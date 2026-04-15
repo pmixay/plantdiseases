@@ -1,8 +1,15 @@
 package com.plantdiseases.app.data.local
 
 import androidx.room.*
+import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Entity(tableName = "scans")
+@Entity(
+    tableName = "scans",
+    indices = [
+        Index(value = ["timestamp"]),
+        Index(value = ["is_healthy"])
+    ]
+)
 data class ScanEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     @ColumnInfo(name = "image_path") val imagePath: String,
@@ -58,7 +65,7 @@ interface ScanDao {
     suspend fun deleteAll()
 }
 
-@Database(entities = [ScanEntity::class], version = 1, exportSchema = false)
+@Database(entities = [ScanEntity::class], version = 2, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun scanDao(): ScanDao
 
@@ -66,13 +73,22 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_scans_timestamp` ON `scans` (`timestamp`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_scans_is_healthy` ON `scans` (`is_healthy`)")
+            }
+        }
+
         fun getInstance(context: android.content.Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
                     "plantdiseases_db"
-                ).build()
+                )
+                    .addMigrations(MIGRATION_1_2)
+                    .build()
                 INSTANCE = instance
                 instance
             }

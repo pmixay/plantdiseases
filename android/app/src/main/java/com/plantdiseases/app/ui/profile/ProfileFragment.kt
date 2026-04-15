@@ -1,10 +1,12 @@
 package com.plantdiseases.app.ui.profile
 
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -45,6 +47,7 @@ class ProfileFragment : Fragment() {
 
         setupThemeChips()
         loadStats()
+        checkServerHealth()
     }
 
     private fun setupThemeChips() {
@@ -108,9 +111,35 @@ class ProfileFragment : Fragment() {
         }
     }
 
+    private fun checkServerHealth() {
+        val app = requireActivity().application as PlantDiseasesApp
+
+        binding.tvServerStatus.text = getString(R.string.server_checking)
+        setStatusIndicatorColor(R.color.on_surface_secondary)
+
+        lifecycleScope.launch {
+            val result = app.scanRepository.checkServerHealth()
+            if (_binding == null) return@launch
+
+            result.onSuccess {
+                binding.tvServerStatus.text = getString(R.string.server_online)
+                setStatusIndicatorColor(R.color.healthy_green)
+            }.onFailure {
+                binding.tvServerStatus.text = getString(R.string.server_offline)
+                setStatusIndicatorColor(R.color.disease_red)
+            }
+        }
+    }
+
+    private fun setStatusIndicatorColor(colorRes: Int) {
+        val drawable = binding.serverStatusIndicator.background as? GradientDrawable
+        drawable?.setColor(ContextCompat.getColor(requireContext(), colorRes))
+    }
+
     override fun onResume() {
         super.onResume()
         loadStats()
+        checkServerHealth()
     }
 
     override fun onDestroyView() {

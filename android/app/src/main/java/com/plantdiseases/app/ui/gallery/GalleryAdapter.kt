@@ -6,6 +6,7 @@ import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
+import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.bumptech.glide.load.resource.bitmap.CenterCrop
 import com.bumptech.glide.load.resource.bitmap.RoundedCorners
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -47,6 +48,7 @@ class GalleryAdapter(
 
             Glide.with(context)
                 .load(File(item.imagePath))
+                .diskCacheStrategy(DiskCacheStrategy.ALL)
                 .transform(CenterCrop(), RoundedCorners(16))
                 .placeholder(R.drawable.ic_plant_placeholder)
                 .into(ivPlant)
