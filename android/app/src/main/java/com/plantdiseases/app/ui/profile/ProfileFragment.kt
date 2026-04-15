@@ -13,6 +13,7 @@ import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.databinding.FragmentProfileBinding
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.ThemeHelper
 import kotlinx.coroutines.launch
 
 class ProfileFragment : Fragment() {
@@ -42,7 +43,28 @@ class ProfileFragment : Fragment() {
                 .show()
         }
 
+        setupThemeChips()
         loadStats()
+    }
+
+    private fun setupThemeChips() {
+        // Set initial selection
+        val currentTheme = ThemeHelper.getSavedTheme(requireContext())
+        when (currentTheme) {
+            ThemeHelper.THEME_LIGHT -> binding.chipThemeLight.isChecked = true
+            ThemeHelper.THEME_DARK -> binding.chipThemeDark.isChecked = true
+            else -> binding.chipThemeSystem.isChecked = true
+        }
+
+        binding.chipThemeLight.setOnClickListener {
+            ThemeHelper.saveTheme(requireContext(), ThemeHelper.THEME_LIGHT)
+        }
+        binding.chipThemeDark.setOnClickListener {
+            ThemeHelper.saveTheme(requireContext(), ThemeHelper.THEME_DARK)
+        }
+        binding.chipThemeSystem.setOnClickListener {
+            ThemeHelper.saveTheme(requireContext(), ThemeHelper.THEME_SYSTEM)
+        }
     }
 
     private fun loadStats() {

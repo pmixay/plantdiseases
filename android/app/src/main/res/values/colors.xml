@@ -26,6 +26,10 @@
     <color name="warning_amber">#EF6C00</color>
     <color name="warning_amber_bg">#FFF3E0</color>
 
+    <!-- Category colors -->
+    <color name="watering_blue">#1976D2</color>
+    <color name="lighting_yellow">#F9A825</color>
+
     <!-- Misc -->
     <color name="scan_frame_color">#80FFFFFF</color>
     <color name="bottom_panel_bg">#F0F2F0</color>

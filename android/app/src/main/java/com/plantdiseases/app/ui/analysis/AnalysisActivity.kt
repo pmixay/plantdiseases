@@ -67,6 +67,7 @@ class AnalysisActivity : AppCompatActivity() {
         binding.loadingLayout.visibility = View.VISIBLE
         binding.errorLayout.visibility = View.GONE
         binding.progressBar.visibility = View.VISIBLE
+        binding.progressBar.playAnimation()
 
         val app = application as PlantDiseasesApp
 

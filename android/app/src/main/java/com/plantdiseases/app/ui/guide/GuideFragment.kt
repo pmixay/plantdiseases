@@ -1,6 +1,8 @@
 package com.plantdiseases.app.ui.guide
 
 import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -10,13 +12,17 @@ import com.google.android.material.tabs.TabLayout
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.GuideDataProvider
 import com.plantdiseases.app.data.model.GuideCategory
+import com.plantdiseases.app.data.model.GuideItem
 import com.plantdiseases.app.databinding.FragmentGuideBinding
+import com.plantdiseases.app.util.LocaleHelper
 
 class GuideFragment : Fragment() {
 
     private var _binding: FragmentGuideBinding? = null
     private val binding get() = _binding!!
     private lateinit var adapter: GuideAdapter
+    private var currentCategory: GuideCategory = GuideCategory.COMMON_DISEASES
+    private var searchQuery: String = ""
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -30,7 +36,6 @@ class GuideFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
 
         adapter = GuideAdapter { item ->
-            // Open detail bottom sheet
             GuideDetailSheet.newInstance(item.id).show(childFragmentManager, "guide_detail")
         }
 
@@ -38,7 +43,8 @@ class GuideFragment : Fragment() {
         binding.rvGuide.adapter = adapter
 
         setupTabs()
-        loadCategory(GuideCategory.COMMON_DISEASES)
+        setupSearch()
+        loadItems()
     }
 
     private fun setupTabs() {
@@ -58,16 +64,41 @@ class GuideFragment : Fragment() {
 
         binding.tabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
             override fun onTabSelected(tab: TabLayout.Tab) {
-                val category = tab.tag as? GuideCategory ?: GuideCategory.COMMON_DISEASES
-                loadCategory(category)
+                currentCategory = tab.tag as? GuideCategory ?: GuideCategory.COMMON_DISEASES
+                loadItems()
             }
             override fun onTabUnselected(tab: TabLayout.Tab) {}
             override fun onTabReselected(tab: TabLayout.Tab) {}
         })
     }
 
-    private fun loadCategory(category: GuideCategory) {
-        val items = GuideDataProvider.getByCategory(category)
+    private fun setupSearch() {
+        binding.etSearch.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                searchQuery = s?.toString()?.trim() ?: ""
+                loadItems()
+            }
+        })
+    }
+
+    private fun loadItems() {
+        val items = if (searchQuery.isBlank()) {
+            GuideDataProvider.getByCategory(currentCategory)
+        } else {
+            // Search across all categories
+            val isRu = LocaleHelper.isRussian(requireContext())
+            val query = searchQuery.lowercase()
+            GuideDataProvider.getGuideItems().filter { item ->
+                val title = if (isRu) item.titleRu else item.titleEn
+                val desc = if (isRu) item.descriptionRu else item.descriptionEn
+                val content = if (isRu) item.contentRu else item.contentEn
+                title.lowercase().contains(query) ||
+                desc.lowercase().contains(query) ||
+                content.lowercase().contains(query)
+            }
+        }
         adapter.submitList(items)
     }
 

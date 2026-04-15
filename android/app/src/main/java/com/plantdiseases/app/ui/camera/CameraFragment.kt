@@ -1,11 +1,19 @@
 package com.plantdiseases.app.ui.camera
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
@@ -15,6 +23,7 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.databinding.FragmentCameraBinding
@@ -90,6 +99,47 @@ class CameraFragment : Fragment() {
 
         // Tip text
         binding.tvScanHint.text = getString(R.string.scan_hint)
+
+        // Tap to focus on camera preview
+        binding.cameraPreview.setOnTouchListener { _, event ->
+            if (event.action == MotionEvent.ACTION_DOWN) {
+                handleTapToFocus(event.x, event.y)
+            }
+            true
+        }
+    }
+
+    private fun handleTapToFocus(x: Float, y: Float) {
+        val cam = camera ?: return
+        val factory = binding.cameraPreview.meteringPointFactory
+        val point = factory.createPoint(x, y)
+        val action = FocusMeteringAction.Builder(point, FocusMeteringAction.FLAG_AF)
+            .setAutoCancelDuration(3, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+        cam.cameraControl.startFocusAndMetering(action)
+
+        // Show a brief focus indicator
+        binding.focusIndicator.let { indicator ->
+            indicator.x = x - indicator.width / 2f
+            indicator.y = y - indicator.height / 2f
+            indicator.visibility = View.VISIBLE
+            indicator.alpha = 1f
+            indicator.scaleX = 1.3f
+            indicator.scaleY = 1.3f
+            indicator.animate()
+                .scaleX(1f)
+                .scaleY(1f)
+                .setDuration(200)
+                .withEndAction {
+                    indicator.animate()
+                        .alpha(0f)
+                        .setDuration(500)
+                        .setStartDelay(600)
+                        .withEndAction { indicator.visibility = View.GONE }
+                        .start()
+                }
+                .start()
+        }
     }
 
     private fun checkCameraPermission() {
@@ -146,6 +196,10 @@ class CameraFragment : Fragment() {
         val imageCapture = imageCapture ?: return
 
         binding.btnCapture.isEnabled = false
+
+        // Vibrate on capture
+        vibrateOnCapture()
+
         val photoFile = ImageUtils.createImageFile(requireContext())
 
         val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
@@ -156,7 +210,7 @@ class CameraFragment : Fragment() {
             object : ImageCapture.OnImageSavedCallback {
                 override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                     binding.btnCapture.isEnabled = true
-                    navigateToAnalysis(photoFile.absolutePath)
+                    checkPlantAndNavigate(photoFile.absolutePath)
                 }
 
                 override fun onError(exception: ImageCaptureException) {
@@ -171,10 +225,47 @@ class CameraFragment : Fragment() {
         )
     }
 
+    private fun vibrateOnCapture() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val vibratorManager = requireContext().getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+                vibratorManager.defaultVibrator.vibrate(
+                    VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE)
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                val vibrator = requireContext().getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                vibrator.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE))
+            }
+        } catch (_: Exception) {
+            // Vibration not available — ignore
+        }
+    }
+
+    /**
+     * HSV-based plant detection: checks if at least 10% of pixels are green-ish.
+     * If not enough green detected, shows warning before proceeding.
+     */
+    private fun checkPlantAndNavigate(imagePath: String) {
+        val hasGreen = ImageUtils.hasGreenContent(imagePath)
+        if (!hasGreen) {
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle(R.string.not_a_plant_title)
+                .setMessage(R.string.not_a_plant_warning)
+                .setPositiveButton(R.string.continue_anyway) { _, _ ->
+                    navigateToAnalysis(imagePath)
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        } else {
+            navigateToAnalysis(imagePath)
+        }
+    }
+
     private fun handleGalleryImage(uri: Uri) {
         val file = ImageUtils.copyUriToFile(requireContext(), uri)
         if (file != null) {
-            navigateToAnalysis(file.absolutePath)
+            checkPlantAndNavigate(file.absolutePath)
         } else {
             Toast.makeText(requireContext(), getString(R.string.image_load_error), Toast.LENGTH_SHORT).show()
         }
