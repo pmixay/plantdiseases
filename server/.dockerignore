@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.git/
+data/
+venv/
+.env
+*.h5
+.DS_Store

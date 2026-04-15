@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PlantDiseases</string>
+
+    <!-- Tabs -->
+    <string name="tab_scan">Сканер</string>
+    <string name="tab_gallery">Галерея</string>
+    <string name="tab_guide">Справка</string>
+
+    <!-- Camera -->
+    <string name="scan_hint">Наведите на лист растения</string>
+    <string name="take_photo">Сфотографировать</string>
+    <string name="gallery">Галерея</string>
+    <string name="flash">Вспышка</string>
+    <string name="recent_scans">ПОСЛЕДНИЕ СКАНЫ</string>
+    <string name="camera_permission_needed">Нужен доступ к камере</string>
+    <string name="grant_permission">Разрешить камеру</string>
+    <string name="camera_error">Не удалось запустить камеру</string>
+    <string name="capture_error">Не удалось сделать фото</string>
+    <string name="image_load_error">Не удалось загрузить изображение</string>
+
+    <!-- Analysis -->
+    <string name="analyzing">Анализируем…</string>
+    <string name="analyzing_detail">Наш ИИ изучает ваше растение</string>
+    <string name="analysis_error">Ошибка анализа</string>
+    <string name="unknown_error">Произошла неизвестная ошибка</string>
+    <string name="retry">Повторить</string>
+    <string name="cancel">Отмена</string>
+
+    <!-- Result -->
+    <string name="result_title">Диагноз</string>
+    <string name="confidence_label">Уверенность</string>
+    <string name="confidence_format">%d%%</string>
+    <string name="status_healthy">Здоровое</string>
+    <string name="status_disease">Обнаружена болезнь</string>
+    <string name="description_label">Описание</string>
+    <string name="treatment_label">Лечение</string>
+    <string name="prevention_label">Профилактика</string>
+
+    <!-- Gallery -->
+    <string name="empty_gallery">Пока нет сканов</string>
+    <string name="empty_gallery_hint">Сфотографируйте растение, чтобы начать</string>
+    <string name="delete_scan">Удалить скан</string>
+    <string name="delete_scan_confirm">Вы уверены, что хотите удалить этот скан?</string>
+    <string name="delete">Удалить</string>
+
+    <!-- Guide categories -->
+    <string name="cat_diseases">Болезни</string>
+    <string name="cat_pests">Вредители</string>
+    <string name="cat_watering">Полив</string>
+    <string name="cat_lighting">Свет</string>
+    <string name="cat_care">Уход</string>
+
+    <!-- Result actions -->
+    <string name="share">Поделиться</string>
+    <string name="low_confidence_warning">Низкая уверенность результата. Попробуйте сделать более чёткое фото при лучшем освещении.</string>
+
+    <!-- Profile -->
+    <string name="tab_profile">Профиль</string>
+    <string name="profile_title">Ваша статистика</string>
+    <string name="total_scans">Всего сканов</string>
+    <string name="healthy_plants">Здоровые</string>
+    <string name="diseased_plants">Больные</string>
+    <string name="accuracy_rate">Процент здоровых</string>
+    <string name="most_common_disease">Частая проблема</string>
+    <string name="no_scans_yet">Пока нет сканов</string>
+    <string name="start_scanning_hint">Начните сканировать растения, чтобы увидеть статистику</string>
+    <string name="app_version">Версия приложения</string>
+    <string name="clear_history">Очистить историю</string>
+    <string name="clear_history_confirm">Это безвозвратно удалит всю историю сканов. Вы уверены?</string>
+    <string name="clear_all">Очистить всё</string>
+    <string name="history_cleared">История очищена</string>
+    <string name="none_yet">Пока нет</string>
+
+    <!-- Settings -->
+    <string name="close">Закрыть</string>
+    <string name="language">Язык</string>
+</resources>

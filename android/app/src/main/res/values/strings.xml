@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PlantDiseases</string>
+
+    <!-- Tabs -->
+    <string name="tab_scan">Scan</string>
+    <string name="tab_gallery">Gallery</string>
+    <string name="tab_guide">Guide</string>
+
+    <!-- Camera -->
+    <string name="scan_hint">Point at the plant leaf to scan</string>
+    <string name="take_photo">Take Photo</string>
+    <string name="gallery">Gallery</string>
+    <string name="flash">Flash</string>
+    <string name="recent_scans">RECENT SCANS</string>
+    <string name="camera_permission_needed">Camera access is needed</string>
+    <string name="grant_permission">Allow Camera</string>
+    <string name="camera_error">Failed to start camera</string>
+    <string name="capture_error">Failed to capture photo</string>
+    <string name="image_load_error">Failed to load image</string>
+
+    <!-- Analysis -->
+    <string name="analyzing">Analyzing…</string>
+    <string name="analyzing_detail">Our AI is examining your plant</string>
+    <string name="analysis_error">Analysis Failed</string>
+    <string name="unknown_error">Unknown error occurred</string>
+    <string name="retry">Retry</string>
+    <string name="cancel">Cancel</string>
+
+    <!-- Result -->
+    <string name="result_title">Diagnosis</string>
+    <string name="confidence_label">Confidence</string>
+    <string name="confidence_format">%d%%</string>
+    <string name="status_healthy">Healthy</string>
+    <string name="status_disease">Disease Detected</string>
+    <string name="description_label">Description</string>
+    <string name="treatment_label">Treatment</string>
+    <string name="prevention_label">Prevention</string>
+
+    <!-- Gallery -->
+    <string name="empty_gallery">No scans yet</string>
+    <string name="empty_gallery_hint">Take a photo of your plant to get started</string>
+    <string name="delete_scan">Delete Scan</string>
+    <string name="delete_scan_confirm">Are you sure you want to delete this scan?</string>
+    <string name="delete">Delete</string>
+
+    <!-- Guide categories -->
+    <string name="cat_diseases">Diseases</string>
+    <string name="cat_pests">Pests</string>
+    <string name="cat_watering">Watering</string>
+    <string name="cat_lighting">Lighting</string>
+    <string name="cat_care">Care Tips</string>
+
+    <!-- Result actions -->
+    <string name="share">Share</string>
+    <string name="low_confidence_warning">Low confidence result. Try taking a clearer photo with better lighting for more accurate diagnosis.</string>
+
+    <!-- Profile -->
+    <string name="tab_profile">Profile</string>
+    <string name="profile_title">Your Statistics</string>
+    <string name="total_scans">Total Scans</string>
+    <string name="healthy_plants">Healthy</string>
+    <string name="diseased_plants">Diseased</string>
+    <string name="accuracy_rate">Health Rate</string>
+    <string name="most_common_disease">Most Common Issue</string>
+    <string name="no_scans_yet">No scans yet</string>
+    <string name="start_scanning_hint">Start scanning your plants to see statistics here</string>
+    <string name="app_version">App Version</string>
+    <string name="clear_history">Clear All History</string>
+    <string name="clear_history_confirm">This will permanently delete all scan history. Are you sure?</string>
+    <string name="clear_all">Clear All</string>
+    <string name="history_cleared">History cleared</string>
+    <string name="none_yet">None yet</string>
+
+    <!-- Settings -->
+    <string name="close">Close</string>
+    <string name="language">Language</string>
+</resources>

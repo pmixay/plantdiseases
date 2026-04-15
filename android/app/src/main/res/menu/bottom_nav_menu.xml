@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/cameraFragment"
+        android:icon="@drawable/ic_scan"
+        android:title="@string/tab_scan" />
+    <item
+        android:id="@+id/galleryFragment"
+        android:icon="@drawable/ic_gallery"
+        android:title="@string/tab_gallery" />
+    <item
+        android:id="@+id/guideFragment"
+        android:icon="@drawable/ic_guide"
+        android:title="@string/tab_guide" />
+    <item
+        android:id="@+id/profileFragment"
+        android:icon="@drawable/ic_profile"
+        android:title="@string/tab_profile" />
+</menu>

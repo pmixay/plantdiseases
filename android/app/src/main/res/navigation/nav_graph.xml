@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/cameraFragment">
+
+    <fragment
+        android:id="@+id/cameraFragment"
+        android:name="com.plantdiseases.app.ui.camera.CameraFragment"
+        android:label="@string/tab_scan" />
+
+    <fragment
+        android:id="@+id/galleryFragment"
+        android:name="com.plantdiseases.app.ui.gallery.GalleryFragment"
+        android:label="@string/tab_gallery" />
+
+    <fragment
+        android:id="@+id/guideFragment"
+        android:name="com.plantdiseases.app.ui.guide.GuideFragment"
+        android:label="@string/tab_guide" />
+
+    <fragment
+        android:id="@+id/profileFragment"
+        android:name="com.plantdiseases.app.ui.profile.ProfileFragment"
+        android:label="@string/tab_profile" />
+
+</navigation>
