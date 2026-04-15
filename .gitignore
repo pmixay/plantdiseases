@@ -12,6 +12,7 @@ server/__pycache__/
 server/*.pyc
 server/data/
 server/models/*.h5
+server/models/*.pth
 
 # OS
 .DS_Store
