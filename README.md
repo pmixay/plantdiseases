@@ -7,29 +7,125 @@ AI-powered houseplant disease detection app for Android with a Python ML server.
 ## Architecture Overview
 
 ```
-┌──────────────────────┐         ┌──────────────────────────┐
-│   Android App        │  HTTP   │   Python Server          │
-│   (Kotlin)           │ ──────► │   (FastAPI)              │
-│                      │         │                          │
-│  • CameraX capture   │         │  • CNN model (MobileNet) │
-│  • Room local DB     │  JSON   │  • PlantVillage dataset  │
-│  • Retrofit client   │ ◄────── │  • Disease database      │
-│  • Material 3 UI     │         │  • Image preprocessing   │
-│  • RU/EN localization│         │  • Input validation      │
-│  • Profile & stats   │         │  • Docker deployment     │
-└──────────────────────┘         └──────────────────────────┘
+┌──────────────────────┐         ┌──────────────────────────────────┐
+│   Android App        │  HTTP   │   Python Server (FastAPI)        │
+│   (Kotlin)           │ ──────► │                                  │
+│                      │         │   ┌──────────────────────────┐   │
+│  • CameraX capture   │         │   │ Stage 1: Detector        │   │
+│  • Room local DB     │         │   │ MobileNetV3-Small        │   │
+│  • Retrofit client   │  JSON   │   │ healthy/diseased + ROI   │   │
+│  • Material 3 UI     │ ◄────── │   └──────────┬───────────────┘   │
+│  • RU/EN localization│         │              │                   │
+│  • Profile & stats   │         │   ┌──────────▼───────────────┐   │
+│                      │         │   │ Stage 2: Classifier      │   │
+│                      │         │   │ EfficientNet-B0          │   │
+│                      │         │   │ 15 disease classes       │   │
+│                      │         │   └──────────────────────────┘   │
+└──────────────────────┘         └──────────────────────────────────┘
 ```
+
+### Two-Stage Detection Pipeline
+
+```
+Full photo
+    │
+    ▼
+┌─────────────────────────┐
+│  Stage 1: Detector       │  MobileNetV3-Small (2.5M params)
+│  "Is the plant diseased? │  Binary classifier + Grad-CAM heatmap
+│   Where is the damage?"  │  Outputs: healthy/diseased + bounding box
+└──────────┬──────────────┘
+           │
+      ┌────┴─────┐
+      │ Healthy?  │─── yes ──► return "Healthy Plant" immediately
+      └────┬──────┘
+           │ no
+           ▼
+    Crop image to affected region
+           │
+           ▼
+┌─────────────────────────┐
+│  Stage 2: Classifier     │  EfficientNet-B0 (5.3M params)
+│  "Which disease is it?"  │  15-class fine-grained classification
+│                          │  Works on the cropped ROI for precision
+└──────────┬──────────────┘
+           │
+           ▼
+    Disease name + confidence
+    + treatment advice (EN/RU)
+```
+
+**Why two stages?**
+- **Better accuracy** — the classifier focuses on the diseased area, not the whole image
+- **Faster for healthy plants** — no need to run the heavy classifier
+- **Explainable** — the bounding box shows exactly what the model detected
+- **Lightweight** — both models total ~8M parameters (vs 100M+ for larger architectures)
+
+---
+
+## Quick Start
+
+### Start the server
+
+**Linux / macOS:**
+```bash
+cd server/
+chmod +x start.sh
+./start.sh
+```
+
+**Windows:**
+```cmd
+cd server\
+start.bat
+```
+
+The script will automatically:
+1. Check Python 3.9+ is installed
+2. Create a virtual environment
+3. Install CPU-only PyTorch (lightweight ~200 MB)
+4. Install all dependencies
+5. Start the server on `http://localhost:8000`
+
+Without trained models the server runs in **demo mode** (colour-based heuristics).
+
+### Train models
+
+```bash
+# Linux
+./start.sh --train
+
+# Windows
+start.bat --train
+
+# Or run training directly
+python train.py              # train both models
+python train.py --detector   # train detector only
+python train.py --classifier # train classifier only
+```
+
+### Build the Android app
+
+1. Open `android/` in Android Studio (Hedgehog 2023.1+)
+2. Set server URL in `app/build.gradle.kts`:
+   ```kotlin
+   // Emulator:
+   buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:8000/\"")
+   // Physical device (same WiFi):
+   buildConfigField("String", "API_BASE_URL", "\"http://YOUR_PC_IP:8000/\"")
+   ```
+3. Sync Gradle → Run on device/emulator
 
 ---
 
 ## Android App
 
 ### Features
-- **Camera scanner** (Photomath-style UI) — point at a plant leaf and capture
-- **Image gallery picker** — analyze photos from device
+- **Camera scanner** — point at a plant leaf and capture
+- **Image gallery picker** — analyse photos from device
 - **Scan history** — all results saved locally in Room DB
-- **Plant care guide** — 22 articles on diseases, pests, watering, lighting, care
-- **Profile & statistics** — total scans, healthy/diseased ratio, most common issue
+- **Plant care guide** — 22 articles on diseases, pests, watering, lighting
+- **Profile & statistics** — total scans, healthy/diseased ratio
 - **Share results** — export diagnosis as text
 - **Low confidence warning** — alert when result is uncertain
 - **Bilingual** — Russian / English with one-tap switching
@@ -46,24 +142,6 @@ AI-powered houseplant disease detection app for Android with a Python ML server.
 | UI | Material Design 3 |
 | Async | Kotlin Coroutines |
 
-### Setup & Build
-
-1. **Open in Android Studio** (Hedgehog 2023.1+ recommended)
-   ```
-   File → Open → select android/ folder
-   ```
-
-2. **Set server URL** in `app/build.gradle.kts`:
-   ```kotlin
-   // For emulator → localhost:
-   buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:8000/\"")
-   
-   // For physical device on same WiFi:
-   buildConfigField("String", "API_BASE_URL", "\"http://YOUR_PC_IP:8000/\"")
-   ```
-
-3. **Sync Gradle** and **Run** on device/emulator
-
 ### Project Structure
 ```
 app/src/main/
@@ -75,20 +153,20 @@ app/src/main/
 │   │   ├── remote/ApiService.kt     # Retrofit API
 │   │   ├── model/Models.kt          # Data models
 │   │   ├── repository/ScanRepository.kt
-│   │   └── GuideDataProvider.kt     # Offline guide articles (22 items)
+│   │   └── GuideDataProvider.kt     # Offline guide (22 items)
 │   ├── ui/
 │   │   ├── camera/                  # Camera scanner screen
 │   │   ├── gallery/                 # Scan history grid
 │   │   ├── guide/                   # Care articles + detail
 │   │   ├── profile/                 # Statistics & settings
-│   │   ├── analysis/                # Loading/analyzing screen
+│   │   ├── analysis/                # Loading / analysing screen
 │   │   └── result/                  # Disease diagnosis result
 │   └── util/
 │       ├── LocaleHelper.kt          # Language switching
 │       └── ImageUtils.kt            # Image processing
 └── res/
     ├── layout/                      # XML layouts
-    ├── values/                      # English strings, colors, themes
+    ├── values/                      # English strings, colours, themes
     ├── values-ru/                   # Russian strings
     ├── drawable/                    # Icons & shapes
     ├── navigation/                  # Nav graph
@@ -99,55 +177,62 @@ app/src/main/
 
 ## Python Server
 
-### Features
-- **FastAPI** REST server with input validation
-- **CNN model** — MobileNetV2 transfer learning
-- **Demo mode** — works without trained model (uses color heuristics)
-- **Bilingual responses** — all disease info in EN and RU
-- **15 disease classes** including common houseplant problems
-- **Docker** — ready for deployment
-- **Request logging** — structured logs with timing
+### Pipeline Models
 
-### Setup
+| Stage | Model | Params | Task |
+|-------|-------|--------|------|
+| 1 — Detector | MobileNetV3-Small | 2.5 M | Binary (healthy/diseased) + Grad-CAM region |
+| 2 — Classifier | EfficientNet-B0 | 5.3 M | 15-class disease identification |
 
-1. **Create virtual environment:**
-   ```bash
-   cd server/
-   python -m venv venv
-   source venv/bin/activate   # Linux/Mac
-   venv\Scripts\activate      # Windows
-   ```
+Both models use **ImageNet-pretrained** backbones with two-phase transfer learning:
+- Phase A: freeze backbone → train classifier head
+- Phase B: unfreeze top layers → fine-tune with lower LR
 
-2. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Run server (demo mode, no trained model needed):**
-   ```bash
-   uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-   ```
-   The server starts in **demo mode** and uses color-based heuristics.
-   API docs: http://localhost:8000/docs
-
-### Docker Deployment
-
-```bash
-cd server/
-docker-compose up --build -d
+### Server Files
+```
+server/
+├── start.sh               # Linux / macOS startup script
+├── start.bat              # Windows startup script
+├── main.py                # FastAPI server (endpoints)
+├── pipeline.py            # Two-stage pipeline orchestrator
+├── detector.py            # Stage 1: MobileNetV3 + Grad-CAM
+├── classifier.py          # Stage 2: EfficientNet-B0
+├── train.py               # Unified training script
+├── diseases_data.py       # Bilingual disease database
+├── requirements.txt       # Server dependencies
+├── requirements-train.txt # Extra training dependencies
+└── models/
+    ├── detector.pth       # Trained Stage 1 model
+    └── classifier.pth     # Trained Stage 2 model
 ```
 
-### Training Your Own Model
+### Startup Options
+
+```bash
+# Start server (default port 8000)
+./start.sh
+start.bat
+
+# Custom port
+./start.sh --port 9000
+start.bat --port 9000
+
+# Train models then start server
+./start.sh --train
+start.bat --train
+```
+
+### Training Your Own Models
 
 1. **Download PlantVillage dataset:**
    - GitHub: https://github.com/spMohanty/PlantVillage-Dataset
    - Kaggle: https://www.kaggle.com/datasets/emmarex/plantdisease
 
-2. **Organize data:**
+2. **Organise data:**
    ```
    server/data/
    ├── train/
-   │   ├── healthy/          # Images of healthy leaves
+   │   ├── healthy/
    │   ├── bacterial_spot/
    │   ├── early_blight/
    │   ├── powdery_mildew/
@@ -160,21 +245,18 @@ docker-compose up --build -d
 
 3. **Train:**
    ```bash
-   python train.py
+   python train.py              # both models
+   python train.py --detector   # Stage 1 only
+   python train.py --classifier # Stage 2 only
    ```
-   Model saves to `models/plant_disease_model.h5`.
-   Training uses MobileNetV2 with two-phase approach:
-   - Phase 1: Train classifier head (15 epochs)
-   - Phase 2: Fine-tune top 30 layers (10 epochs)
-   - Outputs: per-class accuracy, confusion matrix, top confused pairs
 
-4. **Restart server** — model loads automatically.
+4. **Restart server** — models load automatically.
 
 ### API Endpoints
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/health` | Health check + model status |
+| `GET` | `/api/health` | Health check + pipeline status |
 | `POST` | `/api/analyze` | Upload image → get diagnosis |
 
 #### POST /api/analyze
@@ -193,22 +275,20 @@ docker-compose up --build -d
   "treatment_ru": ["Шаг 1", "Шаг 2"],
   "prevention": ["Tip 1", "Tip 2"],
   "prevention_ru": ["Совет 1", "Совет 2"],
-  "is_healthy": false
+  "is_healthy": false,
+  "detection": {
+    "is_diseased": true,
+    "detector_confidence": 0.93,
+    "region": {
+      "x": 120,
+      "y": 80,
+      "width": 200,
+      "height": 170
+    }
+  },
+  "pipeline_mode": "full",
+  "elapsed_ms": 145.3
 }
-```
-
----
-
-## Quick Start (Full Stack)
-
-```bash
-# Terminal 1 — Start server
-cd server/
-pip install -r requirements.txt
-uvicorn main:app --host 0.0.0.0 --port 8000
-
-# Terminal 2 — Build & run Android app
-# Open android/ in Android Studio → Run on device/emulator
 ```
 
 ---

@@ -1,5 +1,8 @@
 """
-PlantDiseases Server — FastAPI backend with CNN model for plant disease detection.
+PlantDiseases Server — FastAPI backend with two-stage CNN pipeline.
+
+Stage 1:  MobileNetV3-Small  — detect diseased region (Grad-CAM)
+Stage 2:  EfficientNet-B0    — classify the specific disease
 
 Usage:
     uvicorn main:app --host 0.0.0.0 --port 8000 --reload
@@ -11,13 +14,12 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-import numpy as np
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from PIL import Image
 
-from model import PlantDiseaseModel
+from pipeline import PlantDiseasePipeline
 from diseases_data import DISEASES_DATABASE
 
 # ── Logging ──────────────────────────────────────────────────────────
@@ -29,34 +31,37 @@ logging.basicConfig(
 logger = logging.getLogger("plantdiseases")
 
 # ── Configuration ────────────────────────────────────────────────────
-MODEL_PATH = Path("models/plant_disease_model.h5")
+MODELS_DIR = Path("models")
+DETECTOR_PATH = MODELS_DIR / "detector.pth"
+CLASSIFIER_PATH = MODELS_DIR / "classifier.pth"
+
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp", "image/bmp"}
 
-model: PlantDiseaseModel | None = None
+pipeline: PlantDiseasePipeline | None = None
 
 
-# ── Lifecycle (replaces deprecated @app.on_event) ────────────────────
+# ── Lifecycle ────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global model
+    global pipeline
     try:
-        model = PlantDiseaseModel(MODEL_PATH)
-        if model.is_loaded:
-            logger.info("Model loaded successfully from %s", MODEL_PATH)
-        else:
-            logger.warning("Model not found at %s — running in DEMO mode", MODEL_PATH)
+        pipeline = PlantDiseasePipeline(
+            detector_path=DETECTOR_PATH,
+            classifier_path=CLASSIFIER_PATH,
+        )
+        logger.info("Pipeline initialised (mode=%s)", pipeline.mode)
     except Exception as e:
-        logger.error("Failed to initialize model: %s", e)
-        model = PlantDiseaseModel(None)
+        logger.error("Failed to initialise pipeline: %s", e)
+        pipeline = PlantDiseasePipeline()
     yield
     logger.info("Server shutting down")
 
 
 app = FastAPI(
     title="PlantDiseases API",
-    description="AI-powered plant disease detection for houseplants",
-    version="1.0.0",
+    description="AI-powered plant disease detection — two-stage pipeline",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
@@ -72,21 +77,24 @@ app.add_middleware(
 
 @app.get("/api/health")
 async def health_check():
-    """Health check endpoint — returns server status and model state."""
+    """Health check — server status, model state, pipeline mode."""
     return {
         "status": "ok",
-        "model_loaded": model is not None and model.is_loaded,
-        "version": "1.0.0",
-        "num_classes": len(model.CLASS_NAMES) if model else 0,
+        "version": "2.0.0",
+        "pipeline_mode": pipeline.mode if pipeline else "unknown",
+        "detector_loaded": pipeline.detector.is_loaded if pipeline else False,
+        "classifier_loaded": pipeline.classifier.is_loaded if pipeline else False,
+        "num_classes": len(pipeline.classifier.CLASS_NAMES) if pipeline else 0,
     }
 
 
 @app.post("/api/analyze")
 async def analyze_image(image: UploadFile = File(...)):
-    """Analyze a plant image for diseases.
+    """Analyse a plant image for diseases (two-stage pipeline).
 
     Accepts JPEG, PNG, WebP, or BMP images up to 10 MB.
-    Returns bilingual (EN/RU) disease diagnosis with treatment advice.
+    Returns bilingual (EN/RU) disease diagnosis with treatment advice
+    and the detected region coordinates.
     """
     start_time = time.time()
 
@@ -95,10 +103,9 @@ async def analyze_image(image: UploadFile = File(...)):
         logger.warning("Rejected file with content_type=%s", image.content_type)
         raise HTTPException(
             status_code=400,
-            detail=f"Unsupported image format. Allowed: JPEG, PNG, WebP, BMP",
+            detail="Unsupported image format. Allowed: JPEG, PNG, WebP, BMP",
         )
 
-    # Read and check file size
     contents = await image.read()
     if len(contents) > MAX_FILE_SIZE:
         logger.warning("Rejected oversized file: %d bytes", len(contents))
@@ -106,33 +113,31 @@ async def analyze_image(image: UploadFile = File(...)):
             status_code=400,
             detail=f"File too large. Maximum size: {MAX_FILE_SIZE // (1024*1024)} MB",
         )
-
     if len(contents) == 0:
         raise HTTPException(status_code=400, detail="Empty file received")
 
-    # ── Image processing ─────────────────────────────────────────
+    # ── Image decoding ───────────────────────────────────────────
     try:
         img = Image.open(io.BytesIO(contents)).convert("RGB")
     except Exception:
         logger.error("Failed to decode image from %s", image.filename)
         raise HTTPException(status_code=400, detail="Cannot read image file")
 
-    # ── Prediction ───────────────────────────────────────────────
-    prediction = model.predict(img)
+    # ── Pipeline ─────────────────────────────────────────────────
+    result = pipeline.analyze(img)
 
-    class_name = prediction["class_name"]
-    confidence = prediction["confidence"]
-
-    # Look up disease info
+    class_name = result["class_name"]
+    confidence = result["confidence"]
     disease_info = DISEASES_DATABASE.get(class_name, DISEASES_DATABASE["unknown"])
 
     elapsed = time.time() - start_time
     logger.info(
-        "Analysis complete: class=%s confidence=%.3f time=%.2fs file=%s",
-        class_name, confidence, elapsed, image.filename,
+        "Analysis complete: class=%s confidence=%.3f time=%.2fs file=%s mode=%s",
+        class_name, confidence, elapsed, image.filename, result["pipeline_mode"],
     )
 
     return JSONResponse(content={
+        # ── backward-compatible fields ──
         "disease_name": disease_info["name_en"],
         "disease_name_ru": disease_info["name_ru"],
         "confidence": round(confidence, 3),
@@ -143,6 +148,10 @@ async def analyze_image(image: UploadFile = File(...)):
         "prevention": disease_info["prevention_en"],
         "prevention_ru": disease_info["prevention_ru"],
         "is_healthy": disease_info.get("is_healthy", False),
+        # ── new pipeline fields ──
+        "detection": result["detection"],
+        "pipeline_mode": result["pipeline_mode"],
+        "elapsed_ms": result["elapsed_ms"],
     })
 
 
