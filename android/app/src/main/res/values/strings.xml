@@ -108,4 +108,17 @@
     <!-- Settings -->
     <string name="close">Close</string>
     <string name="language">Language</string>
+
+    <!-- Network errors -->
+    <string name="server_not_responding">Server Not Responding</string>
+    <string name="server_not_responding_detail">The server did not respond within 10 seconds. Please try again later.</string>
+    <string name="no_network">No Internet Connection</string>
+    <string name="no_network_detail">Check your network connection and try again.</string>
+    <string name="offline_banner">No internet connection</string>
+
+    <!-- Server status -->
+    <string name="server_status">Server Status</string>
+    <string name="server_online">Online</string>
+    <string name="server_offline">Offline</string>
+    <string name="server_checking">Checking…</string>
 </resources>

@@ -4,6 +4,7 @@ import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
+import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.bumptech.glide.load.resource.bitmap.CenterCrop
 import com.bumptech.glide.load.resource.bitmap.RoundedCorners
 import com.plantdiseases.app.R
@@ -44,6 +45,7 @@ class RecentScanAdapter(
 
             Glide.with(context)
                 .load(File(item.imagePath))
+                .diskCacheStrategy(DiskCacheStrategy.ALL)
                 .transform(CenterCrop(), RoundedCorners(24))
                 .placeholder(R.drawable.ic_plant_placeholder)
                 .into(ivThumbnail)

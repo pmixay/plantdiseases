@@ -23,3 +23,9 @@
 # Glide
 -keep public class * implements com.bumptech.glide.module.GlideModule
 -keep class * extends com.bumptech.glide.module.AppGlideModule { <init>(...); }
+
+# Lottie
+-dontwarn com.airbnb.lottie.**
+-keep class com.airbnb.lottie.** { *; }
+-keep class com.airbnb.lottie.model.** { *; }
+-keep class com.airbnb.lottie.animation.** { *; }

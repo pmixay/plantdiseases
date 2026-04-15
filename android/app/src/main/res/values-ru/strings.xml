@@ -108,4 +108,17 @@
     <!-- Settings -->
     <string name="close">Закрыть</string>
     <string name="language">Язык</string>
+
+    <!-- Network errors -->
+    <string name="server_not_responding">Сервер не отвечает</string>
+    <string name="server_not_responding_detail">Сервер не ответил в течение 10 секунд. Попробуйте позже.</string>
+    <string name="no_network">Нет интернета</string>
+    <string name="no_network_detail">Проверьте подключение к сети и повторите попытку.</string>
+    <string name="offline_banner">Нет подключения к интернету</string>
+
+    <!-- Server status -->
+    <string name="server_status">Статус сервера</string>
+    <string name="server_online">Онлайн</string>
+    <string name="server_offline">Недоступен</string>
+    <string name="server_checking">Проверка…</string>
 </resources>

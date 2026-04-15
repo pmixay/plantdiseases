@@ -6,6 +6,10 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -40,6 +44,7 @@ class CameraFragment : Fragment() {
     private var imageCapture: ImageCapture? = null
     private var cameraProvider: ProcessCameraProvider? = null
     private var camera: androidx.camera.core.Camera? = null
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     // Permission launcher
     private val permissionLauncher = registerForActivityResult(
@@ -74,6 +79,7 @@ class CameraFragment : Fragment() {
         setupUI()
         checkCameraPermission()
         loadRecentScans()
+        registerNetworkCallback()
     }
 
     private fun setupUI() {
@@ -310,8 +316,38 @@ class CameraFragment : Fragment() {
         loadRecentScans()
     }
 
+    private fun registerNetworkCallback() {
+        val cm = requireContext().getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+
+        // Check initial state
+        val activeNetwork = cm.getNetworkCapabilities(cm.activeNetwork)
+        val isConnected = activeNetwork?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+        binding.offlineBanner.visibility = if (isConnected) View.GONE else View.VISIBLE
+
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                view?.post { _binding?.offlineBanner?.visibility = View.GONE }
+            }
+
+            override fun onLost(network: Network) {
+                view?.post { _binding?.offlineBanner?.visibility = View.VISIBLE }
+            }
+        }
+        networkCallback = callback
+
+        val request = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .build()
+        cm.registerNetworkCallback(request, callback)
+    }
+
     override fun onDestroyView() {
         super.onDestroyView()
+        networkCallback?.let {
+            val cm = requireContext().getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            cm.unregisterNetworkCallback(it)
+        }
+        networkCallback = null
         _binding = null
     }
 }

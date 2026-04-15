@@ -1,0 +1,16 @@
+version: "3.8"
+
+services:
+  plantdiseases-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: plantdiseases-server
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./models:/app/models:ro
+      - ./logs:/app/logs
+    environment:
+      - CORS_ORIGINS=*
+    restart: unless-stopped

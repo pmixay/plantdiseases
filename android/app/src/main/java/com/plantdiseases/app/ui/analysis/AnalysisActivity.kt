@@ -92,8 +92,21 @@ class AnalysisActivity : AppCompatActivity() {
             }.onFailure { error ->
                 binding.loadingLayout.visibility = View.GONE
                 binding.errorLayout.visibility = View.VISIBLE
-                binding.tvError.text = getString(R.string.analysis_error)
-                binding.tvErrorDetail.text = error.localizedMessage ?: getString(R.string.unknown_error)
+
+                when (error) {
+                    is com.plantdiseases.app.data.repository.ScanRepository.ServerTimeoutException -> {
+                        binding.tvError.text = getString(R.string.server_not_responding)
+                        binding.tvErrorDetail.text = getString(R.string.server_not_responding_detail)
+                    }
+                    is com.plantdiseases.app.data.repository.ScanRepository.NoNetworkException -> {
+                        binding.tvError.text = getString(R.string.no_network)
+                        binding.tvErrorDetail.text = getString(R.string.no_network_detail)
+                    }
+                    else -> {
+                        binding.tvError.text = getString(R.string.analysis_error)
+                        binding.tvErrorDetail.text = error.localizedMessage ?: getString(R.string.unknown_error)
+                    }
+                }
             }
 
             // Clean up temp upload file

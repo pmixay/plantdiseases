@@ -9,24 +9,52 @@ Usage:
 """
 
 import io
+import os
 import time
 import logging
+from collections import defaultdict
 from contextlib import asynccontextmanager
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from PIL import Image
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response as StarletteResponse
 
 from pipeline import PlantDiseasePipeline
 from diseases_data import DISEASES_DATABASE
 
 # ── Logging ──────────────────────────────────────────────────────────
+LOG_DIR = Path("logs")
+LOG_DIR.mkdir(exist_ok=True)
+
+# Console handler
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+console_handler.setFormatter(logging.Formatter(
+    "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+))
+
+# Rotating file handler — 5 MB per file, keep 5 backups
+file_handler = RotatingFileHandler(
+    LOG_DIR / "server.log",
+    maxBytes=5 * 1024 * 1024,
+    backupCount=5,
+    encoding="utf-8",
+)
+file_handler.setLevel(logging.INFO)
+file_handler.setFormatter(logging.Formatter(
+    "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+))
+
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
+    handlers=[console_handler, file_handler],
 )
 logger = logging.getLogger("plantdiseases")
 
@@ -38,13 +66,70 @@ CLASSIFIER_PATH = MODELS_DIR / "classifier.pth"
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp", "image/bmp"}
 
+# ── Server metrics ──────────────────────────────────────────────────
+SERVER_START_TIME: float = 0.0
+TOTAL_REQUESTS: int = 0
+
 pipeline: PlantDiseasePipeline | None = None
+
+
+# ── Rate limiting middleware ────────────────────────────────────────
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    """Simple in-memory rate limiter: 1 request per second per IP."""
+
+    def __init__(self, app, requests_per_second: float = 1.0):
+        super().__init__(app)
+        self.min_interval = 1.0 / requests_per_second
+        self._last_request: dict[str, float] = defaultdict(float)
+
+    async def dispatch(self, request: Request, call_next):
+        # Skip rate limiting for health checks
+        if request.url.path == "/api/health":
+            return await call_next(request)
+
+        client_ip = request.client.host if request.client else "unknown"
+        now = time.time()
+        last = self._last_request[client_ip]
+
+        if now - last < self.min_interval:
+            logger.warning("Rate limited IP=%s", client_ip)
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Too many requests. Please wait before trying again."},
+            )
+
+        self._last_request[client_ip] = now
+        return await call_next(request)
+
+
+# ── Request logging middleware ──────────────────────────────────────
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    """Logs every request with method, path, status, and duration."""
+
+    async def dispatch(self, request: Request, call_next):
+        global TOTAL_REQUESTS
+        TOTAL_REQUESTS += 1
+
+        start = time.time()
+        response: StarletteResponse = await call_next(request)
+        elapsed = time.time() - start
+
+        logger.info(
+            "REQUEST %s %s -> %d (%.3fs) IP=%s",
+            request.method,
+            request.url.path,
+            response.status_code,
+            elapsed,
+            request.client.host if request.client else "unknown",
+        )
+        return response
 
 
 # ── Lifecycle ────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global pipeline
+    global pipeline, SERVER_START_TIME
+    SERVER_START_TIME = time.time()
     try:
         pipeline = PlantDiseasePipeline(
             detector_path=DETECTOR_PATH,
@@ -65,19 +150,26 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# ── CORS — restrict origins for production ──────────────────────────
+ALLOWED_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+
+# ── Middleware stack (order matters: outermost runs first) ───────────
+app.add_middleware(RequestLoggingMiddleware)
+app.add_middleware(RateLimitMiddleware, requests_per_second=1.0)
 
 
 # ── Endpoints ────────────────────────────────────────────────────────
 
 @app.get("/api/health")
 async def health_check():
-    """Health check — server status, model state, pipeline mode."""
+    """Health check — server status, model state, pipeline mode, uptime, request count."""
+    uptime = time.time() - SERVER_START_TIME if SERVER_START_TIME else 0
     return {
         "status": "ok",
         "version": "2.0.0",
@@ -85,6 +177,8 @@ async def health_check():
         "detector_loaded": pipeline.detector.is_loaded if pipeline else False,
         "classifier_loaded": pipeline.classifier.is_loaded if pipeline else False,
         "num_classes": len(pipeline.classifier.CLASS_NAMES) if pipeline else 0,
+        "uptime_seconds": round(uptime, 1),
+        "total_requests": TOTAL_REQUESTS,
     }
 
 
