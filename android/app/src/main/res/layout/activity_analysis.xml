@@ -29,15 +29,13 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
-        <com.google.android.material.progressindicator.CircularProgressIndicator
+        <com.airbnb.lottie.LottieAnimationView
             android:id="@+id/progress_bar"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:indeterminate="true"
-            app:indicatorColor="@color/primary"
-            app:trackColor="@color/primary_light"
-            app:indicatorSize="56dp"
-            app:trackThickness="4dp" />
+            android:layout_width="120dp"
+            android:layout_height="120dp"
+            app:lottie_rawRes="@raw/analysis_scanning"
+            app:lottie_autoPlay="true"
+            app:lottie_loop="true" />
 
         <TextView
             android:id="@+id/tv_status"

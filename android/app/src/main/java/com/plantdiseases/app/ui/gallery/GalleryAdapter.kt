@@ -38,7 +38,7 @@ class GalleryAdapter(
 
         holder.binding.apply {
             tvDiseaseName.text = if (isRu) item.diseaseNameRu else item.diseaseName
-            tvDate.text = ImageUtils.formatTimestamp(item.timestamp)
+            tvDate.text = ImageUtils.formatRelativeDate(context, item.timestamp)
             tvConfidence.text = "${(item.confidence * 100).toInt()}%"
 
             val statusColor = if (item.isHealthy) R.color.healthy_green else R.color.disease_red

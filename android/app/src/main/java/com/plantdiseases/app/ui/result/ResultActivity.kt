@@ -1,9 +1,16 @@
 package com.plantdiseases.app.ui.result
 
+import android.animation.AnimatorSet
+import android.animation.ObjectAnimator
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.util.TypedValue
+import android.view.Gravity
 import android.view.View
+import android.view.animation.DecelerateInterpolator
+import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.lifecycle.lifecycleScope
@@ -66,6 +73,17 @@ class ResultActivity : AppCompatActivity() {
                 .transform(CenterCrop(), RoundedCorners(24))
                 .into(ivPlant)
 
+            // Heatmap overlay for diseased plants
+            if (!scan.isHealthy) {
+                heatmapOverlay.setDetectionRegion(0.5f, 0.45f, 0.35f)
+                heatmapOverlay.postDelayed({
+                    heatmapOverlay.animateIn()
+                    tvHeatmapLabel.visibility = View.VISIBLE
+                    tvHeatmapLabel.alpha = 0f
+                    tvHeatmapLabel.animate().alpha(1f).setDuration(600).start()
+                }, 500)
+            }
+
             // Disease name
             tvDiseaseName.text = if (isRu) scan.diseaseNameRu else scan.diseaseName
 
@@ -90,30 +108,35 @@ class ResultActivity : AppCompatActivity() {
             // Description
             tvDescription.text = if (isRu) scan.descriptionRu else scan.description
 
-            // Treatment
+            // Treatment with step icons
             val treatment = repository.parseStringList(
                 if (isRu) scan.treatmentRu else scan.treatment
             )
             if (treatment.isNotEmpty()) {
                 treatmentSection.visibility = View.VISIBLE
-                tvTreatment.text = treatment.mapIndexed { i, t -> "${i + 1}. $t" }.joinToString("\n\n")
+                buildStepsList(treatmentStepsLayout, treatment, R.drawable.bg_step_circle, R.color.primary)
             } else {
                 treatmentSection.visibility = View.GONE
             }
 
-            // Prevention
+            // Prevention with step icons
             val prevention = repository.parseStringList(
                 if (isRu) scan.preventionRu else scan.prevention
             )
             if (prevention.isNotEmpty()) {
                 preventionSection.visibility = View.VISIBLE
-                tvPrevention.text = prevention.mapIndexed { i, t -> "${i + 1}. $t" }.joinToString("\n\n")
+                buildStepsList(preventionStepsLayout, prevention, R.drawable.bg_step_circle_green, R.color.healthy_green)
             } else {
                 preventionSection.visibility = View.GONE
             }
 
             // Date
             tvDate.text = ImageUtils.formatTimestamp(scan.timestamp)
+
+            // New Scan button
+            btnNewScan.setOnClickListener {
+                finish()
+            }
 
             // Share button
             btnShare.setOnClickListener {
@@ -152,7 +175,6 @@ class ResultActivity : AppCompatActivity() {
                     .setPositiveButton(R.string.delete) { _, _ ->
                         val appInstance = application as PlantDiseasesApp
                         lifecycleScope.launch {
-                            // Delete image file from storage
                             try { File(scan.imagePath).delete() } catch (_: Exception) {}
                             appInstance.scanRepository.deleteScan(scan.id)
                             finish()
@@ -161,8 +183,91 @@ class ResultActivity : AppCompatActivity() {
                     .setNegativeButton(R.string.cancel, null)
                     .show()
             }
+
+            // Animate cards from bottom
+            animateCardsIn()
         }
     }
+
+    private fun buildStepsList(
+        container: LinearLayout,
+        steps: List<String>,
+        bgRes: Int,
+        colorRes: Int
+    ) {
+        container.removeAllViews()
+        val color = getColor(colorRes)
+
+        steps.forEachIndexed { index, step ->
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.TOP
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    if (index > 0) topMargin = 12.dpToPx()
+                }
+            }
+
+            // Step number circle
+            val numberView = TextView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(28.dpToPx(), 28.dpToPx())
+                setBackgroundResource(bgRes)
+                text = "${index + 1}"
+                setTextColor(color)
+                textSize = 13f
+                gravity = Gravity.CENTER
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+            }
+
+            // Step text
+            val textView = TextView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    marginStart = 12.dpToPx()
+                }
+                text = step
+                setTextColor(getColor(R.color.on_surface_secondary))
+                textSize = 14f
+                setLineSpacing(4f.dpToPxF(), 1f)
+            }
+
+            row.addView(numberView)
+            row.addView(textView)
+            container.addView(row)
+        }
+    }
+
+    private fun animateCardsIn() {
+        val cards = listOf(
+            binding.cardStatus,
+            binding.cardConfidence,
+            binding.cardDescription,
+            binding.treatmentSection,
+            binding.preventionSection,
+            binding.btnNewScan
+        ).filter { it.visibility == View.VISIBLE }
+
+        cards.forEachIndexed { index, view ->
+            view.translationY = 100f
+            view.alpha = 0f
+            view.animate()
+                .translationY(0f)
+                .alpha(1f)
+                .setDuration(400)
+                .setStartDelay((index * 80).toLong())
+                .setInterpolator(DecelerateInterpolator())
+                .start()
+        }
+    }
+
+    private fun Int.dpToPx(): Int = TypedValue.applyDimension(
+        TypedValue.COMPLEX_UNIT_DIP, this.toFloat(), resources.displayMetrics
+    ).toInt()
+
+    private fun Float.dpToPxF(): Float = TypedValue.applyDimension(
+        TypedValue.COMPLEX_UNIT_DIP, this, resources.displayMetrics
+    )
 
     companion object {
         const val EXTRA_SCAN_ID = "extra_scan_id"

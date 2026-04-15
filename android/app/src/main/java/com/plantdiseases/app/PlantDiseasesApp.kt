@@ -5,6 +5,7 @@ import com.plantdiseases.app.data.local.AppDatabase
 import com.plantdiseases.app.data.remote.PlantApiClient
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.ThemeHelper
 
 class PlantDiseasesApp : Application() {
 
@@ -17,5 +18,6 @@ class PlantDiseasesApp : Application() {
     override fun onCreate() {
         super.onCreate()
         LocaleHelper.applyLocale(this)
+        ThemeHelper.applySavedTheme(this)
     }
 }

@@ -1,13 +1,16 @@
 package com.plantdiseases.app
 
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import android.view.Menu
 import android.view.MenuItem
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.navigation.fragment.NavHostFragment
 import androidx.navigation.ui.setupWithNavController
 import com.plantdiseases.app.databinding.ActivityMainBinding
+import com.plantdiseases.app.ui.onboarding.OnboardingActivity
 import com.plantdiseases.app.util.LocaleHelper
 
 class MainActivity : AppCompatActivity() {
@@ -19,7 +22,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        installSplashScreen()
         super.onCreate(savedInstanceState)
+
+        // Check onboarding
+        if (!OnboardingActivity.isOnboardingDone(this)) {
+            startActivity(Intent(this, OnboardingActivity::class.java))
+            finish()
+            return
+        }
+
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 

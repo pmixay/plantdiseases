@@ -32,23 +32,53 @@
         android:paddingBottom="24dp">
 
         <LinearLayout
+            android:id="@+id/content_layout"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:padding="16dp">
 
-            <!-- Plant image -->
+            <!-- Plant image with heatmap overlay -->
             <com.google.android.material.card.MaterialCardView
+                android:id="@+id/card_image"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 app:cardCornerRadius="20dp"
                 app:cardElevation="2dp">
 
-                <ImageView
-                    android:id="@+id/iv_plant"
+                <FrameLayout
                     android:layout_width="match_parent"
-                    android:layout_height="260dp"
-                    android:scaleType="centerCrop" />
+                    android:layout_height="260dp">
+
+                    <ImageView
+                        android:id="@+id/iv_plant"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:scaleType="centerCrop" />
+
+                    <com.plantdiseases.app.ui.result.HeatmapOverlayView
+                        android:id="@+id/heatmap_overlay"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:alpha="0" />
+
+                    <!-- Heatmap label -->
+                    <TextView
+                        android:id="@+id/tv_heatmap_label"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="bottom|start"
+                        android:layout_margin="12dp"
+                        android:text="@string/heatmap_label"
+                        android:textColor="@android:color/white"
+                        android:textSize="11sp"
+                        android:fontFamily="sans-serif-medium"
+                        android:background="@drawable/bg_hint_pill"
+                        android:paddingHorizontal="10dp"
+                        android:paddingVertical="4dp"
+                        android:visibility="gone" />
+
+                </FrameLayout>
 
             </com.google.android.material.card.MaterialCardView>
 
@@ -106,6 +136,7 @@
 
             <!-- Confidence -->
             <com.google.android.material.card.MaterialCardView
+                android:id="@+id/card_confidence"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
@@ -166,6 +197,7 @@
 
             <!-- Description -->
             <com.google.android.material.card.MaterialCardView
+                android:id="@+id/card_description"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
@@ -200,7 +232,7 @@
 
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- Treatment -->
+            <!-- Treatment with step icons -->
             <LinearLayout
                 android:id="@+id/treatment_section"
                 android:layout_width="match_parent"
@@ -209,6 +241,7 @@
                 android:orientation="vertical">
 
                 <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/card_treatment"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     app:cardCornerRadius="16dp"
@@ -232,14 +265,12 @@
                             android:drawablePadding="8dp"
                             android:drawableTint="@color/primary" />
 
-                        <TextView
-                            android:id="@+id/tv_treatment"
+                        <LinearLayout
+                            android:id="@+id/treatment_steps_layout"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="12dp"
-                            android:textSize="14sp"
-                            android:textColor="@color/on_surface_secondary"
-                            android:lineSpacingExtra="4dp" />
+                            android:orientation="vertical" />
 
                     </LinearLayout>
 
@@ -247,7 +278,7 @@
 
             </LinearLayout>
 
-            <!-- Prevention -->
+            <!-- Prevention with step icons -->
             <LinearLayout
                 android:id="@+id/prevention_section"
                 android:layout_width="match_parent"
@@ -256,6 +287,7 @@
                 android:orientation="vertical">
 
                 <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/card_prevention"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     app:cardCornerRadius="16dp"
@@ -279,14 +311,12 @@
                             android:drawablePadding="8dp"
                             android:drawableTint="@color/healthy_green" />
 
-                        <TextView
-                            android:id="@+id/tv_prevention"
+                        <LinearLayout
+                            android:id="@+id/prevention_steps_layout"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="12dp"
-                            android:textSize="14sp"
-                            android:textColor="@color/on_surface_secondary"
-                            android:lineSpacingExtra="4dp" />
+                            android:orientation="vertical" />
 
                     </LinearLayout>
 
@@ -331,11 +361,24 @@
 
             </com.google.android.material.card.MaterialCardView>
 
+            <!-- New Scan button -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_new_scan"
+                android:layout_width="match_parent"
+                android:layout_height="56dp"
+                android:layout_marginTop="20dp"
+                android:text="@string/new_scan"
+                android:textSize="16sp"
+                app:icon="@drawable/ic_scan"
+                app:iconGravity="textStart"
+                app:cornerRadius="16dp"
+                app:backgroundTint="@color/primary" />
+
             <!-- Action buttons -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="20dp"
+                android:layout_marginTop="12dp"
                 android:orientation="horizontal"
                 android:gravity="center">
 

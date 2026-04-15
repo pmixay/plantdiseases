@@ -10,6 +10,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
+import com.plantdiseases.app.data.model.ScanHistoryItem
 import com.plantdiseases.app.databinding.FragmentGalleryBinding
 import com.plantdiseases.app.ui.result.ResultActivity
 import kotlinx.coroutines.launch
@@ -20,6 +21,10 @@ class GalleryFragment : Fragment() {
     private val binding get() = _binding!!
 
     private lateinit var adapter: GalleryAdapter
+    private var allScans: List<ScanHistoryItem> = emptyList()
+    private var currentFilter = Filter.ALL
+
+    enum class Filter { ALL, HEALTHY, DISEASED }
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -51,20 +56,48 @@ class GalleryFragment : Fragment() {
             loadScans()
         }
 
+        setupFilterChips()
         loadScans()
+    }
+
+    private fun setupFilterChips() {
+        binding.chipAll.setOnClickListener {
+            currentFilter = Filter.ALL
+            applyFilter()
+        }
+        binding.chipHealthy.setOnClickListener {
+            currentFilter = Filter.HEALTHY
+            applyFilter()
+        }
+        binding.chipDiseased.setOnClickListener {
+            currentFilter = Filter.DISEASED
+            applyFilter()
+        }
+    }
+
+    private fun applyFilter() {
+        val filtered = when (currentFilter) {
+            Filter.ALL -> allScans
+            Filter.HEALTHY -> allScans.filter { it.isHealthy }
+            Filter.DISEASED -> allScans.filter { !it.isHealthy }
+        }
+        adapter.submitList(filtered)
+        updateEmptyState(filtered.isEmpty())
     }
 
     private fun loadScans() {
         val app = requireActivity().application as PlantDiseasesApp
         lifecycleScope.launch {
             binding.swipeRefresh.isRefreshing = true
-            val scans = app.scanRepository.getAllScans()
-            adapter.submitList(scans)
+            allScans = app.scanRepository.getAllScans()
             binding.swipeRefresh.isRefreshing = false
-
-            binding.tvEmptyState.visibility = if (scans.isEmpty()) View.VISIBLE else View.GONE
-            binding.rvGallery.visibility = if (scans.isEmpty()) View.GONE else View.VISIBLE
+            applyFilter()
         }
+    }
+
+    private fun updateEmptyState(isEmpty: Boolean) {
+        binding.emptyStateLayout.visibility = if (isEmpty) View.VISIBLE else View.GONE
+        binding.rvGallery.visibility = if (isEmpty) View.GONE else View.VISIBLE
     }
 
     private fun deleteItem(id: Long) {

@@ -72,6 +72,39 @@
     <string name="history_cleared">History cleared</string>
     <string name="none_yet">None yet</string>
 
+    <!-- Onboarding -->
+    <string name="onboarding_next">Next</string>
+    <string name="onboarding_skip">Skip</string>
+    <string name="onboarding_start">Get Started</string>
+
+    <!-- Result -->
+    <string name="new_scan">New Scan</string>
+    <string name="heatmap_label">Detection Area</string>
+
+    <!-- Camera -->
+    <string name="not_a_plant_warning">This doesn\'t look like a plant. Continue anyway?</string>
+    <string name="not_a_plant_title">Not a Plant?</string>
+    <string name="continue_anyway">Continue</string>
+
+    <!-- Gallery filters -->
+    <string name="filter_all">All</string>
+    <string name="filter_healthy">Healthy</string>
+    <string name="filter_diseased">Diseased</string>
+
+    <!-- Guide search -->
+    <string name="search_guide">Search guide…</string>
+
+    <!-- Dark theme -->
+    <string name="theme_setting">Theme</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="theme_system">System</string>
+
+    <!-- Relative dates -->
+    <string name="date_today">Today</string>
+    <string name="date_yesterday">Yesterday</string>
+    <string name="date_days_ago">%d days ago</string>
+
     <!-- Settings -->
     <string name="close">Close</string>
     <string name="language">Language</string>
