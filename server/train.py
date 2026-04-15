@@ -139,13 +139,9 @@ def create_dataloaders(binary: bool = False):
     train_ds = datasets.ImageFolder(train_dir, transform=train_transforms)
     val_ds = datasets.ImageFolder(val_dir, transform=val_transforms)
 
-    # Verify classes match expected list
+    # Report discovered classes (may differ from CLASS_NAMES defaults)
     found = sorted(train_ds.classes)
-    expected = sorted(CLASS_NAMES)
-    if found != expected:
-        print(f"WARNING: Expected classes {expected}")
-        print(f"         Found classes   {found}")
-        print("Proceeding with found classes...")
+    print(f"  Found classes in data: {found}")
 
     if binary:
         healthy_idx = train_ds.class_to_idx.get("healthy", 0)
@@ -373,8 +369,8 @@ def build_detector(device: torch.device) -> nn.Module:
     return net.to(device)
 
 
-def build_classifier(device: torch.device) -> nn.Module:
-    """EfficientNet-B0 with 15-class head."""
+def build_classifier(device: torch.device, num_classes: int) -> nn.Module:
+    """EfficientNet-B0 with dynamic class head."""
     net = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.DEFAULT)
 
     # Freeze backbone
@@ -383,7 +379,7 @@ def build_classifier(device: torch.device) -> nn.Module:
 
     # Replace classifier head
     in_features = net.classifier[-1].in_features
-    net.classifier[-1] = nn.Linear(in_features, NUM_CLASSES)
+    net.classifier[-1] = nn.Linear(in_features, num_classes)
 
     return net.to(device)
 
@@ -425,17 +421,20 @@ def train_detector(device: torch.device):
 
 
 def train_classifier_model(device: torch.device):
-    print("\n" + "#" * 60)
-    print("#  TRAINING STAGE 2 — DISEASE CLASSIFIER")
-    print(f"#  Model: EfficientNet-B0  ({NUM_CLASSES} classes)")
-    print("#" * 60)
+    import json
 
     train_loader, val_loader, names = create_dataloaders(binary=False)
+    num_cls = len(names)
+
+    print("\n" + "#" * 60)
+    print("#  TRAINING STAGE 2 — DISEASE CLASSIFIER")
+    print(f"#  Model: EfficientNet-B0  ({num_cls} classes)")
+    print("#" * 60)
     print(f"  Training samples:   {len(train_loader.dataset)}")
     print(f"  Validation samples: {len(val_loader.dataset)}")
-    print(f"  Classes: {len(names)}")
+    print(f"  Classes: {num_cls}")
 
-    model = build_classifier(device)
+    model = build_classifier(device, num_cls)
     total_params = sum(p.numel() for p in model.parameters())
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"  Parameters: {total_params:,}  (trainable: {trainable:,})")
@@ -454,7 +453,14 @@ def train_classifier_model(device: torch.device):
 
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     torch.save(model.state_dict(), str(CLASSIFIER_OUTPUT))
+
+    # Save class names mapping so the server knows the class order
+    meta_path = MODELS_DIR / "classes.json"
+    meta = {"class_names": list(names), "num_classes": num_cls}
+    meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2))
+
     print(f"\nClassifier saved → {CLASSIFIER_OUTPUT}")
+    print(f"Class mapping  → {meta_path}")
     return model
 
 

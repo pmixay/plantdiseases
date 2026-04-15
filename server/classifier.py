@@ -1,13 +1,18 @@
 """
 Stage 2 — Disease Classifier.
 
-Uses EfficientNet-B0 to classify a cropped leaf region into one of 15
-disease classes.  Receives the ROI extracted by Stage 1 (detector) so
-the classifier works on the most informative part of the image.
+Uses EfficientNet-B0 to classify a cropped leaf region into disease
+classes.  Receives the ROI extracted by Stage 1 (detector) so the
+classifier works on the most informative part of the image.
+
+Class names are loaded from ``models/classes.json`` (produced by
+the training notebook).  If that file is missing, a built-in default
+list of 15 classes is used.
 
 When no trained model is found, falls back to colour-based heuristics.
 """
 
+import json
 import logging
 from pathlib import Path
 from typing import Optional
@@ -23,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 IMG_SIZE = 224
 
-CLASS_NAMES = [
+DEFAULT_CLASS_NAMES = [
     "healthy",
     "bacterial_spot",
     "early_blight",
@@ -41,18 +46,33 @@ CLASS_NAMES = [
     "botrytis",
 ]
 
-NUM_CLASSES = len(CLASS_NAMES)
+
+def _load_class_names(model_path: Path | None) -> list[str]:
+    """Try to load class names from classes.json next to the model file."""
+    if model_path is not None:
+        meta = model_path.parent / "classes.json"
+        if meta.exists():
+            try:
+                data = json.loads(meta.read_text())
+                names = data.get("class_names", DEFAULT_CLASS_NAMES)
+                logger.info("Loaded %d class names from %s", len(names), meta)
+                return names
+            except Exception as e:
+                logger.warning("Failed to read %s: %s — using defaults", meta, e)
+    return list(DEFAULT_CLASS_NAMES)
 
 
 class DiseaseClassifier:
-    """Fine-grained 15-class plant disease classifier."""
-
-    CLASS_NAMES = CLASS_NAMES
+    """Fine-grained plant disease classifier (dynamic number of classes)."""
 
     def __init__(self, model_path: Path | None = None):
         self.model: Optional[nn.Module] = None
         self.is_loaded = False
         self.device = torch.device("cpu")
+
+        # Resolve class names first — needed to build the correct head
+        self.CLASS_NAMES = _load_class_names(model_path)
+        self.NUM_CLASSES = len(self.CLASS_NAMES)
 
         self.transform = transforms.Compose([
             transforms.Resize((IMG_SIZE, IMG_SIZE)),
@@ -74,7 +94,7 @@ class DiseaseClassifier:
 
     def _load_model(self, path: Path):
         net = models.efficientnet_b0(weights=None)
-        net.classifier[-1] = nn.Linear(net.classifier[-1].in_features, NUM_CLASSES)
+        net.classifier[-1] = nn.Linear(net.classifier[-1].in_features, self.NUM_CLASSES)
 
         state = torch.load(str(path), map_location=self.device, weights_only=True)
         net.load_state_dict(state)
@@ -82,7 +102,7 @@ class DiseaseClassifier:
 
         self.model = net
         self.is_loaded = True
-        logger.info("Classifier model loaded from %s", path)
+        logger.info("Classifier model loaded from %s (%d classes)", path, self.NUM_CLASSES)
 
     # ── public API ───────────────────────────────────────────────────
 
@@ -94,7 +114,7 @@ class DiseaseClassifier:
         dict with keys:
             class_name : str
             confidence : float
-            all_probs  : dict[str, float]  (every class → probability)
+            all_probs  : dict[str, float]  (every class -> probability)
         """
         if self.is_loaded:
             return self._classify_real(img)
@@ -110,11 +130,11 @@ class DiseaseClassifier:
 
         top_idx = int(np.argmax(probs))
         return {
-            "class_name": CLASS_NAMES[top_idx],
+            "class_name": self.CLASS_NAMES[top_idx],
             "confidence": round(float(probs[top_idx]), 4),
             "all_probs": {
-                CLASS_NAMES[i]: round(float(probs[i]), 4)
-                for i in range(NUM_CLASSES)
+                self.CLASS_NAMES[i]: round(float(probs[i]), 4)
+                for i in range(self.NUM_CLASSES)
             },
         }
 
@@ -131,41 +151,40 @@ class DiseaseClassifier:
         brown_ratio = r_mean / total
         brightness = total / 3.0
 
-        # Very green → healthy
-        if green_ratio > 0.38:
+        # Pick a plausible class from whatever names we have
+        names = self.CLASS_NAMES
+
+        if green_ratio > 0.38 and "healthy" in names:
             cls = "healthy"
             conf = 0.82 + np.random.uniform(0, 0.15)
-        # Bright white-ish → powdery mildew
         elif brightness > 190 and g_mean < 170:
-            cls = np.random.choice(["powdery_mildew", "botrytis"])
+            pool = [n for n in ("powdery_mildew", "botrytis", "leaf_mold") if n in names]
+            cls = np.random.choice(pool) if pool else names[0]
             conf = 0.60 + np.random.uniform(0, 0.25)
-        # Brown tones → fungal
         elif brown_ratio > 0.42:
-            cls = np.random.choice([
-                "early_blight", "late_blight", "leaf_mold",
-                "septoria_leaf_spot", "root_rot",
-            ])
+            pool = [n for n in ("early_blight", "late_blight", "leaf_mold",
+                                "septoria_leaf_spot", "root_rot") if n in names]
+            cls = np.random.choice(pool) if pool else names[0]
             conf = 0.65 + np.random.uniform(0, 0.25)
-        # Reddish → rust / spots
         elif r_mean > g_mean and r_mean > 140:
-            cls = np.random.choice(["rust", "bacterial_spot", "anthracnose"])
+            pool = [n for n in ("rust", "bacterial_spot", "anthracnose") if n in names]
+            cls = np.random.choice(pool) if pool else names[0]
             conf = 0.60 + np.random.uniform(0, 0.25)
-        # Yellowish → viral
         else:
-            cls = np.random.choice([
-                "yellow_leaf_curl", "mosaic_virus",
-                "spider_mites", "target_spot",
-            ])
+            pool = [n for n in ("yellow_leaf_curl", "mosaic_virus",
+                                "spider_mites", "target_spot") if n in names]
+            cls = np.random.choice(pool) if pool else names[0]
             conf = 0.55 + np.random.uniform(0, 0.25)
 
         # Build pseudo-probabilities
-        probs = {name: 0.0 for name in CLASS_NAMES}
+        probs = {name: 0.0 for name in names}
         probs[cls] = round(conf, 4)
         leftover = 1.0 - conf
-        others = [n for n in CLASS_NAMES if n != cls]
-        rnd = np.random.dirichlet(np.ones(len(others))) * leftover
-        for name, p in zip(others, rnd):
-            probs[name] = round(float(p), 4)
+        others = [n for n in names if n != cls]
+        if others:
+            rnd = np.random.dirichlet(np.ones(len(others))) * leftover
+            for name, p in zip(others, rnd):
+                probs[name] = round(float(p), 4)
 
         return {
             "class_name": cls,
