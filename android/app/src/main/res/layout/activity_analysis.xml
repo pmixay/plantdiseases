@@ -13,6 +13,7 @@
         android:layout_height="240dp"
         android:layout_marginTop="80dp"
         android:scaleType="centerCrop"
+        android:contentDescription="@string/analyzing"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
@@ -73,6 +74,7 @@
             android:layout_width="56dp"
             android:layout_height="56dp"
             android:src="@drawable/ic_error"
+            android:contentDescription="@string/analysis_error"
             app:tint="@color/disease_red" />
 
         <TextView

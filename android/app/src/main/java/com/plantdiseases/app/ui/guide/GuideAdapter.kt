@@ -1,5 +1,7 @@
 package com.plantdiseases.app.ui.guide
 
+import android.text.SpannableStringBuilder
+import android.text.style.BackgroundColorSpan
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
@@ -12,7 +14,8 @@ import com.plantdiseases.app.databinding.ItemGuideBinding
 import com.plantdiseases.app.util.LocaleHelper
 
 class GuideAdapter(
-    private val onClick: (GuideItem) -> Unit
+    private val onClick: (GuideItem) -> Unit,
+    var searchQuery: String = ""
 ) : ListAdapter<GuideItem, GuideAdapter.ViewHolder>(DIFF) {
 
     inner class ViewHolder(val binding: ItemGuideBinding) :
@@ -31,8 +34,19 @@ class GuideAdapter(
         val isRu = LocaleHelper.isRussian(ctx)
 
         holder.binding.apply {
-            tvTitle.text = if (isRu) item.titleRu else item.titleEn
-            tvDescription.text = if (isRu) item.descriptionRu else item.descriptionEn
+            val title = if (isRu) item.titleRu else item.titleEn
+            val desc = if (isRu) item.descriptionRu else item.descriptionEn
+
+            // Highlight search matches (2.8)
+            if (searchQuery.length >= 2) {
+                val highlightColor = ctx.getColor(R.color.search_highlight)
+                tvTitle.text = highlightText(title, searchQuery, highlightColor)
+                tvDescription.text = highlightText(desc, searchQuery, highlightColor)
+            } else {
+                tvTitle.text = title
+                tvDescription.text = desc
+            }
+
             ivIcon.setImageResource(item.iconRes)
 
             // Set unique background and tint per category
@@ -42,6 +56,24 @@ class GuideAdapter(
 
             root.setOnClickListener { onClick(item) }
         }
+    }
+
+    private fun highlightText(text: String, query: String, color: Int): CharSequence {
+        if (query.isBlank()) return text
+        val ssb = SpannableStringBuilder(text)
+        val lowerText = text.lowercase()
+        val lowerQuery = query.lowercase()
+        var start = lowerText.indexOf(lowerQuery)
+        while (start >= 0) {
+            ssb.setSpan(
+                BackgroundColorSpan(color),
+                start,
+                start + query.length,
+                SpannableStringBuilder.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+            start = lowerText.indexOf(lowerQuery, start + query.length)
+        }
+        return ssb
     }
 
     private fun getCategoryStyle(category: GuideCategory): Pair<Int, Int> {

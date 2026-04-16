@@ -33,6 +33,7 @@
                     android:layout_width="56dp"
                     android:layout_height="56dp"
                     android:src="@drawable/ic_plant_placeholder"
+                    android:contentDescription="@string/app_name"
                     app:tint="@color/on_primary" />
 
                 <TextView
@@ -109,6 +110,56 @@
             </LinearLayout>
 
         </com.google.android.material.card.MaterialCardView>
+
+        <!-- Shimmer stats placeholder -->
+        <com.facebook.shimmer.ShimmerFrameLayout
+            android:id="@+id/shimmer_stats"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:visibility="gone"
+            app:shimmer_auto_start="true"
+            app:shimmer_base_color="@color/shimmer_base"
+            app:shimmer_highlight_color="@color/shimmer_highlight"
+            app:shimmer_duration="1200">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <View android:layout_width="0dp" android:layout_height="100dp"
+                        android:layout_weight="1" android:layout_marginEnd="6dp"
+                        android:background="@color/shimmer_base" />
+                    <View android:layout_width="0dp" android:layout_height="100dp"
+                        android:layout_weight="1" android:layout_marginStart="6dp"
+                        android:background="@color/shimmer_base" />
+
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:orientation="horizontal">
+
+                    <View android:layout_width="0dp" android:layout_height="100dp"
+                        android:layout_weight="1" android:layout_marginEnd="6dp"
+                        android:background="@color/shimmer_base" />
+                    <View android:layout_width="0dp" android:layout_height="100dp"
+                        android:layout_weight="1" android:layout_marginStart="6dp"
+                        android:background="@color/shimmer_base" />
+
+                </LinearLayout>
+
+            </LinearLayout>
+
+        </com.facebook.shimmer.ShimmerFrameLayout>
 
         <!-- Stats grid -->
         <LinearLayout
@@ -226,7 +277,8 @@
                         <ImageView
                             android:layout_width="28dp"
                             android:layout_height="28dp"
-                            android:src="@drawable/ic_healthy" />
+                            android:src="@drawable/ic_healthy"
+                            android:contentDescription="@string/healthy_plants" />
 
                         <TextView
                             android:id="@+id/tv_healthy_count"
@@ -269,7 +321,8 @@
                         <ImageView
                             android:layout_width="28dp"
                             android:layout_height="28dp"
-                            android:src="@drawable/ic_disease" />
+                            android:src="@drawable/ic_disease"
+                            android:contentDescription="@string/diseased_plants" />
 
                         <TextView
                             android:id="@+id/tv_diseased_count"
@@ -317,6 +370,7 @@
                     android:layout_width="32dp"
                     android:layout_height="32dp"
                     android:src="@drawable/ic_stats"
+                    android:contentDescription="@string/most_common_disease"
                     app:tint="@color/primary" />
 
                 <LinearLayout
@@ -363,6 +417,7 @@
                 android:layout_width="80dp"
                 android:layout_height="80dp"
                 android:src="@drawable/ic_scan"
+                android:contentDescription="@string/no_scans_yet"
                 app:tint="@color/primary_light" />
 
             <TextView
@@ -382,6 +437,16 @@
                 android:textSize="14sp"
                 android:textColor="@color/on_surface_secondary"
                 android:gravity="center" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_start_scan"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="@string/first_scan_cta"
+                app:icon="@drawable/ic_scan"
+                app:cornerRadius="16dp"
+                app:backgroundTint="@color/primary" />
 
         </LinearLayout>
 
@@ -611,6 +676,7 @@
                     android:layout_width="32dp"
                     android:layout_height="32dp"
                     android:src="@drawable/ic_guide"
+                    android:contentDescription="@string/how_to_use"
                     app:tint="@color/primary" />
 
                 <TextView
@@ -627,6 +693,7 @@
                     android:layout_width="24dp"
                     android:layout_height="24dp"
                     android:src="@drawable/ic_chevron_right"
+                    android:importantForAccessibility="no"
                     app:tint="@color/on_surface_secondary" />
 
             </LinearLayout>

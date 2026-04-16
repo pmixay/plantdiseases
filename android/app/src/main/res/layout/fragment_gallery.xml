@@ -65,6 +65,47 @@
 
         </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
 
+        <!-- Shimmer skeleton loading -->
+        <com.facebook.shimmer.ShimmerFrameLayout
+            android:id="@+id/shimmer_layout"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:padding="8dp"
+            android:visibility="gone"
+            app:shimmer_auto_start="true"
+            app:shimmer_base_color="@color/shimmer_base"
+            app:shimmer_highlight_color="@color/shimmer_highlight"
+            app:shimmer_duration="1200">
+
+            <GridLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:columnCount="2"
+                android:useDefaultMargins="true">
+
+                <View android:layout_width="0dp" android:layout_height="220dp"
+                    android:layout_columnWeight="1" android:layout_margin="6dp"
+                    android:background="@color/shimmer_base" />
+                <View android:layout_width="0dp" android:layout_height="220dp"
+                    android:layout_columnWeight="1" android:layout_margin="6dp"
+                    android:background="@color/shimmer_base" />
+                <View android:layout_width="0dp" android:layout_height="220dp"
+                    android:layout_columnWeight="1" android:layout_margin="6dp"
+                    android:background="@color/shimmer_base" />
+                <View android:layout_width="0dp" android:layout_height="220dp"
+                    android:layout_columnWeight="1" android:layout_margin="6dp"
+                    android:background="@color/shimmer_base" />
+                <View android:layout_width="0dp" android:layout_height="220dp"
+                    android:layout_columnWeight="1" android:layout_margin="6dp"
+                    android:background="@color/shimmer_base" />
+                <View android:layout_width="0dp" android:layout_height="220dp"
+                    android:layout_columnWeight="1" android:layout_margin="6dp"
+                    android:background="@color/shimmer_base" />
+
+            </GridLayout>
+
+        </com.facebook.shimmer.ShimmerFrameLayout>
+
         <!-- Empty state with Lottie -->
         <LinearLayout
             android:id="@+id/empty_state_layout"
@@ -84,6 +125,7 @@
                 app:lottie_loop="true" />
 
             <TextView
+                android:id="@+id/tv_empty_title"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
@@ -93,6 +135,7 @@
                 android:fontFamily="sans-serif-medium" />
 
             <TextView
+                android:id="@+id/tv_empty_hint"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
@@ -100,6 +143,46 @@
                 android:textColor="@color/on_surface_secondary"
                 android:textSize="13sp"
                 android:alpha="0.7" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_first_scan"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="@string/first_scan_cta"
+                app:icon="@drawable/ic_scan"
+                app:cornerRadius="16dp"
+                app:backgroundTint="@color/primary" />
+
+        </LinearLayout>
+
+        <!-- Filter empty state -->
+        <LinearLayout
+            android:id="@+id/filter_empty_layout"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:paddingHorizontal="32dp"
+            android:visibility="gone">
+
+            <ImageView
+                android:layout_width="80dp"
+                android:layout_height="80dp"
+                android:src="@drawable/ic_plant_placeholder"
+                android:contentDescription="@string/empty_gallery"
+                app:tint="@color/primary_light" />
+
+            <TextView
+                android:id="@+id/tv_filter_empty"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="@string/filter_empty_hint"
+                android:textColor="@color/on_surface_secondary"
+                android:textSize="14sp"
+                android:gravity="center" />
 
         </LinearLayout>
 

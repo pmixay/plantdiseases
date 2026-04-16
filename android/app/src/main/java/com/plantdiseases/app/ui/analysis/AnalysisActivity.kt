@@ -110,6 +110,10 @@ class AnalysisActivity : AppCompatActivity() {
                 // Save to local DB
                 val scanId = app.scanRepository.saveScan(imagePath, response)
 
+                // Set flag to show gallery badge in MainActivity (2.10)
+                getSharedPreferences("plantdiseases_prefs", MODE_PRIVATE)
+                    .edit().putBoolean("new_scan_result", true).apply()
+
                 // Navigate to result
                 val intent = Intent(this@AnalysisActivity, ResultActivity::class.java).apply {
                     putExtra(ResultActivity.EXTRA_SCAN_ID, scanId)

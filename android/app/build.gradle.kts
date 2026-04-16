@@ -123,4 +123,7 @@ dependencies {
 
     // Preferences DataStore
     implementation("androidx.datastore:datastore-preferences:1.0.0")
+
+    // Shimmer effect for skeleton loading
+    implementation("com.facebook.shimmer:shimmer:0.5.0")
 }

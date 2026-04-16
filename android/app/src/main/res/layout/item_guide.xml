@@ -5,6 +5,9 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginBottom="12dp"
+    android:clickable="true"
+    android:focusable="true"
+    android:foreground="?attr/selectableItemBackground"
     app:cardCornerRadius="16dp"
     app:cardElevation="1dp"
     app:cardBackgroundColor="@color/surface"
@@ -23,6 +26,7 @@
             android:layout_height="48dp"
             android:padding="8dp"
             android:background="@drawable/bg_icon_circle"
+            android:contentDescription="@string/tab_guide"
             app:tint="@color/primary" />
 
         <LinearLayout
@@ -57,6 +61,7 @@
             android:layout_height="24dp"
             android:layout_marginStart="8dp"
             android:src="@drawable/ic_chevron_right"
+            android:importantForAccessibility="no"
             app:tint="@color/on_surface_secondary"
             android:alpha="0.5" />
 
