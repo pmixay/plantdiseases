@@ -9,14 +9,11 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
-import android.os.VibrationEffect
-import android.os.Vibrator
-import android.os.VibratorManager
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
+import android.view.Surface
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
@@ -31,6 +28,7 @@ import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.databinding.FragmentCameraBinding
 import com.plantdiseases.app.ui.analysis.AnalysisActivity
+import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -90,30 +88,14 @@ class CameraFragment : Fragment() {
     }
 
     private fun setupUI() {
-        // Capture button
-        binding.btnCapture.setOnClickListener {
-            takePhoto()
-        }
-
-        // Gallery button
-        binding.btnGallery.setOnClickListener {
-            galleryLauncher.launch("image/*")
-        }
-
-        // Flash toggle
-        binding.btnFlash.setOnClickListener {
-            toggleFlash()
-        }
-
-        // Permission button
+        binding.btnCapture.setOnClickListener { takePhoto() }
+        binding.btnGallery.setOnClickListener { galleryLauncher.launch("image/*") }
+        binding.btnFlash.setOnClickListener { toggleFlash() }
         binding.btnGrantPermission.setOnClickListener {
             permissionLauncher.launch(Manifest.permission.CAMERA)
         }
-
-        // Tip text
         binding.tvScanHint.text = getString(R.string.scan_hint)
 
-        // Tap to focus on camera preview
         binding.cameraPreview.setOnTouchListener { _, event ->
             scaleGestureDetector.onTouchEvent(event)
             if (event.action == MotionEvent.ACTION_DOWN && !scaleGestureDetector.isInProgress) {
@@ -123,7 +105,6 @@ class CameraFragment : Fragment() {
         }
     }
 
-    // Pinch-to-zoom (2.3)
     private fun setupPinchToZoom() {
         scaleGestureDetector = ScaleGestureDetector(requireContext(), object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
             override fun onScale(detector: ScaleGestureDetector): Boolean {
@@ -136,7 +117,6 @@ class CameraFragment : Fragment() {
                     )
                 cam.cameraControl.setZoomRatio(newZoomRatio)
 
-                // Show zoom indicator
                 binding.tvZoom.visibility = View.VISIBLE
                 binding.tvZoom.text = String.format(Locale.US, "%.1fx", newZoomRatio)
                 binding.tvZoom.removeCallbacks(hideZoomRunnable)
@@ -153,7 +133,6 @@ class CameraFragment : Fragment() {
         }?.start()
     }
 
-    // Tap-to-focus with success/failure feedback (2.9)
     private fun handleTapToFocus(x: Float, y: Float) {
         val cam = camera ?: return
         val factory = binding.cameraPreview.meteringPointFactory
@@ -164,7 +143,6 @@ class CameraFragment : Fragment() {
 
         val future = cam.cameraControl.startFocusAndMetering(action)
 
-        // Show focus indicator
         binding.focusIndicator.let { indicator ->
             indicator.x = x - indicator.width / 2f
             indicator.y = y - indicator.height / 2f
@@ -179,19 +157,17 @@ class CameraFragment : Fragment() {
                 .start()
         }
 
-        // Listen for focus result (2.9)
         future.addListener({
             try {
                 val result = future.get()
                 if (_binding == null) return@addListener
                 if (result.isFocusSuccessful) {
-                    // Success: green tint + fade out + haptic
                     binding.focusIndicator.setBackgroundTintList(
                         android.content.res.ColorStateList.valueOf(
                             ContextCompat.getColor(requireContext(), R.color.healthy_green)
                         )
                     )
-                    vibrateShort(20)
+                    Haptics.light(requireContext())
                     binding.focusIndicator.animate()
                         .alpha(0f)
                         .setDuration(500)
@@ -202,7 +178,6 @@ class CameraFragment : Fragment() {
                         }
                         .start()
                 } else {
-                    // Failure: red tint + shake + fade out
                     binding.focusIndicator.setBackgroundTintList(
                         android.content.res.ColorStateList.valueOf(
                             ContextCompat.getColor(requireContext(), R.color.disease_red)
@@ -271,9 +246,12 @@ class CameraFragment : Fragment() {
                     it.surfaceProvider = binding.cameraPreview.surfaceProvider
                 }
 
+            val rotation = view?.display?.rotation
+                ?: requireActivity().windowManager.defaultDisplay?.rotation
+                ?: Surface.ROTATION_0
             imageCapture = ImageCapture.Builder()
                 .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
-                .setTargetRotation(requireView().display.rotation)
+                .setTargetRotation(rotation)
                 .build()
 
             val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
@@ -299,10 +277,7 @@ class CameraFragment : Fragment() {
 
         binding.btnCapture.isEnabled = false
 
-        // Vibrate on capture
-        vibrateOnCapture()
-
-        // Shutter flash animation (2.3)
+        Haptics.medium(requireContext())
         playShutterFlash()
 
         val photoFile = ImageUtils.createImageFile(requireContext())
@@ -330,7 +305,6 @@ class CameraFragment : Fragment() {
         )
     }
 
-    // Shutter flash: brief darken + white flash (2.3)
     private fun playShutterFlash() {
         binding.shutterFlash.visibility = View.VISIBLE
         binding.shutterFlash.alpha = 0f
@@ -349,31 +323,6 @@ class CameraFragment : Fragment() {
             .start()
     }
 
-    private fun vibrateOnCapture() {
-        vibrateShort(50)
-    }
-
-    private fun vibrateShort(durationMs: Long) {
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val vibratorManager = requireContext().getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
-                vibratorManager.defaultVibrator.vibrate(
-                    VibrationEffect.createOneShot(durationMs, VibrationEffect.DEFAULT_AMPLITUDE)
-                )
-            } else {
-                @Suppress("DEPRECATION")
-                val vibrator = requireContext().getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-                vibrator.vibrate(VibrationEffect.createOneShot(durationMs, VibrationEffect.DEFAULT_AMPLITUDE))
-            }
-        } catch (_: Exception) {
-            // Vibration not available — ignore
-        }
-    }
-
-    /**
-     * HSV-based plant detection: checks if at least 10% of pixels are green-ish.
-     * If not enough green detected, shows warning before proceeding.
-     */
     private fun checkPlantAndNavigate(imagePath: String) {
         binding.btnCapture.isEnabled = false
         lifecycleScope.launch {
@@ -422,7 +371,6 @@ class CameraFragment : Fragment() {
         )
     }
 
-    // Grid overlay toggle (2.3)
     private fun restoreGridOverlay() {
         val prefs = requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val enabled = prefs.getBoolean(KEY_GRID_OVERLAY, false)
@@ -462,7 +410,6 @@ class CameraFragment : Fragment() {
     private fun registerNetworkCallback() {
         val cm = requireContext().getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
-        // Check initial state
         val activeNetwork = cm.getNetworkCapabilities(cm.activeNetwork)
         val isConnected = activeNetwork?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
         binding.offlineBanner.visibility = if (isConnected) View.GONE else View.VISIBLE

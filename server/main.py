@@ -11,9 +11,9 @@ Usage:
 import asyncio
 import io
 import os
+import threading
 import time
 import logging
-from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from logging.handlers import RotatingFileHandler
@@ -29,19 +29,22 @@ from starlette.responses import Response as StarletteResponse
 from pipeline import PlantDiseasePipeline
 from diseases_data import DISEASES_DATABASE
 
+# Limit Pillow decompression to prevent zip-bomb DoS
+Image.MAX_IMAGE_PIXELS = 20_000_000  # ~4500x4500
+
 # ── Logging ──────────────────────────────────────────────────────────
 LOG_DIR = Path("logs")
 LOG_DIR.mkdir(exist_ok=True)
 
-# Console handler
-console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.INFO)
-console_handler.setFormatter(logging.Formatter(
+_log_fmt = logging.Formatter(
     "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
-))
+)
 
-# Rotating file handler — 5 MB per file, keep 5 backups
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+console_handler.setFormatter(_log_fmt)
+
 file_handler = RotatingFileHandler(
     LOG_DIR / "server.log",
     maxBytes=5 * 1024 * 1024,
@@ -49,10 +52,7 @@ file_handler = RotatingFileHandler(
     encoding="utf-8",
 )
 file_handler.setLevel(logging.INFO)
-file_handler.setFormatter(logging.Formatter(
-    "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-))
+file_handler.setFormatter(_log_fmt)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -66,46 +66,75 @@ DETECTOR_PATH = MODELS_DIR / "detector.pth"
 CLASSIFIER_PATH = MODELS_DIR / "classifier.pth"
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
-MAX_IMAGE_DIMENSION = 4096  # reject images larger than 4096×4096 to prevent OOM
-INFERENCE_TIMEOUT = 30.0  # seconds — one bad request must not block the server
+MAX_IMAGE_DIMENSION = 4096
+INFERENCE_TIMEOUT = 30.0
 ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp", "image/bmp"}
 
-# Thread pool for running synchronous pipeline inference
 _inference_executor = ThreadPoolExecutor(max_workers=2)
 
-# ── Server metrics ──────────────────────────────────────────────────
+# ── Thread-safe server metrics ──────────────────────────────────────
 SERVER_START_TIME: float = 0.0
-TOTAL_REQUESTS: int = 0
+_request_counter_lock = threading.Lock()
+_total_requests: int = 0
+
+
+def _inc_requests() -> int:
+    global _total_requests
+    with _request_counter_lock:
+        _total_requests += 1
+        return _total_requests
+
+
+def _get_requests() -> int:
+    with _request_counter_lock:
+        return _total_requests
+
 
 pipeline: PlantDiseasePipeline | None = None
+
+# ── Rate limiter cleanup interval (seconds) ─────────────────────────
+_RATE_LIMIT_CLEANUP_INTERVAL = 300  # purge stale entries every 5 min
 
 
 # ── Rate limiting middleware ────────────────────────────────────────
 class RateLimitMiddleware(BaseHTTPMiddleware):
-    """Simple in-memory rate limiter: 1 request per second per IP."""
+    """In-memory rate limiter with periodic cleanup to prevent unbounded growth."""
 
     def __init__(self, app, requests_per_second: float = 1.0):
         super().__init__(app)
         self.min_interval = 1.0 / requests_per_second
-        self._last_request: dict[str, float] = defaultdict(float)
+        self._last_request: dict[str, float] = {}
+        self._lock = threading.Lock()
+        self._last_cleanup = time.time()
+
+    def _cleanup_stale(self, now: float) -> None:
+        """Remove entries older than 2x the rate-limit interval."""
+        cutoff = now - max(self.min_interval * 2, 60.0)
+        stale = [ip for ip, ts in self._last_request.items() if ts < cutoff]
+        for ip in stale:
+            del self._last_request[ip]
 
     async def dispatch(self, request: Request, call_next):
-        # Skip rate limiting for health checks
         if request.url.path == "/api/health":
             return await call_next(request)
 
         client_ip = request.client.host if request.client else "unknown"
         now = time.time()
-        last = self._last_request[client_ip]
 
-        if now - last < self.min_interval:
-            logger.warning("Rate limited IP=%s", client_ip)
-            return JSONResponse(
-                status_code=429,
-                content={"detail": "Too many requests. Please wait before trying again."},
-            )
+        with self._lock:
+            if now - self._last_cleanup > _RATE_LIMIT_CLEANUP_INTERVAL:
+                self._cleanup_stale(now)
+                self._last_cleanup = now
 
-        self._last_request[client_ip] = now
+            last = self._last_request.get(client_ip, 0.0)
+            if now - last < self.min_interval:
+                logger.warning("Rate limited IP=%s", client_ip)
+                return JSONResponse(
+                    status_code=429,
+                    content={"detail": "Too many requests. Please wait before trying again."},
+                )
+            self._last_request[client_ip] = now
+
         return await call_next(request)
 
 
@@ -114,8 +143,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
     """Logs every request with method, path, status, and duration."""
 
     async def dispatch(self, request: Request, call_next):
-        global TOTAL_REQUESTS
-        TOTAL_REQUESTS += 1
+        _inc_requests()
 
         start = time.time()
         response: StarletteResponse = await call_next(request)
@@ -157,8 +185,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# ── CORS — restrict origins for production ──────────────────────────
-ALLOWED_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")
+# ── CORS ─────────────────────────────────────────────────────────────
+ALLOWED_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -185,7 +213,7 @@ async def health_check():
         "classifier_loaded": pipeline.classifier.is_loaded if pipeline else False,
         "num_classes": len(pipeline.classifier.CLASS_NAMES) if pipeline else 0,
         "uptime_seconds": round(uptime, 1),
-        "total_requests": TOTAL_REQUESTS,
+        "total_requests": _get_requests(),
     }
 
 
@@ -235,7 +263,7 @@ async def analyze_image(image: UploadFile = File(...)):
         )
 
     # ── Pipeline (with timeout) ──────────────────────────────────
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         result = await asyncio.wait_for(
             loop.run_in_executor(_inference_executor, pipeline.analyze, img),

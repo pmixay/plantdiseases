@@ -9,14 +9,14 @@
     <com.google.android.material.appbar.AppBarLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@color/primary_dark"
+        android:background="@drawable/bg_toolbar_gradient"
         app:elevation="0dp">
 
         <com.google.android.material.appbar.MaterialToolbar
             android:id="@+id/toolbar"
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
-            android:background="@color/primary"
+            android:background="@android:color/transparent"
             app:titleTextColor="@color/on_primary"
             app:titleTextAppearance="@style/TextAppearance.App.Toolbar"
             app:popupTheme="@style/ThemeOverlay.Material3.Light" />

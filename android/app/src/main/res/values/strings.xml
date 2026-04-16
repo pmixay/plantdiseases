@@ -21,7 +21,7 @@
 
     <!-- Analysis -->
     <string name="analyzing">Analyzing…</string>
-    <string name="analyzing_detail">Our AI is examining your plant</string>
+    <string name="analyzing_detail">Examining your plant</string>
     <string name="analysis_error">Analysis Failed</string>
     <string name="unknown_error">Unknown error occurred</string>
     <string name="retry">Retry</string>
@@ -152,12 +152,12 @@
     <!-- How to use (onboarding from profile) -->
     <string name="how_to_use">How to Use</string>
 
-    <!-- Empty states (2.7) -->
+    <!-- Empty states -->
     <string name="first_scan_cta">Take First Scan</string>
     <string name="filter_empty_hint">Nothing in this category yet. Keep scanning — your green shelf is growing!</string>
     <string name="guide_search_empty">Nothing found for \"%s\". Try a different word.</string>
 
-    <!-- Camera grid overlay (2.3) -->
+    <!-- Camera grid overlay -->
     <string name="grid_overlay">Grid Overlay</string>
     <string name="zoom_indicator">%sx</string>
 </resources>

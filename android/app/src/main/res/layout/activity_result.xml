@@ -41,7 +41,7 @@
 
     </com.google.android.material.appbar.AppBarLayout>
 
-    <!-- Sticky header: disease name + confidence (2.4) -->
+    <!-- Sticky header: disease name + confidence -->
     <LinearLayout
         android:id="@+id/sticky_header"
         android:layout_width="match_parent"
@@ -174,7 +174,7 @@
 
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- Combined Status + Confidence + Date card (2.4) -->
+            <!-- Combined Status + Confidence + Date card -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/card_status"
                 android:layout_width="match_parent"
@@ -318,7 +318,7 @@
 
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- Treatment/Prevention tabs card (2.4) -->
+            <!-- Treatment/Prevention tabs card -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/card_treatment_prevention"
                 android:layout_width="match_parent"
@@ -451,7 +451,7 @@
 
     </androidx.core.widget.NestedScrollView>
 
-    <!-- Bottom action bar (2.4) — replaces stacked buttons -->
+    <!-- Bottom action bar — replaces stacked buttons -->
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/bottom_action_bar"
         android:layout_width="match_parent"

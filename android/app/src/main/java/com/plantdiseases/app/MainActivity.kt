@@ -74,7 +74,7 @@ class MainActivity : AppCompatActivity() {
                 R.id.cameraFragment -> supportActionBar?.title = getString(R.string.tab_scan)
                 R.id.galleryFragment -> {
                     supportActionBar?.title = getString(R.string.tab_gallery)
-                    // Clear gallery badge when opening gallery tab (2.10)
+                    // Clear gallery badge when opening gallery tab
                     clearGalleryBadge()
                 }
                 R.id.guideFragment -> supportActionBar?.title = getString(R.string.tab_guide)
@@ -82,7 +82,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Subtle bounce on Scan icon after onboarding (2.10)
+        // Subtle bounce on Scan icon after onboarding
         val prefs = getSharedPreferences("plantdiseases_prefs", MODE_PRIVATE)
         val firstMainLaunch = !prefs.getBoolean("first_main_launched", false)
         if (firstMainLaunch) {
@@ -93,7 +93,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Bounce animation on Scan tab icon (2.10)
+    // Bounce animation on Scan tab icon
     private fun bounceScanIcon() {
         val menuView = binding.bottomNavigation.getChildAt(0) as? android.view.ViewGroup ?: return
         if (menuView.childCount > 0) {
@@ -110,7 +110,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Gallery badge for new results (2.10)
+    // Gallery badge for new results
     fun showGalleryBadge() {
         val badge = binding.bottomNavigation.getOrCreateBadge(R.id.galleryFragment)
         badge.isVisible = true
@@ -123,7 +123,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Check if there's a new scan result to show badge (2.10)
+        // Check if there's a new scan result to show badge
         val prefs = getSharedPreferences("plantdiseases_prefs", MODE_PRIVATE)
         if (prefs.getBoolean("new_scan_result", false)) {
             prefs.edit().putBoolean("new_scan_result", false).apply()
@@ -136,7 +136,7 @@ class MainActivity : AppCompatActivity() {
         return true
     }
 
-    // Smooth language change (2.12)
+    // Smooth language change
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         return when (item.itemId) {
             R.id.action_language -> {

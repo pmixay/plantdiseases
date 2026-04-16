@@ -44,8 +44,8 @@ class OnboardingActivity : AppCompatActivity() {
             OnboardingPage(
                 R.raw.onboarding_diagnose,
                 if (isRu) "Узнай болезнь" else "Get Diagnosis",
-                if (isRu) "Наш ИИ проанализирует фото и определит болезнь с высокой точностью"
-                else "Our AI analyzes the photo and identifies the disease with high accuracy"
+                if (isRu) "Двухэтапная нейросеть найдёт поражённую область и определит болезнь"
+                else "A two-stage neural network locates the affected area and identifies the disease"
             ),
             OnboardingPage(
                 R.raw.onboarding_treat,

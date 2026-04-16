@@ -91,7 +91,7 @@ class GuideFragment : Fragment() {
     }
 
     private fun setupSearch() {
-        // Show recent searches on focus (2.8)
+        // Show recent searches on focus
         binding.etSearch.setOnFocusChangeListener { _, hasFocus ->
             if (hasFocus && binding.etSearch.text.isNullOrEmpty()) {
                 showRecentSearches()
@@ -114,12 +114,12 @@ class GuideFragment : Fragment() {
                 // Cancel previous debounce
                 searchRunnable?.let { handler.removeCallbacks(it) }
 
-                // Min 2 chars (2.8)
+                // Min 2 chars
                 if (query.length < 2 && query.isNotEmpty()) {
                     return
                 }
 
-                // Debounce 300ms (2.8)
+                // Debounce 300ms
                 searchRunnable = Runnable {
                     searchQuery = query
                     adapter.searchQuery = query
@@ -149,7 +149,7 @@ class GuideFragment : Fragment() {
         }
         adapter.submitList(items)
 
-        // Show search empty state (2.7)
+        // Show search empty state
         if (items.isEmpty() && searchQuery.isNotBlank()) {
             binding.searchEmptyLayout.visibility = View.VISIBLE
             binding.tvSearchEmpty.text = getString(R.string.guide_search_empty, searchQuery)
@@ -160,7 +160,7 @@ class GuideFragment : Fragment() {
         }
     }
 
-    // Recent searches (2.8)
+    // Recent searches
     private fun showRecentSearches() {
         val recent = getRecentSearches()
         if (recent.isEmpty()) return
