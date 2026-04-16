@@ -121,4 +121,34 @@
     <string name="server_online">Онлайн</string>
     <string name="server_offline">Недоступен</string>
     <string name="server_checking">Проверка…</string>
+
+    <!-- Top-3 alternatives -->
+    <string name="why_this_diagnosis">Почему этот диагноз?</string>
+    <string name="alternatives_subtitle">Уверенность модели по основным кандидатам</string>
+
+    <!-- About model -->
+    <string name="about_model">О модели</string>
+    <string name="model_architecture">Архитектура</string>
+    <string name="model_params">Параметры</string>
+    <string name="model_classes">Классы</string>
+    <string name="model_pipeline">Пайплайн</string>
+    <string name="model_arch_value">MobileNetV3 + EfficientNet-B0</string>
+    <string name="model_params_value">~8M всего</string>
+    <string name="model_classes_value">15 болезней + здоровое</string>
+    <string name="model_pipeline_value">Двухэтапный: детекция → классификация</string>
+    <string name="model_description">Этап 1 определяет, болеет ли растение, и находит поражённую область с помощью Grad-CAM. Этап 2 классифицирует конкретную болезнь по вырезанной области.</string>
+
+    <!-- Rate limit -->
+    <string name="server_busy">Сервер занят</string>
+    <string name="server_busy_detail">Слишком много запросов. Подождите немного и повторите.</string>
+
+    <!-- Blur detection -->
+    <string name="blurry_photo_title">Размытое фото</string>
+    <string name="blurry_photo_message">Фото кажется размытым. Результаты могут быть менее точными. Продолжить?</string>
+
+    <!-- Retry analysis -->
+    <string name="retry_analysis">Повторить анализ</string>
+
+    <!-- How to use (onboarding from profile) -->
+    <string name="how_to_use">Как пользоваться</string>
 </resources>

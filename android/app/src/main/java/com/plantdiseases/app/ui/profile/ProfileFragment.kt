@@ -1,5 +1,6 @@
 package com.plantdiseases.app.ui.profile
 
+import android.content.Intent
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -14,6 +15,7 @@ import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.databinding.FragmentProfileBinding
+import com.plantdiseases.app.ui.onboarding.OnboardingActivity
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.ThemeHelper
 import kotlinx.coroutines.launch
@@ -43,6 +45,11 @@ class ProfileFragment : Fragment() {
                 .setPositiveButton(R.string.clear_all) { _, _ -> clearHistory() }
                 .setNegativeButton(R.string.cancel, null)
                 .show()
+        }
+
+        // How to Use — re-open onboarding
+        binding.cardHowToUse.setOnClickListener {
+            startActivity(Intent(requireContext(), OnboardingActivity::class.java))
         }
 
         setupThemeChips()

@@ -1,18 +1,25 @@
 package com.plantdiseases.app.ui.result
 
-import android.animation.AnimatorSet
-import android.animation.ObjectAnimator
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.net.Uri
 import android.os.Bundle
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.animation.DecelerateInterpolator
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.FileProvider
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.progressindicator.LinearProgressIndicator
 import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.resource.bitmap.CenterCrop
@@ -22,14 +29,20 @@ import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
+import com.plantdiseases.app.ui.analysis.AnalysisActivity
 import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.launch
 import java.io.File
+import java.io.FileOutputStream
 
 class ResultActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityResultBinding
+
+    // Pinch-to-zoom state
+    private var scaleFactor = 1.0f
+    private lateinit var scaleGestureDetector: ScaleGestureDetector
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
@@ -47,11 +60,44 @@ class ResultActivity : AppCompatActivity() {
         }
 
         binding.toolbar.setNavigationOnClickListener { finish() }
+        setupPinchToZoom()
         loadResult(scanId)
+    }
+
+    private fun setupPinchToZoom() {
+        scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            override fun onScale(detector: ScaleGestureDetector): Boolean {
+                scaleFactor *= detector.scaleFactor
+                scaleFactor = scaleFactor.coerceIn(1.0f, 3.0f)
+                val imageFrame = binding.cardImage.findViewById<FrameLayout>(R.id.card_image)?.getChildAt(0)
+                    ?: binding.ivPlant.parent as? View ?: return true
+                imageFrame.scaleX = scaleFactor
+                imageFrame.scaleY = scaleFactor
+                return true
+            }
+        })
+
+        binding.cardImage.setOnTouchListener { _, event ->
+            scaleGestureDetector.onTouchEvent(event)
+            if (event.action == MotionEvent.ACTION_UP && event.pointerCount <= 1) {
+                // Reset zoom on single tap release after zoom
+                if (scaleFactor > 1.01f) {
+                    val imageFrame = binding.ivPlant.parent as? View
+                    imageFrame?.animate()?.scaleX(1f)?.scaleY(1f)?.setDuration(200)?.start()
+                    scaleFactor = 1.0f
+                }
+            }
+            true
+        }
     }
 
     private fun loadResult(scanId: Long) {
         val app = application as PlantDiseasesApp
+
+        // Show skeleton, hide content
+        binding.skeletonLayout.visibility = View.VISIBLE
+        binding.scrollView.visibility = View.GONE
+        animateSkeleton()
 
         lifecycleScope.launch {
             val scan = app.scanRepository.getScanById(scanId)
@@ -59,7 +105,32 @@ class ResultActivity : AppCompatActivity() {
                 finish()
                 return@launch
             }
+
+            // Hide skeleton, show content
+            binding.skeletonLayout.visibility = View.GONE
+            binding.scrollView.visibility = View.VISIBLE
+
             displayResult(scan, app.scanRepository)
+        }
+    }
+
+    private fun animateSkeleton() {
+        // Pulse animation on skeleton blocks
+        for (i in 0 until binding.skeletonLayout.childCount) {
+            val child = binding.skeletonLayout.getChildAt(i)
+            child.alpha = 0.3f
+            child.animate()
+                .alpha(0.7f)
+                .setDuration(800)
+                .setStartDelay((i * 150).toLong())
+                .withEndAction {
+                    child.animate().alpha(0.3f).setDuration(800).withEndAction {
+                        if (binding.skeletonLayout.visibility == View.VISIBLE) {
+                            animateSkeleton()
+                        }
+                    }.start()
+                }
+                .start()
         }
     }
 
@@ -73,9 +144,19 @@ class ResultActivity : AppCompatActivity() {
                 .transform(CenterCrop(), RoundedCorners(24))
                 .into(ivPlant)
 
-            // Heatmap overlay for diseased plants
+            // Heatmap overlay for diseased plants — use real coordinates from server
             if (!scan.isHealthy) {
-                heatmapOverlay.setDetectionRegion(0.5f, 0.45f, 0.35f)
+                if (scan.regionX != null && scan.regionY != null &&
+                    scan.regionWidth != null && scan.regionHeight != null) {
+                    val origBounds = ImageUtils.getImageDimensions(scan.imagePath)
+                    heatmapOverlay.setDetectionRegion(
+                        scan.regionX, scan.regionY,
+                        scan.regionWidth, scan.regionHeight,
+                        origBounds.first, origBounds.second
+                    )
+                } else {
+                    heatmapOverlay.setDetectionRegionNormalized(0.5f, 0.45f, 0.35f)
+                }
                 heatmapOverlay.postDelayed({
                     heatmapOverlay.animateIn()
                     tvHeatmapLabel.visibility = View.VISIBLE
@@ -108,6 +189,9 @@ class ResultActivity : AppCompatActivity() {
             // Description
             tvDescription.text = if (isRu) scan.descriptionRu else scan.description
 
+            // Top-3 alternative diagnoses
+            buildAlternativeDiagnoses(scan, repository, isRu)
+
             // Treatment with step icons
             val treatment = repository.parseStringList(
                 if (isRu) scan.treatmentRu else scan.treatment
@@ -138,33 +222,27 @@ class ResultActivity : AppCompatActivity() {
                 finish()
             }
 
-            // Share button
+            // Share button — now with image
             btnShare.setOnClickListener {
-                val shareText = buildString {
-                    append(if (isRu) "🌿 PlantDiseases — Диагноз\n\n" else "🌿 PlantDiseases — Diagnosis\n\n")
-                    append(if (isRu) scan.diseaseNameRu else scan.diseaseName)
-                    append(" (${(scan.confidence * 100).toInt()}%)\n\n")
-                    append(if (isRu) scan.descriptionRu else scan.description)
-                    val treatmentList = repository.parseStringList(if (isRu) scan.treatmentRu else scan.treatment)
-                    if (treatmentList.isNotEmpty()) {
-                        append("\n\n")
-                        append(if (isRu) "💊 Лечение:\n" else "💊 Treatment:\n")
-                        treatmentList.forEachIndexed { i, t -> append("${i + 1}. $t\n") }
-                    }
-                }
-                val sendIntent = Intent().apply {
-                    action = Intent.ACTION_SEND
-                    putExtra(Intent.EXTRA_TEXT, shareText)
-                    type = "text/plain"
-                }
-                startActivity(Intent.createChooser(sendIntent, getString(R.string.share)))
+                shareWithImage(scan, repository, isRu)
             }
 
-            // Low confidence warning
+            // Low confidence warning + retry analysis
             if (scan.confidence < 0.5f && !scan.isHealthy) {
                 cardLowConfidence.visibility = View.VISIBLE
+                btnRetryAnalysis.visibility = View.VISIBLE
             } else {
                 cardLowConfidence.visibility = View.GONE
+                btnRetryAnalysis.visibility = View.GONE
+            }
+
+            // Retry analysis button
+            btnRetryAnalysis.setOnClickListener {
+                val intent = Intent(this@ResultActivity, AnalysisActivity::class.java).apply {
+                    putExtra(AnalysisActivity.EXTRA_IMAGE_PATH, scan.imagePath)
+                }
+                startActivity(intent)
+                finish()
             }
 
             // Delete button
@@ -187,6 +265,188 @@ class ResultActivity : AppCompatActivity() {
             // Animate cards from bottom
             animateCardsIn()
         }
+    }
+
+    private fun buildAlternativeDiagnoses(scan: ScanEntity, repository: ScanRepository, isRu: Boolean) {
+        val allProbs = repository.parseAllProbs(scan.allProbs)
+        if (allProbs.isEmpty()) {
+            binding.cardAlternatives.visibility = View.GONE
+            return
+        }
+
+        // Sort by probability descending, take top 3
+        val top3 = allProbs.entries
+            .sortedByDescending { it.value }
+            .take(3)
+
+        if (top3.isEmpty()) {
+            binding.cardAlternatives.visibility = View.GONE
+            return
+        }
+
+        binding.cardAlternatives.visibility = View.VISIBLE
+        binding.alternativesLayout.removeAllViews()
+
+        // Map of class keys to display names
+        val diseaseNames = mapOf(
+            "healthy" to (if (isRu) "Здоровое растение" else "Healthy Plant"),
+            "bacterial_spot" to (if (isRu) "Бактериальная пятнистость" else "Bacterial Spot"),
+            "early_blight" to (if (isRu) "Ранний фитофтороз" else "Early Blight"),
+            "late_blight" to (if (isRu) "Фитофтороз" else "Late Blight"),
+            "leaf_mold" to (if (isRu) "Листовая плесень" else "Leaf Mold"),
+            "septoria_leaf_spot" to (if (isRu) "Септориоз" else "Septoria Leaf Spot"),
+            "spider_mites" to (if (isRu) "Паутинный клещ" else "Spider Mites"),
+            "target_spot" to (if (isRu) "Мишеневидная пятнистость" else "Target Spot"),
+            "mosaic_virus" to (if (isRu) "Мозаичный вирус" else "Mosaic Virus"),
+            "yellow_leaf_curl" to (if (isRu) "Жёлтое скручивание" else "Yellow Leaf Curl"),
+            "powdery_mildew" to (if (isRu) "Мучнистая роса" else "Powdery Mildew"),
+            "rust" to (if (isRu) "Ржавчина" else "Rust"),
+            "root_rot" to (if (isRu) "Корневая гниль" else "Root Rot"),
+            "anthracnose" to (if (isRu) "Антракноз" else "Anthracnose"),
+            "botrytis" to (if (isRu) "Серая гниль" else "Gray Mold")
+        )
+
+        top3.forEachIndexed { index, entry ->
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    if (index > 0) topMargin = 12.dpToPx()
+                }
+            }
+
+            val percent = (entry.value * 100).toInt()
+            val displayName = diseaseNames[entry.key] ?: entry.key
+            val isMain = index == 0
+
+            // Name + percentage row
+            val nameRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+
+            val nameView = TextView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                text = displayName
+                textSize = if (isMain) 14f else 13f
+                setTextColor(getColor(if (isMain) R.color.on_surface else R.color.on_surface_secondary))
+                if (isMain) typeface = android.graphics.Typeface.DEFAULT_BOLD
+            }
+
+            val percentView = TextView(this).apply {
+                text = "$percent%"
+                textSize = if (isMain) 14f else 13f
+                setTextColor(getColor(if (isMain) R.color.primary else R.color.on_surface_secondary))
+                if (isMain) typeface = android.graphics.Typeface.DEFAULT_BOLD
+            }
+
+            nameRow.addView(nameView)
+            nameRow.addView(percentView)
+
+            // Confidence bar
+            val progressBar = LinearProgressIndicator(this).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = 4.dpToPx() }
+                max = 100
+                progress = percent
+                trackCornerRadius = 4.dpToPx()
+                trackThickness = if (isMain) 8.dpToPx() else 6.dpToPx()
+                setIndicatorColor(getColor(if (isMain) R.color.primary else R.color.primary_light))
+                trackColor = getColor(R.color.surface_variant)
+            }
+
+            row.addView(nameRow)
+            row.addView(progressBar)
+            binding.alternativesLayout.addView(row)
+        }
+    }
+
+    private fun shareWithImage(scan: ScanEntity, repository: ScanRepository, isRu: Boolean) {
+        val shareText = buildString {
+            append(if (isRu) "🌿 PlantDiseases — Диагноз\n\n" else "🌿 PlantDiseases — Diagnosis\n\n")
+            append(if (isRu) scan.diseaseNameRu else scan.diseaseName)
+            append(" (${(scan.confidence * 100).toInt()}%)\n\n")
+            append(if (isRu) scan.descriptionRu else scan.description)
+            val treatmentList = repository.parseStringList(if (isRu) scan.treatmentRu else scan.treatment)
+            if (treatmentList.isNotEmpty()) {
+                append("\n\n")
+                append(if (isRu) "💊 Лечение:\n" else "💊 Treatment:\n")
+                treatmentList.forEachIndexed { i, t -> append("${i + 1}. $t\n") }
+            }
+        }
+
+        // Try to share with image
+        try {
+            val imageFile = File(scan.imagePath)
+            if (imageFile.exists()) {
+                // Create a shareable copy with heatmap overlay
+                val shareFile = createShareableImage(scan)
+                val imageUri = FileProvider.getUriForFile(
+                    this, "${packageName}.fileprovider", shareFile
+                )
+
+                val sendIntent = Intent().apply {
+                    action = Intent.ACTION_SEND
+                    putExtra(Intent.EXTRA_TEXT, shareText)
+                    putExtra(Intent.EXTRA_STREAM, imageUri)
+                    type = "image/jpeg"
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                startActivity(Intent.createChooser(sendIntent, getString(R.string.share)))
+                return
+            }
+        } catch (_: Exception) {
+            // Fall through to text-only share
+        }
+
+        // Fallback: text-only share
+        val sendIntent = Intent().apply {
+            action = Intent.ACTION_SEND
+            putExtra(Intent.EXTRA_TEXT, shareText)
+            type = "text/plain"
+        }
+        startActivity(Intent.createChooser(sendIntent, getString(R.string.share)))
+    }
+
+    private fun createShareableImage(scan: ScanEntity): File {
+        val bitmap = BitmapFactory.decodeFile(scan.imagePath)
+        val result = bitmap.copy(Bitmap.Config.ARGB_8888, true)
+        bitmap.recycle()
+
+        // Draw heatmap overlay on the bitmap if diseased
+        if (!scan.isHealthy && scan.regionX != null && scan.regionY != null &&
+            scan.regionWidth != null && scan.regionHeight != null) {
+            val canvas = Canvas(result)
+            val cx = scan.regionX + scan.regionWidth / 2f
+            val cy = scan.regionY + scan.regionHeight / 2f
+            val radius = (scan.regionWidth + scan.regionHeight) / 4f
+
+            val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+            val gradient = android.graphics.RadialGradient(
+                cx, cy, radius.coerceAtLeast(1f),
+                intArrayOf(
+                    android.graphics.Color.argb(120, 255, 0, 0),
+                    android.graphics.Color.argb(80, 255, 165, 0),
+                    android.graphics.Color.argb(40, 255, 255, 0),
+                    android.graphics.Color.TRANSPARENT
+                ),
+                floatArrayOf(0f, 0.4f, 0.7f, 1f),
+                android.graphics.Shader.TileMode.CLAMP
+            )
+            paint.shader = gradient
+            canvas.drawCircle(cx, cy, radius, paint)
+        }
+
+        val shareFile = File(cacheDir, "share_${System.currentTimeMillis()}.jpg")
+        FileOutputStream(shareFile).use { out ->
+            result.compress(Bitmap.CompressFormat.JPEG, 90, out)
+        }
+        result.recycle()
+        return shareFile
     }
 
     private fun buildStepsList(
@@ -243,6 +503,7 @@ class ResultActivity : AppCompatActivity() {
             binding.cardStatus,
             binding.cardConfidence,
             binding.cardDescription,
+            binding.cardAlternatives,
             binding.treatmentSection,
             binding.preventionSection,
             binding.btnNewScan

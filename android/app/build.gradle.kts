@@ -21,13 +21,30 @@ android {
         buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:8000/\"")
     }
 
+    signingConfigs {
+        create("release") {
+            val keystorePath = project.findProperty("RELEASE_STORE_FILE") as String?
+            if (!keystorePath.isNullOrEmpty()) {
+                storeFile = file(keystorePath)
+                storePassword = project.findProperty("RELEASE_STORE_PASSWORD") as String? ?: ""
+                keyAlias = project.findProperty("RELEASE_KEY_ALIAS") as String? ?: ""
+                keyPassword = project.findProperty("RELEASE_KEY_PASSWORD") as String? ?: ""
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            val releaseConfig = signingConfigs.findByName("release")
+            if (releaseConfig?.storeFile != null) {
+                signingConfig = releaseConfig
+            }
         }
     }
 

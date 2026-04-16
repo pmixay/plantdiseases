@@ -125,10 +125,19 @@ python train.py --classifier # train classifier only
 - **Image gallery picker** — analyse photos from device
 - **Scan history** — all results saved locally in Room DB
 - **Plant care guide** — 22 articles on diseases, pests, watering, lighting
-- **Profile & statistics** — total scans, healthy/diseased ratio
-- **Share results** — export diagnosis as text
-- **Low confidence warning** — alert when result is uncertain
+- **Profile & statistics** — total scans, healthy/diseased ratio, "About Model" info
+- **Real Grad-CAM heatmap** — detection region mapped from server pixel coordinates with centerCrop transform
+- **Top-3 alternative diagnoses** — explainable AI with confidence bars
+- **Share results with image** — export diagnosis text + photo with heatmap overlay via FileProvider
+- **Blur detection** — Laplacian variance check warns before uploading blurry photos
+- **Low confidence warning** — alert + "Retry Analysis" button when result is uncertain
+- **HTTP 429 handling** — dedicated "Server busy" message for rate-limited requests
+- **Skeleton loader** — smooth loading state in ResultActivity while Room query runs
+- **Pinch-to-zoom** — examine heatmap details on the result photo
+- **Edge-to-edge display** — transparent status bar, content under system bars
+- **Onboarding from Profile** — "How to Use" button to re-watch onboarding
 - **Bilingual** — Russian / English with one-tap switching
+- **Signed release APK** — signing config with ProGuard rules for Retrofit/Room/Lottie/Gson
 - **Min SDK 26** (Android 8.0+)
 
 ### Tech Stack
@@ -261,7 +270,9 @@ start.bat --train
 
 #### POST /api/analyze
 
-**Request:** `multipart/form-data` with `image` field (JPEG, PNG, WebP, BMP; max 10 MB)
+**Request:** `multipart/form-data` with `image` field (JPEG, PNG, WebP, BMP; max 10 MB, max 4096px per dimension)
+
+**Server protections:** image resolution validation (rejects >4096px to prevent OOM), inference timeout (30s via `asyncio.wait_for`), rate limiting (1 req/sec per IP returns HTTP 429).
 
 **Response:**
 ```json
@@ -285,6 +296,12 @@ start.bat --train
       "width": 200,
       "height": 170
     }
+  },
+  "all_probs": {
+    "healthy": 0.05,
+    "powdery_mildew": 0.87,
+    "leaf_mold": 0.04,
+    "...": "..."
   },
   "pipeline_mode": "full",
   "elapsed_ms": 145.3
@@ -317,4 +334,4 @@ start.bat --train
 
 ## License
 
-MIT — free for personal and commercial use.
+[Unlicense](https://unlicense.org) — public domain, free for any use.

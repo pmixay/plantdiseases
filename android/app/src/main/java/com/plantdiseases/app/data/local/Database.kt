@@ -23,7 +23,14 @@ data class ScanEntity(
     @ColumnInfo(name = "prevention") val prevention: String,      // JSON array
     @ColumnInfo(name = "prevention_ru") val preventionRu: String, // JSON array
     @ColumnInfo(name = "is_healthy") val isHealthy: Boolean,
-    @ColumnInfo(name = "timestamp") val timestamp: Long = System.currentTimeMillis()
+    @ColumnInfo(name = "timestamp") val timestamp: Long = System.currentTimeMillis(),
+    // Detection region from Grad-CAM (pixel coordinates in original image)
+    @ColumnInfo(name = "region_x") val regionX: Int? = null,
+    @ColumnInfo(name = "region_y") val regionY: Int? = null,
+    @ColumnInfo(name = "region_width") val regionWidth: Int? = null,
+    @ColumnInfo(name = "region_height") val regionHeight: Int? = null,
+    // All class probabilities as JSON string for top-3 diagnoses display
+    @ColumnInfo(name = "all_probs") val allProbs: String? = null
 )
 
 @Dao
@@ -65,7 +72,7 @@ interface ScanDao {
     suspend fun deleteAll()
 }
 
-@Database(entities = [ScanEntity::class], version = 2, exportSchema = false)
+@Database(entities = [ScanEntity::class], version = 3, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun scanDao(): ScanDao
 
@@ -80,6 +87,16 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE scans ADD COLUMN region_x INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE scans ADD COLUMN region_y INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE scans ADD COLUMN region_width INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE scans ADD COLUMN region_height INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE scans ADD COLUMN all_probs TEXT DEFAULT NULL")
+            }
+        }
+
         fun getInstance(context: android.content.Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -87,7 +104,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "plantdiseases_db"
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .build()
                 INSTANCE = instance
                 instance

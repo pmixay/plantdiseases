@@ -12,7 +12,8 @@
         <item name="colorSurfaceVariant">@color/surface_variant</item>
         <item name="colorOnSurface">@color/on_surface</item>
         <item name="colorOnSurfaceVariant">@color/on_surface_secondary</item>
-        <item name="android:statusBarColor">@color/primary_dark</item>
+        <!-- Edge-to-edge: transparent status bar -->
+        <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:navigationBarColor">@color/surface</item>
     </style>

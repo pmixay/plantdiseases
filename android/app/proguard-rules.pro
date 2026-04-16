@@ -11,10 +11,12 @@
 -dontwarn okhttp3.**
 -dontwarn okio.**
 
-# Gson
+# Gson — keep all model classes for serialization
 -keepattributes *Annotation*
 -keep class com.google.gson.stream.** { *; }
 -keep class com.plantdiseases.app.data.model.** { *; }
+-keep class com.google.gson.reflect.TypeToken { *; }
+-keep class * extends com.google.gson.reflect.TypeToken
 
 # Room
 -keep class * extends androidx.room.RoomDatabase

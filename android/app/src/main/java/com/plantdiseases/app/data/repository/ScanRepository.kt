@@ -31,6 +31,8 @@ class ScanRepository(
                 val response = apiService.analyzeImage(part)
                 if (response.isSuccessful && response.body() != null) {
                     Result.success(response.body()!!)
+                } else if (response.code() == 429) {
+                    Result.failure(RateLimitException())
                 } else {
                     Result.failure(Exception("Server error: ${response.code()} ${response.message()}"))
                 }
@@ -64,10 +66,12 @@ class ScanRepository(
 
     class ServerTimeoutException : Exception("Server is not responding")
     class NoNetworkException : Exception("No network connection")
+    class RateLimitException : Exception("Server is busy, please wait")
 
     /** Save analysis result to local DB */
     suspend fun saveScan(imagePath: String, result: AnalysisResponse): Long =
         withContext(Dispatchers.IO) {
+            val region = result.detection?.region
             val entity = ScanEntity(
                 imagePath = imagePath,
                 diseaseName = result.diseaseName,
@@ -79,7 +83,12 @@ class ScanRepository(
                 treatmentRu = gson.toJson(result.treatmentRu),
                 prevention = gson.toJson(result.prevention),
                 preventionRu = gson.toJson(result.preventionRu),
-                isHealthy = result.isHealthy
+                isHealthy = result.isHealthy,
+                regionX = region?.x,
+                regionY = region?.y,
+                regionWidth = region?.width,
+                regionHeight = region?.height,
+                allProbs = result.allProbs?.let { gson.toJson(it) }
             )
             scanDao.insert(entity)
         }
@@ -147,6 +156,17 @@ class ScanRepository(
             gson.fromJson(json, Array<String>::class.java).toList()
         } catch (e: Exception) {
             emptyList()
+        }
+    }
+
+    /** Parse all_probs JSON map */
+    fun parseAllProbs(json: String?): Map<String, Float> {
+        if (json.isNullOrEmpty()) return emptyMap()
+        return try {
+            val type = object : com.google.gson.reflect.TypeToken<Map<String, Float>>() {}.type
+            gson.fromJson(json, type)
+        } catch (e: Exception) {
+            emptyMap()
         }
     }
 }
