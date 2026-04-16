@@ -185,7 +185,14 @@ class DiseaseDetector:
 
     # ── demo mode (colour heuristics) ───────────────────────────────
 
+    @staticmethod
+    def _image_seed(img: Image.Image) -> int:
+        """Derive a stable seed from image pixel data for reproducible results."""
+        small = np.array(img.resize((16, 16)), dtype=np.uint8)
+        return int(small.sum()) % (2**31)
+
     def _detect_demo(self, img: Image.Image) -> dict:
+        rng = np.random.RandomState(self._image_seed(img))
         arr = np.array(img.resize((256, 256)))
         hsv = cv2.cvtColor(arr, cv2.COLOR_RGB2HSV)
 
@@ -213,7 +220,7 @@ class DiseaseDetector:
         if disease_ratio < 0.05:
             return {
                 "is_diseased": False,
-                "confidence": round(0.70 + np.random.uniform(0, 0.20), 4),
+                "confidence": round(0.70 + rng.uniform(0, 0.20), 4),
                 "region": None,
             }
 
@@ -235,6 +242,6 @@ class DiseaseDetector:
 
         return {
             "is_diseased": True,
-            "confidence": round(0.60 + np.random.uniform(0, 0.25), 4),
+            "confidence": round(0.60 + rng.uniform(0, 0.25), 4),
             "region": {"x": x1, "y": y1, "width": x2 - x1, "height": y2 - y1},
         }

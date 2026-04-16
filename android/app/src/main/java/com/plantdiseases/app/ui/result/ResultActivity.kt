@@ -6,11 +6,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
-import android.os.VibrationEffect
-import android.os.Vibrator
-import android.os.VibratorManager
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
@@ -35,6 +31,7 @@ import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.ui.analysis.AnalysisActivity
+import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.launch
@@ -45,7 +42,6 @@ class ResultActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityResultBinding
 
-    // Pinch-to-zoom state
     private var scaleFactor = 1.0f
     private lateinit var scaleGestureDetector: ScaleGestureDetector
     private var skeletonAnimator: ValueAnimator? = null
@@ -94,7 +90,6 @@ class ResultActivity : AppCompatActivity() {
         }
     }
 
-    // Sticky header: show disease name + confidence when scrolling (2.4)
     private fun setupStickyHeader() {
         binding.scrollView.setOnScrollChangeListener { _, _, scrollY, _, _ ->
             val statusCardBottom = binding.cardStatus.bottom
@@ -109,7 +104,6 @@ class ResultActivity : AppCompatActivity() {
     private fun loadResult(scanId: Long) {
         val app = application as PlantDiseasesApp
 
-        // Show skeleton, hide content
         binding.skeletonLayout.visibility = View.VISIBLE
         binding.scrollView.visibility = View.GONE
         binding.bottomActionBar.visibility = View.GONE
@@ -122,16 +116,13 @@ class ResultActivity : AppCompatActivity() {
                 return@launch
             }
 
-            // Hide skeleton, show content
             skeletonAnimator?.cancel()
             binding.skeletonLayout.visibility = View.GONE
             binding.scrollView.visibility = View.VISIBLE
             binding.bottomActionBar.visibility = View.VISIBLE
 
             displayResult(scan, app.scanRepository)
-
-            // Haptic feedback on result loaded (2.6)
-            vibrateSuccess()
+            Haptics.success(this@ResultActivity)
         }
     }
 
@@ -150,22 +141,6 @@ class ResultActivity : AppCompatActivity() {
         }
         skeletonAnimator = animator
         animator.start()
-    }
-
-    // Success haptic pattern: short-pause-short (2.6)
-    private fun vibrateSuccess() {
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val vm = getSystemService(VIBRATOR_MANAGER_SERVICE) as VibratorManager
-                vm.defaultVibrator.vibrate(
-                    VibrationEffect.createWaveform(longArrayOf(0, 30, 80, 30), -1)
-                )
-            } else {
-                @Suppress("DEPRECATION")
-                val v = getSystemService(VIBRATOR_SERVICE) as Vibrator
-                v.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 30, 80, 30), -1))
-            }
-        } catch (_: Exception) {}
     }
 
     private fun displayResult(scan: ScanEntity, repository: ScanRepository) {
@@ -204,7 +179,6 @@ class ResultActivity : AppCompatActivity() {
             // Sticky header data
             tvStickyName.text = diseaseName
 
-            // Confidence with easeOutCubic animation (2.5)
             val confidencePercent = (scan.confidence * 100).toInt()
             tvConfidence.text = getString(R.string.confidence_format, confidencePercent)
             tvStickyConfidence.text = getString(R.string.confidence_format, confidencePercent)
@@ -221,7 +195,6 @@ class ResultActivity : AppCompatActivity() {
             }
             confidenceAnimator.start()
 
-            // Status (merged card — 2.4)
             if (scan.isHealthy) {
                 cardStatus.setCardBackgroundColor(getColor(R.color.healthy_green_bg))
                 tvStatusLabel.text = getString(R.string.status_healthy)
@@ -240,13 +213,11 @@ class ResultActivity : AppCompatActivity() {
             // Top-3 alternative diagnoses
             buildAlternativeDiagnoses(scan, repository, isRu)
 
-            // Treatment/Prevention tabs (2.4)
             setupTreatmentPreventionTabs(scan, repository, isRu)
 
             // Date
             tvDate.text = ImageUtils.formatTimestamp(scan.timestamp)
 
-            // Bottom action bar (2.4)
             btnNewScan.setOnClickListener { finish() }
 
             btnShare.setOnClickListener {
@@ -291,7 +262,6 @@ class ResultActivity : AppCompatActivity() {
         }
     }
 
-    // Treatment/Prevention tabs (2.4)
     private fun setupTreatmentPreventionTabs(scan: ScanEntity, repository: ScanRepository, isRu: Boolean) {
         val treatment = repository.parseStringList(
             if (isRu) scan.treatmentRu else scan.treatment
@@ -423,7 +393,6 @@ class ResultActivity : AppCompatActivity() {
             nameRow.addView(nameView)
             nameRow.addView(percentView)
 
-            // Confidence bar with staggered easeOutCubic animation (2.5)
             val progressBar = LinearProgressIndicator(this).apply {
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
@@ -437,7 +406,6 @@ class ResultActivity : AppCompatActivity() {
                 trackColor = getColor(R.color.surface_variant)
             }
 
-            // Staggered animation: main first, then 150ms delay each (2.5)
             val barAnimator = ValueAnimator.ofInt(0, percent).apply {
                 duration = 600
                 startDelay = (index * 150).toLong()

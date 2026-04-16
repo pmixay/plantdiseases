@@ -37,7 +37,7 @@ class GuideAdapter(
             val title = if (isRu) item.titleRu else item.titleEn
             val desc = if (isRu) item.descriptionRu else item.descriptionEn
 
-            // Highlight search matches (2.8)
+            // Highlight search matches
             if (searchQuery.length >= 2) {
                 val highlightColor = ctx.getColor(R.color.search_highlight)
                 tvTitle.text = highlightText(title, searchQuery, highlightColor)

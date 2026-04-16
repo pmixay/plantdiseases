@@ -110,7 +110,7 @@ class AnalysisActivity : AppCompatActivity() {
                 // Save to local DB
                 val scanId = app.scanRepository.saveScan(imagePath, response)
 
-                // Set flag to show gallery badge in MainActivity (2.10)
+                // Set flag to show gallery badge in MainActivity
                 getSharedPreferences("plantdiseases_prefs", MODE_PRIVATE)
                     .edit().putBoolean("new_scan_result", true).apply()
 

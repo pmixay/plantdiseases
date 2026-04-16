@@ -126,4 +126,7 @@ dependencies {
 
     // Shimmer effect for skeleton loading
     implementation("com.facebook.shimmer:shimmer:0.5.0")
+
+    // ExifInterface (used for orientation correction in ImageUtils)
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
 }

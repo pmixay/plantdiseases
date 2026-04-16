@@ -46,7 +46,7 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
-    <!-- Camera scrim for status bar contrast (2.11) -->
+    <!-- Camera scrim for status bar contrast -->
     <View
         android:id="@+id/camera_scrim"
         android:layout_width="0dp"
@@ -56,7 +56,7 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
-    <!-- Shutter flash overlay (2.3) -->
+    <!-- Shutter flash overlay -->
     <View
         android:id="@+id/shutter_flash"
         android:layout_width="match_parent"
@@ -88,7 +88,7 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
-    <!-- Zoom indicator (2.3) -->
+    <!-- Zoom indicator -->
     <TextView
         android:id="@+id/tv_zoom"
         android:layout_width="wrap_content"

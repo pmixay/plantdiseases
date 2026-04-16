@@ -1,20 +1,14 @@
 package com.plantdiseases.app.ui.gallery
 
 import android.content.Intent
-import android.os.Build
 import android.os.Bundle
-import android.os.VibrationEffect
-import android.os.Vibrator
-import android.os.VibratorManager
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.view.animation.AnimationUtils
-import android.view.animation.LayoutAnimationController
-import android.view.animation.ScaleAnimation
 import android.view.animation.AlphaAnimation
 import android.view.animation.AnimationSet
-import androidx.core.app.ActivityOptionsCompat
+import android.view.animation.LayoutAnimationController
+import android.view.animation.ScaleAnimation
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
@@ -24,6 +18,7 @@ import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.ScanHistoryItem
 import com.plantdiseases.app.databinding.FragmentGalleryBinding
 import com.plantdiseases.app.ui.result.ResultActivity
+import com.plantdiseases.app.util.Haptics
 import kotlinx.coroutines.launch
 
 class GalleryFragment : Fragment() {
@@ -64,18 +59,12 @@ class GalleryFragment : Fragment() {
         binding.rvGallery.layoutManager = GridLayoutManager(requireContext(), 2)
         binding.rvGallery.adapter = adapter
 
-        // Stagger animation for list items (2.5)
         setupStaggerAnimation()
 
-        binding.swipeRefresh.setOnRefreshListener {
-            loadScans()
-        }
+        binding.swipeRefresh.setOnRefreshListener { loadScans() }
 
-        // First scan CTA button (2.7)
         binding.btnFirstScan.setOnClickListener {
-            // Navigate to camera/scan tab
-            val navController = findNavController()
-            navController.navigate(R.id.cameraFragment)
+            findNavController().navigate(R.id.cameraFragment)
         }
 
         setupFilterChips()
@@ -104,28 +93,15 @@ class GalleryFragment : Fragment() {
             applyFilter()
         }
         binding.chipHealthy.setOnClickListener {
-            vibrateLight()
+            Haptics.tick(requireContext())
             currentFilter = Filter.HEALTHY
             applyFilter()
         }
         binding.chipDiseased.setOnClickListener {
-            vibrateLight()
+            Haptics.tick(requireContext())
             currentFilter = Filter.DISEASED
             applyFilter()
         }
-    }
-
-    private fun vibrateLight() {
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val vm = requireContext().getSystemService(android.content.Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
-                vm.defaultVibrator.vibrate(VibrationEffect.createOneShot(10, VibrationEffect.DEFAULT_AMPLITUDE))
-            } else {
-                @Suppress("DEPRECATION")
-                val v = requireContext().getSystemService(android.content.Context.VIBRATOR_SERVICE) as Vibrator
-                v.vibrate(VibrationEffect.createOneShot(10, VibrationEffect.DEFAULT_AMPLITUDE))
-            }
-        } catch (_: Exception) {}
     }
 
     private fun applyFilter() {
@@ -136,24 +112,21 @@ class GalleryFragment : Fragment() {
         }
         adapter.submitList(filtered)
 
-        if (filtered.isEmpty() && allScans.isEmpty()) {
-            // No scans at all — show main empty state
-            updateEmptyState(isEmpty = true, isFilterEmpty = false)
-        } else if (filtered.isEmpty()) {
-            // Has scans but filter yields nothing
-            updateEmptyState(isEmpty = false, isFilterEmpty = true)
-        } else {
-            updateEmptyState(isEmpty = false, isFilterEmpty = false)
+        when {
+            filtered.isEmpty() && allScans.isEmpty() ->
+                updateEmptyState(isEmpty = true, isFilterEmpty = false)
+            filtered.isEmpty() ->
+                updateEmptyState(isEmpty = false, isFilterEmpty = true)
+            else ->
+                updateEmptyState(isEmpty = false, isFilterEmpty = false)
         }
 
-        // Re-trigger stagger animation
         binding.rvGallery.scheduleLayoutAnimation()
     }
 
     private fun loadScans() {
         val app = requireActivity().application as PlantDiseasesApp
 
-        // Show shimmer on first load
         if (isFirstLoad) {
             binding.shimmerLayout.visibility = View.VISIBLE
             binding.shimmerLayout.startShimmer()
@@ -164,7 +137,6 @@ class GalleryFragment : Fragment() {
             binding.swipeRefresh.isRefreshing = !isFirstLoad
             allScans = app.scanRepository.getAllScans()
 
-            // Hide shimmer
             if (isFirstLoad) {
                 binding.shimmerLayout.stopShimmer()
                 binding.shimmerLayout.visibility = View.GONE

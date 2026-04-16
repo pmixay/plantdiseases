@@ -36,7 +36,7 @@
 
     </com.google.android.material.textfield.TextInputLayout>
 
-    <!-- Recent searches chip row (2.8) -->
+    <!-- Recent searches chip row -->
     <com.google.android.material.chip.ChipGroup
         android:id="@+id/recent_searches_group"
         android:layout_width="match_parent"
@@ -69,7 +69,7 @@
             android:clipToPadding="false"
             android:padding="16dp" />
 
-        <!-- Search empty state (2.7) -->
+        <!-- Search empty state -->
         <LinearLayout
             android:id="@+id/search_empty_layout"
             android:layout_width="wrap_content"

@@ -138,9 +138,16 @@ class DiseaseClassifier:
             },
         }
 
-    # ── demo mode (colour heuristics) ───────────────────────────────
+    # ── demo mode (colour heuristics, deterministic per image) ────────
+
+    @staticmethod
+    def _image_seed(img: Image.Image) -> int:
+        """Derive a stable seed from image pixel data so results are reproducible."""
+        small = np.array(img.resize((16, 16)), dtype=np.uint8)
+        return int(small.sum()) % (2**31)
 
     def _classify_demo(self, img: Image.Image) -> dict:
+        rng = np.random.RandomState(self._image_seed(img))
         arr = np.array(img.resize((64, 64)), dtype=np.float32)
         r_mean = arr[:, :, 0].mean()
         g_mean = arr[:, :, 1].mean()
@@ -151,7 +158,6 @@ class DiseaseClassifier:
         brown_ratio = r_mean / total
         brightness = total / 3.0
 
-        # Pick a plausible class from whatever names we have
         names = self.CLASS_NAMES
         if not names:
             return {
@@ -162,33 +168,32 @@ class DiseaseClassifier:
 
         if green_ratio > 0.38 and "healthy" in names:
             cls = "healthy"
-            conf = 0.82 + np.random.uniform(0, 0.15)
+            conf = 0.82 + rng.uniform(0, 0.15)
         elif brightness > 190 and g_mean < 170:
             pool = [n for n in ("powdery_mildew", "botrytis", "leaf_mold") if n in names]
-            cls = np.random.choice(pool) if pool else names[0]
-            conf = 0.60 + np.random.uniform(0, 0.25)
+            cls = rng.choice(pool) if pool else names[0]
+            conf = 0.60 + rng.uniform(0, 0.25)
         elif brown_ratio > 0.42:
             pool = [n for n in ("early_blight", "late_blight", "leaf_mold",
                                 "septoria_leaf_spot", "root_rot") if n in names]
-            cls = np.random.choice(pool) if pool else names[0]
-            conf = 0.65 + np.random.uniform(0, 0.25)
+            cls = rng.choice(pool) if pool else names[0]
+            conf = 0.65 + rng.uniform(0, 0.25)
         elif r_mean > g_mean and r_mean > 140:
             pool = [n for n in ("rust", "bacterial_spot", "anthracnose") if n in names]
-            cls = np.random.choice(pool) if pool else names[0]
-            conf = 0.60 + np.random.uniform(0, 0.25)
+            cls = rng.choice(pool) if pool else names[0]
+            conf = 0.60 + rng.uniform(0, 0.25)
         else:
             pool = [n for n in ("yellow_leaf_curl", "mosaic_virus",
                                 "spider_mites", "target_spot") if n in names]
-            cls = np.random.choice(pool) if pool else names[0]
-            conf = 0.55 + np.random.uniform(0, 0.25)
+            cls = rng.choice(pool) if pool else names[0]
+            conf = 0.55 + rng.uniform(0, 0.25)
 
-        # Build pseudo-probabilities
         probs = {name: 0.0 for name in names}
         probs[cls] = round(conf, 4)
         leftover = 1.0 - conf
         others = [n for n in names if n != cls]
         if others:
-            rnd = np.random.dirichlet(np.ones(len(others))) * leftover
+            rnd = rng.dirichlet(np.ones(len(others))) * leftover
             for name, p in zip(others, rnd):
                 probs[name] = round(float(p), 4)
 

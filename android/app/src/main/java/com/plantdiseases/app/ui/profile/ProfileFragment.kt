@@ -54,7 +54,7 @@ class ProfileFragment : Fragment() {
             startActivity(Intent(requireContext(), OnboardingActivity::class.java))
         }
 
-        // Profile empty state CTA (2.7)
+        // Profile empty state CTA
         binding.btnStartScan.setOnClickListener {
             findNavController().navigate(R.id.cameraFragment)
         }
@@ -88,7 +88,7 @@ class ProfileFragment : Fragment() {
         val app = requireActivity().application as PlantDiseasesApp
         val isRu = LocaleHelper.isRussian(requireContext())
 
-        // Show shimmer on first load (2.2)
+        // Show shimmer on first load
         if (isFirstLoad) {
             binding.shimmerStats.visibility = View.VISIBLE
             binding.shimmerStats.startShimmer()
