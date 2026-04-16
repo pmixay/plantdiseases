@@ -10,13 +10,16 @@ import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.resource.bitmap.CenterCrop
 import com.bumptech.glide.load.resource.bitmap.RoundedCorners
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.databinding.ActivityAnalysisBinding
 import com.plantdiseases.app.ui.result.ResultActivity
 import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.LocaleHelper
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 class AnalysisActivity : AppCompatActivity() {
@@ -39,7 +42,7 @@ class AnalysisActivity : AppCompatActivity() {
         }
 
         setupUI()
-        startAnalysis()
+        checkBlurAndAnalyze()
     }
 
     private fun setupUI() {
@@ -60,6 +63,31 @@ class AnalysisActivity : AppCompatActivity() {
             binding.errorLayout.visibility = View.GONE
             binding.loadingLayout.visibility = View.VISIBLE
             startAnalysis()
+        }
+    }
+
+    private fun checkBlurAndAnalyze() {
+        lifecycleScope.launch {
+            val blurScore = withContext(Dispatchers.IO) {
+                ImageUtils.computeBlurScore(imagePath)
+            }
+
+            if (blurScore < 100.0) {
+                // Photo is blurry — warn user
+                MaterialAlertDialogBuilder(this@AnalysisActivity)
+                    .setTitle(R.string.blurry_photo_title)
+                    .setMessage(R.string.blurry_photo_message)
+                    .setPositiveButton(R.string.continue_anyway) { _, _ ->
+                        startAnalysis()
+                    }
+                    .setNegativeButton(R.string.cancel) { _, _ ->
+                        finish()
+                    }
+                    .setCancelable(false)
+                    .show()
+            } else {
+                startAnalysis()
+            }
         }
     }
 
@@ -101,6 +129,10 @@ class AnalysisActivity : AppCompatActivity() {
                     is com.plantdiseases.app.data.repository.ScanRepository.NoNetworkException -> {
                         binding.tvError.text = getString(R.string.no_network)
                         binding.tvErrorDetail.text = getString(R.string.no_network_detail)
+                    }
+                    is com.plantdiseases.app.data.repository.ScanRepository.RateLimitException -> {
+                        binding.tvError.text = getString(R.string.server_busy)
+                        binding.tvErrorDetail.text = getString(R.string.server_busy_detail)
                     }
                     else -> {
                         binding.tvError.text = getString(R.string.analysis_error)

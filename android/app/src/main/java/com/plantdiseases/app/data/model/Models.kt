@@ -2,6 +2,21 @@ package com.plantdiseases.app.data.model
 
 import com.google.gson.annotations.SerializedName
 
+/** Region of interest detected by Grad-CAM (pixel coordinates in original image) */
+data class DetectionRegion(
+    @SerializedName("x") val x: Int,
+    @SerializedName("y") val y: Int,
+    @SerializedName("width") val width: Int,
+    @SerializedName("height") val height: Int
+)
+
+/** Stage 1 detection result */
+data class Detection(
+    @SerializedName("is_diseased") val isDiseased: Boolean,
+    @SerializedName("detector_confidence") val detectorConfidence: Float,
+    @SerializedName("region") val region: DetectionRegion?
+)
+
 /** Response from the server after analyzing an image */
 data class AnalysisResponse(
     @SerializedName("disease_name") val diseaseName: String,
@@ -13,7 +28,11 @@ data class AnalysisResponse(
     @SerializedName("treatment_ru") val treatmentRu: List<String>,
     @SerializedName("prevention") val prevention: List<String>,
     @SerializedName("prevention_ru") val preventionRu: List<String>,
-    @SerializedName("is_healthy") val isHealthy: Boolean
+    @SerializedName("is_healthy") val isHealthy: Boolean,
+    @SerializedName("detection") val detection: Detection? = null,
+    @SerializedName("all_probs") val allProbs: Map<String, Float>? = null,
+    @SerializedName("pipeline_mode") val pipelineMode: String? = null,
+    @SerializedName("elapsed_ms") val elapsedMs: Float? = null
 )
 
 /** Guide article about plant care */

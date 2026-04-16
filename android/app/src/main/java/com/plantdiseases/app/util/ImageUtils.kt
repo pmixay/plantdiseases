@@ -113,6 +113,62 @@ object ImageUtils {
         }
     }
 
+    /** Get image dimensions without fully decoding the bitmap */
+    fun getImageDimensions(imagePath: String): Pair<Int, Int> {
+        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(imagePath, options)
+        return Pair(options.outWidth.coerceAtLeast(1), options.outHeight.coerceAtLeast(1))
+    }
+
+    /**
+     * Compute Laplacian variance to detect blurry images.
+     * Returns a variance value — lower means blurrier.
+     * Threshold ~100 is a reasonable default: below it the image is likely blurry.
+     */
+    fun computeBlurScore(imagePath: String): Double {
+        return try {
+            val options = BitmapFactory.Options().apply { inSampleSize = 4 }
+            val bitmap = BitmapFactory.decodeFile(imagePath, options) ?: return Double.MAX_VALUE
+            val w = bitmap.width
+            val h = bitmap.height
+
+            // Convert to grayscale
+            val gray = IntArray(w * h)
+            for (y in 0 until h) {
+                for (x in 0 until w) {
+                    val pixel = bitmap.getPixel(x, y)
+                    val r = (pixel shr 16) and 0xFF
+                    val g = (pixel shr 8) and 0xFF
+                    val b = pixel and 0xFF
+                    gray[y * w + x] = (0.299 * r + 0.587 * g + 0.114 * b).toInt()
+                }
+            }
+            bitmap.recycle()
+
+            // Apply Laplacian kernel [0,1,0; 1,-4,1; 0,1,0] and compute variance
+            var sum = 0.0
+            var sumSq = 0.0
+            var count = 0
+            for (y in 1 until h - 1) {
+                for (x in 1 until w - 1) {
+                    val laplacian = gray[(y - 1) * w + x] +
+                            gray[(y + 1) * w + x] +
+                            gray[y * w + (x - 1)] +
+                            gray[y * w + (x + 1)] -
+                            4 * gray[y * w + x]
+                    sum += laplacian
+                    sumSq += laplacian.toDouble() * laplacian
+                    count++
+                }
+            }
+            if (count == 0) return Double.MAX_VALUE
+            val mean = sum / count
+            (sumSq / count) - (mean * mean) // variance
+        } catch (e: Exception) {
+            Double.MAX_VALUE // On error, assume sharp
+        }
+    }
+
     /**
      * HSV-based check: returns true if at least 8% of pixels are green-ish.
      * Green in HSV: H in [35..85], S > 0.2, V > 0.15

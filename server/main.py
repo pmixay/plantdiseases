@@ -8,11 +8,13 @@ Usage:
     uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 """
 
+import asyncio
 import io
 import os
 import time
 import logging
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -64,7 +66,12 @@ DETECTOR_PATH = MODELS_DIR / "detector.pth"
 CLASSIFIER_PATH = MODELS_DIR / "classifier.pth"
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+MAX_IMAGE_DIMENSION = 4096  # reject images larger than 4096×4096 to prevent OOM
+INFERENCE_TIMEOUT = 30.0  # seconds — one bad request must not block the server
 ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp", "image/bmp"}
+
+# Thread pool for running synchronous pipeline inference
+_inference_executor = ThreadPoolExecutor(max_workers=2)
 
 # ── Server metrics ──────────────────────────────────────────────────
 SERVER_START_TIME: float = 0.0
@@ -217,11 +224,33 @@ async def analyze_image(image: UploadFile = File(...)):
         logger.error("Failed to decode image from %s", image.filename)
         raise HTTPException(status_code=400, detail="Cannot read image file")
 
-    # ── Pipeline ─────────────────────────────────────────────────
-    result = pipeline.analyze(img)
+    # ── Resolution validation (prevent OOM on huge images) ───────
+    img_w, img_h = img.size
+    if img_w > MAX_IMAGE_DIMENSION or img_h > MAX_IMAGE_DIMENSION:
+        logger.warning("Rejected oversized image: %dx%d from %s", img_w, img_h, image.filename)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Image resolution too large ({img_w}x{img_h}). "
+                   f"Maximum dimension: {MAX_IMAGE_DIMENSION}px",
+        )
+
+    # ── Pipeline (with timeout) ──────────────────────────────────
+    loop = asyncio.get_event_loop()
+    try:
+        result = await asyncio.wait_for(
+            loop.run_in_executor(_inference_executor, pipeline.analyze, img),
+            timeout=INFERENCE_TIMEOUT,
+        )
+    except asyncio.TimeoutError:
+        logger.error("Inference timed out after %.0fs for %s", INFERENCE_TIMEOUT, image.filename)
+        raise HTTPException(
+            status_code=504,
+            detail=f"Analysis timed out after {int(INFERENCE_TIMEOUT)} seconds",
+        )
 
     class_name = result["class_name"]
     confidence = result["confidence"]
+    all_probs = result.get("all_probs", {})
     disease_info = DISEASES_DATABASE.get(class_name, DISEASES_DATABASE["unknown"])
 
     elapsed = time.time() - start_time
@@ -229,6 +258,9 @@ async def analyze_image(image: UploadFile = File(...)):
         "Analysis complete: class=%s confidence=%.3f time=%.2fs file=%s mode=%s",
         class_name, confidence, elapsed, image.filename, result["pipeline_mode"],
     )
+
+    # Round all_probs for a cleaner response
+    rounded_probs = {k: round(v, 4) for k, v in all_probs.items()}
 
     return JSONResponse(content={
         # ── backward-compatible fields ──
@@ -244,6 +276,7 @@ async def analyze_image(image: UploadFile = File(...)):
         "is_healthy": disease_info.get("is_healthy", False),
         # ── new pipeline fields ──
         "detection": result["detection"],
+        "all_probs": rounded_probs,
         "pipeline_mode": result["pipeline_mode"],
         "elapsed_ms": result["elapsed_ms"],
     })

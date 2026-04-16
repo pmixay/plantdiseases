@@ -24,9 +24,47 @@
 
     </com.google.android.material.appbar.AppBarLayout>
 
-    <androidx.core.widget.NestedScrollView
+    <!-- Skeleton loading state -->
+    <LinearLayout
+        android:id="@+id/skeleton_layout"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:padding="16dp"
+        android:visibility="visible"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="260dp"
+            android:layout_marginTop="8dp"
+            android:background="@color/surface_variant" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="80dp"
+            android:layout_marginTop="16dp"
+            android:background="@color/surface_variant" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="60dp"
+            android:layout_marginTop="12dp"
+            android:background="@color/surface_variant" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="100dp"
+            android:layout_marginTop="12dp"
+            android:background="@color/surface_variant" />
+
+    </LinearLayout>
+
+    <androidx.core.widget.NestedScrollView
+        android:id="@+id/scroll_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone"
         app:layout_behavior="@string/appbar_scrolling_view_behavior"
         android:clipToPadding="false"
         android:paddingBottom="24dp">
@@ -324,6 +362,50 @@
 
             </LinearLayout>
 
+            <!-- Top-3 alternative diagnoses — explainable AI -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/card_alternatives"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:visibility="gone"
+                app:cardCornerRadius="16dp"
+                app:cardElevation="0dp"
+                app:cardBackgroundColor="@color/surface">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/why_this_diagnosis"
+                        android:textSize="16sp"
+                        android:textColor="@color/on_surface"
+                        android:fontFamily="sans-serif-medium" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="@string/alternatives_subtitle"
+                        android:textSize="12sp"
+                        android:textColor="@color/on_surface_secondary" />
+
+                    <LinearLayout
+                        android:id="@+id/alternatives_layout"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:orientation="vertical" />
+
+                </LinearLayout>
+
+            </com.google.android.material.card.MaterialCardView>
+
             <!-- Low confidence warning -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/card_low_confidence"
@@ -360,6 +442,20 @@
                 </LinearLayout>
 
             </com.google.android.material.card.MaterialCardView>
+
+            <!-- Retry analysis button (shown at low confidence) -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_retry_analysis"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="12dp"
+                android:text="@string/retry_analysis"
+                android:visibility="gone"
+                app:cornerRadius="16dp"
+                app:strokeColor="@color/primary"
+                app:icon="@drawable/ic_scan"
+                app:iconTint="@color/primary" />
 
             <!-- New Scan button -->
             <com.google.android.material.button.MaterialButton
