@@ -22,7 +22,21 @@ object ImageUtils {
 
     /** Compress and resize image for upload */
     fun prepareImageForUpload(context: Context, imagePath: String, maxSize: Int = 1024): File {
-        val original = BitmapFactory.decodeFile(imagePath)
+        // Two-pass decoding: measure first, then downsample to avoid OOM on large images
+        val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(imagePath, boundsOpts)
+        val rawW = boundsOpts.outWidth
+        val rawH = boundsOpts.outHeight
+        var inSampleSize = 1
+        if (rawW > maxSize || rawH > maxSize) {
+            val halfW = rawW / 2
+            val halfH = rawH / 2
+            while (halfW / inSampleSize >= maxSize && halfH / inSampleSize >= maxSize) {
+                inSampleSize *= 2
+            }
+        }
+        val decodeOpts = BitmapFactory.Options().apply { this.inSampleSize = inSampleSize }
+        val original = BitmapFactory.decodeFile(imagePath, decodeOpts)
         val rotated = rotateIfNeeded(imagePath, original)
 
         val ratio = maxSize.toFloat() / maxOf(rotated.width, rotated.height)
@@ -132,18 +146,20 @@ object ImageUtils {
             val w = bitmap.width
             val h = bitmap.height
 
+            // Bulk-read all pixels at once (20-30x faster than per-pixel getPixel)
+            val pixels = IntArray(w * h)
+            bitmap.getPixels(pixels, 0, w, 0, 0, w, h)
+            bitmap.recycle()
+
             // Convert to grayscale
             val gray = IntArray(w * h)
-            for (y in 0 until h) {
-                for (x in 0 until w) {
-                    val pixel = bitmap.getPixel(x, y)
-                    val r = (pixel shr 16) and 0xFF
-                    val g = (pixel shr 8) and 0xFF
-                    val b = pixel and 0xFF
-                    gray[y * w + x] = (0.299 * r + 0.587 * g + 0.114 * b).toInt()
-                }
+            for (i in pixels.indices) {
+                val pixel = pixels[i]
+                val r = (pixel shr 16) and 0xFF
+                val g = (pixel shr 8) and 0xFF
+                val b = pixel and 0xFF
+                gray[i] = (0.299 * r + 0.587 * g + 0.114 * b).toInt()
             }
-            bitmap.recycle()
 
             // Apply Laplacian kernel [0,1,0; 1,-4,1; 0,1,0] and compute variance
             var sum = 0.0

@@ -30,6 +30,8 @@ interface ApiService {
 /**
  * OkHttp interceptor that retries failed requests with exponential backoff.
  * Only retries on network errors (IOException), not on HTTP error responses.
+ * POST requests (e.g. /api/analyze) get at most 1 retry to avoid long waits
+ * when uploading large images on slow connections.
  */
 class RetryInterceptor(
     private val maxRetries: Int = 3,
@@ -39,15 +41,16 @@ class RetryInterceptor(
     @Throws(IOException::class)
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
+        val effectiveRetries = if (request.method == "POST") minOf(maxRetries, 1) else maxRetries
         var lastException: IOException? = null
 
-        for (attempt in 0..maxRetries) {
+        for (attempt in 0..effectiveRetries) {
             try {
                 val response = chain.proceed(request)
                 return response
             } catch (e: IOException) {
                 lastException = e
-                if (attempt < maxRetries) {
+                if (attempt < effectiveRetries) {
                     val delay = initialDelayMs * (1L shl attempt) // 1s, 2s, 4s
                     try {
                         Thread.sleep(delay)

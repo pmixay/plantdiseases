@@ -12,8 +12,8 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
+import android.animation.ValueAnimator
 import android.view.animation.DecelerateInterpolator
-import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -43,6 +43,7 @@ class ResultActivity : AppCompatActivity() {
     // Pinch-to-zoom state
     private var scaleFactor = 1.0f
     private lateinit var scaleGestureDetector: ScaleGestureDetector
+    private var skeletonAnimator: ValueAnimator? = null
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
@@ -69,10 +70,8 @@ class ResultActivity : AppCompatActivity() {
             override fun onScale(detector: ScaleGestureDetector): Boolean {
                 scaleFactor *= detector.scaleFactor
                 scaleFactor = scaleFactor.coerceIn(1.0f, 3.0f)
-                val imageFrame = binding.cardImage.findViewById<FrameLayout>(R.id.card_image)?.getChildAt(0)
-                    ?: binding.ivPlant.parent as? View ?: return true
-                imageFrame.scaleX = scaleFactor
-                imageFrame.scaleY = scaleFactor
+                binding.imageFrame.scaleX = scaleFactor
+                binding.imageFrame.scaleY = scaleFactor
                 return true
             }
         })
@@ -82,12 +81,11 @@ class ResultActivity : AppCompatActivity() {
             if (event.action == MotionEvent.ACTION_UP && event.pointerCount <= 1) {
                 // Reset zoom on single tap release after zoom
                 if (scaleFactor > 1.01f) {
-                    val imageFrame = binding.ivPlant.parent as? View
-                    imageFrame?.animate()?.scaleX(1f)?.scaleY(1f)?.setDuration(200)?.start()
+                    binding.imageFrame.animate().scaleX(1f).scaleY(1f).setDuration(200).start()
                     scaleFactor = 1.0f
                 }
             }
-            true
+            scaleGestureDetector.isInProgress
         }
     }
 
@@ -107,6 +105,7 @@ class ResultActivity : AppCompatActivity() {
             }
 
             // Hide skeleton, show content
+            skeletonAnimator?.cancel()
             binding.skeletonLayout.visibility = View.GONE
             binding.scrollView.visibility = View.VISIBLE
 
@@ -115,23 +114,20 @@ class ResultActivity : AppCompatActivity() {
     }
 
     private fun animateSkeleton() {
-        // Pulse animation on skeleton blocks
-        for (i in 0 until binding.skeletonLayout.childCount) {
-            val child = binding.skeletonLayout.getChildAt(i)
-            child.alpha = 0.3f
-            child.animate()
-                .alpha(0.7f)
-                .setDuration(800)
-                .setStartDelay((i * 150).toLong())
-                .withEndAction {
-                    child.animate().alpha(0.3f).setDuration(800).withEndAction {
-                        if (binding.skeletonLayout.visibility == View.VISIBLE) {
-                            animateSkeleton()
-                        }
-                    }.start()
+        skeletonAnimator?.cancel()
+        val animator = ValueAnimator.ofFloat(0.3f, 0.7f).apply {
+            duration = 800
+            repeatMode = ValueAnimator.REVERSE
+            repeatCount = ValueAnimator.INFINITE
+            addUpdateListener { anim ->
+                val alpha = anim.animatedValue as Float
+                for (i in 0 until binding.skeletonLayout.childCount) {
+                    binding.skeletonLayout.getChildAt(i).alpha = alpha
                 }
-                .start()
+            }
         }
+        skeletonAnimator = animator
+        animator.start()
     }
 
     private fun displayResult(scan: ScanEntity, repository: ScanRepository) {
@@ -154,8 +150,6 @@ class ResultActivity : AppCompatActivity() {
                         scan.regionWidth, scan.regionHeight,
                         origBounds.first, origBounds.second
                     )
-                } else {
-                    heatmapOverlay.setDetectionRegionNormalized(0.5f, 0.45f, 0.35f)
                 }
                 heatmapOverlay.postDelayed({
                     heatmapOverlay.animateIn()
@@ -413,17 +407,46 @@ class ResultActivity : AppCompatActivity() {
     }
 
     private fun createShareableImage(scan: ScanEntity): File {
-        val bitmap = BitmapFactory.decodeFile(scan.imagePath)
-        val result = bitmap.copy(Bitmap.Config.ARGB_8888, true)
-        bitmap.recycle()
+        // Clean old share files before creating a new one
+        cacheDir.listFiles { file -> file.name.startsWith("share_") }?.forEach { it.delete() }
+
+        // Two-pass decoding to avoid OOM on large images, downscale to max 1920px
+        val maxDim = 1920
+        val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(scan.imagePath, boundsOpts)
+        var inSampleSize = 1
+        val rawW = boundsOpts.outWidth
+        val rawH = boundsOpts.outHeight
+        while (rawW / (inSampleSize * 2) >= maxDim && rawH / (inSampleSize * 2) >= maxDim) {
+            inSampleSize *= 2
+        }
+        val decodeOpts = BitmapFactory.Options().apply {
+            this.inSampleSize = inSampleSize
+            inMutable = true
+        }
+        val result = BitmapFactory.decodeFile(scan.imagePath, decodeOpts)
+
+        // Further scale down if still exceeds max dimension
+        val finalBitmap = if (maxOf(result.width, result.height) > maxDim) {
+            val ratio = maxDim.toFloat() / maxOf(result.width, result.height)
+            val scaled = Bitmap.createScaledBitmap(
+                result, (result.width * ratio).toInt(), (result.height * ratio).toInt(), true
+            )
+            result.recycle()
+            scaled
+        } else {
+            result
+        }
 
         // Draw heatmap overlay on the bitmap if diseased
         if (!scan.isHealthy && scan.regionX != null && scan.regionY != null &&
             scan.regionWidth != null && scan.regionHeight != null) {
-            val canvas = Canvas(result)
-            val cx = scan.regionX + scan.regionWidth / 2f
-            val cy = scan.regionY + scan.regionHeight / 2f
-            val radius = (scan.regionWidth + scan.regionHeight) / 4f
+            val scaleX = finalBitmap.width.toFloat() / rawW
+            val scaleY = finalBitmap.height.toFloat() / rawH
+            val canvas = Canvas(finalBitmap)
+            val cx = (scan.regionX + scan.regionWidth / 2f) * scaleX
+            val cy = (scan.regionY + scan.regionHeight / 2f) * scaleY
+            val radius = (scan.regionWidth + scan.regionHeight) / 4f * ((scaleX + scaleY) / 2f)
 
             val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
             val gradient = android.graphics.RadialGradient(
@@ -443,9 +466,9 @@ class ResultActivity : AppCompatActivity() {
 
         val shareFile = File(cacheDir, "share_${System.currentTimeMillis()}.jpg")
         FileOutputStream(shareFile).use { out ->
-            result.compress(Bitmap.CompressFormat.JPEG, 90, out)
+            finalBitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
         }
-        result.recycle()
+        finalBitmap.recycle()
         return shareFile
     }
 
@@ -529,6 +552,12 @@ class ResultActivity : AppCompatActivity() {
     private fun Float.dpToPxF(): Float = TypedValue.applyDimension(
         TypedValue.COMPLEX_UNIT_DIP, this, resources.displayMetrics
     )
+
+    override fun onDestroy() {
+        skeletonAnimator?.cancel()
+        skeletonAnimator = null
+        super.onDestroy()
+    }
 
     companion object {
         const val EXTRA_SCAN_ID = "extra_scan_id"
