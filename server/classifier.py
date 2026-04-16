@@ -153,6 +153,12 @@ class DiseaseClassifier:
 
         # Pick a plausible class from whatever names we have
         names = self.CLASS_NAMES
+        if not names:
+            return {
+                "class_name": "unknown",
+                "confidence": 0.0,
+                "all_probs": {},
+            }
 
         if green_ratio > 0.38 and "healthy" in names:
             cls = "healthy"

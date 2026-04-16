@@ -85,6 +85,7 @@
                 app:cardElevation="2dp">
 
                 <FrameLayout
+                    android:id="@+id/image_frame"
                     android:layout_width="match_parent"
                     android:layout_height="260dp">
 

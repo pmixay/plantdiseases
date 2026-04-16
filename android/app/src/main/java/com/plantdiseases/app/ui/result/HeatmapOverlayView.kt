@@ -50,38 +50,9 @@ class HeatmapOverlayView @JvmOverloads constructor(
         invalidate()
     }
 
-    /**
-     * Legacy fallback: normalized coordinates (0-1) for center and radius.
-     * Used when no real server coordinates are available.
-     */
-    fun setDetectionRegionNormalized(cx: Float = 0.5f, cy: Float = 0.5f, radius: Float = 0.35f) {
-        val clampedCx = cx.coerceIn(0.1f, 0.9f)
-        val clampedCy = cy.coerceIn(0.1f, 0.9f)
-        val clampedR = radius.coerceIn(0.15f, 0.5f)
-        // Convert to a synthetic pixel region (view-size based, imgWidth=0 signals normalized mode)
-        regionX = 0
-        regionY = 0
-        regionW = 0
-        regionH = 0
-        imgWidth = 0
-        imgHeight = 0
-        showOverlay = true
-        // Store normalized for drawing
-        _normalizedCx = clampedCx
-        _normalizedCy = clampedCy
-        _normalizedRadius = clampedR
-        invalidate()
-    }
-
-    private var _normalizedCx = 0.5f
-    private var _normalizedCy = 0.5f
-    private var _normalizedRadius = 0.35f
 
     fun animateIn() {
-        animate()
-            .alpha(1f)
-            .setDuration(800)
-            .start()
+        alpha = 1f
         val animator = android.animation.ValueAnimator.ofFloat(0f, 0.6f)
         animator.duration = 800
         animator.addUpdateListener {
@@ -98,31 +69,20 @@ class HeatmapOverlayView @JvmOverloads constructor(
         val viewW = width.toFloat()
         val viewH = height.toFloat()
 
-        val cx: Float
-        val cy: Float
-        val radius: Float
+        // Real pixel coordinates — map through centerCrop transform
+        val scale = maxOf(viewW / imgWidth, viewH / imgHeight)
+        val scaledImgW = imgWidth * scale
+        val scaledImgH = imgHeight * scale
+        val offsetX = (scaledImgW - viewW) / 2f
+        val offsetY = (scaledImgH - viewH) / 2f
 
-        if (imgWidth > 0 && imgHeight > 0) {
-            // Real pixel coordinates — map through centerCrop transform
-            val scale = maxOf(viewW / imgWidth, viewH / imgHeight)
-            val scaledImgW = imgWidth * scale
-            val scaledImgH = imgHeight * scale
-            val offsetX = (scaledImgW - viewW) / 2f
-            val offsetY = (scaledImgH - viewH) / 2f
-
-            // Map region center from original image to view coordinates
-            val regionCxOrig = regionX + regionW / 2f
-            val regionCyOrig = regionY + regionH / 2f
-            cx = regionCxOrig * scale - offsetX
-            cy = regionCyOrig * scale - offsetY
-            // Use the average of mapped width/height as radius
-            radius = (regionW + regionH) / 2f * scale / 2f
-        } else {
-            // Normalized fallback
-            cx = viewW * _normalizedCx
-            cy = viewH * _normalizedCy
-            radius = minOf(viewW, viewH) * _normalizedRadius
-        }
+        // Map region center from original image to view coordinates
+        val regionCxOrig = regionX + regionW / 2f
+        val regionCyOrig = regionY + regionH / 2f
+        val cx = regionCxOrig * scale - offsetX
+        val cy = regionCyOrig * scale - offsetY
+        // Use the average of mapped width/height as radius
+        val radius = (regionW + regionH) / 2f * scale / 2f
 
         // Draw semi-transparent dark overlay on the whole image
         paint.color = Color.argb((40 * overlayAlpha).toInt(), 0, 0, 0)

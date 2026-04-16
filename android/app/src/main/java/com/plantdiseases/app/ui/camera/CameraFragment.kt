@@ -33,7 +33,9 @@ import com.plantdiseases.app.R
 import com.plantdiseases.app.databinding.FragmentCameraBinding
 import com.plantdiseases.app.ui.analysis.AnalysisActivity
 import com.plantdiseases.app.util.ImageUtils
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 class CameraFragment : Fragment() {
@@ -253,18 +255,25 @@ class CameraFragment : Fragment() {
      * If not enough green detected, shows warning before proceeding.
      */
     private fun checkPlantAndNavigate(imagePath: String) {
-        val hasGreen = ImageUtils.hasGreenContent(imagePath)
-        if (!hasGreen) {
-            MaterialAlertDialogBuilder(requireContext())
-                .setTitle(R.string.not_a_plant_title)
-                .setMessage(R.string.not_a_plant_warning)
-                .setPositiveButton(R.string.continue_anyway) { _, _ ->
-                    navigateToAnalysis(imagePath)
-                }
-                .setNegativeButton(R.string.cancel, null)
-                .show()
-        } else {
-            navigateToAnalysis(imagePath)
+        binding.btnCapture.isEnabled = false
+        lifecycleScope.launch {
+            val hasGreen = withContext(Dispatchers.Default) {
+                ImageUtils.hasGreenContent(imagePath)
+            }
+            if (_binding == null) return@launch
+            binding.btnCapture.isEnabled = true
+            if (!hasGreen) {
+                MaterialAlertDialogBuilder(requireContext())
+                    .setTitle(R.string.not_a_plant_title)
+                    .setMessage(R.string.not_a_plant_warning)
+                    .setPositiveButton(R.string.continue_anyway) { _, _ ->
+                        navigateToAnalysis(imagePath)
+                    }
+                    .setNegativeButton(R.string.cancel, null)
+                    .show()
+            } else {
+                navigateToAnalysis(imagePath)
+            }
         }
     }
 
