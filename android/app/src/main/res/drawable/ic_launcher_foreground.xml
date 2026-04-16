@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Foreground content fits within central 72x72 safe zone (18..90 on 108) -->
+
+    <!-- Leaf body -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,30 C54,30 32,44 32,62 C32,75 42,84 54,84 C66,84 76,75 76,62 C76,44 54,30 54,30 Z" />
+
+    <!-- Leaf vein and ribs -->
+    <path
+        android:strokeColor="#1F7A3F"
+        android:strokeWidth="2.5"
+        android:fillColor="#00000000"
+        android:pathData="M54,36 L54,80 M54,48 L43,57 M54,56 L65,48 M54,64 L44,70 M54,70 L64,62" />
+
+    <!-- Magnifier ring -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3"
+        android:pathData="M64,62 m-9,0 a9,9 0 1,0 18,0 a9,9 0 1,0 -18,0" />
+
+    <!-- Magnifier handle -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:pathData="M70,68 L77,75" />
+</vector>
