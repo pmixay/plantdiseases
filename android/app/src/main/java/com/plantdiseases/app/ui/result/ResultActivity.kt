@@ -6,7 +6,11 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
@@ -20,6 +24,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.progressindicator.LinearProgressIndicator
+import com.google.android.material.tabs.TabLayout
 import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.resource.bitmap.CenterCrop
@@ -62,6 +67,7 @@ class ResultActivity : AppCompatActivity() {
 
         binding.toolbar.setNavigationOnClickListener { finish() }
         setupPinchToZoom()
+        setupStickyHeader()
         loadResult(scanId)
     }
 
@@ -79,7 +85,6 @@ class ResultActivity : AppCompatActivity() {
         binding.cardImage.setOnTouchListener { _, event ->
             scaleGestureDetector.onTouchEvent(event)
             if (event.action == MotionEvent.ACTION_UP && event.pointerCount <= 1) {
-                // Reset zoom on single tap release after zoom
                 if (scaleFactor > 1.01f) {
                     binding.imageFrame.animate().scaleX(1f).scaleY(1f).setDuration(200).start()
                     scaleFactor = 1.0f
@@ -89,12 +94,25 @@ class ResultActivity : AppCompatActivity() {
         }
     }
 
+    // Sticky header: show disease name + confidence when scrolling (2.4)
+    private fun setupStickyHeader() {
+        binding.scrollView.setOnScrollChangeListener { _, _, scrollY, _, _ ->
+            val statusCardBottom = binding.cardStatus.bottom
+            if (scrollY > statusCardBottom) {
+                binding.stickyHeader.visibility = View.VISIBLE
+            } else {
+                binding.stickyHeader.visibility = View.GONE
+            }
+        }
+    }
+
     private fun loadResult(scanId: Long) {
         val app = application as PlantDiseasesApp
 
         // Show skeleton, hide content
         binding.skeletonLayout.visibility = View.VISIBLE
         binding.scrollView.visibility = View.GONE
+        binding.bottomActionBar.visibility = View.GONE
         animateSkeleton()
 
         lifecycleScope.launch {
@@ -108,8 +126,12 @@ class ResultActivity : AppCompatActivity() {
             skeletonAnimator?.cancel()
             binding.skeletonLayout.visibility = View.GONE
             binding.scrollView.visibility = View.VISIBLE
+            binding.bottomActionBar.visibility = View.VISIBLE
 
             displayResult(scan, app.scanRepository)
+
+            // Haptic feedback on result loaded (2.6)
+            vibrateSuccess()
         }
     }
 
@@ -130,8 +152,25 @@ class ResultActivity : AppCompatActivity() {
         animator.start()
     }
 
+    // Success haptic pattern: short-pause-short (2.6)
+    private fun vibrateSuccess() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val vm = getSystemService(VIBRATOR_MANAGER_SERVICE) as VibratorManager
+                vm.defaultVibrator.vibrate(
+                    VibrationEffect.createWaveform(longArrayOf(0, 30, 80, 30), -1)
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                val v = getSystemService(VIBRATOR_SERVICE) as Vibrator
+                v.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 30, 80, 30), -1))
+            }
+        } catch (_: Exception) {}
+    }
+
     private fun displayResult(scan: ScanEntity, repository: ScanRepository) {
         val isRu = LocaleHelper.isRussian(this)
+        val diseaseName = if (isRu) scan.diseaseNameRu else scan.diseaseName
 
         binding.apply {
             // Image
@@ -140,7 +179,7 @@ class ResultActivity : AppCompatActivity() {
                 .transform(CenterCrop(), RoundedCorners(24))
                 .into(ivPlant)
 
-            // Heatmap overlay for diseased plants — use real coordinates from server
+            // Heatmap overlay for diseased plants
             if (!scan.isHealthy) {
                 if (scan.regionX != null && scan.regionY != null &&
                     scan.regionWidth != null && scan.regionHeight != null) {
@@ -160,14 +199,29 @@ class ResultActivity : AppCompatActivity() {
             }
 
             // Disease name
-            tvDiseaseName.text = if (isRu) scan.diseaseNameRu else scan.diseaseName
+            tvDiseaseName.text = diseaseName
 
-            // Confidence
+            // Sticky header data
+            tvStickyName.text = diseaseName
+
+            // Confidence with easeOutCubic animation (2.5)
             val confidencePercent = (scan.confidence * 100).toInt()
             tvConfidence.text = getString(R.string.confidence_format, confidencePercent)
-            progressConfidence.progress = confidencePercent
+            tvStickyConfidence.text = getString(R.string.confidence_format, confidencePercent)
 
-            // Status
+            // Animate confidence bar with easeOutCubic
+            progressConfidence.max = 100
+            progressConfidence.progress = 0
+            val confidenceAnimator = ValueAnimator.ofInt(0, confidencePercent).apply {
+                duration = 800
+                interpolator = DecelerateInterpolator(2.5f)
+                addUpdateListener { anim ->
+                    progressConfidence.progress = anim.animatedValue as Int
+                }
+            }
+            confidenceAnimator.start()
+
+            // Status (merged card — 2.4)
             if (scan.isHealthy) {
                 cardStatus.setCardBackgroundColor(getColor(R.color.healthy_green_bg))
                 tvStatusLabel.text = getString(R.string.status_healthy)
@@ -186,42 +240,20 @@ class ResultActivity : AppCompatActivity() {
             // Top-3 alternative diagnoses
             buildAlternativeDiagnoses(scan, repository, isRu)
 
-            // Treatment with step icons
-            val treatment = repository.parseStringList(
-                if (isRu) scan.treatmentRu else scan.treatment
-            )
-            if (treatment.isNotEmpty()) {
-                treatmentSection.visibility = View.VISIBLE
-                buildStepsList(treatmentStepsLayout, treatment, R.drawable.bg_step_circle, R.color.primary)
-            } else {
-                treatmentSection.visibility = View.GONE
-            }
-
-            // Prevention with step icons
-            val prevention = repository.parseStringList(
-                if (isRu) scan.preventionRu else scan.prevention
-            )
-            if (prevention.isNotEmpty()) {
-                preventionSection.visibility = View.VISIBLE
-                buildStepsList(preventionStepsLayout, prevention, R.drawable.bg_step_circle_green, R.color.healthy_green)
-            } else {
-                preventionSection.visibility = View.GONE
-            }
+            // Treatment/Prevention tabs (2.4)
+            setupTreatmentPreventionTabs(scan, repository, isRu)
 
             // Date
             tvDate.text = ImageUtils.formatTimestamp(scan.timestamp)
 
-            // New Scan button
-            btnNewScan.setOnClickListener {
-                finish()
-            }
+            // Bottom action bar (2.4)
+            btnNewScan.setOnClickListener { finish() }
 
-            // Share button — now with image
             btnShare.setOnClickListener {
                 shareWithImage(scan, repository, isRu)
             }
 
-            // Low confidence warning + retry analysis
+            // Low confidence
             if (scan.confidence < 0.5f && !scan.isHealthy) {
                 cardLowConfidence.visibility = View.VISIBLE
                 btnRetryAnalysis.visibility = View.VISIBLE
@@ -230,7 +262,6 @@ class ResultActivity : AppCompatActivity() {
                 btnRetryAnalysis.visibility = View.GONE
             }
 
-            // Retry analysis button
             btnRetryAnalysis.setOnClickListener {
                 val intent = Intent(this@ResultActivity, AnalysisActivity::class.java).apply {
                     putExtra(AnalysisActivity.EXTRA_IMAGE_PATH, scan.imagePath)
@@ -239,7 +270,6 @@ class ResultActivity : AppCompatActivity() {
                 finish()
             }
 
-            // Delete button
             btnDelete.setOnClickListener {
                 MaterialAlertDialogBuilder(this@ResultActivity)
                     .setTitle(R.string.delete_scan)
@@ -261,6 +291,63 @@ class ResultActivity : AppCompatActivity() {
         }
     }
 
+    // Treatment/Prevention tabs (2.4)
+    private fun setupTreatmentPreventionTabs(scan: ScanEntity, repository: ScanRepository, isRu: Boolean) {
+        val treatment = repository.parseStringList(
+            if (isRu) scan.treatmentRu else scan.treatment
+        )
+        val prevention = repository.parseStringList(
+            if (isRu) scan.preventionRu else scan.prevention
+        )
+
+        if (treatment.isEmpty() && prevention.isEmpty()) {
+            binding.cardTreatmentPrevention.visibility = View.GONE
+            return
+        }
+
+        binding.cardTreatmentPrevention.visibility = View.VISIBLE
+
+        // Add tabs
+        if (treatment.isNotEmpty()) {
+            binding.tabsTreatmentPrevention.addTab(
+                binding.tabsTreatmentPrevention.newTab().setText(R.string.treatment_label).setTag("treatment")
+            )
+            buildStepsList(binding.treatmentStepsLayout, treatment, R.drawable.bg_step_circle, R.color.primary)
+        }
+        if (prevention.isNotEmpty()) {
+            binding.tabsTreatmentPrevention.addTab(
+                binding.tabsTreatmentPrevention.newTab().setText(R.string.prevention_label).setTag("prevention")
+            )
+            buildStepsList(binding.preventionStepsLayout, prevention, R.drawable.bg_step_circle_green, R.color.healthy_green)
+        }
+
+        // Show first tab content by default
+        if (treatment.isNotEmpty()) {
+            binding.treatmentStepsLayout.visibility = View.VISIBLE
+            binding.preventionStepsLayout.visibility = View.GONE
+        } else {
+            binding.treatmentStepsLayout.visibility = View.GONE
+            binding.preventionStepsLayout.visibility = View.VISIBLE
+        }
+
+        binding.tabsTreatmentPrevention.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
+            override fun onTabSelected(tab: TabLayout.Tab) {
+                when (tab.tag) {
+                    "treatment" -> {
+                        binding.treatmentStepsLayout.visibility = View.VISIBLE
+                        binding.preventionStepsLayout.visibility = View.GONE
+                    }
+                    "prevention" -> {
+                        binding.treatmentStepsLayout.visibility = View.GONE
+                        binding.preventionStepsLayout.visibility = View.VISIBLE
+                    }
+                }
+            }
+            override fun onTabUnselected(tab: TabLayout.Tab) {}
+            override fun onTabReselected(tab: TabLayout.Tab) {}
+        })
+    }
+
     private fun buildAlternativeDiagnoses(scan: ScanEntity, repository: ScanRepository, isRu: Boolean) {
         val allProbs = repository.parseAllProbs(scan.allProbs)
         if (allProbs.isEmpty()) {
@@ -268,7 +355,6 @@ class ResultActivity : AppCompatActivity() {
             return
         }
 
-        // Sort by probability descending, take top 3
         val top3 = allProbs.entries
             .sortedByDescending { it.value }
             .take(3)
@@ -281,7 +367,6 @@ class ResultActivity : AppCompatActivity() {
         binding.cardAlternatives.visibility = View.VISIBLE
         binding.alternativesLayout.removeAllViews()
 
-        // Map of class keys to display names
         val diseaseNames = mapOf(
             "healthy" to (if (isRu) "Здоровое растение" else "Healthy Plant"),
             "bacterial_spot" to (if (isRu) "Бактериальная пятнистость" else "Bacterial Spot"),
@@ -315,7 +400,6 @@ class ResultActivity : AppCompatActivity() {
             val displayName = diseaseNames[entry.key] ?: entry.key
             val isMain = index == 0
 
-            // Name + percentage row
             val nameRow = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -339,19 +423,30 @@ class ResultActivity : AppCompatActivity() {
             nameRow.addView(nameView)
             nameRow.addView(percentView)
 
-            // Confidence bar
+            // Confidence bar with staggered easeOutCubic animation (2.5)
             val progressBar = LinearProgressIndicator(this).apply {
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply { topMargin = 4.dpToPx() }
                 max = 100
-                progress = percent
+                progress = 0
                 trackCornerRadius = 4.dpToPx()
                 trackThickness = if (isMain) 8.dpToPx() else 6.dpToPx()
                 setIndicatorColor(getColor(if (isMain) R.color.primary else R.color.primary_light))
                 trackColor = getColor(R.color.surface_variant)
             }
+
+            // Staggered animation: main first, then 150ms delay each (2.5)
+            val barAnimator = ValueAnimator.ofInt(0, percent).apply {
+                duration = 600
+                startDelay = (index * 150).toLong()
+                interpolator = DecelerateInterpolator(2.5f)
+                addUpdateListener { anim ->
+                    progressBar.progress = anim.animatedValue as Int
+                }
+            }
+            barAnimator.start()
 
             row.addView(nameRow)
             row.addView(progressBar)
@@ -373,11 +468,9 @@ class ResultActivity : AppCompatActivity() {
             }
         }
 
-        // Try to share with image
         try {
             val imageFile = File(scan.imagePath)
             if (imageFile.exists()) {
-                // Create a shareable copy with heatmap overlay
                 val shareFile = createShareableImage(scan)
                 val imageUri = FileProvider.getUriForFile(
                     this, "${packageName}.fileprovider", shareFile
@@ -393,11 +486,8 @@ class ResultActivity : AppCompatActivity() {
                 startActivity(Intent.createChooser(sendIntent, getString(R.string.share)))
                 return
             }
-        } catch (_: Exception) {
-            // Fall through to text-only share
-        }
+        } catch (_: Exception) { }
 
-        // Fallback: text-only share
         val sendIntent = Intent().apply {
             action = Intent.ACTION_SEND
             putExtra(Intent.EXTRA_TEXT, shareText)
@@ -407,10 +497,8 @@ class ResultActivity : AppCompatActivity() {
     }
 
     private fun createShareableImage(scan: ScanEntity): File {
-        // Clean old share files before creating a new one
         cacheDir.listFiles { file -> file.name.startsWith("share_") }?.forEach { it.delete() }
 
-        // Two-pass decoding to avoid OOM on large images, downscale to max 1920px
         val maxDim = 1920
         val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(scan.imagePath, boundsOpts)
@@ -426,7 +514,6 @@ class ResultActivity : AppCompatActivity() {
         }
         val result = BitmapFactory.decodeFile(scan.imagePath, decodeOpts)
 
-        // Further scale down if still exceeds max dimension
         val finalBitmap = if (maxOf(result.width, result.height) > maxDim) {
             val ratio = maxDim.toFloat() / maxOf(result.width, result.height)
             val scaled = Bitmap.createScaledBitmap(
@@ -438,7 +525,6 @@ class ResultActivity : AppCompatActivity() {
             result
         }
 
-        // Draw heatmap overlay on the bitmap if diseased
         if (!scan.isHealthy && scan.regionX != null && scan.regionY != null &&
             scan.regionWidth != null && scan.regionHeight != null) {
             val scaleX = finalBitmap.width.toFloat() / rawW
@@ -493,7 +579,6 @@ class ResultActivity : AppCompatActivity() {
                 }
             }
 
-            // Step number circle
             val numberView = TextView(this).apply {
                 layoutParams = LinearLayout.LayoutParams(28.dpToPx(), 28.dpToPx())
                 setBackgroundResource(bgRes)
@@ -504,7 +589,6 @@ class ResultActivity : AppCompatActivity() {
                 typeface = android.graphics.Typeface.DEFAULT_BOLD
             }
 
-            // Step text
             val textView = TextView(this).apply {
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
                     marginStart = 12.dpToPx()
@@ -524,12 +608,10 @@ class ResultActivity : AppCompatActivity() {
     private fun animateCardsIn() {
         val cards = listOf(
             binding.cardStatus,
-            binding.cardConfidence,
             binding.cardDescription,
+            binding.cardTreatmentPrevention,
             binding.cardAlternatives,
-            binding.treatmentSection,
-            binding.preventionSection,
-            binding.btnNewScan
+            binding.cardLowConfidence
         ).filter { it.visibility == View.VISIBLE }
 
         cards.forEachIndexed { index, view ->

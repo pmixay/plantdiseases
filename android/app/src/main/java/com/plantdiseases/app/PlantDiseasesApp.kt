@@ -1,6 +1,7 @@
 package com.plantdiseases.app
 
 import android.app.Application
+import com.google.android.material.color.DynamicColors
 import com.plantdiseases.app.data.local.AppDatabase
 import com.plantdiseases.app.data.remote.PlantApiClient
 import com.plantdiseases.app.data.repository.ScanRepository
@@ -19,5 +20,7 @@ class PlantDiseasesApp : Application() {
         super.onCreate()
         LocaleHelper.applyLocale(this)
         ThemeHelper.applySavedTheme(this)
+        // Material You: on Android 12+ use wallpaper-based dynamic colors
+        DynamicColors.applyToActivitiesIfAvailable(this)
     }
 }

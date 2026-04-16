@@ -1,29 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Brand colors — green gradient palette -->
-    <color name="primary">#2E7D32</color>
-    <color name="primary_dark">#1B5E20</color>
-    <color name="primary_light">#C8E6C9</color>
-    <color name="primary_variant">#388E3C</color>
+    <!-- Brand colors — botanical palette -->
+    <color name="primary">#1F7A3F</color>
+    <color name="primary_dark">#155A2E</color>
+    <color name="primary_light">#D7EDE0</color>
+    <color name="primary_variant">#2A8F4F</color>
     <color name="on_primary">#FFFFFF</color>
+    <color name="secondary">#D4A574</color>
+    <color name="on_secondary">#FFFFFF</color>
 
     <!-- Gradient endpoints for toolbar/header -->
-    <color name="gradient_start">#1B5E20</color>
-    <color name="gradient_end">#43A047</color>
+    <color name="gradient_start">#155A2E</color>
+    <color name="gradient_end">#2A8F4F</color>
 
     <!-- Surface -->
-    <color name="background">#F4F8F4</color>
+    <color name="background">#FAFDF9</color>
     <color name="surface">#FFFFFF</color>
     <color name="surface_variant">#F0F5F0</color>
     <color name="on_surface">#1A1C1A</color>
-    <color name="on_surface_secondary">#5F6B5E</color>
+    <color name="on_surface_secondary">#4A5549</color>
 
     <!-- Semantic -->
-    <color name="healthy_green">#43A047</color>
-    <color name="healthy_green_bg">#E8F5E9</color>
-    <color name="disease_red">#E53935</color>
-    <color name="disease_red_bg">#FFEBEE</color>
-    <color name="warning_amber">#EF6C00</color>
+    <color name="healthy_green">#2E8B57</color>
+    <color name="healthy_green_bg">#E4F2EA</color>
+    <color name="disease_red">#C44536</color>
+    <color name="disease_red_bg">#FCEAE8</color>
+    <color name="warning_amber">#D4820A</color>
     <color name="warning_amber_bg">#FFF3E0</color>
 
     <!-- Category colors -->
@@ -38,4 +40,8 @@
     <color name="hint_pill_bg">#80000000</color>
     <color name="divider">#E0E4E0</color>
     <color name="card_stroke">#E8ECE8</color>
+    <color name="search_highlight">#FFF3B0</color>
+    <color name="shimmer_base">#E0E4E0</color>
+    <color name="shimmer_highlight">#F5F5F5</color>
+    <color name="camera_scrim">#40000000</color>
 </resources>

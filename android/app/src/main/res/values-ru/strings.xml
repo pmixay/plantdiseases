@@ -151,4 +151,13 @@
 
     <!-- How to use (onboarding from profile) -->
     <string name="how_to_use">Как пользоваться</string>
+
+    <!-- Empty states (2.7) -->
+    <string name="first_scan_cta">Сделать первый скан</string>
+    <string name="filter_empty_hint">Пока нет ничего в этой категории. Продолжайте сканировать — ваша зелёная полка растёт!</string>
+    <string name="guide_search_empty">Ничего не найдено по запросу \"%s\". Попробуйте другое слово.</string>
+
+    <!-- Camera grid overlay (2.3) -->
+    <string name="grid_overlay">Сетка</string>
+    <string name="zoom_indicator">%sx</string>
 </resources>

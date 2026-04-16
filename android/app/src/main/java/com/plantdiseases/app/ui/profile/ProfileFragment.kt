@@ -10,6 +10,7 @@ import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
+import androidx.navigation.fragment.findNavController
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.PlantDiseasesApp
@@ -24,6 +25,7 @@ class ProfileFragment : Fragment() {
 
     private var _binding: FragmentProfileBinding? = null
     private val binding get() = _binding!!
+    private var isFirstLoad = true
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -50,6 +52,11 @@ class ProfileFragment : Fragment() {
         // How to Use — re-open onboarding
         binding.cardHowToUse.setOnClickListener {
             startActivity(Intent(requireContext(), OnboardingActivity::class.java))
+        }
+
+        // Profile empty state CTA (2.7)
+        binding.btnStartScan.setOnClickListener {
+            findNavController().navigate(R.id.cameraFragment)
         }
 
         setupThemeChips()
@@ -81,8 +88,22 @@ class ProfileFragment : Fragment() {
         val app = requireActivity().application as PlantDiseasesApp
         val isRu = LocaleHelper.isRussian(requireContext())
 
+        // Show shimmer on first load (2.2)
+        if (isFirstLoad) {
+            binding.shimmerStats.visibility = View.VISIBLE
+            binding.shimmerStats.startShimmer()
+            binding.statsLayout.visibility = View.GONE
+        }
+
         lifecycleScope.launch {
             val stats = app.scanRepository.getStats()
+
+            // Hide shimmer
+            if (isFirstLoad) {
+                binding.shimmerStats.stopShimmer()
+                binding.shimmerStats.visibility = View.GONE
+                isFirstLoad = false
+            }
 
             if (stats.totalScans == 0) {
                 binding.statsLayout.visibility = View.GONE

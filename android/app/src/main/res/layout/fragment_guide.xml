@@ -22,6 +22,7 @@
         app:boxCornerRadiusBottomEnd="12dp"
         app:startIconDrawable="@android:drawable/ic_menu_search"
         app:startIconTint="@color/on_surface_secondary"
+        app:endIconMode="clear_text"
         app:hintEnabled="false">
 
         <com.google.android.material.textfield.TextInputEditText
@@ -35,6 +36,16 @@
 
     </com.google.android.material.textfield.TextInputLayout>
 
+    <!-- Recent searches chip row (2.8) -->
+    <com.google.android.material.chip.ChipGroup
+        android:id="@+id/recent_searches_group"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="4dp"
+        android:visibility="gone"
+        app:singleLine="true" />
+
     <com.google.android.material.tabs.TabLayout
         android:id="@+id/tab_layout"
         android:layout_width="match_parent"
@@ -47,11 +58,46 @@
         app:tabTextColor="@color/on_surface_secondary"
         app:tabRippleColor="@color/primary_light" />
 
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/rv_guide"
+    <FrameLayout
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:clipToPadding="false"
-        android:padding="16dp" />
+        android:layout_height="match_parent">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/rv_guide"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:padding="16dp" />
+
+        <!-- Search empty state (2.7) -->
+        <LinearLayout
+            android:id="@+id/search_empty_layout"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:paddingHorizontal="32dp"
+            android:visibility="gone">
+
+            <ImageView
+                android:layout_width="80dp"
+                android:layout_height="80dp"
+                android:src="@drawable/ic_guide"
+                android:contentDescription="@string/search_guide"
+                app:tint="@color/primary_light" />
+
+            <TextView
+                android:id="@+id/tv_search_empty"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:textColor="@color/on_surface_secondary"
+                android:textSize="14sp"
+                android:gravity="center" />
+
+        </LinearLayout>
+
+    </FrameLayout>
 
 </LinearLayout>

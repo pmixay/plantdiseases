@@ -7,22 +7,74 @@
     android:background="@color/background">
 
     <com.google.android.material.appbar.AppBarLayout
+        android:id="@+id/app_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:background="@color/primary"
         app:elevation="0dp">
 
-        <com.google.android.material.appbar.MaterialToolbar
-            android:id="@+id/toolbar"
+        <com.google.android.material.appbar.CollapsingToolbarLayout
+            android:id="@+id/collapsing_toolbar"
             android:layout_width="match_parent"
-            android:layout_height="?attr/actionBarSize"
-            android:background="@color/primary"
-            app:navigationIcon="@drawable/ic_back"
-            app:navigationIconTint="@color/on_primary"
-            app:title="@string/result_title"
-            app:titleTextColor="@color/on_primary" />
+            android:layout_height="wrap_content"
+            app:layout_scrollFlags="scroll|exitUntilCollapsed"
+            app:contentScrim="@color/primary"
+            app:expandedTitleGravity="bottom"
+            app:expandedTitleMarginStart="16dp"
+            app:expandedTitleTextAppearance="@style/TextAppearance.App.Toolbar"
+            app:collapsedTitleTextAppearance="@style/TextAppearance.App.Toolbar"
+            app:expandedTitleTextColor="@color/on_primary"
+            app:collapsedTitleTextColor="@color/on_primary">
+
+            <com.google.android.material.appbar.MaterialToolbar
+                android:id="@+id/toolbar"
+                android:layout_width="match_parent"
+                android:layout_height="?attr/actionBarSize"
+                android:background="@color/primary"
+                app:layout_collapseMode="pin"
+                app:navigationIcon="@drawable/ic_back"
+                app:navigationIconTint="@color/on_primary"
+                app:title="@string/result_title"
+                app:titleTextColor="@color/on_primary" />
+
+        </com.google.android.material.appbar.CollapsingToolbarLayout>
 
     </com.google.android.material.appbar.AppBarLayout>
+
+    <!-- Sticky header: disease name + confidence (2.4) -->
+    <LinearLayout
+        android:id="@+id/sticky_header"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="8dp"
+        android:background="@color/surface"
+        android:elevation="4dp"
+        android:visibility="gone"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+
+        <TextView
+            android:id="@+id/tv_sticky_name"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textSize="16sp"
+            android:textColor="@color/on_surface"
+            android:fontFamily="sans-serif-medium"
+            android:maxLines="1"
+            android:ellipsize="end" />
+
+        <TextView
+            android:id="@+id/tv_sticky_confidence"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="14sp"
+            android:textColor="@color/primary"
+            android:fontFamily="sans-serif-medium" />
+
+    </LinearLayout>
 
     <!-- Skeleton loading state -->
     <LinearLayout
@@ -67,7 +119,7 @@
         android:visibility="gone"
         app:layout_behavior="@string/appbar_scrolling_view_behavior"
         android:clipToPadding="false"
-        android:paddingBottom="24dp">
+        android:paddingBottom="80dp">
 
         <LinearLayout
             android:id="@+id/content_layout"
@@ -93,7 +145,8 @@
                         android:id="@+id/iv_plant"
                         android:layout_width="match_parent"
                         android:layout_height="match_parent"
-                        android:scaleType="centerCrop" />
+                        android:scaleType="centerCrop"
+                        android:contentDescription="@string/result_title" />
 
                     <com.plantdiseases.app.ui.result.HeatmapOverlayView
                         android:id="@+id/heatmap_overlay"
@@ -121,67 +174,15 @@
 
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- Status card -->
+            <!-- Combined Status + Confidence + Date card (2.4) -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/card_status"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="16dp"
                 app:cardCornerRadius="16dp"
-                app:cardElevation="0dp">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:padding="16dp">
-
-                    <ImageView
-                        android:id="@+id/iv_status_icon"
-                        android:layout_width="40dp"
-                        android:layout_height="40dp" />
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginStart="12dp"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:id="@+id/tv_status_label"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:textSize="13sp"
-                            android:fontFamily="sans-serif-medium"
-                            android:textAllCaps="true"
-                            android:letterSpacing="0.05" />
-
-                        <TextView
-                            android:id="@+id/tv_disease_name"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
-                            android:textSize="22sp"
-                            android:textColor="@color/on_surface"
-                            android:fontFamily="sans-serif-medium" />
-
-                    </LinearLayout>
-
-                </LinearLayout>
-
-            </com.google.android.material.card.MaterialCardView>
-
-            <!-- Confidence -->
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/card_confidence"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                app:cardCornerRadius="16dp"
                 app:cardElevation="0dp"
-                app:cardBackgroundColor="@color/surface">
+                android:foreground="?attr/selectableItemBackground">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -189,9 +190,53 @@
                     android:orientation="vertical"
                     android:padding="16dp">
 
+                    <!-- Status row -->
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <ImageView
+                            android:id="@+id/iv_status_icon"
+                            android:layout_width="40dp"
+                            android:layout_height="40dp"
+                            android:contentDescription="@string/status_healthy" />
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginStart="12dp"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:id="@+id/tv_status_label"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:textSize="13sp"
+                                android:fontFamily="sans-serif-medium"
+                                android:textAllCaps="true"
+                                android:letterSpacing="0.05" />
+
+                            <TextView
+                                android:id="@+id/tv_disease_name"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:textSize="22sp"
+                                android:textColor="@color/on_surface"
+                                android:fontFamily="sans-serif-medium" />
+
+                        </LinearLayout>
+
+                    </LinearLayout>
+
+                    <!-- Confidence row -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
                         android:orientation="horizontal">
 
                         <TextView
@@ -222,6 +267,7 @@
                         app:trackCornerRadius="4dp"
                         app:trackThickness="8dp" />
 
+                    <!-- Date row -->
                     <TextView
                         android:id="@+id/tv_date"
                         android:layout_width="wrap_content"
@@ -242,7 +288,8 @@
                 android:layout_marginTop="12dp"
                 app:cardCornerRadius="16dp"
                 app:cardElevation="0dp"
-                app:cardBackgroundColor="@color/surface">
+                app:cardBackgroundColor="@color/surface"
+                android:foreground="?attr/selectableItemBackground">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -271,97 +318,51 @@
 
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- Treatment with step icons -->
-            <LinearLayout
-                android:id="@+id/treatment_section"
+            <!-- Treatment/Prevention tabs card (2.4) -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/card_treatment_prevention"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
-                android:orientation="vertical">
+                app:cardCornerRadius="16dp"
+                app:cardElevation="0dp"
+                app:cardBackgroundColor="@color/surface">
 
-                <com.google.android.material.card.MaterialCardView
-                    android:id="@+id/card_treatment"
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    app:cardCornerRadius="16dp"
-                    app:cardElevation="0dp"
-                    app:cardBackgroundColor="@color/surface">
+                    android:orientation="vertical">
 
+                    <com.google.android.material.tabs.TabLayout
+                        android:id="@+id/tabs_treatment_prevention"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        app:tabMode="fixed"
+                        app:tabGravity="fill"
+                        app:tabIndicatorColor="@color/primary"
+                        app:tabSelectedTextColor="@color/primary"
+                        app:tabTextColor="@color/on_surface_secondary" />
+
+                    <!-- Treatment steps -->
                     <LinearLayout
+                        android:id="@+id/treatment_steps_layout"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:padding="16dp">
+                        android:padding="16dp" />
 
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/treatment_label"
-                            android:textSize="16sp"
-                            android:textColor="@color/primary"
-                            android:fontFamily="sans-serif-medium"
-                            android:drawableStart="@drawable/ic_treatment"
-                            android:drawablePadding="8dp"
-                            android:drawableTint="@color/primary" />
-
-                        <LinearLayout
-                            android:id="@+id/treatment_steps_layout"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="12dp"
-                            android:orientation="vertical" />
-
-                    </LinearLayout>
-
-                </com.google.android.material.card.MaterialCardView>
-
-            </LinearLayout>
-
-            <!-- Prevention with step icons -->
-            <LinearLayout
-                android:id="@+id/prevention_section"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:orientation="vertical">
-
-                <com.google.android.material.card.MaterialCardView
-                    android:id="@+id/card_prevention"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    app:cardCornerRadius="16dp"
-                    app:cardElevation="0dp"
-                    app:cardBackgroundColor="@color/surface">
-
+                    <!-- Prevention steps -->
                     <LinearLayout
+                        android:id="@+id/prevention_steps_layout"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:padding="16dp">
+                        android:padding="16dp"
+                        android:visibility="gone" />
 
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/prevention_label"
-                            android:textSize="16sp"
-                            android:textColor="@color/healthy_green"
-                            android:fontFamily="sans-serif-medium"
-                            android:drawableStart="@drawable/ic_prevention"
-                            android:drawablePadding="8dp"
-                            android:drawableTint="@color/healthy_green" />
+                </LinearLayout>
 
-                        <LinearLayout
-                            android:id="@+id/prevention_steps_layout"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="12dp"
-                            android:orientation="vertical" />
-
-                    </LinearLayout>
-
-                </com.google.android.material.card.MaterialCardView>
-
-            </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
 
             <!-- Top-3 alternative diagnoses — explainable AI -->
             <com.google.android.material.card.MaterialCardView
@@ -372,7 +373,8 @@
                 android:visibility="gone"
                 app:cardCornerRadius="16dp"
                 app:cardElevation="0dp"
-                app:cardBackgroundColor="@color/surface">
+                app:cardBackgroundColor="@color/surface"
+                android:foreground="?attr/selectableItemBackground">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -429,7 +431,8 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="⚠️"
-                        android:textSize="20sp" />
+                        android:textSize="20sp"
+                        android:importantForAccessibility="no" />
 
                     <TextView
                         android:layout_width="0dp"
@@ -444,66 +447,78 @@
 
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- Retry analysis button (shown at low confidence) -->
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_retry_analysis"
-                style="@style/Widget.Material3.Button.OutlinedButton"
-                android:layout_width="match_parent"
-                android:layout_height="48dp"
-                android:layout_marginTop="12dp"
-                android:text="@string/retry_analysis"
-                android:visibility="gone"
-                app:cornerRadius="16dp"
-                app:strokeColor="@color/primary"
-                app:icon="@drawable/ic_scan"
-                app:iconTint="@color/primary" />
+        </LinearLayout>
 
-            <!-- New Scan button -->
+    </androidx.core.widget.NestedScrollView>
+
+    <!-- Bottom action bar (2.4) — replaces stacked buttons -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/bottom_action_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        app:cardCornerRadius="0dp"
+        app:cardElevation="8dp"
+        app:cardBackgroundColor="@color/surface">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:paddingVertical="8dp"
+            android:paddingHorizontal="16dp">
+
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_new_scan"
-                android:layout_width="match_parent"
-                android:layout_height="56dp"
-                android:layout_marginTop="20dp"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:layout_marginEnd="8dp"
                 android:text="@string/new_scan"
-                android:textSize="16sp"
                 app:icon="@drawable/ic_scan"
                 app:iconGravity="textStart"
                 app:cornerRadius="16dp"
                 app:backgroundTint="@color/primary" />
 
-            <!-- Action buttons -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:orientation="horizontal"
-                android:gravity="center">
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_share"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_marginEnd="8dp"
+                app:icon="@drawable/ic_share"
+                app:iconGravity="textStart"
+                app:iconPadding="0dp"
+                app:iconTint="@color/primary"
+                app:cornerRadius="16dp" />
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btn_share"
-                    style="@style/Widget.Material3.Button.TonalButton"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginEnd="8dp"
-                    android:text="@string/share"
-                    app:icon="@drawable/ic_share"
-                    app:iconTint="@color/primary" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_retry_analysis"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_marginEnd="8dp"
+                android:visibility="gone"
+                app:icon="@drawable/ic_scan"
+                app:iconGravity="textStart"
+                app:iconPadding="0dp"
+                app:iconTint="@color/primary"
+                app:cornerRadius="16dp" />
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btn_delete"
-                    style="@style/Widget.Material3.Button.TextButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/delete_scan"
-                    android:textColor="@color/disease_red"
-                    app:icon="@drawable/ic_delete"
-                    app:iconTint="@color/disease_red" />
-
-            </LinearLayout>
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_delete"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                app:icon="@drawable/ic_delete"
+                app:iconGravity="textStart"
+                app:iconPadding="0dp"
+                app:iconTint="@color/disease_red"
+                app:cornerRadius="16dp" />
 
         </LinearLayout>
 
-    </androidx.core.widget.NestedScrollView>
+    </com.google.android.material.card.MaterialCardView>
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>
