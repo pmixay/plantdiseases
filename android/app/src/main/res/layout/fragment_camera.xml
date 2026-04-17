@@ -243,7 +243,7 @@
                 android:layout_height="wrap_content"
                 android:src="@drawable/ic_scan"
                 android:contentDescription="@string/take_photo"
-                app:fabSize="large"
+                app:fabSize="auto"
                 app:fabCustomSize="72dp"
                 app:maxImageSize="36dp"
                 app:backgroundTint="@color/primary"
