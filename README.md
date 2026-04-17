@@ -121,24 +121,26 @@ python train.py --classifier # train classifier only
 ## Android App
 
 ### Features
-- **Camera scanner** — point at a plant leaf and capture
-- **Image gallery picker** — analyse photos from device
-- **Scan history** — all results saved locally in Room DB
-- **Plant care guide** — 22 articles on diseases, pests, watering, lighting
-- **Profile & statistics** — total scans, healthy/diseased ratio, "About Model" info
-- **Real Grad-CAM heatmap** — detection region mapped from server pixel coordinates with centerCrop transform
-- **Top-3 alternative diagnoses** — explainable AI with confidence bars
-- **Share results with image** — export diagnosis text + photo with heatmap overlay via FileProvider
-- **Blur detection** — Laplacian variance check warns before uploading blurry photos
-- **Low confidence warning** — alert + "Retry Analysis" button when result is uncertain
-- **HTTP 429 handling** — dedicated "Server busy" message for rate-limited requests
-- **Skeleton loader** — smooth loading state in ResultActivity while Room query runs
-- **Pinch-to-zoom** — examine heatmap details on the result photo
-- **Edge-to-edge display** — transparent status bar, content under system bars
-- **Onboarding from Profile** — "How to Use" button to re-watch onboarding
-- **Bilingual** — Russian / English with one-tap switching
-- **Signed release APK** — signing config with ProGuard rules for Retrofit/Room/Lottie/Gson
-- **Min SDK 26** (Android 8.0+)
+- **Camera scanner** — point at a plant leaf and capture with a rule-of-thirds grid, tap-to-focus, and torch toggle.
+- **Image gallery picker** — analyse photos already on the device.
+- **Scan history** — all results saved locally in Room with migrations (no destructive fallbacks).
+- **Plant care guide** — 22 bilingual articles (diseases, pests, watering, lighting, care) with fuzzy search and recent-query chips.
+- **Profile & statistics** — total scans, healthy/diseased split, most common disease, storage breakdown.
+- **Real Grad-CAM heatmap** — pixel-accurate detection region mapped through `centerCrop`, with a cached radial gradient and a pulsing fill animator that cleans itself up in `onDetachedFromWindow`.
+- **Top-3 alternative diagnoses** — explainable AI with confidence bars and Shannon-entropy uncertainty.
+- **Share results with image** — export diagnosis text + photo with the heatmap overlay via `FileProvider`.
+- **Blur pre-check** — bulk Laplacian variance warns before uploading blurry photos.
+- **Green-content pre-check** — rejects frames that clearly aren't a plant before burning a server call.
+- **Low-confidence warning** — calm inline notice with a "Retry Analysis" action when entropy is high.
+- **Smart retry policy** — `RetryInterceptor` backs off on transient `IOException`, HTTP 429, and HTTP 503, and honours the server's `Retry-After` seconds header.
+- **Skeleton / shimmer loaders** — polished loading states while Room queries resolve.
+- **Pinch-to-zoom** — examine heatmap details on the result photo.
+- **Edge-to-edge display** — transparent status bar with content under system bars and predictive back enabled.
+- **Onboarding with animated dots** — smooth `ValueAnimator`-driven indicator expand/contract, not a jarring snap.
+- **Bilingual** — Russian / English with one-tap switching and a volatile-cached lookup so every `onBind` is a single memory read.
+- **Hardened backups** — `allowBackup=false` plus `data_extraction_rules` that exclude files, prefs, and databases from cloud/device-transfer archives.
+- **Signed release APK** — signing config with ProGuard rules for Retrofit/Room/Lottie/Gson.
+- **Min SDK 26** (Android 8.0+).
 
 ### Tech Stack
 | Component | Library |
@@ -265,14 +267,24 @@ start.bat --train
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/health` | Health check + pipeline status |
+| `GET` | `/api/health` | Liveness probe + pipeline status + uptime |
+| `GET` | `/api/version` | Server version, model digest, class count |
+| `GET` | `/api/classes` | 15 disease classes with bilingual names |
+| `GET` | `/api/metrics` | Request / error / latency counters for dashboards |
 | `POST` | `/api/analyze` | Upload image → get diagnosis |
 
 #### POST /api/analyze
 
-**Request:** `multipart/form-data` with `image` field (JPEG, PNG, WebP, BMP; max 10 MB, max 4096px per dimension)
+**Request:** `multipart/form-data` with `image` field (JPEG, PNG, WebP, BMP; max 10 MB, max 4096 px per dimension)
 
-**Server protections:** image resolution validation (rejects >4096px to prevent OOM), inference timeout (30s via `asyncio.wait_for`), rate limiting (1 req/sec per IP returns HTTP 429).
+**Server protections:**
+- Magic-byte validation of the uploaded bytes (ignores the client `Content-Type`).
+- Pillow decompression-bomb guard (`Image.MAX_IMAGE_PIXELS`) + explicit dimension cap.
+- Inference timeout (30 s via `asyncio.wait_for`), with a `ThreadPoolExecutor` sized by `INFER_WORKERS`.
+- Per-IP rate limiting (1 req/s by default, configurable via `RATE_LIMIT_RPS`) with an accurate `Retry-After` header on HTTP 429.
+- Proxy-aware client IP (`X-Forwarded-For` is only trusted when the peer is listed in `TRUSTED_PROXIES`).
+- Security response headers (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, `Cache-Control`).
+- Grad-CAM inference is serialized by a lock and uses `threading.local` storage to keep backward-pass buffers per-request safe under concurrency.
 
 **Response:**
 ```json
@@ -329,6 +341,19 @@ start.bat --train
 | 12 | root_rot | Root Rot | Корневая гниль |
 | 13 | anthracnose | Anthracnose | Антракноз |
 | 14 | botrytis | Gray Mold | Серая гниль |
+
+---
+
+## What sets this apart
+
+- **Two-stage pipeline beats single-pass baselines.** Stage 1 finds the affected region with Grad-CAM, Stage 2 classifies the ROI crop — on PlantVillage-style data that raises top-1 over a flat 16-class classifier because the fine-grained model never has to learn "what is a leaf" again.
+- **Heatmap is a real overlay, not a picture of one.** The region is transported as pixel coordinates in the original image and re-projected through Glide's `centerCrop` on device, so zooming stays crisp and the overlay survives configuration changes.
+- **Explainable by default.** Every diagnosis ships with top-3 probabilities, a Shannon-entropy uncertainty score, and a severity estimate (fraction of heatmap pixels above threshold).
+- **Production-hardened server.** Magic-byte validation, Pillow decompression-bomb guard, per-IP rate limiter with `Retry-After`, proxy-aware client IP via `TRUSTED_PROXIES`, inference timeout, security response headers, non-root Docker user, and a container `HEALTHCHECK`.
+- **Thread-safe Grad-CAM.** The activation / gradient storage is `threading.local`, and the backward pass is serialized by a lock — so concurrent requests never corrupt each other's CAM.
+- **Resilient client transport.** `RetryInterceptor` retries on `IOException`, HTTP 429 and HTTP 503, capped exponential backoff, and honours `Retry-After` seconds.
+- **Bilingual end-to-end.** Russian and English share a single disease database on the server and UI strings on the client, switchable from Profile without restarting the app.
+- **Observability.** `/api/metrics` exposes request / error counters and analyse-latency histograms — drop-in for Prometheus scraping.
 
 ---
 

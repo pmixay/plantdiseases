@@ -1,15 +1,13 @@
 @echo off
-rem ─────────────────────────────────────────────────────────────────────
-rem  PlantDiseases Server — Windows startup script
+rem PlantDiseases Server - Windows startup script.
 rem
-rem  Creates a virtual environment, installs lightweight (CPU-only)
-rem  PyTorch + dependencies, and starts the FastAPI server.
+rem Creates a virtual environment, installs CPU-only PyTorch + server
+rem dependencies, and starts the FastAPI server.
 rem
-rem  Usage:
-rem      start.bat                  &  start server (default port 8000)
-rem      start.bat --port 9000      &  custom port
-rem      start.bat --train          &  train models before starting
-rem ─────────────────────────────────────────────────────────────────────
+rem Usage:
+rem     start.bat                 start server (default port 8000)
+rem     start.bat --port 9000     custom port
+rem     start.bat --train         train models before starting
 setlocal enabledelayedexpansion
 
 cd /d "%~dp0"
@@ -17,7 +15,6 @@ cd /d "%~dp0"
 set PORT=8000
 set TRAIN=false
 
-rem ── Parse arguments ────────────────────────────────────────────────
 :parse_args
 if "%~1"=="" goto args_done
 if "%~1"=="--port" (
@@ -45,25 +42,20 @@ exit /b 0
 
 :args_done
 
-echo ======================================================
-echo        PlantDiseases Server — Startup
-echo ======================================================
+echo PlantDiseases Server - startup
 echo.
 
-rem ── Check Python ───────────────────────────────────────────────────
 where python >nul 2>&1
 if errorlevel 1 (
     echo ERROR: Python is not found in PATH.
     echo Install Python 3.9+ from https://www.python.org/downloads/
-    echo Make sure to check "Add Python to PATH" during installation.
-    pause
+    echo Make sure "Add Python to PATH" is checked during installation.
     exit /b 1
 )
 
 for /f "tokens=2 delims= " %%v in ('python --version 2^>^&1') do set PYVER=%%v
 echo [+] Using Python %PYVER%
 
-rem ── Create virtual environment ─────────────────────────────────────
 if not exist "venv" (
     echo [+] Creating virtual environment...
     python -m venv venv
@@ -72,8 +64,7 @@ if not exist "venv" (
 echo [+] Activating virtual environment...
 call venv\Scripts\activate.bat
 
-rem ── Install dependencies ───────────────────────────────────────────
-echo [+] Installing PyTorch (CPU-only — lightweight)...
+echo [+] Installing PyTorch (CPU-only)...
 pip install --quiet --upgrade pip
 pip install --quiet torch torchvision --index-url https://download.pytorch.org/whl/cpu
 
@@ -85,10 +76,9 @@ if "%TRAIN%"=="true" (
     pip install --quiet -r requirements.txt
 )
 
-rem ── Create models directory ────────────────────────────────────────
 if not exist "models" mkdir models
+if not exist "logs" mkdir logs
 
-rem ── Optional training ──────────────────────────────────────────────
 if "%TRAIN%"=="true" (
     echo.
     echo [+] Starting model training...
@@ -96,27 +86,23 @@ if "%TRAIN%"=="true" (
     echo.
 )
 
-rem ── Check models ───────────────────────────────────────────────────
 echo.
 if exist "models\detector.pth" (
     if exist "models\classifier.pth" (
-        echo [+] Both models found — running in FULL mode
+        echo [+] Both models found - running in FULL mode
         goto start_server
     )
 )
-
 if exist "models\detector.pth" (
-    echo [!] Only detector model found — running in PARTIAL mode
+    echo [!] Only detector model found - running in PARTIAL mode
     goto start_server
 )
 if exist "models\classifier.pth" (
-    echo [!] Only classifier model found — running in PARTIAL mode
+    echo [!] Only classifier model found - running in PARTIAL mode
     goto start_server
 )
-
-echo [!] No trained models found — running in DEMO mode
-echo     To train models:  start.bat --train
-echo     (requires data\ directory with PlantVillage dataset)
+echo [!] No trained models found - running in DEMO mode
+echo     To train: start.bat --train
 
 :start_server
 echo.
@@ -125,10 +111,5 @@ echo     API docs:  http://localhost:%PORT%/docs
 echo     Health:    http://localhost:%PORT%/api/health
 echo.
 
-uvicorn main:app --host 0.0.0.0 --port %PORT%
-
-if errorlevel 1 (
-    echo.
-    echo Server exited with an error. Press any key to close.
-    pause >nul
-)
+if not defined FORWARDED_ALLOW_IPS set FORWARDED_ALLOW_IPS=127.0.0.1
+uvicorn main:app --host 0.0.0.0 --port %PORT% --forwarded-allow-ips %FORWARDED_ALLOW_IPS% --proxy-headers

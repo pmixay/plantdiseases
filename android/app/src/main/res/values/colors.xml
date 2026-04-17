@@ -1,47 +1,50 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Brand colors — botanical palette -->
+    <!-- Brand — botanical green palette -->
     <color name="primary">#1F7A3F</color>
-    <color name="primary_dark">#155A2E</color>
+    <color name="primary_dark">#0F4D25</color>
     <color name="primary_light">#D7EDE0</color>
     <color name="primary_variant">#2A8F4F</color>
     <color name="on_primary">#FFFFFF</color>
-    <color name="secondary">#D4A574</color>
+    <color name="on_primary_secondary">#B0FFFFFF</color>
+    <color name="secondary">#66C07A</color>
     <color name="on_secondary">#FFFFFF</color>
+    <color name="accent_lime">#7ED957</color>
 
-    <!-- Gradient endpoints for toolbar/header -->
-    <color name="gradient_start">#155A2E</color>
-    <color name="gradient_end">#2A8F4F</color>
+    <!-- Gradient stops (ordered dark -> medium -> light) -->
+    <color name="gradient_start">#0F4D25</color>
+    <color name="gradient_mid">#1F7A3F</color>
+    <color name="gradient_end">#2FB062</color>
 
     <!-- Surface -->
-    <color name="background">#FAFDF9</color>
+    <color name="background">#F5FBF6</color>
     <color name="surface">#FFFFFF</color>
-    <color name="surface_variant">#F0F5F0</color>
-    <color name="on_surface">#1A1C1A</color>
+    <color name="surface_variant">#EDF5EE</color>
+    <color name="on_surface">#121A13</color>
     <color name="on_surface_secondary">#4A5549</color>
 
     <!-- Semantic -->
-    <color name="healthy_green">#2E8B57</color>
+    <color name="healthy_green">#1F8A4C</color>
     <color name="healthy_green_bg">#E4F2EA</color>
     <color name="disease_red">#C44536</color>
     <color name="disease_red_bg">#FCEAE8</color>
-    <color name="warning_amber">#D4820A</color>
+    <color name="warning_amber">#B8700A</color>
     <color name="warning_amber_bg">#FFF3E0</color>
 
-    <!-- Category colors -->
+    <!-- Category accents -->
     <color name="watering_blue">#1976D2</color>
     <color name="lighting_yellow">#F9A825</color>
 
     <!-- Misc -->
     <color name="scan_frame_color">#80FFFFFF</color>
-    <color name="bottom_panel_bg">#F0F2F0</color>
-    <color name="icon_bg">#E8F0E8</color>
+    <color name="bottom_panel_bg">#EDF5EE</color>
+    <color name="icon_bg">#E4F1E7</color>
     <color name="semi_transparent">#40000000</color>
     <color name="hint_pill_bg">#80000000</color>
-    <color name="divider">#E0E4E0</color>
-    <color name="card_stroke">#E8ECE8</color>
+    <color name="divider">#DCE6DE</color>
+    <color name="card_stroke">#E3ECE5</color>
     <color name="search_highlight">#FFF3B0</color>
-    <color name="shimmer_base">#E0E4E0</color>
-    <color name="shimmer_highlight">#F5F5F5</color>
+    <color name="shimmer_base">#E0E6E1</color>
+    <color name="shimmer_highlight">#F5F8F5</color>
     <color name="camera_scrim">#40000000</color>
 </resources>

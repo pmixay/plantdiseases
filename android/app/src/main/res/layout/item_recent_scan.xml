@@ -20,7 +20,9 @@
             android:id="@+id/iv_thumbnail"
             android:layout_width="72dp"
             android:layout_height="72dp"
-            android:scaleType="centerCrop" />
+            android:scaleType="centerCrop"
+            android:importantForAccessibility="no"
+            android:contentDescription="@null" />
 
         <TextView
             android:id="@+id/tv_disease_name"

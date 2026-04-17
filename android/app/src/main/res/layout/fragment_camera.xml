@@ -251,12 +251,11 @@
                 app:elevation="6dp"
                 app:borderWidth="0dp" />
 
-            <!-- Placeholder for symmetry -->
-            <View
+            <!-- Keeps the capture button centered when gallery is present -->
+            <Space
                 android:layout_width="56dp"
                 android:layout_height="56dp"
-                android:layout_marginStart="40dp"
-                android:visibility="invisible" />
+                android:layout_marginStart="40dp" />
 
         </LinearLayout>
 

@@ -3,87 +3,63 @@ Unified training script for the PlantDiseases two-stage pipeline.
 
 Trains both models sequentially:
     1. Detector   (MobileNetV3-Small)  — binary: healthy vs diseased
-    2. Classifier (EfficientNet-B0)    — 15-class disease identification
+    2. Classifier (EfficientNet-B0)    — multi-class disease identification
 
-Both use two-phase transfer-learning:
+Both use two-phase transfer learning:
     Phase A  — freeze backbone, train head only
-    Phase B  — unfreeze top layers and fine-tune with lower LR
+    Phase B  — unfreeze top layers and fine-tune with a lower learning rate
 
-SETUP
------
-  1. Download PlantVillage dataset:
-       https://github.com/spMohanty/PlantVillage-Dataset
-       Kaggle: https://www.kaggle.com/datasets/emmarex/plantdisease
+Dataset layout expected under ``server/data``::
 
-  2. Organise images:
-       data/
-         train/
-           healthy/
-           bacterial_spot/
-           early_blight/
-           ...
-         val/
-           healthy/
-           bacterial_spot/
-           ...
+    data/
+      train/
+        healthy/
+        bacterial_spot/
+        ...
+      val/
+        healthy/
+        bacterial_spot/
+        ...
 
-  3. Run:
-       python train.py              # train both models
-       python train.py --detector   # train detector only
-       python train.py --classifier # train classifier only
+Usage::
 
-  4. Models save to  models/detector.pth  and  models/classifier.pth
+    python train.py              # train both models
+    python train.py --detector   # train detector only
+    python train.py --classifier # train classifier only
 """
 
 import argparse
 import copy
+import json
 import os
 import sys
 import time
 from pathlib import Path
 
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from torchvision import datasets, models, transforms
 
-# ── Configuration ────────────────────────────────────────────────────
-
-IMG_SIZE = 224
-BATCH_SIZE = 32
-NUM_WORKERS = min(4, os.cpu_count() or 1)
-
-DATA_DIR = Path("data")
-MODELS_DIR = Path("models")
+# ── Paths ────────────────────────────────────────────────────────────
+SCRIPT_DIR = Path(__file__).resolve().parent
+DATA_DIR = Path(os.getenv("PLANTD_DATA_DIR", SCRIPT_DIR / "data"))
+MODELS_DIR = SCRIPT_DIR / "models"
+CHECKPOINT_DIR = MODELS_DIR / "checkpoints"
 
 DETECTOR_OUTPUT = MODELS_DIR / "detector.pth"
 CLASSIFIER_OUTPUT = MODELS_DIR / "classifier.pth"
 
-CLASS_NAMES = [
-    "healthy",
-    "bacterial_spot",
-    "early_blight",
-    "late_blight",
-    "leaf_mold",
-    "septoria_leaf_spot",
-    "spider_mites",
-    "target_spot",
-    "mosaic_virus",
-    "yellow_leaf_curl",
-    "powdery_mildew",
-    "rust",
-    "root_rot",
-    "anthracnose",
-    "botrytis",
-]
+# ── Hyperparameters ──────────────────────────────────────────────────
+IMG_SIZE = 224
+BATCH_SIZE = int(os.getenv("PLANTD_BATCH_SIZE", 32))
+NUM_WORKERS = min(4, os.cpu_count() or 1)
+SEED = 42
 
-NUM_CLASSES = len(CLASS_NAMES)
+torch.manual_seed(SEED)
 
-
-# ── Data transforms ─────────────────────────────────────────────────
-
+# ── Data transforms ──────────────────────────────────────────────────
 train_transforms = transforms.Compose([
     transforms.RandomResizedCrop(IMG_SIZE, scale=(0.8, 1.0)),
     transforms.RandomHorizontalFlip(),
@@ -103,8 +79,6 @@ val_transforms = transforms.Compose([
     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
 ])
 
-
-# ── Dataset loaders ──────────────────────────────────────────────────
 
 class BinaryPlantDataset(torch.utils.data.Dataset):
     """Wraps an ImageFolder and collapses all non-healthy classes to label 1."""
@@ -127,19 +101,13 @@ def create_dataloaders(binary: bool = False):
     train_dir = DATA_DIR / "train"
     val_dir = DATA_DIR / "val"
 
-    if not train_dir.exists():
-        print(f"ERROR: Training data not found at {train_dir}")
-        print()
-        print("Setup instructions:")
-        print("  1. Download PlantVillage: https://www.kaggle.com/datasets/emmarex/plantdisease")
-        print("  2. Organise into  data/train/  and  data/val/  with class sub-folders")
-        print("  3. Each class folder should contain >=100 images")
+    if not train_dir.exists() or not val_dir.exists():
+        print(f"ERROR: training data not found at {DATA_DIR}")
+        print("Set PLANTD_DATA_DIR or put the PlantVillage dataset under server/data/")
         sys.exit(1)
 
     train_ds = datasets.ImageFolder(train_dir, transform=train_transforms)
     val_ds = datasets.ImageFolder(val_dir, transform=val_transforms)
-
-    # Report discovered classes (may differ from CLASS_NAMES defaults)
     found = sorted(train_ds.classes)
     print(f"  Found classes in data: {found}")
 
@@ -162,8 +130,6 @@ def create_dataloaders(binary: bool = False):
     )
     return train_loader, val_loader, names
 
-
-# ── Training loop ────────────────────────────────────────────────────
 
 def train_one_epoch(model, loader, criterion, optimizer, device):
     model.train()
@@ -191,12 +157,19 @@ def evaluate(model, loader, criterion, device):
         images, labels = images.to(device), labels.to(device)
         outputs = model(images)
         loss = criterion(outputs, labels)
-
         running_loss += loss.item() * images.size(0)
         correct += (outputs.argmax(1) == labels).sum().item()
         total += images.size(0)
 
     return running_loss / total, correct / total
+
+
+def _unfreeze_top_features(model: nn.Module, top_blocks: int) -> None:
+    """Unfreeze the last ``top_blocks`` children of ``model.features``."""
+    feature_children = list(getattr(model, "features").children())
+    for block in feature_children[-top_blocks:]:
+        for p in block.parameters():
+            p.requires_grad = True
 
 
 def train_model(
@@ -208,21 +181,20 @@ def train_model(
     epochs_finetune: int,
     lr_freeze: float,
     lr_finetune: float,
-    unfreeze_from: int,
+    unfreeze_top_blocks: int,
     model_name: str,
+    checkpoint_path: Path,
 ) -> nn.Module:
-    """Two-phase training with early stopping."""
+    """Two-phase training with early stopping and disk checkpoints."""
     criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
     best_acc = 0.0
     best_state = None
     patience_counter = 0
     patience = 7
 
-    # ── Phase 1: frozen backbone ─────────────────────────────────
-    print(f"\n{'='*60}")
-    print(f"Phase 1: Training {model_name} head ({epochs_freeze} epochs)")
-    print(f"{'='*60}")
+    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
 
+    print(f"\nPhase 1: training {model_name} head ({epochs_freeze} epochs)")
     optimizer = optim.AdamW(
         filter(lambda p: p.requires_grad, model.parameters()),
         lr=lr_freeze, weight_decay=1e-4,
@@ -239,13 +211,13 @@ def train_model(
         print(
             f"  Epoch {epoch:>2}/{epochs_freeze}  "
             f"train_loss={train_loss:.4f}  train_acc={train_acc:.3f}  "
-            f"val_loss={val_loss:.4f}  val_acc={val_acc:.3f}  "
-            f"({dt:.1f}s)"
+            f"val_loss={val_loss:.4f}  val_acc={val_acc:.3f}  ({dt:.1f}s)"
         )
 
         if val_acc > best_acc:
             best_acc = val_acc
             best_state = copy.deepcopy(model.state_dict())
+            torch.save(best_state, checkpoint_path)
             patience_counter = 0
         else:
             patience_counter += 1
@@ -253,19 +225,11 @@ def train_model(
                 print(f"  Early stopping at epoch {epoch}")
                 break
 
-    # Restore best before fine-tuning
     if best_state:
         model.load_state_dict(best_state)
 
-    # ── Phase 2: unfreeze top layers and fine-tune ───────────────
-    print(f"\n{'='*60}")
-    print(f"Phase 2: Fine-tuning {model_name} ({epochs_finetune} epochs)")
-    print(f"{'='*60}")
-
-    # Unfreeze layers from unfreeze_from onward
-    params = list(model.parameters())
-    for p in params[unfreeze_from:]:
-        p.requires_grad = True
+    print(f"\nPhase 2: fine-tuning {model_name} ({epochs_finetune} epochs)")
+    _unfreeze_top_features(model, unfreeze_top_blocks)
 
     optimizer = optim.AdamW(
         filter(lambda p: p.requires_grad, model.parameters()),
@@ -284,13 +248,13 @@ def train_model(
         print(
             f"  Epoch {epoch:>2}/{epochs_finetune}  "
             f"train_loss={train_loss:.4f}  train_acc={train_acc:.3f}  "
-            f"val_loss={val_loss:.4f}  val_acc={val_acc:.3f}  "
-            f"({dt:.1f}s)"
+            f"val_loss={val_loss:.4f}  val_acc={val_acc:.3f}  ({dt:.1f}s)"
         )
 
         if val_acc > best_acc:
             best_acc = val_acc
             best_state = copy.deepcopy(model.state_dict())
+            torch.save(best_state, checkpoint_path)
             patience_counter = 0
         else:
             patience_counter += 1
@@ -305,10 +269,10 @@ def train_model(
     return model
 
 
-# ── Detailed evaluation ──────────────────────────────────────────────
-
 @torch.no_grad()
 def detailed_evaluation(model, loader, class_names, device):
+    import numpy as np
+
     model.eval()
     n_classes = len(class_names)
     confusion = np.zeros((n_classes, n_classes), dtype=int)
@@ -323,79 +287,55 @@ def detailed_evaluation(model, loader, class_names, device):
     correct = confusion.trace()
     accuracy = correct / total if total > 0 else 0
 
-    print(f"\n{'='*60}")
-    print("DETAILED EVALUATION")
-    print(f"{'='*60}")
-    print(f"\nOverall accuracy: {accuracy:.4f} ({accuracy*100:.1f}%)")
-    print(f"\n{'Class':<25} {'Accuracy':>10} {'Samples':>10}")
-    print("-" * 50)
-
+    print("\nDetailed evaluation")
+    print(f"  Overall accuracy: {accuracy:.4f} ({accuracy*100:.1f}%)")
+    print(f"  {'Class':<25} {'Accuracy':>10} {'Samples':>10}")
     for i, name in enumerate(class_names):
         row_sum = confusion[i].sum()
         if row_sum > 0:
             cls_acc = confusion[i][i] / row_sum
-            print(f"{name:<25} {cls_acc:>9.1%} {row_sum:>10}")
+            print(f"  {name:<25} {cls_acc:>9.1%} {row_sum:>10}")
         else:
-            print(f"{name:<25} {'N/A':>10} {0:>10}")
+            print(f"  {name:<25} {'N/A':>10} {0:>10}")
 
-    # Top confused pairs
-    print("\nMost confused pairs:")
     errors = []
     for i in range(n_classes):
         for j in range(n_classes):
             if i != j and confusion[i][j] > 0:
                 errors.append((confusion[i][j], class_names[i], class_names[j]))
     errors.sort(reverse=True)
-    for count, true_name, pred_name in errors[:10]:
-        print(f"  {true_name} → {pred_name}: {count} errors")
+    if errors:
+        print("  Most confused pairs:")
+        for count, true_name, pred_name in errors[:10]:
+            print(f"    {true_name} -> {pred_name}: {count} errors")
 
     return accuracy
 
 
-# ── Model builders ───────────────────────────────────────────────────
-
 def build_detector(device: torch.device) -> nn.Module:
-    """MobileNetV3-Small with 2-class head."""
     net = models.mobilenet_v3_small(weights=models.MobileNet_V3_Small_Weights.DEFAULT)
-
-    # Freeze backbone
     for param in net.features.parameters():
         param.requires_grad = False
-
-    # Replace classifier head
     in_features = net.classifier[-1].in_features
     net.classifier[-1] = nn.Linear(in_features, 2)
-
     return net.to(device)
 
 
 def build_classifier(device: torch.device, num_classes: int) -> nn.Module:
-    """EfficientNet-B0 with dynamic class head."""
     net = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.DEFAULT)
-
-    # Freeze backbone
     for param in net.features.parameters():
         param.requires_grad = False
-
-    # Replace classifier head
     in_features = net.classifier[-1].in_features
     net.classifier[-1] = nn.Linear(in_features, num_classes)
-
     return net.to(device)
 
 
-# ── Main ─────────────────────────────────────────────────────────────
-
 def train_detector(device: torch.device):
-    print("\n" + "#" * 60)
-    print("#  TRAINING STAGE 1 — DISEASE DETECTOR")
-    print(f"#  Model: MobileNetV3-Small  (binary: healthy / diseased)")
-    print("#" * 60)
+    print("\nTRAINING STAGE 1 - DISEASE DETECTOR (MobileNetV3-Small, binary)")
 
     train_loader, val_loader, names = create_dataloaders(binary=True)
     print(f"  Training samples:   {len(train_loader.dataset)}")
     print(f"  Validation samples: {len(val_loader.dataset)}")
-    print(f"  Classes: {names}")
 
     model = build_detector(device)
     total_params = sum(p.numel() for p in model.parameters())
@@ -408,31 +348,26 @@ def train_detector(device: torch.device):
         epochs_finetune=10,
         lr_freeze=1e-3,
         lr_finetune=1e-5,
-        unfreeze_from=-40,
+        unfreeze_top_blocks=3,
         model_name="Detector",
+        checkpoint_path=CHECKPOINT_DIR / "detector_best.pth",
     )
 
     detailed_evaluation(model, val_loader, names, device)
 
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     torch.save(model.state_dict(), str(DETECTOR_OUTPUT))
-    print(f"\nDetector saved → {DETECTOR_OUTPUT}")
+    print(f"\nDetector saved -> {DETECTOR_OUTPUT}")
     return model
 
 
 def train_classifier_model(device: torch.device):
-    import json
-
     train_loader, val_loader, names = create_dataloaders(binary=False)
     num_cls = len(names)
 
-    print("\n" + "#" * 60)
-    print("#  TRAINING STAGE 2 — DISEASE CLASSIFIER")
-    print(f"#  Model: EfficientNet-B0  ({num_cls} classes)")
-    print("#" * 60)
+    print(f"\nTRAINING STAGE 2 - DISEASE CLASSIFIER (EfficientNet-B0, {num_cls} classes)")
     print(f"  Training samples:   {len(train_loader.dataset)}")
     print(f"  Validation samples: {len(val_loader.dataset)}")
-    print(f"  Classes: {num_cls}")
 
     model = build_classifier(device, num_cls)
     total_params = sum(p.numel() for p in model.parameters())
@@ -445,8 +380,9 @@ def train_classifier_model(device: torch.device):
         epochs_finetune=15,
         lr_freeze=1e-3,
         lr_finetune=5e-6,
-        unfreeze_from=-60,
+        unfreeze_top_blocks=3,
         model_name="Classifier",
+        checkpoint_path=CHECKPOINT_DIR / "classifier_best.pth",
     )
 
     detailed_evaluation(model, val_loader, names, device)
@@ -454,13 +390,12 @@ def train_classifier_model(device: torch.device):
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     torch.save(model.state_dict(), str(CLASSIFIER_OUTPUT))
 
-    # Save class names mapping so the server knows the class order
     meta_path = MODELS_DIR / "classes.json"
     meta = {"class_names": list(names), "num_classes": num_cls}
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2))
 
-    print(f"\nClassifier saved → {CLASSIFIER_OUTPUT}")
-    print(f"Class mapping  → {meta_path}")
+    print(f"\nClassifier saved -> {CLASSIFIER_OUTPUT}")
+    print(f"Class mapping  -> {meta_path}")
     return model
 
 
@@ -470,33 +405,26 @@ def main():
     parser.add_argument("--classifier", action="store_true", help="Train classifier only")
     args = parser.parse_args()
 
-    # If neither flag is set → train both
-    train_det = args.detector or (not args.detector and not args.classifier)
-    train_cls = args.classifier or (not args.detector and not args.classifier)
+    train_det = args.detector or not (args.detector or args.classifier)
+    train_cls = args.classifier or not (args.detector or args.classifier)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
     if device.type == "cuda":
         print(f"  GPU: {torch.cuda.get_device_name(0)}")
-        print(f"  Memory: {torch.cuda.get_device_properties(0).total_mem / 1e9:.1f} GB")
+        print(f"  Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
 
     if train_det:
         train_detector(device)
-
     if train_cls:
         train_classifier_model(device)
 
-    print("\n" + "=" * 60)
-    print("TRAINING COMPLETE")
-    print("=" * 60)
+    print("\nTRAINING COMPLETE")
     if train_det:
-        print(f"  Detector   → {DETECTOR_OUTPUT}")
+        print(f"  Detector   -> {DETECTOR_OUTPUT}")
     if train_cls:
-        print(f"  Classifier → {CLASSIFIER_OUTPUT}")
-    print()
-    print("Restart the server to load trained models:")
-    print("  Linux:   ./start.sh")
-    print("  Windows: start.bat")
+        print(f"  Classifier -> {CLASSIFIER_OUTPUT}")
+    print("\nRestart the server to load trained models.")
 
 
 if __name__ == "__main__":

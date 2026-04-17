@@ -2,23 +2,24 @@ package com.plantdiseases.app.ui.guide
 
 import android.content.Context
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.material.chip.Chip
 import com.google.android.material.tabs.TabLayout
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.GuideDataProvider
 import com.plantdiseases.app.data.model.GuideCategory
-import com.plantdiseases.app.data.model.GuideItem
 import com.plantdiseases.app.databinding.FragmentGuideBinding
 import com.plantdiseases.app.util.LocaleHelper
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 class GuideFragment : Fragment() {
 
@@ -28,8 +29,7 @@ class GuideFragment : Fragment() {
     private var currentCategory: GuideCategory = GuideCategory.COMMON_DISEASES
     private var searchQuery: String = ""
 
-    private val handler = Handler(Looper.getMainLooper())
-    private var searchRunnable: Runnable? = null
+    private var searchJob: Job? = null
 
     private val PREFS_NAME = "plantdiseases_prefs"
     private val KEY_RECENT_SEARCHES = "recent_searches"
@@ -112,7 +112,7 @@ class GuideFragment : Fragment() {
                 }
 
                 // Cancel previous debounce
-                searchRunnable?.let { handler.removeCallbacks(it) }
+                searchJob?.cancel()
 
                 // Min 2 chars
                 if (query.length < 2 && query.isNotEmpty()) {
@@ -120,12 +120,11 @@ class GuideFragment : Fragment() {
                 }
 
                 // Debounce 300ms
-                searchRunnable = Runnable {
+                searchJob = viewLifecycleOwner.lifecycleScope.launch {
+                    delay(300)
                     searchQuery = query
                     adapter.searchQuery = query
                     loadItems()
-                }.also {
-                    handler.postDelayed(it, 300)
                 }
             }
         })
@@ -199,7 +198,7 @@ class GuideFragment : Fragment() {
 
     override fun onDestroyView() {
         super.onDestroyView()
-        searchRunnable?.let { handler.removeCallbacks(it) }
+        searchJob?.cancel()
         _binding = null
     }
 }

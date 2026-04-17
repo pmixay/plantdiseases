@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   plantdiseases-server:
     build:
@@ -12,5 +10,16 @@ services:
       - ./models:/app/models:ro
       - ./logs:/app/logs
     environment:
-      - CORS_ORIGINS=*
+      # Restrict origins in production (comma separated list of explicit origins).
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      # Comma separated proxy IPs whose X-Forwarded-For header is trusted.
+      - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
+      - FORWARDED_ALLOW_IPS=${FORWARDED_ALLOW_IPS:-127.0.0.1}
+      - RATE_LIMIT_RPS=${RATE_LIMIT_RPS:-1.0}
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health', timeout=2).status == 200 else 1)\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

@@ -2,13 +2,15 @@ package com.plantdiseases.app.util
 
 import android.content.Context
 import android.content.res.Configuration
-import android.os.Build
 import java.util.Locale
 
 object LocaleHelper {
 
     private const val PREFS_NAME = "plantdiseases_prefs"
     private const val KEY_LANGUAGE = "app_language"
+
+    @Volatile
+    private var cachedLanguage: String? = null
 
     fun applyLocale(context: Context): Context {
         val lang = getSavedLanguage(context)
@@ -28,11 +30,15 @@ object LocaleHelper {
     }
 
     fun getSavedLanguage(context: Context): String {
+        cachedLanguage?.let { return it }
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getString(KEY_LANGUAGE, "en") ?: "en"
+        val value = prefs.getString(KEY_LANGUAGE, "en") ?: "en"
+        cachedLanguage = value
+        return value
     }
 
     private fun saveLanguage(context: Context, language: String) {
+        cachedLanguage = language
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_LANGUAGE, language)
