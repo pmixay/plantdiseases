@@ -1,5 +1,6 @@
 package com.plantdiseases.app.ui.onboarding
 
+import android.animation.ValueAnimator
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
@@ -7,6 +8,7 @@ import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.LinearLayout
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -22,6 +24,8 @@ class OnboardingActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityOnboardingBinding
     private val indicators = mutableListOf<View>()
+    private var currentSelected = -1
+    private var widthAnimator: ValueAnimator? = null
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
@@ -101,15 +105,52 @@ class OnboardingActivity : AppCompatActivity() {
     }
 
     private fun updateIndicators(selected: Int) {
+        if (selected == currentSelected) return
+        val previous = currentSelected
+        currentSelected = selected
+
         indicators.forEachIndexed { index, view ->
             view.isSelected = index == selected
-            val size = if (index == selected) 12.dp else 10.dp
-            view.layoutParams = (view.layoutParams as LinearLayout.LayoutParams).apply {
-                width = if (index == selected) 24.dp else 10.dp
-                height = size
+            if (index != selected && index != previous) {
+                val lp = view.layoutParams as LinearLayout.LayoutParams
+                lp.width = 10.dp
+                lp.height = 10.dp
+                view.layoutParams = lp
             }
-            view.requestLayout()
         }
+
+        widthAnimator?.cancel()
+        val expanding = indicators.getOrNull(selected) ?: return
+        val shrinking = indicators.getOrNull(previous)
+
+        widthAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 220
+            interpolator = AccelerateDecelerateInterpolator()
+            addUpdateListener { anim ->
+                val t = anim.animatedValue as Float
+                applyWidth(expanding, lerp(10.dp, 24.dp, t), lerp(10.dp, 12.dp, t))
+                if (shrinking != null) {
+                    applyWidth(shrinking, lerp(24.dp, 10.dp, t), lerp(12.dp, 10.dp, t))
+                }
+            }
+            start()
+        }
+    }
+
+    private fun applyWidth(view: View, width: Int, height: Int) {
+        val lp = view.layoutParams as LinearLayout.LayoutParams
+        lp.width = width
+        lp.height = height
+        view.layoutParams = lp
+    }
+
+    private fun lerp(from: Int, to: Int, t: Float): Int =
+        (from + (to - from) * t).toInt()
+
+    override fun onDestroy() {
+        widthAnimator?.cancel()
+        widthAnimator = null
+        super.onDestroy()
     }
 
     private fun finishOnboarding() {

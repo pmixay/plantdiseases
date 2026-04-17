@@ -6,10 +6,13 @@ import com.plantdiseases.app.data.model.GuideItem
 
 object GuideDataProvider {
 
-    fun getGuideItems(): List<GuideItem> = listOf(
-        // ═══════════════════════════════════════════
-        // COMMON DISEASES (all 15 model classes covered)
-        // ═══════════════════════════════════════════
+    private val items: List<GuideItem> by lazy { buildItems() }
+    private val byCategory: Map<GuideCategory, List<GuideItem>> by lazy { items.groupBy { it.category } }
+
+    fun getGuideItems(): List<GuideItem> = items
+
+    private fun buildItems(): List<GuideItem> = listOf(
+        // Common diseases — covers all 15 model classes
 
         GuideItem(
             id = "powdery_mildew",
@@ -737,9 +740,7 @@ PREVENTION:
             category = GuideCategory.COMMON_DISEASES
         ),
 
-        // ═══════════════════════════════════════════
-        // PESTS
-        // ═══════════════════════════════════════════
+        // Pests
 
         GuideItem(
             id = "spider_mites",
@@ -957,9 +958,7 @@ PREVENTION:
             category = GuideCategory.PESTS
         ),
 
-        // ═══════════════════════════════════════════
-        // WATERING
-        // ═══════════════════════════════════════════
+        // Watering
 
         GuideItem(
             id = "watering_basics",
@@ -1081,9 +1080,7 @@ TIPS:
             category = GuideCategory.WATERING
         ),
 
-        // ═══════════════════════════════════════════
-        // LIGHTING
-        // ═══════════════════════════════════════════
+        // Lighting
 
         GuideItem(
             id = "light_guide",
@@ -1149,9 +1146,7 @@ TIPS:
             category = GuideCategory.LIGHTING
         ),
 
-        // ═══════════════════════════════════════════
-        // CARE TIPS
-        // ═══════════════════════════════════════════
+        // Care tips
 
         GuideItem(
             id = "repotting",
@@ -1429,5 +1424,5 @@ WINTER (December-February):
     )
 
     fun getByCategory(category: GuideCategory): List<GuideItem> =
-        getGuideItems().filter { it.category == category }
+        byCategory[category].orEmpty()
 }

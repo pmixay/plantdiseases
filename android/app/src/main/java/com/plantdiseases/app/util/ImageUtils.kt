@@ -31,7 +31,7 @@ object ImageUtils {
         if (rawW > maxSize || rawH > maxSize) {
             val halfW = rawW / 2
             val halfH = rawH / 2
-            while (halfW / inSampleSize >= maxSize && halfH / inSampleSize >= maxSize) {
+            while (halfW / inSampleSize >= maxSize || halfH / inSampleSize >= maxSize) {
                 inSampleSize *= 2
             }
         }

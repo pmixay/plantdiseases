@@ -100,53 +100,48 @@ class AnalysisActivity : AppCompatActivity() {
         val app = application as PlantDiseasesApp
 
         lifecycleScope.launch {
-            // Prepare image for upload
             val uploadFile = ImageUtils.prepareImageForUpload(this@AnalysisActivity, imagePath)
 
-            // Send to server
-            val result = app.scanRepository.analyzeImage(uploadFile)
+            try {
+                val result = app.scanRepository.analyzeImage(uploadFile)
 
-            result.onSuccess { response ->
-                // Save to local DB
-                val scanId = app.scanRepository.saveScan(imagePath, response)
+                result.onSuccess { response ->
+                    val scanId = app.scanRepository.saveScan(imagePath, response)
 
-                // Set flag to show gallery badge in MainActivity
-                getSharedPreferences("plantdiseases_prefs", MODE_PRIVATE)
-                    .edit().putBoolean("new_scan_result", true).apply()
+                    getSharedPreferences("plantdiseases_prefs", MODE_PRIVATE)
+                        .edit().putBoolean("new_scan_result", true).apply()
 
-                // Navigate to result
-                val intent = Intent(this@AnalysisActivity, ResultActivity::class.java).apply {
-                    putExtra(ResultActivity.EXTRA_SCAN_ID, scanId)
-                }
-                startActivity(intent)
-                finish()
-
-            }.onFailure { error ->
-                binding.loadingLayout.visibility = View.GONE
-                binding.errorLayout.visibility = View.VISIBLE
-
-                when (error) {
-                    is com.plantdiseases.app.data.repository.ScanRepository.ServerTimeoutException -> {
-                        binding.tvError.text = getString(R.string.server_not_responding)
-                        binding.tvErrorDetail.text = getString(R.string.server_not_responding_detail)
+                    val intent = Intent(this@AnalysisActivity, ResultActivity::class.java).apply {
+                        putExtra(ResultActivity.EXTRA_SCAN_ID, scanId)
                     }
-                    is com.plantdiseases.app.data.repository.ScanRepository.NoNetworkException -> {
-                        binding.tvError.text = getString(R.string.no_network)
-                        binding.tvErrorDetail.text = getString(R.string.no_network_detail)
-                    }
-                    is com.plantdiseases.app.data.repository.ScanRepository.RateLimitException -> {
-                        binding.tvError.text = getString(R.string.server_busy)
-                        binding.tvErrorDetail.text = getString(R.string.server_busy_detail)
-                    }
-                    else -> {
-                        binding.tvError.text = getString(R.string.analysis_error)
-                        binding.tvErrorDetail.text = error.localizedMessage ?: getString(R.string.unknown_error)
+                    startActivity(intent)
+                    finish()
+                }.onFailure { error ->
+                    binding.loadingLayout.visibility = View.GONE
+                    binding.errorLayout.visibility = View.VISIBLE
+
+                    when (error) {
+                        is com.plantdiseases.app.data.repository.ScanRepository.ServerTimeoutException -> {
+                            binding.tvError.text = getString(R.string.server_not_responding)
+                            binding.tvErrorDetail.text = getString(R.string.server_not_responding_detail)
+                        }
+                        is com.plantdiseases.app.data.repository.ScanRepository.NoNetworkException -> {
+                            binding.tvError.text = getString(R.string.no_network)
+                            binding.tvErrorDetail.text = getString(R.string.no_network_detail)
+                        }
+                        is com.plantdiseases.app.data.repository.ScanRepository.RateLimitException -> {
+                            binding.tvError.text = getString(R.string.server_busy)
+                            binding.tvErrorDetail.text = getString(R.string.server_busy_detail)
+                        }
+                        else -> {
+                            binding.tvError.text = getString(R.string.analysis_error)
+                            binding.tvErrorDetail.text = error.localizedMessage ?: getString(R.string.unknown_error)
+                        }
                     }
                 }
+            } finally {
+                runCatching { uploadFile.delete() }
             }
-
-            // Clean up temp upload file
-            uploadFile.delete()
         }
     }
 

@@ -53,7 +53,7 @@
                     android:layout_marginTop="4dp"
                     android:text="@string/profile_title"
                     android:textSize="14sp"
-                    android:textColor="#B0FFFFFF" />
+                    android:textColor="@color/on_primary_secondary" />
 
             </LinearLayout>
 

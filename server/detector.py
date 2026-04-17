@@ -1,14 +1,14 @@
 """
 Stage 1 — Disease Region Detector.
 
-Uses MobileNetV3-Small as a binary classifier (healthy / diseased)
-with Grad-CAM to localise the affected area on the leaf.
-
-When no trained model is found, falls back to colour-based heuristics
-that look for brown, yellow, and white patches typical of plant diseases.
+Binary classifier (healthy vs. diseased) on MobileNetV3-Small with
+Grad-CAM localisation. When no trained weights are present, falls back
+to an HSV-based colour heuristic that flags brown/yellow/white/dark
+patches typical of leaf disease.
 """
 
 import logging
+import threading
 from pathlib import Path
 from typing import Optional
 
@@ -25,44 +25,46 @@ logger = logging.getLogger(__name__)
 IMG_SIZE = 224
 
 
-# ── Grad-CAM helper ─────────────────────────────────────────────────
-
 class GradCAM:
-    """Generate class-activation heatmaps from a target conv layer."""
+    """Thread-safe Grad-CAM using forward/backward hooks on a target layer.
+
+    Hooks capture per-call activations and gradients into thread-local
+    storage so concurrent requests cannot overwrite each other's state.
+    """
 
     def __init__(self, model: nn.Module, target_layer: nn.Module):
         self.model = model
-        self.activations: Optional[torch.Tensor] = None
-        self.gradients: Optional[torch.Tensor] = None
+        self._local = threading.local()
 
         target_layer.register_forward_hook(self._save_activation)
         target_layer.register_full_backward_hook(self._save_gradient)
 
     def _save_activation(self, _module, _input, output):
-        self.activations = output.detach()
+        self._local.activations = output.detach()
 
     def _save_gradient(self, _module, _grad_in, grad_out):
-        self.gradients = grad_out[0].detach()
+        self._local.gradients = grad_out[0].detach()
 
     @torch.enable_grad()
-    def generate(self, input_tensor: torch.Tensor, target_class: int = 1):
+    def generate(self, input_tensor: torch.Tensor, target_class: int = 1) -> np.ndarray:
         """Return a normalised heatmap (H×W float32 in [0, 1])."""
-        self.model.zero_grad()
+        self.model.zero_grad(set_to_none=True)
         output = self.model(input_tensor)
         score = output[0, target_class]
         score.backward()
 
-        weights = self.gradients.mean(dim=[2, 3], keepdim=True)
-        cam = (weights * self.activations).sum(dim=1, keepdim=True)
-        cam = F.relu(cam)
-        cam = cam.squeeze().cpu().numpy()
+        activations = getattr(self._local, "activations", None)
+        gradients = getattr(self._local, "gradients", None)
+        if activations is None or gradients is None:
+            return np.zeros((IMG_SIZE, IMG_SIZE), dtype=np.float32)
 
+        weights = gradients.mean(dim=[2, 3], keepdim=True)
+        cam = (weights * activations).sum(dim=1, keepdim=True)
+        cam = F.relu(cam).squeeze().cpu().numpy()
         if cam.max() > 0:
             cam = cam / cam.max()
         return cam.astype(np.float32)
 
-
-# ── Bounding-box extraction from heatmap ─────────────────────────────
 
 def heatmap_to_bbox(
     heatmap: np.ndarray,
@@ -85,7 +87,6 @@ def heatmap_to_bbox(
     y_min, y_max = int(coords[0].min()), int(coords[0].max())
     x_min, x_max = int(coords[1].min()), int(coords[1].max())
 
-    # Add padding
     pad_x = int((x_max - x_min) * padding_ratio)
     pad_y = int((y_max - y_min) * padding_ratio)
     x_min = max(0, x_min - pad_x)
@@ -93,18 +94,19 @@ def heatmap_to_bbox(
     x_max = min(original_w, x_max + pad_x)
     y_max = min(original_h, y_max + pad_y)
 
+    severity = float((resized > threshold).sum()) / float(resized.size)
+
     return {
         "x": x_min,
         "y": y_min,
         "width": x_max - x_min,
         "height": y_max - y_min,
+        "severity": round(severity, 4),
     }
 
 
-# ── Main detector class ─────────────────────────────────────────────
-
 class DiseaseDetector:
-    """Binary healthy/diseased detector with region localisation."""
+    """Binary healthy/diseased detector with ROI localisation."""
 
     LABELS = ["healthy", "diseased"]
 
@@ -113,6 +115,8 @@ class DiseaseDetector:
         self.grad_cam: Optional[GradCAM] = None
         self.is_loaded = False
         self.device = torch.device("cpu")
+        # Serialise grad-CAM calls — backward pass is not re-entrant.
+        self._inference_lock = threading.Lock()
 
         self.transform = transforms.Compose([
             transforms.Resize((IMG_SIZE, IMG_SIZE)),
@@ -130,7 +134,7 @@ class DiseaseDetector:
                 logger.error("Failed to load detector model: %s", e)
 
         if not self.is_loaded:
-            logger.warning("Detector: no model — running in DEMO mode")
+            logger.warning("Detector: no model found, running in DEMO mode")
 
     def _load_model(self, path: Path):
         net = models.mobilenet_v3_small(weights=None)
@@ -145,37 +149,26 @@ class DiseaseDetector:
         self.is_loaded = True
         logger.info("Detector model loaded from %s", path)
 
-    # ── public API ───────────────────────────────────────────────────
-
     def detect(self, img: Image.Image) -> dict:
-        """Analyse the full image and return detection results.
-
-        Returns
-        -------
-        dict with keys:
-            is_diseased : bool
-            confidence  : float
-            region      : dict | None   (bounding box in original coords)
-        """
+        """Analyse an image. Returns {is_diseased, confidence, region}."""
         if self.is_loaded:
             return self._detect_real(img)
         return self._detect_demo(img)
 
-    # ── real inference ───────────────────────────────────────────────
-
     def _detect_real(self, img: Image.Image) -> dict:
         tensor = self.transform(img).unsqueeze(0).to(self.device)
 
-        with torch.no_grad():
-            logits = self.model(tensor)
-        probs = F.softmax(logits, dim=1)[0]
-        is_diseased = bool(probs[1] > probs[0])
-        confidence = float(probs[1] if is_diseased else probs[0])
+        with self._inference_lock:
+            with torch.no_grad():
+                logits = self.model(tensor)
+            probs = F.softmax(logits, dim=1)[0]
+            is_diseased = bool(probs[1] > probs[0])
+            confidence = float(probs[1] if is_diseased else probs[0])
 
-        region = None
-        if is_diseased:
-            heatmap = self.grad_cam.generate(tensor, target_class=1)
-            region = heatmap_to_bbox(heatmap, img.width, img.height)
+            region = None
+            if is_diseased:
+                heatmap = self.grad_cam.generate(tensor, target_class=1)
+                region = heatmap_to_bbox(heatmap, img.width, img.height)
 
         return {
             "is_diseased": is_diseased,
@@ -183,11 +176,8 @@ class DiseaseDetector:
             "region": region,
         }
 
-    # ── demo mode (colour heuristics) ───────────────────────────────
-
     @staticmethod
     def _image_seed(img: Image.Image) -> int:
-        """Derive a stable seed from image pixel data for reproducible results."""
         small = np.array(img.resize((16, 16)), dtype=np.uint8)
         return int(small.sum()) % (2**31)
 
@@ -196,21 +186,15 @@ class DiseaseDetector:
         arr = np.array(img.resize((256, 256)))
         hsv = cv2.cvtColor(arr, cv2.COLOR_RGB2HSV)
 
-        # Masks for suspicious colours
-        # Brown spots (low saturation, medium value)
         brown = cv2.inRange(hsv, (8, 40, 40), (25, 200, 180))
-        # Yellow patches
         yellow = cv2.inRange(hsv, (20, 80, 100), (35, 255, 255))
-        # White/grey patches (powdery mildew)
         white = cv2.inRange(hsv, (0, 0, 180), (180, 50, 255))
-        # Dark necrotic spots
         dark = cv2.inRange(hsv, (0, 0, 0), (180, 255, 50))
 
         combined = cv2.bitwise_or(brown, yellow)
         combined = cv2.bitwise_or(combined, white)
         combined = cv2.bitwise_or(combined, dark)
 
-        # Morphological cleanup
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
         combined = cv2.morphologyEx(combined, cv2.MORPH_CLOSE, kernel)
         combined = cv2.morphologyEx(combined, cv2.MORPH_OPEN, kernel)
@@ -224,7 +208,6 @@ class DiseaseDetector:
                 "region": None,
             }
 
-        # Extract bounding box from the largest connected component
         contours, _ = cv2.findContours(combined, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if not contours:
             return {"is_diseased": True, "confidence": 0.60, "region": None}
@@ -232,7 +215,6 @@ class DiseaseDetector:
         largest = max(contours, key=cv2.contourArea)
         x, y, w, h = cv2.boundingRect(largest)
 
-        # Scale back to original image size
         sx, sy = img.width / 256, img.height / 256
         pad = 0.15
         x1 = max(0, int((x - w * pad) * sx))
@@ -243,5 +225,11 @@ class DiseaseDetector:
         return {
             "is_diseased": True,
             "confidence": round(0.60 + rng.uniform(0, 0.25), 4),
-            "region": {"x": x1, "y": y1, "width": x2 - x1, "height": y2 - y1},
+            "region": {
+                "x": x1,
+                "y": y1,
+                "width": x2 - x1,
+                "height": y2 - y1,
+                "severity": round(float(disease_ratio), 4),
+            },
         }

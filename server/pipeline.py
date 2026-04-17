@@ -1,34 +1,10 @@
 """
 Two-stage plant disease detection pipeline.
 
-Stage 1  (Detector)   — MobileNetV3-Small binary classifier + Grad-CAM
-                         Answers: "Is the plant diseased?" and "Where?"
-Stage 2  (Classifier) — EfficientNet-B0 multi-class classifier
-                         Answers: "Which disease is it?"
-
-Flow
-----
-    Full image
-        │
-        ▼
-    ┌─────────────────────┐
-    │  Stage 1: Detector   │  healthy / diseased + ROI heatmap
-    └──────────┬──────────┘
-               │
-          ┌────┴─────┐
-          │ Healthy?  │─── yes ──► return "healthy" immediately
-          └────┬──────┘
-               │ no
-               ▼
-       Crop image to ROI
-               │
-               ▼
-    ┌─────────────────────┐
-    │  Stage 2: Classifier │  15-class disease identification
-    └──────────┬──────────┘
-               │
-               ▼
-    Combined result + disease info
+Stage 1 (Detector)   — MobileNetV3-Small binary head + Grad-CAM.
+Stage 2 (Classifier) — EfficientNet-B0 fine-grained classifier, run on
+                       the ROI produced by Stage 1 (or the full image as
+                       a fallback).
 """
 
 import logging
@@ -42,12 +18,10 @@ from classifier import DiseaseClassifier
 
 logger = logging.getLogger(__name__)
 
-# Minimum crop size (pixels) — if the ROI is smaller than this the
-# classifier receives the full image instead of a tiny fragment.
+# Classifier receives the ROI unless it is smaller than this.
 MIN_CROP_SIZE = 32
 
-# If the detector says "healthy" with at least this confidence we
-# skip Stage 2 entirely and return early.
+# Early-exit threshold for the "healthy" branch of Stage 1.
 HEALTHY_SKIP_THRESHOLD = 0.65
 
 
@@ -164,9 +138,10 @@ class PlantDiseasePipeline:
         w, h = region["width"], region["height"]
 
         if w < MIN_CROP_SIZE or h < MIN_CROP_SIZE:
-            logger.debug("ROI too small (%dx%d) — using full image", w, h)
             return img
 
-        crop = img.crop((x, y, x + w, y + h))
-        logger.debug("Cropped to ROI (%d, %d, %d, %d)", x, y, w, h)
-        return crop
+        x2 = max(x + 1, min(img.width, x + w))
+        y2 = max(y + 1, min(img.height, y + h))
+        x = max(0, min(x, img.width - 1))
+        y = max(0, min(y, img.height - 1))
+        return img.crop((x, y, x2, y2))

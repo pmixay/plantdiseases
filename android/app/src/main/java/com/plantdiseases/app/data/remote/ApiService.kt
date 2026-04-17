@@ -28,14 +28,14 @@ interface ApiService {
 }
 
 /**
- * OkHttp interceptor that retries failed requests with exponential backoff.
- * Only retries on network errors (IOException), not on HTTP error responses.
- * POST requests (e.g. /api/analyze) get at most 1 retry to avoid long waits
- * when uploading large images on slow connections.
+ * Retries on transient network failures and on HTTP 429 / 503, honouring the
+ * Retry-After header when present. POST requests are retried at most once to
+ * avoid re-uploading large payloads on slow connections.
  */
 class RetryInterceptor(
     private val maxRetries: Int = 3,
-    private val initialDelayMs: Long = 1000
+    private val initialDelayMs: Long = 1000,
+    private val maxDelayMs: Long = 8000
 ) : Interceptor {
 
     @Throws(IOException::class)
@@ -43,25 +43,48 @@ class RetryInterceptor(
         val request = chain.request()
         val effectiveRetries = if (request.method == "POST") minOf(maxRetries, 1) else maxRetries
         var lastException: IOException? = null
+        var lastResponse: Response? = null
 
         for (attempt in 0..effectiveRetries) {
+            lastResponse?.close()
+            lastResponse = null
+
             try {
                 val response = chain.proceed(request)
-                return response
+                if (response.code != 429 && response.code != 503) {
+                    return response
+                }
+                if (attempt >= effectiveRetries) {
+                    return response
+                }
+                val serverDelay = parseRetryAfterMs(response.header("Retry-After"))
+                response.close()
+                sleepBackoff(attempt, serverDelay)
             } catch (e: IOException) {
                 lastException = e
-                if (attempt < effectiveRetries) {
-                    val delay = initialDelayMs * (1L shl attempt) // 1s, 2s, 4s
-                    try {
-                        Thread.sleep(delay)
-                    } catch (_: InterruptedException) {
-                        Thread.currentThread().interrupt()
-                        throw e
-                    }
-                }
+                if (attempt >= effectiveRetries) throw e
+                sleepBackoff(attempt, null)
             }
         }
-        throw lastException!!
+        lastResponse?.let { return it }
+        throw lastException ?: IOException("Retry loop exited without a response")
+    }
+
+    private fun sleepBackoff(attempt: Int, serverDelayMs: Long?) {
+        val backoff = minOf(initialDelayMs * (1L shl attempt), maxDelayMs)
+        val delay = serverDelayMs?.coerceAtLeast(backoff) ?: backoff
+        try {
+            Thread.sleep(delay)
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw IOException("Interrupted during retry backoff", e)
+        }
+    }
+
+    private fun parseRetryAfterMs(header: String?): Long? {
+        if (header.isNullOrBlank()) return null
+        val seconds = header.trim().toLongOrNull() ?: return null
+        return (seconds.coerceAtLeast(0L) * 1000L).coerceAtMost(maxDelayMs)
     }
 }
 

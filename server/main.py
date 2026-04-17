@@ -3,13 +3,12 @@ PlantDiseases Server — FastAPI backend with two-stage CNN pipeline.
 
 Stage 1:  MobileNetV3-Small  — detect diseased region (Grad-CAM)
 Stage 2:  EfficientNet-B0    — classify the specific disease
-
-Usage:
-    uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 """
 
 import asyncio
 import io
+import ipaddress
+import math
 import os
 import threading
 import time
@@ -22,25 +21,29 @@ from pathlib import Path
 from fastapi import FastAPI, File, UploadFile, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response as StarletteResponse
 
 from pipeline import PlantDiseasePipeline
 from diseases_data import DISEASES_DATABASE
 
+try:
+    from . import __version__ as APP_VERSION  # type: ignore
+except Exception:
+    APP_VERSION = "2.1.0"
+
 # Limit Pillow decompression to prevent zip-bomb DoS
-Image.MAX_IMAGE_PIXELS = 20_000_000  # ~4500x4500
+Image.MAX_IMAGE_PIXELS = 20_000_000  # ~4500×4500
 
 # ── Logging ──────────────────────────────────────────────────────────
-LOG_DIR = Path("logs")
+LOG_DIR = Path(os.getenv("LOG_DIR", "logs"))
 LOG_DIR.mkdir(exist_ok=True)
 
 _log_fmt = logging.Formatter(
     "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
-
 console_handler = logging.StreamHandler()
 console_handler.setLevel(logging.INFO)
 console_handler.setFormatter(_log_fmt)
@@ -54,10 +57,7 @@ file_handler = RotatingFileHandler(
 file_handler.setLevel(logging.INFO)
 file_handler.setFormatter(_log_fmt)
 
-logging.basicConfig(
-    level=logging.INFO,
-    handlers=[console_handler, file_handler],
-)
+logging.basicConfig(level=logging.INFO, handlers=[console_handler, file_handler])
 logger = logging.getLogger("plantdiseases")
 
 # ── Configuration ────────────────────────────────────────────────────
@@ -65,40 +65,103 @@ MODELS_DIR = Path("models")
 DETECTOR_PATH = MODELS_DIR / "detector.pth"
 CLASSIFIER_PATH = MODELS_DIR / "classifier.pth"
 
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
-MAX_IMAGE_DIMENSION = 4096
-INFERENCE_TIMEOUT = 30.0
+MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE", 10 * 1024 * 1024))  # 10 MB
+MAX_IMAGE_DIMENSION = int(os.getenv("MAX_IMAGE_DIMENSION", 4096))
+INFERENCE_TIMEOUT = float(os.getenv("INFERENCE_TIMEOUT", 30.0))
 ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp", "image/bmp"}
+IMAGE_MAGIC = (
+    b"\xff\xd8\xff",            # JPEG
+    b"\x89PNG\r\n\x1a\n",       # PNG
+    b"RIFF",                    # WebP (RIFF....WEBP)
+    b"BM",                      # BMP
+)
 
-_inference_executor = ThreadPoolExecutor(max_workers=2)
+RATE_LIMIT_RPS = float(os.getenv("RATE_LIMIT_RPS", 1.0))
+TRUSTED_PROXIES = {
+    p.strip() for p in os.getenv("TRUSTED_PROXIES", "").split(",") if p.strip()
+}
+
+_inference_executor = ThreadPoolExecutor(max_workers=int(os.getenv("INFER_WORKERS", 2)))
 
 # ── Thread-safe server metrics ──────────────────────────────────────
 SERVER_START_TIME: float = 0.0
-_request_counter_lock = threading.Lock()
-_total_requests: int = 0
+_metrics_lock = threading.Lock()
+_total_requests = 0
+_total_analyses = 0
+_total_errors = 0
+_latency_sum_ms = 0.0
+_latency_count = 0
+_class_counts: dict[str, int] = {}
 
 
-def _inc_requests() -> int:
+def _record_request() -> None:
     global _total_requests
-    with _request_counter_lock:
+    with _metrics_lock:
         _total_requests += 1
-        return _total_requests
 
 
-def _get_requests() -> int:
-    with _request_counter_lock:
-        return _total_requests
+def _record_analysis(class_name: str, elapsed_ms: float) -> None:
+    global _total_analyses, _latency_sum_ms, _latency_count
+    with _metrics_lock:
+        _total_analyses += 1
+        _latency_sum_ms += elapsed_ms
+        _latency_count += 1
+        _class_counts[class_name] = _class_counts.get(class_name, 0) + 1
+
+
+def _record_error() -> None:
+    global _total_errors
+    with _metrics_lock:
+        _total_errors += 1
+
+
+def _snapshot_metrics() -> dict:
+    with _metrics_lock:
+        avg = _latency_sum_ms / _latency_count if _latency_count else 0.0
+        return {
+            "total_requests": _total_requests,
+            "total_analyses": _total_analyses,
+            "total_errors": _total_errors,
+            "avg_latency_ms": round(avg, 1),
+            "class_counts": dict(_class_counts),
+        }
 
 
 pipeline: PlantDiseasePipeline | None = None
 
 # ── Rate limiter cleanup interval (seconds) ─────────────────────────
-_RATE_LIMIT_CLEANUP_INTERVAL = 300  # purge stale entries every 5 min
+_RATE_LIMIT_CLEANUP_INTERVAL = 300
 
 
-# ── Rate limiting middleware ────────────────────────────────────────
+def _client_ip(request: Request) -> str:
+    """Return the real client IP, honouring X-Forwarded-For only for trusted proxies."""
+    peer = request.client.host if request.client else "unknown"
+    if not TRUSTED_PROXIES:
+        return peer
+    try:
+        peer_ip = ipaddress.ip_address(peer)
+    except ValueError:
+        return peer
+    # Only trust the header if the direct peer is a configured proxy.
+    if peer not in TRUSTED_PROXIES and not any(
+        peer_ip in ipaddress.ip_network(net, strict=False) for net in TRUSTED_PROXIES
+    ):
+        return peer
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        # Take the leftmost non-empty entry that parses as an IP
+        for entry in (e.strip() for e in xff.split(",")):
+            if entry:
+                try:
+                    ipaddress.ip_address(entry)
+                    return entry
+                except ValueError:
+                    continue
+    return peer
+
+
 class RateLimitMiddleware(BaseHTTPMiddleware):
-    """In-memory rate limiter with periodic cleanup to prevent unbounded growth."""
+    """Per-IP token-free rate limiter with periodic cleanup."""
 
     def __init__(self, app, requests_per_second: float = 1.0):
         super().__init__(app)
@@ -108,17 +171,17 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self._last_cleanup = time.time()
 
     def _cleanup_stale(self, now: float) -> None:
-        """Remove entries older than 2x the rate-limit interval."""
         cutoff = now - max(self.min_interval * 2, 60.0)
         stale = [ip for ip, ts in self._last_request.items() if ts < cutoff]
         for ip in stale:
             del self._last_request[ip]
 
     async def dispatch(self, request: Request, call_next):
-        if request.url.path == "/api/health":
+        # Health and metadata endpoints are always free
+        if request.url.path in ("/api/health", "/api/version", "/api/classes"):
             return await call_next(request)
 
-        client_ip = request.client.host if request.client else "unknown"
+        client_ip = _client_ip(request)
         now = time.time()
 
         with self._lock:
@@ -129,8 +192,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             last = self._last_request.get(client_ip, 0.0)
             if now - last < self.min_interval:
                 logger.warning("Rate limited IP=%s", client_ip)
+                retry_after = max(1, int(math.ceil(self.min_interval - (now - last))))
                 return JSONResponse(
                     status_code=429,
+                    headers={"Retry-After": str(retry_after)},
                     content={"detail": "Too many requests. Please wait before trying again."},
                 )
             self._last_request[client_ip] = now
@@ -138,24 +203,34 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-# ── Request logging middleware ──────────────────────────────────────
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Minimal set of security response headers."""
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        response.headers.setdefault("Cache-Control", "no-store")
+        return response
+
+
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
     """Logs every request with method, path, status, and duration."""
 
     async def dispatch(self, request: Request, call_next):
-        _inc_requests()
-
+        _record_request()
         start = time.time()
         response: StarletteResponse = await call_next(request)
         elapsed = time.time() - start
-
         logger.info(
             "REQUEST %s %s -> %d (%.3fs) IP=%s",
             request.method,
             request.url.path,
             response.status_code,
             elapsed,
-            request.client.host if request.client else "unknown",
+            _client_ip(request),
         )
         return response
 
@@ -176,17 +251,22 @@ async def lifespan(app: FastAPI):
         pipeline = PlantDiseasePipeline()
     yield
     logger.info("Server shutting down")
+    _inference_executor.shutdown(wait=False)
 
 
 app = FastAPI(
     title="PlantDiseases API",
     description="AI-powered plant disease detection — two-stage pipeline",
-    version="2.0.0",
+    version=APP_VERSION,
     lifespan=lifespan,
 )
 
 # ── CORS ─────────────────────────────────────────────────────────────
-ALLOWED_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
+_cors_raw = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
+ALLOWED_ORIGINS = [o.strip() for o in _cors_raw.split(",") if o.strip()]
+if ALLOWED_ORIGINS == ["*"]:
+    logger.warning("CORS_ORIGINS=* is insecure for production; restrict it in deployment.")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -194,9 +274,43 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Middleware stack (order matters: outermost runs first) ───────────
+# Middleware order: outermost runs first.
 app.add_middleware(RequestLoggingMiddleware)
-app.add_middleware(RateLimitMiddleware, requests_per_second=1.0)
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(RateLimitMiddleware, requests_per_second=RATE_LIMIT_RPS)
+
+
+def _validate_image_bytes(contents: bytes) -> None:
+    """Validate file size and magic bytes. Raises HTTPException on failure."""
+    if len(contents) == 0:
+        raise HTTPException(status_code=400, detail="Empty file received")
+    if len(contents) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File too large. Maximum size: {MAX_FILE_SIZE // (1024*1024)} MB",
+        )
+    head = contents[:16]
+    if not any(head.startswith(sig) for sig in IMAGE_MAGIC):
+        # Extra check for WebP (RIFF....WEBP)
+        if not (head.startswith(b"RIFF") and len(contents) >= 12 and contents[8:12] == b"WEBP"):
+            raise HTTPException(
+                status_code=400,
+                detail="Unrecognised image format. Allowed: JPEG, PNG, WebP, BMP",
+            )
+
+
+def _open_image(contents: bytes) -> Image.Image:
+    """Decode bytes into a validated RGB PIL image."""
+    try:
+        img = Image.open(io.BytesIO(contents))
+        img.load()  # force actual decoding to surface truncation errors
+        return img.convert("RGB")
+    except Image.DecompressionBombError:
+        raise HTTPException(status_code=400, detail="Image exceeds decompression safety limit")
+    except UnidentifiedImageError:
+        raise HTTPException(status_code=400, detail="Cannot read image file")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Cannot read image file")
 
 
 # ── Endpoints ────────────────────────────────────────────────────────
@@ -207,13 +321,54 @@ async def health_check():
     uptime = time.time() - SERVER_START_TIME if SERVER_START_TIME else 0
     return {
         "status": "ok",
-        "version": "2.0.0",
+        "version": APP_VERSION,
         "pipeline_mode": pipeline.mode if pipeline else "unknown",
         "detector_loaded": pipeline.detector.is_loaded if pipeline else False,
         "classifier_loaded": pipeline.classifier.is_loaded if pipeline else False,
         "num_classes": len(pipeline.classifier.CLASS_NAMES) if pipeline else 0,
         "uptime_seconds": round(uptime, 1),
-        "total_requests": _get_requests(),
+        "total_requests": _snapshot_metrics()["total_requests"],
+    }
+
+
+@app.get("/api/version")
+async def version():
+    """Server version and model architecture."""
+    return {
+        "version": APP_VERSION,
+        "pipeline_mode": pipeline.mode if pipeline else "unknown",
+        "detector_arch": "MobileNetV3-Small",
+        "classifier_arch": "EfficientNet-B0",
+        "stages": 2,
+    }
+
+
+@app.get("/api/classes")
+async def classes():
+    """List of known disease classes with bilingual names."""
+    if pipeline is None:
+        raise HTTPException(status_code=503, detail="Pipeline not ready")
+    items = []
+    for name in pipeline.classifier.CLASS_NAMES:
+        info = DISEASES_DATABASE.get(name, {})
+        items.append({
+            "class": name,
+            "name_en": info.get("name_en", name.replace("_", " ").title()),
+            "name_ru": info.get("name_ru", name),
+            "is_healthy": bool(info.get("is_healthy", False)),
+        })
+    return {"count": len(items), "classes": items}
+
+
+@app.get("/api/metrics")
+async def metrics():
+    """Operational metrics (JSON). Useful for dashboards and jury demos."""
+    snap = _snapshot_metrics()
+    uptime = time.time() - SERVER_START_TIME if SERVER_START_TIME else 0
+    return {
+        "uptime_seconds": round(uptime, 1),
+        **snap,
+        "pipeline_mode": pipeline.mode if pipeline else "unknown",
     }
 
 
@@ -222,13 +377,17 @@ async def analyze_image(image: UploadFile = File(...)):
     """Analyse a plant image for diseases (two-stage pipeline).
 
     Accepts JPEG, PNG, WebP, or BMP images up to 10 MB.
-    Returns bilingual (EN/RU) disease diagnosis with treatment advice
-    and the detected region coordinates.
+    Returns bilingual (EN/RU) disease diagnosis with treatment advice,
+    detected region (with severity score) and the top-k class probabilities.
     """
+    if pipeline is None:
+        _record_error()
+        raise HTTPException(status_code=503, detail="Server starting up, try again shortly")
+
     start_time = time.time()
 
-    # ── Input validation ─────────────────────────────────────────
     if not image.content_type or image.content_type not in ALLOWED_CONTENT_TYPES:
+        _record_error()
         logger.warning("Rejected file with content_type=%s", image.content_type)
         raise HTTPException(
             status_code=400,
@@ -236,25 +395,21 @@ async def analyze_image(image: UploadFile = File(...)):
         )
 
     contents = await image.read()
-    if len(contents) > MAX_FILE_SIZE:
-        logger.warning("Rejected oversized file: %d bytes", len(contents))
-        raise HTTPException(
-            status_code=400,
-            detail=f"File too large. Maximum size: {MAX_FILE_SIZE // (1024*1024)} MB",
-        )
-    if len(contents) == 0:
-        raise HTTPException(status_code=400, detail="Empty file received")
-
-    # ── Image decoding ───────────────────────────────────────────
     try:
-        img = Image.open(io.BytesIO(contents)).convert("RGB")
-    except Exception:
-        logger.error("Failed to decode image from %s", image.filename)
-        raise HTTPException(status_code=400, detail="Cannot read image file")
+        _validate_image_bytes(contents)
+    except HTTPException:
+        _record_error()
+        raise
 
-    # ── Resolution validation (prevent OOM on huge images) ───────
+    try:
+        img = _open_image(contents)
+    except HTTPException:
+        _record_error()
+        raise
+
     img_w, img_h = img.size
     if img_w > MAX_IMAGE_DIMENSION or img_h > MAX_IMAGE_DIMENSION:
+        _record_error()
         logger.warning("Rejected oversized image: %dx%d from %s", img_w, img_h, image.filename)
         raise HTTPException(
             status_code=400,
@@ -262,7 +417,6 @@ async def analyze_image(image: UploadFile = File(...)):
                    f"Maximum dimension: {MAX_IMAGE_DIMENSION}px",
         )
 
-    # ── Pipeline (with timeout) ──────────────────────────────────
     loop = asyncio.get_running_loop()
     try:
         result = await asyncio.wait_for(
@@ -270,11 +424,16 @@ async def analyze_image(image: UploadFile = File(...)):
             timeout=INFERENCE_TIMEOUT,
         )
     except asyncio.TimeoutError:
+        _record_error()
         logger.error("Inference timed out after %.0fs for %s", INFERENCE_TIMEOUT, image.filename)
         raise HTTPException(
             status_code=504,
             detail=f"Analysis timed out after {int(INFERENCE_TIMEOUT)} seconds",
         )
+    except Exception as e:
+        _record_error()
+        logger.exception("Inference crashed: %s", e)
+        raise HTTPException(status_code=500, detail="Internal inference error")
 
     class_name = result["class_name"]
     confidence = result["confidence"]
@@ -282,16 +441,30 @@ async def analyze_image(image: UploadFile = File(...)):
     disease_info = DISEASES_DATABASE.get(class_name, DISEASES_DATABASE["unknown"])
 
     elapsed = time.time() - start_time
+    _record_analysis(class_name, elapsed * 1000)
+
     logger.info(
         "Analysis complete: class=%s confidence=%.3f time=%.2fs file=%s mode=%s",
         class_name, confidence, elapsed, image.filename, result["pipeline_mode"],
     )
 
-    # Round all_probs for a cleaner response
     rounded_probs = {k: round(v, 4) for k, v in all_probs.items()}
 
+    # Compute Shannon-entropy uncertainty in [0, 1]; higher = more uncertain.
+    if rounded_probs:
+        vals = [p for p in rounded_probs.values() if p > 0]
+        entropy = -sum(p * math.log(p) for p in vals)
+        max_entropy = math.log(len(rounded_probs))
+        uncertainty = round(entropy / max_entropy, 4) if max_entropy > 0 else 0.0
+    else:
+        uncertainty = 0.0
+
+    detection = result["detection"]
+    severity = None
+    if detection.get("region") and isinstance(detection["region"], dict):
+        severity = detection["region"].get("severity")
+
     return JSONResponse(content={
-        # ── backward-compatible fields ──
         "disease_name": disease_info["name_en"],
         "disease_name_ru": disease_info["name_ru"],
         "confidence": round(confidence, 3),
@@ -302,14 +475,22 @@ async def analyze_image(image: UploadFile = File(...)):
         "prevention": disease_info["prevention_en"],
         "prevention_ru": disease_info["prevention_ru"],
         "is_healthy": disease_info.get("is_healthy", False),
-        # ── new pipeline fields ──
-        "detection": result["detection"],
+        "detection": detection,
+        "severity": severity,
+        "uncertainty": uncertainty,
         "all_probs": rounded_probs,
         "pipeline_mode": result["pipeline_mode"],
         "elapsed_ms": result["elapsed_ms"],
+        "server_version": APP_VERSION,
     })
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(
+        app,
+        host=os.getenv("HOST", "0.0.0.0"),
+        port=int(os.getenv("PORT", 8000)),
+        forwarded_allow_ips=os.getenv("FORWARDED_ALLOW_IPS", "127.0.0.1"),
+        proxy_headers=True,
+    )
