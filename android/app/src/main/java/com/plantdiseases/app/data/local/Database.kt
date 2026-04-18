@@ -1,6 +1,7 @@
 package com.plantdiseases.app.data.local
 
 import androidx.room.*
+import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Entity(
