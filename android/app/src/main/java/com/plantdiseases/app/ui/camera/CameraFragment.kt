@@ -243,7 +243,7 @@ class CameraFragment : Fragment() {
             val preview = Preview.Builder()
                 .build()
                 .also {
-                    it.surfaceProvider = binding.cameraPreview.surfaceProvider
+                    it.setSurfaceProvider(binding.cameraPreview.surfaceProvider)
                 }
 
             val rotation = view?.display?.rotation
