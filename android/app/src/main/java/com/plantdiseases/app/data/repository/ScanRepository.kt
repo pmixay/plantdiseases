@@ -7,6 +7,7 @@ import com.plantdiseases.app.data.model.AnalysisResponse
 import com.plantdiseases.app.data.model.HealthResponse
 import com.plantdiseases.app.data.model.ScanHistoryItem
 import com.plantdiseases.app.data.remote.ApiService
+import com.plantdiseases.app.data.remote.PlantApiClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -18,8 +19,11 @@ import java.net.UnknownHostException
 
 class ScanRepository(
     private val scanDao: ScanDao,
-    private val apiService: ApiService
+    private val apiClient: PlantApiClient,
 ) {
+    private val apiService: ApiService
+        get() = apiClient.apiService
+
     private val gson = Gson()
 
     /** Send image to server for analysis */

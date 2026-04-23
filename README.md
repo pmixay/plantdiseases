@@ -106,15 +106,20 @@ python train.py --classifier # train classifier only
 
 ### Build the Android app
 
-1. Open `android/` in Android Studio (Hedgehog 2023.1+)
-2. Set server URL in `app/build.gradle.kts`:
-   ```kotlin
-   // Emulator:
-   buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:8000/\"")
-   // Physical device (same WiFi):
-   buildConfigField("String", "API_BASE_URL", "\"http://YOUR_PC_IP:8000/\"")
-   ```
-3. Sync Gradle → Run on device/emulator
+1. Open `android/` in Android Studio (Hedgehog 2023.1+).
+2. Sync Gradle → Run on device/emulator.
+3. Set the server URL at runtime in **Profile → Server URL** — no rebuild required.
+   The shipped default (`http://10.0.2.2:8000/`) points at the Android emulator
+   loopback; on a physical device, type your PC's LAN IP, e.g. `http://192.168.1.42:8000/`.
+
+The compile-time default lives in `app/build.gradle.kts` as
+`buildConfigField("String", "API_BASE_URL", ...)` and is used the first
+time the app launches (and after "Reset to default" in Profile).
+
+> **Cleartext HTTP.** `network_security_config.xml` permits HTTP only for
+> `10.0.2.2`, `localhost`, and `127.0.0.1`. To test against a PC on the
+> same WiFi, add its exact IP as another `<domain>` entry (Android does
+> not accept CIDR ranges inside `<domain>`). Use HTTPS in production.
 
 ---
 
@@ -139,7 +144,8 @@ python train.py --classifier # train classifier only
 - **Onboarding with animated dots** — smooth `ValueAnimator`-driven indicator expand/contract, not a jarring snap.
 - **Bilingual** — Russian / English with one-tap switching and a volatile-cached lookup so every `onBind` is a single memory read.
 - **Hardened backups** — `allowBackup=false` plus `data_extraction_rules` that exclude files, prefs, and databases from cloud/device-transfer archives.
-- **Signed release APK** — signing config with ProGuard rules for Retrofit/Room/Lottie/Gson.
+- **Configurable server URL** — change the backend endpoint from Profile → Server URL without rebuilding.
+- **Release signing ready** — a `release` signing config in `build.gradle.kts` picks up `RELEASE_STORE_FILE` / `RELEASE_KEY_ALIAS` Gradle properties, with ProGuard rules for Retrofit/Room/Lottie/Gson. A production-signed smoke test is still pending (see `ROADMAP.md`).
 - **Min SDK 26** (Android 8.0+).
 
 ### Tech Stack
@@ -174,6 +180,8 @@ app/src/main/
 │   │   └── result/                  # Disease diagnosis result
 │   └── util/
 │       ├── LocaleHelper.kt          # Language switching
+│       ├── ServerConfig.kt          # Runtime server URL (SharedPreferences)
+│       ├── ThemeHelper.kt           # Light/Dark/System theme
 │       └── ImageUtils.kt            # Image processing
 └── res/
     ├── layout/                      # XML layouts

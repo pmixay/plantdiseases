@@ -3,8 +3,8 @@ package com.plantdiseases.app.ui.analysis
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import android.view.View
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
@@ -100,7 +100,25 @@ class AnalysisActivity : AppCompatActivity() {
         val app = application as PlantDiseasesApp
 
         lifecycleScope.launch {
-            val uploadFile = ImageUtils.prepareImageForUpload(this@AnalysisActivity, imagePath)
+            // Image preparation (decode + resize + re-encode) is CPU/IO heavy
+            // and allocates several bitmaps — keep it off the main thread.
+            val uploadFile = try {
+                withContext(Dispatchers.IO) {
+                    ImageUtils.prepareImageForUpload(this@AnalysisActivity, imagePath)
+                }
+            } catch (e: ImageUtils.ImageDecodeException) {
+                Log.w(TAG, "Image decode failed", e)
+                showError(getString(R.string.image_decode_error_title), getString(R.string.image_decode_error_detail))
+                return@launch
+            } catch (e: OutOfMemoryError) {
+                Log.e(TAG, "Out of memory preparing upload", e)
+                showError(getString(R.string.image_too_large_title), getString(R.string.image_too_large_detail))
+                return@launch
+            } catch (e: Exception) {
+                Log.e(TAG, "Unexpected failure preparing upload", e)
+                showError(getString(R.string.analysis_error), e.localizedMessage ?: getString(R.string.unknown_error))
+                return@launch
+            }
 
             try {
                 val result = app.scanRepository.analyzeImage(uploadFile)
@@ -117,25 +135,19 @@ class AnalysisActivity : AppCompatActivity() {
                     startActivity(intent)
                     finish()
                 }.onFailure { error ->
-                    binding.loadingLayout.visibility = View.GONE
-                    binding.errorLayout.visibility = View.VISIBLE
-
                     when (error) {
-                        is com.plantdiseases.app.data.repository.ScanRepository.ServerTimeoutException -> {
-                            binding.tvError.text = getString(R.string.server_not_responding)
-                            binding.tvErrorDetail.text = getString(R.string.server_not_responding_detail)
-                        }
-                        is com.plantdiseases.app.data.repository.ScanRepository.NoNetworkException -> {
-                            binding.tvError.text = getString(R.string.no_network)
-                            binding.tvErrorDetail.text = getString(R.string.no_network_detail)
-                        }
-                        is com.plantdiseases.app.data.repository.ScanRepository.RateLimitException -> {
-                            binding.tvError.text = getString(R.string.server_busy)
-                            binding.tvErrorDetail.text = getString(R.string.server_busy_detail)
-                        }
+                        is com.plantdiseases.app.data.repository.ScanRepository.ServerTimeoutException ->
+                            showError(getString(R.string.server_not_responding), getString(R.string.server_not_responding_detail))
+                        is com.plantdiseases.app.data.repository.ScanRepository.NoNetworkException ->
+                            showError(getString(R.string.no_network), getString(R.string.no_network_detail))
+                        is com.plantdiseases.app.data.repository.ScanRepository.RateLimitException ->
+                            showError(getString(R.string.server_busy), getString(R.string.server_busy_detail))
                         else -> {
-                            binding.tvError.text = getString(R.string.analysis_error)
-                            binding.tvErrorDetail.text = error.localizedMessage ?: getString(R.string.unknown_error)
+                            Log.w(TAG, "Analysis failed", error)
+                            showError(
+                                getString(R.string.analysis_error),
+                                error.localizedMessage ?: getString(R.string.unknown_error)
+                            )
                         }
                     }
                 }
@@ -145,7 +157,15 @@ class AnalysisActivity : AppCompatActivity() {
         }
     }
 
+    private fun showError(title: String, detail: String) {
+        binding.loadingLayout.visibility = View.GONE
+        binding.errorLayout.visibility = View.VISIBLE
+        binding.tvError.text = title
+        binding.tvErrorDetail.text = detail
+    }
+
     companion object {
         const val EXTRA_IMAGE_PATH = "extra_image_path"
+        private const val TAG = "AnalysisActivity"
     }
 }

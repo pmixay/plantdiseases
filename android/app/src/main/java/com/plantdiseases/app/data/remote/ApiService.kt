@@ -4,6 +4,7 @@ import android.content.Context
 import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.data.model.AnalysisResponse
 import com.plantdiseases.app.data.model.HealthResponse
+import com.plantdiseases.app.util.ServerConfig
 import okhttp3.Interceptor
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
@@ -88,11 +89,14 @@ class RetryInterceptor(
     }
 }
 
-class PlantApiClient(context: Context) {
+/**
+ * Retrofit client. The base URL is resolved through [ServerConfig] on every
+ * request so users can change the server address at runtime (Profile screen)
+ * without restarting the app.
+ */
+class PlantApiClient(private val context: Context) {
 
-    val apiService: ApiService
-
-    init {
+    private val client: OkHttpClient = run {
         val logging = HttpLoggingInterceptor().apply {
             level = if (BuildConfig.DEBUG) {
                 HttpLoggingInterceptor.Level.BODY
@@ -100,21 +104,38 @@ class PlantApiClient(context: Context) {
                 HttpLoggingInterceptor.Level.NONE
             }
         }
-
-        val client = OkHttpClient.Builder()
+        OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)
             .addInterceptor(RetryInterceptor(maxRetries = 3, initialDelayMs = 1000))
             .addInterceptor(logging)
             .build()
+    }
 
-        val retrofit = Retrofit.Builder()
-            .baseUrl(BuildConfig.API_BASE_URL)
+    @Volatile private var cachedBaseUrl: String = ServerConfig.getBaseUrl(context)
+    @Volatile private var cachedService: ApiService = buildService(cachedBaseUrl)
+
+    /** Returns the up-to-date [ApiService], rebuilding Retrofit when the URL changes. */
+    val apiService: ApiService
+        get() {
+            val current = ServerConfig.getBaseUrl(context)
+            if (current != cachedBaseUrl) {
+                synchronized(this) {
+                    if (current != cachedBaseUrl) {
+                        cachedBaseUrl = current
+                        cachedService = buildService(current)
+                    }
+                }
+            }
+            return cachedService
+        }
+
+    private fun buildService(baseUrl: String): ApiService =
+        Retrofit.Builder()
+            .baseUrl(baseUrl)
             .client(client)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
-
-        apiService = retrofit.create(ApiService::class.java)
-    }
+            .create(ApiService::class.java)
 }

@@ -24,6 +24,10 @@
     <string name="analyzing_detail">Examining your plant</string>
     <string name="analysis_error">Analysis Failed</string>
     <string name="unknown_error">Unknown error occurred</string>
+    <string name="image_decode_error_title">Cannot Read Image</string>
+    <string name="image_decode_error_detail">The file appears to be corrupt or in an unsupported format. Please try a different photo.</string>
+    <string name="image_too_large_title">Image Too Large</string>
+    <string name="image_too_large_detail">Not enough memory to process this photo. Try a smaller image.</string>
     <string name="retry">Retry</string>
     <string name="cancel">Cancel</string>
 
@@ -121,6 +125,14 @@
     <string name="server_online">Online</string>
     <string name="server_offline">Offline</string>
     <string name="server_checking">Checking…</string>
+    <string name="server_url_setting">Server URL</string>
+    <string name="server_url_hint">http://10.0.2.2:8000/</string>
+    <string name="server_url_help">Use 10.0.2.2 for the Android emulator, or your PC IP on the same WiFi.</string>
+    <string name="save">Save</string>
+    <string name="reset_to_default">Reset to default</string>
+    <string name="server_url_saved">Server URL saved</string>
+    <string name="server_url_invalid">Invalid URL</string>
+    <string name="server_url_reset">Reset to default URL</string>
 
     <!-- Top-3 alternatives -->
     <string name="why_this_diagnosis">Why This Diagnosis?</string>

@@ -1,8 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    Cleartext HTTP is permitted ONLY for local development targets so
+    `http://10.0.2.2` (emulator loopback) and `http://localhost` work
+    out of the box.
+
+    To test against a PC on the same WiFi, add its IP explicitly, e.g.:
+        <domain includeSubdomains="false">192.168.1.42</domain>
+
+    Android's network-security-config does NOT interpret CIDR blocks
+    inside <domain>, so entries like "192.168.0.0/16" silently match
+    nothing — always list the exact host.
+-->
 <network-security-config>
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="true">10.0.2.2</domain>
         <domain includeSubdomains="true">localhost</domain>
-        <domain includeSubdomains="true">192.168.0.0/16</domain>
+        <domain includeSubdomains="true">127.0.0.1</domain>
     </domain-config>
 </network-security-config>

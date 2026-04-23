@@ -12,7 +12,7 @@ class PlantDiseasesApp : Application() {
     val database: AppDatabase by lazy { AppDatabase.getInstance(this) }
     val apiClient: PlantApiClient by lazy { PlantApiClient(this) }
     val scanRepository: ScanRepository by lazy {
-        ScanRepository(database.scanDao(), apiClient.apiService)
+        ScanRepository(database.scanDao(), apiClient)
     }
 
     override fun onCreate() {
