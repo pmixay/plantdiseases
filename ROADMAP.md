@@ -3,7 +3,7 @@
 A short, honest record of what is done, what is still worth doing, and what we
 deliberately skip. The project is an Android client plus a Python FastAPI
 pipeline with two stages: a MobileNetV3-Small detector with Grad-CAM, and an
-EfficientNet-B0 classifier over 15 disease classes.
+EfficientNet-B0 classifier over 9 disease classes (PlantVillage Tomato subset).
 
 ---
 
@@ -112,10 +112,10 @@ These are not shipped; they are the next things to pull in if there is time.
 
 ### 1. Train real models
 The pipeline runs in heuristic demo mode without `models/detector.pth` and
-`models/classifier.pth`. Binary detector at ≥ 92 % and 15-class classifier at
-≥ 78 % is realistic on a PlantVillage-like subset with a
+`models/classifier.pth`. Binary detector at ≥ 92 % and the shipped 9-class
+classifier at ≥ 78 % is realistic on a PlantVillage-like subset with a
 `WeightedRandomSampler`, because PlantVillage is heavily imbalanced (many
-`tomato_healthy`, few `root_rot`). The training script already supports
+`tomato_healthy`, few rare classes). The training script already supports
 per-epoch checkpointing, so a Colab T4 run of a couple hours is enough for a
 defensible accuracy story. The inference path already reports Shannon entropy
 and top-3 alternatives, which means we can show calibration and failure modes

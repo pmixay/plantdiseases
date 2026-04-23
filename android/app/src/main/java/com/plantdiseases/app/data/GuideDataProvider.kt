@@ -12,7 +12,7 @@ object GuideDataProvider {
     fun getGuideItems(): List<GuideItem> = items
 
     private fun buildItems(): List<GuideItem> = listOf(
-        // Common diseases — covers all 15 model classes
+        // Common diseases — covers the shipped 9 model classes plus extra guide-only entries
 
         GuideItem(
             id = "powdery_mildew",

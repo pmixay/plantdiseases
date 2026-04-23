@@ -45,9 +45,9 @@ def test_demo_pipeline_result_shape():
     assert 0.95 <= total <= 1.05
 
 
-def test_class_names_match_default_15():
+def test_class_names_match_default():
     from classifier import DEFAULT_CLASS_NAMES, DiseaseClassifier
 
     clf = DiseaseClassifier(model_path=None)
-    assert clf.NUM_CLASSES == 15
+    assert clf.NUM_CLASSES == len(DEFAULT_CLASS_NAMES)
     assert clf.CLASS_NAMES == DEFAULT_CLASS_NAMES
