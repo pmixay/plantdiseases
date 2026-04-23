@@ -45,6 +45,17 @@ EfficientNet-B0 classifier over 15 disease classes.
 ### Android correctness and polish
 - `ImageUtils.prepareImageForUpload` downsample loop bug fixed (`&&` → `||`);
   non-square images are now actually downsampled.
+- `ImageUtils.prepareImageForUpload` now surfaces a typed
+  `ImageDecodeException` instead of NPE'ing on `BitmapFactory.decodeFile`
+  returning `null`, and intermediate bitmaps are recycled inside a
+  `try { ... } finally { }` so decode/encode failures can't leak memory.
+  `AnalysisActivity` runs the whole prepare-and-upload chain on
+  `Dispatchers.IO`, catches `ImageDecodeException` and `OutOfMemoryError`
+  separately, and shows dedicated, localized error cards.
+- `ResultActivity.createShareableImage` is now dispatched to
+  `Dispatchers.IO` (decode + canvas draw + JPEG encode), falls back to a
+  text-only share if compositing fails, and throws `ImageDecodeException`
+  instead of NPE'ing when the source file is corrupt.
 - `AnalysisActivity` wraps the upload in `try { ... } finally { delete() }` so
   the temp file is removed even when the user cancels.
 - `HeatmapOverlayView` no longer allocates per frame. `RadialGradient` is
@@ -57,6 +68,15 @@ EfficientNet-B0 classifier over 15 disease classes.
 - `RetryInterceptor` now retries on transient `IOException` **and** HTTP 429 /
   503, with capped exponential backoff. It reads and obeys the server's
   `Retry-After` seconds header.
+- `PlantApiClient` resolves the base URL through `ServerConfig` on every
+  request. The Retrofit instance is rebuilt under a lock when the user
+  changes the URL, so the OkHttp client (with its retry interceptor, logging,
+  and timeouts) is reused and no in-flight request is interrupted.
+- `network_security_config.xml` no longer contains a spurious
+  `<domain>192.168.0.0/16</domain>` (Android does not interpret CIDR inside
+  `<domain>`; the previous entry matched nothing). Cleartext is now scoped
+  to `10.0.2.2`, `localhost`, and `127.0.0.1`, with a comment explaining how
+  to add a specific LAN IP.
 - `GuideFragment` replaced a leaky `Handler(mainLooper)` debounce with a
   cancellable coroutine `Job`.
 - `GuideDataProvider` caches the full item list and groups by category once;
@@ -101,11 +121,14 @@ defensible accuracy story. The inference path already reports Shannon entropy
 and top-3 alternatives, which means we can show calibration and failure modes
 honestly.
 
-### 2. Configurable server URL
-`API_BASE_URL` still lives in `build.gradle.kts`. A Profile field backed by
-DataStore would let demo hardware point at any server without a rebuild; the
-`RetryInterceptor` and `Retry-After` handling are already in place for a
-"Test connection" button.
+### 2. Configurable server URL — **done**
+`ServerConfig` persists a user-set base URL to `SharedPreferences` (with the
+`BuildConfig.API_BASE_URL` as the default). `PlantApiClient` rebuilds its
+Retrofit instance under a lock when the URL changes and reuses the same
+OkHttp client (retry interceptor, logging, timeouts). The Profile screen
+exposes a validated text field, a **Save** button that accepts bare
+`host:port` (auto-prefixing `http://`), and a **Reset to default** action.
+Server-health re-checks immediately after a change.
 
 ### 3. Plant tracker (My Garden)
 One Room entity (`Plant(id, name, species, createdAt, icon)`) and a nullable
@@ -182,8 +205,10 @@ optional for a defence and mandatory for any actual deployment.
 | Temp-file cleanup on cancellation | done |
 | `allowBackup=false`, data-extraction rules | done |
 | Predictive back enabled | done |
+| Image pipeline off-main-thread, typed decode errors, OOM handled | done |
+| Network-security-config scoped to real hostnames (no bogus CIDR) | done |
 | Detector + classifier weights trained and shipped | pending |
-| Configurable server URL from the app | pending |
+| Configurable server URL from the app | done |
 | Release APK signed, installed, smoke-tested | pending |
 | My Garden persistent tracker | pending |
 | Care reminders | pending |

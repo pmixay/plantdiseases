@@ -18,6 +18,7 @@ import com.plantdiseases.app.R
 import com.plantdiseases.app.databinding.FragmentProfileBinding
 import com.plantdiseases.app.ui.onboarding.OnboardingActivity
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.ServerConfig
 import com.plantdiseases.app.util.ThemeHelper
 import kotlinx.coroutines.launch
 
@@ -60,8 +61,35 @@ class ProfileFragment : Fragment() {
         }
 
         setupThemeChips()
+        setupServerUrlEditor()
         loadStats()
         checkServerHealth()
+    }
+
+    private fun setupServerUrlEditor() {
+        val current = ServerConfig.getBaseUrl(requireContext())
+        binding.etServerUrl.setText(current)
+
+        binding.btnSaveServerUrl.setOnClickListener {
+            val raw = binding.etServerUrl.text?.toString().orEmpty()
+            val normalised = ServerConfig.setBaseUrl(requireContext(), raw)
+            if (normalised == null) {
+                binding.tilServerUrl.error = getString(R.string.server_url_invalid)
+                return@setOnClickListener
+            }
+            binding.tilServerUrl.error = null
+            binding.etServerUrl.setText(normalised)
+            Toast.makeText(requireContext(), R.string.server_url_saved, Toast.LENGTH_SHORT).show()
+            checkServerHealth()
+        }
+
+        binding.btnResetServerUrl.setOnClickListener {
+            val defaultUrl = ServerConfig.resetToDefault(requireContext())
+            binding.tilServerUrl.error = null
+            binding.etServerUrl.setText(defaultUrl)
+            Toast.makeText(requireContext(), R.string.server_url_reset, Toast.LENGTH_SHORT).show()
+            checkServerHealth()
+        }
     }
 
     private fun setupThemeChips() {

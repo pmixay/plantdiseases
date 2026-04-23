@@ -24,6 +24,10 @@
     <string name="analyzing_detail">Изучаем ваше растение</string>
     <string name="analysis_error">Ошибка анализа</string>
     <string name="unknown_error">Произошла неизвестная ошибка</string>
+    <string name="image_decode_error_title">Не удалось прочитать фото</string>
+    <string name="image_decode_error_detail">Файл повреждён или имеет неподдерживаемый формат. Попробуйте другое фото.</string>
+    <string name="image_too_large_title">Слишком большое фото</string>
+    <string name="image_too_large_detail">Не хватает памяти для обработки. Попробуйте фото поменьше.</string>
     <string name="retry">Повторить</string>
     <string name="cancel">Отмена</string>
 
@@ -121,6 +125,14 @@
     <string name="server_online">Онлайн</string>
     <string name="server_offline">Недоступен</string>
     <string name="server_checking">Проверка…</string>
+    <string name="server_url_setting">URL сервера</string>
+    <string name="server_url_hint">http://10.0.2.2:8000/</string>
+    <string name="server_url_help">Для эмулятора используйте 10.0.2.2, для физического устройства — IP компьютера в той же сети.</string>
+    <string name="save">Сохранить</string>
+    <string name="reset_to_default">По умолчанию</string>
+    <string name="server_url_saved">URL сервера сохранён</string>
+    <string name="server_url_invalid">Неверный URL</string>
+    <string name="server_url_reset">Сброшен на значение по умолчанию</string>
 
     <!-- Top-3 alternatives -->
     <string name="why_this_diagnosis">Почему этот диагноз?</string>

@@ -5,13 +5,24 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.net.Uri
+import android.util.Log
 import androidx.exifinterface.media.ExifInterface
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.*
 
 object ImageUtils {
+
+    private const val TAG = "ImageUtils"
+
+    /**
+     * Thrown when an image on disk cannot be decoded (corrupt, wrong format,
+     * truncated download, etc.). The message is human-friendly so the UI can
+     * surface it directly.
+     */
+    class ImageDecodeException(message: String, cause: Throwable? = null) : IOException(message, cause)
 
     /** Create a temp file for camera capture */
     fun createImageFile(context: Context): File {
@@ -20,13 +31,24 @@ object ImageUtils {
         return File(storageDir, "PLANT_${timeStamp}.jpg")
     }
 
-    /** Compress and resize image for upload */
+    /**
+     * Compress and resize image for upload.
+     *
+     * Performs two-pass decoding (bounds first, then downsample) and
+     * always recycles intermediate bitmaps. Throws [ImageDecodeException]
+     * on unreadable files and [OutOfMemoryError] upstream if the device
+     * genuinely cannot fit the image — callers should catch both.
+     */
+    @Throws(ImageDecodeException::class)
     fun prepareImageForUpload(context: Context, imagePath: String, maxSize: Int = 1024): File {
-        // Two-pass decoding: measure first, then downsample to avoid OOM on large images
         val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(imagePath, boundsOpts)
         val rawW = boundsOpts.outWidth
         val rawH = boundsOpts.outHeight
+        if (rawW <= 0 || rawH <= 0) {
+            throw ImageDecodeException("Image file is empty or corrupt: $imagePath")
+        }
+
         var inSampleSize = 1
         if (rawW > maxSize || rawH > maxSize) {
             val halfW = rawW / 2
@@ -37,31 +59,43 @@ object ImageUtils {
         }
         val decodeOpts = BitmapFactory.Options().apply { this.inSampleSize = inSampleSize }
         val original = BitmapFactory.decodeFile(imagePath, decodeOpts)
-        val rotated = rotateIfNeeded(imagePath, original)
+            ?: throw ImageDecodeException("Failed to decode image: $imagePath")
+
+        val rotated = try {
+            rotateIfNeeded(imagePath, original)
+        } catch (e: IOException) {
+            Log.w(TAG, "EXIF read failed, using unrotated bitmap", e)
+            original
+        }
 
         val ratio = maxSize.toFloat() / maxOf(rotated.width, rotated.height)
         val scaled = if (ratio < 1f) {
             Bitmap.createScaledBitmap(
                 rotated,
-                (rotated.width * ratio).toInt(),
-                (rotated.height * ratio).toInt(),
+                (rotated.width * ratio).toInt().coerceAtLeast(1),
+                (rotated.height * ratio).toInt().coerceAtLeast(1),
                 true
             )
         } else rotated
 
         val outputFile = File(context.cacheDir, "upload_${System.currentTimeMillis()}.jpg")
-        FileOutputStream(outputFile).use { out ->
-            scaled.compress(Bitmap.CompressFormat.JPEG, 85, out)
+        try {
+            FileOutputStream(outputFile).use { out ->
+                scaled.compress(Bitmap.CompressFormat.JPEG, 85, out)
+            }
+        } finally {
+            if (scaled !== rotated) scaled.recycle()
+            if (rotated !== original) rotated.recycle()
+            original.recycle()
         }
-
-        if (scaled !== rotated) scaled.recycle()
-        if (rotated !== original) rotated.recycle()
-        original.recycle()
 
         return outputFile
     }
 
-    /** Copy URI to internal storage */
+    /**
+     * Copy URI to internal storage. Returns null on I/O failure;
+     * the cause is logged so the user-visible toast can stay simple.
+     */
     fun copyUriToFile(context: Context, uri: Uri): File? {
         return try {
             val file = createImageFile(context)
@@ -69,10 +103,16 @@ object ImageUtils {
                 FileOutputStream(file).use { output ->
                     input.copyTo(output)
                 }
+            } ?: run {
+                Log.w(TAG, "copyUriToFile: null input stream for $uri")
+                return null
             }
             file
-        } catch (e: Exception) {
-            e.printStackTrace()
+        } catch (e: IOException) {
+            Log.w(TAG, "copyUriToFile failed for $uri", e)
+            null
+        } catch (e: SecurityException) {
+            Log.w(TAG, "copyUriToFile: permission denied for $uri", e)
             null
         }
     }
@@ -180,7 +220,11 @@ object ImageUtils {
             if (count == 0) return Double.MAX_VALUE
             val mean = sum / count
             (sumSq / count) - (mean * mean) // variance
+        } catch (e: OutOfMemoryError) {
+            Log.w(TAG, "computeBlurScore: out of memory", e)
+            Double.MAX_VALUE
         } catch (e: Exception) {
+            Log.w(TAG, "computeBlurScore failed", e)
             Double.MAX_VALUE // On error, assume sharp
         }
     }
@@ -219,7 +263,11 @@ object ImageUtils {
             val sampledPixels = (totalPixels / 4) // step 2 in both dimensions
             val greenRatio = greenPixels.toFloat() / sampledPixels.coerceAtLeast(1)
             greenRatio >= 0.08f
+        } catch (e: OutOfMemoryError) {
+            Log.w(TAG, "hasGreenContent: out of memory", e)
+            true
         } catch (e: Exception) {
+            Log.w(TAG, "hasGreenContent failed", e)
             true // On error, assume it's a plant
         }
     }

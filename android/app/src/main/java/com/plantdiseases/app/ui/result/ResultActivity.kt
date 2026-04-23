@@ -7,6 +7,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
@@ -34,7 +35,9 @@ import com.plantdiseases.app.ui.analysis.AnalysisActivity
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.LocaleHelper
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 
@@ -436,26 +439,46 @@ class ResultActivity : AppCompatActivity() {
             }
         }
 
-        try {
-            val imageFile = File(scan.imagePath)
-            if (imageFile.exists()) {
-                val shareFile = createShareableImage(scan)
-                val imageUri = FileProvider.getUriForFile(
-                    this, "${packageName}.fileprovider", shareFile
-                )
+        val imageFile = File(scan.imagePath)
+        if (!imageFile.exists()) {
+            launchShareTextOnly(shareText)
+            return
+        }
 
-                val sendIntent = Intent().apply {
-                    action = Intent.ACTION_SEND
-                    putExtra(Intent.EXTRA_TEXT, shareText)
-                    putExtra(Intent.EXTRA_STREAM, imageUri)
-                    type = "image/jpeg"
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-                startActivity(Intent.createChooser(sendIntent, getString(R.string.share)))
-                return
+        // Image composition (decode + canvas + JPEG encode) is off the UI thread.
+        lifecycleScope.launch {
+            val shareFile = try {
+                withContext(Dispatchers.IO) { createShareableImage(scan) }
+            } catch (e: Exception) {
+                Log.w(TAG, "Share image composition failed, falling back to text-only", e)
+                null
             }
-        } catch (_: Exception) { }
 
+            if (shareFile == null || isFinishing) {
+                if (!isFinishing) launchShareTextOnly(shareText)
+                return@launch
+            }
+
+            val imageUri = try {
+                FileProvider.getUriForFile(this@ResultActivity, "${packageName}.fileprovider", shareFile)
+            } catch (e: IllegalArgumentException) {
+                Log.w(TAG, "FileProvider URI failed, falling back to text-only", e)
+                launchShareTextOnly(shareText)
+                return@launch
+            }
+
+            val sendIntent = Intent().apply {
+                action = Intent.ACTION_SEND
+                putExtra(Intent.EXTRA_TEXT, shareText)
+                putExtra(Intent.EXTRA_STREAM, imageUri)
+                type = "image/jpeg"
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(sendIntent, getString(R.string.share)))
+        }
+    }
+
+    private fun launchShareTextOnly(shareText: String) {
         val sendIntent = Intent().apply {
             action = Intent.ACTION_SEND
             putExtra(Intent.EXTRA_TEXT, shareText)
@@ -470,9 +493,12 @@ class ResultActivity : AppCompatActivity() {
         val maxDim = 1920
         val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(scan.imagePath, boundsOpts)
-        var inSampleSize = 1
         val rawW = boundsOpts.outWidth
         val rawH = boundsOpts.outHeight
+        if (rawW <= 0 || rawH <= 0) {
+            throw ImageUtils.ImageDecodeException("Source image cannot be decoded: ${scan.imagePath}")
+        }
+        var inSampleSize = 1
         while (rawW / (inSampleSize * 2) >= maxDim && rawH / (inSampleSize * 2) >= maxDim) {
             inSampleSize *= 2
         }
@@ -481,6 +507,7 @@ class ResultActivity : AppCompatActivity() {
             inMutable = true
         }
         val result = BitmapFactory.decodeFile(scan.imagePath, decodeOpts)
+            ?: throw ImageUtils.ImageDecodeException("Failed to decode image: ${scan.imagePath}")
 
         val finalBitmap = if (maxOf(result.width, result.height) > maxDim) {
             val ratio = maxDim.toFloat() / maxOf(result.width, result.height)
@@ -611,5 +638,6 @@ class ResultActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_SCAN_ID = "extra_scan_id"
+        private const val TAG = "ResultActivity"
     }
 }
