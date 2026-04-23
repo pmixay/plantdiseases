@@ -13,6 +13,10 @@ server/*.pyc
 server/data/
 server/models/*.h5
 server/models/*.pth
+server/logs/
+server/**/__pycache__/
+server/.pytest_cache/
+.ruff_cache/
 
 # OS
 .DS_Store

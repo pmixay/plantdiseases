@@ -1,0 +1,20 @@
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+extend-exclude = [
+    "train_notebook.ipynb",
+    ".venv",
+    "venv",
+    "logs",
+    "models",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]
+ignore = [
+    "E501",  # line-length warnings are informational only; formatter handles it
+    "B008",  # FastAPI relies on Depends()/File() defaults being called at function definition
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B"]

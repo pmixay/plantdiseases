@@ -13,8 +13,8 @@ from pathlib import Path
 
 from PIL import Image
 
-from detector import DiseaseDetector
 from classifier import DiseaseClassifier
+from detector import DiseaseDetector
 
 logger = logging.getLogger(__name__)
 

@@ -8,25 +8,25 @@ Stage 2:  EfficientNet-B0    — classify the specific disease
 import asyncio
 import io
 import ipaddress
+import logging
 import math
 import os
 import threading
 import time
-import logging
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, Request
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from PIL import Image, UnidentifiedImageError
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response as StarletteResponse
 
-from pipeline import PlantDiseasePipeline
 from diseases_data import DISEASES_DATABASE
+from pipeline import PlantDiseasePipeline
 
 try:
     from . import __version__ as APP_VERSION  # type: ignore
@@ -81,7 +81,17 @@ TRUSTED_PROXIES = {
     p.strip() for p in os.getenv("TRUSTED_PROXIES", "").split(",") if p.strip()
 }
 
-_inference_executor = ThreadPoolExecutor(max_workers=int(os.getenv("INFER_WORKERS", 2)))
+INFER_WORKERS = int(os.getenv("INFER_WORKERS", 2))
+_inference_executor: ThreadPoolExecutor | None = None
+
+
+def _get_inference_executor() -> ThreadPoolExecutor:
+    """Lazily (re)create the inference executor so test harnesses that cycle
+    the FastAPI lifespan can reuse it after a previous shutdown."""
+    global _inference_executor
+    if _inference_executor is None or getattr(_inference_executor, "_shutdown", False):
+        _inference_executor = ThreadPoolExecutor(max_workers=INFER_WORKERS)
+    return _inference_executor
 
 # ── Thread-safe server metrics ──────────────────────────────────────
 SERVER_START_TIME: float = 0.0
@@ -177,8 +187,14 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             del self._last_request[ip]
 
     async def dispatch(self, request: Request, call_next):
-        # Health and metadata endpoints are always free
-        if request.url.path in ("/api/health", "/api/version", "/api/classes"):
+        # Health, metadata and metrics endpoints are always free
+        if request.url.path in (
+            "/api/health",
+            "/api/version",
+            "/api/classes",
+            "/api/metrics",
+            "/api/metrics/prometheus",
+        ):
             return await call_next(request)
 
         client_ip = _client_ip(request)
@@ -238,8 +254,9 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 # ── Lifecycle ────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global pipeline, SERVER_START_TIME
+    global pipeline, SERVER_START_TIME, _inference_executor
     SERVER_START_TIME = time.time()
+    _inference_executor = _get_inference_executor()
     try:
         pipeline = PlantDiseasePipeline(
             detector_path=DETECTOR_PATH,
@@ -251,7 +268,9 @@ async def lifespan(app: FastAPI):
         pipeline = PlantDiseasePipeline()
     yield
     logger.info("Server shutting down")
-    _inference_executor.shutdown(wait=False)
+    if _inference_executor is not None:
+        _inference_executor.shutdown(wait=False)
+        _inference_executor = None
 
 
 app = FastAPI(
@@ -305,12 +324,12 @@ def _open_image(contents: bytes) -> Image.Image:
         img = Image.open(io.BytesIO(contents))
         img.load()  # force actual decoding to surface truncation errors
         return img.convert("RGB")
-    except Image.DecompressionBombError:
-        raise HTTPException(status_code=400, detail="Image exceeds decompression safety limit")
-    except UnidentifiedImageError:
-        raise HTTPException(status_code=400, detail="Cannot read image file")
-    except Exception:
-        raise HTTPException(status_code=400, detail="Cannot read image file")
+    except Image.DecompressionBombError as exc:
+        raise HTTPException(status_code=400, detail="Image exceeds decompression safety limit") from exc
+    except UnidentifiedImageError as exc:
+        raise HTTPException(status_code=400, detail="Cannot read image file") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Cannot read image file") from exc
 
 
 # ── Endpoints ────────────────────────────────────────────────────────
@@ -372,6 +391,55 @@ async def metrics():
     }
 
 
+_PROM_LABEL_ESCAPE = str.maketrans({"\\": r"\\", "\"": r"\"", "\n": r"\n"})
+
+
+def _prom_label(value: str) -> str:
+    return value.translate(_PROM_LABEL_ESCAPE)
+
+
+@app.get("/api/metrics/prometheus")
+async def metrics_prometheus():
+    """Prometheus text exposition (v0.0.4) of the same counters as /api/metrics."""
+    snap = _snapshot_metrics()
+    uptime = time.time() - SERVER_START_TIME if SERVER_START_TIME else 0
+    mode = pipeline.mode if pipeline else "unknown"
+    version = _prom_label(APP_VERSION)
+
+    lines = [
+        "# HELP plantdiseases_uptime_seconds Seconds since the server started.",
+        "# TYPE plantdiseases_uptime_seconds gauge",
+        f"plantdiseases_uptime_seconds {uptime:.3f}",
+        "# HELP plantdiseases_requests_total Total HTTP requests handled.",
+        "# TYPE plantdiseases_requests_total counter",
+        f"plantdiseases_requests_total {snap['total_requests']}",
+        "# HELP plantdiseases_analyses_total Total successful /api/analyze responses.",
+        "# TYPE plantdiseases_analyses_total counter",
+        f"plantdiseases_analyses_total {snap['total_analyses']}",
+        "# HELP plantdiseases_errors_total Total error responses from /api/analyze.",
+        "# TYPE plantdiseases_errors_total counter",
+        f"plantdiseases_errors_total {snap['total_errors']}",
+        "# HELP plantdiseases_analyze_latency_ms_avg Average analyse latency in milliseconds.",
+        "# TYPE plantdiseases_analyze_latency_ms_avg gauge",
+        f"plantdiseases_analyze_latency_ms_avg {snap['avg_latency_ms']}",
+        "# HELP plantdiseases_pipeline_mode_info Pipeline mode and server version (value is always 1).",
+        "# TYPE plantdiseases_pipeline_mode_info gauge",
+        f'plantdiseases_pipeline_mode_info{{mode="{_prom_label(mode)}",version="{version}"}} 1',
+        "# HELP plantdiseases_class_predictions_total Count of predictions per class.",
+        "# TYPE plantdiseases_class_predictions_total counter",
+    ]
+    for class_name, count in sorted(snap["class_counts"].items()):
+        lines.append(
+            f'plantdiseases_class_predictions_total{{class="{_prom_label(class_name)}"}} {count}'
+        )
+
+    body = "\n".join(lines) + "\n"
+    return StarletteResponse(
+        content=body,
+        media_type="text/plain; version=0.0.4; charset=utf-8",
+    )
+
+
 @app.post("/api/analyze")
 async def analyze_image(image: UploadFile = File(...)):
     """Analyse a plant image for diseases (two-stage pipeline).
@@ -420,20 +488,20 @@ async def analyze_image(image: UploadFile = File(...)):
     loop = asyncio.get_running_loop()
     try:
         result = await asyncio.wait_for(
-            loop.run_in_executor(_inference_executor, pipeline.analyze, img),
+            loop.run_in_executor(_get_inference_executor(), pipeline.analyze, img),
             timeout=INFERENCE_TIMEOUT,
         )
-    except asyncio.TimeoutError:
+    except asyncio.TimeoutError as exc:
         _record_error()
         logger.error("Inference timed out after %.0fs for %s", INFERENCE_TIMEOUT, image.filename)
         raise HTTPException(
             status_code=504,
             detail=f"Analysis timed out after {int(INFERENCE_TIMEOUT)} seconds",
-        )
-    except Exception as e:
+        ) from exc
+    except Exception as exc:
         _record_error()
-        logger.exception("Inference crashed: %s", e)
-        raise HTTPException(status_code=500, detail="Internal inference error")
+        logger.exception("Inference crashed: %s", exc)
+        raise HTTPException(status_code=500, detail="Internal inference error") from exc
 
     class_name = result["class_name"]
     confidence = result["confidence"]
