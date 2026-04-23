@@ -137,10 +137,21 @@ class DiseaseDetector:
             logger.warning("Detector: no model found, running in DEMO mode")
 
     def _load_model(self, path: Path):
+        state = torch.load(str(path), map_location=self.device, weights_only=True)
+
+        # The detector must be binary; refuse to load anything else.
+        head_weight = None
+        for key, tensor in state.items():
+            if key.startswith("classifier.") and key.endswith(".weight") and tensor.ndim == 2:
+                head_weight = tensor
+        if head_weight is not None and int(head_weight.shape[0]) != 2:
+            raise ValueError(
+                f"Detector checkpoint has {int(head_weight.shape[0])} outputs, expected 2 "
+                f"(healthy/diseased). Retrain with `python train.py --detector`."
+            )
+
         net = models.mobilenet_v3_small(weights=None)
         net.classifier[-1] = nn.Linear(net.classifier[-1].in_features, 2)
-
-        state = torch.load(str(path), map_location=self.device, weights_only=True)
         net.load_state_dict(state)
         net.to(self.device).eval()
 
