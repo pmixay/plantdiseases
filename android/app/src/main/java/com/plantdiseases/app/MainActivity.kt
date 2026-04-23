@@ -48,16 +48,36 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        // Handle insets for edge-to-edge
-        ViewCompat.setOnApplyWindowInsetsListener(binding.toolbar) { view, insets ->
-            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            view.updatePadding(top = systemBars.top)
+        // Single root inset listener — dispatches status-bar + nav-bar + cutout insets
+        // to the toolbar (top) and the bottom navigation (bottom/sides).
+        // Using clipToPadding=false on the bottom nav means this padding expands
+        // the view instead of squeezing icon+label into a fixed 80dp area, which
+        // was the root cause of the overlapping menu on Samsung/gesture-nav devices.
+        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, insets ->
+            val bars = insets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+            )
+            // Padding on the AppBarLayout (wrap_content) — keeps the toolbar's own
+            // height at actionBarSize, and extends the gradient behind the status bar.
+            // Side insets also prevent toolbar action icons from being clipped by a
+            // display cutout / rounded corner on edge-to-edge devices.
+            binding.appBar.updatePadding(top = bars.top)
+            binding.toolbar.updatePadding(left = bars.left, right = bars.right)
+            binding.bottomNavigation.updatePadding(
+                bottom = bars.bottom,
+                left = bars.left,
+                right = bars.right,
+            )
             insets
         }
-        ViewCompat.setOnApplyWindowInsetsListener(binding.bottomNavigation) { view, insets ->
-            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            view.updatePadding(bottom = systemBars.bottom)
-            insets
+
+        // Push fragment content above the bottom navigation using its real height
+        // (which now varies with the system gesture bar).
+        binding.bottomNavigation.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
+            val h = v.height
+            if (binding.navHostFragment.paddingBottom != h) {
+                binding.navHostFragment.updatePadding(bottom = h)
+            }
         }
 
         setSupportActionBar(binding.toolbar)
