@@ -7,7 +7,7 @@ classifier works on the most informative part of the image.
 
 Class names are loaded from ``models/classes.json`` (produced by
 the training notebook).  If that file is missing, a built-in default
-list of 15 classes is used.
+list matching the shipped 9-class weights is used.
 
 When no trained model is found, falls back to colour-based heuristics.
 """
@@ -28,22 +28,18 @@ logger = logging.getLogger(__name__)
 
 IMG_SIZE = 224
 
+# Order must match the training-time ``sorted(ImageFolder.classes)``
+# (alphabetical) because the classifier head indices were frozen against it.
 DEFAULT_CLASS_NAMES = [
-    "healthy",
     "bacterial_spot",
     "early_blight",
+    "healthy",
     "late_blight",
     "leaf_mold",
+    "mosaic_virus",
     "septoria_leaf_spot",
     "spider_mites",
     "target_spot",
-    "mosaic_virus",
-    "yellow_leaf_curl",
-    "powdery_mildew",
-    "rust",
-    "root_rot",
-    "anthracnose",
-    "botrytis",
 ]
 
 

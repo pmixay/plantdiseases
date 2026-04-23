@@ -144,9 +144,9 @@
     <string name="model_params">Параметры</string>
     <string name="model_classes">Классы</string>
     <string name="model_pipeline">Пайплайн</string>
-    <string name="model_arch_value">MobileNetV3 + EfficientNet-B0</string>
-    <string name="model_params_value">~8M всего</string>
-    <string name="model_classes_value">15 болезней + здоровое</string>
+    <string name="model_arch_value">MobileNetV3-Small + EfficientNet-B0</string>
+    <string name="model_params_value">~5.5M всего</string>
+    <string name="model_classes_value">8 болезней + здоровое</string>
     <string name="model_pipeline_value">Двухэтапный: детекция → классификация</string>
     <string name="model_description">Этап 1 определяет, болеет ли растение, и находит поражённую область с помощью Grad-CAM. Этап 2 классифицирует конкретную болезнь по вырезанной области.</string>
 

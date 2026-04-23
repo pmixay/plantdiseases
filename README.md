@@ -19,7 +19,7 @@ AI-powered houseplant disease detection app for Android with a Python ML server.
 │  • Profile & stats   │         │   ┌──────────▼───────────────┐   │
 │                      │         │   │ Stage 2: Classifier      │   │
 │                      │         │   │ EfficientNet-B0          │   │
-│                      │         │   │ 15 disease classes       │   │
+│                      │         │   │ 9 classes (tomato)       │   │
 │                      │         │   └──────────────────────────┘   │
 └──────────────────────┘         └──────────────────────────────────┘
 ```
@@ -31,7 +31,7 @@ Full photo
     │
     ▼
 ┌─────────────────────────┐
-│  Stage 1: Detector       │  MobileNetV3-Small (2.5M params)
+│  Stage 1: Detector       │  MobileNetV3-Small (1.5M params)
 │  "Is the plant diseased? │  Binary classifier + Grad-CAM heatmap
 │   Where is the damage?"  │  Outputs: healthy/diseased + bounding box
 └──────────┬──────────────┘
@@ -45,8 +45,8 @@ Full photo
            │
            ▼
 ┌─────────────────────────┐
-│  Stage 2: Classifier     │  EfficientNet-B0 (5.3M params)
-│  "Which disease is it?"  │  15-class fine-grained classification
+│  Stage 2: Classifier     │  EfficientNet-B0 (4.0M params, 9-class head)
+│  "Which disease is it?"  │  9-class fine-grained classification
 │                          │  Works on the cropped ROI for precision
 └──────────┬──────────────┘
            │
@@ -59,7 +59,7 @@ Full photo
 - **Better accuracy** — the classifier focuses on the diseased area, not the whole image
 - **Faster for healthy plants** — no need to run the heavy classifier
 - **Explainable** — the bounding box shows exactly what the model detected
-- **Lightweight** — both models total ~8M parameters (vs 100M+ for larger architectures)
+- **Lightweight** — both models total ~5.5M parameters (vs 100M+ for larger architectures)
 
 ---
 
@@ -200,8 +200,8 @@ app/src/main/
 
 | Stage | Model | Params | Task |
 |-------|-------|--------|------|
-| 1 — Detector | MobileNetV3-Small | 2.5 M | Binary (healthy/diseased) + Grad-CAM region |
-| 2 — Classifier | EfficientNet-B0 | 5.3 M | 15-class disease identification |
+| 1 — Detector | MobileNetV3-Small | 1.5 M | Binary (healthy/diseased) + Grad-CAM region |
+| 2 — Classifier | EfficientNet-B0 | 4.0 M | 9-class disease identification |
 
 Both models use **ImageNet-pretrained** backbones with two-phase transfer learning:
 - Phase A: freeze backbone → train classifier head
@@ -277,7 +277,7 @@ start.bat --train
 |--------|------|-------------|
 | `GET` | `/api/health` | Liveness probe + pipeline status + uptime |
 | `GET` | `/api/version` | Server version, model digest, class count |
-| `GET` | `/api/classes` | 15 disease classes with bilingual names |
+| `GET` | `/api/classes` | 9 classes with bilingual names |
 | `GET` | `/api/metrics` | Request / error / latency counters for dashboards |
 | `POST` | `/api/analyze` | Upload image → get diagnosis |
 
@@ -332,23 +332,26 @@ start.bat --train
 
 ## Disease Classes
 
+The shipped classifier weights cover the 9-class PlantVillage Tomato subset.
+Order is alphabetical — it matches `sorted(ImageFolder.classes)` at training time
+and is the canonical mapping stored in `server/models/classes.json`.
+
 | # | Class | EN Name | RU Name |
 |---|-------|---------|---------|
-| 0 | healthy | Healthy Plant | Здоровое растение |
-| 1 | bacterial_spot | Bacterial Spot | Бактериальная пятнистость |
-| 2 | early_blight | Early Blight | Ранний фитофтороз |
+| 0 | bacterial_spot | Bacterial Spot | Бактериальная пятнистость |
+| 1 | early_blight | Early Blight | Ранний фитофтороз |
+| 2 | healthy | Healthy Plant | Здоровое растение |
 | 3 | late_blight | Late Blight | Фитофтороз |
 | 4 | leaf_mold | Leaf Mold | Листовая плесень |
-| 5 | septoria_leaf_spot | Septoria Leaf Spot | Септориоз |
-| 6 | spider_mites | Spider Mites | Паутинный клещ |
-| 7 | target_spot | Target Spot | Мишеневидная пятнистость |
-| 8 | mosaic_virus | Mosaic Virus | Мозаичный вирус |
-| 9 | yellow_leaf_curl | Yellow Leaf Curl | Жёлтое скручивание |
-| 10 | powdery_mildew | Powdery Mildew | Мучнистая роса |
-| 11 | rust | Rust | Ржавчина |
-| 12 | root_rot | Root Rot | Корневая гниль |
-| 13 | anthracnose | Anthracnose | Антракноз |
-| 14 | botrytis | Gray Mold | Серая гниль |
+| 5 | mosaic_virus | Mosaic Virus | Мозаичный вирус |
+| 6 | septoria_leaf_spot | Septoria Leaf Spot | Септориоз |
+| 7 | spider_mites | Spider Mites | Паутинный клещ |
+| 8 | target_spot | Target Spot | Мишеневидная пятнистость |
+
+`server/diseases_data.py` additionally carries bilingual treatment / prevention
+copy for `yellow_leaf_curl`, `powdery_mildew`, `rust`, `root_rot`, `anthracnose`,
+`botrytis`, and `unknown`, which are available if you retrain on a wider class
+set — just regenerate `classes.json` to match your new `ImageFolder`.
 
 ---
 

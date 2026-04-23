@@ -4,13 +4,15 @@ from __future__ import annotations
 
 
 def test_health_contract(client):
+    from classifier import DEFAULT_CLASS_NAMES
+
     r = client.get("/api/health")
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "ok"
     assert "version" in body
     assert body["pipeline_mode"] in ("full", "partial", "demo")
-    assert body["num_classes"] == 15
+    assert body["num_classes"] == len(DEFAULT_CLASS_NAMES)
     assert body["uptime_seconds"] >= 0
 
 
@@ -25,11 +27,13 @@ def test_version_contract(client):
 
 
 def test_classes_contract(client):
+    from classifier import DEFAULT_CLASS_NAMES
+
     r = client.get("/api/classes")
     assert r.status_code == 200
     body = r.json()
-    assert body["count"] == 15
-    assert len(body["classes"]) == 15
+    assert body["count"] == len(DEFAULT_CLASS_NAMES)
+    assert len(body["classes"]) == len(DEFAULT_CLASS_NAMES)
 
     first = body["classes"][0]
     assert set(first.keys()) >= {"class", "name_en", "name_ru", "is_healthy"}
