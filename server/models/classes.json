@@ -14,8 +14,7 @@
     "mosaic_virus",
     "not_a_plant",
     "powdery_mildew",
-    "rust",
-    "spider_mites"
+    "rust"
   ],
   "detector_classes": [
     "leaf",
