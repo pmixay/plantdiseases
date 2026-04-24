@@ -110,7 +110,7 @@ class LeafDetector:
         cls_ids = r.boxes.cls.cpu().numpy().astype(int)
 
         detections = []
-        for (x1, y1, x2, y2), conf, cls_id in zip(boxes_xyxy, confs, cls_ids):
+        for (x1, y1, x2, y2), conf, cls_id in zip(boxes_xyxy, confs, cls_ids, strict=False):
             cls_id = int(cls_id)
             class_name = (
                 DETECTOR_CLASSES[cls_id]
