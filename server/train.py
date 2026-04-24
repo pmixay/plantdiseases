@@ -45,8 +45,10 @@ from __future__ import annotations
 
 import argparse
 import copy
+import io
 import json
 import os
+import random
 import sys
 import time
 from pathlib import Path
@@ -54,10 +56,33 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from PIL import Image
 from torch.utils.data import DataLoader, WeightedRandomSampler
 from torchvision import datasets, transforms
 
 from classifier import _build_efficientnet_v2_s
+
+
+class RandomJPEGCompression:
+    """Re-encode the PIL image as JPEG with a random quality level.
+
+    Phone cameras apply aggressive JPEG compression that creates blocky
+    artefacts on leaf edges and disease spots. Simulating this during
+    training makes the classifier a lot more robust on real uploads.
+    """
+
+    def __init__(self, p: float = 0.5, quality_range: tuple[int, int] = (40, 95)):
+        self.p = p
+        self.q_min, self.q_max = quality_range
+
+    def __call__(self, img: Image.Image) -> Image.Image:
+        if random.random() > self.p:
+            return img
+        q = random.randint(self.q_min, self.q_max)
+        buf = io.BytesIO()
+        img.convert("RGB").save(buf, format="JPEG", quality=q)
+        buf.seek(0)
+        return Image.open(buf).convert("RGB")
 
 # ── Paths ────────────────────────────────────────────────────────────
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -82,17 +107,27 @@ torch.manual_seed(SEED)
 
 
 # ── Classifier transforms (augmentation tuned for real-world houseplants) ─
+#
+# Covers the failure modes that actually hit a houseplant app in practice:
+#   • hand-held phone shake           → GaussianBlur, RandomAffine
+#   • off-axis shots of leaves        → RandomPerspective, RandomRotation
+#   • lighting (tungsten / daylight)  → ColorJitter
+#   • fingers / pots occluding leaves → RandomErasing
+#   • aggressive mobile JPEG codecs   → RandomJPEGCompression (custom)
+#   • varying framing / zoom          → RandomResizedCrop
 train_transforms = transforms.Compose([
-    transforms.RandomResizedCrop(CLASSIFIER_IMG_SIZE, scale=(0.65, 1.0)),
+    transforms.RandomResizedCrop(CLASSIFIER_IMG_SIZE, scale=(0.6, 1.0)),
     transforms.RandomHorizontalFlip(),
     transforms.RandomVerticalFlip(p=0.1),
     transforms.RandomRotation(25),
+    transforms.RandomPerspective(distortion_scale=0.25, p=0.35),
     transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.25, hue=0.05),
     transforms.RandomAffine(degrees=0, translate=(0.08, 0.08), shear=8),
-    transforms.GaussianBlur(kernel_size=3, sigma=(0.1, 1.3)),
+    transforms.GaussianBlur(kernel_size=3, sigma=(0.1, 1.5)),
+    RandomJPEGCompression(p=0.5, quality_range=(40, 95)),
     transforms.ToTensor(),
     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
-    transforms.RandomErasing(p=0.2, scale=(0.02, 0.20)),
+    transforms.RandomErasing(p=0.35, scale=(0.02, 0.22)),
 ])
 
 val_transforms = transforms.Compose([
@@ -125,6 +160,49 @@ def _make_sampler(dataset: datasets.ImageFolder) -> WeightedRandomSampler:
         num_samples=len(sample_weights),
         replacement=True,
     )
+
+
+@torch.no_grad()
+def _print_per_class_report(
+    model: nn.Module,
+    val_loader: DataLoader,
+    class_names: list[str],
+    device: torch.device,
+    use_amp: bool,
+) -> None:
+    """Collect predictions over the whole val set and print per-class
+    precision/recall/F1 plus a confusion matrix. Required to tell whether
+    the classifier actually learned disease classes or only the dominant
+    `healthy` / `not_a_plant` classes."""
+    model.eval()
+    all_pred: list[int] = []
+    all_true: list[int] = []
+    for images, labels in val_loader:
+        images = images.to(device, non_blocking=True)
+        with torch.cuda.amp.autocast(enabled=use_amp and device.type == "cuda"):
+            logits = model(images)
+        all_pred.extend(logits.argmax(1).cpu().tolist())
+        all_true.extend(labels.tolist())
+
+    try:
+        from sklearn.metrics import classification_report, confusion_matrix  # type: ignore
+    except ImportError:
+        print("[classifier] scikit-learn not installed — skipping per-class report")
+        return
+
+    print("\n[classifier] Per-class metrics on val:")
+    print(classification_report(
+        all_true, all_pred,
+        target_names=class_names,
+        digits=3,
+        zero_division=0,
+    ))
+    cm = confusion_matrix(all_true, all_pred, labels=list(range(len(class_names))))
+    print("Confusion matrix (rows=true, cols=pred):")
+    header = "            " + " ".join(f"{n[:8]:>9}" for n in class_names)
+    print(header)
+    for name, row in zip(class_names, cm, strict=False):
+        print(f"{name:>12} " + " ".join(f"{v:>9}" for v in row))
 
 
 # ── Stage 2: Classifier training ─────────────────────────────────────
@@ -194,16 +272,42 @@ def train_classifier(
     net.to(device)
 
     criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
-    optimizer = optim.AdamW(
+
+    def _make_opt_sched(params, lr: float, epochs: int):
+        """AdamW with linear warmup (1 epoch) → cosine decay."""
+        opt = optim.AdamW(params, lr=lr, weight_decay=1e-4)
+        warmup_epochs = min(1, max(epochs // 10, 0))
+        if warmup_epochs > 0 and epochs > warmup_epochs:
+            warm = optim.lr_scheduler.LinearLR(
+                opt, start_factor=0.1, end_factor=1.0, total_iters=warmup_epochs,
+            )
+            cos = optim.lr_scheduler.CosineAnnealingLR(
+                opt, T_max=epochs - warmup_epochs,
+            )
+            sch = optim.lr_scheduler.SequentialLR(
+                opt, schedulers=[warm, cos], milestones=[warmup_epochs],
+            )
+        else:
+            sch = optim.lr_scheduler.CosineAnnealingLR(opt, T_max=max(epochs, 1))
+        return opt, sch
+
+    optimizer, scheduler = _make_opt_sched(
         [p for p in net.parameters() if p.requires_grad],
-        lr=lr_head, weight_decay=1e-4,
+        lr=lr_head, epochs=epochs_head,
     )
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs_head)
     scaler = torch.cuda.amp.GradScaler(enabled=use_amp and device.type == "cuda")
 
     best_acc = 0.0
     best_state = None
     CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
+
+    def _save_checkpoint(state: dict, epoch: int, phase_name: str) -> None:
+        """Persist `last.pth` after every epoch so a Colab disconnect
+        doesn't cost the whole run."""
+        torch.save(
+            {"state_dict": state, "epoch": epoch, "phase": phase_name},
+            CHECKPOINT_DIR / "last.pth",
+        )
 
     def run_epoch(model, loader, train: bool):
         model.train(train)
@@ -240,11 +344,14 @@ def train_classifier(
             f"  epoch {epoch}/{epochs_head}  "
             f"train_loss={tr_loss:.3f} acc={tr_acc:.3f}  "
             f"val_loss={val_loss:.3f} acc={val_acc:.3f}  "
+            f"lr={optimizer.param_groups[0]['lr']:.2e}  "
             f"({time.time() - t0:.1f}s)"
         )
+        _save_checkpoint(net.state_dict(), epoch, "A")
         if val_acc > best_acc:
             best_acc = val_acc
             best_state = copy.deepcopy(net.state_dict())
+            torch.save(best_state, CHECKPOINT_DIR / "best.pth")
 
     # Phase B: unfreeze top blocks
     unfreeze_layers = ("features.5", "features.6", "features.7", "classifier.")
@@ -253,11 +360,10 @@ def train_classifier(
     trainable = sum(p.numel() for p in net.parameters() if p.requires_grad)
     print(f"[classifier] Phase B — fine-tune ({trainable:,} trainable params)")
 
-    optimizer = optim.AdamW(
+    optimizer, scheduler = _make_opt_sched(
         [p for p in net.parameters() if p.requires_grad],
-        lr=lr_finetune, weight_decay=1e-4,
+        lr=lr_finetune, epochs=epochs_finetune,
     )
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs_finetune)
 
     for epoch in range(1, epochs_finetune + 1):
         t0 = time.time()
@@ -268,11 +374,18 @@ def train_classifier(
             f"  epoch {epoch}/{epochs_finetune}  "
             f"train_loss={tr_loss:.3f} acc={tr_acc:.3f}  "
             f"val_loss={val_loss:.3f} acc={val_acc:.3f}  "
+            f"lr={optimizer.param_groups[0]['lr']:.2e}  "
             f"({time.time() - t0:.1f}s)"
         )
+        _save_checkpoint(net.state_dict(), epoch, "B")
         if val_acc > best_acc:
             best_acc = val_acc
             best_state = copy.deepcopy(net.state_dict())
+            torch.save(best_state, CHECKPOINT_DIR / "best.pth")
+
+    # Per-class diagnostics — without these, high aggregate accuracy can
+    # hide a model that just predicts `healthy` or never flags disease.
+    _print_per_class_report(net, val_loader, train_ds.classes, device, use_amp)
 
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     torch.save(best_state, CLASSIFIER_OUTPUT)
