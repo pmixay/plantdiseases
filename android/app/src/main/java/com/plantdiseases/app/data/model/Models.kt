@@ -2,19 +2,22 @@ package com.plantdiseases.app.data.model
 
 import com.google.gson.annotations.SerializedName
 
-/** Region of interest detected by Grad-CAM (pixel coordinates in original image) */
+/** Single bounding box returned by the YOLOv8 detector (Stage 1). */
 data class DetectionRegion(
     @SerializedName("x") val x: Int,
     @SerializedName("y") val y: Int,
     @SerializedName("width") val width: Int,
-    @SerializedName("height") val height: Int
+    @SerializedName("height") val height: Int,
+    @SerializedName("class") val className: String? = null,
+    @SerializedName("confidence") val confidence: Float? = null
 )
 
-/** Stage 1 detection result */
+/** Stage 1 detection result — list of boxes plus the one Stage 2 used. */
 data class Detection(
     @SerializedName("is_diseased") val isDiseased: Boolean,
     @SerializedName("detector_confidence") val detectorConfidence: Float,
-    @SerializedName("region") val region: DetectionRegion?
+    @SerializedName("regions") val regions: List<DetectionRegion> = emptyList(),
+    @SerializedName("primary_region") val primaryRegion: DetectionRegion? = null
 )
 
 /** Response from the server after analyzing an image */

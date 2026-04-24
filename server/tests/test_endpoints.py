@@ -20,9 +20,10 @@ def test_version_contract(client):
     r = client.get("/api/version")
     assert r.status_code == 200
     body = r.json()
-    assert body["detector_arch"] == "MobileNetV3-Small"
-    assert body["classifier_arch"] == "EfficientNet-B0"
+    assert body["detector_arch"] == "YOLOv8n"
+    assert body["classifier_arch"] == "EfficientNetV2-S"
     assert body["stages"] == 2
+    assert body["focus"] == "houseplants"
     assert body["pipeline_mode"] in ("full", "partial", "demo")
 
 
@@ -107,4 +108,7 @@ def test_analyze_response_contract(client, png_bytes):
     assert 0.0 <= body["uncertainty"] <= 1.0
     assert isinstance(body["treatment"], list)
     assert isinstance(body["all_probs"], dict)
-    assert set(body["detection"].keys()) == {"is_diseased", "detector_confidence", "region"}
+    assert set(body["detection"].keys()) == {
+        "is_diseased", "detector_confidence", "regions", "primary_region",
+    }
+    assert isinstance(body["detection"]["regions"], list)

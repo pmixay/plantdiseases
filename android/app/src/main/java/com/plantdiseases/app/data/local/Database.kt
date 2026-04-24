@@ -1,8 +1,6 @@
 package com.plantdiseases.app.data.local
 
 import androidx.room.*
-import androidx.room.migration.Migration
-import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Entity(
     tableName = "scans",
@@ -25,12 +23,12 @@ data class ScanEntity(
     @ColumnInfo(name = "prevention_ru") val preventionRu: String, // JSON array
     @ColumnInfo(name = "is_healthy") val isHealthy: Boolean,
     @ColumnInfo(name = "timestamp") val timestamp: Long = System.currentTimeMillis(),
-    // Detection region from Grad-CAM (pixel coordinates in original image)
-    @ColumnInfo(name = "region_x") val regionX: Int? = null,
-    @ColumnInfo(name = "region_y") val regionY: Int? = null,
-    @ColumnInfo(name = "region_width") val regionWidth: Int? = null,
-    @ColumnInfo(name = "region_height") val regionHeight: Int? = null,
-    // All class probabilities as JSON string for top-3 diagnoses display
+    // All bounding boxes from the YOLOv8 detector, serialised as a JSON
+    // array of {x, y, width, height, class, confidence}.
+    @ColumnInfo(name = "regions") val regions: String? = null,
+    // Index into `regions` that Stage 2 used as the primary crop (-1 if none).
+    @ColumnInfo(name = "primary_region_index") val primaryRegionIndex: Int? = null,
+    // Per-class probabilities from the classifier (JSON map).
     @ColumnInfo(name = "all_probs") val allProbs: String? = null
 )
 
@@ -73,7 +71,7 @@ interface ScanDao {
     suspend fun deleteAll()
 }
 
-@Database(entities = [ScanEntity::class], version = 3, exportSchema = false)
+@Database(entities = [ScanEntity::class], version = 1, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun scanDao(): ScanDao
 
@@ -81,32 +79,13 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
-        private val MIGRATION_1_2 = object : Migration(1, 2) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("CREATE INDEX IF NOT EXISTS `index_scans_timestamp` ON `scans` (`timestamp`)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS `index_scans_is_healthy` ON `scans` (`is_healthy`)")
-            }
-        }
-
-        private val MIGRATION_2_3 = object : Migration(2, 3) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE scans ADD COLUMN region_x INTEGER DEFAULT NULL")
-                db.execSQL("ALTER TABLE scans ADD COLUMN region_y INTEGER DEFAULT NULL")
-                db.execSQL("ALTER TABLE scans ADD COLUMN region_width INTEGER DEFAULT NULL")
-                db.execSQL("ALTER TABLE scans ADD COLUMN region_height INTEGER DEFAULT NULL")
-                db.execSQL("ALTER TABLE scans ADD COLUMN all_probs TEXT DEFAULT NULL")
-            }
-        }
-
         fun getInstance(context: android.content.Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
                     "plantdiseases_db"
-                )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
-                    .build()
+                ).build()
                 INSTANCE = instance
                 instance
             }

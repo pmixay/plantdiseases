@@ -1,8 +1,9 @@
 """
-PlantDiseases Server — FastAPI backend with two-stage CNN pipeline.
+PlantDiseases Server — FastAPI backend with the PlantScope v3.x two-stage
+houseplant disease pipeline.
 
-Stage 1:  MobileNetV3-Small  — detect diseased region (Grad-CAM)
-Stage 2:  EfficientNet-B0    — classify the specific disease
+Stage 1:  YOLOv8n            — locate leaves, flag diseased regions
+Stage 2:  EfficientNetV2-S   — classify the primary disease bbox
 """
 
 import asyncio
@@ -31,7 +32,7 @@ from pipeline import PlantDiseasePipeline
 try:
     from . import __version__ as APP_VERSION  # type: ignore
 except Exception:
-    APP_VERSION = "2.2.0"
+    APP_VERSION = "3.0.0"
 
 # Limit Pillow decompression to prevent zip-bomb DoS
 Image.MAX_IMAGE_PIXELS = 20_000_000  # ~4500×4500
@@ -62,8 +63,8 @@ logger = logging.getLogger("plantdiseases")
 
 # ── Configuration ────────────────────────────────────────────────────
 MODELS_DIR = Path("models")
-DETECTOR_PATH = MODELS_DIR / "detector.pth"
-CLASSIFIER_PATH = MODELS_DIR / "classifier.pth"
+DETECTOR_PATH = MODELS_DIR / "detector.pt"       # YOLOv8 weights
+CLASSIFIER_PATH = MODELS_DIR / "classifier.pth"  # EfficientNetV2-S weights
 
 MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE", 10 * 1024 * 1024))  # 10 MB
 MAX_IMAGE_DIMENSION = int(os.getenv("MAX_IMAGE_DIMENSION", 4096))
@@ -356,9 +357,10 @@ async def version():
     return {
         "version": APP_VERSION,
         "pipeline_mode": pipeline.mode if pipeline else "unknown",
-        "detector_arch": "MobileNetV3-Small",
-        "classifier_arch": "EfficientNet-B0",
+        "detector_arch": "YOLOv8n",
+        "classifier_arch": "EfficientNetV2-S",
         "stages": 2,
+        "focus": "houseplants",
     }
 
 
@@ -528,9 +530,6 @@ async def analyze_image(image: UploadFile = File(...)):
         uncertainty = 0.0
 
     detection = result["detection"]
-    severity = None
-    if detection.get("region") and isinstance(detection["region"], dict):
-        severity = detection["region"].get("severity")
 
     return JSONResponse(content={
         "disease_name": disease_info["name_en"],
@@ -544,7 +543,6 @@ async def analyze_image(image: UploadFile = File(...)):
         "prevention_ru": disease_info["prevention_ru"],
         "is_healthy": disease_info.get("is_healthy", False),
         "detection": detection,
-        "severity": severity,
         "uncertainty": uncertainty,
         "all_probs": rounded_probs,
         "pipeline_mode": result["pipeline_mode"],

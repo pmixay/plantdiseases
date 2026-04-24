@@ -7,20 +7,36 @@ import android.graphics.Color
 import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.RadialGradient
+import android.graphics.RectF
 import android.graphics.Shader
 import android.util.AttributeSet
 import android.view.View
 
 /**
- * Draws a Grad-CAM-style heatmap overlay on top of a plant image.
- * Accepts pixel coordinates from the server's detection.region and maps
- * them to view coordinates, accounting for centerCrop scaleType.
+ * Draws the YOLOv8 detector output on top of a plant image.
+ *
+ * For each detected box we draw a dashed outline and a soft radial
+ * "spotlight". Diseased boxes are red/orange, healthy leaves are green.
+ * The primary box (the one Stage 2 classified) is emphasised with a
+ * thicker stroke.
+ *
+ * Coordinates arrive in original-image pixel space and are mapped to
+ * view coordinates assuming the underlying ImageView uses centerCrop.
  */
 class HeatmapOverlayView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
     defStyleAttr: Int = 0
 ) : View(context, attrs, defStyleAttr) {
+
+    data class Box(
+        val x: Int,
+        val y: Int,
+        val width: Int,
+        val height: Int,
+        val diseased: Boolean,
+        val primary: Boolean,
+    )
 
     private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val dimPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
@@ -29,30 +45,20 @@ class HeatmapOverlayView @JvmOverloads constructor(
         strokeWidth = 2f
         pathEffect = DashPathEffect(floatArrayOf(10f, 5f), 0f)
     }
-    private var cachedGradient: RadialGradient? = null
-    private var cachedRadius = 0f
-    private var cachedCx = 0f
-    private var cachedCy = 0f
     private var animator: ValueAnimator? = null
     private var overlayAlpha = 0f
     private var showOverlay = false
 
-    private var regionX = 0
-    private var regionY = 0
-    private var regionW = 0
-    private var regionH = 0
+    private val boxes = mutableListOf<Box>()
     private var imgWidth = 0
     private var imgHeight = 0
 
-    fun setDetectionRegion(x: Int, y: Int, w: Int, h: Int, origW: Int, origH: Int) {
-        regionX = x
-        regionY = y
-        regionW = w
-        regionH = h
+    fun setBoxes(list: List<Box>, origW: Int, origH: Int) {
+        boxes.clear()
+        boxes.addAll(list)
         imgWidth = origW
         imgHeight = origH
-        showOverlay = true
-        cachedGradient = null
+        showOverlay = list.isNotEmpty()
         invalidate()
     }
 
@@ -69,68 +75,66 @@ class HeatmapOverlayView @JvmOverloads constructor(
         }
     }
 
-    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-        super.onSizeChanged(w, h, oldw, oldh)
-        cachedGradient = null
-    }
-
     override fun onDetachedFromWindow() {
         animator?.cancel()
         animator = null
-        cachedGradient = null
         super.onDetachedFromWindow()
-    }
-
-    private fun ensureGradient(cx: Float, cy: Float, radius: Float) {
-        if (cachedGradient != null && cachedRadius == radius && cachedCx == cx && cachedCy == cy) return
-        cachedGradient = RadialGradient(
-            cx, cy, radius.coerceAtLeast(1f),
-            intArrayOf(
-                Color.argb(180, 255, 0, 0),
-                Color.argb(140, 255, 165, 0),
-                Color.argb(100, 255, 255, 0),
-                Color.argb(60, 0, 255, 0),
-                Color.TRANSPARENT
-            ),
-            floatArrayOf(0f, 0.3f, 0.5f, 0.7f, 1f),
-            Shader.TileMode.CLAMP
-        )
-        cachedRadius = radius
-        cachedCx = cx
-        cachedCy = cy
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        if (!showOverlay || overlayAlpha == 0f || imgWidth <= 0 || imgHeight <= 0) return
+        if (!showOverlay || overlayAlpha == 0f || imgWidth <= 0 || imgHeight <= 0 || boxes.isEmpty()) return
 
         val viewW = width.toFloat()
         val viewH = height.toFloat()
-
         val scale = maxOf(viewW / imgWidth, viewH / imgHeight)
         val scaledImgW = imgWidth * scale
         val scaledImgH = imgHeight * scale
         val offsetX = (scaledImgW - viewW) / 2f
         val offsetY = (scaledImgH - viewH) / 2f
 
-        val regionCxOrig = regionX + regionW / 2f
-        val regionCyOrig = regionY + regionH / 2f
-        val cx = regionCxOrig * scale - offsetX
-        val cy = regionCyOrig * scale - offsetY
-        val radius = (regionW + regionH) / 2f * scale / 2f
-        val safeRadius = radius.coerceAtLeast(1f)
-
-        dimPaint.color = Color.argb((40 * overlayAlpha).toInt(), 0, 0, 0)
+        dimPaint.color = Color.argb((30 * overlayAlpha).toInt(), 0, 0, 0)
         canvas.drawRect(0f, 0f, viewW, viewH, dimPaint)
 
-        ensureGradient(cx, cy, safeRadius)
-        fillPaint.shader = cachedGradient
-        fillPaint.alpha = (overlayAlpha * 255).toInt()
-        canvas.drawCircle(cx, cy, safeRadius, fillPaint)
-        fillPaint.shader = null
-        fillPaint.alpha = 255
+        boxes.forEach { box ->
+            val left = box.x * scale - offsetX
+            val top = box.y * scale - offsetY
+            val right = (box.x + box.width) * scale - offsetX
+            val bottom = (box.y + box.height) * scale - offsetY
+            val cx = (left + right) / 2f
+            val cy = (top + bottom) / 2f
+            val radius = (maxOf(right - left, bottom - top) / 2f).coerceAtLeast(1f)
 
-        strokePaint.color = Color.argb((200 * overlayAlpha).toInt(), 255, 80, 80)
-        canvas.drawCircle(cx, cy, safeRadius * 0.85f, strokePaint)
+            val outerColor: Int
+            val strokeColor: Int
+            if (box.diseased) {
+                outerColor = Color.argb(180, 255, 0, 0)
+                strokeColor = Color.argb((220 * overlayAlpha).toInt(), 255, 80, 80)
+            } else {
+                outerColor = Color.argb(140, 0, 200, 80)
+                strokeColor = Color.argb((200 * overlayAlpha).toInt(), 80, 220, 120)
+            }
+
+            val gradient = RadialGradient(
+                cx, cy, radius,
+                intArrayOf(
+                    outerColor,
+                    Color.argb(120, Color.red(outerColor), Color.green(outerColor), Color.blue(outerColor)),
+                    Color.TRANSPARENT
+                ),
+                floatArrayOf(0f, 0.5f, 1f),
+                Shader.TileMode.CLAMP
+            )
+            fillPaint.shader = gradient
+            fillPaint.alpha = (overlayAlpha * 255).toInt()
+            canvas.drawCircle(cx, cy, radius, fillPaint)
+            fillPaint.shader = null
+            fillPaint.alpha = 255
+
+            strokePaint.color = strokeColor
+            strokePaint.strokeWidth = if (box.primary) 5f else 2f
+            val rect = RectF(left, top, right, bottom)
+            canvas.drawRoundRect(rect, 8f, 8f, strokePaint)
+        }
     }
 }

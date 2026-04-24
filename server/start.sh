@@ -87,13 +87,14 @@ if [[ "$TRAIN" == true ]]; then
     python train.py
 fi
 
-if [[ -f "models/detector.pth" && -f "models/classifier.pth" ]]; then
+if [[ -f "models/detector.pt" && -f "models/classifier.pth" ]]; then
     echo "[+] Both models found — running in FULL mode"
-elif [[ -f "models/detector.pth" || -f "models/classifier.pth" ]]; then
+elif [[ -f "models/detector.pt" || -f "models/classifier.pth" ]]; then
     echo "[!] Only one model found — running in PARTIAL mode"
 else
     echo "[!] No trained models found — running in DEMO mode"
-    echo "    To train: ./start.sh --train"
+    echo "    Train in Colab via train_notebook.ipynb, then drop"
+    echo "    detector.pt, classifier.pth, classes.json into server/models/"
 fi
 
 echo

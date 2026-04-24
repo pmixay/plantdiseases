@@ -26,7 +26,6 @@ def test_demo_pipeline_is_deterministic():
     assert r1["pipeline_mode"] == "demo"
     assert r1["class_name"] == r2["class_name"]
     assert r1["confidence"] == r2["confidence"]
-    # All-probs dicts must match exactly.
     assert r1["all_probs"] == r2["all_probs"]
 
 
@@ -38,9 +37,11 @@ def test_demo_pipeline_result_shape():
         assert key in result, f"missing key {key}"
 
     assert 0.0 <= result["confidence"] <= 1.0
-    assert set(result["detection"].keys()) == {"is_diseased", "detector_confidence", "region"}
+    assert set(result["detection"].keys()) == {
+        "is_diseased", "detector_confidence", "regions", "primary_region",
+    }
+    assert isinstance(result["detection"]["regions"], list)
     assert isinstance(result["all_probs"], dict)
-    # Probabilities are rounded to 4 decimals but must sum to roughly 1.
     total = sum(result["all_probs"].values())
     assert 0.95 <= total <= 1.05
 
@@ -51,3 +52,10 @@ def test_class_names_match_default():
     clf = DiseaseClassifier(model_path=None)
     assert clf.NUM_CLASSES == len(DEFAULT_CLASS_NAMES)
     assert clf.CLASS_NAMES == DEFAULT_CLASS_NAMES
+
+
+def test_not_a_plant_class_is_present():
+    """Rejection class must always exist — it's how the pipeline reports noise."""
+    from classifier import DEFAULT_CLASS_NAMES
+
+    assert "not_a_plant" in DEFAULT_CLASS_NAMES

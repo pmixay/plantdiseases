@@ -157,17 +157,20 @@ class ResultActivity : AppCompatActivity() {
                 .transform(CenterCrop(), RoundedCorners(24))
                 .into(ivPlant)
 
-            // Heatmap overlay for diseased plants
-            if (!scan.isHealthy) {
-                if (scan.regionX != null && scan.regionY != null &&
-                    scan.regionWidth != null && scan.regionHeight != null) {
-                    val origBounds = ImageUtils.getImageDimensions(scan.imagePath)
-                    heatmapOverlay.setDetectionRegion(
-                        scan.regionX, scan.regionY,
-                        scan.regionWidth, scan.regionHeight,
-                        origBounds.first, origBounds.second
+            // YOLOv8 bbox overlay — show every detected leaf, emphasise
+            // the primary one (the box that Stage 2 classified).
+            val regions = repository.parseRegions(scan.regions)
+            if (!scan.isHealthy && regions.isNotEmpty()) {
+                val origBounds = ImageUtils.getImageDimensions(scan.imagePath)
+                val primaryIdx = scan.primaryRegionIndex ?: -1
+                val overlayBoxes = regions.mapIndexed { i, r ->
+                    HeatmapOverlayView.Box(
+                        x = r.x, y = r.y, width = r.width, height = r.height,
+                        diseased = (r.className == "diseased_leaf"),
+                        primary = i == primaryIdx,
                     )
                 }
+                heatmapOverlay.setBoxes(overlayBoxes, origBounds.first, origBounds.second)
                 heatmapOverlay.postDelayed({
                     heatmapOverlay.animateIn()
                     tvHeatmapLabel.visibility = View.VISIBLE
@@ -342,20 +345,14 @@ class ResultActivity : AppCompatActivity() {
 
         val diseaseNames = mapOf(
             "healthy" to (if (isRu) "Здоровое растение" else "Healthy Plant"),
-            "bacterial_spot" to (if (isRu) "Бактериальная пятнистость" else "Bacterial Spot"),
-            "early_blight" to (if (isRu) "Ранний фитофтороз" else "Early Blight"),
-            "late_blight" to (if (isRu) "Фитофтороз" else "Late Blight"),
-            "leaf_mold" to (if (isRu) "Листовая плесень" else "Leaf Mold"),
-            "septoria_leaf_spot" to (if (isRu) "Септориоз" else "Septoria Leaf Spot"),
-            "spider_mites" to (if (isRu) "Паутинный клещ" else "Spider Mites"),
-            "target_spot" to (if (isRu) "Мишеневидная пятнистость" else "Target Spot"),
-            "mosaic_virus" to (if (isRu) "Мозаичный вирус" else "Mosaic Virus"),
-            "yellow_leaf_curl" to (if (isRu) "Жёлтое скручивание" else "Yellow Leaf Curl"),
             "powdery_mildew" to (if (isRu) "Мучнистая роса" else "Powdery Mildew"),
+            "leaf_spot" to (if (isRu) "Пятнистость листьев" else "Leaf Spot"),
+            "blight" to (if (isRu) "Фитофтороз" else "Blight"),
             "rust" to (if (isRu) "Ржавчина" else "Rust"),
-            "root_rot" to (if (isRu) "Корневая гниль" else "Root Rot"),
-            "anthracnose" to (if (isRu) "Антракноз" else "Anthracnose"),
-            "botrytis" to (if (isRu) "Серая гниль" else "Gray Mold")
+            "mosaic_virus" to (if (isRu) "Мозаичный вирус" else "Mosaic Virus"),
+            "spider_mites" to (if (isRu) "Паутинный клещ" else "Spider Mites"),
+            "leaf_mold" to (if (isRu) "Листовая плесень" else "Leaf Mold"),
+            "not_a_plant" to (if (isRu) "Не растение" else "Not a Plant")
         )
 
         top3.forEachIndexed { index, entry ->
@@ -520,29 +517,32 @@ class ResultActivity : AppCompatActivity() {
             result
         }
 
-        if (!scan.isHealthy && scan.regionX != null && scan.regionY != null &&
-            scan.regionWidth != null && scan.regionHeight != null) {
-            val scaleX = finalBitmap.width.toFloat() / rawW
-            val scaleY = finalBitmap.height.toFloat() / rawH
-            val canvas = Canvas(finalBitmap)
-            val cx = (scan.regionX + scan.regionWidth / 2f) * scaleX
-            val cy = (scan.regionY + scan.regionHeight / 2f) * scaleY
-            val radius = (scan.regionWidth + scan.regionHeight) / 4f * ((scaleX + scaleY) / 2f)
+        if (!scan.isHealthy) {
+            val regions = (application as PlantDiseasesApp).scanRepository.parseRegions(scan.regions)
+            val primary = regions.getOrNull(scan.primaryRegionIndex ?: -1)
+            if (primary != null) {
+                val scaleX = finalBitmap.width.toFloat() / rawW
+                val scaleY = finalBitmap.height.toFloat() / rawH
+                val canvas = Canvas(finalBitmap)
+                val cx = (primary.x + primary.width / 2f) * scaleX
+                val cy = (primary.y + primary.height / 2f) * scaleY
+                val radius = (primary.width + primary.height) / 4f * ((scaleX + scaleY) / 2f)
 
-            val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
-            val gradient = android.graphics.RadialGradient(
-                cx, cy, radius.coerceAtLeast(1f),
-                intArrayOf(
-                    android.graphics.Color.argb(120, 255, 0, 0),
-                    android.graphics.Color.argb(80, 255, 165, 0),
-                    android.graphics.Color.argb(40, 255, 255, 0),
-                    android.graphics.Color.TRANSPARENT
-                ),
-                floatArrayOf(0f, 0.4f, 0.7f, 1f),
-                android.graphics.Shader.TileMode.CLAMP
-            )
-            paint.shader = gradient
-            canvas.drawCircle(cx, cy, radius, paint)
+                val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+                val gradient = android.graphics.RadialGradient(
+                    cx, cy, radius.coerceAtLeast(1f),
+                    intArrayOf(
+                        android.graphics.Color.argb(120, 255, 0, 0),
+                        android.graphics.Color.argb(80, 255, 165, 0),
+                        android.graphics.Color.argb(40, 255, 255, 0),
+                        android.graphics.Color.TRANSPARENT
+                    ),
+                    floatArrayOf(0f, 0.4f, 0.7f, 1f),
+                    android.graphics.Shader.TileMode.CLAMP
+                )
+                paint.shader = gradient
+                canvas.drawCircle(cx, cy, radius, paint)
+            }
         }
 
         val shareFile = File(cacheDir, "share_${System.currentTimeMillis()}.jpg")

@@ -12,7 +12,7 @@ object GuideDataProvider {
     fun getGuideItems(): List<GuideItem> = items
 
     private fun buildItems(): List<GuideItem> = listOf(
-        // Common diseases — covers the shipped 9 model classes plus extra guide-only entries
+        // Common diseases — houseplant-focused guide articles
 
         GuideItem(
             id = "powdery_mildew",
@@ -79,6 +79,114 @@ PREVENTION:
         ),
 
         GuideItem(
+            id = "leaf_spot",
+            titleEn = "Leaf Spot (Bacterial / Fungal)",
+            titleRu = "Пятнистость листьев (бактериальная / грибковая)",
+            descriptionEn = "Dark round or irregular spots, often with a yellow halo",
+            descriptionRu = "Тёмные округлые или неправильные пятна, часто с жёлтым ореолом",
+            contentEn = """
+Leaf spot is a broad category covering bacterial and fungal infections that show up as dark, clearly bordered spots on the leaf. Common on ficus, dracaena, calathea, and many other houseplants whose leaves stay wet for too long.
+
+SYMPTOMS:
+• Dark brown / black spots with yellow halos
+• Spots may merge into larger dead patches
+• Affected leaves yellow and drop
+• Progresses during high humidity or after misting
+
+TREATMENT:
+1. Cut off affected leaves with sterile scissors
+2. Apply a copper-based fungicide / bactericide weekly for 2–3 weeks
+3. Switch to bottom watering — keep foliage dry
+4. Improve airflow and let the top of the substrate dry between waterings
+5. Disinfect tools with 70% alcohol between plants
+
+PREVENTION:
+• Water the substrate, not the leaves
+• Remove fallen leaves from the pot surface
+• Quarantine new plants for two weeks
+• Sterilise pots and saucers before reuse
+            """.trimIndent(),
+            contentRu = """
+Пятнистость листьев — общее название для бактериальных и грибковых инфекций, проявляющихся в виде тёмных пятен с чёткими краями. Часто встречается на фикусах, драценах, калатеях и многих других комнатных растениях, когда листья слишком долго остаются влажными.
+
+СИМПТОМЫ:
+• Тёмно-коричневые / чёрные пятна с жёлтым ореолом
+• Пятна сливаются в крупные отмирающие участки
+• Поражённые листья желтеют и опадают
+• Болезнь прогрессирует при высокой влажности или после опрыскивания
+
+ЛЕЧЕНИЕ:
+1. Обрежьте поражённые листья стерильными ножницами
+2. Обрабатывайте фунгицидом на основе меди раз в неделю 2–3 недели
+3. Перейдите на полив снизу — листья держите сухими
+4. Улучшите воздухообмен, давайте верхнему слою субстрата просыхать
+5. Дезинфицируйте инструмент 70% спиртом между растениями
+
+ПРОФИЛАКТИКА:
+• Поливайте субстрат, а не листья
+• Убирайте опавшие листья с поверхности горшка
+• Новые растения держите 2 недели на карантине
+• Перед повторным использованием стерилизуйте горшки и поддоны
+            """.trimIndent(),
+            iconRes = R.drawable.ic_disease,
+            category = GuideCategory.COMMON_DISEASES
+        ),
+
+        GuideItem(
+            id = "blight",
+            titleEn = "Blight",
+            titleRu = "Фитофтороз",
+            descriptionEn = "Rapidly spreading water-soaked lesions on leaves and stems",
+            descriptionRu = "Быстро растущие водянистые поражения на листьях и стеблях",
+            contentEn = """
+Blight is a fast-moving fungal disease that causes large, dark, water-soaked lesions on leaves and stems. On houseplants it is most often triggered by overwatering combined with cool temperatures.
+
+SYMPTOMS:
+• Large dark, water-soaked patches on leaves
+• Stems develop soft black lesions near the soil line
+• Infected parts wilt and collapse within days
+• White fuzzy mold may appear on the underside in humid rooms
+
+TREATMENT:
+1. Remove and destroy every affected part — do not compost
+2. Apply a systemic or copper-based fungicide
+3. Reduce watering and let the substrate dry deeply
+4. Raise the room temperature above 20 °C and lower humidity
+5. If more than half the plant is lost, discard it to protect the rest
+
+PREVENTION:
+• Never let pots stand in water
+• Keep plants spaced for good airflow
+• Keep the room above 18 °C in winter
+• Inspect the collection weekly during cool, damp weather
+            """.trimIndent(),
+            contentRu = """
+Фитофтороз — быстро прогрессирующее грибковое заболевание: крупные тёмные водянистые поражения на листьях и стеблях. На комнатных растениях чаще всего возникает при переувлажнении в сочетании с прохладой.
+
+СИМПТОМЫ:
+• Крупные тёмные водянистые пятна на листьях
+• Мягкие чёрные поражения у основания стебля
+• Поражённые части увядают и сморщиваются за несколько дней
+• Во влажных помещениях на нижней стороне появляется белая пушистая плесень
+
+ЛЕЧЕНИЕ:
+1. Удалите и уничтожьте все поражённые части — не в компост
+2. Обработайте системным фунгицидом или препаратом на основе меди
+3. Сократите полив, дайте субстрату глубоко просохнуть
+4. Поднимите температуру выше 20 °C и снизьте влажность
+5. Если поражено больше половины растения — утилизируйте его
+
+ПРОФИЛАКТИКА:
+• Никогда не оставляйте горшки в воде
+• Расставляйте растения свободно для вентиляции
+• Зимой поддерживайте температуру выше 18 °C
+• В сырую прохладную погоду осматривайте коллекцию еженедельно
+            """.trimIndent(),
+            iconRes = R.drawable.ic_disease,
+            category = GuideCategory.COMMON_DISEASES
+        ),
+
+        GuideItem(
             id = "root_rot",
             titleEn = "Root Rot",
             titleRu = "Корневая гниль",
@@ -131,178 +239,6 @@ PREVENTION:
 • Поливайте только когда верхний слой почвы сухой
 • Используйте хорошо дренированную почвенную смесь
 • Не оставляйте горшки стоять в воде
-            """.trimIndent(),
-            iconRes = R.drawable.ic_disease,
-            category = GuideCategory.COMMON_DISEASES
-        ),
-
-        GuideItem(
-            id = "bacterial_spot",
-            titleEn = "Bacterial Spot",
-            titleRu = "Бактериальная пятнистость",
-            descriptionEn = "Dark water-soaked lesions with yellow halos",
-            descriptionRu = "Тёмные водянистые пятна с жёлтыми ореолами",
-            contentEn = """
-Bacterial leaf spot causes dark, water-soaked lesions on leaves that may have yellow halos. It spreads through water splash and contaminated tools.
-
-SYMPTOMS:
-• Dark brown/black water-soaked spots
-• Yellow halos surrounding spots
-• Lesions may crack or become papery
-• Premature leaf drop
-
-CAUSES:
-• Splashing water onto foliage
-• Contaminated pruning tools
-• High humidity with poor ventilation
-
-TREATMENT:
-1. Remove and destroy all affected leaves immediately
-2. Apply copper-based bactericide spray
-3. Reduce watering frequency and avoid wetting leaves
-4. Improve air circulation around the plant
-5. Disinfect all tools with 70% rubbing alcohol
-
-PREVENTION:
-• Water at soil level, never on foliage
-• Space plants for good air circulation
-• Sterilize pots and tools before use
-• Quarantine new plants for 2 weeks
-            """.trimIndent(),
-            contentRu = """
-Бактериальная пятнистость вызывает тёмные, водянистые поражения на листьях с жёлтыми ореолами. Распространяется через брызги воды и загрязнённые инструменты.
-
-СИМПТОМЫ:
-• Тёмно-коричневые/чёрные водянистые пятна
-• Жёлтые ореолы вокруг пятен
-• Поражения могут растрескиваться или высыхать
-• Преждевременное опадение листьев
-
-ПРИЧИНЫ:
-• Попадание воды на листву
-• Загрязнённые инструменты обрезки
-• Высокая влажность при плохой вентиляции
-
-ЛЕЧЕНИЕ:
-1. Немедленно удалите и уничтожьте все поражённые листья
-2. Нанесите бактерицидный спрей на основе меди
-3. Сократите частоту полива, избегайте попадания воды на листья
-4. Улучшите циркуляцию воздуха вокруг растения
-5. Дезинфицируйте все инструменты 70% спиртом
-
-ПРОФИЛАКТИКА:
-• Поливайте на уровне почвы, никогда на листья
-• Размещайте растения на расстоянии для хорошей вентиляции
-• Стерилизуйте горшки и инструменты перед использованием
-• Новые растения держите на карантине 2 недели
-            """.trimIndent(),
-            iconRes = R.drawable.ic_disease,
-            category = GuideCategory.COMMON_DISEASES
-        ),
-
-        GuideItem(
-            id = "early_blight",
-            titleEn = "Early Blight",
-            titleRu = "Ранний фитофтороз",
-            descriptionEn = "Concentric ring target-like spots on older leaves",
-            descriptionRu = "Концентрические кольцевые пятна на старых листьях",
-            contentEn = """
-Early blight is a fungal disease that creates concentric ring patterns (target spots) on older leaves first. Common in warm, humid conditions.
-
-SYMPTOMS:
-• Concentric brown rings on lower/older leaves
-• Yellowing around spots
-• Leaves dry out and fall off
-• Spreads upward from lower leaves
-
-TREATMENT:
-1. Remove infected leaves and dispose (do not compost)
-2. Apply fungicide containing chlorothalonil or copper
-3. Ensure proper spacing between plants
-4. Water at the base in the morning
-5. Apply mulch to prevent soil splash
-
-PREVENTION:
-• Rotate plant locations annually
-• Ensure good air circulation
-• Avoid overhead watering
-• Remove plant debris regularly
-            """.trimIndent(),
-            contentRu = """
-Ранний фитофтороз — грибковое заболевание, создающее концентрические кольцевые узоры (мишеневидные пятна) сначала на старых листьях.
-
-СИМПТОМЫ:
-• Концентрические коричневые кольца на нижних/старых листьях
-• Пожелтение вокруг пятен
-• Листья высыхают и опадают
-• Распространяется снизу вверх
-
-ЛЕЧЕНИЕ:
-1. Удалите заражённые листья (не компостируйте)
-2. Примените фунгицид на основе меди
-3. Обеспечьте достаточное расстояние между растениями
-4. Поливайте у основания утром
-5. Мульчируйте для предотвращения брызг
-
-ПРОФИЛАКТИКА:
-• Ежегодно меняйте расположение растений
-• Обеспечьте хорошую циркуляцию воздуха
-• Избегайте верхнего полива
-• Регулярно убирайте растительные остатки
-            """.trimIndent(),
-            iconRes = R.drawable.ic_disease,
-            category = GuideCategory.COMMON_DISEASES
-        ),
-
-        GuideItem(
-            id = "late_blight",
-            titleEn = "Late Blight",
-            titleRu = "Фитофтороз",
-            descriptionEn = "Large dark water-soaked lesions spreading rapidly",
-            descriptionRu = "Крупные тёмные водянистые поражения",
-            contentEn = """
-Late blight causes large, dark, water-soaked lesions that spread rapidly. Leaves may show white fuzzy growth on undersides in humid conditions.
-
-SYMPTOMS:
-• Large irregular dark patches
-• White fuzzy mold on leaf undersides
-• Rapid spread across the plant
-• Foul smell in advanced stages
-
-TREATMENT:
-1. Remove and destroy all affected parts immediately
-2. Apply copper-based or systemic fungicide
-3. Increase spacing and air circulation
-4. Reduce humidity around the plant
-5. In severe cases, the plant may need to be discarded
-
-PREVENTION:
-• Avoid excess moisture on foliage
-• Provide good ventilation
-• Inspect plants regularly during humid weather
-• Use disease-resistant varieties when possible
-            """.trimIndent(),
-            contentRu = """
-Фитофтороз вызывает крупные, тёмные, водянистые поражения, которые быстро распространяются. На нижней стороне листьев может появляться белый пушистый налёт.
-
-СИМПТОМЫ:
-• Крупные неправильные тёмные пятна
-• Белая пушистая плесень на нижней стороне листьев
-• Быстрое распространение по растению
-• Неприятный запах в запущенных стадиях
-
-ЛЕЧЕНИЕ:
-1. Немедленно удалите и уничтожьте все поражённые части
-2. Примените фунгицид на основе меди или системный фунгицид
-3. Увеличьте расстояние между растениями и вентиляцию
-4. Снизьте влажность вокруг растения
-5. В тяжёлых случаях растение может потребовать утилизации
-
-ПРОФИЛАКТИКА:
-• Избегайте избыточной влаги на листве
-• Обеспечьте хорошую вентиляцию
-• Осматривайте растения во влажную погоду
-• Используйте устойчивые к болезням сорта
             """.trimIndent(),
             iconRes = R.drawable.ic_disease,
             category = GuideCategory.COMMON_DISEASES
@@ -363,114 +299,6 @@ PREVENTION:
         ),
 
         GuideItem(
-            id = "septoria_leaf_spot",
-            titleEn = "Septoria Leaf Spot",
-            titleRu = "Септориоз",
-            descriptionEn = "Small circular spots with dark borders and gray centers",
-            descriptionRu = "Мелкие круглые пятна с тёмными краями и серыми центрами",
-            contentEn = """
-Septoria creates small, circular spots with dark borders and light gray centers. Tiny black dots (pycnidia) may be visible in spots under magnification.
-
-SYMPTOMS:
-• Small round spots (2-5 mm) with dark edges
-• Light gray or tan centers
-• Tiny black fruiting bodies in spots
-• Starts on lower leaves, spreads upward
-
-TREATMENT:
-1. Remove all leaves showing symptoms
-2. Apply fungicide (chlorothalonil or copper-based)
-3. Water only at soil level
-4. Clean up fallen leaves and debris
-5. Treat weekly until symptoms stop
-
-PREVENTION:
-• Ensure good air circulation
-• Mulch around plants to prevent splash
-• Avoid working with wet plants
-• Remove debris from plant area
-            """.trimIndent(),
-            contentRu = """
-Септориоз создаёт маленькие круглые пятна с тёмными краями и светло-серыми центрами. В пятнах могут быть видны крошечные чёрные точки (пикнидии).
-
-СИМПТОМЫ:
-• Мелкие круглые пятна (2-5 мм) с тёмными краями
-• Светло-серые или бежевые центры
-• Мелкие чёрные плодовые тела в пятнах
-• Начинается на нижних листьях, распространяется вверх
-
-ЛЕЧЕНИЕ:
-1. Удалите все листья с симптомами
-2. Примените фунгицид (на основе меди)
-3. Поливайте только на уровне почвы
-4. Уберите опавшие листья и мусор
-5. Обрабатывайте еженедельно до исчезновения симптомов
-
-ПРОФИЛАКТИКА:
-• Обеспечьте хорошую циркуляцию воздуха
-• Мульчируйте для предотвращения брызг
-• Не работайте с мокрыми растениями
-• Убирайте мусор из зоны растений
-            """.trimIndent(),
-            iconRes = R.drawable.ic_disease,
-            category = GuideCategory.COMMON_DISEASES
-        ),
-
-        GuideItem(
-            id = "target_spot",
-            titleEn = "Target Spot",
-            titleRu = "Мишеневидная пятнистость",
-            descriptionEn = "Circular brown lesions with concentric rings",
-            descriptionRu = "Круглые коричневые пятна с концентрическими кольцами",
-            contentEn = """
-Target spot produces circular brown lesions with concentric rings resembling a target. It can affect leaves, stems, and fruits.
-
-SYMPTOMS:
-• Round brown spots with ring patterns
-• Spots may merge into larger areas
-• Affected tissue becomes dry and papery
-• Can affect stems and flower parts
-
-TREATMENT:
-1. Prune and remove all affected plant parts
-2. Apply broad-spectrum fungicide
-3. Improve air flow around plants
-4. Avoid watering foliage directly
-5. Keep the growing area clean
-
-PREVENTION:
-• Rotate plant positions
-• Water at ground level
-• Maintain good air circulation
-• Clean tools between plants
-            """.trimIndent(),
-            contentRu = """
-Мишеневидная пятнистость образует круглые коричневые поражения с концентрическими кольцами, напоминающими мишень.
-
-СИМПТОМЫ:
-• Круглые коричневые пятна с кольцевым узором
-• Пятна могут сливаться в крупные области
-• Поражённая ткань высыхает
-• Может поражать стебли и цветы
-
-ЛЕЧЕНИЕ:
-1. Обрежьте и удалите все поражённые части
-2. Примените фунгицид широкого спектра
-3. Улучшите воздушный поток вокруг растений
-4. Избегайте прямого полива листвы
-5. Содержите зону выращивания в чистоте
-
-ПРОФИЛАКТИКА:
-• Чередуйте расположение растений
-• Поливайте на уровне почвы
-• Поддерживайте хорошую циркуляцию воздуха
-• Очищайте инструменты между растениями
-            """.trimIndent(),
-            iconRes = R.drawable.ic_disease,
-            category = GuideCategory.COMMON_DISEASES
-        ),
-
-        GuideItem(
             id = "mosaic_virus",
             titleEn = "Mosaic Virus",
             titleRu = "Мозаичный вирус",
@@ -525,60 +353,6 @@ PREVENTION:
         ),
 
         GuideItem(
-            id = "yellow_leaf_curl",
-            titleEn = "Yellow Leaf Curl",
-            titleRu = "Жёлтое скручивание листьев",
-            descriptionEn = "Leaves curl upward and turn yellow",
-            descriptionRu = "Листья скручиваются вверх и желтеют",
-            contentEn = """
-Yellow leaf curl virus causes leaves to curl upward and turn yellow. Growth becomes stunted and the plant produces fewer flowers.
-
-SYMPTOMS:
-• Leaves curling upward at edges
-• Yellowing between leaf veins
-• Stunted, bushy growth
-• Reduced flower and fruit production
-
-TREATMENT:
-1. No cure exists — remove severely affected plants
-2. Control whitefly populations (main vector)
-3. Use yellow sticky traps near plants
-4. Apply neem oil to repel whiteflies
-5. Keep plants strong with proper nutrition
-
-PREVENTION:
-• Use reflective mulches to deter whiteflies
-• Screen windows if growing near open windows
-• Quarantine new plants for 2-3 weeks
-• Inspect plants regularly for whiteflies
-            """.trimIndent(),
-            contentRu = """
-Вирус жёлтого скручивания листьев вызывает скручивание листьев вверх и пожелтение. Рост замедляется, растение даёт меньше цветов.
-
-СИМПТОМЫ:
-• Листья скручиваются вверх по краям
-• Пожелтение между жилками листьев
-• Замедленный, кустистый рост
-• Уменьшение цветения
-
-ЛЕЧЕНИЕ:
-1. Лечения не существует — удалите сильно поражённые растения
-2. Контролируйте популяцию белокрылки (основной переносчик)
-3. Используйте жёлтые клейкие ловушки
-4. Нанесите масло нима для отпугивания белокрылки
-5. Поддерживайте здоровье растений правильным питанием
-
-ПРОФИЛАКТИКА:
-• Используйте светоотражающую мульчу
-• Защитите окна сетками
-• Карантинируйте новые растения 2-3 недели
-• Регулярно осматривайте на наличие белокрылки
-            """.trimIndent(),
-            iconRes = R.drawable.ic_disease,
-            category = GuideCategory.COMMON_DISEASES
-        ),
-
-        GuideItem(
             id = "rust",
             titleEn = "Rust Disease",
             titleRu = "Ржавчина",
@@ -627,60 +401,6 @@ PREVENTION:
 • Содержите листву сухой
 • Своевременно убирайте опавшие листья
 • Обеспечьте расстояние между растениями
-            """.trimIndent(),
-            iconRes = R.drawable.ic_disease,
-            category = GuideCategory.COMMON_DISEASES
-        ),
-
-        GuideItem(
-            id = "anthracnose",
-            titleEn = "Anthracnose",
-            titleRu = "Антракноз",
-            descriptionEn = "Dark sunken lesions with pink/orange spore masses",
-            descriptionRu = "Тёмные вдавленные пятна с розовыми/оранжевыми спорами",
-            contentEn = """
-Anthracnose causes dark, sunken lesions on leaves, stems, and fruits. The spots may have pink or orange spore masses in humid conditions.
-
-SYMPTOMS:
-• Dark, sunken lesions on leaves and stems
-• Pink or orange spore masses visible in wet weather
-• Leaf edges may curl and turn brown
-• Severe defoliation possible
-
-TREATMENT:
-1. Remove and destroy affected plant parts
-2. Apply copper-based fungicide
-3. Reduce watering and improve drainage
-4. Increase air circulation
-5. Disinfect pruning tools between cuts
-
-PREVENTION:
-• Avoid overhead watering
-• Provide good air circulation
-• Clean up plant debris regularly
-• Use sterile potting mix
-            """.trimIndent(),
-            contentRu = """
-Антракноз вызывает тёмные, вдавленные поражения на листьях, стеблях и плодах. Пятна могут содержать розовые или оранжевые массы спор во влажных условиях.
-
-СИМПТОМЫ:
-• Тёмные вдавленные поражения на листьях и стеблях
-• Розовые или оранжевые массы спор во влажную погоду
-• Края листьев скручиваются и буреют
-• Возможно сильное опадение листьев
-
-ЛЕЧЕНИЕ:
-1. Удалите и уничтожьте поражённые части
-2. Примените фунгицид на основе меди
-3. Сократите полив и улучшите дренаж
-4. Увеличьте циркуляцию воздуха
-5. Дезинфицируйте секатор между срезами
-
-ПРОФИЛАКТИКА:
-• Избегайте верхнего полива
-• Обеспечьте хорошую вентиляцию
-• Регулярно убирайте растительные остатки
-• Используйте стерильную почвенную смесь
             """.trimIndent(),
             iconRes = R.drawable.ic_disease,
             category = GuideCategory.COMMON_DISEASES

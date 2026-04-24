@@ -1,246 +1,232 @@
 """
-Stage 1 — Disease Region Detector.
+Stage 1 — Leaf / Diseased-Region Detector.
 
-Binary classifier (healthy vs. diseased) on MobileNetV3-Small with
-Grad-CAM localisation. When no trained weights are present, falls back
-to an HSV-based colour heuristic that flags brown/yellow/white/dark
-patches typical of leaf disease.
+YOLOv8-nano detector trained to localise plant leaves in real-world photos
+and flag the ones that look diseased. Outputs bounding boxes with class and
+confidence; the pipeline then crops the highest-confidence disease box for
+Stage 2.
+
+Two detector classes:
+    0 → "leaf"           — visibly healthy leaf
+    1 → "diseased_leaf"  — leaf with visible disease symptoms
+
+When no trained weights are present, the detector falls back to a
+deterministic HSV colour heuristic that still produces a plausible bbox so
+the server is usable in demo mode.
 """
 
+from __future__ import annotations
+
 import logging
-import threading
 from pathlib import Path
 from typing import Optional
 
 import cv2
 import numpy as np
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
 from PIL import Image
-from torchvision import models, transforms
 
 logger = logging.getLogger(__name__)
 
-IMG_SIZE = 224
+DETECTOR_IMG_SIZE = 640
+DETECTOR_CLASSES = ("leaf", "diseased_leaf")
+MIN_CONFIDENCE = 0.25
+MAX_DETECTIONS = 10
 
 
-class GradCAM:
-    """Thread-safe Grad-CAM using forward/backward hooks on a target layer.
-
-    Hooks capture per-call activations and gradients into thread-local
-    storage so concurrent requests cannot overwrite each other's state.
-    """
-
-    def __init__(self, model: nn.Module, target_layer: nn.Module):
-        self.model = model
-        self._local = threading.local()
-
-        target_layer.register_forward_hook(self._save_activation)
-        target_layer.register_full_backward_hook(self._save_gradient)
-
-    def _save_activation(self, _module, _input, output):
-        self._local.activations = output.detach()
-
-    def _save_gradient(self, _module, _grad_in, grad_out):
-        self._local.gradients = grad_out[0].detach()
-
-    @torch.enable_grad()
-    def generate(self, input_tensor: torch.Tensor, target_class: int = 1) -> np.ndarray:
-        """Return a normalised heatmap (H×W float32 in [0, 1])."""
-        self.model.zero_grad(set_to_none=True)
-        output = self.model(input_tensor)
-        score = output[0, target_class]
-        score.backward()
-
-        activations = getattr(self._local, "activations", None)
-        gradients = getattr(self._local, "gradients", None)
-        if activations is None or gradients is None:
-            return np.zeros((IMG_SIZE, IMG_SIZE), dtype=np.float32)
-
-        weights = gradients.mean(dim=[2, 3], keepdim=True)
-        cam = (weights * activations).sum(dim=1, keepdim=True)
-        cam = F.relu(cam).squeeze().cpu().numpy()
-        if cam.max() > 0:
-            cam = cam / cam.max()
-        return cam.astype(np.float32)
-
-
-def heatmap_to_bbox(
-    heatmap: np.ndarray,
-    original_w: int,
-    original_h: int,
-    threshold: float = 0.4,
-    padding_ratio: float = 0.15,
-) -> Optional[dict]:
-    """Convert a Grad-CAM heatmap into a bounding box in original-image coords.
-
-    Returns ``None`` when the heatmap has no strong activation.
-    """
-    resized = cv2.resize(heatmap, (original_w, original_h))
-    binary = (resized > threshold).astype(np.uint8)
-
-    coords = np.where(binary > 0)
-    if len(coords[0]) == 0:
-        return None
-
-    y_min, y_max = int(coords[0].min()), int(coords[0].max())
-    x_min, x_max = int(coords[1].min()), int(coords[1].max())
-
-    pad_x = int((x_max - x_min) * padding_ratio)
-    pad_y = int((y_max - y_min) * padding_ratio)
-    x_min = max(0, x_min - pad_x)
-    y_min = max(0, y_min - pad_y)
-    x_max = min(original_w, x_max + pad_x)
-    y_max = min(original_h, y_max + pad_y)
-
-    severity = float((resized > threshold).sum()) / float(resized.size)
-
-    return {
-        "x": x_min,
-        "y": y_min,
-        "width": x_max - x_min,
-        "height": y_max - y_min,
-        "severity": round(severity, 4),
-    }
-
-
-class DiseaseDetector:
-    """Binary healthy/diseased detector with ROI localisation."""
-
-    LABELS = ["healthy", "diseased"]
+class LeafDetector:
+    """YOLOv8n-based leaf / diseased-leaf detector."""
 
     def __init__(self, model_path: Path | None = None):
-        self.model: Optional[nn.Module] = None
-        self.grad_cam: Optional[GradCAM] = None
+        self.model = None
         self.is_loaded = False
-        self.device = torch.device("cpu")
-        # Serialise grad-CAM calls — backward pass is not re-entrant.
-        self._inference_lock = threading.Lock()
-
-        self.transform = transforms.Compose([
-            transforms.Resize((IMG_SIZE, IMG_SIZE)),
-            transforms.ToTensor(),
-            transforms.Normalize(
-                mean=[0.485, 0.456, 0.406],
-                std=[0.229, 0.224, 0.225],
-            ),
-        ])
+        self.device = "cpu"
+        self._model_path = model_path
 
         if model_path and model_path.exists():
             try:
                 self._load_model(model_path)
             except Exception as e:
-                logger.error("Failed to load detector model: %s", e)
+                logger.error("Failed to load YOLO detector: %s", e)
 
         if not self.is_loaded:
-            logger.warning("Detector: no model found, running in DEMO mode")
+            logger.warning("Detector: no YOLO weights found, running in DEMO mode")
 
-    def _load_model(self, path: Path):
-        state = torch.load(str(path), map_location=self.device, weights_only=True)
+    def _load_model(self, path: Path) -> None:
+        # Lazy import keeps the ultralytics dependency optional at runtime.
+        from ultralytics import YOLO  # type: ignore
 
-        # The detector must be binary; refuse to load anything else.
-        head_weight = None
-        for key, tensor in state.items():
-            if key.startswith("classifier.") and key.endswith(".weight") and tensor.ndim == 2:
-                head_weight = tensor
-        if head_weight is not None and int(head_weight.shape[0]) != 2:
-            raise ValueError(
-                f"Detector checkpoint has {int(head_weight.shape[0])} outputs, expected 2 "
-                f"(healthy/diseased). Retrain with `python train.py --detector`."
-            )
-
-        net = models.mobilenet_v3_small(weights=None)
-        net.classifier[-1] = nn.Linear(net.classifier[-1].in_features, 2)
-        net.load_state_dict(state)
-        net.to(self.device).eval()
-
-        self.model = net
-        self.grad_cam = GradCAM(net, net.features[-1])
+        self.model = YOLO(str(path))
+        # Warm up so the first request isn't paying JIT cost.
+        self.model.predict(
+            np.zeros((DETECTOR_IMG_SIZE, DETECTOR_IMG_SIZE, 3), dtype=np.uint8),
+            imgsz=DETECTOR_IMG_SIZE,
+            verbose=False,
+            device=self.device,
+        )
         self.is_loaded = True
-        logger.info("Detector model loaded from %s", path)
+        logger.info("YOLOv8 detector loaded from %s", path)
+
+    # ── public API ───────────────────────────────────────────────────
 
     def detect(self, img: Image.Image) -> dict:
-        """Analyse an image. Returns {is_diseased, confidence, region}."""
+        """Run detection on a PIL image.
+
+        Returns
+        -------
+        dict with:
+            detections : list of {x, y, width, height, class, confidence}
+                         in original-image pixel coordinates. Sorted by
+                         (diseased first, then confidence desc).
+            is_diseased : bool   — any "diseased_leaf" detection above threshold
+            confidence  : float  — best confidence across all detections
+            primary_box : dict | None — the bbox the classifier should crop
+        """
         if self.is_loaded:
             return self._detect_real(img)
         return self._detect_demo(img)
 
+    # ── real inference (YOLOv8) ──────────────────────────────────────
+
     def _detect_real(self, img: Image.Image) -> dict:
-        tensor = self.transform(img).unsqueeze(0).to(self.device)
+        arr = np.array(img)
+        results = self.model.predict(
+            arr,
+            imgsz=DETECTOR_IMG_SIZE,
+            conf=MIN_CONFIDENCE,
+            iou=0.45,
+            max_det=MAX_DETECTIONS,
+            verbose=False,
+            device=self.device,
+        )
+        if not results:
+            return self._empty_result()
 
-        with self._inference_lock:
-            with torch.no_grad():
-                logits = self.model(tensor)
-            probs = F.softmax(logits, dim=1)[0]
-            is_diseased = bool(probs[1] > probs[0])
-            confidence = float(probs[1] if is_diseased else probs[0])
+        r = results[0]
+        if r.boxes is None or len(r.boxes) == 0:
+            return self._empty_result()
 
-            region = None
-            if is_diseased:
-                heatmap = self.grad_cam.generate(tensor, target_class=1)
-                region = heatmap_to_bbox(heatmap, img.width, img.height)
+        boxes_xyxy = r.boxes.xyxy.cpu().numpy()
+        confs = r.boxes.conf.cpu().numpy()
+        cls_ids = r.boxes.cls.cpu().numpy().astype(int)
 
-        return {
-            "is_diseased": is_diseased,
-            "confidence": round(confidence, 4),
-            "region": region,
-        }
+        detections = []
+        for (x1, y1, x2, y2), conf, cls_id in zip(boxes_xyxy, confs, cls_ids, strict=False):
+            cls_id = int(cls_id)
+            class_name = (
+                DETECTOR_CLASSES[cls_id]
+                if 0 <= cls_id < len(DETECTOR_CLASSES)
+                else f"class_{cls_id}"
+            )
+            detections.append({
+                "x": int(max(0, round(x1))),
+                "y": int(max(0, round(y1))),
+                "width": int(max(1, round(x2 - x1))),
+                "height": int(max(1, round(y2 - y1))),
+                "class": class_name,
+                "confidence": round(float(conf), 4),
+            })
 
-    @staticmethod
-    def _image_seed(img: Image.Image) -> int:
-        small = np.array(img.resize((16, 16)), dtype=np.uint8)
-        return int(small.sum()) % (2**31)
+        # Prefer diseased boxes, then highest confidence.
+        detections.sort(
+            key=lambda d: (0 if d["class"] == "diseased_leaf" else 1, -d["confidence"])
+        )
+        return self._build_result(detections)
+
+    # ── demo mode (HSV heuristics) ───────────────────────────────────
 
     def _detect_demo(self, img: Image.Image) -> dict:
-        rng = np.random.RandomState(self._image_seed(img))
-        arr = np.array(img.resize((256, 256)))
+        arr = np.array(img.resize((320, 320)))
         hsv = cv2.cvtColor(arr, cv2.COLOR_RGB2HSV)
 
-        brown = cv2.inRange(hsv, (8, 40, 40), (25, 200, 180))
+        # Plant-ish pixels (any green hue, reasonable saturation & value)
+        green_mask = cv2.inRange(hsv, (25, 30, 30), (95, 255, 255))
+        # Disease-ish pixels (brown / yellow / white / dark lesions)
+        brown = cv2.inRange(hsv, (8, 40, 40), (25, 210, 190))
         yellow = cv2.inRange(hsv, (20, 80, 100), (35, 255, 255))
         white = cv2.inRange(hsv, (0, 0, 180), (180, 50, 255))
         dark = cv2.inRange(hsv, (0, 0, 0), (180, 255, 50))
-
-        combined = cv2.bitwise_or(brown, yellow)
-        combined = cv2.bitwise_or(combined, white)
-        combined = cv2.bitwise_or(combined, dark)
+        disease_mask = cv2.bitwise_or(cv2.bitwise_or(brown, yellow), cv2.bitwise_or(white, dark))
+        disease_mask = cv2.bitwise_and(disease_mask, green_mask)  # only within leaf area
 
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-        combined = cv2.morphologyEx(combined, cv2.MORPH_CLOSE, kernel)
-        combined = cv2.morphologyEx(combined, cv2.MORPH_OPEN, kernel)
+        green_mask = cv2.morphologyEx(green_mask, cv2.MORPH_OPEN, kernel)
+        disease_mask = cv2.morphologyEx(disease_mask, cv2.MORPH_CLOSE, kernel)
 
-        disease_ratio = combined.sum() / 255.0 / (256 * 256)
+        green_ratio = float(green_mask.sum()) / 255.0 / green_mask.size
+        disease_ratio = float(disease_mask.sum()) / 255.0 / disease_mask.size
 
-        if disease_ratio < 0.05:
-            return {
-                "is_diseased": False,
-                "confidence": round(0.70 + rng.uniform(0, 0.20), 4),
-                "region": None,
-            }
+        # No plant → probably "not_a_plant" scenario
+        if green_ratio < 0.05:
+            return self._empty_result()
 
-        contours, _ = cv2.findContours(combined, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        if not contours:
-            return {"is_diseased": True, "confidence": 0.60, "region": None}
+        sx = img.width / 320.0
+        sy = img.height / 320.0
+        detections: list[dict] = []
 
-        largest = max(contours, key=cv2.contourArea)
-        x, y, w, h = cv2.boundingRect(largest)
+        # Largest leaf contour
+        contours, _ = cv2.findContours(green_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if contours:
+            largest = max(contours, key=cv2.contourArea)
+            if cv2.contourArea(largest) > 500:
+                gx, gy, gw, gh = cv2.boundingRect(largest)
+                detections.append({
+                    "x": int(gx * sx),
+                    "y": int(gy * sy),
+                    "width": int(max(1, gw * sx)),
+                    "height": int(max(1, gh * sy)),
+                    "class": "leaf",
+                    "confidence": round(float(min(0.95, 0.60 + green_ratio)), 4),
+                })
 
-        sx, sy = img.width / 256, img.height / 256
-        pad = 0.15
-        x1 = max(0, int((x - w * pad) * sx))
-        y1 = max(0, int((y - h * pad) * sy))
-        x2 = min(img.width, int((x + w * (1 + pad)) * sx))
-        y2 = min(img.height, int((y + h * (1 + pad)) * sy))
+        # Diseased-region contour (if any)
+        if disease_ratio > 0.02:
+            d_contours, _ = cv2.findContours(disease_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if d_contours:
+                d_largest = max(d_contours, key=cv2.contourArea)
+                dx, dy, dw, dh = cv2.boundingRect(d_largest)
+                # pad out a bit so the classifier sees some healthy context
+                pad = 0.2
+                dx = max(0, int((dx - dw * pad) * sx))
+                dy = max(0, int((dy - dh * pad) * sy))
+                dw = int(min(img.width - dx, dw * (1 + 2 * pad) * sx))
+                dh = int(min(img.height - dy, dh * (1 + 2 * pad) * sy))
+                detections.append({
+                    "x": dx,
+                    "y": dy,
+                    "width": max(1, dw),
+                    "height": max(1, dh),
+                    "class": "diseased_leaf",
+                    "confidence": round(float(min(0.90, 0.50 + disease_ratio * 3)), 4),
+                })
+
+        detections.sort(
+            key=lambda d: (0 if d["class"] == "diseased_leaf" else 1, -d["confidence"])
+        )
+        return self._build_result(detections)
+
+    # ── helpers ──────────────────────────────────────────────────────
+
+    @staticmethod
+    def _empty_result() -> dict:
+        return {
+            "detections": [],
+            "is_diseased": False,
+            "confidence": 0.0,
+            "primary_box": None,
+        }
+
+    @staticmethod
+    def _build_result(detections: list[dict]) -> dict:
+        if not detections:
+            return LeafDetector._empty_result()
+
+        diseased = [d for d in detections if d["class"] == "diseased_leaf"]
+        primary: Optional[dict] = diseased[0] if diseased else detections[0]
+        best_conf = max(d["confidence"] for d in detections)
 
         return {
-            "is_diseased": True,
-            "confidence": round(0.60 + rng.uniform(0, 0.25), 4),
-            "region": {
-                "x": x1,
-                "y": y1,
-                "width": x2 - x1,
-                "height": y2 - y1,
-                "severity": round(float(disease_ratio), 4),
-            },
+            "detections": detections,
+            "is_diseased": bool(diseased),
+            "confidence": round(float(best_conf), 4),
+            "primary_box": primary,
         }

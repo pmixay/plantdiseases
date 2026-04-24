@@ -6,9 +6,9 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# System dependencies for OpenCV
+# System dependencies for OpenCV and Ultralytics
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends libgl1 libglib2.0-0 && \
+    apt-get install -y --no-install-recommends libgl1 libglib2.0-0 libgomp1 && \
     rm -rf /var/lib/apt/lists/*
 
 # Install CPU-only PyTorch first (smaller image, no CUDA)
