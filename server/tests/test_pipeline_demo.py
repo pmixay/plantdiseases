@@ -81,7 +81,7 @@ def test_healthy_gate_reroutes_when_margin_too_small():
     """If healthy wins but the runner-up is within the margin, the final
     class should be re-routed to the runner-up and `uncertain_healthy`
     should appear in warnings."""
-    from pipeline import _apply_postprocessing_rules, HEALTHY_MARGIN
+    from pipeline import HEALTHY_MARGIN, _apply_postprocessing_rules
 
     # Synthetic probabilities where healthy wins narrowly — margin under
     # the threshold must trigger the re-route.
