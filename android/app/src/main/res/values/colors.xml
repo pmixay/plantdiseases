@@ -19,6 +19,7 @@
     <!-- Toolbar background (subtle vertical gradient, no harsh diagonal) -->
     <color name="toolbar_top">#1F7A3F</color>
     <color name="toolbar_bottom">#196832</color>
+    <color name="toolbar_title">#FFFFFF</color>
 
     <!-- Surface -->
     <color name="background">#F5FBF6</color>

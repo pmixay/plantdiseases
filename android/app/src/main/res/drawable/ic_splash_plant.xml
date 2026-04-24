@@ -20,11 +20,11 @@
     <!-- Small magnifying glass overlay -->
     <path
         android:fillColor="#00000000"
-        android:strokeColor="#FFFFFF"
+        android:strokeColor="#757575"
         android:strokeWidth="3"
         android:pathData="M64,60 A10,10 0,1,0 64,60.01" />
     <path
-        android:strokeColor="#FFFFFF"
+        android:strokeColor="#757575"
         android:strokeWidth="3"
         android:pathData="M71,67 L78,74" />
 </vector>

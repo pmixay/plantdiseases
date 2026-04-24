@@ -22,13 +22,13 @@
     <!-- Magnifier ring -->
     <path
         android:fillColor="#00000000"
-        android:strokeColor="#FFFFFF"
+        android:strokeColor="#757575"
         android:strokeWidth="3"
         android:pathData="M64,62 m-9,0 a9,9 0 1,0 18,0 a9,9 0 1,0 -18,0" />
 
     <!-- Magnifier handle -->
     <path
-        android:strokeColor="#FFFFFF"
+        android:strokeColor="#757575"
         android:strokeWidth="3"
         android:strokeLineCap="round"
         android:pathData="M70,68 L77,75" />
