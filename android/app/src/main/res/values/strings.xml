@@ -144,11 +144,11 @@
     <string name="model_params">Parameters</string>
     <string name="model_classes">Classes</string>
     <string name="model_pipeline">Pipeline</string>
-    <string name="model_arch_value">MobileNetV3-Small + EfficientNet-B0</string>
-    <string name="model_params_value">~5.5M total</string>
-    <string name="model_classes_value">8 diseases + healthy</string>
-    <string name="model_pipeline_value">Two-stage: detect → classify</string>
-    <string name="model_description">Stage 1 detects if the plant is diseased and locates the affected region using Grad-CAM. Stage 2 classifies the specific disease from the cropped area.</string>
+    <string name="model_arch_value">YOLOv8n + EfficientNetV2-S</string>
+    <string name="model_params_value">~24M total</string>
+    <string name="model_classes_value">8 diseases + healthy + not-a-plant</string>
+    <string name="model_pipeline_value">Two-stage: locate → classify</string>
+    <string name="model_description">Stage 1 (YOLOv8n) finds every leaf in the photo and flags the ones that look diseased. Stage 2 (EfficientNetV2-S) classifies the cropped diseased region and rejects frames without a plant.</string>
 
     <!-- Rate limit -->
     <string name="server_busy">Server Busy</string>

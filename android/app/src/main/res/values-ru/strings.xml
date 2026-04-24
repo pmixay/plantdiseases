@@ -144,11 +144,11 @@
     <string name="model_params">Параметры</string>
     <string name="model_classes">Классы</string>
     <string name="model_pipeline">Пайплайн</string>
-    <string name="model_arch_value">MobileNetV3-Small + EfficientNet-B0</string>
-    <string name="model_params_value">~5.5M всего</string>
-    <string name="model_classes_value">8 болезней + здоровое</string>
-    <string name="model_pipeline_value">Двухэтапный: детекция → классификация</string>
-    <string name="model_description">Этап 1 определяет, болеет ли растение, и находит поражённую область с помощью Grad-CAM. Этап 2 классифицирует конкретную болезнь по вырезанной области.</string>
+    <string name="model_arch_value">YOLOv8n + EfficientNetV2-S</string>
+    <string name="model_params_value">~24M всего</string>
+    <string name="model_classes_value">8 болезней + здоровое + не-растение</string>
+    <string name="model_pipeline_value">Двухэтапный: локализация → классификация</string>
+    <string name="model_description">Этап 1 (YOLOv8n) находит листья в кадре и выделяет те, что выглядят больными. Этап 2 (EfficientNetV2-S) классифицирует вырезанную область и отбрасывает кадры без растения.</string>
 
     <!-- Rate limit -->
     <string name="server_busy">Сервер занят</string>
