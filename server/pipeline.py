@@ -1,28 +1,34 @@
 """
-Two-stage plant disease detection pipeline.
+Two-stage houseplant disease detection pipeline.
 
-Stage 1 (Detector)   — MobileNetV3-Small binary head + Grad-CAM.
-Stage 2 (Classifier) — EfficientNet-B0 fine-grained classifier, run on
-                       the ROI produced by Stage 1 (or the full image as
-                       a fallback).
+Stage 1 (Detector)   — YOLOv8n. Locates leaves and flags diseased regions.
+                       Produces a list of bounding boxes in the original
+                       image's pixel space.
+Stage 2 (Classifier) — EfficientNetV2-S. Classifies the highest-confidence
+                       disease bbox into one of 9 houseplant-focused
+                       disease classes (including ``not_a_plant``).
+
+The pipeline is deliberately tolerant to real-world noise: when Stage 1
+finds no plant in the frame, the final label is set to ``not_a_plant``
+and the user is asked to retake the photo.
 """
+
+from __future__ import annotations
 
 import logging
 import time
 from pathlib import Path
+from typing import Optional
 
 from PIL import Image
 
 from classifier import DiseaseClassifier
-from detector import DiseaseDetector
+from detector import LeafDetector
 
 logger = logging.getLogger(__name__)
 
-# Classifier receives the ROI unless it is smaller than this.
 MIN_CROP_SIZE = 32
-
-# Early-exit threshold for the "healthy" branch of Stage 1.
-HEALTHY_SKIP_THRESHOLD = 0.65
+CROP_PADDING_RATIO = 0.10
 
 
 class PlantDiseasePipeline:
@@ -33,7 +39,7 @@ class PlantDiseasePipeline:
         detector_path: Path | None = None,
         classifier_path: Path | None = None,
     ):
-        self.detector = DiseaseDetector(detector_path)
+        self.detector = LeafDetector(detector_path)
         self.classifier = DiseaseClassifier(classifier_path)
 
         logger.info(
@@ -44,7 +50,6 @@ class PlantDiseasePipeline:
 
     @property
     def is_loaded(self) -> bool:
-        """True when at least one real model is loaded."""
         return self.detector.is_loaded or self.classifier.is_loaded
 
     @property
@@ -55,7 +60,7 @@ class PlantDiseasePipeline:
             return "partial"
         return "demo"
 
-    # ── Main entry point ─────────────────────────────────────────────
+    # ── main entry point ─────────────────────────────────────────────
 
     def analyze(self, img: Image.Image) -> dict:
         """Run the full two-stage pipeline on a PIL image.
@@ -63,53 +68,58 @@ class PlantDiseasePipeline:
         Returns
         -------
         dict with keys:
-            class_name          : str   – predicted disease (or "healthy")
-            confidence          : float
-            all_probs           : dict  – per-class probabilities
-            detection           : dict  – Stage 1 output
+            class_name          : str   — predicted Stage 2 class
+            confidence          : float — Stage 2 top-1 probability
+            all_probs           : dict  — per-class probabilities
+            detection           : dict  — Stage 1 output
                 is_diseased         : bool
                 detector_confidence : float
-                region              : dict | None  (x, y, width, height)
-            pipeline_mode       : str   – "full" | "partial" | "demo"
+                regions             : list[dict]  (bbox + class + confidence)
+                primary_region      : dict | None  (bbox used by Stage 2)
+            pipeline_mode       : str   — "full" | "partial" | "demo"
             elapsed_ms          : float
         """
         t0 = time.perf_counter()
 
-        # ── Stage 1: detect ──────────────────────────────────────────
-        detection = self.detector.detect(img)
+        stage1 = self.detector.detect(img)
+        detections = stage1["detections"]
+        primary = stage1["primary_box"]
+
         logger.info(
-            "Stage 1 → diseased=%s  confidence=%.3f  region=%s",
-            detection["is_diseased"],
-            detection["confidence"],
-            "yes" if detection["region"] else "no",
+            "Stage 1 → detections=%d  diseased=%s  best_conf=%.3f",
+            len(detections),
+            stage1["is_diseased"],
+            stage1["confidence"],
         )
 
-        # Early exit — plant looks healthy
-        if not detection["is_diseased"] and detection["confidence"] >= HEALTHY_SKIP_THRESHOLD:
+        # No plant at all in frame — short-circuit to "not_a_plant"
+        if not detections:
             elapsed = (time.perf_counter() - t0) * 1000
+            probs = {n: 0.0 for n in self.classifier.CLASS_NAMES}
+            if "not_a_plant" in probs:
+                probs["not_a_plant"] = 1.0
             return {
-                "class_name": "healthy",
-                "confidence": detection["confidence"],
-                "all_probs": {n: 0.0 for n in self.classifier.CLASS_NAMES}
-                | {"healthy": detection["confidence"]},
+                "class_name": "not_a_plant",
+                "confidence": 1.0,
+                "all_probs": probs,
                 "detection": {
                     "is_diseased": False,
-                    "detector_confidence": detection["confidence"],
-                    "region": None,
+                    "detector_confidence": 0.0,
+                    "regions": [],
+                    "primary_region": None,
                 },
                 "pipeline_mode": self.mode,
                 "elapsed_ms": round(elapsed, 1),
             }
 
-        # ── Crop to ROI (or keep full image) ─────────────────────────
-        crop = self._extract_crop(img, detection.get("region"))
-
-        # ── Stage 2: classify ────────────────────────────────────────
+        crop = self._extract_crop(img, primary)
         classification = self.classifier.classify(crop)
+
         logger.info(
-            "Stage 2 → class=%s  confidence=%.3f",
+            "Stage 2 → class=%s  confidence=%.3f  low_conf=%s",
             classification["class_name"],
             classification["confidence"],
+            classification.get("low_confidence"),
         )
 
         elapsed = (time.perf_counter() - t0) * 1000
@@ -118,9 +128,10 @@ class PlantDiseasePipeline:
             "confidence": classification["confidence"],
             "all_probs": classification["all_probs"],
             "detection": {
-                "is_diseased": detection["is_diseased"],
-                "detector_confidence": detection["confidence"],
-                "region": detection["region"],
+                "is_diseased": stage1["is_diseased"],
+                "detector_confidence": stage1["confidence"],
+                "regions": detections,
+                "primary_region": primary,
             },
             "pipeline_mode": self.mode,
             "elapsed_ms": round(elapsed, 1),
@@ -129,19 +140,28 @@ class PlantDiseasePipeline:
     # ── helpers ──────────────────────────────────────────────────────
 
     @staticmethod
-    def _extract_crop(img: Image.Image, region: dict | None) -> Image.Image:
-        """Crop the image to the detected region, with safety checks."""
+    def _extract_crop(img: Image.Image, region: Optional[dict]) -> Image.Image:
+        """Crop the image to ``region`` with a small padding margin.
+
+        Falls back to the full image when the region is missing or too small.
+        """
         if region is None:
             return img
 
-        x, y = region["x"], region["y"]
-        w, h = region["width"], region["height"]
+        x = int(region.get("x", 0))
+        y = int(region.get("y", 0))
+        w = int(region.get("width", 0))
+        h = int(region.get("height", 0))
 
         if w < MIN_CROP_SIZE or h < MIN_CROP_SIZE:
             return img
 
-        x2 = max(x + 1, min(img.width, x + w))
-        y2 = max(y + 1, min(img.height, y + h))
-        x = max(0, min(x, img.width - 1))
-        y = max(0, min(y, img.height - 1))
-        return img.crop((x, y, x2, y2))
+        pad_x = int(w * CROP_PADDING_RATIO)
+        pad_y = int(h * CROP_PADDING_RATIO)
+        x1 = max(0, x - pad_x)
+        y1 = max(0, y - pad_y)
+        x2 = min(img.width, x + w + pad_x)
+        y2 = min(img.height, y + h + pad_y)
+        if x2 <= x1 or y2 <= y1:
+            return img
+        return img.crop((x1, y1, x2, y2))

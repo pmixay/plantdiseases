@@ -87,13 +87,13 @@ if "%TRAIN%"=="true" (
 )
 
 echo.
-if exist "models\detector.pth" (
+if exist "models\detector.pt" (
     if exist "models\classifier.pth" (
         echo [+] Both models found - running in FULL mode
         goto start_server
     )
 )
-if exist "models\detector.pth" (
+if exist "models\detector.pt" (
     echo [!] Only detector model found - running in PARTIAL mode
     goto start_server
 )
@@ -102,7 +102,8 @@ if exist "models\classifier.pth" (
     goto start_server
 )
 echo [!] No trained models found - running in DEMO mode
-echo     To train: start.bat --train
+echo     Train in Colab via train_notebook.ipynb, then copy detector.pt,
+echo     classifier.pth and classes.json into server\models\
 
 :start_server
 echo.

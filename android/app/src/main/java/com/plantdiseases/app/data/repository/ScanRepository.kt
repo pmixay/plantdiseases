@@ -75,7 +75,14 @@ class ScanRepository(
     /** Save analysis result to local DB */
     suspend fun saveScan(imagePath: String, result: AnalysisResponse): Long =
         withContext(Dispatchers.IO) {
-            val region = result.detection?.region
+            val detection = result.detection
+            val regions = detection?.regions ?: emptyList()
+            val primary = detection?.primaryRegion
+            val primaryIndex = if (primary == null) null
+                else regions.indexOfFirst {
+                    it.x == primary.x && it.y == primary.y &&
+                        it.width == primary.width && it.height == primary.height
+                }.takeIf { it >= 0 }
             val entity = ScanEntity(
                 imagePath = imagePath,
                 diseaseName = result.diseaseName,
@@ -88,14 +95,25 @@ class ScanRepository(
                 prevention = gson.toJson(result.prevention),
                 preventionRu = gson.toJson(result.preventionRu),
                 isHealthy = result.isHealthy,
-                regionX = region?.x,
-                regionY = region?.y,
-                regionWidth = region?.width,
-                regionHeight = region?.height,
+                regions = if (regions.isEmpty()) null else gson.toJson(regions),
+                primaryRegionIndex = primaryIndex,
                 allProbs = result.allProbs?.let { gson.toJson(it) }
             )
             scanDao.insert(entity)
         }
+
+    /** Parse stored regions JSON back into a list of DetectionRegion. */
+    fun parseRegions(json: String?): List<com.plantdiseases.app.data.model.DetectionRegion> {
+        if (json.isNullOrEmpty()) return emptyList()
+        return try {
+            gson.fromJson(
+                json,
+                Array<com.plantdiseases.app.data.model.DetectionRegion>::class.java,
+            ).toList()
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
 
     /** Get recent scan history */
     suspend fun getRecentScans(limit: Int = 20): List<ScanHistoryItem> =

@@ -1,16 +1,19 @@
 """
-Stage 2 — Disease Classifier.
+Stage 2 — Houseplant Disease Classifier.
 
-Uses EfficientNet-B0 to classify a cropped leaf region into disease
-classes.  Receives the ROI extracted by Stage 1 (detector) so the
-classifier works on the most informative part of the image.
+Uses EfficientNetV2-S to classify a cropped leaf region into one of 9
+houseplant-focused disease classes, including a rejection class
+(``not_a_plant``) that lets the pipeline stay robust to fingers, walls
+and random objects in the frame.
 
 Class names are loaded from ``models/classes.json`` (produced by
-the training notebook).  If that file is missing, a built-in default
-list matching the shipped 9-class weights is used.
-
-When no trained model is found, falls back to colour-based heuristics.
+``train.py`` / ``train_notebook.ipynb``). If that file is missing, a
+built-in default list is used. When no trained weights are available the
+classifier falls back to colour heuristics so the server is usable in
+demo mode.
 """
+
+from __future__ import annotations
 
 import json
 import logging
@@ -26,51 +29,61 @@ from torchvision import models, transforms
 
 logger = logging.getLogger(__name__)
 
-IMG_SIZE = 224
+IMG_SIZE = 300  # EfficientNetV2-S native inference size
 
-# Order must match the training-time ``sorted(ImageFolder.classes)``
-# (alphabetical) because the classifier head indices were frozen against it.
+# Alphabetical — must match training-time ``sorted(ImageFolder.classes)``.
 DEFAULT_CLASS_NAMES = [
-    "bacterial_spot",
-    "early_blight",
+    "blight",
     "healthy",
-    "late_blight",
     "leaf_mold",
+    "leaf_spot",
     "mosaic_virus",
-    "septoria_leaf_spot",
+    "not_a_plant",
+    "powdery_mildew",
+    "rust",
     "spider_mites",
-    "target_spot",
 ]
+
+# Minimum confidence below which we surface the built-in fallback name.
+LOW_CONFIDENCE_THRESHOLD = 0.35
 
 
 def _load_class_names(model_path: Path | None) -> list[str]:
-    """Try to load class names from classes.json next to the model file."""
+    """Load class names from classes.json next to the checkpoint."""
     if model_path is not None:
         meta = model_path.parent / "classes.json"
         if meta.exists():
             try:
-                data = json.loads(meta.read_text())
-                names = data.get("class_names", DEFAULT_CLASS_NAMES)
+                data = json.loads(meta.read_text(encoding="utf-8"))
+                names = data.get("class_names") or DEFAULT_CLASS_NAMES
                 version = data.get("model_version", "unknown")
                 logger.info(
                     "Loaded %d class names from %s (model_version=%s)",
                     len(names), meta, version,
                 )
-                return names
+                return list(names)
             except Exception as e:
                 logger.warning("Failed to read %s: %s — using defaults", meta, e)
     return list(DEFAULT_CLASS_NAMES)
 
 
+def _build_efficientnet_v2_s(num_classes: int) -> nn.Module:
+    """Create an untrained EfficientNetV2-S with a classifier head sized
+    to ``num_classes``."""
+    net = models.efficientnet_v2_s(weights=None)
+    in_features = net.classifier[-1].in_features
+    net.classifier[-1] = nn.Linear(in_features, num_classes)
+    return net
+
+
 class DiseaseClassifier:
-    """Fine-grained plant disease classifier (dynamic number of classes)."""
+    """EfficientNetV2-S houseplant disease classifier."""
 
     def __init__(self, model_path: Path | None = None):
         self.model: Optional[nn.Module] = None
         self.is_loaded = False
         self.device = torch.device("cpu")
 
-        # Resolve class names first — needed to build the correct head
         self.CLASS_NAMES = _load_class_names(model_path)
         self.NUM_CLASSES = len(self.CLASS_NAMES)
 
@@ -92,41 +105,41 @@ class DiseaseClassifier:
         if not self.is_loaded:
             logger.warning("Classifier: no model — running in DEMO mode")
 
-    def _load_model(self, path: Path):
+    def _load_model(self, path: Path) -> None:
         state = torch.load(str(path), map_location=self.device, weights_only=True)
 
-        # Validate head width matches the class-name list we just loaded.
-        head_weight = state.get("classifier.1.weight")
-        if head_weight is None:
-            # Last Linear in EfficientNet-B0 classifier is at index 1 by default,
-            # but be defensive: pick the first 2-D parameter whose name ends in ".weight"
-            # inside the classifier module.
-            for key, tensor in state.items():
-                if key.startswith("classifier.") and key.endswith(".weight") and tensor.ndim == 2:
-                    head_weight = tensor
+        # Sanity-check the head width against our class list.
+        head_weight = None
+        for key, tensor in state.items():
+            if key.startswith("classifier.") and key.endswith(".weight") and tensor.ndim == 2:
+                head_weight = tensor
         if head_weight is not None:
             state_num_classes = int(head_weight.shape[0])
             if state_num_classes != self.NUM_CLASSES:
                 logger.error(
                     "Classifier mismatch: checkpoint has %d outputs but classes.json "
-                    "declares %d. Rebuilding head to match the checkpoint — update "
-                    "models/classes.json (it is regenerated by train.py / train_notebook.ipynb).",
+                    "declares %d. Trusting the checkpoint and padding class list — "
+                    "regenerate classes.json for production deployments.",
                     state_num_classes, self.NUM_CLASSES,
                 )
-                # Trust the checkpoint: drop any extra names so indices stay aligned.
-                self.CLASS_NAMES = self.CLASS_NAMES[:state_num_classes] if state_num_classes <= len(self.CLASS_NAMES) else (
-                    self.CLASS_NAMES + [f"class_{i}" for i in range(len(self.CLASS_NAMES), state_num_classes)]
-                )
+                if state_num_classes <= len(self.CLASS_NAMES):
+                    self.CLASS_NAMES = self.CLASS_NAMES[:state_num_classes]
+                else:
+                    self.CLASS_NAMES = self.CLASS_NAMES + [
+                        f"class_{i}" for i in range(len(self.CLASS_NAMES), state_num_classes)
+                    ]
                 self.NUM_CLASSES = state_num_classes
 
-        net = models.efficientnet_b0(weights=None)
-        net.classifier[-1] = nn.Linear(net.classifier[-1].in_features, self.NUM_CLASSES)
+        net = _build_efficientnet_v2_s(self.NUM_CLASSES)
         net.load_state_dict(state)
         net.to(self.device).eval()
 
         self.model = net
         self.is_loaded = True
-        logger.info("Classifier model loaded from %s (%d classes)", path, self.NUM_CLASSES)
+        logger.info(
+            "Classifier (EfficientNetV2-S) loaded from %s (%d classes)",
+            path, self.NUM_CLASSES,
+        )
 
     # ── public API ───────────────────────────────────────────────────
 
@@ -135,10 +148,11 @@ class DiseaseClassifier:
 
         Returns
         -------
-        dict with keys:
-            class_name : str
-            confidence : float
-            all_probs  : dict[str, float]  (every class -> probability)
+        dict with:
+            class_name : str                  — top-1 class
+            confidence : float                — top-1 probability
+            all_probs  : dict[str, float]     — probability per class
+            low_confidence : bool             — True when top-1 < threshold
         """
         if self.is_loaded:
             return self._classify_real(img)
@@ -153,29 +167,30 @@ class DiseaseClassifier:
         probs = F.softmax(logits, dim=1)[0].cpu().numpy()
 
         top_idx = int(np.argmax(probs))
+        top_conf = float(probs[top_idx])
         return {
             "class_name": self.CLASS_NAMES[top_idx],
-            "confidence": round(float(probs[top_idx]), 4),
+            "confidence": round(top_conf, 4),
             "all_probs": {
                 self.CLASS_NAMES[i]: round(float(probs[i]), 4)
                 for i in range(self.NUM_CLASSES)
             },
+            "low_confidence": top_conf < LOW_CONFIDENCE_THRESHOLD,
         }
 
-    # ── demo mode (colour heuristics, deterministic per image) ────────
+    # ── demo mode (colour heuristics, deterministic per image) ───────
 
     @staticmethod
     def _image_seed(img: Image.Image) -> int:
-        """Derive a stable seed from image pixel data so results are reproducible."""
         small = np.array(img.resize((16, 16)), dtype=np.uint8)
         return int(small.sum()) % (2**31)
 
     def _classify_demo(self, img: Image.Image) -> dict:
         rng = np.random.RandomState(self._image_seed(img))
         arr = np.array(img.resize((64, 64)), dtype=np.float32)
-        r_mean = arr[:, :, 0].mean()
-        g_mean = arr[:, :, 1].mean()
-        b_mean = arr[:, :, 2].mean()
+        r_mean = float(arr[:, :, 0].mean())
+        g_mean = float(arr[:, :, 1].mean())
+        b_mean = float(arr[:, :, 2].mean())
         total = r_mean + g_mean + b_mean + 1e-6
 
         green_ratio = g_mean / total
@@ -188,29 +203,32 @@ class DiseaseClassifier:
                 "class_name": "unknown",
                 "confidence": 0.0,
                 "all_probs": {},
+                "low_confidence": True,
             }
 
-        if green_ratio > 0.38 and "healthy" in names:
+        # Almost no green → probably not a plant.
+        if green_ratio < 0.32 and "not_a_plant" in names:
+            cls = "not_a_plant"
+            conf = 0.60 + rng.uniform(0, 0.20)
+        elif green_ratio > 0.42 and "healthy" in names:
             cls = "healthy"
-            conf = 0.82 + rng.uniform(0, 0.15)
+            conf = 0.78 + rng.uniform(0, 0.15)
         elif brightness > 190 and g_mean < 170:
-            pool = [n for n in ("powdery_mildew", "botrytis", "leaf_mold") if n in names]
-            cls = rng.choice(pool) if pool else names[0]
-            conf = 0.60 + rng.uniform(0, 0.25)
-        elif brown_ratio > 0.42:
-            pool = [n for n in ("early_blight", "late_blight", "leaf_mold",
-                                "septoria_leaf_spot", "root_rot") if n in names]
-            cls = rng.choice(pool) if pool else names[0]
-            conf = 0.65 + rng.uniform(0, 0.25)
-        elif r_mean > g_mean and r_mean > 140:
-            pool = [n for n in ("rust", "bacterial_spot", "anthracnose") if n in names]
-            cls = rng.choice(pool) if pool else names[0]
-            conf = 0.60 + rng.uniform(0, 0.25)
-        else:
-            pool = [n for n in ("yellow_leaf_curl", "mosaic_virus",
-                                "spider_mites", "target_spot") if n in names]
+            pool = [n for n in ("powdery_mildew", "leaf_mold") if n in names]
             cls = rng.choice(pool) if pool else names[0]
             conf = 0.55 + rng.uniform(0, 0.25)
+        elif brown_ratio > 0.42:
+            pool = [n for n in ("blight", "leaf_spot", "leaf_mold") if n in names]
+            cls = rng.choice(pool) if pool else names[0]
+            conf = 0.55 + rng.uniform(0, 0.25)
+        elif r_mean > g_mean and r_mean > 140:
+            pool = [n for n in ("rust", "leaf_spot") if n in names]
+            cls = rng.choice(pool) if pool else names[0]
+            conf = 0.55 + rng.uniform(0, 0.25)
+        else:
+            pool = [n for n in ("mosaic_virus", "spider_mites") if n in names]
+            cls = rng.choice(pool) if pool else names[0]
+            conf = 0.50 + rng.uniform(0, 0.25)
 
         probs = {name: 0.0 for name in names}
         probs[cls] = round(conf, 4)
@@ -225,4 +243,5 @@ class DiseaseClassifier:
             "class_name": cls,
             "confidence": round(float(conf), 4),
             "all_probs": probs,
+            "low_confidence": conf < LOW_CONFIDENCE_THRESHOLD,
         }

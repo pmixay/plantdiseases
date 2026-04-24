@@ -1,6 +1,7 @@
 # PlantDiseases
 
-AI-powered houseplant disease detection app for Android with a Python ML server.
+AI-powered **houseplant** disease detection app for Android, backed by
+the PlantScope v3 two-stage Python ML server.
 
 ---
 
@@ -12,14 +13,16 @@ AI-powered houseplant disease detection app for Android with a Python ML server.
 │   (Kotlin)           │ ──────► │                                  │
 │                      │         │   ┌──────────────────────────┐   │
 │  • CameraX capture   │         │   │ Stage 1: Detector        │   │
-│  • Room local DB     │         │   │ MobileNetV3-Small        │   │
-│  • Retrofit client   │  JSON   │   │ healthy/diseased + ROI   │   │
-│  • Material 3 UI     │ ◄────── │   └──────────┬───────────────┘   │
-│  • RU/EN localization│         │              │                   │
-│  • Profile & stats   │         │   ┌──────────▼───────────────┐   │
+│  • Room local DB     │         │   │ YOLOv8n                  │   │
+│  • Retrofit client   │  JSON   │   │ leaf / diseased_leaf     │   │
+│  • Material 3 UI     │ ◄────── │   │ bounding boxes           │   │
+│  • RU/EN localization│         │   └──────────┬───────────────┘   │
+│  • Profile & stats   │         │              │                   │
+│                      │         │   ┌──────────▼───────────────┐   │
 │                      │         │   │ Stage 2: Classifier      │   │
-│                      │         │   │ EfficientNet-B0          │   │
-│                      │         │   │ 9 classes (tomato)       │   │
+│                      │         │   │ EfficientNetV2-S         │   │
+│                      │         │   │ 9 houseplant classes     │   │
+│                      │         │   │ + not_a_plant rejection  │   │
 │                      │         │   └──────────────────────────┘   │
 └──────────────────────┘         └──────────────────────────────────┘
 ```
@@ -27,39 +30,44 @@ AI-powered houseplant disease detection app for Android with a Python ML server.
 ### Two-Stage Detection Pipeline
 
 ```
-Full photo
+Full photo (any composition — hand, wall, background are OK)
     │
     ▼
-┌─────────────────────────┐
-│  Stage 1: Detector       │  MobileNetV3-Small (1.5M params)
-│  "Is the plant diseased? │  Binary classifier + Grad-CAM heatmap
-│   Where is the damage?"  │  Outputs: healthy/diseased + bounding box
-└──────────┬──────────────┘
+┌──────────────────────────┐
+│  Stage 1: Leaf Detector   │  YOLOv8n (~3.2M params)
+│  "Where are the leaves    │  Outputs bboxes {leaf, diseased_leaf}
+│   and which look sick?"   │  Filters noise: no box → not_a_plant
+└──────────┬───────────────┘
            │
-      ┌────┴─────┐
-      │ Healthy?  │─── yes ──► return "Healthy Plant" immediately
-      └────┬──────┘
-           │ no
+      ┌────┴─────────────────┐
+      │ Any detections?       │─── no ──► "Not a plant / retake photo"
+      └────┬─────────────────┘
+           │ yes
            ▼
-    Crop image to affected region
+    Crop to the primary diseased bbox
+    (or the best leaf if nothing is flagged)
            │
            ▼
-┌─────────────────────────┐
-│  Stage 2: Classifier     │  EfficientNet-B0 (4.0M params, 9-class head)
-│  "Which disease is it?"  │  9-class fine-grained classification
-│                          │  Works on the cropped ROI for precision
-└──────────┬──────────────┘
+┌──────────────────────────┐
+│  Stage 2: Disease Classifier  │  EfficientNetV2-S (~21M params)
+│  "Which disease is this?"     │  9 houseplant classes + not_a_plant
+│                               │  Operates only on the ROI
+└──────────┬───────────────────┘
            │
            ▼
     Disease name + confidence
-    + treatment advice (EN/RU)
+    + treatment / prevention advice (EN/RU)
 ```
 
 **Why two stages?**
-- **Better accuracy** — the classifier focuses on the diseased area, not the whole image
-- **Faster for healthy plants** — no need to run the heavy classifier
-- **Explainable** — the bounding box shows exactly what the model detected
-- **Lightweight** — both models total ~5.5M parameters (vs 100M+ for larger architectures)
+- **Works on real photos**, not only lab shots. YOLOv8 ignores fingers, walls,
+  and furniture because they never score above the detection threshold.
+- **Classifier focuses on the lesion.** Running EfficientNetV2-S on a tight
+  crop beats running it on the whole room.
+- **Explainable by default** — Stage 1 returns every bounding box, the
+  Android app draws them all, and highlights the one Stage 2 used.
+- **Manageable size** — detector ~10 MB, classifier ~82 MB, both trainable
+  in ≈ 90 min end-to-end on a free Colab T4.
 
 ---
 
@@ -91,18 +99,26 @@ Without trained models the server runs in **demo mode** (colour-based heuristics
 
 ### Train models
 
+The recommended workflow is **Google Colab** — `server/train_notebook.ipynb`
+is a self-contained T4-friendly pipeline that:
+
+1. Clones PlantDoc (object-detection + classification subsets).
+2. Downloads COCO val2017 for `not_a_plant` negatives.
+3. Optionally pulls a houseplant species set from Kaggle.
+4. Trains **YOLOv8n** (Stage 1) ≈ 40-60 min.
+5. Trains **EfficientNetV2-S** (Stage 2) ≈ 40-50 min, mixed precision.
+6. Exports `detector.pt`, `classifier.pth`, `classes.json` for download.
+
+CLI entry point (mirrors the notebook) is still available:
+
 ```bash
-# Linux
-./start.sh --train
-
-# Windows
-start.bat --train
-
-# Or run training directly
-python train.py              # train both models
-python train.py --detector   # train detector only
-python train.py --classifier # train classifier only
+python train.py                 # both stages
+python train.py --detector      # YOLOv8n only
+python train.py --classifier    # EfficientNetV2-S only
 ```
+
+Drop the three output files into `server/models/` and restart the server;
+the pipeline auto-detects real vs demo mode.
 
 ### Build the Android app
 
@@ -131,7 +147,7 @@ time the app launches (and after "Reset to default" in Profile).
 - **Scan history** — all results saved locally in Room with migrations (no destructive fallbacks).
 - **Plant care guide** — 22 bilingual articles (diseases, pests, watering, lighting, care) with fuzzy search and recent-query chips.
 - **Profile & statistics** — total scans, healthy/diseased split, most common disease, storage breakdown.
-- **Real Grad-CAM heatmap** — pixel-accurate detection region mapped through `centerCrop`, with a cached radial gradient and a pulsing fill animator that cleans itself up in `onDetachedFromWindow`.
+- **Live bbox overlay** — every YOLOv8 detection is drawn on top of the original photo through `centerCrop`, with a cached radial gradient and a pulsing fill animator that cleans itself up in `onDetachedFromWindow`. The primary box (the one Stage 2 classified) gets a thicker stroke.
 - **Top-3 alternative diagnoses** — explainable AI with confidence bars and Shannon-entropy uncertainty.
 - **Share results with image** — export diagnosis text + photo with the heatmap overlay via `FileProvider`.
 - **Blur pre-check** — bulk Laplacian variance warns before uploading blurry photos.
@@ -200,12 +216,12 @@ app/src/main/
 
 | Stage | Model | Params | Task |
 |-------|-------|--------|------|
-| 1 — Detector | MobileNetV3-Small | 1.5 M | Binary (healthy/diseased) + Grad-CAM region |
-| 2 — Classifier | EfficientNet-B0 | 4.0 M | 9-class disease identification |
+| 1 — Detector | YOLOv8n (Ultralytics) | ~3.2 M | Bounding boxes for `leaf` / `diseased_leaf` |
+| 2 — Classifier | EfficientNetV2-S (ImageNet-V2-S) | ~21 M | 9-class houseplant disease head + rejection class |
 
-Both models use **ImageNet-pretrained** backbones with two-phase transfer learning:
-- Phase A: freeze backbone → train classifier head
-- Phase B: unfreeze top layers → fine-tune with lower LR
+Stage 1 is an off-the-shelf YOLOv8n fine-tuned on PlantDoc (remapped to two
+classes). Stage 2 is two-phase transfer learning: freeze the backbone to warm
+up the head, then unfreeze the top blocks with a smaller LR.
 
 ### Server Files
 ```
@@ -214,15 +230,17 @@ server/
 ├── start.bat              # Windows startup script
 ├── main.py                # FastAPI server (endpoints)
 ├── pipeline.py            # Two-stage pipeline orchestrator
-├── detector.py            # Stage 1: MobileNetV3 + Grad-CAM
-├── classifier.py          # Stage 2: EfficientNet-B0
-├── train.py               # Unified training script
-├── diseases_data.py       # Bilingual disease database
-├── requirements.txt       # Server dependencies
+├── detector.py            # Stage 1: YOLOv8n + HSV demo fallback
+├── classifier.py          # Stage 2: EfficientNetV2-S + rejection class
+├── train.py               # Unified training script (YOLO + EfficientNet)
+├── train_notebook.ipynb   # Colab-optimised training workflow
+├── diseases_data.py       # Bilingual houseplant disease database
+├── requirements.txt       # Server dependencies (PyTorch + Ultralytics)
 ├── requirements-train.txt # Extra training dependencies
 └── models/
-    ├── detector.pth       # Trained Stage 1 model
-    └── classifier.pth     # Trained Stage 2 model
+    ├── detector.pt        # Trained Stage 1 (YOLOv8n)
+    ├── classifier.pth     # Trained Stage 2 (EfficientNetV2-S)
+    └── classes.json       # Canonical class list + model version
 ```
 
 ### Startup Options
@@ -243,33 +261,39 @@ start.bat --train
 
 ### Training Your Own Models
 
-1. **Download PlantVillage dataset:**
-   - GitHub: https://github.com/spMohanty/PlantVillage-Dataset
-   - Kaggle: https://www.kaggle.com/datasets/emmarex/plantdisease
+The easiest path is Google Colab — open `server/train_notebook.ipynb`,
+switch to a T4 GPU, and run all cells top-to-bottom. If you prefer a CLI:
 
-2. **Organise data:**
+1. **Grab the datasets** (the Colab notebook does this automatically):
+   - **PlantDoc Object Detection** — <https://github.com/pratikkayal/PlantDoc-Object-Detection-Dataset>
+   - **PlantDoc Classification** — <https://github.com/pratikkayal/PlantDoc-Dataset>
+   - **COCO val2017** — <https://images.cocodataset.org/zips/val2017.zip>
+     (provides `not_a_plant` negatives — fingers, walls, furniture, ...).
+   - *(optional)* **Houseplant Species** — Kaggle
+     `kacpergregorowicz/house-plant-species` — strengthens the `healthy`
+     class with real indoor photos.
+
+2. **Organise data** (mirrors the notebook output):
    ```
    server/data/
-   ├── train/
-   │   ├── healthy/
-   │   ├── bacterial_spot/
-   │   ├── early_blight/
-   │   ├── powdery_mildew/
-   │   └── ...
-   └── val/
-       ├── healthy/
-       ├── bacterial_spot/
-       └── ...
+   ├── detector/                    # YOLO format
+   │   ├── data.yaml                # nc=2, names=[leaf, diseased_leaf]
+   │   ├── images/{train,val}/
+   │   └── labels/{train,val}/
+   └── classifier/                  # ImageFolder (alphabetical classes)
+       ├── train/{blight,healthy,leaf_mold,leaf_spot,mosaic_virus,
+       │         not_a_plant,powdery_mildew,rust,spider_mites}/
+       └── val/(same structure)/
    ```
 
 3. **Train:**
    ```bash
-   python train.py              # both models
-   python train.py --detector   # Stage 1 only
-   python train.py --classifier # Stage 2 only
+   python train.py                  # YOLOv8n + EfficientNetV2-S
+   python train.py --detector       # Stage 1 only
+   python train.py --classifier     # Stage 2 only
    ```
 
-4. **Restart server** — models load automatically.
+4. **Restart the server** — weights load automatically.
 
 ### API Endpoints
 
@@ -292,7 +316,6 @@ start.bat --train
 - Per-IP rate limiting (1 req/s by default, configurable via `RATE_LIMIT_RPS`) with an accurate `Retry-After` header on HTTP 429.
 - Proxy-aware client IP (`X-Forwarded-For` is only trusted when the peer is listed in `TRUSTED_PROXIES`).
 - Security response headers (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, `Cache-Control`).
-- Grad-CAM inference is serialized by a lock and uses `threading.local` storage to keep backward-pass buffers per-request safe under concurrency.
 
 **Response:**
 ```json
@@ -310,12 +333,14 @@ start.bat --train
   "detection": {
     "is_diseased": true,
     "detector_confidence": 0.93,
-    "region": {
-      "x": 120,
-      "y": 80,
-      "width": 200,
-      "height": 170
-    }
+    "regions": [
+      {"x": 120, "y": 80, "width": 200, "height": 170,
+       "class": "diseased_leaf", "confidence": 0.93},
+      {"x": 340, "y": 210, "width": 160, "height": 150,
+       "class": "leaf", "confidence": 0.71}
+    ],
+    "primary_region": {"x": 120, "y": 80, "width": 200, "height": 170,
+                       "class": "diseased_leaf", "confidence": 0.93}
   },
   "all_probs": {
     "healthy": 0.05,
@@ -332,39 +357,58 @@ start.bat --train
 
 ## Disease Classes
 
-The shipped classifier weights cover the 9-class PlantVillage Tomato subset.
-Order is alphabetical — it matches `sorted(ImageFolder.classes)` at training time
-and is the canonical mapping stored in `server/models/classes.json`.
+Stage 2 ships with 9 alphabetically-ordered houseplant-focused classes
+(canonical order is stored in `server/models/classes.json`):
 
 | # | Class | EN Name | RU Name |
 |---|-------|---------|---------|
-| 0 | bacterial_spot | Bacterial Spot | Бактериальная пятнистость |
-| 1 | early_blight | Early Blight | Ранний фитофтороз |
-| 2 | healthy | Healthy Plant | Здоровое растение |
-| 3 | late_blight | Late Blight | Фитофтороз |
-| 4 | leaf_mold | Leaf Mold | Листовая плесень |
-| 5 | mosaic_virus | Mosaic Virus | Мозаичный вирус |
-| 6 | septoria_leaf_spot | Septoria Leaf Spot | Септориоз |
-| 7 | spider_mites | Spider Mites | Паутинный клещ |
-| 8 | target_spot | Target Spot | Мишеневидная пятнистость |
+| 0 | blight | Blight | Фитофтороз |
+| 1 | healthy | Healthy Plant | Здоровое растение |
+| 2 | leaf_mold | Leaf Mold | Листовая плесень |
+| 3 | leaf_spot | Leaf Spot (Bacterial / Fungal) | Пятнистость листьев |
+| 4 | mosaic_virus | Mosaic Virus | Мозаичный вирус |
+| 5 | not_a_plant | Not a Plant | Не растение |
+| 6 | powdery_mildew | Powdery Mildew | Мучнистая роса |
+| 7 | rust | Rust | Ржавчина |
+| 8 | spider_mites | Spider Mites | Паутинный клещ |
 
-`server/diseases_data.py` additionally carries bilingual treatment / prevention
-copy for `yellow_leaf_curl`, `powdery_mildew`, `rust`, `root_rot`, `anthracnose`,
-`botrytis`, and `unknown`, which are available if you retrain on a wider class
-set — just regenerate `classes.json` to match your new `ImageFolder`.
+Stage 1 detects two object classes — `leaf` (healthy) and `diseased_leaf`.
+The `not_a_plant` Stage 2 class is a rejection bucket trained on COCO
+imagery so fingers, walls, furniture, and fabrics don't trigger a false
+disease call.
 
 ---
 
 ## What sets this apart
 
-- **Two-stage pipeline beats single-pass baselines.** Stage 1 finds the affected region with Grad-CAM, Stage 2 classifies the ROI crop — on PlantVillage-style data that raises top-1 over a flat 16-class classifier because the fine-grained model never has to learn "what is a leaf" again.
-- **Heatmap is a real overlay, not a picture of one.** The region is transported as pixel coordinates in the original image and re-projected through Glide's `centerCrop` on device, so zooming stays crisp and the overlay survives configuration changes.
-- **Explainable by default.** Every diagnosis ships with top-3 probabilities, a Shannon-entropy uncertainty score, and a severity estimate (fraction of heatmap pixels above threshold).
-- **Production-hardened server.** Magic-byte validation, Pillow decompression-bomb guard, per-IP rate limiter with `Retry-After`, proxy-aware client IP via `TRUSTED_PROXIES`, inference timeout, security response headers, non-root Docker user, and a container `HEALTHCHECK`.
-- **Thread-safe Grad-CAM.** The activation / gradient storage is `threading.local`, and the backward pass is serialized by a lock — so concurrent requests never corrupt each other's CAM.
-- **Resilient client transport.** `RetryInterceptor` retries on `IOException`, HTTP 429 and HTTP 503, capped exponential backoff, and honours `Retry-After` seconds.
-- **Bilingual end-to-end.** Russian and English share a single disease database on the server and UI strings on the client, switchable from Profile without restarting the app.
-- **Observability.** `/api/metrics` exposes request / error counters and analyse-latency histograms — drop-in for Prometheus scraping.
+- **Real two-stage pipeline.** YOLOv8n locates every leaf with a bbox;
+  EfficientNetV2-S classifies only the primary diseased region. The
+  classifier never has to first figure out "what is a leaf".
+- **Robust to noisy photos.** Fingers, walls, and furniture are silently
+  dropped by Stage 1 thresholding; images with no detection fall back to
+  `not_a_plant` so the user gets a helpful "retake the photo" response.
+- **Houseplant-focused training data.** PlantDoc (real-world photos) +
+  COCO negatives + houseplant species — not the lab-conditioned
+  PlantVillage Tomato dataset that powered v1/v2.
+- **Explainable by default.** Every bbox is transported to the app, and
+  the primary one is highlighted — top-3 probabilities, a
+  Shannon-entropy uncertainty score, and per-class probabilities ride
+  along.
+- **Production-hardened server.** Magic-byte validation,
+  decompression-bomb guard, per-IP rate limiter with `Retry-After`,
+  proxy-aware client IP via `TRUSTED_PROXIES`, inference timeout, security
+  response headers, non-root Docker user, container `HEALTHCHECK`.
+- **Resilient client transport.** `RetryInterceptor` retries on
+  `IOException`, HTTP 429 and HTTP 503 with capped exponential backoff,
+  and honours `Retry-After` seconds.
+- **Bilingual end-to-end.** Russian and English share a single disease
+  database on the server and UI strings on the client, switchable from
+  Profile without restarting the app.
+- **Observability.** `/api/metrics` exposes request / error counters and
+  analyse-latency histograms — drop-in for Prometheus scraping.
+- **Colab-first training.** `train_notebook.ipynb` downloads datasets,
+  converts them, trains both stages end-to-end on a free T4, and packages
+  the exported weights.
 
 ---
 

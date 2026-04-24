@@ -168,7 +168,7 @@ Before opening the service to the public:
 - [ ] `RATE_LIMIT_RPS` tuned for expected traffic (default `1.0` is per-IP).
 - [ ] `MAX_FILE_SIZE` aligned with nginx `client_max_body_size`.
 - [ ] `proxy_read_timeout` ≥ `INFERENCE_TIMEOUT`.
-- [ ] Model files (`detector.pth`, `classifier.pth`, `classes.json`) present under `server/models/` — otherwise the server stays in demo mode (acceptable for a jury demo, not for a prod launch).
+- [ ] Model files (`detector.pt`, `classifier.pth`, `classes.json`) present under `server/models/` — otherwise the server stays in demo mode (acceptable for a jury demo, not for a prod launch).
 - [ ] `/api/health` reports `pipeline_mode: "full"`.
 - [ ] `classes.json` `num_classes` matches the classifier head size (the server logs a mismatch otherwise).
 - [ ] Logs are rotating (`LOG_DIR`) and being shipped off-box.
