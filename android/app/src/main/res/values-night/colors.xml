@@ -16,12 +16,16 @@
     <color name="gradient_mid">#1E4028</color>
     <color name="gradient_end">#2E6A42</color>
 
+    <!-- Toolbar background (subtle vertical gradient, no harsh diagonal) -->
+    <color name="toolbar_top">#24452E</color>
+    <color name="toolbar_bottom">#16301F</color>
+
     <!-- Surface -->
     <color name="background">#0C120E</color>
     <color name="surface">#141B16</color>
     <color name="surface_variant">#1E2820</color>
-    <color name="on_surface">#E7EEE7</color>
-    <color name="on_surface_secondary">#AAB4AA</color>
+    <color name="on_surface">#F5F8F5</color>
+    <color name="on_surface_secondary">#C8D0C8</color>
 
     <!-- Semantic -->
     <color name="healthy_green">#7FC791</color>

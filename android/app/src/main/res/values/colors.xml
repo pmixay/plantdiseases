@@ -16,6 +16,10 @@
     <color name="gradient_mid">#1F7A3F</color>
     <color name="gradient_end">#2FB062</color>
 
+    <!-- Toolbar background (subtle vertical gradient, no harsh diagonal) -->
+    <color name="toolbar_top">#1F7A3F</color>
+    <color name="toolbar_bottom">#196832</color>
+
     <!-- Surface -->
     <color name="background">#F5FBF6</color>
     <color name="surface">#FFFFFF</color>
