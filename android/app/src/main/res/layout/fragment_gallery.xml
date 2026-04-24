@@ -130,8 +130,8 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
                 android:text="@string/empty_gallery"
-                android:textColor="@color/on_surface_secondary"
-                android:textSize="16sp"
+                android:textColor="@color/on_surface"
+                android:textSize="18sp"
                 android:fontFamily="sans-serif-medium" />
 
             <TextView
@@ -141,8 +141,7 @@
                 android:layout_marginTop="8dp"
                 android:text="@string/empty_gallery_hint"
                 android:textColor="@color/on_surface_secondary"
-                android:textSize="13sp"
-                android:alpha="0.7" />
+                android:textSize="14sp" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_first_scan"
