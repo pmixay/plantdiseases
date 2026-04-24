@@ -508,14 +508,16 @@ async def analyze_image(image: UploadFile = File(...)):
     class_name = result["class_name"]
     confidence = result["confidence"]
     all_probs = result.get("all_probs", {})
+    warnings = list(result.get("warnings", []))
+    top_k = list(result.get("top_k", []))
     disease_info = DISEASES_DATABASE.get(class_name, DISEASES_DATABASE["unknown"])
 
     elapsed = time.time() - start_time
     _record_analysis(class_name, elapsed * 1000)
 
     logger.info(
-        "Analysis complete: class=%s confidence=%.3f time=%.2fs file=%s mode=%s",
-        class_name, confidence, elapsed, image.filename, result["pipeline_mode"],
+        "Analysis complete: class=%s confidence=%.3f time=%.2fs file=%s mode=%s warnings=%s",
+        class_name, confidence, elapsed, image.filename, result["pipeline_mode"], warnings,
     )
 
     rounded_probs = {k: round(v, 4) for k, v in all_probs.items()}
@@ -531,6 +533,26 @@ async def analyze_image(image: UploadFile = File(...)):
 
     detection = result["detection"]
 
+    # Annotate top_k with the bilingual display name so the client can
+    # render "Листовая плесень · 6%" without a second lookup table.
+    top_k_localised = []
+    for entry in top_k:
+        cls = entry.get("class", "")
+        info = DISEASES_DATABASE.get(cls, DISEASES_DATABASE["unknown"])
+        top_k_localised.append({
+            "class": cls,
+            "confidence": entry.get("confidence", 0.0),
+            "name_en": info.get("name_en", cls.replace("_", " ").title()),
+            "name_ru": info.get("name_ru", cls),
+            "is_healthy": bool(info.get("is_healthy", False)),
+        })
+
+    is_healthy_effective = bool(disease_info.get("is_healthy", False))
+    # A healthy verdict that got re-routed or flagged as uncertain is NOT
+    # a confident green badge anymore.
+    if "uncertain_healthy" in warnings:
+        is_healthy_effective = False
+
     return JSONResponse(content={
         "disease_name": disease_info["name_en"],
         "disease_name_ru": disease_info["name_ru"],
@@ -541,10 +563,12 @@ async def analyze_image(image: UploadFile = File(...)):
         "treatment_ru": disease_info["treatment_ru"],
         "prevention": disease_info["prevention_en"],
         "prevention_ru": disease_info["prevention_ru"],
-        "is_healthy": disease_info.get("is_healthy", False),
+        "is_healthy": is_healthy_effective,
         "detection": detection,
         "uncertainty": uncertainty,
         "all_probs": rounded_probs,
+        "top_k": top_k_localised,
+        "warnings": warnings,
         "pipeline_mode": result["pipeline_mode"],
         "elapsed_ms": result["elapsed_ms"],
         "server_version": APP_VERSION,

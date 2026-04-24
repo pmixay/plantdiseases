@@ -1,6 +1,8 @@
 package com.plantdiseases.app.data.local
 
 import androidx.room.*
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Entity(
     tableName = "scans",
@@ -29,7 +31,11 @@ data class ScanEntity(
     // Index into `regions` that Stage 2 used as the primary crop (-1 if none).
     @ColumnInfo(name = "primary_region_index") val primaryRegionIndex: Int? = null,
     // Per-class probabilities from the classifier (JSON map).
-    @ColumnInfo(name = "all_probs") val allProbs: String? = null
+    @ColumnInfo(name = "all_probs") val allProbs: String? = null,
+    // Diagnostic flags from the pipeline post-processing rules
+    // (e.g. "uncertain_healthy", "detector_classifier_mismatch"),
+    // serialised as a JSON array of strings.
+    @ColumnInfo(name = "warnings") val warnings: String? = null
 )
 
 @Dao
@@ -71,7 +77,7 @@ interface ScanDao {
     suspend fun deleteAll()
 }
 
-@Database(entities = [ScanEntity::class], version = 1, exportSchema = false)
+@Database(entities = [ScanEntity::class], version = 2, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun scanDao(): ScanDao
 
@@ -79,13 +85,22 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
+        // v1 → v2: add nullable `warnings` column for pipeline post-processing flags.
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE scans ADD COLUMN warnings TEXT")
+            }
+        }
+
         fun getInstance(context: android.content.Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     AppDatabase::class.java,
                     "plantdiseases_db"
-                ).build()
+                )
+                    .addMigrations(MIGRATION_1_2)
+                    .build()
                 INSTANCE = instance
                 instance
             }

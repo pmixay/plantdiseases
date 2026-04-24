@@ -161,6 +161,12 @@
     <!-- Retry analysis -->
     <string name="retry_analysis">Retry Analysis</string>
 
+    <!-- Pipeline warnings -->
+    <string name="warning_uncertain_healthy_title">Could be disease</string>
+    <string name="warning_uncertain_healthy">The model is not confident that the plant is healthy. Please check the alternative diagnoses below — they may apply.</string>
+    <string name="warning_detector_mismatch_title">Detector sees damage</string>
+    <string name="warning_detector_mismatch">The detector spotted leaf damage, but the classifier decided the plant is healthy. Try re-scanning from a closer, better-lit angle.</string>
+
     <!-- How to use (onboarding from profile) -->
     <string name="how_to_use">How to Use</string>
 

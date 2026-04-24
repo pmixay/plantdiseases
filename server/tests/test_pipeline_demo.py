@@ -59,3 +59,79 @@ def test_not_a_plant_class_is_present():
     from classifier import DEFAULT_CLASS_NAMES
 
     assert "not_a_plant" in DEFAULT_CLASS_NAMES
+
+
+def test_top_k_and_warnings_keys_in_result():
+    """Pipeline should always include top_k and warnings so the UI
+    never has to gate on `.get(...)` for these fields."""
+    p = PlantDiseasePipeline()
+    result = p.analyze(_seeded_image(seed=11))
+
+    assert "top_k" in result, "top_k missing from pipeline result"
+    assert "warnings" in result, "warnings missing from pipeline result"
+    assert isinstance(result["top_k"], list)
+    assert isinstance(result["warnings"], list)
+    # top_k at most 3 entries, each has class + confidence.
+    assert len(result["top_k"]) <= 3
+    for entry in result["top_k"]:
+        assert set(entry.keys()) == {"class", "confidence"}
+
+
+def test_healthy_gate_reroutes_when_margin_too_small():
+    """If healthy wins but the runner-up is within the margin, the final
+    class should be re-routed to the runner-up and `uncertain_healthy`
+    should appear in warnings."""
+    from pipeline import _apply_postprocessing_rules, HEALTHY_MARGIN
+
+    # Synthetic probabilities where healthy wins narrowly — margin under
+    # the threshold must trigger the re-route.
+    probs = {
+        "blight": 0.05,
+        "healthy": 0.55,
+        "leaf_mold": 0.05,
+        "leaf_spot": 0.55 - (HEALTHY_MARGIN / 2),
+        "mosaic_virus": 0.02,
+        "not_a_plant": 0.01,
+        "powdery_mildew": 0.01,
+        "rust": 0.01,
+    }
+    # Normalise so the dict sums to ~1 (the rule logic doesn't require
+    # it but this keeps the test honest).
+    s = sum(probs.values())
+    probs = {k: v / s for k, v in probs.items()}
+
+    classification = {
+        "class_name": "healthy",
+        "confidence": probs["healthy"],
+        "all_probs": probs,
+        "low_confidence": False,
+    }
+    stage1 = {"is_diseased": False, "confidence": 0.7}
+    out = _apply_postprocessing_rules(classification, stage1, list(probs.keys()))
+
+    assert out["class_name"] != "healthy", "re-route must trigger on low margin"
+    assert "uncertain_healthy" in out["warnings"]
+
+
+def test_detector_classifier_mismatch_warning():
+    """Detector says 'diseased_leaf' but classifier confidently says
+    'healthy' → UI should get a mismatch warning."""
+    from pipeline import _apply_postprocessing_rules
+
+    probs = {
+        "blight": 0.01, "healthy": 0.95, "leaf_mold": 0.01,
+        "leaf_spot": 0.01, "mosaic_virus": 0.01, "not_a_plant": 0.0,
+        "powdery_mildew": 0.005, "rust": 0.005,
+    }
+    classification = {
+        "class_name": "healthy",
+        "confidence": 0.95,
+        "all_probs": probs,
+        "low_confidence": False,
+    }
+    stage1 = {"is_diseased": True, "confidence": 0.8}
+    out = _apply_postprocessing_rules(classification, stage1, list(probs.keys()))
+
+    assert "detector_classifier_mismatch" in out["warnings"]
+    # Healthy was confident enough that we don't ALSO flag uncertain_healthy.
+    assert "uncertain_healthy" not in out["warnings"]

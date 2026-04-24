@@ -20,6 +20,15 @@ data class Detection(
     @SerializedName("primary_region") val primaryRegion: DetectionRegion? = null
 )
 
+/** Single entry in the server-provided top-k candidate list. */
+data class TopKEntry(
+    @SerializedName("class") val className: String,
+    @SerializedName("confidence") val confidence: Float,
+    @SerializedName("name_en") val nameEn: String? = null,
+    @SerializedName("name_ru") val nameRu: String? = null,
+    @SerializedName("is_healthy") val isHealthy: Boolean? = null
+)
+
 /** Response from the server after analyzing an image */
 data class AnalysisResponse(
     @SerializedName("disease_name") val diseaseName: String,
@@ -34,6 +43,8 @@ data class AnalysisResponse(
     @SerializedName("is_healthy") val isHealthy: Boolean,
     @SerializedName("detection") val detection: Detection? = null,
     @SerializedName("all_probs") val allProbs: Map<String, Float>? = null,
+    @SerializedName("top_k") val topK: List<TopKEntry>? = null,
+    @SerializedName("warnings") val warnings: List<String>? = null,
     @SerializedName("pipeline_mode") val pipelineMode: String? = null,
     @SerializedName("elapsed_ms") val elapsedMs: Float? = null
 )
