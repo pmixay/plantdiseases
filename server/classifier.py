@@ -41,7 +41,6 @@ DEFAULT_CLASS_NAMES = [
     "not_a_plant",
     "powdery_mildew",
     "rust",
-    "spider_mites",
 ]
 
 # Minimum confidence below which we surface the built-in fallback name.
