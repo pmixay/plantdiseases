@@ -10,7 +10,7 @@
         android:id="@+id/app_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@color/primary"
+        android:background="@drawable/bg_toolbar_gradient"
         app:elevation="0dp">
 
         <com.google.android.material.appbar.CollapsingToolbarLayout
@@ -18,24 +18,24 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             app:layout_scrollFlags="scroll|exitUntilCollapsed"
-            app:contentScrim="@color/primary"
+            app:contentScrim="@drawable/bg_toolbar_gradient"
             app:expandedTitleGravity="bottom"
             app:expandedTitleMarginStart="16dp"
             app:expandedTitleTextAppearance="@style/TextAppearance.App.Toolbar"
             app:collapsedTitleTextAppearance="@style/TextAppearance.App.Toolbar"
-            app:expandedTitleTextColor="@color/on_primary"
-            app:collapsedTitleTextColor="@color/on_primary">
+            app:expandedTitleTextColor="@color/toolbar_title"
+            app:collapsedTitleTextColor="@color/toolbar_title">
 
             <com.google.android.material.appbar.MaterialToolbar
                 android:id="@+id/toolbar"
                 android:layout_width="match_parent"
                 android:layout_height="?attr/actionBarSize"
-                android:background="@color/primary"
+                android:background="@android:color/transparent"
                 app:layout_collapseMode="pin"
                 app:navigationIcon="@drawable/ic_back"
-                app:navigationIconTint="@color/on_primary"
+                app:navigationIconTint="@color/toolbar_title"
                 app:title="@string/result_title"
-                app:titleTextColor="@color/on_primary" />
+                app:titleTextColor="@color/toolbar_title" />
 
         </com.google.android.material.appbar.CollapsingToolbarLayout>
 

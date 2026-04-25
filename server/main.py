@@ -32,7 +32,7 @@ from pipeline import PlantDiseasePipeline
 try:
     from . import __version__ as APP_VERSION  # type: ignore
 except Exception:
-    APP_VERSION = "3.0.0"
+    APP_VERSION = "3.1.0"
 
 # Limit Pillow decompression to prevent zip-bomb DoS
 Image.MAX_IMAGE_PIXELS = 20_000_000  # ~4500×4500

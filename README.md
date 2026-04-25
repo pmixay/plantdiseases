@@ -144,48 +144,32 @@ identical, but the results are not meaningful.
 
 ## Training the models
 
-The recommended path is **Google Colab** via
+Training runs **only in Google Colab** via
 [`server/train_notebook.ipynb`](server/train_notebook.ipynb). The
-notebook runs end-to-end on a free-tier T4 in roughly 90 minutes:
+notebook runs end-to-end on a free-tier T4 in roughly 70–95 minutes:
 
 1. Install dependencies and sanity-check the GPU.
 2. Clone **PlantDoc** (object-detection + classification subsets).
-3. Download **COCO val2017** to produce `not_a_plant` negatives.
+3. Download **COCO val2017** to produce `not_a_plant` negatives
+   (plant-like categories like *potted plant* and *vase* are filtered
+   out via the COCO annotations to avoid label noise).
 4. Optionally pull **Houseplant Species** from Kaggle to strengthen the
    `healthy` class with real indoor photos.
 5. Train **YOLOv8n** on the remapped leaf / diseased_leaf dataset
-   (~40–60 min with `cos_lr`, AMP, `patience=15`).
+   (~30–45 min with `cache='ram'`, mosaic + mixup + hsv-jitter
+   augmentations, `close_mosaic=10`, AMP and `patience=12`).
 6. Train **EfficientNetV2-S** end-to-end: freeze-backbone warmup
    (`Phase A`, 10 epochs) then fine-tune `features.5-7` + head
-   (`Phase B`, 8 epochs) with mixed precision and a class-balanced
-   sampler (~40–50 min).
-7. Export `detector.pt`, `classifier.pth`, and `classes.json`.
+   (`Phase B`, 12 epochs) with FocalLoss + inverse-frequency weights,
+   CutMix/MixUp, EMA weights, h-flip TTA on val, a class-balanced
+   sampler, batch=48 + persistent workers + `channels_last` for T4
+   throughput (~40–55 min).
+7. Export `detector.pt`, `classifier.pth`, and `classes.json`
+   (the notebook regenerates `classes.json` with the alphabetical class
+   list and the v3.1.0 model version).
 
 Drop the three files into `server/models/` and restart the server — the
 pipeline auto-detects real vs demo mode.
-
-A CLI entry point lives in [`server/train.py`](server/train.py) and
-mirrors the notebook:
-
-```bash
-python train.py                 # both stages
-python train.py --detector      # YOLOv8n only
-python train.py --classifier    # EfficientNetV2-S only
-```
-
-It expects two dataset roots under `server/data/`:
-
-```
-data/
-├── detector/                   # YOLO format
-│   ├── data.yaml               # nc: 2, names: [leaf, diseased_leaf]
-│   ├── images/{train,val}/
-│   └── labels/{train,val}/
-└── classifier/                 # ImageFolder — class folders must be alphabetical
-    ├── train/{blight,healthy,leaf_mold,leaf_spot,mosaic_virus,
-    │         not_a_plant,powdery_mildew,rust,spider_mites}/
-    └── val/(same structure)/
-```
 
 ---
 
@@ -347,10 +331,8 @@ server/
 ├── detector.py              # Stage 1: YOLOv8n (+ HSV demo fallback)
 ├── classifier.py            # Stage 2: EfficientNetV2-S
 ├── diseases_data.py         # Bilingual houseplant disease database
-├── train.py                 # CLI training (YOLO + EfficientNet)
-├── train_notebook.ipynb     # Colab-ready end-to-end training
+├── train_notebook.ipynb     # Colab-only end-to-end training notebook
 ├── requirements.txt         # Server dependencies
-├── requirements-train.txt   # Extra training dependencies
 ├── Dockerfile               # Non-root, HEALTHCHECK-enabled image
 ├── docker-compose.yml       # Compose stack for production
 └── models/
