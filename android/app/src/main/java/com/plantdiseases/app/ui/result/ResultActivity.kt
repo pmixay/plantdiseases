@@ -158,7 +158,10 @@ class ResultActivity : AppCompatActivity() {
                 .into(ivPlant)
 
             // YOLOv8 bbox overlay — show every detected leaf, emphasise
-            // the primary one (the box that Stage 2 classified).
+            // the primary one (the box that Stage 2 classified). v4 detector
+            // is single-class ("leaf") so the disease colour is driven by
+            // the overall scan verdict + primary-region flag, not by a
+            // per-bbox class label.
             val regions = repository.parseRegions(scan.regions)
             if (!scan.isHealthy && regions.isNotEmpty()) {
                 val origBounds = ImageUtils.getImageDimensions(scan.imagePath)
@@ -166,7 +169,7 @@ class ResultActivity : AppCompatActivity() {
                 val overlayBoxes = regions.mapIndexed { i, r ->
                     HeatmapOverlayView.Box(
                         x = r.x, y = r.y, width = r.width, height = r.height,
-                        diseased = (r.className == "diseased_leaf"),
+                        diseased = (i == primaryIdx),
                         primary = i == primaryIdx,
                     )
                 }
@@ -375,15 +378,20 @@ class ResultActivity : AppCompatActivity() {
         binding.alternativesLayout.removeAllViews()
 
         val diseaseNames = mapOf(
+            // PlantScope v4 — 8 houseplant classes
             "healthy" to (if (isRu) "Здоровое растение" else "Healthy Plant"),
             "powdery_mildew" to (if (isRu) "Мучнистая роса" else "Powdery Mildew"),
             "leaf_spot" to (if (isRu) "Пятнистость листьев" else "Leaf Spot"),
+            "spider_mites" to (if (isRu) "Паутинный клещ" else "Spider Mites"),
+            "mealybug" to (if (isRu) "Мучнистый червец" else "Mealybugs"),
+            "scale_insect" to (if (isRu) "Щитовка" else "Scale Insects"),
+            "nutrient_deficiency" to (if (isRu) "Нехватка элементов" else "Nutrient Deficiency"),
+            "not_a_plant" to (if (isRu) "Не растение" else "Not a Plant"),
+            // Legacy v3.x names — kept so older cached scans render labels.
             "blight" to (if (isRu) "Фитофтороз" else "Blight"),
             "rust" to (if (isRu) "Ржавчина" else "Rust"),
             "mosaic_virus" to (if (isRu) "Мозаичный вирус" else "Mosaic Virus"),
-            "spider_mites" to (if (isRu) "Паутинный клещ" else "Spider Mites"),
-            "leaf_mold" to (if (isRu) "Листовая плесень" else "Leaf Mold"),
-            "not_a_plant" to (if (isRu) "Не растение" else "Not a Plant")
+            "leaf_mold" to (if (isRu) "Листовая плесень" else "Leaf Mold")
         )
 
         top3.forEachIndexed { index, entry ->

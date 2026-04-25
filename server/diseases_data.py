@@ -1,12 +1,12 @@
 """
-Bilingual disease information database for PlantScope v3.x.
+Bilingual disease information database for PlantScope v4.x.
 
 Maps Stage 2 classifier class names to houseplant-specific descriptions,
-treatments, and prevention tips. The database is intentionally focused on
-diseases and pests most common on indoor/houseplants — even though the
-visual patterns generalise from PlantDoc's real-world crop photos.
+treatments, and prevention tips. v4 drops field-crop-specific classes
+(``blight``, ``leaf_mold``, ``mosaic_virus``, ``rust``) and adds
+indoor-relevant ones: ``mealybug``, ``scale_insect``, ``nutrient_deficiency``.
 
-Authoritative class list: server/models/classes.json.
+Authoritative class list: ``server/models/classes.json``.
 """
 
 DISEASES_DATABASE = {
@@ -108,108 +108,6 @@ DISEASES_DATABASE = {
         "is_healthy": False
     },
 
-    "blight": {
-        "name_en": "Blight",
-        "name_ru": "Фитофтороз",
-        "description_en": "A rapidly spreading fungal disease that causes large, dark, water-soaked lesions on leaves and stems. On houseplants it is most often triggered by overwatering combined with cool temperatures.",
-        "description_ru": "Быстро прогрессирующее грибковое заболевание: крупные тёмные водянистые поражения на листьях и стеблях. На комнатных растениях чаще всего возникает при переувлажнении и прохладе.",
-        "treatment_en": [
-            "Remove and destroy every affected part immediately — do not compost",
-            "Apply a systemic or copper-based fungicide",
-            "Reduce watering and let the substrate dry deeply",
-            "Raise the temperature above 20 °C and reduce humidity",
-            "If more than 50 % of the plant is affected, consider discarding it to protect the rest"
-        ],
-        "treatment_ru": [
-            "Немедленно удалите и уничтожьте все поражённые части — не в компост",
-            "Обработайте системным фунгицидом или препаратом на основе меди",
-            "Сократите полив, дайте субстрату глубоко просохнуть",
-            "Поднимите температуру выше 20 °C и снизьте влажность",
-            "Если поражено больше 50 % растения — лучше утилизировать его, чтобы не заразить остальные"
-        ],
-        "prevention_en": [
-            "Never let pots stand in water — empty saucers after watering",
-            "Space plants for good airflow",
-            "Keep the room above 18 °C in winter",
-            "Inspect the collection weekly during cool, damp weather"
-        ],
-        "prevention_ru": [
-            "Никогда не оставляйте горшки в воде — сливайте из поддона лишнюю",
-            "Расставляйте растения свободно для хорошей вентиляции",
-            "Зимой поддерживайте температуру выше 18 °C",
-            "В сырую прохладную погоду осматривайте коллекцию еженедельно"
-        ],
-        "is_healthy": False
-    },
-
-    "rust": {
-        "name_en": "Rust",
-        "name_ru": "Ржавчина",
-        "description_en": "A fungal disease that produces orange, rust-coloured pustules on the undersides of leaves, with matching yellow spots on top. Common on pelargoniums, fuchsias, and chrysanthemums.",
-        "description_ru": "Грибковое заболевание: оранжевые «ржавые» пустулы на нижней стороне листьев и соответствующие жёлтые пятна сверху. Часто на пеларгониях, фуксиях, хризантемах.",
-        "treatment_en": [
-            "Remove and destroy all leaves showing pustules",
-            "Apply a sulfur-based or copper fungicide every 7–14 days",
-            "Do not mist and do not compost affected material",
-            "Improve air circulation around the plant",
-            "Isolate infected plants from the rest of the collection"
-        ],
-        "treatment_ru": [
-            "Удалите и уничтожьте все листья с пустулами",
-            "Раз в 7–14 дней обрабатывайте фунгицидом на основе серы или меди",
-            "Прекратите опрыскивание; поражённые части не компостируйте",
-            "Улучшите вентиляцию вокруг растения",
-            "Изолируйте заражённое растение от остальных"
-        ],
-        "prevention_en": [
-            "Water in the morning so leaves dry quickly",
-            "Keep foliage dry — skip overhead misting for susceptible species",
-            "Remove fallen leaves promptly",
-            "Give plants enough space to allow airflow"
-        ],
-        "prevention_ru": [
-            "Поливайте утром, чтобы листья быстро высыхали",
-            "Не опрыскивайте восприимчивые виды сверху",
-            "Своевременно убирайте опавшие листья",
-            "Расставляйте растения так, чтобы был воздух между ними"
-        ],
-        "is_healthy": False
-    },
-
-    "mosaic_virus": {
-        "name_en": "Mosaic Virus",
-        "name_ru": "Мозаичный вирус",
-        "description_en": "A viral infection that creates a mottled, patchwork pattern of light and dark green on the leaves. Leaves may distort or curl. There is no cure — infected plants are usually discarded to protect the collection.",
-        "description_ru": "Вирусная инфекция: характерный пёстрый узор из светло- и тёмно-зелёных участков на листьях. Листья могут деформироваться и скручиваться. Лечения нет — заражённые растения обычно утилизируют, чтобы защитить коллекцию.",
-        "treatment_en": [
-            "There is no cure for plant viruses",
-            "Discard severely affected plants and the substrate they grew in",
-            "Mild cases may be kept in isolation but will not recover",
-            "Control aphids, thrips and whiteflies — they are the main vectors",
-            "Wash hands and sterilise tools after touching an infected plant"
-        ],
-        "treatment_ru": [
-            "Вирусные инфекции растений не лечатся",
-            "Сильно поражённые растения утилизируйте вместе с субстратом",
-            "Слабо поражённые можно оставить в изоляции, но они не выздоровеют",
-            "Боритесь с тлёй, трипсами и белокрылкой — это главные переносчики",
-            "После контакта с больным растением мойте руки и дезинфицируйте инструмент"
-        ],
-        "prevention_en": [
-            "Buy plants from trusted sources — check leaves before buying",
-            "Quarantine new arrivals for 2–3 weeks",
-            "Use sterile tools and clean pots",
-            "Don't handle plants after smoking (tobacco can carry mosaic virus)"
-        ],
-        "prevention_ru": [
-            "Покупайте растения в проверенных местах, осматривайте листья",
-            "Новые растения держите 2–3 недели на карантине",
-            "Используйте стерильные инструменты и чистые горшки",
-            "Не работайте с растениями сразу после курения (табак переносит вирус)"
-        ],
-        "is_healthy": False
-    },
-
     "spider_mites": {
         "name_en": "Spider Mites",
         "name_ru": "Паутинный клещ",
@@ -244,36 +142,104 @@ DISEASES_DATABASE = {
         "is_healthy": False
     },
 
-    "leaf_mold": {
-        "name_en": "Leaf Mold",
-        "name_ru": "Листовая плесень",
-        "description_en": "A fungal disease that shows up as pale yellow patches on the upper leaf surface and olive-brown fuzzy mold on the underside. Develops quickly in humid, poorly ventilated rooms.",
-        "description_ru": "Грибковое заболевание: светло-жёлтые пятна сверху листа и оливково-коричневая пушистая плесень снизу. Быстро развивается во влажных помещениях без вентиляции.",
+    "mealybug": {
+        "name_en": "Mealybugs",
+        "name_ru": "Мучнистый червец",
+        "description_en": "Small white sap-sucking insects covered in a cottony, waxy coating. Look for fluffy white masses in leaf axils, on stems and on the undersides of leaves. Common on succulents, orchids, ficus and citrus indoors.",
+        "description_ru": "Мелкие белые сосущие насекомые, покрытые ватообразным восковым налётом. Ищите пушистые белые комочки в пазухах листьев, на стеблях и на нижней стороне листьев. Часто на суккулентах, орхидеях, фикусах и цитрусовых.",
         "treatment_en": [
-            "Carefully remove infected leaves",
-            "Drop humidity below 70 % and boost ventilation immediately",
-            "Apply a copper- or sulfur-based fungicide once a week",
-            "Space plants out so air can flow around each one",
-            "Water only at the soil level, in the morning"
+            "Dab visible insects with a cotton swab dipped in 70 % isopropyl alcohol",
+            "Wash the plant with insecticidal soap or neem-oil solution",
+            "For severe infestations, use a systemic insecticide (imidacloprid)",
+            "Repeat treatment every 7 days for 3–4 weeks to catch hatchlings",
+            "Isolate the plant — mealybugs spread to neighbours quickly"
         ],
         "treatment_ru": [
-            "Аккуратно удалите заражённые листья",
-            "Снизьте влажность ниже 70 % и резко улучшите проветривание",
-            "Раз в неделю обрабатывайте фунгицидом на основе меди или серы",
-            "Расставьте растения так, чтобы воздух свободно циркулировал",
-            "Поливайте только под корень и утром"
+            "Протрите видимых насекомых ватной палочкой со спиртом 70 %",
+            "Помойте растение инсектицидным мылом или раствором масла нима",
+            "При сильном поражении — системный инсектицид (имидаклоприд)",
+            "Повторяйте обработку каждые 7 дней 3–4 недели — добиваете новые поколения",
+            "Изолируйте растение — червец быстро переходит на соседей"
         ],
         "prevention_en": [
-            "Keep room humidity in the 40–65 % range",
-            "Avoid night-time misting",
-            "Ensure the room has good passive or active air exchange",
-            "Clean the soil surface from fallen debris regularly"
+            "Inspect new plants closely — quarantine for 2–3 weeks",
+            "Wipe leaves regularly to spot the first cottony specks early",
+            "Avoid over-fertilising with nitrogen — soft growth attracts mealybugs",
+            "Keep humidity moderate and ventilate the room"
         ],
         "prevention_ru": [
-            "Поддерживайте влажность помещения 40–65 %",
-            "Не опрыскивайте растения на ночь",
-            "Обеспечьте воздухообмен (естественный или приточный)",
-            "Регулярно очищайте поверхность субстрата от опавших листьев"
+            "Тщательно осматривайте новые растения — карантин 2–3 недели",
+            "Регулярно протирайте листья, чтобы заметить первые белые комочки",
+            "Не перекармливайте азотом — рыхлый прирост привлекает червеца",
+            "Держите умеренную влажность и проветривайте помещение"
+        ],
+        "is_healthy": False
+    },
+
+    "scale_insect": {
+        "name_en": "Scale Insects",
+        "name_ru": "Щитовка",
+        "description_en": "Small immobile insects that look like brown, tan or black bumps stuck to stems and the undersides of leaves. They produce sticky honeydew that can lead to sooty mould. Common on ficus, palms, citrus and ivy.",
+        "description_ru": "Мелкие неподвижные насекомые в виде коричневых, бежевых или чёрных «бляшек» на стеблях и нижней стороне листьев. Выделяют липкую падь, на которой развивается чёрный сажистый грибок. Часто на фикусах, пальмах, цитрусовых и плюще.",
+        "treatment_en": [
+            "Scrape adult scales off with a soft toothbrush or fingernail",
+            "Wipe the plant down with a 70 % alcohol + soap solution",
+            "Apply horticultural oil or neem oil — coats and suffocates the scales",
+            "Use a systemic insecticide for heavy infestations on hard-to-reach spots",
+            "Repeat weekly for 3–4 weeks; scale eggs hatch in waves"
+        ],
+        "treatment_ru": [
+            "Соскоблите взрослых щитовок мягкой зубной щёткой или ногтем",
+            "Протрите растение спиртом 70 % с мылом",
+            "Обработайте садовым или ниммовым маслом — оно «душит» щитовку",
+            "При сильном поражении в труднодоступных местах — системный инсектицид",
+            "Повторяйте обработку еженедельно 3–4 недели — новые поколения вылупляются волнами"
+        ],
+        "prevention_en": [
+            "Inspect leaf undersides and stem joints once a week",
+            "Quarantine new plants and check carefully before introducing them",
+            "Wipe leaves of large-leaved species — early scales come off easily",
+            "Don't crowd plants; airflow makes infestations harder to start"
+        ],
+        "prevention_ru": [
+            "Раз в неделю осматривайте обратную сторону листьев и узлы стебля",
+            "Новые растения держите на карантине, осматривайте перед размещением",
+            "Протирайте листья крупнолистных видов — молодую щитовку легко снять",
+            "Не размещайте растения вплотную — циркуляция воздуха мешает заражению"
+        ],
+        "is_healthy": False
+    },
+
+    "nutrient_deficiency": {
+        "name_en": "Nutrient Deficiency / Yellowing",
+        "name_ru": "Нехватка элементов / пожелтение",
+        "description_en": "General chlorosis or yellowing of the leaves without obvious spots, webbing or powder. Causes range from overwatering and root issues to a real shortage of nitrogen, iron or magnesium. Often the leaves turn yellow between the veins, droop, or fall off.",
+        "description_ru": "Общий хлороз или пожелтение листьев без явных пятен, паутины или налёта. Причины — от перелива и проблем с корнями до реальной нехватки азота, железа или магния. Часто листья желтеют между жилками, поникают или опадают.",
+        "treatment_en": [
+            "Check the substrate first — overwatering looks just like deficiency",
+            "Let the top 3–4 cm dry out before the next watering",
+            "Switch to a balanced liquid fertiliser (NPK ~10-10-10) at half strength",
+            "If yellowing is between the veins, try a chelated iron + magnesium feed",
+            "If roots smell sour or look brown, repot into fresh, well-draining substrate"
+        ],
+        "treatment_ru": [
+            "Сначала проверьте субстрат — перелив выглядит как нехватка элементов",
+            "Дайте верхним 3–4 см просохнуть перед следующим поливом",
+            "Перейдите на сбалансированное жидкое удобрение (NPK ~10-10-10) в половинной дозе",
+            "Если желтеют участки между жилками — попробуйте хелат железа + магний",
+            "Если корни пахнут кислым или потемнели — пересадите в свежий рыхлый субстрат"
+        ],
+        "prevention_en": [
+            "Water only after the top of the substrate dries — don't keep it constantly wet",
+            "Feed during active growth (spring–summer); skip fertiliser in winter",
+            "Use pots with drainage holes; never let the pot sit in water",
+            "Refresh the substrate every 1–2 years — even good soil gets depleted"
+        ],
+        "prevention_ru": [
+            "Поливайте только после просыхания верха субстрата — не держите постоянно сырым",
+            "Подкармливайте в активный сезон (весна-лето), зимой подкормки прекратите",
+            "Используйте горшки с дренажными отверстиями; не оставляйте в поддоне с водой",
+            "Меняйте субстрат каждые 1–2 года — даже хороший грунт истощается"
         ],
         "is_healthy": False
     },

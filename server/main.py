@@ -3,7 +3,7 @@ PlantDiseases Server — FastAPI backend with the PlantScope v3.x two-stage
 houseplant disease pipeline.
 
 Stage 1:  YOLOv8n            — locate leaves, flag diseased regions
-Stage 2:  EfficientNetV2-S   — classify the primary disease bbox
+Stage 2:  EfficientNet-B0    — classify the primary leaf bbox (ONNX INT8)
 """
 
 import asyncio
@@ -32,7 +32,7 @@ from pipeline import PlantDiseasePipeline
 try:
     from . import __version__ as APP_VERSION  # type: ignore
 except Exception:
-    APP_VERSION = "3.1.0"
+    APP_VERSION = "4.0.0"
 
 # Limit Pillow decompression to prevent zip-bomb DoS
 Image.MAX_IMAGE_PIXELS = 20_000_000  # ~4500×4500
@@ -63,8 +63,8 @@ logger = logging.getLogger("plantdiseases")
 
 # ── Configuration ────────────────────────────────────────────────────
 MODELS_DIR = Path("models")
-DETECTOR_PATH = MODELS_DIR / "detector.pt"       # YOLOv8 weights
-CLASSIFIER_PATH = MODELS_DIR / "classifier.pth"  # EfficientNetV2-S weights
+DETECTOR_PATH = MODELS_DIR / "detector.pt"       # YOLOv8 weights (auto-prefers detector.onnx if present)
+CLASSIFIER_PATH = MODELS_DIR / "classifier.pth"  # EfficientNet-B0 (auto-prefers classifier_int8.onnx → classifier.onnx)
 
 MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE", 10 * 1024 * 1024))  # 10 MB
 MAX_IMAGE_DIMENSION = int(os.getenv("MAX_IMAGE_DIMENSION", 4096))
@@ -357,8 +357,8 @@ async def version():
     return {
         "version": APP_VERSION,
         "pipeline_mode": pipeline.mode if pipeline else "unknown",
-        "detector_arch": "YOLOv8n",
-        "classifier_arch": "EfficientNetV2-S",
+        "detector_arch": "YOLOv8n (single-class leaf)",
+        "classifier_arch": "EfficientNet-B0 (ONNX INT8)",
         "stages": 2,
         "focus": "houseplants",
     }

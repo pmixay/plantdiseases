@@ -20,8 +20,8 @@ def test_version_contract(client):
     r = client.get("/api/version")
     assert r.status_code == 200
     body = r.json()
-    assert body["detector_arch"] == "YOLOv8n"
-    assert body["classifier_arch"] == "EfficientNetV2-S"
+    assert body["detector_arch"] == "YOLOv8n (single-class leaf)"
+    assert body["classifier_arch"] == "EfficientNet-B0 (ONNX INT8)"
     assert body["stages"] == 2
     assert body["focus"] == "houseplants"
     assert body["pipeline_mode"] in ("full", "partial", "demo")
