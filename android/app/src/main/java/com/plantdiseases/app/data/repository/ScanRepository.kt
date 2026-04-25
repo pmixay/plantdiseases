@@ -83,9 +83,6 @@ class ScanRepository(
                     it.x == primary.x && it.y == primary.y &&
                         it.width == primary.width && it.height == primary.height
                 }.takeIf { it >= 0 }
-            val warningsJson = result.warnings
-                ?.takeIf { it.isNotEmpty() }
-                ?.let { gson.toJson(it) }
             val entity = ScanEntity(
                 imagePath = imagePath,
                 diseaseName = result.diseaseName,
@@ -100,8 +97,7 @@ class ScanRepository(
                 isHealthy = result.isHealthy,
                 regions = if (regions.isEmpty()) null else gson.toJson(regions),
                 primaryRegionIndex = primaryIndex,
-                allProbs = result.allProbs?.let { gson.toJson(it) },
-                warnings = warningsJson
+                allProbs = result.allProbs?.let { gson.toJson(it) }
             )
             scanDao.insert(entity)
         }
@@ -193,16 +189,6 @@ class ScanRepository(
             gson.fromJson(json, type)
         } catch (e: Exception) {
             emptyMap()
-        }
-    }
-
-    /** Parse pipeline warnings JSON array (flags like "uncertain_healthy"). */
-    fun parseWarnings(json: String?): List<String> {
-        if (json.isNullOrEmpty()) return emptyList()
-        return try {
-            gson.fromJson(json, Array<String>::class.java).toList()
-        } catch (e: Exception) {
-            emptyList()
         }
     }
 }
