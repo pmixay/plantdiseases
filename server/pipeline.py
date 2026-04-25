@@ -1,29 +1,27 @@
 """
-Two-stage houseplant disease detection pipeline.
+Two-stage houseplant disease detection pipeline (v4).
 
-Stage 1 (Detector)   — YOLOv8n. Locates leaves and flags diseased regions.
-                       Produces a list of bounding boxes in the original
-                       image's pixel space.
-Stage 2 (Classifier) — EfficientNetV2-S. Classifies the highest-confidence
-                       disease bbox into one of 9 houseplant-focused
-                       disease classes (including ``not_a_plant``).
+Stage 1 (Detector)   — YOLOv8n single-class. Locates ``leaf`` bboxes.
+Stage 2 (Classifier) — EfficientNet-B0 (ONNX). Classifies a cropped
+                       leaf region into one of up to 8 houseplant
+                       condition classes including ``not_a_plant``.
 
-The pipeline is deliberately tolerant to real-world noise: when Stage 1
-finds no plant in the frame, the final label is set to ``not_a_plant``
-and the user is asked to retake the photo.
+v4 design changes vs v3.x:
 
-Post-processing rules applied after the classifier runs:
-
-* ``healthy`` predictions require extra evidence. Because ``healthy`` is
-  the default class when nothing obvious is wrong, we only surface it as
-  a confident "green" badge when the top-1 probability is at least
-  ``HEALTHY_MIN_CONFIDENCE`` and its margin over the runner-up is at
-  least ``HEALTHY_MARGIN``. Otherwise we re-route the top label to the
-  runner-up disease and attach a ``uncertain_healthy`` warning so the UI
-  can show the alternatives.
-* If the detector flagged a ``diseased_leaf`` bbox but the classifier
-  still landed on ``healthy``, we attach a ``detector_classifier_mismatch``
-  warning so the UI can prompt for a re-scan.
+* The detector no longer makes a healthy/diseased call — it only
+  localises leaves. The classifier owns the disease decision. This
+  removes a v3.x bias where a skewed two-class detector reported
+  ``diseased_leaf`` on most boxes and pulled the postprocessing gate
+  toward "everything is sick."
+* When multiple bboxes are returned the pipeline picks the one with
+  the highest classifier disease score (max softmax over non-healthy
+  / non-not_a_plant classes). If every box is confidently healthy we
+  surface the most central bbox.
+* The healthy gate is significantly less aggressive. ``HEALTHY_MIN_*``
+  are calibrated for an in-distribution houseplant classifier rather
+  than a defensive 0.85/0.20 fallback. We **no longer reroute** to a
+  runner-up disease — we attach an ``uncertain_healthy`` warning and
+  let the UI surface alternatives via ``top_k``.
 """
 
 from __future__ import annotations
@@ -43,15 +41,17 @@ logger = logging.getLogger(__name__)
 MIN_CROP_SIZE = 32
 CROP_PADDING_RATIO = 0.10
 
-# ``healthy`` is the default class when nothing obvious is wrong, so we
-# require it to clear a higher bar than any disease class. These match
-# the README's "uncertain healthy" contract — tweaking them is the
-# quickest lever for cutting false-healthy reports.
-HEALTHY_MIN_CONFIDENCE = 0.85
-HEALTHY_MARGIN = 0.20
+# v4 healthy gate. Previous v3 values (0.85 / 0.20 with auto-rerouting)
+# were too aggressive — any healthy plant photographed at low light or
+# at an angle would trip the gate and get re-labeled as the strongest
+# runner-up disease. Now the gate only attaches a soft warning.
+HEALTHY_MIN_CONFIDENCE = 0.55
+HEALTHY_MARGIN = 0.10
 
-# Number of ranked alternatives (including top-1) that the API surfaces
-# so the Android UI can build the "why this diagnosis" card.
+# Classes the pipeline considers "disease-like" when ranking which
+# bbox to feed back to the classifier and to the UI as primary.
+_NON_DISEASE = {"healthy", "not_a_plant"}
+
 TOP_K_ALTERNATIVES = 3
 
 
@@ -65,11 +65,11 @@ class PlantDiseasePipeline:
     ):
         self.detector = LeafDetector(detector_path)
         self.classifier = DiseaseClassifier(classifier_path)
-
         logger.info(
-            "Pipeline ready  detector=%s  classifier=%s",
+            "Pipeline ready  detector=%s  classifier=%s (%s backend)",
             "MODEL" if self.detector.is_loaded else "DEMO",
             "MODEL" if self.classifier.is_loaded else "DEMO",
+            getattr(self.classifier, "backend", "demo"),
         )
 
     @property
@@ -87,38 +87,17 @@ class PlantDiseasePipeline:
     # ── main entry point ─────────────────────────────────────────────
 
     def analyze(self, img: Image.Image) -> dict:
-        """Run the full two-stage pipeline on a PIL image.
-
-        Returns
-        -------
-        dict with keys:
-            class_name          : str   — final top-1 class after rules
-            confidence          : float — final top-1 probability
-            all_probs           : dict  — per-class probabilities
-            top_k               : list  — [{class, confidence}, ...] top-3
-            warnings            : list[str] — diagnostic flags for the UI
-            detection           : dict  — Stage 1 output
-                is_diseased         : bool
-                detector_confidence : float
-                regions             : list[dict]  (bbox + class + confidence)
-                primary_region      : dict | None  (bbox used by Stage 2)
-            pipeline_mode       : str   — "full" | "partial" | "demo"
-            elapsed_ms          : float
-        """
         t0 = time.perf_counter()
 
         stage1 = self.detector.detect(img)
         detections = stage1["detections"]
-        primary = stage1["primary_box"]
 
         logger.info(
-            "Stage 1 → detections=%d  diseased=%s  best_conf=%.3f",
-            len(detections),
-            stage1["is_diseased"],
-            stage1["confidence"],
+            "Stage 1 → detections=%d  best_conf=%.3f",
+            len(detections), stage1["confidence"],
         )
 
-        # No plant at all in frame — short-circuit to "not_a_plant"
+        # No leaf in frame → short-circuit to ``not_a_plant``.
         if not detections:
             elapsed = (time.perf_counter() - t0) * 1000
             probs = {n: 0.0 for n in self.classifier.CLASS_NAMES}
@@ -141,18 +120,27 @@ class PlantDiseasePipeline:
                 "elapsed_ms": round(elapsed, 1),
             }
 
-        crop = self._extract_crop(img, primary)
-        classification = self.classifier.classify(crop)
+        # Disease-aware primary-box selection: classify each candidate
+        # bbox (capped to keep latency bounded), pick the one with the
+        # highest non-healthy/non-not_a_plant softmax mass. If none
+        # beat the threshold we fall back to the highest-confidence
+        # leaf as the primary box.
+        primary, classification = self._pick_primary(img, detections)
+
+        is_diseased = (
+            classification["class_name"] not in _NON_DISEASE
+            and classification["confidence"] >= HEALTHY_MIN_CONFIDENCE * 0.5
+        )
 
         logger.info(
-            "Stage 2 → class=%s  confidence=%.3f  low_conf=%s",
+            "Stage 2 → class=%s  confidence=%.3f  primary_box=%s",
             classification["class_name"],
             classification["confidence"],
-            classification.get("low_confidence"),
+            primary,
         )
 
         final = _apply_postprocessing_rules(
-            classification, stage1, self.classifier.CLASS_NAMES,
+            classification, self.classifier.CLASS_NAMES,
         )
 
         elapsed = (time.perf_counter() - t0) * 1000
@@ -163,7 +151,7 @@ class PlantDiseasePipeline:
             "top_k": final["top_k"],
             "warnings": final["warnings"],
             "detection": {
-                "is_diseased": stage1["is_diseased"],
+                "is_diseased": is_diseased,
                 "detector_confidence": stage1["confidence"],
                 "regions": detections,
                 "primary_region": primary,
@@ -174,23 +162,72 @@ class PlantDiseasePipeline:
 
     # ── helpers ──────────────────────────────────────────────────────
 
+    # Cap the number of bboxes we re-classify per request. With ONNX
+    # INT8 EfficientNet-B0 each call costs ~20-30ms on CPU, so 4 boxes
+    # adds ~100ms worst case which is acceptable for our 150ms budget.
+    _MAX_RECLASSIFY = 4
+
+    def _pick_primary(self, img: Image.Image, detections: list[dict]):
+        """Classify the top-N leaf bboxes and pick the most disease-like.
+
+        Returns ``(primary_box, classification_dict)``. Falls back to
+        the highest-confidence detection when nothing scores high on a
+        disease class.
+        """
+        # Sort by detector confidence and cap the count.
+        ranked = sorted(detections, key=lambda d: -d["confidence"])[: self._MAX_RECLASSIFY]
+        best_disease_score = -1.0
+        best_box = ranked[0]
+        best_classification: Optional[dict] = None
+        results: list[tuple[dict, dict]] = []
+
+        for box in ranked:
+            crop = self._extract_crop(img, box)
+            cls_res = self.classifier.classify(crop)
+            results.append((box, cls_res))
+            disease_score = max(
+                (
+                    p for n, p in cls_res["all_probs"].items()
+                    if n not in _NON_DISEASE
+                ),
+                default=0.0,
+            )
+            if disease_score > best_disease_score:
+                best_disease_score = disease_score
+                best_box = box
+                best_classification = cls_res
+
+        # If nothing looked obviously diseased, prefer the most central
+        # large leaf (helps avoid noisy edge crops on cluttered photos).
+        if best_disease_score < 0.30 and len(ranked) > 1:
+            W, H = img.size
+            cx, cy = W / 2, H / 2
+            def central_score(d: dict) -> float:
+                bx = d["x"] + d["width"] / 2
+                by = d["y"] + d["height"] / 2
+                area = d["width"] * d["height"]
+                dist2 = (bx - cx) ** 2 + (by - cy) ** 2
+                # Larger + more central wins.
+                return area - 0.4 * dist2
+            best_box, best_classification = max(
+                results, key=lambda rc: central_score(rc[0])
+            )
+
+        # ``best_classification`` is always set because we ran the loop
+        # at least once.
+        assert best_classification is not None
+        return best_box, best_classification
+
     @staticmethod
     def _extract_crop(img: Image.Image, region: Optional[dict]) -> Image.Image:
-        """Crop the image to ``region`` with a small padding margin.
-
-        Falls back to the full image when the region is missing or too small.
-        """
         if region is None:
             return img
-
         x = int(region.get("x", 0))
         y = int(region.get("y", 0))
         w = int(region.get("width", 0))
         h = int(region.get("height", 0))
-
         if w < MIN_CROP_SIZE or h < MIN_CROP_SIZE:
             return img
-
         pad_x = int(w * CROP_PADDING_RATIO)
         pad_y = int(h * CROP_PADDING_RATIO)
         x1 = max(0, x - pad_x)
@@ -205,7 +242,6 @@ class PlantDiseasePipeline:
 # ── pure helpers (exposed for tests) ─────────────────────────────────
 
 def _build_top_k(probs: dict[str, float], k: int) -> list[dict]:
-    """Return the top-k class/confidence pairs sorted by descending probability."""
     ordered = sorted(probs.items(), key=lambda item: item[1], reverse=True)[:k]
     return [
         {"class": name, "confidence": round(float(conf), 4)}
@@ -215,60 +251,41 @@ def _build_top_k(probs: dict[str, float], k: int) -> list[dict]:
 
 def _apply_postprocessing_rules(
     classification: dict,
-    stage1: dict,
     class_names: list[str],
 ) -> dict:
-    """Refine the classifier output with healthy/margin and detector rules.
+    """Soft postprocessing: warnings only, no class re-routing.
 
-    The returned dict carries:
-      * class_name, confidence     — possibly re-routed top-1
-      * all_probs                   — unchanged; the UI renders this
-      * top_k                       — ranked top-3 (before re-routing)
-      * warnings                    — list of short flag strings
+    Two checks remain:
+      * ``uncertain_healthy`` — top-1 is healthy but confidence/margin
+        below the v4 thresholds. We surface alternatives but do NOT
+        rewrite the predicted class. (v3 used to swap to the runner-up
+        disease which forced false-positive disease reports.)
+      * ``low_confidence`` — top-1 below ``LOW_CONFIDENCE_THRESHOLD``.
+        Lets the UI tone down the badge without fighting the model.
     """
     probs = classification["all_probs"]
     top_k = _build_top_k(probs, TOP_K_ALTERNATIVES)
     warnings: list[str] = []
 
-    # Sorted snapshot so we can reason about top-1 / top-2 without
-    # duplicating the sort. argmax/partition on the numpy array would
-    # work too but this keeps the names visible in the warning payload.
     ordered = sorted(probs.items(), key=lambda item: item[1], reverse=True)
     top1_name, top1_prob = ordered[0]
-    top2_name, top2_prob = (ordered[1] if len(ordered) > 1 else (top1_name, 0.0))
-
-    final_name = classification["class_name"]
-    final_conf = classification["confidence"]
+    top2_prob = ordered[1][1] if len(ordered) > 1 else 0.0
 
     if top1_name == "healthy" and "healthy" in class_names:
         margin = top1_prob - top2_prob
-        low_conf = top1_prob < HEALTHY_MIN_CONFIDENCE
-        low_margin = margin < HEALTHY_MARGIN
-        if low_conf or low_margin:
+        if top1_prob < HEALTHY_MIN_CONFIDENCE or margin < HEALTHY_MARGIN:
             warnings.append("uncertain_healthy")
-            # Re-route to the most likely disease (i.e. any non-healthy
-            # runner-up). This is what the UI should present as the
-            # actionable diagnosis; the raw probability dict still shows
-            # healthy so the user can see the model's hesitation.
-            fallback = next(
-                (name for name, _ in ordered if name != "healthy"), None,
-            )
-            if fallback is not None:
-                final_name = fallback
-                final_conf = float(probs[fallback])
             logger.info(
-                "healthy gate failed  top1=%s (%.3f) top2=%s (%.3f)  low_conf=%s low_margin=%s",
-                top1_name, top1_prob, top2_name, top2_prob, low_conf, low_margin,
+                "healthy gate soft-warning  top1=%.3f  margin=%.3f",
+                top1_prob, margin,
             )
 
-    # Detector said "diseased_leaf" but classifier stayed on healthy →
-    # surface that disagreement so the user can retake the photo.
-    if stage1.get("is_diseased") and final_name == "healthy":
-        warnings.append("detector_classifier_mismatch")
+    if classification.get("low_confidence"):
+        warnings.append("low_confidence")
 
     return {
-        "class_name": final_name,
-        "confidence": round(float(final_conf), 4),
+        "class_name": classification["class_name"],
+        "confidence": round(float(classification["confidence"]), 4),
         "all_probs": probs,
         "top_k": top_k,
         "warnings": warnings,
