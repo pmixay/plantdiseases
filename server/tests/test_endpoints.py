@@ -97,6 +97,8 @@ def test_analyze_response_contract(client, png_bytes):
         "detection",
         "uncertainty",
         "all_probs",
+        "top_k",
+        "warnings",
         "pipeline_mode",
         "elapsed_ms",
         "server_version",
@@ -108,6 +110,12 @@ def test_analyze_response_contract(client, png_bytes):
     assert 0.0 <= body["uncertainty"] <= 1.0
     assert isinstance(body["treatment"], list)
     assert isinstance(body["all_probs"], dict)
+    assert isinstance(body["top_k"], list)
+    assert isinstance(body["warnings"], list)
+    # top_k entries are localised — client renders them without a
+    # second disease-name lookup.
+    for entry in body["top_k"]:
+        assert {"class", "confidence", "name_en", "name_ru", "is_healthy"} <= entry.keys()
     assert set(body["detection"].keys()) == {
         "is_diseased", "detector_confidence", "regions", "primary_region",
     }

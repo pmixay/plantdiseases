@@ -6,5 +6,5 @@
         android:icon="@drawable/ic_language"
         android:title="@string/language"
         app:showAsAction="ifRoom"
-        app:iconTint="@color/on_primary" />
+        app:iconTint="@color/toolbar_title" />
 </menu>

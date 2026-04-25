@@ -161,6 +161,12 @@
     <!-- Retry analysis -->
     <string name="retry_analysis">Повторить анализ</string>
 
+    <!-- Pipeline warnings -->
+    <string name="warning_uncertain_healthy_title">Возможно, болезнь</string>
+    <string name="warning_uncertain_healthy">Модель не уверена, что растение здорово. Проверьте альтернативные диагнозы ниже — один из них может подойти.</string>
+    <string name="warning_detector_mismatch_title">Детектор видит повреждения</string>
+    <string name="warning_detector_mismatch">Детектор нашёл признаки повреждения, но классификатор определил растение как здоровое. Рекомендуем повторить скан с ближнего ракурса при хорошем освещении.</string>
+
     <!-- How to use (onboarding from profile) -->
     <string name="how_to_use">Как пользоваться</string>
 

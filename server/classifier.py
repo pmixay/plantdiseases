@@ -7,10 +7,12 @@ houseplant-focused disease classes, including a rejection class
 and random objects in the frame.
 
 Class names are loaded from ``models/classes.json`` (produced by
-``train.py`` / ``train_notebook.ipynb``). If that file is missing, a
-built-in default list is used. When no trained weights are available the
-classifier falls back to colour heuristics so the server is usable in
-demo mode.
+``train_notebook.ipynb`` in Colab). If that file is missing, a built-in
+default list is used. ``DEFAULT_CLASS_NAMES`` mirrors the alphabetical
+order that ``ImageFolder`` produces in the notebook, so a freshly
+trained checkpoint will line up with the defaults even without
+classes.json. When no trained weights are available the classifier
+falls back to colour heuristics so the server is usable in demo mode.
 """
 
 from __future__ import annotations
@@ -32,6 +34,9 @@ logger = logging.getLogger(__name__)
 IMG_SIZE = 300  # EfficientNetV2-S native inference size
 
 # Alphabetical — must match training-time ``sorted(ImageFolder.classes)``.
+# 9 classes total; ``spider_mites`` is the new pest class produced by the
+# v3.1 notebook. The 8-class v3.0 checkpoint still loads cleanly because
+# ``_load_model`` truncates the list when the head is smaller.
 DEFAULT_CLASS_NAMES = [
     "blight",
     "healthy",
@@ -41,6 +46,7 @@ DEFAULT_CLASS_NAMES = [
     "not_a_plant",
     "powdery_mildew",
     "rust",
+    "spider_mites",
 ]
 
 # Minimum confidence below which we surface the built-in fallback name.

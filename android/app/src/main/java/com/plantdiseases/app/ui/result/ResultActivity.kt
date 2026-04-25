@@ -216,6 +216,9 @@ class ResultActivity : AppCompatActivity() {
             // Description
             tvDescription.text = if (isRu) scan.descriptionRu else scan.description
 
+            // Pipeline warnings (uncertain_healthy / detector_classifier_mismatch)
+            buildPipelineWarnings(scan, repository)
+
             // Top-3 alternative diagnoses
             buildAlternativeDiagnoses(scan, repository, isRu)
 
@@ -322,6 +325,34 @@ class ResultActivity : AppCompatActivity() {
             override fun onTabUnselected(tab: TabLayout.Tab) {}
             override fun onTabReselected(tab: TabLayout.Tab) {}
         })
+    }
+
+    private fun buildPipelineWarnings(scan: ScanEntity, repository: ScanRepository) {
+        val warnings = repository.parseWarnings(scan.warnings)
+        if (warnings.isEmpty()) {
+            binding.cardPipelineWarning.visibility = View.GONE
+            return
+        }
+
+        // A detector/classifier mismatch is the more actionable flag —
+        // it means the model disagreed with itself — so prefer it over
+        // the softer "uncertain_healthy".
+        val (titleRes, bodyRes) = when {
+            "detector_classifier_mismatch" in warnings ->
+                R.string.warning_detector_mismatch_title to
+                    R.string.warning_detector_mismatch
+            "uncertain_healthy" in warnings ->
+                R.string.warning_uncertain_healthy_title to
+                    R.string.warning_uncertain_healthy
+            else -> {
+                binding.cardPipelineWarning.visibility = View.GONE
+                return
+            }
+        }
+
+        binding.cardPipelineWarning.visibility = View.VISIBLE
+        binding.tvPipelineWarningTitle.setText(titleRes)
+        binding.tvPipelineWarningBody.setText(bodyRes)
     }
 
     private fun buildAlternativeDiagnoses(scan: ScanEntity, repository: ScanRepository, isRu: Boolean) {
@@ -606,6 +637,7 @@ class ResultActivity : AppCompatActivity() {
             binding.cardDescription,
             binding.cardTreatmentPrevention,
             binding.cardAlternatives,
+            binding.cardPipelineWarning,
             binding.cardLowConfidence
         ).filter { it.visibility == View.VISIBLE }
 
