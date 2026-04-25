@@ -103,6 +103,17 @@ The `not_a_plant` bucket is a true rejection class trained on COCO
 imagery (fingers, walls, furniture, fabric) so noisy frames don't get
 a random disease label.
 
+**Class-size safeguard.** The training notebook drops any class whose
+training split has fewer than `MIN_TRAIN_PER_CLASS = 50` images. PlantDoc
+on its own only yields a handful of `spider_mites` photos, so the
+notebook now also sparse-checkouts the
+`Tomato___Spider_mites Two-spotted_spider_mite` folder from
+[PlantVillage](https://github.com/spMohanty/PlantVillage-Dataset) (~1.3k
+photos, capped at 800 after shuffle) to keep the class healthy. If
+PlantVillage cannot be reached, the guard simply removes `spider_mites`
+from the class list and the model ships as 8-class — the server's
+`classifier._load_model` truncates `DEFAULT_CLASS_NAMES` to match.
+
 ---
 
 ## Quick start
