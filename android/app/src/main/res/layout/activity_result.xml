@@ -10,7 +10,7 @@
         android:id="@+id/app_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@drawable/bg_toolbar_gradient"
+        android:background="@color/primary"
         app:elevation="0dp">
 
         <com.google.android.material.appbar.CollapsingToolbarLayout
@@ -18,24 +18,24 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             app:layout_scrollFlags="scroll|exitUntilCollapsed"
-            app:contentScrim="@drawable/bg_toolbar_gradient"
+            app:contentScrim="@color/primary"
             app:expandedTitleGravity="bottom"
             app:expandedTitleMarginStart="16dp"
             app:expandedTitleTextAppearance="@style/TextAppearance.App.Toolbar"
             app:collapsedTitleTextAppearance="@style/TextAppearance.App.Toolbar"
-            app:expandedTitleTextColor="@color/toolbar_title"
-            app:collapsedTitleTextColor="@color/toolbar_title">
+            app:expandedTitleTextColor="@color/on_primary"
+            app:collapsedTitleTextColor="@color/on_primary">
 
             <com.google.android.material.appbar.MaterialToolbar
                 android:id="@+id/toolbar"
                 android:layout_width="match_parent"
                 android:layout_height="?attr/actionBarSize"
-                android:background="@android:color/transparent"
+                android:background="@color/primary"
                 app:layout_collapseMode="pin"
                 app:navigationIcon="@drawable/ic_back"
-                app:navigationIconTint="@color/toolbar_title"
+                app:navigationIconTint="@color/on_primary"
                 app:title="@string/result_title"
-                app:titleTextColor="@color/toolbar_title" />
+                app:titleTextColor="@color/on_primary" />
 
         </com.google.android.material.appbar.CollapsingToolbarLayout>
 
@@ -404,62 +404,6 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="12dp"
                         android:orientation="vertical" />
-
-                </LinearLayout>
-
-            </com.google.android.material.card.MaterialCardView>
-
-            <!-- Pipeline warnings (uncertain healthy / detector mismatch) -->
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/card_pipeline_warning"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:visibility="gone"
-                app:cardCornerRadius="16dp"
-                app:cardElevation="0dp"
-                app:cardBackgroundColor="@color/warning_amber_bg">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="top"
-                    android:padding="14dp">
-
-                    <ImageView
-                        android:layout_width="22dp"
-                        android:layout_height="22dp"
-                        android:layout_marginTop="2dp"
-                        android:src="@drawable/ic_warning"
-                        android:contentDescription="@null"
-                        android:importantForAccessibility="no" />
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginStart="10dp"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:id="@+id/tv_pipeline_warning_title"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:textSize="14sp"
-                            android:fontFamily="sans-serif-medium"
-                            android:textColor="@color/warning_amber" />
-
-                        <TextView
-                            android:id="@+id/tv_pipeline_warning_body"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
-                            android:textSize="13sp"
-                            android:textColor="@color/warning_amber"
-                            android:lineSpacingExtra="2dp" />
-
-                    </LinearLayout>
 
                 </LinearLayout>
 
