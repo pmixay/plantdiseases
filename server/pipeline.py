@@ -1,31 +1,44 @@
 """
-Two-stage houseplant disease detection pipeline (v4).
+Two-stage houseplant disease detection pipeline (v4.1).
 
 Stage 1 (Detector)   — YOLOv8n single-class. Locates ``leaf`` bboxes.
 Stage 2 (Classifier) — EfficientNet-B0 (ONNX). Classifies a cropped
-                       leaf region into one of up to 8 houseplant
+                       leaf region into one of up to 11 houseplant
                        condition classes including ``not_a_plant``.
 
-v4 design changes vs v3.x:
+v4.1 design changes vs v4:
 
-* The detector no longer makes a healthy/diseased call — it only
-  localises leaves. The classifier owns the disease decision. This
-  removes a v3.x bias where a skewed two-class detector reported
-  ``diseased_leaf`` on most boxes and pulled the postprocessing gate
-  toward "everything is sick."
-* When multiple bboxes are returned the pipeline picks the one with
-  the highest classifier disease score (max softmax over non-healthy
-  / non-not_a_plant classes). If every box is confidently healthy we
-  surface the most central bbox.
-* The healthy gate is significantly less aggressive. ``HEALTHY_MIN_*``
-  are calibrated for an in-distribution houseplant classifier rather
-  than a defensive 0.85/0.20 fallback. We **no longer reroute** to a
-  runner-up disease — we attach an ``uncertain_healthy`` warning and
-  let the UI surface alternatives via ``top_k``.
+* **Mean voting** instead of max-disease primary-box selection. v4
+  picked the bbox with the highest non-healthy softmax mass — which
+  is, by construction, biased toward "found a disease". A single
+  noisy edge crop with ``leaf_spot=0.8`` would outvote nine clean
+  ``healthy=0.7`` predictions. v4.1 averages softmax distributions
+  across valid bboxes; one outlier no longer wins the room.
+* **Size filter** on bboxes. Tiny detections (<1% of image area or
+  <32px) are dropped before classification — they were the dominant
+  source of v4 false-positives on real indoor photos.
+* **Healthy fallback margin**. When the averaged top-1 is a disease
+  but its margin over ``healthy`` is below ``HEALTHY_FALLBACK_MARGIN``
+  the prediction is downgraded to ``healthy``. This compensates for
+  the residual overconfidence of EfficientNet on out-of-distribution
+  inputs without hard-rerouting (which v3 did and v4 explicitly
+  removed).
+* **Disease confidence threshold**. If top-1 is a disease but the
+  averaged confidence is below ``DISEASE_MIN_CONFIDENCE`` we surface
+  ``healthy`` and attach a soft warning. The model already gates
+  ``low_confidence`` on per-crop level; this is the per-image gate.
+* **Temperature scaling** (optional). If ``temperature.json`` is
+  present next to the classifier weights, probabilities are recalibrated
+  before voting. Models trained with v4.1 notebook produce this file
+  automatically; older v4 models default to ``T=1.0`` (no-op).
+
+Stage 1 detector still owns localisation only — the disease decision
+remains 100% on the classifier side, as in v4.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from pathlib import Path
@@ -41,18 +54,79 @@ logger = logging.getLogger(__name__)
 MIN_CROP_SIZE = 32
 CROP_PADDING_RATIO = 0.10
 
-# v4 healthy gate. Previous v3 values (0.85 / 0.20 with auto-rerouting)
-# were too aggressive — any healthy plant photographed at low light or
-# at an angle would trip the gate and get re-labeled as the strongest
-# runner-up disease. Now the gate only attaches a soft warning.
+# v4.1 new: bboxes smaller than this fraction of the full image area
+# get dropped before classification. They are almost always noise
+# (corner false-positives, lighting artefacts, partial leaves through
+# blur) and were the main vector for v4's "everything is sick"
+# regression on real indoor photos.
+MIN_BBOX_AREA_FRAC = 0.01
+
+# v4 healthy gate (kept). These trigger the soft ``uncertain_healthy``
+# warning when top-1 is healthy but weak.
 HEALTHY_MIN_CONFIDENCE = 0.55
 HEALTHY_MARGIN = 0.10
 
-# Classes the pipeline considers "disease-like" when ranking which
-# bbox to feed back to the classifier and to the UI as primary.
+# v4.1 new: disease-side gate. If averaged top-1 is a disease but its
+# softmax mass is below this threshold, we downgrade to healthy.
+# Calibrated against v4 misfires on backlit / indoor / blurry shots
+# where the model gives ~50-60% to a disease but ~40% to healthy —
+# the right call there is "not confident enough to claim disease".
+DISEASE_MIN_CONFIDENCE = 0.65
+
+# v4.1 new: if averaged top-1 is a disease but its margin over
+# ``healthy`` is below this, downgrade. Catches the case where the
+# model is split close to 50/50 between a disease and healthy across
+# the image — there's no good reason to commit to disease then.
+HEALTHY_FALLBACK_MARGIN = 0.15
+
+# Classes that are not "diseases" — used to compute disease scores
+# and to know when to apply the healthy fallback.
 _NON_DISEASE = {"healthy", "not_a_plant"}
 
 TOP_K_ALTERNATIVES = 3
+
+
+def _load_temperature(classifier_path: Path | None) -> float:
+    """Look for ``temperature.json`` next to the classifier weights.
+
+    v4.1 training notebook writes it automatically. Returns 1.0 (no-op)
+    for v4 models or when the file is missing/malformed.
+    """
+    candidates: list[Path] = []
+    if classifier_path is not None:
+        candidates.append(Path(classifier_path).parent / "temperature.json")
+    candidates.extend([
+        Path("server/models/temperature.json"),
+        Path("models/temperature.json"),
+    ])
+    for p in candidates:
+        try:
+            if p.exists():
+                data = json.loads(p.read_text(encoding="utf-8"))
+                T = float(data.get("temperature", 1.0))
+                if T > 0:
+                    logger.info("Loaded temperature T=%.3f from %s", T, p)
+                    return T
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Could not load temperature from %s: %s", p, e)
+    return 1.0
+
+
+def _apply_temperature(probs: dict[str, float], T: float) -> dict[str, float]:
+    """Apply temperature scaling on already-softmaxed probabilities.
+
+    Mathematically equivalent to ``softmax(logits / T)``: since
+    ``softmax(z/T)`` is proportional to ``exp(z/T) = (exp z) ** (1/T) =
+    p ** (1/T)`` (up to a per-batch constant that disappears under
+    re-normalisation), we can recover calibrated probs from probs alone.
+    """
+    if abs(T - 1.0) < 1e-6:
+        return probs
+    powered = {n: max(float(p), 1e-12) ** (1.0 / T) for n, p in probs.items()}
+    z = sum(powered.values())
+    if z <= 0:
+        return probs
+    return {n: v / z for n, v in powered.items()}
 
 
 class PlantDiseasePipeline:
@@ -65,11 +139,15 @@ class PlantDiseasePipeline:
     ):
         self.detector = LeafDetector(detector_path)
         self.classifier = DiseaseClassifier(classifier_path)
+        # v4.1: opt-in temperature scaling. Defaults to 1.0 (no-op) if
+        # temperature.json is absent — keeps backward-compat with v4.
+        self.temperature = _load_temperature(classifier_path)
         logger.info(
-            "Pipeline ready  detector=%s  classifier=%s (%s backend)",
+            "Pipeline ready  detector=%s  classifier=%s (%s backend)  T=%.3f",
             "MODEL" if self.detector.is_loaded else "DEMO",
             "MODEL" if self.classifier.is_loaded else "DEMO",
             getattr(self.classifier, "backend", "demo"),
+            self.temperature,
         )
 
     @property
@@ -120,11 +198,7 @@ class PlantDiseasePipeline:
                 "elapsed_ms": round(elapsed, 1),
             }
 
-        # Disease-aware primary-box selection: classify each candidate
-        # bbox (capped to keep latency bounded), pick the one with the
-        # highest non-healthy/non-not_a_plant softmax mass. If none
-        # beat the threshold we fall back to the highest-confidence
-        # leaf as the primary box.
+        # v4.1: mean voting across valid bboxes (size-filtered).
         primary, classification = self._pick_primary(img, detections)
 
         is_diseased = (
@@ -133,10 +207,11 @@ class PlantDiseasePipeline:
         )
 
         logger.info(
-            "Stage 2 → class=%s  confidence=%.3f  primary_box=%s",
+            "Stage 2 → class=%s  confidence=%.3f  primary_box=%s  voted_over=%d",
             classification["class_name"],
             classification["confidence"],
             primary,
+            classification.get("_voted_over", 1),
         )
 
         final = _apply_postprocessing_rules(
@@ -168,55 +243,143 @@ class PlantDiseasePipeline:
     _MAX_RECLASSIFY = 4
 
     def _pick_primary(self, img: Image.Image, detections: list[dict]):
-        """Classify the top-N leaf bboxes and pick the most disease-like.
+        """Mean-voting primary classification over valid bboxes (v4.1).
 
-        Returns ``(primary_box, classification_dict)``. Falls back to
-        the highest-confidence detection when nothing scores high on a
-        disease class.
+        Pipeline:
+          1. Drop bboxes smaller than ``MIN_CROP_SIZE`` or
+             ``MIN_BBOX_AREA_FRAC`` of image area. These are noise.
+          2. Sort by detector confidence, cap to ``_MAX_RECLASSIFY``.
+          3. Classify each, average softmax distributions.
+          4. Apply temperature scaling (no-op when T=1.0).
+          5. Apply healthy fallback if top-1 is a disease with weak
+             margin over ``healthy`` or below ``DISEASE_MIN_CONFIDENCE``.
+          6. Pick the primary bbox: the one whose own top-1 matches the
+             aggregated top-1 (most "representative"). Falls back to
+             the largest bbox if no per-box prediction matches.
+
+        Returns ``(primary_box, classification_dict)``.
         """
-        # Sort by detector confidence and cap the count.
-        ranked = sorted(detections, key=lambda d: -d["confidence"])[: self._MAX_RECLASSIFY]
-        best_disease_score = -1.0
-        best_box = ranked[0]
-        best_classification: Optional[dict] = None
+        W, H = img.size
+        img_area = max(W * H, 1)
+
+        # 1. Size filter — drop noise bboxes.
+        sized: list[dict] = []
+        for d in detections:
+            w = int(d.get("width", 0))
+            h = int(d.get("height", 0))
+            if w < MIN_CROP_SIZE or h < MIN_CROP_SIZE:
+                continue
+            if (w * h) / img_area < MIN_BBOX_AREA_FRAC:
+                continue
+            sized.append(d)
+
+        # If everything got filtered, take the single largest bbox.
+        # We never want to skip classification entirely when the detector
+        # found leaves — otherwise we'd misroute to ``not_a_plant``.
+        if not sized:
+            sized = [
+                max(
+                    detections,
+                    key=lambda d: int(d.get("width", 0)) * int(d.get("height", 0)),
+                )
+            ]
+
+        # 2. Rank by detector confidence and cap.
+        ranked = sorted(sized, key=lambda d: -d["confidence"])[: self._MAX_RECLASSIFY]
+
+        # 3. Classify each bbox, accumulate softmax sums.
         results: list[tuple[dict, dict]] = []
+        sum_probs: dict[str, float] = {n: 0.0 for n in self.classifier.CLASS_NAMES}
 
         for box in ranked:
             crop = self._extract_crop(img, box)
             cls_res = self.classifier.classify(crop)
-            results.append((box, cls_res))
-            disease_score = max(
-                (
-                    p for n, p in cls_res["all_probs"].items()
-                    if n not in _NON_DISEASE
-                ),
-                default=0.0,
-            )
-            if disease_score > best_disease_score:
-                best_disease_score = disease_score
-                best_box = box
-                best_classification = cls_res
+            # 4. Per-crop temperature scaling. Doing it before averaging
+            # is correct: averaging T-scaled distributions ≠ T-scaling
+            # the average.
+            calibrated = _apply_temperature(cls_res["all_probs"], self.temperature)
+            results.append((box, {**cls_res, "all_probs": calibrated}))
+            for n, p in calibrated.items():
+                sum_probs[n] = sum_probs.get(n, 0.0) + float(p)
 
-        # If nothing looked obviously diseased, prefer the most central
-        # large leaf (helps avoid noisy edge crops on cluttered photos).
-        if best_disease_score < 0.30 and len(ranked) > 1:
-            W, H = img.size
-            cx, cy = W / 2, H / 2
-            def central_score(d: dict) -> float:
-                bx = d["x"] + d["width"] / 2
-                by = d["y"] + d["height"] / 2
-                area = d["width"] * d["height"]
-                dist2 = (bx - cx) ** 2 + (by - cy) ** 2
-                # Larger + more central wins.
-                return area - 0.4 * dist2
-            best_box, best_classification = max(
-                results, key=lambda rc: central_score(rc[0])
-            )
+        n_boxes = max(len(results), 1)
+        mean_probs = {name: total / n_boxes for name, total in sum_probs.items()}
 
-        # ``best_classification`` is always set because we ran the loop
-        # at least once.
-        assert best_classification is not None
-        return best_box, best_classification
+        # 5. Determine top-1 from the averaged distribution.
+        top1_class = max(mean_probs, key=mean_probs.get)
+        top1_conf = float(mean_probs[top1_class])
+        healthy_p = float(mean_probs.get("healthy", 0.0))
+
+        # 5a. Healthy fallback: if averaged top-1 is a disease but its
+        # margin over healthy is small, downgrade. This is the main
+        # patch against the v4 false-positive disease pattern.
+        #
+        # Confidence semantics on fallback: we don't surface the raw
+        # ``healthy`` probability — for an overconfident model that's
+        # often 3-5%, which reads to the user as "97% sick" even though
+        # the actual signal is "we're not confident enough to claim a
+        # disease". Instead we report ``1 - top1_disease_conf`` — i.e.
+        # how confident we are it is NOT this disease — clamped to be
+        # at least the raw healthy prob (we never lie downward) and at
+        # most 0.95 (we don't claim certainty we never had).
+        downgraded = False
+        if top1_class not in _NON_DISEASE and "healthy" in mean_probs:
+            margin = top1_conf - healthy_p
+            disease_top_conf = top1_conf  # remember before we overwrite
+            fallback_reason: Optional[str] = None
+            if margin < HEALTHY_FALLBACK_MARGIN:
+                fallback_reason = f"margin={margin:.3f}<{HEALTHY_FALLBACK_MARGIN}"
+            elif top1_conf < DISEASE_MIN_CONFIDENCE:
+                fallback_reason = (
+                    f"threshold={top1_conf:.3f}<{DISEASE_MIN_CONFIDENCE}"
+                )
+            if fallback_reason is not None:
+                # Confidence = "we are 1-p_disease confident this is NOT
+                # the suspected disease", bounded [healthy_p, 0.95].
+                inverted_conf = max(healthy_p, 1.0 - disease_top_conf)
+                inverted_conf = min(inverted_conf, 0.95)
+                logger.info(
+                    "Healthy fallback (%s)  was=%s/%.3f  → healthy/%.3f",
+                    fallback_reason, top1_class, disease_top_conf, inverted_conf,
+                )
+                top1_class = "healthy"
+                top1_conf = inverted_conf
+                downgraded = True
+
+        # 6. Pick primary bbox: prefer one whose own top-1 matches the
+        # aggregated decision (most "representative" of the call).
+        # Fall back to the largest bbox if nothing matches.
+        matching = [
+            (box, cls) for box, cls in results
+            if (cls.get("class_name") == top1_class) or (
+                # If we downgraded to healthy in aggregation but no
+                # per-crop is healthy by argmax (rare), still allow the
+                # match by checking whose healthy prob is highest.
+                downgraded and top1_class == "healthy"
+                and max(cls["all_probs"], key=cls["all_probs"].get) == "healthy"
+            )
+        ]
+        if matching:
+            primary_box = max(
+                matching,
+                key=lambda r: float(r[1]["all_probs"].get(top1_class, 0.0)),
+            )[0]
+        else:
+            primary_box = max(
+                results,
+                key=lambda r: int(r[0].get("width", 0)) * int(r[0].get("height", 0)),
+            )[0]
+
+        # 7. Build aggregated classification dict in the same shape
+        # the rest of the pipeline already expects.
+        aggregated_cls = {
+            "class_name": top1_class,
+            "confidence": top1_conf,
+            "all_probs": mean_probs,
+            "low_confidence": top1_conf < HEALTHY_MIN_CONFIDENCE,
+            "_voted_over": n_boxes,  # for logging/telemetry
+        }
+        return primary_box, aggregated_cls
 
     @staticmethod
     def _extract_crop(img: Image.Image, region: Optional[dict]) -> Image.Image:
@@ -255,13 +418,11 @@ def _apply_postprocessing_rules(
 ) -> dict:
     """Soft postprocessing: warnings only, no class re-routing.
 
-    Two checks remain:
+    Same semantics as v4. Two checks:
       * ``uncertain_healthy`` — top-1 is healthy but confidence/margin
-        below the v4 thresholds. We surface alternatives but do NOT
-        rewrite the predicted class. (v3 used to swap to the runner-up
-        disease which forced false-positive disease reports.)
-      * ``low_confidence`` — top-1 below ``LOW_CONFIDENCE_THRESHOLD``.
-        Lets the UI tone down the badge without fighting the model.
+        below thresholds. Surfaces alternatives, no class swap.
+      * ``low_confidence`` — top-1 below the healthy threshold. Lets
+        the UI tone down the badge without fighting the model.
     """
     probs = classification["all_probs"]
     top_k = _build_top_k(probs, TOP_K_ALTERNATIVES)
