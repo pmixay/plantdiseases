@@ -35,9 +35,11 @@ logger = logging.getLogger(__name__)
 DEFAULT_IMG_SIZE = 256
 
 # Alphabetical — must match training-time ``sorted(ImageFolder.classes)``.
-# v4 ships 8 houseplant-relevant classes. Older 9-class v3.x checkpoints
-# still load: ``_load_pytorch_model`` truncates the list to match.
+# v4.1 ships up to 11 houseplant-relevant classes. Older 8-class v4.0 or
+# 9-class v3.x checkpoints still load — ``_load_pytorch_model`` and the
+# ONNX path both truncate the list to match the actual head width.
 DEFAULT_CLASS_NAMES = [
+    "aphids",
     "healthy",
     "leaf_spot",
     "mealybug",
@@ -46,6 +48,8 @@ DEFAULT_CLASS_NAMES = [
     "powdery_mildew",
     "scale_insect",
     "spider_mites",
+    "thrips",
+    "whitefly",
 ]
 
 # Per-channel ImageNet normalisation (matches the training transforms).

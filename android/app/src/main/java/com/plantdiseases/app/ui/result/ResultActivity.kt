@@ -378,7 +378,7 @@ class ResultActivity : AppCompatActivity() {
         binding.alternativesLayout.removeAllViews()
 
         val diseaseNames = mapOf(
-            // PlantScope v4 — 8 houseplant classes
+            // PlantScope v4.1 — up to 11 houseplant classes
             "healthy" to (if (isRu) "Здоровое растение" else "Healthy Plant"),
             "powdery_mildew" to (if (isRu) "Мучнистая роса" else "Powdery Mildew"),
             "leaf_spot" to (if (isRu) "Пятнистость листьев" else "Leaf Spot"),
@@ -386,6 +386,9 @@ class ResultActivity : AppCompatActivity() {
             "mealybug" to (if (isRu) "Мучнистый червец" else "Mealybugs"),
             "scale_insect" to (if (isRu) "Щитовка" else "Scale Insects"),
             "nutrient_deficiency" to (if (isRu) "Нехватка элементов" else "Nutrient Deficiency"),
+            "aphids" to (if (isRu) "Тля" else "Aphids"),
+            "thrips" to (if (isRu) "Трипсы" else "Thrips"),
+            "whitefly" to (if (isRu) "Белокрылка" else "Whitefly"),
             "not_a_plant" to (if (isRu) "Не растение" else "Not a Plant"),
             // Legacy v3.x names — kept so older cached scans render labels.
             "blight" to (if (isRu) "Фитофтороз" else "Blight"),

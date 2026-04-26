@@ -4,7 +4,8 @@ Bilingual disease information database for PlantScope v4.x.
 Maps Stage 2 classifier class names to houseplant-specific descriptions,
 treatments, and prevention tips. v4 drops field-crop-specific classes
 (``blight``, ``leaf_mold``, ``mosaic_virus``, ``rust``) and adds
-indoor-relevant ones: ``mealybug``, ``scale_insect``, ``nutrient_deficiency``.
+indoor-relevant ones: ``mealybug``, ``scale_insect``, ``nutrient_deficiency``,
+``aphids``, ``thrips``, ``whitefly``.
 
 Authoritative class list: ``server/models/classes.json``.
 """
@@ -240,6 +241,108 @@ DISEASES_DATABASE = {
             "Подкармливайте в активный сезон (весна-лето), зимой подкормки прекратите",
             "Используйте горшки с дренажными отверстиями; не оставляйте в поддоне с водой",
             "Меняйте субстрат каждые 1–2 года — даже хороший грунт истощается"
+        ],
+        "is_healthy": False
+    },
+
+    "aphids": {
+        "name_en": "Aphids",
+        "name_ru": "Тля",
+        "description_en": "Tiny soft-bodied insects (1–3 mm), green, black or pinkish, that cluster on young shoots, flower buds and leaf undersides. They suck sap and excrete sticky honeydew, which can later attract sooty mould. Common on hibiscus, peppers, herbs and fresh growth of most houseplants.",
+        "description_ru": "Мелкие мягкотелые насекомые (1–3 мм), зелёные, чёрные или розоватые, скапливаются на молодых побегах, бутонах и обратной стороне листьев. Высасывают сок и оставляют липкую падь, на которую часто оседает сажистый грибок. Чаще всего поражают гибискус, перец, зелень и свежие приросты комнатных растений.",
+        "treatment_en": [
+            "Rinse the plant with a strong stream of lukewarm water — physically removes most colonies",
+            "Spray with insecticidal soap or 1 % neem oil; repeat in 5–7 days for two cycles",
+            "For heavy infestations, apply a systemic insecticide (e.g. imidacloprid) per label",
+            "Wipe sticky honeydew off leaves so sooty mould doesn't follow",
+            "Cut off heavily infested shoot tips — aphids prefer soft new growth"
+        ],
+        "treatment_ru": [
+            "Смойте тлю сильной струёй тёплой воды — большую часть колоний уносит механически",
+            "Опрыскайте инсектицидным мылом или 1 % раствором нима; повторите через 5–7 дней (2 цикла)",
+            "При сильном заражении применяйте системный инсектицид (например, имидаклоприд) по инструкции",
+            "Стирайте липкую падь с листьев — иначе на ней разовьётся сажистый грибок",
+            "Срежьте сильно заражённые верхушки — тля любит молодой прирост"
+        ],
+        "prevention_en": [
+            "Inspect new growth and flower buds weekly — early colonies are easy to wash off",
+            "Quarantine new plants for 2 weeks before placing them next to the others",
+            "Don't over-fertilise with nitrogen — soft, lush growth attracts aphids",
+            "Encourage airflow; aphids thrive in still, warm pockets"
+        ],
+        "prevention_ru": [
+            "Раз в неделю осматривайте молодые побеги и бутоны — ранние колонии легко смыть",
+            "Новые растения держите 2 недели на карантине",
+            "Не перекармливайте азотом — мягкий бурный прирост притягивает тлю",
+            "Обеспечьте циркуляцию воздуха — в застойном тепле тля плодится быстрее"
+        ],
+        "is_healthy": False
+    },
+
+    "thrips": {
+        "name_en": "Thrips",
+        "name_ru": "Трипсы",
+        "description_en": "Slender insects (~1 mm), pale to dark, that scrape leaf surfaces and feed on sap. Damage looks like silvery streaks, stippling or a metallic sheen, often with tiny black faecal dots. Especially common on monstera, alocasia, anthurium, ficus and orchids.",
+        "description_ru": "Мелкие узкие насекомые (~1 мм), светлые или тёмные. Соскребают эпидермис и пьют сок — на листьях остаются серебристые штрихи, точечные следы или металлический блеск, часто с чёрными точками экскрементов. Часто поражают монстеру, алоказию, антуриум, фикус, орхидеи.",
+        "treatment_en": [
+            "Isolate the plant — adult thrips fly and spread quickly",
+            "Shower the foliage thoroughly, top and bottom, to dislodge larvae",
+            "Spray with insecticidal soap or neem oil weekly for 3 cycles (egg → adult takes ~7 days)",
+            "Place blue sticky traps next to the plant to catch flying adults",
+            "Cut off heavily damaged leaves; bag and discard them, don't compost"
+        ],
+        "treatment_ru": [
+            "Изолируйте растение — взрослые трипсы летают и быстро расселяются",
+            "Тщательно промойте листья сверху и снизу, смывая личинок",
+            "Опрыскивайте инсектицидным мылом или нимом раз в неделю, 3 цикла (цикл «яйцо → имаго» ~7 дней)",
+            "Поставьте рядом синие клеевые ловушки — на них летят взрослые особи",
+            "Сильно повреждённые листья срежьте, упакуйте в пакет и выбросьте — не компостируйте"
+        ],
+        "prevention_en": [
+            "Quarantine new plants for at least 2 weeks; check leaf undersides",
+            "Keep humidity above 50 % — thrips prefer dry air",
+            "Wipe foliage of large-leaved species monthly — early damage is easy to spot",
+            "Avoid bringing cut flowers or outdoor plants near houseplants"
+        ],
+        "prevention_ru": [
+            "Новые растения держите 2 недели на карантине, осматривайте обратную сторону листьев",
+            "Поддерживайте влажность выше 50 % — трипсы любят сухой воздух",
+            "Раз в месяц протирайте листья крупнолистных видов — ранние повреждения видны сразу",
+            "Не размещайте срезанные цветы и уличные растения рядом с комнатными"
+        ],
+        "is_healthy": False
+    },
+
+    "whitefly": {
+        "name_en": "Whitefly",
+        "name_ru": "Белокрылка",
+        "description_en": "Small (~1.5 mm) white flying insects that rest on leaf undersides; when the plant is shaken, a cloud of tiny moths takes off. They suck sap and produce honeydew, leading to yellowing leaves and sticky residue. Common on hibiscus, fuchsia, mint, tomato seedlings, gerbera and pelargonium indoors.",
+        "description_ru": "Мелкие (~1.5 мм) белые летающие насекомые, сидят на обратной стороне листьев; при встряхивании растения с него взлетает облачко «мошек». Высасывают сок и оставляют липкую падь — листья желтеют, на них остаётся клейкий налёт. Часто поражают гибискус, фуксию, мяту, рассаду томатов, герберы, пеларгонию.",
+        "treatment_en": [
+            "Place yellow sticky traps near the plant — adults are strongly drawn to yellow",
+            "Vacuum adult whiteflies in early morning when they're sluggish",
+            "Spray leaf undersides with insecticidal soap or 1 % neem oil every 5 days for 3 weeks",
+            "Wipe leaves to remove eggs and honeydew between sprays",
+            "Repot if the soil also harbours pupae; discard the top centimetre of substrate"
+        ],
+        "treatment_ru": [
+            "Развесьте рядом жёлтые клеевые ловушки — взрослых сильно тянет на жёлтый",
+            "Утром, когда они вялые, можно собирать пылесосом",
+            "Опрыскивайте обратную сторону листьев инсектицидным мылом или 1 % нимом каждые 5 дней (3 недели)",
+            "Между опрыскиваниями протирайте листья от яиц и пади",
+            "Если в субстрате есть куколки — снимите верхний сантиметр почвы или пересадите"
+        ],
+        "prevention_en": [
+            "Check leaf undersides of new plants — that's where eggs hide",
+            "Don't crowd plants; whiteflies thrive in still, warm air",
+            "Keep windows screened in summer to block adults entering from outside",
+            "Wipe leaves regularly so honeydew doesn't accumulate"
+        ],
+        "prevention_ru": [
+            "При покупке осматривайте обратную сторону листьев — там лежат яйца",
+            "Не размещайте растения вплотную — белокрылке нужен тёплый застойный воздух",
+            "Летом ставьте на окна москитную сетку, чтобы взрослые не залетали с улицы",
+            "Регулярно протирайте листья — не давайте пади накапливаться"
         ],
         "is_healthy": False
     },
