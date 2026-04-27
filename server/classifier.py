@@ -43,17 +43,14 @@ DEFAULT_IMG_SIZE = 256
 # OR truncate this list to match the actual head width and prefer the
 # class names declared in classes.json when present.
 DEFAULT_CLASS_NAMES = [
-    "aphids",
+    "anthracnose",
+    "gray_mold",
     "healthy",
-    "leaf_spot",
-    "mealybug",
+    "iron_chlorosis",
+    "late_blight",
     "not_a_plant",
-    "nutrient_deficiency",
     "powdery_mildew",
-    "scale_insect",
-    "spider_mites",
-    "thrips",
-    "whitefly",
+    "sunburn",
 ]
 
 # Per-channel ImageNet normalisation (matches the training transforms).

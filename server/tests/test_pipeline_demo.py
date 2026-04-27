@@ -61,15 +61,28 @@ def test_not_a_plant_class_is_present():
     assert "not_a_plant" in DEFAULT_CLASS_NAMES
 
 
-def test_v4_taxonomy_replaces_field_crop_classes():
-    """v4 dropped field-crop-only classes (blight, leaf_mold, mosaic_virus, rust)
-    and added houseplant-specific ones (mealybug, scale_insect, nutrient_deficiency)."""
+def test_v45_taxonomy_is_disease_only():
+    """v4.5 carries 8 disease-only classes; pests live in PEST_INFO and are
+    surfaced via possible_pest_causes hints, not as classifier outputs."""
     from classifier import DEFAULT_CLASS_NAMES
 
-    for added in ("mealybug", "scale_insect", "nutrient_deficiency"):
-        assert added in DEFAULT_CLASS_NAMES, f"v4 must include {added}"
-    for removed in ("blight", "leaf_mold", "mosaic_virus", "rust"):
-        assert removed not in DEFAULT_CLASS_NAMES, f"v4 must drop {removed}"
+    expected = {
+        "anthracnose", "gray_mold", "healthy", "iron_chlorosis",
+        "late_blight", "not_a_plant", "powdery_mildew", "sunburn",
+    }
+    assert set(DEFAULT_CLASS_NAMES) == expected, (
+        f"v4.5 class set drift: extra={set(DEFAULT_CLASS_NAMES) - expected} "
+        f"missing={expected - set(DEFAULT_CLASS_NAMES)}"
+    )
+    # Pests must NOT be classifier outputs in v4.5.
+    for pest in ("aphids", "mealybug", "scale_insect", "spider_mites",
+                 "thrips", "whitefly"):
+        assert pest not in DEFAULT_CLASS_NAMES, (
+            f"v4.5 must drop pest class {pest} (it's a hint, not a label)"
+        )
+    # Old broad bucket also retired.
+    for removed in ("leaf_spot", "blight", "leaf_mold", "mosaic_virus", "rust"):
+        assert removed not in DEFAULT_CLASS_NAMES, f"v4.5 must drop {removed}"
 
 
 def test_top_k_and_warnings_keys_in_result():
@@ -95,13 +108,13 @@ def test_healthy_gate_attaches_warning_without_rerouting():
 
     probs = {
         "healthy": 0.55,
-        "leaf_spot": 0.55 - (HEALTHY_MARGIN / 2),
-        "mealybug": 0.05,
+        "anthracnose": 0.55 - (HEALTHY_MARGIN / 2),
+        "gray_mold": 0.05,
+        "iron_chlorosis": 0.05,
+        "late_blight": 0.05,
         "not_a_plant": 0.01,
-        "nutrient_deficiency": 0.05,
         "powdery_mildew": 0.05,
-        "scale_insect": 0.02,
-        "spider_mites": 0.02,
+        "sunburn": 0.02,
     }
     s = sum(probs.values())
     probs = {k: v / s for k, v in probs.items()}
@@ -125,13 +138,13 @@ def test_healthy_gate_silent_on_high_confidence():
 
     probs = {
         "healthy": 0.92,
-        "leaf_spot": 0.02,
-        "mealybug": 0.01,
+        "anthracnose": 0.01,
+        "gray_mold": 0.01,
+        "iron_chlorosis": 0.01,
+        "late_blight": 0.01,
         "not_a_plant": 0.01,
-        "nutrient_deficiency": 0.01,
         "powdery_mildew": 0.01,
-        "scale_insect": 0.01,
-        "spider_mites": 0.01,
+        "sunburn": 0.02,
     }
     classification = {
         "class_name": "healthy",
@@ -149,11 +162,11 @@ def test_low_confidence_warning_is_propagated():
     from pipeline import _apply_postprocessing_rules
 
     probs = {n: 1 / 8 for n in (
-        "healthy", "leaf_spot", "mealybug", "not_a_plant",
-        "nutrient_deficiency", "powdery_mildew", "scale_insect", "spider_mites",
+        "anthracnose", "gray_mold", "healthy", "iron_chlorosis",
+        "late_blight", "not_a_plant", "powdery_mildew", "sunburn",
     )}
     classification = {
-        "class_name": "leaf_spot",
+        "class_name": "anthracnose",
         "confidence": 0.13,
         "all_probs": probs,
         "low_confidence": True,

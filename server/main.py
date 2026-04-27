@@ -26,7 +26,7 @@ from PIL import Image, UnidentifiedImageError
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response as StarletteResponse
 
-from diseases_data import DISEASES_DATABASE
+from diseases_data import DISEASES_DATABASE, pest_hints
 from pipeline import PlantDiseasePipeline
 
 try:
@@ -553,6 +553,12 @@ async def analyze_image(image: UploadFile = File(...)):
     if "uncertain_healthy" in warnings:
         is_healthy_effective = False
 
+    # v4.5: pests are not classifier outputs — they're a hint section
+    # rendered next to the diagnosis. Resolve the disease's
+    # ``possible_pest_causes`` keys into the full pest cards here so
+    # the client doesn't need a second lookup table.
+    possible_pests = pest_hints(class_name)
+
     return JSONResponse(content={
         "disease_name": disease_info["name_en"],
         "disease_name_ru": disease_info["name_ru"],
@@ -569,6 +575,7 @@ async def analyze_image(image: UploadFile = File(...)):
         "all_probs": rounded_probs,
         "top_k": top_k_localised,
         "warnings": warnings,
+        "possible_pest_causes": possible_pests,
         "pipeline_mode": result["pipeline_mode"],
         "elapsed_ms": result["elapsed_ms"],
         "server_version": APP_VERSION,
