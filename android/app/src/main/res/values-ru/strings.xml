@@ -137,6 +137,8 @@
     <!-- Top-3 alternatives -->
     <string name="why_this_diagnosis">Почему этот диагноз?</string>
     <string name="alternatives_subtitle">Уверенность модели по основным кандидатам</string>
+    <string name="pest_causes_title">А может это вредитель?</string>
+    <string name="pest_causes_subtitle">Эти вредители оставляют похожие следы — быстрая проверка ниже.</string>
 
     <!-- About model -->
     <string name="about_model">О модели</string>

@@ -137,6 +137,8 @@
     <!-- Top-3 alternatives -->
     <string name="why_this_diagnosis">Why This Diagnosis?</string>
     <string name="alternatives_subtitle">Model confidence across top candidates</string>
+    <string name="pest_causes_title">Could it be a pest?</string>
+    <string name="pest_causes_subtitle">These pests cause damage that can look similar — quick checklist below.</string>
 
     <!-- About model -->
     <string name="about_model">About the Model</string>

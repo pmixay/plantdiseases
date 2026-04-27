@@ -225,6 +225,9 @@ class ResultActivity : AppCompatActivity() {
             // Top-3 alternative diagnoses
             buildAlternativeDiagnoses(scan, repository, isRu)
 
+            // v4.5: pests as hint section (could the same look come from a pest?)
+            buildPestCauses(scan, isRu)
+
             setupTreatmentPreventionTabs(scan, repository, isRu)
 
             // Date
@@ -378,17 +381,14 @@ class ResultActivity : AppCompatActivity() {
         binding.alternativesLayout.removeAllViews()
 
         val diseaseNames = mapOf(
-            // PlantScope v4.1 — up to 11 houseplant classes
+            // PlantScope v4.5 — 8 disease classes (pests are now hints, not labels)
             "healthy" to (if (isRu) "Здоровое растение" else "Healthy Plant"),
             "powdery_mildew" to (if (isRu) "Мучнистая роса" else "Powdery Mildew"),
-            "leaf_spot" to (if (isRu) "Пятнистость листьев" else "Leaf Spot"),
-            "spider_mites" to (if (isRu) "Паутинный клещ" else "Spider Mites"),
-            "mealybug" to (if (isRu) "Мучнистый червец" else "Mealybugs"),
-            "scale_insect" to (if (isRu) "Щитовка" else "Scale Insects"),
-            "nutrient_deficiency" to (if (isRu) "Нехватка элементов" else "Nutrient Deficiency"),
-            "aphids" to (if (isRu) "Тля" else "Aphids"),
-            "thrips" to (if (isRu) "Трипсы" else "Thrips"),
-            "whitefly" to (if (isRu) "Белокрылка" else "Whitefly"),
+            "anthracnose" to (if (isRu) "Антракноз" else "Anthracnose"),
+            "gray_mold" to (if (isRu) "Серая гниль" else "Gray Mold"),
+            "iron_chlorosis" to (if (isRu) "Железный хлороз" else "Iron Chlorosis"),
+            "late_blight" to (if (isRu) "Фитофтороз" else "Late Blight"),
+            "sunburn" to (if (isRu) "Солнечный ожог" else "Sunburn"),
             "not_a_plant" to (if (isRu) "Не растение" else "Not a Plant"),
             // Legacy v3.x names — kept so older cached scans render labels.
             "blight" to (if (isRu) "Фитофтороз" else "Blight"),
@@ -461,6 +461,62 @@ class ResultActivity : AppCompatActivity() {
             row.addView(nameRow)
             row.addView(progressBar)
             binding.alternativesLayout.addView(row)
+        }
+    }
+
+    private fun buildPestCauses(scan: ScanEntity, isRu: Boolean) {
+        // Resolve disease class key from the stored top probability.
+        // ScanRepository.parseAllProbs returns a Map<className, prob>.
+        val repository = (application as PlantDiseasesApp).scanRepository
+        val classKey = repository.parseAllProbs(scan.allProbs)
+            .entries.maxByOrNull { it.value }?.key
+            ?: run {
+                binding.cardPestCauses.visibility = View.GONE
+                return
+            }
+
+        val pests = com.plantdiseases.app.data.PestCauses.forDisease(classKey)
+        if (pests.isEmpty()) {
+            binding.cardPestCauses.visibility = View.GONE
+            return
+        }
+
+        binding.cardPestCauses.visibility = View.VISIBLE
+        binding.pestCausesLayout.removeAllViews()
+
+        pests.forEachIndexed { index, pest ->
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    if (index > 0) topMargin = 12.dpToPx()
+                }
+            }
+
+            val name = TextView(this).apply {
+                text = if (isRu) pest.nameRu else pest.nameEn
+                textSize = 14f
+                setTextColor(getColor(R.color.on_surface))
+                typeface = android.graphics.Typeface.create("sans-serif-medium",
+                    android.graphics.Typeface.NORMAL)
+            }
+            val summary = TextView(this).apply {
+                text = if (isRu) pest.summaryRu else pest.summaryEn
+                textSize = 12f
+                setTextColor(getColor(R.color.on_surface_secondary))
+            }
+            val hint = TextView(this).apply {
+                text = "💡 " + if (isRu) pest.hintRu else pest.hintEn
+                textSize = 12f
+                setTextColor(getColor(R.color.on_surface_secondary))
+                setPadding(0, 4.dpToPx(), 0, 0)
+            }
+            row.addView(name)
+            row.addView(summary)
+            row.addView(hint)
+            binding.pestCausesLayout.addView(row)
         }
     }
 
@@ -648,6 +704,7 @@ class ResultActivity : AppCompatActivity() {
             binding.cardDescription,
             binding.cardTreatmentPrevention,
             binding.cardAlternatives,
+            binding.cardPestCauses,
             binding.cardPipelineWarning,
             binding.cardLowConfidence
         ).filter { it.visibility == View.VISIBLE }
