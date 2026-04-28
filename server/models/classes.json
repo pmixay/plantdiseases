@@ -3,7 +3,7 @@
   "model_version": "4.5.0",
   "architecture": {
     "detector": "YOLOv8n (single-class leaf)",
-    "classifier": "EfficientNetV2-B0"
+    "classifier": "EfficientNetV2-S (torchvision, IMAGENET1K_V1)"
   },
   "num_classes": 8,
   "class_names": [
