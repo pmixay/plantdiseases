@@ -54,12 +54,13 @@ logger = logging.getLogger(__name__)
 MIN_CROP_SIZE = 32
 CROP_PADDING_RATIO = 0.10
 
-# v4.1 new: bboxes smaller than this fraction of the full image area
-# get dropped before classification. They are almost always noise
-# (corner false-positives, lighting artefacts, partial leaves through
-# blur) and were the main vector for v4's "everything is sick"
-# regression on real indoor photos.
-MIN_BBOX_AREA_FRAC = 0.01
+# v4.6: bboxes smaller than this fraction of the full image area
+# get dropped before classification. v4.1 used 0.01 which was too
+# aggressive on wide shots — a 4032×3024 phone photo at 1% = 350×350,
+# i.e. nearly the entire visible leaf at typical shooting distance.
+# Real noise bboxes (corner FPs, lighting artefacts) are almost
+# always <0.5% of the image; 0.005 is the natural break point.
+MIN_BBOX_AREA_FRAC = 0.005
 
 # v4 healthy gate (kept). These trigger the soft ``uncertain_healthy``
 # warning when top-1 is healthy but weak.
@@ -287,13 +288,17 @@ class PlantDiseasePipeline:
         # 2. Rank by detector confidence and cap.
         ranked = sorted(sized, key=lambda d: -d["confidence"])[: self._MAX_RECLASSIFY]
 
-        # 3. Classify each bbox, accumulate softmax sums.
+        # 3. Classify all bboxes in a single batched forward pass when
+        # the backend supports dynamic batch (ONNX/PyTorch). Cuts the
+        # per-call setup cost on CPU — the dominant overhead for ≤4
+        # boxes — without changing numerics.
+        crops = [self._extract_crop(img, box) for box in ranked]
+        cls_results = self.classifier.classify_batch(crops)
+
         results: list[tuple[dict, dict]] = []
         sum_probs: dict[str, float] = {n: 0.0 for n in self.classifier.CLASS_NAMES}
 
-        for box in ranked:
-            crop = self._extract_crop(img, box)
-            cls_res = self.classifier.classify(crop)
+        for box, cls_res in zip(ranked, cls_results, strict=False):
             # 4. Per-crop temperature scaling. Doing it before averaging
             # is correct: averaging T-scaled distributions ≠ T-scaling
             # the average.
@@ -323,6 +328,7 @@ class PlantDiseasePipeline:
         # at least the raw healthy prob (we never lie downward) and at
         # most 0.95 (we don't claim certainty we never had).
         downgraded = False
+        suspected_disease: Optional[str] = None
         if top1_class not in _NON_DISEASE and "healthy" in mean_probs:
             margin = top1_conf - healthy_p
             disease_top_conf = top1_conf  # remember before we overwrite
@@ -342,9 +348,34 @@ class PlantDiseasePipeline:
                     "Healthy fallback (%s)  was=%s/%.3f  → healthy/%.3f",
                     fallback_reason, top1_class, disease_top_conf, inverted_conf,
                 )
+                suspected_disease = top1_class
+                # Redistribute probability mass so all_probs/top_k stay
+                # consistent with the chosen class_name. Without this
+                # the UI saw healthy as class_name but the suspected
+                # disease still ranked #1 in top_k — a confusing
+                # contradiction. We move (disease_p - inverted_conf)
+                # from the suspected disease into healthy and
+                # renormalize so the distribution still sums to 1.
+                target_healthy = max(inverted_conf, healthy_p)
+                delta = min(
+                    disease_top_conf - inverted_conf,
+                    mean_probs[suspected_disease],
+                )
+                if delta > 0:
+                    mean_probs[suspected_disease] -= delta
+                    mean_probs["healthy"] = mean_probs.get("healthy", 0.0) + delta
+                # Renormalize defensively in case temperature scaling
+                # left a sub-1 sum or floating-point drift accumulated.
+                total = sum(mean_probs.values())
+                if total > 0:
+                    mean_probs = {n: p / total for n, p in mean_probs.items()}
                 top1_class = "healthy"
-                top1_conf = inverted_conf
+                top1_conf = float(mean_probs["healthy"])
                 downgraded = True
+                # Sanity: confidence we report should never be below
+                # the original inverted bound after renormalisation.
+                if top1_conf < target_healthy:
+                    top1_conf = target_healthy
 
         # 6. Pick primary bbox: prefer one whose own top-1 matches the
         # aggregated decision (most "representative" of the call).
@@ -378,6 +409,7 @@ class PlantDiseasePipeline:
             "all_probs": mean_probs,
             "low_confidence": top1_conf < HEALTHY_MIN_CONFIDENCE,
             "_voted_over": n_boxes,  # for logging/telemetry
+            "_suspected_disease": suspected_disease,  # set only on healthy fallback
         }
         return primary_box, aggregated_cls
 
@@ -418,9 +450,14 @@ def _apply_postprocessing_rules(
 ) -> dict:
     """Soft postprocessing: warnings only, no class re-routing.
 
-    Same semantics as v4. Two checks:
+    Three checks:
       * ``uncertain_healthy`` — top-1 is healthy but confidence/margin
         below thresholds. Surfaces alternatives, no class swap.
+      * ``disease_uncertain`` — the v4.1 healthy-fallback fired in
+        ``_pick_primary``: top-1 was a disease but margin/threshold was
+        weak so the class was downgraded to healthy. We attach a
+        warning that names the suspected disease so the UI can show
+        "borderline call, ruled out X".
       * ``low_confidence`` — top-1 below the healthy threshold. Lets
         the UI tone down the badge without fighting the model.
     """
@@ -440,6 +477,10 @@ def _apply_postprocessing_rules(
                 "healthy gate soft-warning  top1=%.3f  margin=%.3f",
                 top1_prob, margin,
             )
+
+    suspected = classification.get("_suspected_disease")
+    if suspected:
+        warnings.append(f"disease_uncertain:{suspected}")
 
     if classification.get("low_confidence"):
         warnings.append("low_confidence")
