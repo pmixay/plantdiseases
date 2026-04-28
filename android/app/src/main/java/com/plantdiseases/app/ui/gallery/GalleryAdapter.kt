@@ -38,11 +38,26 @@ class GalleryAdapter(
         val isRu = LocaleHelper.isRussian(context)
 
         holder.binding.apply {
-            tvDiseaseName.text = if (isRu) item.diseaseNameRu else item.diseaseName
+            val displayName = when {
+                item.isNotAPlant -> context.getString(R.string.not_a_plant_diagnosis_name)
+                isRu -> item.diseaseNameRu
+                else -> item.diseaseName
+            }
+            tvDiseaseName.text = displayName
             tvDate.text = ImageUtils.formatRelativeDate(context, item.timestamp)
-            tvConfidence.text = context.getString(R.string.confidence_format, (item.confidence * 100).toInt())
+            // Confidence on a NAP card is misleading — hide the percentage.
+            if (item.isNotAPlant) {
+                tvConfidence.text = ""
+            } else {
+                tvConfidence.text =
+                    context.getString(R.string.confidence_format, (item.confidence * 100).toInt())
+            }
 
-            val statusColor = if (item.isHealthy) R.color.healthy_green else R.color.disease_red
+            val statusColor = when {
+                item.isNotAPlant -> R.color.neutral_blue
+                item.isHealthy -> R.color.healthy_green
+                else -> R.color.disease_red
+            }
             statusIndicator.setBackgroundColor(context.getColor(statusColor))
             tvDiseaseName.setTextColor(context.getColor(statusColor))
 

@@ -35,6 +35,9 @@
     <color name="disease_red_bg">#FCEAE8</color>
     <color name="warning_amber">#B8700A</color>
     <color name="warning_amber_bg">#FFF3E0</color>
+    <!-- Neutral "not a plant" verdict — distinct from healthy/diseased/warning. -->
+    <color name="neutral_blue">#3B6EA8</color>
+    <color name="neutral_blue_bg">#E6EFF8</color>
 
     <!-- Category accents -->
     <color name="watering_blue">#1976D2</color>

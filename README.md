@@ -15,50 +15,57 @@ advice.
 │   (Kotlin)           │ ──────► │                                  │
 │                      │         │   ┌──────────────────────────┐   │
 │  • CameraX capture   │         │   │ Stage 1: Detector        │   │
-│  • Room local DB     │         │   │ YOLOv8n                  │   │
-│  • Retrofit client   │  JSON   │   │ leaf / diseased_leaf     │   │
-│  • Material 3 UI     │ ◄────── │   │ bounding boxes           │   │
-│  • RU / EN strings   │         │   └──────────┬───────────────┘   │
-│  • Profile & stats   │         │              │                   │
-│                      │         │   ┌──────────▼───────────────┐   │
-│                      │         │   │ Stage 2: Classifier      │   │
-│                      │         │   │ EfficientNetV2-S         │   │
-│                      │         │   │ 9 houseplant classes     │   │
+│  • Room local DB     │         │   │ YOLOv8n (single-class)   │   │
+│  • Retrofit client   │  JSON   │   │ leaf bounding boxes      │   │
+│  • Material 3 UI     │ ◄────── │   └──────────┬───────────────┘   │
+│  • RU / EN strings   │         │              │                   │
+│  • Profile & stats   │         │   ┌──────────▼───────────────┐   │
+│  • NotAPlant verdict │         │   │ Stage 2: Classifier      │   │
+│    as separate state │         │   │ EfficientNet-B0 @ 240 px │   │
+│                      │         │   │ 8 houseplant classes     │   │
 │                      │         │   │ + not_a_plant rejection  │   │
+│                      │         │   │ + MSP/OOD gate           │   │
 │                      │         │   └──────────────────────────┘   │
 └──────────────────────┘         └──────────────────────────────────┘
 ```
 
-### Two-stage pipeline
+### Two-stage pipeline (v4.7)
 
 ```
 Full photo (any composition — hand, wall, background are fine)
     │
     ▼
 ┌──────────────────────────┐
-│  Stage 1: Leaf Detector   │  YOLOv8n (~3.2 M params)
-│  "Where are the leaves    │  Output: bboxes for leaf / diseased_leaf
-│   and which look sick?"   │  No detection → "not a plant, retake"
+│  Stage 1: Leaf Detector   │  YOLOv8n (~3.2 M params, single-class "leaf")
+│  "Where are the leaves?"  │  No detection → class = not_a_plant
 └──────────┬───────────────┘
            │
       ┌────┴──────────────────┐
       │ Any detections?        │─── no ──► class = not_a_plant
       └────┬──────────────────┘
-           │ yes
+           │ yes (≥1 leaf bbox, size-filtered)
            ▼
-    Crop to the primary diseased bbox
-    (or the best healthy leaf if none are flagged)
+    Crop ≤4 highest-confidence bboxes (mean-voting)
            │
            ▼
-┌──────────────────────────┐
-│  Stage 2: Disease Classifier  │  EfficientNetV2-S (~21 M params)
-│  "Which disease is this?"     │  9 classes incl. not_a_plant
-│                               │  Operates only on the ROI
+┌──────────────────────────────┐
+│  Stage 2: Disease Classifier  │  EfficientNet-B0 (~5 M params, 240 px)
+│  "Which condition is this?"   │  8 classes incl. not_a_plant
+│                               │  ONNX INT8 (~25-40 ms on CPU VPS)
 └──────────┬───────────────────┘
            │
            ▼
-    Disease name + confidence + per-class probabilities
-    + treatment / prevention advice (EN / RU)
+    Mean-voted softmax + temperature scaling
+           │
+           ▼
+    Healthy fallback (margin / threshold gates)
+           │
+           ▼
+    OOD/NAP gate: low detector conf + low classifier MSP → not_a_plant
+           │
+           ▼
+    Final disease name + confidence + per-class probabilities
+    + treatment / prevention advice (EN / RU) + pest hints
 ```
 
 **Why two stages.** Letting YOLOv8 find the leaf first means the
@@ -66,53 +73,75 @@ classifier sees a tight crop instead of a whole room — the backbone never
 has to learn "what is a leaf" again. It also rejects noise: fingers,
 walls, and furniture don't score above the detector threshold, so the
 pipeline cleanly returns `not_a_plant` instead of guessing a random
-disease.
+disease. A second-line MSP-based OOD gate
+([`pipeline.py:NAP_*_FLOOR`](server/pipeline.py)) catches the residual
+case where Stage 1 fires weakly on a non-leaf texture.
+
+**Why EfficientNet-B0 and not V2-S.** The classifier dataset is on the
+order of ~7-8k images across 8 classes. EfficientNetV2-S (21M params) was
+oversized for that, with elevated overfit risk on the long-tail classes
+(anthracnose, sunburn). B0 (5M params) is a better capacity match,
+trains faster on a free Colab T4 (~30-40 min vs ~70-95 min), and runs
+~4× faster on a CPU-only production VPS — directly user-visible latency.
+The classifier loader auto-detects either backbone, so a v4.5 V2-S
+checkpoint still loads cleanly.
 
 ---
 
 ## Classes
 
-Stage 1 (YOLOv8n) returns two object classes:
+Stage 1 (YOLOv8n) is **single-class**:
 
 | # | Class |
 |---|-------|
 | 0 | `leaf` |
-| 1 | `diseased_leaf` |
 
-Stage 2 (EfficientNetV2-S) classifies the primary diseased crop into one
-of nine houseplant-focused classes (alphabetical, matching
-`sorted(ImageFolder.classes)` at training time):
+The "is this leaf diseased?" decision belongs entirely to Stage 2 —
+v3.x's two-class detector (`leaf` / `diseased_leaf`) introduced a strong
+"flag everything as diseased" bias that propagated into the
+postprocessing gate. v4 dropped it.
+
+Stage 2 (EfficientNet-B0 in v4.7, EfficientNetV2-S in v4.5) classifies
+the primary leaf crop into one of eight houseplant-focused classes
+(alphabetical, matching `sorted(ImageFolder.classes)` at training time):
 
 | # | Class | EN name | RU name |
 |---|-------|---------|---------|
-| 0 | `blight` | Blight | Фитофтороз |
-| 1 | `healthy` | Healthy Plant | Здоровое растение |
-| 2 | `leaf_mold` | Leaf Mold | Листовая плесень |
-| 3 | `leaf_spot` | Leaf Spot (Bacterial / Fungal) | Пятнистость листьев |
-| 4 | `mosaic_virus` | Mosaic Virus | Мозаичный вирус |
-| 5 | `not_a_plant` | Not a Plant | Не растение |
-| 6 | `powdery_mildew` | Powdery Mildew | Мучнистая роса |
-| 7 | `rust` | Rust | Ржавчина |
-| 8 | `spider_mites` | Spider Mites | Паутинный клещ |
+| 0 | `anthracnose`     | Anthracnose      | Антракноз            |
+| 1 | `gray_mold`       | Gray Mold        | Серая гниль          |
+| 2 | `healthy`         | Healthy Plant    | Здоровое растение    |
+| 3 | `iron_chlorosis`  | Iron Chlorosis   | Железный хлороз      |
+| 4 | `late_blight`     | Late Blight      | Фитофтороз           |
+| 5 | `not_a_plant`     | Not a Plant      | Не растение          |
+| 6 | `powdery_mildew`  | Powdery Mildew   | Мучнистая роса       |
+| 7 | `sunburn`         | Sunburn          | Солнечный ожог       |
 
 Canonical list: [`server/models/classes.json`](server/models/classes.json).
 Bilingual descriptions, treatments and prevention tips live in
 [`server/diseases_data.py`](server/diseases_data.py).
 
-The `not_a_plant` bucket is a true rejection class trained on COCO
-imagery (fingers, walls, furniture, fabric) so noisy frames don't get
-a random disease label.
+The `not_a_plant` bucket is a true rejection class trained on ~1800
+COCO val2017 photos (fingers, walls, furniture, fabric) with plant-like
+categories filtered out via COCO annotations. The pipeline also runs an
+MSP-based OOD gate after voting so even Stage-1 false positives on
+plant-coloured textures (curtains, fabric) cleanly route to NAP rather
+than getting a random disease label.
+
+**Pests are hints, not classes.** Pest cards (spider mites, aphids,
+mealybugs, scale insects, whitefly, thrips) surface as "possible pest
+causes" under each diagnosis — see
+[`server/diseases_data.py`](server/diseases_data.py) `PEST_INFO`. They
+are not separate classes because at 240 px (or even 320 px) on cropped
+foliage the discriminating cue is sub-pixel and the treatment advice
+overlaps. Keeping them as hints means the user gets actionable guidance
+without forcing the model to learn a class boundary it can't see.
 
 **Class-size safeguard.** The training notebook drops any class whose
-training split has fewer than `MIN_TRAIN_PER_CLASS = 50` images. PlantDoc
-on its own only yields a handful of `spider_mites` photos, so the
-notebook now also sparse-checkouts the
-`Tomato___Spider_mites Two-spotted_spider_mite` folder from
-[PlantVillage](https://github.com/spMohanty/PlantVillage-Dataset) (~1.3k
-photos, capped at 800 after shuffle) to keep the class healthy. If
-PlantVillage cannot be reached, the guard simply removes `spider_mites`
-from the class list and the model ships as 8-class — the server's
-`classifier._load_model` truncates `DEFAULT_CLASS_NAMES` to match.
+training split has fewer than `MIN_TRAIN_PER_CLASS = 60` images. If a
+data source is unreachable (iNat 5xx, PlantVillage rate limit) the
+class is removed cleanly and `classes.json` is regenerated to match —
+the server's classifier loader truncates/pads `DEFAULT_CLASS_NAMES` to
+the actual head width on load.
 
 ---
 
@@ -156,31 +185,39 @@ identical, but the results are not meaningful.
 ## Training the models
 
 Training runs **only in Google Colab** via
-[`server/train_notebook.ipynb`](server/train_notebook.ipynb). The
-notebook runs end-to-end on a free-tier T4 in roughly 70–95 minutes:
+[`server/train_notebook.ipynb`](server/train_notebook.ipynb). The v4.7
+notebook runs end-to-end on a free-tier T4 in roughly 50-70 minutes
+(down from ~70-95 min on the v4.5 V2-S recipe):
 
 1. Install dependencies and sanity-check the GPU.
-2. Clone **PlantDoc** (object-detection + classification subsets).
-3. Download **COCO val2017** to produce `not_a_plant` negatives
+2. Clone **PlantDoc** for the YOLO-side and pull supporting sources
+   for the classifier (PlantVillage, iNaturalist taxon scrapes,
+   Kaggle Houseplant Species).
+3. Download **COCO val2017** to produce ~1800 `not_a_plant` negatives
    (plant-like categories like *potted plant* and *vase* are filtered
    out via the COCO annotations to avoid label noise).
-4. Optionally pull **Houseplant Species** from Kaggle to strengthen the
-   `healthy` class with real indoor photos.
-5. Train **YOLOv8n** on the remapped leaf / diseased_leaf dataset
-   (~30–45 min with `cache='ram'`, mosaic + mixup + hsv-jitter
+4. Build the classifier dataset with stratified per-class 15% val
+   split and group-aware leakage prevention (multi-crop and iNat
+   multi-photo observations stay on the same side of the split).
+5. Train **YOLOv8n** single-class on the leaf-only dataset
+   (~20-30 min with `cache='disk'`, mosaic + mixup + hsv-jitter
    augmentations, `close_mosaic=10`, AMP and `patience=12`).
-6. Train **EfficientNetV2-S** end-to-end: freeze-backbone warmup
-   (`Phase A`, 10 epochs) then fine-tune `features.5-7` + head
-   (`Phase B`, 12 epochs) with FocalLoss + inverse-frequency weights,
-   CutMix/MixUp, EMA weights, h-flip TTA on val, a class-balanced
-   sampler, batch=48 + persistent workers + `channels_last` for T4
-   throughput (~40–55 min).
-7. Export `detector.pt`, `classifier.pth`, and `classes.json`
-   (the notebook regenerates `classes.json` with the alphabetical class
-   list and the v3.1.0 model version).
+6. Train **EfficientNet-B0 @ 240** end-to-end: freeze-backbone warmup
+   (`Phase A`, 8 epochs) then fine-tune `features.5-8` + head
+   (`Phase B`, 14 epochs) with CrossEntropy + label_smoothing=0.05,
+   WeightedRandomSampler, CutMix (p=0.4) + MixUp (p=0.2), EMA weights
+   (decay=0.999), h-flip TTA on val, batch=96 + persistent workers +
+   `channels_last` for T4 throughput (~30-40 min).
+7. Calibrate temperature on val NLL (extended grid 0.3-5.0) and write
+   `temperature.json` next to the checkpoint.
+8. Export `detector.pt`/`detector.onnx`, `classifier.pth`/`classifier.onnx`/
+   `classifier_int8.onnx`, and `classes.json` (the notebook regenerates
+   `classes.json` with the alphabetical class list, val accuracy
+   numbers and the v4.7 model version).
 
-Drop the three files into `server/models/` and restart the server — the
-pipeline auto-detects real vs demo mode.
+Drop the model files into `server/models/` and restart the server — the
+pipeline auto-detects real vs demo mode and prefers ONNX INT8 when
+present.
 
 ---
 
@@ -340,7 +377,7 @@ server/
 ├── main.py                  # FastAPI server (endpoints, middleware)
 ├── pipeline.py              # Two-stage pipeline orchestrator
 ├── detector.py              # Stage 1: YOLOv8n (+ HSV demo fallback)
-├── classifier.py            # Stage 2: EfficientNetV2-S
+├── classifier.py            # Stage 2: EfficientNet-B0 (auto-detects V2-S too)
 ├── diseases_data.py         # Bilingual houseplant disease database
 ├── train_notebook.ipynb     # Colab-only end-to-end training notebook
 ├── requirements.txt         # Server dependencies
@@ -348,7 +385,7 @@ server/
 ├── docker-compose.yml       # Compose stack for production
 └── models/
     ├── detector.pt          # YOLOv8n weights
-    ├── classifier.pth       # EfficientNetV2-S weights
+    ├── classifier.pth       # EfficientNet-B0 weights (or V2-S if v4.5)
     └── classes.json         # Canonical class list + model version
 ```
 

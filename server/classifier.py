@@ -5,7 +5,7 @@ Classifies a (preferably cropped) leaf region into one of 8
 houseplant-relevant condition classes including the rejection class
 ``not_a_plant``. Class names + input resolution live in
 ``models/classes.json``; if the file is missing a built-in default is
-used (v4.5 = EfficientNetV2-S @ 320).
+used (v4.7 = EfficientNet-B0 @ 240).
 
 The classifier prefers ONNX Runtime (CPU EP) when an ``.onnx`` weight
 is present — that's the path the training notebook now produces and
@@ -16,8 +16,9 @@ the recommended default for production deployment. Loading order:
 3. ``classifier.pth``       (PyTorch fallback)
 
 The PyTorch fallback auto-detects the backbone from the state dict
-shape so a v4.0/4.1 ``classifier.pth`` (EfficientNet-B0 @ 256) still
-loads correctly alongside the v4.5 V2-S @ 320 checkpoint.
+shape, so v4.0/4.1/4.7 ``classifier.pth`` (EfficientNet-B0 @ 240) and
+v4.5 ``classifier.pth`` (EfficientNetV2-S @ 320) checkpoints both
+load cleanly without server-side reconfiguration.
 
 If none of those load successfully we fall back to a colour heuristic
 so the server is usable in demo mode.
@@ -34,16 +35,16 @@ from PIL import Image
 
 logger = logging.getLogger(__name__)
 
-# Match the v4.5 training notebook (EfficientNetV2-S @ 320). Older
-# v4.0/4.1 checkpoints used 256 (EfficientNet-B0); we pick the right
-# value at load time from classes.json. This default is only used when
-# classes.json is missing AND the checkpoint resolution can't be
-# inferred from the head — keep it pinned to the latest train recipe.
-DEFAULT_IMG_SIZE = 320
-# Legacy fallback size for v4.0/4.1 EfficientNet-B0 checkpoints when
+# Match the v4.7 training notebook (EfficientNet-B0 @ 240). The v4.5
+# notebook trained EfficientNetV2-S @ 320 — we still honour that when
+# classes.json declares it. This default is only used when classes.json
+# is missing AND the backbone resolution can't be inferred from the
+# state dict — keep it pinned to the latest train recipe.
+DEFAULT_IMG_SIZE = 240
+# Legacy fallback size for v4.5 EfficientNetV2-S checkpoints when
 # classes.json is missing. We still honour classes.json["training"]
 # ["img_size"] when present (single source of truth).
-LEGACY_B0_IMG_SIZE = 256
+LEGACY_V2S_IMG_SIZE = 320
 
 # Alphabetical — must match training-time ``sorted(ImageFolder.classes)``.
 # Mirrors what the v4.0 notebook actually shipped (8 classes). The
@@ -221,14 +222,18 @@ class DiseaseClassifier:
             self.CLASS_NAMES = self._fit_class_names(self.CLASS_NAMES, ckpt_classes)
             self.NUM_CLASSES = ckpt_classes
 
-        # Pick the backbone based on the feature-vector width — distinguishes
-        # EfficientNet-B0 (1280) from EfficientNetV2-S (1280 too, but state
-        # dict shape on the classifier weight differs in dimension on prior
-        # blocks). The reliable signal: V2-S checkpoints contain
-        # ``features.6.0.block.0.0.weight`` while B0 has ``features.6.0.block.0.0.weight``
-        # too — instead, check whether key ``features.7.0.block.0.0.weight`` exists
-        # (B0 has 8 stages: 0..7; V2-S has 7: 0..6).
-        is_v2s = "features.6.0.block.0.0.weight" in state and "features.7.0.block.0.0.weight" not in state
+        # Distinguish B0 from V2-S by Sequential length:
+        #   torchvision EfficientNet-B0 has 9 entries in `features` (stem +
+        #   blocks 1..7 + head conv = indices 0..8). MBConv blocks expose
+        #   ``features.{i}.0.block.0.0.weight`` for i in 1..7.
+        #   torchvision EfficientNet-V2-S has 8 entries (stem + Fused/MBConv
+        #   blocks 1..6 + head conv = indices 0..7). The head conv at
+        #   features.7 has no `block.` child.
+        # So the cleanest signal: presence of ``features.7.0.block.*`` (a
+        # block, not the head conv) → B0; absence → V2-S.
+        v2s_signal = "features.6.0.block.0.0.weight" in state
+        b0_signal = "features.7.0.block.0.0.weight" in state
+        is_v2s = v2s_signal and not b0_signal
         if is_v2s:
             net = models.efficientnet_v2_s(weights=None)
         else:
@@ -240,11 +245,11 @@ class DiseaseClassifier:
 
         self._torch_model = net
         self._torch_device = torch.device("cpu")
-        # If classes.json was missing we have to guess. The v4.5 train
-        # recipe pins V2-S to 320, B0 legacy was 256. Honour whatever
+        # If classes.json was missing we have to guess. The v4.7 train
+        # recipe pins B0 to 240; v4.5 V2-S used 320. Honour whatever
         # came from classes.json when present (img_size != default).
-        if not is_v2s and self.img_size == DEFAULT_IMG_SIZE:
-            self.img_size = LEGACY_B0_IMG_SIZE
+        if is_v2s and self.img_size == DEFAULT_IMG_SIZE:
+            self.img_size = LEGACY_V2S_IMG_SIZE
         self.is_loaded = True
         self.backend = "torch"
         logger.info(

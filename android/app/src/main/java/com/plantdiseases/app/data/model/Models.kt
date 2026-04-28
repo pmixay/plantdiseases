@@ -95,6 +95,12 @@ data class ScanHistoryItem(
     val diseaseNameRu: String,
     val confidence: Float,
     val isHealthy: Boolean,
+    /**
+     * True when the scan was classified as `not_a_plant`. Mutually
+     * exclusive with `isHealthy`; `isHealthy=false && isNotAPlant=false`
+     * means a real disease was diagnosed.
+     */
+    val isNotAPlant: Boolean,
     val timestamp: Long
 )
 

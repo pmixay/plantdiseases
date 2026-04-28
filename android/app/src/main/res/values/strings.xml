@@ -37,6 +37,11 @@
     <string name="confidence_format">%d%%</string>
     <string name="status_healthy">Healthy</string>
     <string name="status_disease">Disease Detected</string>
+    <string name="status_not_a_plant">Not a Plant</string>
+    <string name="not_a_plant_diagnosis_name">Not a plant in frame</string>
+    <string name="not_a_plant_result_title">This doesn\'t look like a plant</string>
+    <string name="not_a_plant_result_body">The model couldn\'t find a plant leaf in this photo. Try retaking the picture so the leaf fills most of the frame, with steady hands and good lighting.</string>
+    <string name="not_a_plant_retry_hint">Tip: get closer to a single leaf on a plain background.</string>
     <string name="description_label">Description</string>
     <string name="treatment_label">Treatment</string>
     <string name="prevention_label">Prevention</string>
@@ -146,11 +151,11 @@
     <string name="model_params">Parameters</string>
     <string name="model_classes">Classes</string>
     <string name="model_pipeline">Pipeline</string>
-    <string name="model_arch_value">YOLOv8n + EfficientNetV2-S</string>
-    <string name="model_params_value">~24M total</string>
-    <string name="model_classes_value">8 diseases + healthy + not-a-plant</string>
+    <string name="model_arch_value">YOLOv8n + EfficientNet-B0</string>
+    <string name="model_params_value">~8M total</string>
+    <string name="model_classes_value">7 diseases + healthy + not-a-plant</string>
     <string name="model_pipeline_value">Two-stage: locate → classify</string>
-    <string name="model_description">Stage 1 (YOLOv8n) finds every leaf in the photo and flags the ones that look diseased. Stage 2 (EfficientNetV2-S) classifies the cropped diseased region and rejects frames without a plant.</string>
+    <string name="model_description">Stage 1 (YOLOv8n) locates every leaf in the photo. Stage 2 (EfficientNet-B0 @ 240 px) classifies the cropped leaf region into one of 7 houseplant diseases or healthy, and rejects frames without a plant via a dedicated not-a-plant class plus an MSP/OOD gate.</string>
 
     <!-- Rate limit -->
     <string name="server_busy">Server Busy</string>

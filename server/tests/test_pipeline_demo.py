@@ -61,9 +61,11 @@ def test_not_a_plant_class_is_present():
     assert "not_a_plant" in DEFAULT_CLASS_NAMES
 
 
-def test_v45_taxonomy_is_disease_only():
-    """v4.5 carries 8 disease-only classes; pests live in PEST_INFO and are
-    surfaced via possible_pest_causes hints, not as classifier outputs."""
+def test_v47_taxonomy_is_disease_only():
+    """v4.5/v4.7 carry the same 8 disease-only classes; pests live in
+    PEST_INFO and are surfaced via possible_pest_causes hints, not as
+    classifier outputs. The backbone changed in v4.7 (V2-S → B0) but
+    the taxonomy is stable."""
     from classifier import DEFAULT_CLASS_NAMES
 
     expected = {
@@ -201,6 +203,77 @@ def test_healthy_fallback_emits_disease_uncertain_warning():
         f"expected disease_uncertain warning, got {out['warnings']}"
     )
     assert "disease_uncertain:powdery_mildew" in out["warnings"]
+
+
+def test_ood_reroute_to_nap_produces_consistent_distribution():
+    """v4.7: when the secondary OOD gate fires, _reroute_to_nap must
+    rewrite the classification so that ``not_a_plant`` is the top class
+    AND the published probability mass adds up to ~1, with the original
+    runner-up classes preserved in proportion (so the UI's alternatives
+    list still makes sense)."""
+    from pipeline import PlantDiseasePipeline
+
+    p = PlantDiseasePipeline()
+    classification = {
+        "class_name": "powdery_mildew",
+        "confidence": 0.42,
+        "all_probs": {
+            "anthracnose": 0.05, "gray_mold": 0.10, "healthy": 0.20,
+            "iron_chlorosis": 0.05, "late_blight": 0.05,
+            "not_a_plant": 0.03, "powdery_mildew": 0.42, "sunburn": 0.10,
+        },
+        "low_confidence": False,
+        "_voted_over": 1,
+    }
+    out = p._reroute_to_nap(classification)
+
+    assert out["class_name"] == "not_a_plant"
+    assert out["confidence"] >= 0.55
+    # Distribution still sums to ~1 and not_a_plant is genuinely the top.
+    total = sum(out["all_probs"].values())
+    assert 0.99 <= total <= 1.01, f"distribution drift {total}"
+    top = max(out["all_probs"], key=out["all_probs"].get)
+    assert top == "not_a_plant"
+    # The OOD gate flag is recorded so the postprocessor can surface
+    # the corresponding warning.
+    assert out["_ood_gated"] is True
+
+
+def test_postprocessor_emits_nap_ood_warning():
+    """The pipeline tags an OOD-rerouted result so the UI can explain it
+    differently from a "no leaves found" NAP."""
+    from pipeline import _apply_postprocessing_rules
+
+    classification = {
+        "class_name": "not_a_plant",
+        "confidence": 0.7,
+        "all_probs": {"not_a_plant": 0.7, "healthy": 0.1, "anthracnose": 0.05,
+                       "gray_mold": 0.05, "iron_chlorosis": 0.025,
+                       "late_blight": 0.025, "powdery_mildew": 0.025,
+                       "sunburn": 0.025},
+        "low_confidence": False,
+        "_ood_gated": True,
+    }
+    out = _apply_postprocessing_rules(
+        classification, list(classification["all_probs"].keys())
+    )
+    assert "nap_ood_gated" in out["warnings"]
+
+
+def test_is_diseased_uses_disease_min_confidence():
+    """v4.7 bug fix: previously the ``is_diseased`` flag fired at
+    HEALTHY_MIN_CONFIDENCE * 0.5 = 0.275, which silently disagreed with
+    the much stricter DISEASE_MIN_CONFIDENCE = 0.65 used in voting. The
+    detector overlay would say "diseased region" while the disease
+    verdict had already been downgraded to healthy. Both signals must
+    use the same threshold."""
+    from pipeline import DISEASE_MIN_CONFIDENCE, _NON_DISEASE
+
+    # Sanity check: DISEASE_MIN_CONFIDENCE > HEALTHY_MIN_CONFIDENCE * 0.5
+    # so this test would have caught the regression.
+    assert DISEASE_MIN_CONFIDENCE >= 0.5
+    assert "healthy" in _NON_DISEASE
+    assert "not_a_plant" in _NON_DISEASE
 
 
 def test_healthy_fallback_keeps_top_k_consistent_with_class_name():

@@ -133,7 +133,13 @@ class ProfileFragment : Fragment() {
                 isFirstLoad = false
             }
 
-            if (stats.totalScans == 0) {
+            // `totalScans` from ScanStats counts plant scans only (healthy +
+            // real disease). NAP rows are tracked separately and do not
+            // contribute to health rate or "most common disease" — but
+            // they DO count toward the empty-state check, otherwise users
+            // who only have NAP scans see an "empty" profile.
+            val totalRecorded = stats.totalScans + stats.notAPlantCount
+            if (totalRecorded == 0) {
                 binding.statsLayout.visibility = View.GONE
                 binding.emptyState.visibility = View.VISIBLE
                 binding.btnClearHistory.visibility = View.GONE
@@ -144,10 +150,15 @@ class ProfileFragment : Fragment() {
             binding.emptyState.visibility = View.GONE
             binding.btnClearHistory.visibility = View.VISIBLE
 
-            binding.tvTotalScans.text = stats.totalScans.toString()
+            // The "Total Scans" card surfaces the full recorded count so
+            // it matches the gallery row count; NAP filtering only affects
+            // health-rate and most-common-disease semantics.
+            binding.tvTotalScans.text = totalRecorded.toString()
             binding.tvHealthyCount.text = stats.healthyCount.toString()
             binding.tvDiseasedCount.text = stats.diseasedCount.toString()
 
+            // Health rate is over plant scans only — NAP rows don't fail
+            // a plant health check, they're a UX retake prompt.
             val healthRate = if (stats.totalScans > 0) {
                 "${(stats.healthyCount * 100 / stats.totalScans)}%"
             } else "—"
