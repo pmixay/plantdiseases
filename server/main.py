@@ -1,9 +1,10 @@
 """
-PlantDiseases Server — FastAPI backend with the PlantScope v3.x two-stage
+PlantDiseases Server — FastAPI backend with the PlantScope v4.5 two-stage
 houseplant disease pipeline.
 
-Stage 1:  YOLOv8n            — locate leaves, flag diseased regions
-Stage 2:  EfficientNet-B0    — classify the primary leaf bbox (ONNX INT8)
+Stage 1:  YOLOv8n            — locate leaves (single class)
+Stage 2:  EfficientNetV2-S   — classify cropped leaf regions; mean-voted
+                               across bboxes, ONNX (INT8 dynamic on MatMul)
 """
 
 import asyncio
@@ -64,7 +65,7 @@ logger = logging.getLogger("plantdiseases")
 # ── Configuration ────────────────────────────────────────────────────
 MODELS_DIR = Path("models")
 DETECTOR_PATH = MODELS_DIR / "detector.pt"       # YOLOv8 weights (auto-prefers detector.onnx if present)
-CLASSIFIER_PATH = MODELS_DIR / "classifier.pth"  # EfficientNet-B0 (auto-prefers classifier_int8.onnx → classifier.onnx)
+CLASSIFIER_PATH = MODELS_DIR / "classifier.pth"  # EfficientNetV2-S (auto-prefers classifier_int8.onnx → classifier.onnx)
 
 MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE", 10 * 1024 * 1024))  # 10 MB
 MAX_IMAGE_DIMENSION = int(os.getenv("MAX_IMAGE_DIMENSION", 4096))

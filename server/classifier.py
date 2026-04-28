@@ -1,10 +1,11 @@
 """
 Stage 2 — Houseplant Disease Classifier.
 
-Classifies a (preferably cropped) leaf region into one of up to 8
+Classifies a (preferably cropped) leaf region into one of 8
 houseplant-relevant condition classes including the rejection class
-``not_a_plant``. Class names live in ``models/classes.json``; if the
-file is missing a built-in default is used.
+``not_a_plant``. Class names + input resolution live in
+``models/classes.json``; if the file is missing a built-in default is
+used (v4.5 = EfficientNetV2-S @ 320).
 
 The classifier prefers ONNX Runtime (CPU EP) when an ``.onnx`` weight
 is present — that's the path the training notebook now produces and
@@ -12,7 +13,11 @@ the recommended default for production deployment. Loading order:
 
 1. ``classifier_int8.onnx`` (dynamic-quantized, smallest + fastest)
 2. ``classifier.onnx``      (FP32 ONNX)
-3. ``classifier.pth``       (PyTorch fallback, EfficientNet-B0)
+3. ``classifier.pth``       (PyTorch fallback)
+
+The PyTorch fallback auto-detects the backbone from the state dict
+shape so a v4.0/4.1 ``classifier.pth`` (EfficientNet-B0 @ 256) still
+loads correctly alongside the v4.5 V2-S @ 320 checkpoint.
 
 If none of those load successfully we fall back to a colour heuristic
 so the server is usable in demo mode.
@@ -29,10 +34,16 @@ from PIL import Image
 
 logger = logging.getLogger(__name__)
 
-# EfficientNet-B0 native input size used by the v4 training notebook.
-# Falls back to 300 for legacy v3.x EfficientNetV2-S checkpoints — the
-# matching ``IMG_SIZE`` is read from classes.json when available.
-DEFAULT_IMG_SIZE = 256
+# Match the v4.5 training notebook (EfficientNetV2-S @ 320). Older
+# v4.0/4.1 checkpoints used 256 (EfficientNet-B0); we pick the right
+# value at load time from classes.json. This default is only used when
+# classes.json is missing AND the checkpoint resolution can't be
+# inferred from the head — keep it pinned to the latest train recipe.
+DEFAULT_IMG_SIZE = 320
+# Legacy fallback size for v4.0/4.1 EfficientNet-B0 checkpoints when
+# classes.json is missing. We still honour classes.json["training"]
+# ["img_size"] when present (single source of truth).
+LEGACY_B0_IMG_SIZE = 256
 
 # Alphabetical — must match training-time ``sorted(ImageFolder.classes)``.
 # Mirrors what the v4.0 notebook actually shipped (8 classes). The
@@ -229,9 +240,11 @@ class DiseaseClassifier:
 
         self._torch_model = net
         self._torch_device = torch.device("cpu")
-        # Override img_size for V2-S legacy checkpoints when classes.json missed it.
-        if is_v2s and self.img_size == DEFAULT_IMG_SIZE:
-            self.img_size = 300
+        # If classes.json was missing we have to guess. The v4.5 train
+        # recipe pins V2-S to 320, B0 legacy was 256. Honour whatever
+        # came from classes.json when present (img_size != default).
+        if not is_v2s and self.img_size == DEFAULT_IMG_SIZE:
+            self.img_size = LEGACY_B0_IMG_SIZE
         self.is_loaded = True
         self.backend = "torch"
         logger.info(
@@ -256,6 +269,26 @@ class DiseaseClassifier:
             return self._classify_torch(img)
         return self._classify_demo(img)
 
+    def classify_batch(self, imgs: list[Image.Image]) -> list[dict]:
+        """Classify N crops in a single forward pass when possible.
+
+        ONNX (the production path) and PyTorch both support dynamic
+        batch — the v4.5 export sets ``dynamic_axes={'input':{0:'batch'}}``
+        — so we save the per-call setup cost (~5-10 ms each on CPU) by
+        running one stacked inference. Demo mode falls back to per-image
+        evaluation; the heuristic is cheap enough that batching adds no
+        value there.
+
+        Returns one dict per input in the same order as ``imgs``.
+        """
+        if not imgs:
+            return []
+        if self.backend == "onnx":
+            return self._classify_onnx_batch(imgs)
+        if self.backend == "torch":
+            return self._classify_torch_batch(imgs)
+        return [self._classify_demo(im) for im in imgs]
+
     # ── preprocessing (NumPy) ────────────────────────────────────────
 
     def _preprocess(self, img: Image.Image) -> np.ndarray:
@@ -270,6 +303,10 @@ class DiseaseClassifier:
         arr = (arr - NORM_MEAN) / NORM_STD
         return np.ascontiguousarray(arr.transpose(2, 0, 1)[None], dtype=np.float32)
 
+    def _preprocess_batch(self, imgs: list[Image.Image]) -> np.ndarray:
+        """Stack N preprocessed crops into a single (N,3,H,W) tensor."""
+        return np.concatenate([self._preprocess(im) for im in imgs], axis=0)
+
     # ── ONNX inference ───────────────────────────────────────────────
 
     def _classify_onnx(self, img: Image.Image) -> dict:
@@ -277,6 +314,15 @@ class DiseaseClassifier:
         logits = self._onnx_session.run(None, {self._onnx_input_name: x})[0][0]
         probs = _softmax(logits)
         return self._format_result(probs)
+
+    def _classify_onnx_batch(self, imgs: list[Image.Image]) -> list[dict]:
+        x = self._preprocess_batch(imgs)
+        # logits: (N, num_classes)
+        logits = self._onnx_session.run(None, {self._onnx_input_name: x})[0]
+        out: list[dict] = []
+        for i in range(logits.shape[0]):
+            out.append(self._format_result(_softmax(logits[i])))
+        return out
 
     # ── PyTorch inference ────────────────────────────────────────────
 
@@ -287,6 +333,13 @@ class DiseaseClassifier:
             logits = self._torch_model(x)[0].cpu().numpy()
         probs = _softmax(logits)
         return self._format_result(probs)
+
+    def _classify_torch_batch(self, imgs: list[Image.Image]) -> list[dict]:
+        import torch
+        x = torch.from_numpy(self._preprocess_batch(imgs))
+        with torch.no_grad():
+            logits = self._torch_model(x).cpu().numpy()
+        return [self._format_result(_softmax(logits[i])) for i in range(logits.shape[0])]
 
     def _format_result(self, probs: np.ndarray) -> dict:
         top_idx = int(np.argmax(probs))
@@ -324,24 +377,28 @@ class DiseaseClassifier:
             return {"class_name": "unknown", "confidence": 0.0,
                     "all_probs": {}, "low_confidence": True}
 
+        # Demo branches map to the v4.5 8-class taxonomy. Pests
+        # (spider_mites/mealybug/scale_insect) and the retired buckets
+        # (leaf_spot, nutrient_deficiency) were removed in v4.5 and
+        # their references cleaned out here in v4.6.
         if green_ratio < 0.32 and "not_a_plant" in names:
             cls, conf = "not_a_plant", 0.60 + rng.uniform(0, 0.20)
         elif green_ratio > 0.42 and "healthy" in names:
             cls, conf = "healthy", 0.78 + rng.uniform(0, 0.15)
         elif brightness > 190 and g_mean < 170:
-            pool = [n for n in ("powdery_mildew",) if n in names]
+            pool = [n for n in ("powdery_mildew", "gray_mold") if n in names]
             cls = rng.choice(pool) if pool else names[0]
             conf = 0.55 + rng.uniform(0, 0.25)
         elif brown_ratio > 0.42:
-            pool = [n for n in ("leaf_spot", "nutrient_deficiency") if n in names]
+            pool = [n for n in ("anthracnose", "late_blight", "sunburn") if n in names]
             cls = rng.choice(pool) if pool else names[0]
             conf = 0.55 + rng.uniform(0, 0.25)
         elif r_mean > g_mean and r_mean > 140:
-            pool = [n for n in ("scale_insect", "leaf_spot") if n in names]
+            pool = [n for n in ("anthracnose", "iron_chlorosis") if n in names]
             cls = rng.choice(pool) if pool else names[0]
             conf = 0.55 + rng.uniform(0, 0.25)
         else:
-            pool = [n for n in ("spider_mites", "mealybug") if n in names]
+            pool = [n for n in ("iron_chlorosis", "gray_mold") if n in names]
             cls = rng.choice(pool) if pool else names[0]
             conf = 0.50 + rng.uniform(0, 0.25)
 
