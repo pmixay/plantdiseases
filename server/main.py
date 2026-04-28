@@ -1,10 +1,16 @@
 """
-PlantDiseases Server — FastAPI backend with the PlantScope v4.5 two-stage
+PlantDiseases Server — FastAPI backend with the PlantScope v4.7 two-stage
 houseplant disease pipeline.
 
 Stage 1:  YOLOv8n            — locate leaves (single class)
-Stage 2:  EfficientNetV2-S   — classify cropped leaf regions; mean-voted
-                               across bboxes, ONNX (INT8 dynamic on MatMul)
+Stage 2:  EfficientNet-B0    — classify cropped leaf regions; mean-voted
+                               across bboxes, ONNX (INT8 dynamic on MatMul).
+                               v4.5 trained EfficientNetV2-S @ 320; v4.7
+                               switched to B0 @ 240 for a better fit to the
+                               ~7-8k dataset and ~4× faster CPU inference.
+                               The classifier loader auto-detects either
+                               backbone from the state dict so old V2-S
+                               checkpoints keep working.
 """
 
 import asyncio
@@ -65,7 +71,11 @@ logger = logging.getLogger("plantdiseases")
 # ── Configuration ────────────────────────────────────────────────────
 MODELS_DIR = Path("models")
 DETECTOR_PATH = MODELS_DIR / "detector.pt"       # YOLOv8 weights (auto-prefers detector.onnx if present)
-CLASSIFIER_PATH = MODELS_DIR / "classifier.pth"  # EfficientNetV2-S (auto-prefers classifier_int8.onnx → classifier.onnx)
+# Classifier: v4.7 = EfficientNet-B0 @ 240 ; v4.5 = EfficientNetV2-S @ 320.
+# The loader (classifier.py:_load_pytorch_model) auto-detects the backbone
+# from the state dict shape; classes.json carries the canonical img_size.
+# Production preference order: classifier_int8.onnx → classifier.onnx → .pth.
+CLASSIFIER_PATH = MODELS_DIR / "classifier.pth"
 
 MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE", 10 * 1024 * 1024))  # 10 MB
 MAX_IMAGE_DIMENSION = int(os.getenv("MAX_IMAGE_DIMENSION", 4096))
@@ -354,12 +364,26 @@ async def health_check():
 
 @app.get("/api/version")
 async def version():
-    """Server version and model architecture."""
+    """Server version and model architecture.
+
+    The classifier architecture string is derived from the actually-loaded
+    backend so the response stays accurate across v4.5 (EfficientNetV2-S
+    @ 320) and v4.7 (EfficientNet-B0 @ 240) checkpoints. In demo mode we
+    surface the heuristic explicitly.
+    """
+    if pipeline is None:
+        cls_arch = "unknown"
+    elif not pipeline.classifier.is_loaded:
+        cls_arch = "demo (HSV heuristic)"
+    else:
+        backend = getattr(pipeline.classifier, "backend", "unknown")
+        img_size = getattr(pipeline.classifier, "img_size", 0)
+        cls_arch = f"EfficientNet (torchvision) @ {img_size} px / {backend} backend"
     return {
         "version": APP_VERSION,
         "pipeline_mode": pipeline.mode if pipeline else "unknown",
         "detector_arch": "YOLOv8n (single-class leaf)",
-        "classifier_arch": "EfficientNet-B0 (ONNX INT8)",
+        "classifier_arch": cls_arch,
         "stages": 2,
         "focus": "houseplants",
     }

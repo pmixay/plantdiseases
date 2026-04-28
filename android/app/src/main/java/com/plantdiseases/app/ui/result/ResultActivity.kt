@@ -148,7 +148,12 @@ class ResultActivity : AppCompatActivity() {
 
     private fun displayResult(scan: ScanEntity, repository: ScanRepository) {
         val isRu = LocaleHelper.isRussian(this)
-        val diseaseName = if (isRu) scan.diseaseNameRu else scan.diseaseName
+        val isNotAPlant = isNotAPlantScan(scan, repository)
+        val diseaseName = when {
+            isNotAPlant -> getString(R.string.not_a_plant_diagnosis_name)
+            isRu -> scan.diseaseNameRu
+            else -> scan.diseaseName
+        }
 
         binding.apply {
             // Image
@@ -157,13 +162,10 @@ class ResultActivity : AppCompatActivity() {
                 .transform(CenterCrop(), RoundedCorners(24))
                 .into(ivPlant)
 
-            // YOLOv8 bbox overlay — show every detected leaf, emphasise
-            // the primary one (the box that Stage 2 classified). v4 detector
-            // is single-class ("leaf") so the disease colour is driven by
-            // the overall scan verdict + primary-region flag, not by a
-            // per-bbox class label.
+            // YOLOv8 bbox overlay — only when we actually found a diseased
+            // region. NAP and healthy verdicts skip the overlay.
             val regions = repository.parseRegions(scan.regions)
-            if (!scan.isHealthy && regions.isNotEmpty()) {
+            if (!isNotAPlant && !scan.isHealthy && regions.isNotEmpty()) {
                 val origBounds = ImageUtils.getImageDimensions(scan.imagePath)
                 val primaryIdx = scan.primaryRegionIndex ?: -1
                 val overlayBoxes = regions.mapIndexed { i, r ->
@@ -189,46 +191,76 @@ class ResultActivity : AppCompatActivity() {
             tvStickyName.text = diseaseName
 
             val confidencePercent = (scan.confidence * 100).toInt()
-            tvConfidence.text = getString(R.string.confidence_format, confidencePercent)
-            tvStickyConfidence.text = getString(R.string.confidence_format, confidencePercent)
+            // For NAP we don't expose a confidence bar — the "verdict" itself
+            // is "we can't classify this". Showing 100% confidence next to
+            // a "not a plant" reads as the model being certain about the
+            // diagnosis, which is misleading.
+            if (isNotAPlant) {
+                tvConfidence.visibility = View.GONE
+                progressConfidence.visibility = View.GONE
+                tvStickyConfidence.visibility = View.GONE
+            } else {
+                tvConfidence.visibility = View.VISIBLE
+                progressConfidence.visibility = View.VISIBLE
+                tvStickyConfidence.visibility = View.VISIBLE
+                tvConfidence.text = getString(R.string.confidence_format, confidencePercent)
+                tvStickyConfidence.text = getString(R.string.confidence_format, confidencePercent)
+                progressConfidence.max = 100
+                progressConfidence.progress = 0
+                val confidenceAnimator = ValueAnimator.ofInt(0, confidencePercent).apply {
+                    duration = 800
+                    interpolator = DecelerateInterpolator(2.5f)
+                    addUpdateListener { anim ->
+                        progressConfidence.progress = anim.animatedValue as Int
+                    }
+                }
+                confidenceAnimator.start()
+            }
 
-            // Animate confidence bar with easeOutCubic
-            progressConfidence.max = 100
-            progressConfidence.progress = 0
-            val confidenceAnimator = ValueAnimator.ofInt(0, confidencePercent).apply {
-                duration = 800
-                interpolator = DecelerateInterpolator(2.5f)
-                addUpdateListener { anim ->
-                    progressConfidence.progress = anim.animatedValue as Int
+            when {
+                isNotAPlant -> {
+                    cardStatus.setCardBackgroundColor(getColor(R.color.neutral_blue_bg))
+                    tvStatusLabel.text = getString(R.string.status_not_a_plant)
+                    tvStatusLabel.setTextColor(getColor(R.color.neutral_blue))
+                    ivStatusIcon.setImageResource(R.drawable.ic_warning)
+                    ivStatusIcon.setColorFilter(getColor(R.color.neutral_blue))
+                }
+                scan.isHealthy -> {
+                    cardStatus.setCardBackgroundColor(getColor(R.color.healthy_green_bg))
+                    tvStatusLabel.text = getString(R.string.status_healthy)
+                    tvStatusLabel.setTextColor(getColor(R.color.healthy_green))
+                    ivStatusIcon.setImageResource(R.drawable.ic_healthy)
+                    ivStatusIcon.clearColorFilter()
+                }
+                else -> {
+                    cardStatus.setCardBackgroundColor(getColor(R.color.disease_red_bg))
+                    tvStatusLabel.text = getString(R.string.status_disease)
+                    tvStatusLabel.setTextColor(getColor(R.color.disease_red))
+                    ivStatusIcon.setImageResource(R.drawable.ic_disease)
+                    ivStatusIcon.clearColorFilter()
                 }
             }
-            confidenceAnimator.start()
 
-            if (scan.isHealthy) {
-                cardStatus.setCardBackgroundColor(getColor(R.color.healthy_green_bg))
-                tvStatusLabel.text = getString(R.string.status_healthy)
-                tvStatusLabel.setTextColor(getColor(R.color.healthy_green))
-                ivStatusIcon.setImageResource(R.drawable.ic_healthy)
+            // Description: for NAP we replace it with a dedicated retry hint
+            // and silence the disease-only sections below.
+            if (isNotAPlant) {
+                tvDescription.text = getString(R.string.not_a_plant_result_body)
+                cardTreatmentPrevention.visibility = View.GONE
+                cardAlternatives.visibility = View.GONE
+                cardPestCauses.visibility = View.GONE
+                cardPipelineWarning.visibility = View.GONE
+                cardLowConfidence.visibility = View.GONE
+                // Share a "not a plant" verdict makes no sense — hide it.
+                btnShare.visibility = View.GONE
+                btnRetryAnalysis.visibility = View.VISIBLE
             } else {
-                cardStatus.setCardBackgroundColor(getColor(R.color.disease_red_bg))
-                tvStatusLabel.text = getString(R.string.status_disease)
-                tvStatusLabel.setTextColor(getColor(R.color.disease_red))
-                ivStatusIcon.setImageResource(R.drawable.ic_disease)
+                tvDescription.text = if (isRu) scan.descriptionRu else scan.description
+                btnShare.visibility = View.VISIBLE
+                buildPipelineWarnings(scan, repository)
+                buildAlternativeDiagnoses(scan, repository, isRu)
+                buildPestCauses(scan, isRu)
+                setupTreatmentPreventionTabs(scan, repository, isRu)
             }
-
-            // Description
-            tvDescription.text = if (isRu) scan.descriptionRu else scan.description
-
-            // Pipeline warnings (uncertain_healthy / detector_classifier_mismatch)
-            buildPipelineWarnings(scan, repository)
-
-            // Top-3 alternative diagnoses
-            buildAlternativeDiagnoses(scan, repository, isRu)
-
-            // v4.5: pests as hint section (could the same look come from a pest?)
-            buildPestCauses(scan, isRu)
-
-            setupTreatmentPreventionTabs(scan, repository, isRu)
 
             // Date
             tvDate.text = ImageUtils.formatTimestamp(scan.timestamp)
@@ -239,11 +271,11 @@ class ResultActivity : AppCompatActivity() {
                 shareWithImage(scan, repository, isRu)
             }
 
-            // Low confidence
-            if (scan.confidence < 0.5f && !scan.isHealthy) {
+            // Low confidence (only shown for actual disease diagnoses).
+            if (!isNotAPlant && scan.confidence < 0.5f && !scan.isHealthy) {
                 cardLowConfidence.visibility = View.VISIBLE
                 btnRetryAnalysis.visibility = View.VISIBLE
-            } else {
+            } else if (!isNotAPlant) {
                 cardLowConfidence.visibility = View.GONE
                 btnRetryAnalysis.visibility = View.GONE
             }
@@ -462,6 +494,26 @@ class ResultActivity : AppCompatActivity() {
             row.addView(progressBar)
             binding.alternativesLayout.addView(row)
         }
+    }
+
+    /**
+     * NAP detection. Two redundant signals:
+     * 1. The classifier's top-class key (`not_a_plant`) read from the
+     *    persisted `all_probs` JSON. This is locale-independent and the
+     *    canonical signal — it survives renaming the displayed disease.
+     * 2. The displayed disease name (EN or RU) as a fallback for legacy
+     *    rows from before `all_probs` was persisted.
+     *
+     * We accept either signal. If the persisted top class is missing
+     * (older scan without `all_probs`), we still recognise NAP via the
+     * stored localized name.
+     */
+    private fun isNotAPlantScan(scan: ScanEntity, repository: ScanRepository): Boolean {
+        val topKey = repository.parseAllProbs(scan.allProbs)
+            .entries.maxByOrNull { it.value }?.key
+        if (topKey == "not_a_plant") return true
+        return scan.diseaseName.equals("Not a Plant", ignoreCase = true) ||
+            scan.diseaseNameRu == "Не растение"
     }
 
     private fun buildPestCauses(scan: ScanEntity, isRu: Boolean) {

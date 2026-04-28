@@ -37,6 +37,11 @@
     <string name="confidence_format">%d%%</string>
     <string name="status_healthy">Здоровое</string>
     <string name="status_disease">Обнаружена болезнь</string>
+    <string name="status_not_a_plant">Не растение</string>
+    <string name="not_a_plant_diagnosis_name">В кадре нет растения</string>
+    <string name="not_a_plant_result_title">Это не похоже на растение</string>
+    <string name="not_a_plant_result_body">Модель не нашла лист растения на фото. Попробуйте сделать снимок так, чтобы лист занимал большую часть кадра, при ровном освещении и без дрожания.</string>
+    <string name="not_a_plant_retry_hint">Подсказка: подойдите ближе к одному листу на однотонном фоне.</string>
     <string name="description_label">Описание</string>
     <string name="treatment_label">Лечение</string>
     <string name="prevention_label">Профилактика</string>
@@ -146,11 +151,11 @@
     <string name="model_params">Параметры</string>
     <string name="model_classes">Классы</string>
     <string name="model_pipeline">Пайплайн</string>
-    <string name="model_arch_value">YOLOv8n + EfficientNetV2-S</string>
-    <string name="model_params_value">~24M всего</string>
-    <string name="model_classes_value">8 болезней + здоровое + не-растение</string>
+    <string name="model_arch_value">YOLOv8n + EfficientNet-B0</string>
+    <string name="model_params_value">~8M всего</string>
+    <string name="model_classes_value">7 болезней + здоровое + не-растение</string>
     <string name="model_pipeline_value">Двухэтапный: локализация → классификация</string>
-    <string name="model_description">Этап 1 (YOLOv8n) находит листья в кадре и выделяет те, что выглядят больными. Этап 2 (EfficientNetV2-S) классифицирует вырезанную область и отбрасывает кадры без растения.</string>
+    <string name="model_description">Этап 1 (YOLOv8n) находит листья в кадре. Этап 2 (EfficientNet-B0 @ 240 px) классифицирует вырезанную область листа в одну из 7 болезней комнатных растений или \"здоровое\", и отбрасывает кадры без растения через отдельный класс not-a-plant и MSP/OOD-фильтр.</string>
 
     <!-- Rate limit -->
     <string name="server_busy">Сервер занят</string>

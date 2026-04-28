@@ -80,6 +80,16 @@ DISEASE_MIN_CONFIDENCE = 0.65
 # the image — there's no good reason to commit to disease then.
 HEALTHY_FALLBACK_MARGIN = 0.15
 
+# v4.7: NAP (out-of-distribution) gate. The detector still occasionally
+# flags non-leaf textures (curtains, fabrics, hands at green tone) as
+# leaves with low confidence. When the detector confidence is below this
+# AND the classifier's max-softmax-probability (MSP) is also weak, we
+# route to ``not_a_plant`` instead of guessing a disease/healthy label.
+# Calibrated so noisy frames cleanly reject without sniping good shots:
+# real plant detections almost always score >0.45 by Stage 1.
+NAP_DETECTOR_CONF_FLOOR = 0.40
+NAP_CLASSIFIER_MSP_FLOOR = 0.45
+
 # Classes that are not "diseases" — used to compute disease scores
 # and to know when to apply the healthy fallback.
 _NON_DISEASE = {"healthy", "not_a_plant"}
@@ -202,9 +212,39 @@ class PlantDiseasePipeline:
         # v4.1: mean voting across valid bboxes (size-filtered).
         primary, classification = self._pick_primary(img, detections)
 
+        # v4.7: secondary NAP gate. Even if Stage 1 returned a bbox, a low
+        # detector confidence combined with a low classifier max-softmax
+        # is the classic OOD signature: the detector glommed onto a
+        # plant-coloured texture and the classifier had no clean answer
+        # to give. Route to NAP rather than emitting a guessed disease.
+        # We only override when the classifier *isn't* already saying NAP
+        # (no double-negative routing) and isn't confident in healthy
+        # (a confident healthy verdict is its own valid signal).
+        det_conf = float(stage1.get("confidence", 0.0))
+        cls_msp = float(classification.get("confidence", 0.0))
+        cls_name = classification["class_name"]
+        if (
+            cls_name not in _NON_DISEASE
+            and det_conf < NAP_DETECTOR_CONF_FLOOR
+            and cls_msp < NAP_CLASSIFIER_MSP_FLOOR
+            and "not_a_plant" in self.classifier.CLASS_NAMES
+        ):
+            logger.info(
+                "OOD gate triggered (det=%.3f<%.2f, msp=%.3f<%.2f) → not_a_plant",
+                det_conf, NAP_DETECTOR_CONF_FLOOR,
+                cls_msp, NAP_CLASSIFIER_MSP_FLOOR,
+            )
+            classification = self._reroute_to_nap(classification)
+
+        # v4.7 bug fix: previous threshold (HEALTHY_MIN_CONFIDENCE * 0.5
+        # = 0.275) was effectively no gate at all — almost any non-NAP
+        # non-healthy class above 27.5% softmax fired the diseased flag,
+        # which contradicted the much stricter DISEASE_MIN_CONFIDENCE
+        # logic in _pick_primary. Tighten to the same threshold so the
+        # detector overlay and the disease verdict can't disagree.
         is_diseased = (
             classification["class_name"] not in _NON_DISEASE
-            and classification["confidence"] >= HEALTHY_MIN_CONFIDENCE * 0.5
+            and classification["confidence"] >= DISEASE_MIN_CONFIDENCE
         )
 
         logger.info(
@@ -413,6 +453,44 @@ class PlantDiseasePipeline:
         }
         return primary_box, aggregated_cls
 
+    def _reroute_to_nap(self, classification: dict) -> dict:
+        """Rewrite an OOD-gated classification to a confident NAP verdict.
+
+        Used when the secondary NAP gate fires after voting. We don't
+        invent confidence — we report ``1 - cls_msp`` (i.e. how confident
+        we are it is NOT the suspected disease), bounded to a sensible
+        range so the UI doesn't claim 100% certainty about negativity
+        either. Probability mass is moved into ``not_a_plant`` and the
+        rest is renormalised so all_probs/top_k still sum to 1.
+        """
+        names = list(classification.get("all_probs", {}).keys()) or self.classifier.CLASS_NAMES
+        msp = float(classification.get("confidence", 0.0))
+        nap_conf = max(min(1.0 - msp, 0.95), 0.55)
+        probs = {n: 0.0 for n in names}
+        probs["not_a_plant"] = nap_conf
+        # Spread the rest over the remaining classes proportional to
+        # the original distribution (so e.g. a "healthy" runner-up
+        # still ranks above other diseases in the alternatives list).
+        leftover = 1.0 - nap_conf
+        original = classification.get("all_probs") or {}
+        residual_total = sum(
+            v for k, v in original.items() if k != "not_a_plant"
+        )
+        if residual_total > 0 and leftover > 0:
+            for k, v in original.items():
+                if k == "not_a_plant":
+                    continue
+                probs[k] = float(v) * (leftover / residual_total)
+        return {
+            "class_name": "not_a_plant",
+            "confidence": nap_conf,
+            "all_probs": probs,
+            "low_confidence": False,
+            "_voted_over": classification.get("_voted_over", 1),
+            "_suspected_disease": None,
+            "_ood_gated": True,
+        }
+
     @staticmethod
     def _extract_crop(img: Image.Image, region: Optional[dict]) -> Image.Image:
         if region is None:
@@ -481,6 +559,12 @@ def _apply_postprocessing_rules(
     suspected = classification.get("_suspected_disease")
     if suspected:
         warnings.append(f"disease_uncertain:{suspected}")
+
+    if classification.get("_ood_gated"):
+        # Helps the UI explain "we routed this to Not-a-Plant because the
+        # detector + classifier signals were both weak" rather than the
+        # default "no leaves found" explanation.
+        warnings.append("nap_ood_gated")
 
     if classification.get("low_confidence"):
         warnings.append("low_confidence")

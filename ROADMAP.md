@@ -2,9 +2,10 @@
 
 A short, honest record of what is still worth doing and what we
 deliberately skip. The project is an Android client plus a Python
-FastAPI pipeline: **YOLOv8n** locates leaves and flags diseased ones,
-**EfficientNetV2-S** classifies the primary diseased crop into nine
+FastAPI pipeline: **YOLOv8n** (single-class) locates leaves and
+**EfficientNet-B0 @ 240** classifies the primary leaf crop into eight
 houseplant-focused classes (including a `not_a_plant` rejection bucket).
+The classifier loader auto-detects v4.5 V2-S weights too.
 
 ---
 
@@ -14,12 +15,14 @@ houseplant-focused classes (including a `not_a_plant` rejection bucket).
 The pipeline runs in heuristic demo mode without
 `models/detector.pt` and `models/classifier.pth`. Use
 `server/train_notebook.ipynb` on a free Colab T4: the notebook
-downloads PlantDoc (detection + classification), COCO val2017 for
-negatives, and trains both stages in roughly 90 min. Realistic
-targets on that data mix are YOLOv8n mAP50 ≥ 0.60 for two-class leaf
-detection and EfficientNetV2-S top-1 ≥ 0.78 with a class-balanced
-sampler. The classifier owns the `not_a_plant` rejection class, so
-it can honestly refuse to diagnose bad frames instead of guessing.
+downloads PlantDoc, PlantVillage, iNat scrapes, COCO val2017 for
+negatives, and trains both stages in roughly 50-70 min on the v4.7
+recipe (B0 @ 240). Realistic targets on that data mix are YOLOv8n
+mAP50 ≥ 0.65 for single-class leaf detection and EfficientNet-B0
+top-1 ≥ 0.78 (TTA) with a class-balanced sampler. The classifier
+owns the `not_a_plant` rejection class plus the production-side
+MSP/OOD gate (`pipeline.py:NAP_*_FLOOR`), so it can honestly refuse
+to diagnose bad frames instead of guessing.
 
 ### 2. Plant tracker (My Garden)
 One Room entity (`Plant(id, name, species, createdAt, icon)`) plus a

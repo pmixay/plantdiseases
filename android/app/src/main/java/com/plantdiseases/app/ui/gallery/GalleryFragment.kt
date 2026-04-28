@@ -107,8 +107,10 @@ class GalleryFragment : Fragment() {
     private fun applyFilter() {
         val filtered = when (currentFilter) {
             Filter.ALL -> allScans
-            Filter.HEALTHY -> allScans.filter { it.isHealthy }
-            Filter.DISEASED -> allScans.filter { !it.isHealthy }
+            Filter.HEALTHY -> allScans.filter { it.isHealthy && !it.isNotAPlant }
+            // Diseased = real plant disease only. NAP rows are neither
+            // healthy nor diseased; they belong to neither bucket.
+            Filter.DISEASED -> allScans.filter { !it.isHealthy && !it.isNotAPlant }
         }
         adapter.submitList(filtered)
 
