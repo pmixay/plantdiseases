@@ -208,16 +208,10 @@ def test_healthy_fallback_keeps_top_k_consistent_with_class_name():
     suspected disease while class_name said healthy. Pipeline now
     redistributes mass so the chosen class is the actual top-1 in
     all_probs / top_k."""
-    from pipeline import PlantDiseasePipeline, MIN_CROP_SIZE
-    from PIL import Image
-    import numpy as np
+    from pipeline import _apply_postprocessing_rules
 
-    # Build a synthetic classification result that would trigger
-    # fallback (disease just above healthy by a tiny margin).
-    p = PlantDiseasePipeline()
-    # Drive the demo classifier deterministically, then simulate a
-    # fallback by post-construction. We test the public contract on
-    # the helper directly to avoid coupling to detector heuristics.
+    # Synthetic post-fallback classification: class_name="healthy" with
+    # a redistributed distribution (healthy now actually top-1).
     aggregated = {
         "class_name": "healthy",
         "confidence": 0.55,
@@ -229,7 +223,6 @@ def test_healthy_fallback_keeps_top_k_consistent_with_class_name():
         "low_confidence": False,
         "_suspected_disease": "powdery_mildew",
     }
-    from pipeline import _apply_postprocessing_rules
     out = _apply_postprocessing_rules(aggregated,
                                       list(aggregated["all_probs"].keys()))
 
