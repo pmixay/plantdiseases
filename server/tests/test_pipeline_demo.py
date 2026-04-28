@@ -267,7 +267,7 @@ def test_is_diseased_uses_disease_min_confidence():
     detector overlay would say "diseased region" while the disease
     verdict had already been downgraded to healthy. Both signals must
     use the same threshold."""
-    from pipeline import DISEASE_MIN_CONFIDENCE, _NON_DISEASE
+    from pipeline import _NON_DISEASE, DISEASE_MIN_CONFIDENCE
 
     # Sanity check: DISEASE_MIN_CONFIDENCE > HEALTHY_MIN_CONFIDENCE * 0.5
     # so this test would have caught the regression.
