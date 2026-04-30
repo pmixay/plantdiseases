@@ -33,13 +33,28 @@ from PIL import Image, UnidentifiedImageError
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response as StarletteResponse
 
+from ai_services import (
+    chat_metrics_snapshot,
+    chat_reply,
+    compare_progression,
+    generate_care_plan,
+    identify_species,
+)
 from diseases_data import DISEASES_DATABASE, pest_hints
 from pipeline import PlantDiseasePipeline
+
+try:  # Pydantic v2 — request bodies for the new endpoints.
+    from pydantic import BaseModel, Field
+except Exception:  # pragma: no cover
+    BaseModel = object  # type: ignore[assignment]
+
+    def Field(*args, **kwargs):  # type: ignore[no-redef]
+        return None
 
 try:
     from . import __version__ as APP_VERSION  # type: ignore
 except Exception:
-    APP_VERSION = "4.0.0"
+    APP_VERSION = "5.0.0"
 
 # Limit Pillow decompression to prevent zip-bomb DoS
 Image.MAX_IMAGE_PIXELS = 20_000_000  # ~4500×4500
@@ -379,11 +394,15 @@ async def version():
         backend = getattr(pipeline.classifier, "backend", "unknown")
         img_size = getattr(pipeline.classifier, "img_size", 0)
         cls_arch = f"EfficientNet (torchvision) @ {img_size} px / {backend} backend"
+    ensemble_size = (
+        pipeline.classifier.ensemble_size if pipeline and pipeline.classifier else 0
+    )
     return {
         "version": APP_VERSION,
         "pipeline_mode": pipeline.mode if pipeline else "unknown",
         "detector_arch": "YOLOv8n (single-class leaf)",
         "classifier_arch": cls_arch,
+        "ensemble_size": ensemble_size,
         "stages": 2,
         "focus": "houseplants",
     }
@@ -415,6 +434,7 @@ async def metrics():
         "uptime_seconds": round(uptime, 1),
         **snap,
         "pipeline_mode": pipeline.mode if pipeline else "unknown",
+        "ai_doctor": chat_metrics_snapshot(),
     }
 
 
@@ -597,6 +617,7 @@ async def analyze_image(image: UploadFile = File(...)):
         "is_healthy": is_healthy_effective,
         "detection": detection,
         "uncertainty": uncertainty,
+        "severity": result.get("severity", "low"),
         "all_probs": rounded_probs,
         "top_k": top_k_localised,
         "warnings": warnings,
@@ -605,6 +626,133 @@ async def analyze_image(image: UploadFile = File(...)):
         "elapsed_ms": result["elapsed_ms"],
         "server_version": APP_VERSION,
     })
+
+
+# ── v5.0: smart APIs ────────────────────────────────────────────────
+
+
+class ChatRequest(BaseModel):  # type: ignore[misc]
+    session_id: str = Field(..., min_length=1, max_length=64)
+    message: str = Field(..., min_length=1, max_length=2000)
+    locale: str = Field(default="en", max_length=8)
+    diagnosis: dict | None = None
+
+
+class CarePlanRequest(BaseModel):  # type: ignore[misc]
+    disease: str = Field(..., min_length=1, max_length=64)
+    species: str | None = Field(default=None, max_length=128)
+    light: str = Field(default="bright_indirect", max_length=32)
+    locale: str = Field(default="en", max_length=8)
+
+
+class ProgressionRequest(BaseModel):  # type: ignore[misc]
+    current: dict
+    previous: dict | None = None
+
+
+@app.post("/api/identify")
+async def identify_endpoint(image: UploadFile = File(...), organ: str = "leaf"):
+    """PlantNet-backed plant species identification.
+
+    Returns up to 5 candidate species with confidence scores. When the
+    PlantNet API key is missing we still respond 200 OK with
+    ``available: false`` so the client can render a graceful state
+    instead of an error toast. Cached server-side by SHA-256(image) +
+    organ to keep the daily PlantNet quota intact.
+    """
+    if pipeline is None:
+        _record_error()
+        raise HTTPException(status_code=503, detail="Server starting up, try again shortly")
+    if not image.content_type or image.content_type not in ALLOWED_CONTENT_TYPES:
+        _record_error()
+        raise HTTPException(status_code=400, detail="Unsupported image format")
+    contents = await image.read()
+    try:
+        _validate_image_bytes(contents)
+    except HTTPException:
+        _record_error()
+        raise
+    organ = (organ or "leaf").strip().lower()
+    if organ not in ("leaf", "flower", "fruit", "bark", "habit", "auto"):
+        organ = "leaf"
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(
+        _get_inference_executor(), identify_species, contents, organ,
+    )
+    return JSONResponse(content={**result, "organ": organ})
+
+
+@app.post("/api/chat")
+async def chat_endpoint(payload: ChatRequest, request: Request):
+    """AI Plant Doctor — Claude Haiku 4.5 with prompt caching.
+
+    The system prompt is long and stable so the SDK caches it for a
+    5-minute TTL on Anthropic's side, dropping the per-turn cost.
+    Per-session turn + token caps prevent budget overrun. Per-IP rate
+    limiting from the global middleware still applies.
+    """
+    client_ip = _client_ip(request)
+    result = await asyncio.get_running_loop().run_in_executor(
+        _get_inference_executor(),
+        lambda: chat_reply(
+            session_id=payload.session_id,
+            user_message=payload.message,
+            locale=payload.locale,
+            diagnosis_context=payload.diagnosis,
+        ),
+    )
+    if not result.get("available"):
+        # Abuse logging: cap-rejection from a specific IP is the
+        # signature pattern for a runaway client. Log at WARNING so
+        # ops dashboards can alert on it.
+        if result.get("reason") in ("session_turn_cap", "session_token_cap"):
+            logger.warning(
+                "AI Doctor budget cap hit  ip=%s session=%s reason=%s",
+                client_ip, payload.session_id, result["reason"],
+            )
+    return JSONResponse(content=result)
+
+
+@app.post("/api/care-plan")
+async def care_plan_endpoint(payload: CarePlanRequest):
+    """Build a watering / fertilising / humidity schedule for a plant.
+
+    Always returns a usable rules-based plan; when an API key is set
+    the response also includes a Markdown ``summary_md`` polished by
+    Claude. Disease must be one of the known classifier classes.
+    """
+    if pipeline is None:
+        raise HTTPException(status_code=503, detail="Server starting up, try again shortly")
+    disease = payload.disease.strip()
+    if disease not in DISEASES_DATABASE and disease != "unknown":
+        # Don't reject — just normalise unknown to ``unknown``. Keeps the
+        # endpoint forgiving while still producing a useful plan.
+        disease = "unknown"
+    plan = await asyncio.get_running_loop().run_in_executor(
+        _get_inference_executor(),
+        lambda: generate_care_plan(
+            disease=disease,
+            species=payload.species,
+            light=payload.light,
+            locale=payload.locale,
+        ),
+    )
+    return JSONResponse(content=plan)
+
+
+@app.post("/api/progression")
+async def progression_endpoint(payload: ProgressionRequest):
+    """Compare two scans and return a worsening/improving/stable verdict.
+
+    Pure function over the analyse-shaped dicts the client already has,
+    so this endpoint is fast and deterministic. Useful for the Android
+    "Disease progression chart" view.
+    """
+    return JSONResponse(
+        content=compare_progression(
+            current=payload.current, previous=payload.previous,
+        )
+    )
 
 
 if __name__ == "__main__":

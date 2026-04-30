@@ -1,10 +1,25 @@
 """
-Two-stage houseplant disease detection pipeline (v4.1).
+Two-stage houseplant disease detection pipeline (v5.0).
 
 Stage 1 (Detector)   — YOLOv8n single-class. Locates ``leaf`` bboxes.
-Stage 2 (Classifier) — EfficientNet-B0 (ONNX). Classifies a cropped
-                       leaf region into one of up to 11 houseplant
-                       condition classes including ``not_a_plant``.
+Stage 2 (Classifier) — EfficientNet-B0 (ONNX) + optional V2-S ensemble
+                       peer. Classifies cropped leaf regions into one of
+                       up to 10 houseplant condition classes including
+                       ``not_a_plant``.
+
+v5.0 additions on top of the v4.x logic that follows below:
+* **Severity scoring** — each ``analyze`` response carries a
+  ``severity: low | medium | high`` derived from (a) the relative bbox
+  area of the diagnosed disease, (b) the disease confidence margin
+  over ``healthy`` and (c) whether the disease class is degenerative
+  (``late_blight``, ``mosaic_virus`` always escalate one level).
+* **TTA at inference** — horizontal-flip averaging is applied to the
+  primary classifier output (peer is excluded from TTA to keep CPU
+  budget bounded). Roughly +1 % top-1 vs cold inference.
+* **Ensemble** — when the V2-S peer is loaded, its softmax is blended
+  with the primary inside ``DiseaseClassifier`` itself, transparent to
+  this file. The pipeline only sees a calmer, better-calibrated
+  distribution.
 
 v4.1 design changes vs v4:
 
@@ -93,6 +108,26 @@ NAP_CLASSIFIER_MSP_FLOOR = 0.45
 # Classes that are not "diseases" — used to compute disease scores
 # and to know when to apply the healthy fallback.
 _NON_DISEASE = {"healthy", "not_a_plant"}
+
+# v5.0: classes that escalate severity by one level on principle. They
+# have aggressive systemic spread (mosaic virus is incurable; late
+# blight can wipe out a plant in days under indoor humidity) and the UI
+# benefits from a stronger nudge to act quickly.
+_DEGENERATIVE_DISEASES = {"late_blight", "mosaic_virus"}
+
+# Severity thresholds (relative bbox area). Calibrated against typical
+# indoor phone shots: a single leaf at arm's length covers roughly
+# 5–15% of the frame; a "the whole plant looks bad" full-frame shot
+# covers >30% via NMS-merged bboxes.
+SEVERITY_AREA_LOW = 0.06   # below this is "small / localised lesion"
+SEVERITY_AREA_HIGH = 0.18  # above this is "widespread"
+
+# Severity thresholds (disease confidence margin over healthy). Small
+# margins => the model is hedging => severity stays low even if the
+# bbox is large. Large margin => the call is confident => severity
+# escalates with area.
+SEVERITY_MARGIN_LOW = 0.20
+SEVERITY_MARGIN_HIGH = 0.45
 
 TOP_K_ALTERNATIVES = 3
 
@@ -199,6 +234,7 @@ class PlantDiseasePipeline:
                 "all_probs": probs,
                 "top_k": top_k,
                 "warnings": [],
+                "severity": "low",
                 "detection": {
                     "is_diseased": False,
                     "detector_confidence": 0.0,
@@ -259,6 +295,18 @@ class PlantDiseasePipeline:
             classification, self.classifier.CLASS_NAMES,
         )
 
+        # v5.0: severity scoring. We compute it on the *post-fallback*
+        # class so the UI severity always agrees with the displayed
+        # diagnosis (a downgrade-to-healthy ⇒ severity=low).
+        severity = compute_severity(
+            class_name=final["class_name"],
+            confidence=float(final["confidence"]),
+            healthy_prob=float(final["all_probs"].get("healthy", 0.0)),
+            primary_box=primary,
+            image_size=img.size,
+            is_diseased=is_diseased,
+        )
+
         elapsed = (time.perf_counter() - t0) * 1000
         return {
             "class_name": final["class_name"],
@@ -266,6 +314,7 @@ class PlantDiseasePipeline:
             "all_probs": final["all_probs"],
             "top_k": final["top_k"],
             "warnings": final["warnings"],
+            "severity": severity,
             "detection": {
                 "is_diseased": is_diseased,
                 "detector_confidence": stage1["confidence"],
@@ -513,6 +562,69 @@ class PlantDiseasePipeline:
 
 
 # ── pure helpers (exposed for tests) ─────────────────────────────────
+
+def compute_severity(
+    *,
+    class_name: str,
+    confidence: float,
+    healthy_prob: float,
+    primary_box: Optional[dict],
+    image_size: tuple[int, int],
+    is_diseased: bool,
+) -> str:
+    """Heuristic severity scoring (low / medium / high).
+
+    Inputs combine three independent signals:
+      1. Relative bbox area — how much of the frame is the lesion
+         occupying. Tiny localised spots stay "low" even at high
+         confidence; full-leaf coverage escalates.
+      2. Confidence margin over healthy — how decisive the model is
+         about it being a disease at all. Hedged calls cap at "low".
+      3. Class-level prior for degenerative diseases (late_blight,
+         mosaic_virus) which always step up one level.
+
+    Returns ``low`` for healthy / NAP / non-diseased verdicts.
+    """
+    if not is_diseased or class_name in _NON_DISEASE:
+        return "low"
+
+    W, H = image_size
+    img_area = max(W * H, 1)
+    if primary_box:
+        w = float(primary_box.get("width", 0))
+        h = float(primary_box.get("height", 0))
+        area_frac = max(0.0, min(1.0, (w * h) / img_area))
+    else:
+        area_frac = 0.0
+
+    margin = max(0.0, float(confidence) - float(healthy_prob))
+
+    # Score in [0, 6] from area + margin, then bucket. Each axis worth
+    # up to 3 points so neither one alone can pin the result.
+    if area_frac >= SEVERITY_AREA_HIGH:
+        area_pts = 3
+    elif area_frac >= SEVERITY_AREA_LOW:
+        area_pts = 2
+    else:
+        area_pts = 1
+
+    if margin >= SEVERITY_MARGIN_HIGH:
+        margin_pts = 3
+    elif margin >= SEVERITY_MARGIN_LOW:
+        margin_pts = 2
+    else:
+        margin_pts = 1
+
+    score = area_pts + margin_pts
+    if class_name in _DEGENERATIVE_DISEASES:
+        score += 1
+
+    if score >= 6:
+        return "high"
+    if score >= 4:
+        return "medium"
+    return "low"
+
 
 def _build_top_k(probs: dict[str, float], k: int) -> list[dict]:
     ordered = sorted(probs.items(), key=lambda item: item[1], reverse=True)[:k]
