@@ -7,6 +7,29 @@ advice.
 
 ---
 
+## Project status (Apr 2026)
+
+The pipeline and the Android client are feature-complete for the core
+scan flow. **Real model weights have not been trained yet** — without
+`server/models/detector.pt` and `classifier.pth` the server falls back
+to a colour-heuristic demo mode (the API contract is identical, but the
+diagnoses are not meaningful).
+
+We are running a 4-week sprint (Apr 30 → May 30, 2026) to:
+
+1. Train the v4.7 weights and expand the dataset.
+2. Add plant **species identification** (PlantNet API) on top of disease
+   detection.
+3. Ship **My Garden**, **care reminders**, an **AI Plant Doctor** chat,
+   a **light meter** and **on-device offline inference**.
+4. Push the UI to portfolio-grade polish (real-time leaf framing,
+   severity scoring, disease-progression charts, time-lapse,
+   Material You).
+
+Per-week, per-engineer task list lives in [`ROADMAP.md`](ROADMAP.md).
+
+---
+
 ## Architecture
 
 ```
