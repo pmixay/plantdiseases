@@ -1,12 +1,16 @@
 """
-Bilingual disease information database for PlantScope v3.x.
+Bilingual disease information database for PlantScope v4.5.
 
-Maps Stage 2 classifier class names to houseplant-specific descriptions,
-treatments, and prevention tips. The database is intentionally focused on
-diseases and pests most common on indoor/houseplants — even though the
-visual patterns generalise from PlantDoc's real-world crop photos.
+Stage 2 classifier outputs ONE OF 8 disease classes — the bilingual
+content for each lives in ``DISEASES_DATABASE`` below. v4.5 drops the
+pest classes (mealybug / scale / aphids / spider_mites / thrips /
+whitefly) and the broad ``leaf_spot`` bucket; pests are now surfaced
+as a UI hint section instead via ``PEST_INFO`` + each disease's
+``possible_pest_causes`` field.
 
-Authoritative class list: server/models/classes.json.
+Final 8 classes: ``anthracnose``, ``gray_mold``, ``healthy``,
+``iron_chlorosis``, ``late_blight``, ``not_a_plant``, ``powdery_mildew``,
+``sunburn``. Authoritative list: ``server/models/classes.json``.
 """
 
 DISEASES_DATABASE = {
@@ -37,7 +41,8 @@ DISEASES_DATABASE = {
             "Весной и летом вносите удобрения каждые 2–3 недели",
             "Еженедельно осматривайте новые листья на первые признаки вредителей"
         ],
-        "is_healthy": True
+        "is_healthy": True,
+        "possible_pest_causes": []
     },
 
     "powdery_mildew": {
@@ -71,211 +76,183 @@ DISEASES_DATABASE = {
             "Поливайте под корень, а не сверху по листьям",
             "Новые растения держите 2 недели на карантине"
         ],
-        "is_healthy": False
+        "is_healthy": False,
+        "possible_pest_causes": ["mealybug"]
     },
 
-    "leaf_spot": {
-        "name_en": "Leaf Spot (Bacterial / Fungal)",
-        "name_ru": "Пятнистость листьев (бактериальная / грибковая)",
-        "description_en": "A broad category covering bacterial and fungal leaf-spot infections. Look for dark, round or irregular spots with yellow halos. Often triggered by water splashing onto leaves in humid indoor conditions.",
-        "description_ru": "Обобщённая категория, включающая бактериальные и грибковые пятнистости. Выглядит как тёмные округлые или неправильные пятна с жёлтым ободком. Часто возникает при попадании воды на листья во влажном помещении.",
+    "iron_chlorosis": {
+        "name_en": "Iron Chlorosis",
+        "name_ru": "Железный хлороз",
+        "description_en": "Interveinal yellowing of leaves with green veins still visible — the textbook sign of iron deficiency. The newest leaves go pale first. Often triggered by alkaline tap water, depleted substrate, or root issues caused by overwatering. Sap-sucking pests (spider mites, aphids, scale, mealybugs, whitefly) cause similar symptoms by draining the leaf — check the underside before treating.",
+        "description_ru": "Жёлтые листья с зелёными жилками — классический признак нехватки железа. Самые молодые листья бледнеют первыми. Часто возникает из-за щелочной водопроводной воды, истощённого субстрата или проблем с корнями от перелива. Сосущие вредители (паутинный клещ, тля, щитовка, мучнистый червец, белокрылка) дают похожие симптомы — обязательно осмотрите обратную сторону листьев.",
         "treatment_en": [
-            "Cut off affected leaves with sterile scissors and discard them",
-            "Apply a copper-based fungicide / bactericide once a week for 2–3 weeks",
-            "Switch to bottom watering — never wet the foliage",
-            "Improve ventilation and let the substrate dry between waterings",
-            "Disinfect all tools with 70 % isopropyl alcohol after each plant"
+            "Check the substrate first — overwatering looks just like deficiency",
+            "Let the top 3–4 cm dry out before the next watering",
+            "Switch to a balanced liquid fertiliser (NPK ~10-10-10) at half strength",
+            "If yellowing is between the veins, try a chelated iron + magnesium feed",
+            "If roots smell sour or look brown, repot into fresh, well-draining substrate"
         ],
         "treatment_ru": [
-            "Обрежьте поражённые листья стерильными ножницами и выбросьте",
-            "Раз в неделю 2–3 недели подряд обрабатывайте фунгицидом на основе меди",
-            "Перейдите на полив снизу — листья держите сухими",
-            "Улучшите проветривание, дайте субстрату подсыхать между поливами",
-            "После обработки каждого растения дезинфицируйте инструмент спиртом 70 %"
+            "Сначала проверьте субстрат — перелив выглядит как нехватка элементов",
+            "Дайте верхним 3–4 см просохнуть перед следующим поливом",
+            "Перейдите на сбалансированное жидкое удобрение (NPK ~10-10-10) в половинной дозе",
+            "Если желтеют участки между жилками — попробуйте хелат железа + магний",
+            "Если корни пахнут кислым или потемнели — пересадите в свежий рыхлый субстрат"
         ],
         "prevention_en": [
-            "Water the substrate, not the leaves",
-            "Remove fallen leaves from the pot surface regularly",
-            "Avoid moving plants between warm and cold rooms — it weakens them",
-            "Sterilise pots and saucers before reusing them"
+            "Water only after the top of the substrate dries — don't keep it constantly wet",
+            "Feed during active growth (spring–summer); skip fertiliser in winter",
+            "Use pots with drainage holes; never let the pot sit in water",
+            "Refresh the substrate every 1–2 years — even good soil gets depleted"
         ],
         "prevention_ru": [
-            "Поливайте субстрат, а не листья",
-            "Регулярно убирайте опавшие листья с поверхности горшка",
-            "Не переставляйте растения между тёплыми и холодными комнатами — это их ослабляет",
-            "Перед повторным использованием стерилизуйте горшки и поддоны"
+            "Поливайте только после просыхания верха субстрата — не держите постоянно сырым",
+            "Подкармливайте в активный сезон (весна-лето), зимой подкормки прекратите",
+            "Используйте горшки с дренажными отверстиями; не оставляйте в поддоне с водой",
+            "Меняйте субстрат каждые 1–2 года — даже хороший грунт истощается"
         ],
-        "is_healthy": False
+        "is_healthy": False,
+        "possible_pest_causes": ["spider_mites", "aphids", "scale_insect", "mealybug", "whitefly"]
     },
 
-    "blight": {
-        "name_en": "Blight",
+    "anthracnose": {
+        "name_en": "Anthracnose",
+        "name_ru": "Антракноз",
+        "description_en": "Fungal disease (Colletotrichum) showing dark brown-to-black sunken spots, often with a darker border or yellow halo. Common on ficus, philodendron, palms, anthurium and dracaena, especially after watering with cold water or during prolonged high humidity.",
+        "description_ru": "Грибковое заболевание (Colletotrichum) — тёмно-коричневые или чёрные вдавленные пятна, часто с более тёмной каймой или жёлтым ореолом. Часто на фикусах, филодендронах, пальмах, антуриуме и драцене, особенно после полива холодной водой или при длительной высокой влажности.",
+        "treatment_en": [
+            "Cut off the worst-affected leaves with sterile scissors and dispose (do not compost)",
+            "Spray with a copper-based fungicide or chlorothalonil weekly for 3 weeks",
+            "Reduce overhead watering — keep foliage dry, water only the substrate",
+            "Improve airflow; isolate the plant for 2–3 weeks",
+            "Disinfect tools with 70 % isopropyl alcohol between plants"
+        ],
+        "treatment_ru": [
+            "Срежьте сильно поражённые листья стерильными ножницами, выбросьте (не в компост)",
+            "Опрыскивайте медьсодержащим фунгицидом или хлороталонилом раз в неделю в течение 3 недель",
+            "Прекратите полив сверху — листья держите сухими, поливайте только в субстрат",
+            "Обеспечьте циркуляцию воздуха, изолируйте растение на 2–3 недели",
+            "Дезинфицируйте инструмент 70% спиртом между растениями"
+        ],
+        "prevention_en": [
+            "Avoid wetting the leaves; use bottom watering when possible",
+            "Don't crowd plants — anthracnose loves still humid air",
+            "Quarantine new plants for 2 weeks before adding to the collection",
+            "Wipe leaves with a damp cloth monthly so spores don't accumulate"
+        ],
+        "prevention_ru": [
+            "Не мочите листья — по возможности поливайте снизу",
+            "Не размещайте растения вплотную — антракноз любит застойный влажный воздух",
+            "Новые растения держите 2 недели на карантине",
+            "Раз в месяц протирайте листья влажной тряпкой — споры не скапливаются"
+        ],
+        "is_healthy": False,
+        "possible_pest_causes": ["spider_mites"]
+    },
+
+    "gray_mold": {
+        "name_en": "Gray Mold (Botrytis)",
+        "name_ru": "Серая гниль (ботритис)",
+        "description_en": "Botrytis cinerea causes a fluffy gray mold on flowers, buds, soft new growth and damaged leaves. Develops in cool (15–22 °C) high-humidity conditions with poor airflow — typical for crowded windowsills in winter. Affected tissue first looks water-soaked, then collapses under a dusty gray coating.",
+        "description_ru": "Botrytis cinerea — пушистый серый налёт на цветках, бутонах, молодых побегах и повреждённых листьях. Развивается в прохладе (15–22 °C) при высокой влажности и слабой циркуляции воздуха — типично для зимних подоконников с тесно стоящими растениями. Поражённая ткань сначала водянистая, потом проседает под серой пыльной коркой.",
+        "treatment_en": [
+            "Remove all affected parts (leaves, flowers, buds) with sterile shears; bag and discard",
+            "Spray remaining tissue with a Botrytis-targeted fungicide (e.g. fenhexamid or boscalid)",
+            "Lower humidity below 65 % and stop misting until the infection clears",
+            "Increase airflow with a small fan; do not let leaves stay wet overnight",
+            "Move the plant to a warmer (>22 °C), brighter location"
+        ],
+        "treatment_ru": [
+            "Удалите все поражённые части (листья, цветы, бутоны) стерильным секатором, упакуйте и выбросьте",
+            "Обработайте оставшуюся ткань фунгицидом против ботритиса (фенгексамид, боскалид)",
+            "Снизьте влажность ниже 65 %, прекратите опрыскивание до устранения инфекции",
+            "Включите небольшой вентилятор, не оставляйте листья мокрыми на ночь",
+            "Переставьте растение в более тёплое (>22 °C) и светлое место"
+        ],
+        "prevention_en": [
+            "Don't crowd plants — gray mold thrives in stagnant air",
+            "Promptly remove faded flowers and dead leaves — Botrytis colonises dying tissue first",
+            "Water in the morning so leaves dry before evening",
+            "Avoid bumping/handling soft growth — wounds are infection sites"
+        ],
+        "prevention_ru": [
+            "Не размещайте растения вплотную — серая гниль любит застойный воздух",
+            "Сразу удаляйте увядшие цветы и сухие листья — ботритис первым заселяет отмершую ткань",
+            "Поливайте утром, чтобы листья высохли до вечера",
+            "Не задевайте мягкие побеги — раны становятся воротами инфекции"
+        ],
+        "is_healthy": False,
+        "possible_pest_causes": ["mealybug"]
+    },
+
+    "late_blight": {
+        "name_en": "Late Blight (Phytophthora)",
         "name_ru": "Фитофтороз",
-        "description_en": "A rapidly spreading fungal disease that causes large, dark, water-soaked lesions on leaves and stems. On houseplants it is most often triggered by overwatering combined with cool temperatures.",
-        "description_ru": "Быстро прогрессирующее грибковое заболевание: крупные тёмные водянистые поражения на листьях и стеблях. На комнатных растениях чаще всего возникает при переувлажнении и прохладе.",
+        "description_en": "Phytophthora infestans (and related oomycetes) cause large brown water-soaked patches that spread very fast — a healthy leaf can collapse in 24–48 hours. The patches may have a fuzzy white margin on the underside in humid conditions. Common on tomato seedlings indoors, but also affects calathea, peperomia and seedlings of any species.",
+        "description_ru": "Phytophthora infestans (и родственные оомицеты) — крупные коричневые водянистые пятна, расползающиеся очень быстро: здоровый лист может погибнуть за 24–48 часов. По краю пятна снизу может быть пушистый белый налёт при высокой влажности. Часто на рассаде томатов в помещении, а также на калатее, пеперомии и рассаде любых видов.",
         "treatment_en": [
-            "Remove and destroy every affected part immediately — do not compost",
-            "Apply a systemic or copper-based fungicide",
-            "Reduce watering and let the substrate dry deeply",
-            "Raise the temperature above 20 °C and reduce humidity",
-            "If more than 50 % of the plant is affected, consider discarding it to protect the rest"
+            "Quickly isolate the plant — late blight spreads through air and water splash",
+            "Cut off all affected leaves and stems plus 2 cm of healthy tissue around them",
+            "Apply a systemic fungicide effective against oomycetes (e.g. metalaxyl, fosetyl-Al)",
+            "Repot into fresh substrate; old soil may carry resting spores",
+            "If more than 50 % of the plant is affected, dispose of the plant — recovery is unlikely"
         ],
         "treatment_ru": [
-            "Немедленно удалите и уничтожьте все поражённые части — не в компост",
-            "Обработайте системным фунгицидом или препаратом на основе меди",
-            "Сократите полив, дайте субстрату глубоко просохнуть",
-            "Поднимите температуру выше 20 °C и снизьте влажность",
-            "Если поражено больше 50 % растения — лучше утилизировать его, чтобы не заразить остальные"
+            "Срочно изолируйте растение — фитофтороз распространяется по воздуху и брызгами воды",
+            "Срежьте все поражённые листья и стебли с захватом 2 см здоровой ткани",
+            "Примените системный фунгицид против оомицетов (металаксил, фосэтил-Al)",
+            "Пересадите в свежий субстрат — в старом могут быть покоящиеся споры",
+            "Если поражено больше 50 % растения, выбросьте его — спасти, скорее всего, не получится"
         ],
         "prevention_en": [
-            "Never let pots stand in water — empty saucers after watering",
-            "Space plants for good airflow",
-            "Keep the room above 18 °C in winter",
-            "Inspect the collection weekly during cool, damp weather"
+            "Never reuse old substrate from a sick plant",
+            "Sterilise pots and seedling trays with a 1:10 bleach solution before reuse",
+            "Water the substrate, not the leaves; keep the plant dry overnight",
+            "Don't crowd seedlings — Phytophthora spreads fastest in dense clusters"
         ],
         "prevention_ru": [
-            "Никогда не оставляйте горшки в воде — сливайте из поддона лишнюю",
-            "Расставляйте растения свободно для хорошей вентиляции",
-            "Зимой поддерживайте температуру выше 18 °C",
-            "В сырую прохладную погоду осматривайте коллекцию еженедельно"
+            "Никогда не используйте субстрат от больного растения повторно",
+            "Перед повторным использованием стерилизуйте горшки и рассадные кассеты раствором 1:10 хлорки",
+            "Поливайте субстрат, а не листья; не оставляйте растение мокрым на ночь",
+            "Не загущайте посадку рассады — фитофтороз быстрее всего летит между растениями вплотную"
         ],
-        "is_healthy": False
+        "is_healthy": False,
+        "possible_pest_causes": []
     },
 
-    "rust": {
-        "name_en": "Rust",
-        "name_ru": "Ржавчина",
-        "description_en": "A fungal disease that produces orange, rust-coloured pustules on the undersides of leaves, with matching yellow spots on top. Common on pelargoniums, fuchsias, and chrysanthemums.",
-        "description_ru": "Грибковое заболевание: оранжевые «ржавые» пустулы на нижней стороне листьев и соответствующие жёлтые пятна сверху. Часто на пеларгониях, фуксиях, хризантемах.",
+    "sunburn": {
+        "name_en": "Sunburn / Leaf Scorch",
+        "name_ru": "Солнечный ожог",
+        "description_en": "Dry, brown, papery patches that appear on the side of leaves facing direct sunlight (typically south or south-west windows). Tissue feels brittle, not fuzzy or wet. Often after an abrupt move from shade to sun, or after watering droplets focus light onto leaves. Common on calathea, fittonia, ferns, dracaena.",
+        "description_ru": "Сухие коричневые «бумажные» пятна с той стороны листа, которая обращена к прямому солнцу (обычно южные/юго-западные окна). Ткань ломкая, не пушистая и не мокрая. Часто после резкой перестановки из тени на свет или после полива, когда капли воды фокусируют свет на листьях. Часто на калатее, фиттонии, папоротниках, драцене.",
         "treatment_en": [
-            "Remove and destroy all leaves showing pustules",
-            "Apply a sulfur-based or copper fungicide every 7–14 days",
-            "Do not mist and do not compost affected material",
-            "Improve air circulation around the plant",
-            "Isolate infected plants from the rest of the collection"
+            "Move the plant 30–50 cm away from the window or behind a thin curtain",
+            "Trim off heavily damaged leaves once the rest of the plant has stabilised",
+            "Don't water any harder than usual — burned tissue won't grow back, but the plant won't get worse if light is reduced",
+            "Avoid misting at midday — water droplets can act like lenses",
+            "Acclimate plants to brighter spots gradually (15–30 minutes more sun per day)"
         ],
         "treatment_ru": [
-            "Удалите и уничтожьте все листья с пустулами",
-            "Раз в 7–14 дней обрабатывайте фунгицидом на основе серы или меди",
-            "Прекратите опрыскивание; поражённые части не компостируйте",
-            "Улучшите вентиляцию вокруг растения",
-            "Изолируйте заражённое растение от остальных"
+            "Отодвиньте растение на 30–50 см от окна или повесьте лёгкую штору",
+            "Сильно повреждённые листья срежьте, когда остальная часть растения стабилизируется",
+            "Не увеличивайте полив — обожжённая ткань не восстановится, но растение остановит ухудшение при снижении света",
+            "Не опрыскивайте растение в обед — капли воды работают как линзы",
+            "Приучайте растения к более светлым местам постепенно (по 15–30 мин больше солнца в день)"
         ],
         "prevention_en": [
-            "Water in the morning so leaves dry quickly",
-            "Keep foliage dry — skip overhead misting for susceptible species",
-            "Remove fallen leaves promptly",
-            "Give plants enough space to allow airflow"
+            "Use a thin curtain or paper sheet on south/south-west windows in summer",
+            "Don't move shade plants directly into bright light — acclimate over a week",
+            "Water in the morning or evening, not under direct sun",
+            "Wipe water droplets off the leaves after misting if the plant sits in sun"
         ],
         "prevention_ru": [
-            "Поливайте утром, чтобы листья быстро высыхали",
-            "Не опрыскивайте восприимчивые виды сверху",
-            "Своевременно убирайте опавшие листья",
-            "Расставляйте растения так, чтобы был воздух между ними"
+            "Летом на южных/юго-западных окнах используйте лёгкую штору или лист бумаги",
+            "Не переставляйте теневые растения сразу на яркий свет — акклиматизируйте неделю",
+            "Поливайте утром или вечером, не под прямым солнцем",
+            "Если растение стоит на солнце, после опрыскивания убирайте капли воды с листьев"
         ],
-        "is_healthy": False
-    },
-
-    "mosaic_virus": {
-        "name_en": "Mosaic Virus",
-        "name_ru": "Мозаичный вирус",
-        "description_en": "A viral infection that creates a mottled, patchwork pattern of light and dark green on the leaves. Leaves may distort or curl. There is no cure — infected plants are usually discarded to protect the collection.",
-        "description_ru": "Вирусная инфекция: характерный пёстрый узор из светло- и тёмно-зелёных участков на листьях. Листья могут деформироваться и скручиваться. Лечения нет — заражённые растения обычно утилизируют, чтобы защитить коллекцию.",
-        "treatment_en": [
-            "There is no cure for plant viruses",
-            "Discard severely affected plants and the substrate they grew in",
-            "Mild cases may be kept in isolation but will not recover",
-            "Control aphids, thrips and whiteflies — they are the main vectors",
-            "Wash hands and sterilise tools after touching an infected plant"
-        ],
-        "treatment_ru": [
-            "Вирусные инфекции растений не лечатся",
-            "Сильно поражённые растения утилизируйте вместе с субстратом",
-            "Слабо поражённые можно оставить в изоляции, но они не выздоровеют",
-            "Боритесь с тлёй, трипсами и белокрылкой — это главные переносчики",
-            "После контакта с больным растением мойте руки и дезинфицируйте инструмент"
-        ],
-        "prevention_en": [
-            "Buy plants from trusted sources — check leaves before buying",
-            "Quarantine new arrivals for 2–3 weeks",
-            "Use sterile tools and clean pots",
-            "Don't handle plants after smoking (tobacco can carry mosaic virus)"
-        ],
-        "prevention_ru": [
-            "Покупайте растения в проверенных местах, осматривайте листья",
-            "Новые растения держите 2–3 недели на карантине",
-            "Используйте стерильные инструменты и чистые горшки",
-            "Не работайте с растениями сразу после курения (табак переносит вирус)"
-        ],
-        "is_healthy": False
-    },
-
-    "spider_mites": {
-        "name_en": "Spider Mites",
-        "name_ru": "Паутинный клещ",
-        "description_en": "Tiny sap-sucking arachnids that cause fine stippling, bronze discolouration and a silk-like webbing on the undersides of leaves. Thrive in dry, warm indoor air during winter heating.",
-        "description_ru": "Мельчайшие клещи, высасывающие сок: вызывают точечную крапчатость, бронзовый налёт и тончайшую паутинку с нижней стороны листьев. Процветают в сухом и тёплом воздухе в отопительный сезон.",
-        "treatment_en": [
-            "Rinse the plant in the shower to wash off adults and webs",
-            "Spray with insecticidal soap, neem oil or a specialised acaricide",
-            "Repeat the treatment every 5–7 days for at least 3 weeks — eggs keep hatching",
-            "Raise humidity around the plant with a pebble tray or humidifier",
-            "Isolate the affected plant immediately"
-        ],
-        "treatment_ru": [
-            "Промойте растение в душе, чтобы смыть взрослых клещей и паутину",
-            "Обработайте инсектицидным мылом, маслом нима или специализированным акарицидом",
-            "Повторяйте обработку каждые 5–7 дней минимум 3 недели — из яиц появляются новые",
-            "Поднимите влажность рядом с растением (поддон с галькой, увлажнитель)",
-            "Немедленно изолируйте заражённое растение"
-        ],
-        "prevention_en": [
-            "Mist or use a humidifier during the heating season",
-            "Wipe large leaves with a damp cloth weekly",
-            "Inspect new plants with a magnifier before placing them with others",
-            "Avoid drought stress — dry plants are magnets for mites"
-        ],
-        "prevention_ru": [
-            "В отопительный сезон опрыскивайте или ставьте увлажнитель",
-            "Еженедельно протирайте крупные листья влажной тканью",
-            "Осматривайте новые растения с лупой перед размещением в коллекции",
-            "Не допускайте пересушивания — пересохшие растения привлекают клещей"
-        ],
-        "is_healthy": False
-    },
-
-    "leaf_mold": {
-        "name_en": "Leaf Mold",
-        "name_ru": "Листовая плесень",
-        "description_en": "A fungal disease that shows up as pale yellow patches on the upper leaf surface and olive-brown fuzzy mold on the underside. Develops quickly in humid, poorly ventilated rooms.",
-        "description_ru": "Грибковое заболевание: светло-жёлтые пятна сверху листа и оливково-коричневая пушистая плесень снизу. Быстро развивается во влажных помещениях без вентиляции.",
-        "treatment_en": [
-            "Carefully remove infected leaves",
-            "Drop humidity below 70 % and boost ventilation immediately",
-            "Apply a copper- or sulfur-based fungicide once a week",
-            "Space plants out so air can flow around each one",
-            "Water only at the soil level, in the morning"
-        ],
-        "treatment_ru": [
-            "Аккуратно удалите заражённые листья",
-            "Снизьте влажность ниже 70 % и резко улучшите проветривание",
-            "Раз в неделю обрабатывайте фунгицидом на основе меди или серы",
-            "Расставьте растения так, чтобы воздух свободно циркулировал",
-            "Поливайте только под корень и утром"
-        ],
-        "prevention_en": [
-            "Keep room humidity in the 40–65 % range",
-            "Avoid night-time misting",
-            "Ensure the room has good passive or active air exchange",
-            "Clean the soil surface from fallen debris regularly"
-        ],
-        "prevention_ru": [
-            "Поддерживайте влажность помещения 40–65 %",
-            "Не опрыскивайте растения на ночь",
-            "Обеспечьте воздухообмен (естественный или приточный)",
-            "Регулярно очищайте поверхность субстрата от опавших листьев"
-        ],
-        "is_healthy": False
+        "is_healthy": False,
+        "possible_pest_causes": []
     },
 
     "not_a_plant": {
@@ -305,7 +282,8 @@ DISEASES_DATABASE = {
             "Не снимайте через стекло — блики путают детектор",
             "Используйте сетку камеры, чтобы разместить лист по центру"
         ],
-        "is_healthy": False
+        "is_healthy": False,
+        "possible_pest_causes": []
     },
 
     "unknown": {
@@ -335,6 +313,82 @@ DISEASES_DATABASE = {
             "Поддерживайте постоянный режим полива и освещения",
             "Содержите зону выращивания в чистоте"
         ],
-        "is_healthy": False
+        "is_healthy": False,
+        "possible_pest_causes": []
     }
 }
+
+
+# ── Pest hint registry ───────────────────────────────────────────────
+#
+# Pests are NOT classifier outputs in v4.5; they're surfaced as a UI
+# hint section ("possible pest causes") on each disease card. Diseases
+# reference these keys via ``possible_pest_causes``. Single source of
+# truth: name, short summary (what it looks like), the 1-line
+# "if you see this" hint and a category for grouping.
+
+PEST_INFO = {
+    "spider_mites": {
+        "name_en": "Spider Mites",
+        "name_ru": "Паутинный клещ",
+        "category": "mite",
+        "summary_en": "Tiny mites that cause fine webbing and stippled yellow spots on leaves; hide on the leaf underside.",
+        "summary_ru": "Мелкие клещи: тонкая паутина и светлые точки на листьях, прячутся снизу листа.",
+        "hint_en": "Look on leaf undersides with a magnifier — fine webs and red/brown specks.",
+        "hint_ru": "Посмотрите на нижнюю сторону листа с лупой — тонкая паутина и красно-коричневые точки."
+    },
+    "aphids": {
+        "name_en": "Aphids",
+        "name_ru": "Тля",
+        "category": "sap_sucker",
+        "summary_en": "Soft-bodied insects (1-3 mm) that cluster on young shoots and flower buds.",
+        "summary_ru": "Мягкотелые насекомые (1-3 мм), скапливаются на молодых побегах и бутонах.",
+        "hint_en": "Check soft new growth and the underside of new leaves for green/black clusters.",
+        "hint_ru": "Осмотрите молодые побеги и обратную сторону свежих листьев — зелёные или чёрные скопления."
+    },
+    "mealybug": {
+        "name_en": "Mealybugs",
+        "name_ru": "Мучнистый червец",
+        "category": "sap_sucker",
+        "summary_en": "Soft-bodied insects covered in white cottony wax; hide in leaf axils and along stems.",
+        "summary_ru": "Мягкотелые насекомые в белом ватообразном воске; прячутся в пазухах листьев и на стеблях.",
+        "hint_en": "Look for white cottony tufts in leaf axils and where stems join.",
+        "hint_ru": "Ищите белые ватные комочки в пазухах листьев и в местах соединения стеблей."
+    },
+    "scale_insect": {
+        "name_en": "Scale Insects",
+        "name_ru": "Щитовка",
+        "category": "sap_sucker",
+        "summary_en": "Brown or yellowish hard or soft 'plaques' (2-5 mm) glued to stems and leaf veins.",
+        "summary_ru": "Коричневые или желтоватые «бляшки» (2-5 мм), приклеенные к стеблям и жилкам листьев.",
+        "hint_en": "Try scraping a brown 'spot' on a stem with your nail — if it lifts off, it's scale.",
+        "hint_ru": "Попробуйте сковырнуть «пятно» на стебле ногтем — если отделяется, это щитовка."
+    },
+    "whitefly": {
+        "name_en": "Whitefly",
+        "name_ru": "Белокрылка",
+        "category": "sap_sucker",
+        "summary_en": "Small (~1.5 mm) white flying insects on leaf undersides; a cloud takes off when shaken.",
+        "summary_ru": "Мелкие (~1.5 мм) белые летающие насекомые на обратной стороне листьев; при встряхивании взлетают облачком.",
+        "hint_en": "Gently shake the plant — a cloud of tiny white moths is whitefly.",
+        "hint_ru": "Слегка встряхните растение — если поднимается облачко белых «мошек», это белокрылка."
+    }
+}
+
+
+def pest_hints(disease_class: str) -> list[dict]:
+    """Resolve ``possible_pest_causes`` into a list of pest info dicts.
+
+    Returns an empty list when the disease has no associated pests
+    (e.g. ``healthy``, ``not_a_plant``, or purely environmental
+    classes like ``sunburn`` and ``late_blight``).
+    """
+    info = DISEASES_DATABASE.get(disease_class) or DISEASES_DATABASE["unknown"]
+    keys = info.get("possible_pest_causes") or []
+    out: list[dict] = []
+    for k in keys:
+        pest = PEST_INFO.get(k)
+        if pest is None:
+            continue
+        out.append({"key": k, **pest})
+    return out

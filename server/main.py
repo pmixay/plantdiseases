@@ -1,9 +1,16 @@
 """
-PlantDiseases Server — FastAPI backend with the PlantScope v3.x two-stage
+PlantDiseases Server — FastAPI backend with the PlantScope v4.7 two-stage
 houseplant disease pipeline.
 
-Stage 1:  YOLOv8n            — locate leaves, flag diseased regions
-Stage 2:  EfficientNetV2-S   — classify the primary disease bbox
+Stage 1:  YOLOv8n            — locate leaves (single class)
+Stage 2:  EfficientNet-B0    — classify cropped leaf regions; mean-voted
+                               across bboxes, ONNX (INT8 dynamic on MatMul).
+                               v4.5 trained EfficientNetV2-S @ 320; v4.7
+                               switched to B0 @ 240 for a better fit to the
+                               ~7-8k dataset and ~4× faster CPU inference.
+                               The classifier loader auto-detects either
+                               backbone from the state dict so old V2-S
+                               checkpoints keep working.
 """
 
 import asyncio
@@ -26,13 +33,13 @@ from PIL import Image, UnidentifiedImageError
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response as StarletteResponse
 
-from diseases_data import DISEASES_DATABASE
+from diseases_data import DISEASES_DATABASE, pest_hints
 from pipeline import PlantDiseasePipeline
 
 try:
     from . import __version__ as APP_VERSION  # type: ignore
 except Exception:
-    APP_VERSION = "3.0.0"
+    APP_VERSION = "4.0.0"
 
 # Limit Pillow decompression to prevent zip-bomb DoS
 Image.MAX_IMAGE_PIXELS = 20_000_000  # ~4500×4500
@@ -63,8 +70,12 @@ logger = logging.getLogger("plantdiseases")
 
 # ── Configuration ────────────────────────────────────────────────────
 MODELS_DIR = Path("models")
-DETECTOR_PATH = MODELS_DIR / "detector.pt"       # YOLOv8 weights
-CLASSIFIER_PATH = MODELS_DIR / "classifier.pth"  # EfficientNetV2-S weights
+DETECTOR_PATH = MODELS_DIR / "detector.pt"       # YOLOv8 weights (auto-prefers detector.onnx if present)
+# Classifier: v4.7 = EfficientNet-B0 @ 240 ; v4.5 = EfficientNetV2-S @ 320.
+# The loader (classifier.py:_load_pytorch_model) auto-detects the backbone
+# from the state dict shape; classes.json carries the canonical img_size.
+# Production preference order: classifier_int8.onnx → classifier.onnx → .pth.
+CLASSIFIER_PATH = MODELS_DIR / "classifier.pth"
 
 MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE", 10 * 1024 * 1024))  # 10 MB
 MAX_IMAGE_DIMENSION = int(os.getenv("MAX_IMAGE_DIMENSION", 4096))
@@ -353,12 +364,26 @@ async def health_check():
 
 @app.get("/api/version")
 async def version():
-    """Server version and model architecture."""
+    """Server version and model architecture.
+
+    The classifier architecture string is derived from the actually-loaded
+    backend so the response stays accurate across v4.5 (EfficientNetV2-S
+    @ 320) and v4.7 (EfficientNet-B0 @ 240) checkpoints. In demo mode we
+    surface the heuristic explicitly.
+    """
+    if pipeline is None:
+        cls_arch = "unknown"
+    elif not pipeline.classifier.is_loaded:
+        cls_arch = "demo (HSV heuristic)"
+    else:
+        backend = getattr(pipeline.classifier, "backend", "unknown")
+        img_size = getattr(pipeline.classifier, "img_size", 0)
+        cls_arch = f"EfficientNet (torchvision) @ {img_size} px / {backend} backend"
     return {
         "version": APP_VERSION,
         "pipeline_mode": pipeline.mode if pipeline else "unknown",
-        "detector_arch": "YOLOv8n",
-        "classifier_arch": "EfficientNetV2-S",
+        "detector_arch": "YOLOv8n (single-class leaf)",
+        "classifier_arch": cls_arch,
         "stages": 2,
         "focus": "houseplants",
     }
@@ -508,14 +533,16 @@ async def analyze_image(image: UploadFile = File(...)):
     class_name = result["class_name"]
     confidence = result["confidence"]
     all_probs = result.get("all_probs", {})
+    warnings = list(result.get("warnings", []))
+    top_k = list(result.get("top_k", []))
     disease_info = DISEASES_DATABASE.get(class_name, DISEASES_DATABASE["unknown"])
 
     elapsed = time.time() - start_time
     _record_analysis(class_name, elapsed * 1000)
 
     logger.info(
-        "Analysis complete: class=%s confidence=%.3f time=%.2fs file=%s mode=%s",
-        class_name, confidence, elapsed, image.filename, result["pipeline_mode"],
+        "Analysis complete: class=%s confidence=%.3f time=%.2fs file=%s mode=%s warnings=%s",
+        class_name, confidence, elapsed, image.filename, result["pipeline_mode"], warnings,
     )
 
     rounded_probs = {k: round(v, 4) for k, v in all_probs.items()}
@@ -531,6 +558,32 @@ async def analyze_image(image: UploadFile = File(...)):
 
     detection = result["detection"]
 
+    # Annotate top_k with the bilingual display name so the client can
+    # render "Листовая плесень · 6%" without a second lookup table.
+    top_k_localised = []
+    for entry in top_k:
+        cls = entry.get("class", "")
+        info = DISEASES_DATABASE.get(cls, DISEASES_DATABASE["unknown"])
+        top_k_localised.append({
+            "class": cls,
+            "confidence": entry.get("confidence", 0.0),
+            "name_en": info.get("name_en", cls.replace("_", " ").title()),
+            "name_ru": info.get("name_ru", cls),
+            "is_healthy": bool(info.get("is_healthy", False)),
+        })
+
+    is_healthy_effective = bool(disease_info.get("is_healthy", False))
+    # A healthy verdict that got re-routed or flagged as uncertain is NOT
+    # a confident green badge anymore.
+    if "uncertain_healthy" in warnings:
+        is_healthy_effective = False
+
+    # v4.5: pests are not classifier outputs — they're a hint section
+    # rendered next to the diagnosis. Resolve the disease's
+    # ``possible_pest_causes`` keys into the full pest cards here so
+    # the client doesn't need a second lookup table.
+    possible_pests = pest_hints(class_name)
+
     return JSONResponse(content={
         "disease_name": disease_info["name_en"],
         "disease_name_ru": disease_info["name_ru"],
@@ -541,10 +594,13 @@ async def analyze_image(image: UploadFile = File(...)):
         "treatment_ru": disease_info["treatment_ru"],
         "prevention": disease_info["prevention_en"],
         "prevention_ru": disease_info["prevention_ru"],
-        "is_healthy": disease_info.get("is_healthy", False),
+        "is_healthy": is_healthy_effective,
         "detection": detection,
         "uncertainty": uncertainty,
         "all_probs": rounded_probs,
+        "top_k": top_k_localised,
+        "warnings": warnings,
+        "possible_pest_causes": possible_pests,
         "pipeline_mode": result["pipeline_mode"],
         "elapsed_ms": result["elapsed_ms"],
         "server_version": APP_VERSION,

@@ -20,6 +20,31 @@ data class Detection(
     @SerializedName("primary_region") val primaryRegion: DetectionRegion? = null
 )
 
+/** Single entry in the server-provided top-k candidate list. */
+data class TopKEntry(
+    @SerializedName("class") val className: String,
+    @SerializedName("confidence") val confidence: Float,
+    @SerializedName("name_en") val nameEn: String? = null,
+    @SerializedName("name_ru") val nameRu: String? = null,
+    @SerializedName("is_healthy") val isHealthy: Boolean? = null
+)
+
+/**
+ * v4.5 hint surfaced in the UI under each diagnosis: the pests whose
+ * damage pattern can be confused with this disease. Resolved server-side
+ * from `diseases_data.PEST_INFO` and the disease's `possible_pest_causes`.
+ */
+data class PossiblePestCause(
+    @SerializedName("key") val key: String,
+    @SerializedName("name_en") val nameEn: String,
+    @SerializedName("name_ru") val nameRu: String,
+    @SerializedName("category") val category: String? = null,
+    @SerializedName("summary_en") val summaryEn: String? = null,
+    @SerializedName("summary_ru") val summaryRu: String? = null,
+    @SerializedName("hint_en") val hintEn: String? = null,
+    @SerializedName("hint_ru") val hintRu: String? = null
+)
+
 /** Response from the server after analyzing an image */
 data class AnalysisResponse(
     @SerializedName("disease_name") val diseaseName: String,
@@ -34,6 +59,9 @@ data class AnalysisResponse(
     @SerializedName("is_healthy") val isHealthy: Boolean,
     @SerializedName("detection") val detection: Detection? = null,
     @SerializedName("all_probs") val allProbs: Map<String, Float>? = null,
+    @SerializedName("top_k") val topK: List<TopKEntry>? = null,
+    @SerializedName("warnings") val warnings: List<String>? = null,
+    @SerializedName("possible_pest_causes") val possiblePestCauses: List<PossiblePestCause>? = null,
     @SerializedName("pipeline_mode") val pipelineMode: String? = null,
     @SerializedName("elapsed_ms") val elapsedMs: Float? = null
 )
@@ -67,6 +95,12 @@ data class ScanHistoryItem(
     val diseaseNameRu: String,
     val confidence: Float,
     val isHealthy: Boolean,
+    /**
+     * True when the scan was classified as `not_a_plant`. Mutually
+     * exclusive with `isHealthy`; `isHealthy=false && isNotAPlant=false`
+     * means a real disease was diagnosed.
+     */
+    val isNotAPlant: Boolean,
     val timestamp: Long
 )
 

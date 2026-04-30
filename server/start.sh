@@ -9,7 +9,10 @@
 #     chmod +x start.sh
 #     ./start.sh              # start server (default port 8000)
 #     ./start.sh --port 9000  # custom port
-#     ./start.sh --train      # train models before starting
+#
+# Models are trained in Colab via train_notebook.ipynb. Drop the
+# resulting detector.pt, classifier.pth and classes.json into
+# server/models/ before starting the server in FULL mode.
 #
 set -euo pipefail
 
@@ -17,18 +20,18 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
 PORT="${PORT:-8000}"
-TRAIN=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --port)  PORT="$2"; shift 2 ;;
-        --train) TRAIN=true; shift ;;
         -h|--help)
             cat <<USAGE
-Usage: $0 [--port PORT] [--train]
+Usage: $0 [--port PORT]
 
   --port PORT   Server port (default: 8000)
-  --train       Train models before starting the server
+
+Train models in Colab via train_notebook.ipynb, then drop
+detector.pt, classifier.pth and classes.json into server/models/.
 USAGE
             exit 0
             ;;
@@ -72,20 +75,10 @@ echo "[+] Installing PyTorch (CPU-only)..."
 pip install --quiet --upgrade pip
 pip install --quiet torch torchvision --index-url https://download.pytorch.org/whl/cpu
 
-if [[ "$TRAIN" == true ]]; then
-    echo "[+] Installing training dependencies..."
-    pip install --quiet -r requirements-train.txt
-else
-    echo "[+] Installing server dependencies..."
-    pip install --quiet -r requirements.txt
-fi
+echo "[+] Installing server dependencies..."
+pip install --quiet -r requirements.txt
 
 mkdir -p models logs
-
-if [[ "$TRAIN" == true ]]; then
-    echo "[+] Starting model training..."
-    python train.py
-fi
 
 if [[ -f "models/detector.pt" && -f "models/classifier.pth" ]]; then
     echo "[+] Both models found — running in FULL mode"

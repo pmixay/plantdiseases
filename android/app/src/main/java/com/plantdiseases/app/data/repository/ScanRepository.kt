@@ -83,6 +83,9 @@ class ScanRepository(
                     it.x == primary.x && it.y == primary.y &&
                         it.width == primary.width && it.height == primary.height
                 }.takeIf { it >= 0 }
+            val warningsJson = result.warnings
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { gson.toJson(it) }
             val entity = ScanEntity(
                 imagePath = imagePath,
                 diseaseName = result.diseaseName,
@@ -97,7 +100,8 @@ class ScanRepository(
                 isHealthy = result.isHealthy,
                 regions = if (regions.isEmpty()) null else gson.toJson(regions),
                 primaryRegionIndex = primaryIndex,
-                allProbs = result.allProbs?.let { gson.toJson(it) }
+                allProbs = result.allProbs?.let { gson.toJson(it) },
+                warnings = warningsJson
             )
             scanDao.insert(entity)
         }
@@ -146,17 +150,64 @@ class ScanRepository(
         diseaseNameRu = diseaseNameRu,
         confidence = confidence,
         isHealthy = isHealthy,
+        isNotAPlant = isNotAPlantEntity(this),
         timestamp = timestamp
     )
 
-    /** Get scan statistics */
+    /**
+     * NAP detection at storage level: prefer the canonical class key from
+     * `all_probs`; fall back to the localized display name (covers legacy
+     * scans without `all_probs`).
+     */
+    private fun isNotAPlantEntity(entity: ScanEntity): Boolean {
+        val topKey = parseAllProbs(entity.allProbs)
+            .entries.maxByOrNull { it.value }?.key
+        if (topKey == "not_a_plant") return true
+        return entity.diseaseName.equals("Not a Plant", ignoreCase = true) ||
+            entity.diseaseNameRu == "Не растение"
+    }
+
+    /**
+     * Stats reflect the user's plant-care reality, not the raw row count.
+     *
+     * `not_a_plant` rows are surfaced as their own category (not folded
+     * into the diseased count) and are excluded from the "most common
+     * disease" rollup — otherwise a misfired scan or two would crown
+     * "Not a Plant" as the user's most common problem.
+     *
+     * `totalScans` here is the count of *plant* scans (healthy + real
+     * disease). `notAPlantCount` is reported separately so the UI can
+     * decide whether to show it.
+     */
     suspend fun getStats(): ScanStats = withContext(Dispatchers.IO) {
-        val total = scanDao.getCount()
-        val healthy = scanDao.getHealthyCount()
-        val diseased = scanDao.getDiseasedCount()
-        val commonDisease = scanDao.getMostCommonDisease()
-        val commonDiseaseRu = scanDao.getMostCommonDiseaseRu()
-        ScanStats(total, healthy, diseased, commonDisease, commonDiseaseRu)
+        val all = scanDao.getAllScans()
+        var notAPlant = 0
+        var healthy = 0
+        var diseased = 0
+        val diseaseEnCounts = mutableMapOf<String, Int>()
+        val diseaseRuByEn = mutableMapOf<String, String>()
+        for (s in all) {
+            when {
+                isNotAPlantEntity(s) -> notAPlant++
+                s.isHealthy -> healthy++
+                else -> {
+                    diseased++
+                    diseaseEnCounts[s.diseaseName] =
+                        (diseaseEnCounts[s.diseaseName] ?: 0) + 1
+                    diseaseRuByEn[s.diseaseName] = s.diseaseNameRu
+                }
+            }
+        }
+        val topEn = diseaseEnCounts.maxByOrNull { it.value }?.key
+        val topRu = topEn?.let { diseaseRuByEn[it] }
+        ScanStats(
+            totalScans = healthy + diseased,
+            healthyCount = healthy,
+            diseasedCount = diseased,
+            notAPlantCount = notAPlant,
+            mostCommonDisease = topEn,
+            mostCommonDiseaseRu = topRu,
+        )
     }
 
     /** Clear all scan history */
@@ -168,6 +219,7 @@ class ScanRepository(
         val totalScans: Int,
         val healthyCount: Int,
         val diseasedCount: Int,
+        val notAPlantCount: Int,
         val mostCommonDisease: String?,
         val mostCommonDiseaseRu: String?
     )
@@ -189,6 +241,16 @@ class ScanRepository(
             gson.fromJson(json, type)
         } catch (e: Exception) {
             emptyMap()
+        }
+    }
+
+    /** Parse pipeline warnings JSON array (flags like "uncertain_healthy"). */
+    fun parseWarnings(json: String?): List<String> {
+        if (json.isNullOrEmpty()) return emptyList()
+        return try {
+            gson.fromJson(json, Array<String>::class.java).toList()
+        } catch (e: Exception) {
+            emptyList()
         }
     }
 }

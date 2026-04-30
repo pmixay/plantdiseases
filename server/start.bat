@@ -7,13 +7,14 @@ rem
 rem Usage:
 rem     start.bat                 start server (default port 8000)
 rem     start.bat --port 9000     custom port
-rem     start.bat --train         train models before starting
+rem
+rem Train models in Colab via train_notebook.ipynb, then drop
+rem detector.pt, classifier.pth and classes.json into server\models\.
 setlocal enabledelayedexpansion
 
 cd /d "%~dp0"
 
 set PORT=8000
-set TRAIN=false
 
 :parse_args
 if "%~1"=="" goto args_done
@@ -23,21 +24,18 @@ if "%~1"=="--port" (
     shift
     goto parse_args
 )
-if "%~1"=="--train" (
-    set TRAIN=true
-    shift
-    goto parse_args
-)
 if "%~1"=="-h" goto show_help
 if "%~1"=="--help" goto show_help
 echo Unknown option: %~1
 exit /b 1
 
 :show_help
-echo Usage: start.bat [--port PORT] [--train]
+echo Usage: start.bat [--port PORT]
 echo.
 echo   --port PORT   Server port (default: 8000)
-echo   --train       Train models before starting the server
+echo.
+echo Train models in Colab via train_notebook.ipynb, then drop
+echo detector.pt, classifier.pth and classes.json into server\models\.
 exit /b 0
 
 :args_done
@@ -68,23 +66,11 @@ echo [+] Installing PyTorch (CPU-only)...
 pip install --quiet --upgrade pip
 pip install --quiet torch torchvision --index-url https://download.pytorch.org/whl/cpu
 
-if "%TRAIN%"=="true" (
-    echo [+] Installing training dependencies...
-    pip install --quiet -r requirements-train.txt
-) else (
-    echo [+] Installing server dependencies...
-    pip install --quiet -r requirements.txt
-)
+echo [+] Installing server dependencies...
+pip install --quiet -r requirements.txt
 
 if not exist "models" mkdir models
 if not exist "logs" mkdir logs
-
-if "%TRAIN%"=="true" (
-    echo.
-    echo [+] Starting model training...
-    python train.py
-    echo.
-)
 
 echo.
 if exist "models\detector.pt" (

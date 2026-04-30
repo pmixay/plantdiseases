@@ -34,12 +34,17 @@ class RecentScanAdapter(
         val isRu = LocaleHelper.isRussian(context)
 
         holder.binding.apply {
-            tvDiseaseName.text = if (isRu) item.diseaseNameRu else item.diseaseName
+            val displayName = when {
+                item.isNotAPlant -> context.getString(R.string.not_a_plant_diagnosis_name)
+                isRu -> item.diseaseNameRu
+                else -> item.diseaseName
+            }
+            tvDiseaseName.text = displayName
 
-            val statusColor = if (item.isHealthy) {
-                R.color.healthy_green
-            } else {
-                R.color.disease_red
+            val statusColor = when {
+                item.isNotAPlant -> R.color.neutral_blue
+                item.isHealthy -> R.color.healthy_green
+                else -> R.color.disease_red
             }
             tvDiseaseName.setTextColor(context.getColor(statusColor))
 

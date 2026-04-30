@@ -20,8 +20,14 @@ def test_version_contract(client):
     r = client.get("/api/version")
     assert r.status_code == 200
     body = r.json()
-    assert body["detector_arch"] == "YOLOv8n"
-    assert body["classifier_arch"] == "EfficientNetV2-S"
+    assert body["detector_arch"] == "YOLOv8n (single-class leaf)"
+    # v4.7: classifier_arch is derived from the actually-loaded backend
+    # so the value depends on which weights the test environment has.
+    # In the test harness no weights are present so we get the demo
+    # heuristic; a production server would surface "EfficientNet ... px /
+    # onnx backend". We assert structure, not the exact backbone string.
+    assert isinstance(body["classifier_arch"], str)
+    assert body["classifier_arch"] != ""
     assert body["stages"] == 2
     assert body["focus"] == "houseplants"
     assert body["pipeline_mode"] in ("full", "partial", "demo")
@@ -97,6 +103,8 @@ def test_analyze_response_contract(client, png_bytes):
         "detection",
         "uncertainty",
         "all_probs",
+        "top_k",
+        "warnings",
         "pipeline_mode",
         "elapsed_ms",
         "server_version",
@@ -108,6 +116,12 @@ def test_analyze_response_contract(client, png_bytes):
     assert 0.0 <= body["uncertainty"] <= 1.0
     assert isinstance(body["treatment"], list)
     assert isinstance(body["all_probs"], dict)
+    assert isinstance(body["top_k"], list)
+    assert isinstance(body["warnings"], list)
+    # top_k entries are localised — client renders them without a
+    # second disease-name lookup.
+    for entry in body["top_k"]:
+        assert {"class", "confidence", "name_en", "name_ru", "is_healthy"} <= entry.keys()
     assert set(body["detection"].keys()) == {
         "is_diseased", "detector_confidence", "regions", "primary_region",
     }

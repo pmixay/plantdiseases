@@ -37,6 +37,11 @@
     <string name="confidence_format">%d%%</string>
     <string name="status_healthy">Healthy</string>
     <string name="status_disease">Disease Detected</string>
+    <string name="status_not_a_plant">Not a Plant</string>
+    <string name="not_a_plant_diagnosis_name">Not a plant in frame</string>
+    <string name="not_a_plant_result_title">This doesn\'t look like a plant</string>
+    <string name="not_a_plant_result_body">The model couldn\'t find a plant leaf in this photo. Try retaking the picture so the leaf fills most of the frame, with steady hands and good lighting.</string>
+    <string name="not_a_plant_retry_hint">Tip: get closer to a single leaf on a plain background.</string>
     <string name="description_label">Description</string>
     <string name="treatment_label">Treatment</string>
     <string name="prevention_label">Prevention</string>
@@ -137,6 +142,8 @@
     <!-- Top-3 alternatives -->
     <string name="why_this_diagnosis">Why This Diagnosis?</string>
     <string name="alternatives_subtitle">Model confidence across top candidates</string>
+    <string name="pest_causes_title">Could it be a pest?</string>
+    <string name="pest_causes_subtitle">These pests cause damage that can look similar — quick checklist below.</string>
 
     <!-- About model -->
     <string name="about_model">About the Model</string>
@@ -144,11 +151,11 @@
     <string name="model_params">Parameters</string>
     <string name="model_classes">Classes</string>
     <string name="model_pipeline">Pipeline</string>
-    <string name="model_arch_value">YOLOv8n + EfficientNetV2-S</string>
-    <string name="model_params_value">~24M total</string>
-    <string name="model_classes_value">8 diseases + healthy + not-a-plant</string>
+    <string name="model_arch_value">YOLOv8n + EfficientNet-B0</string>
+    <string name="model_params_value">~8M total</string>
+    <string name="model_classes_value">7 diseases + healthy + not-a-plant</string>
     <string name="model_pipeline_value">Two-stage: locate → classify</string>
-    <string name="model_description">Stage 1 (YOLOv8n) finds every leaf in the photo and flags the ones that look diseased. Stage 2 (EfficientNetV2-S) classifies the cropped diseased region and rejects frames without a plant.</string>
+    <string name="model_description">Stage 1 (YOLOv8n) locates every leaf in the photo. Stage 2 (EfficientNet-B0 @ 240 px) classifies the cropped leaf region into one of 7 houseplant diseases or healthy, and rejects frames without a plant via a dedicated not-a-plant class plus an MSP/OOD gate.</string>
 
     <!-- Rate limit -->
     <string name="server_busy">Server Busy</string>
@@ -160,6 +167,12 @@
 
     <!-- Retry analysis -->
     <string name="retry_analysis">Retry Analysis</string>
+
+    <!-- Pipeline warnings -->
+    <string name="warning_uncertain_healthy_title">Could be disease</string>
+    <string name="warning_uncertain_healthy">The model is not confident that the plant is healthy. Please check the alternative diagnoses below — they may apply.</string>
+    <string name="warning_detector_mismatch_title">Detector sees damage</string>
+    <string name="warning_detector_mismatch">The detector spotted leaf damage, but the classifier decided the plant is healthy. Try re-scanning from a closer, better-lit angle.</string>
 
     <!-- How to use (onboarding from profile) -->
     <string name="how_to_use">How to Use</string>
