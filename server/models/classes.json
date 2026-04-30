@@ -1,17 +1,20 @@
 {
-  "_comment": "PlantScope v4.7 — 8 houseplant disease classes. Stage 1 detector is single-class (leaf); the disease decision is owned by Stage 2. Pests (spider_mites/aphids/mealybug/scale_insect/whitefly) are NOT classifier outputs — they appear as 'possible_pest_causes' hints per disease (see server/diseases_data.py PEST_INFO). Order matches sorted(ImageFolder.classes), i.e. alphabetical. v4.7 changes: classifier backbone EfficientNetV2-S @ 320 → EfficientNet-B0 @ 240 (better fit for ~7-8k dataset, ~4× faster CPU inference). This file is regenerated automatically by train_notebook.ipynb cell 14 after each training run; the values below are the v4.7 defaults that match the notebook (cell 12: IMG_SIZE=240, LABEL_SMOOTHING=0.05, CUTMIX_PROB=0.4, MIXUP_PROB=0.2).",
-  "model_version": "4.7.0",
+  "_comment": "PlantScope v5.0 — 10 houseplant disease classes. Stage 1 detector is single-class (leaf); the disease decision is owned by Stage 2. Pests (spider_mites/aphids/mealybug/scale_insect/whitefly) are NOT classifier outputs — they appear as 'possible_pest_causes' hints per disease (see server/diseases_data.py PEST_INFO). Order matches sorted(ImageFolder.classes), i.e. alphabetical. v5.0 changes: +2 classes (bacterial_leaf_spot, mosaic_virus); EfficientNet-B0 @ 240 stays the production primary, optional EfficientNetV2-S @ 300 ensemble peer ('ensemble.peer_*' fields). This file is regenerated automatically by train_notebook.ipynb final cell after each training run; the values below are the v5.0 defaults that match the notebook.",
+  "model_version": "5.0.0",
   "architecture": {
     "detector": "YOLOv8n (single-class leaf)",
-    "classifier": "EfficientNet-B0 (torchvision, IMAGENET1K_V1)"
+    "classifier": "EfficientNet-B0 (torchvision, IMAGENET1K_V1)",
+    "ensemble_peer": "EfficientNetV2-S @ 300 (optional, weight=0.45)"
   },
-  "num_classes": 8,
+  "num_classes": 10,
   "class_names": [
     "anthracnose",
+    "bacterial_leaf_spot",
     "gray_mold",
     "healthy",
     "iron_chlorosis",
     "late_blight",
+    "mosaic_virus",
     "not_a_plant",
     "powdery_mildew",
     "sunburn"
@@ -28,6 +31,12 @@
     "cutmix_safe": "no mixing across not_a_plant <-> plant classes",
     "mixup_safe": "no mixing across not_a_plant <-> plant classes",
     "yolo_cache": "disk",
-    "_note": "Real values overwritten by cell 14 of train_notebook.ipynb after each run."
+    "_note": "Real values overwritten by the final cell of train_notebook.ipynb after each run."
+  },
+  "ensemble": {
+    "peer_arch": "EfficientNetV2-S",
+    "peer_img_size": 300,
+    "peer_weight": 0.45,
+    "_note": "Loaded only if classifier_v2s*.onnx is present next to the primary checkpoint."
   }
 }

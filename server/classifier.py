@@ -1,11 +1,20 @@
 """
 Stage 2 — Houseplant Disease Classifier.
 
-Classifies a (preferably cropped) leaf region into one of 8
+Classifies a (preferably cropped) leaf region into one of 10
 houseplant-relevant condition classes including the rejection class
 ``not_a_plant``. Class names + input resolution live in
 ``models/classes.json``; if the file is missing a built-in default is
-used (v4.7 = EfficientNet-B0 @ 240).
+used (v5.0 = EfficientNet-B0 @ 240, optional V2-S @ 300 ensemble).
+
+v5.0 changes vs v4.7:
+* +2 disease classes — ``bacterial_leaf_spot`` and ``mosaic_virus``.
+  Both are common houseplant problems with clean visual signatures
+  (yellow-haloed angular spots / mottled green-yellow patterns) and
+  strong PV+iNat data sources.
+* Optional second checkpoint (``classifier_v2s.onnx``) loaded as an
+  ensemble peer and weighted-averaged at inference. Falls back to the
+  single classifier when the peer is missing.
 
 The classifier prefers ONNX Runtime (CPU EP) when an ``.onnx`` weight
 is present — that's the path the training notebook now produces and
@@ -55,11 +64,15 @@ LEGACY_V2S_IMG_SIZE = 320
 # OR truncate this list to match the actual head width and prefer the
 # class names declared in classes.json when present.
 DEFAULT_CLASS_NAMES = [
+    # PlantScope v5.0 — 10 houseplant disease classes (alphabetical),
+    # matching sorted(ImageFolder.classes) at training time.
     "anthracnose",
+    "bacterial_leaf_spot",
     "gray_mold",
     "healthy",
     "iron_chlorosis",
     "late_blight",
+    "mosaic_virus",
     "not_a_plant",
     "powdery_mildew",
     "sunburn",
@@ -117,6 +130,25 @@ def _resolve_onnx_path(model_path: Path | None) -> Path | None:
     return None
 
 
+def _resolve_ensemble_path(model_path: Path | None) -> Path | None:
+    """v5.0: optional secondary backbone (V2-S) co-located with the primary.
+
+    The notebook can train a second checkpoint at higher resolution and
+    export it as ``classifier_v2s.onnx`` (or ``_int8`` variant). When
+    present we weighted-average its softmax with the primary's at
+    inference. Missing peer → primary-only inference; the field
+    ``ensemble_size`` in ``/api/version`` reflects the actual count.
+    """
+    if model_path is None:
+        return None
+    parent = model_path.parent
+    for candidate in ("classifier_v2s_int8.onnx", "classifier_v2s.onnx"):
+        p = parent / candidate
+        if p.exists():
+            return p
+    return None
+
+
 class DiseaseClassifier:
     """Houseplant disease classifier (ONNX preferred, PyTorch fallback)."""
 
@@ -127,6 +159,17 @@ class DiseaseClassifier:
         self._onnx_input_name: str = ""
         self._torch_model = None        # torch.nn.Module
         self._torch_device = None       # torch.device
+
+        # v5.0: optional ensemble peer (V2-S @ higher res). Loaded only
+        # if a sibling ``classifier_v2s*.onnx`` is found next to the
+        # primary; otherwise inference stays single-model.
+        self._peer_session = None
+        self._peer_input_name: str = ""
+        self._peer_img_size: int = 0
+        self.ensemble_size: int = 1
+        # Primary weight in the ensemble softmax average. Tuned at
+        # training time and persisted in classes.json["ensemble"].
+        self._peer_weight: float = 0.45
 
         meta = _load_metadata(model_path.parent) if model_path else {}
         self.CLASS_NAMES = _resolve_class_names(meta)
@@ -147,6 +190,16 @@ class DiseaseClassifier:
                 self._load_pytorch_model(model_path)
             except Exception as e:
                 logger.error("Failed to load PyTorch classifier %s: %s", model_path, e)
+
+        # Optional ensemble peer — we never *fail* on a missing peer; the
+        # primary is enough to serve traffic. Only attach if the head
+        # widths match (i.e. the peer was trained on the same taxonomy).
+        peer_path = _resolve_ensemble_path(model_path)
+        if self.is_loaded and peer_path is not None:
+            try:
+                self._attach_peer(peer_path, meta)
+            except Exception as e:
+                logger.warning("Ensemble peer skipped (%s): %s", peer_path, e)
 
         if not self.is_loaded:
             logger.warning("Classifier: no model — running in DEMO mode")
@@ -258,6 +311,37 @@ class DiseaseClassifier:
             path, self.NUM_CLASSES, self.img_size,
         )
 
+    def _attach_peer(self, path: Path, meta: dict) -> None:
+        """Load the optional V2-S ensemble peer and validate its head."""
+        import onnxruntime as ort
+
+        opts = ort.SessionOptions()
+        opts.intra_op_num_threads = 2
+        opts.inter_op_num_threads = 1
+        opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        sess = ort.InferenceSession(
+            str(path), sess_options=opts, providers=["CPUExecutionProvider"],
+        )
+        out = sess.get_outputs()[0]
+        out_dim = next((d for d in out.shape if isinstance(d, int)), None)
+        if out_dim is not None and out_dim != self.NUM_CLASSES:
+            raise ValueError(
+                f"peer head width {out_dim} != primary {self.NUM_CLASSES}"
+            )
+        ensemble_meta = (meta.get("ensemble") or {})
+        self._peer_img_size = int(
+            ensemble_meta.get("peer_img_size", 300) or 300
+        )
+        weight = float(ensemble_meta.get("peer_weight", 0.45) or 0.45)
+        self._peer_weight = max(0.0, min(0.95, weight))
+        self._peer_session = sess
+        self._peer_input_name = sess.get_inputs()[0].name
+        self.ensemble_size = 2
+        logger.info(
+            "Ensemble peer attached %s @ %dpx (weight=%.2f)",
+            path, self._peer_img_size, self._peer_weight,
+        )
+
     @staticmethod
     def _fit_class_names(names: list[str], n: int) -> list[str]:
         if n <= len(names):
@@ -312,22 +396,70 @@ class DiseaseClassifier:
         """Stack N preprocessed crops into a single (N,3,H,W) tensor."""
         return np.concatenate([self._preprocess(im) for im in imgs], axis=0)
 
+    def _preprocess_peer(self, img: Image.Image) -> np.ndarray:
+        """Same normalisation but resize to the peer's native input size."""
+        size = self._peer_img_size
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        if img.size != (size, size):
+            img = img.resize((size, size), Image.BILINEAR)
+        arr = np.asarray(img, dtype=np.float32) / 255.0
+        arr = (arr - NORM_MEAN) / NORM_STD
+        return np.ascontiguousarray(arr.transpose(2, 0, 1)[None], dtype=np.float32)
+
+    def _peer_probs(self, imgs: list[Image.Image]) -> np.ndarray | None:
+        """Run the peer on N crops, return (N, num_classes) softmax or None."""
+        if self._peer_session is None:
+            return None
+        try:
+            x = np.concatenate([self._preprocess_peer(im) for im in imgs], axis=0)
+            logits = self._peer_session.run(None, {self._peer_input_name: x})[0]
+        except Exception as e:  # noqa: BLE001 — never let a peer crash inference
+            logger.warning("Peer inference failed, dropping ensemble: %s", e)
+            return None
+        # Stable per-row softmax.
+        logits = logits - logits.max(axis=1, keepdims=True)
+        e = np.exp(logits)
+        return e / e.sum(axis=1, keepdims=True)
+
+    def _blend_with_peer(
+        self, primary_probs: np.ndarray, imgs: list[Image.Image],
+    ) -> np.ndarray:
+        """Weighted-average primary softmax with the ensemble peer when active.
+
+        primary_probs: (N, num_classes)
+        Returns the blended (N, num_classes) softmax.
+        """
+        if self._peer_session is None:
+            return primary_probs
+        peer = self._peer_probs(imgs)
+        if peer is None or peer.shape != primary_probs.shape:
+            return primary_probs
+        w = self._peer_weight
+        return (1.0 - w) * primary_probs + w * peer
+
     # ── ONNX inference ───────────────────────────────────────────────
 
     def _classify_onnx(self, img: Image.Image) -> dict:
         x = self._preprocess(img)
-        logits = self._onnx_session.run(None, {self._onnx_input_name: x})[0][0]
-        probs = _softmax(logits)
-        return self._format_result(probs)
+        logits = self._onnx_session.run(None, {self._onnx_input_name: x})[0]
+        # Stable softmax over the batch dim (here N=1).
+        logits = logits - logits.max(axis=1, keepdims=True)
+        e = np.exp(logits)
+        probs = e / e.sum(axis=1, keepdims=True)
+        # v5.0: blend with the optional V2-S peer when present.
+        probs = self._blend_with_peer(probs, [img])
+        return self._format_result(probs[0])
 
     def _classify_onnx_batch(self, imgs: list[Image.Image]) -> list[dict]:
         x = self._preprocess_batch(imgs)
         # logits: (N, num_classes)
         logits = self._onnx_session.run(None, {self._onnx_input_name: x})[0]
-        out: list[dict] = []
-        for i in range(logits.shape[0]):
-            out.append(self._format_result(_softmax(logits[i])))
-        return out
+        logits = logits - logits.max(axis=1, keepdims=True)
+        e = np.exp(logits)
+        probs = e / e.sum(axis=1, keepdims=True)
+        probs = self._blend_with_peer(probs, imgs)
+        return [self._format_result(probs[i]) for i in range(probs.shape[0])]
 
     # ── PyTorch inference ────────────────────────────────────────────
 
@@ -335,16 +467,23 @@ class DiseaseClassifier:
         import torch
         x = torch.from_numpy(self._preprocess(img))
         with torch.no_grad():
-            logits = self._torch_model(x)[0].cpu().numpy()
-        probs = _softmax(logits)
-        return self._format_result(probs)
+            logits = self._torch_model(x).cpu().numpy()
+        logits = logits - logits.max(axis=1, keepdims=True)
+        e = np.exp(logits)
+        probs = e / e.sum(axis=1, keepdims=True)
+        probs = self._blend_with_peer(probs, [img])
+        return self._format_result(probs[0])
 
     def _classify_torch_batch(self, imgs: list[Image.Image]) -> list[dict]:
         import torch
         x = torch.from_numpy(self._preprocess_batch(imgs))
         with torch.no_grad():
             logits = self._torch_model(x).cpu().numpy()
-        return [self._format_result(_softmax(logits[i])) for i in range(logits.shape[0])]
+        logits = logits - logits.max(axis=1, keepdims=True)
+        e = np.exp(logits)
+        probs = e / e.sum(axis=1, keepdims=True)
+        probs = self._blend_with_peer(probs, imgs)
+        return [self._format_result(probs[i]) for i in range(probs.shape[0])]
 
     def _format_result(self, probs: np.ndarray) -> dict:
         top_idx = int(np.argmax(probs))
@@ -382,18 +521,31 @@ class DiseaseClassifier:
             return {"class_name": "unknown", "confidence": 0.0,
                     "all_probs": {}, "low_confidence": True}
 
-        # Demo branches map to the v4.5 8-class taxonomy. Pests
-        # (spider_mites/mealybug/scale_insect) and the retired buckets
-        # (leaf_spot, nutrient_deficiency) were removed in v4.5 and
-        # their references cleaned out here in v4.6.
+        # Demo branches map to the v5.0 10-class taxonomy. Pests stay
+        # UI hints, not classes. New v5.0 buckets (bacterial_leaf_spot,
+        # mosaic_virus) are routed by green/yellow contrast variance.
+        # Standard deviation of the green channel separates uniformly
+        # green ("healthy") from mottled ("mosaic") and clean from
+        # spotted ("bacterial").
+        g_std = float(arr[:, :, 1].std())
+
         if green_ratio < 0.32 and "not_a_plant" in names:
             cls, conf = "not_a_plant", 0.60 + rng.uniform(0, 0.20)
-        elif green_ratio > 0.42 and "healthy" in names:
+        elif green_ratio > 0.42 and g_std < 35 and "healthy" in names:
             cls, conf = "healthy", 0.78 + rng.uniform(0, 0.15)
+        elif green_ratio > 0.36 and g_std > 50 and "mosaic_virus" in names:
+            cls, conf = "mosaic_virus", 0.55 + rng.uniform(0, 0.20)
         elif brightness > 190 and g_mean < 170:
             pool = [n for n in ("powdery_mildew", "gray_mold") if n in names]
             cls = rng.choice(pool) if pool else names[0]
             conf = 0.55 + rng.uniform(0, 0.25)
+        elif brown_ratio > 0.42 and g_std > 45:
+            # High contrast brown spots — classic bacterial / anthracnose
+            # signature. Halo signal can't be detected from RGB stats
+            # alone, so we split bacterial vs anthracnose by chance.
+            pool = [n for n in ("bacterial_leaf_spot", "anthracnose") if n in names]
+            cls = rng.choice(pool) if pool else names[0]
+            conf = 0.55 + rng.uniform(0, 0.20)
         elif brown_ratio > 0.42:
             pool = [n for n in ("anthracnose", "late_blight", "sunburn") if n in names]
             cls = rng.choice(pool) if pool else names[0]

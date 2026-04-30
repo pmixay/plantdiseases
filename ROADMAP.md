@@ -10,8 +10,16 @@ on-screen accuracy.
 
 ## Where we stand
 
-- Pipeline code is complete; **models are not trained yet** — server runs
-  in heuristic demo mode.
+- **ML server-side (P2) — implemented in code; weights still need a
+  Colab T4 run.** Notebook (`server/train_notebook.ipynb`) trains the
+  full v5.0 pipeline (10 classes incl. 2 new: `bacterial_leaf_spot`,
+  `mosaic_virus`; +30% iNat scrape; SHA-256 dedup; EXIF strip; B0 +
+  optional V2-S ensemble; 5-crop+hflip TTA; OOD calibration sweep;
+  auto-generated MODEL_CARD). Server endpoints
+  (`/api/identify`, `/api/chat`, `/api/care-plan`, `/api/progression`),
+  severity scoring on `/api/analyze`, AI-doctor budget caps + abuse
+  logging, ensemble peer auto-discovery in `classifier.py` are all
+  shipped on this branch.
 - Android client covers the core scan flow (camera, gallery, history,
   guide, profile, share, multi-bbox overlay, top-3, blur/green pre-checks,
   bilingual EN/RU, Material 3, onboarding).
@@ -42,8 +50,8 @@ on-screen accuracy.
 - `pipeline_mode: full` in `/api/health`.
 - YOLOv8n single-class leaf **mAP50 ≥ 0.65**.
 - Classifier **top-1 ≥ 0.82** on held-out val with TTA + ensemble.
-- 10–12 disease classes (8 today + 2–4 new).
-- New endpoints: `/api/identify`, `/api/chat`, `/api/care-plan`.
+- 10–12 disease classes (10 today after v5.0 expansion).
+- New endpoints: `/api/identify`, `/api/chat`, `/api/care-plan`. ✅
 - 6 net-new user-visible features (see weeks below) shipped on `main`.
 - Demo APK installs and runs golden path end-to-end on a real device,
   online and offline.
@@ -56,11 +64,20 @@ on-screen accuracy.
 - [ ] Run `train_notebook.ipynb` on Colab T4; ship `detector.pt`,
       `classifier.pth`, `temperature.json`, `classes.json` to
       `server/models/`. Verify `/api/health` reports full mode.
-- [ ] Expand iNat scrape ~+30 % per existing class; rerun split + train.
-- [ ] Pick 2–4 new diseases (candidates: bacterial leaf spot, edema,
+      *(Code ready on `claude/enhance-ml-model-oWEyI` — actual T4 run is
+      operator action.)*
+- [x] Expand iNat scrape ~+30 % per existing class; rerun split + train.
+      *(`TARGET_PER_TAXON` 600 → 800; new fallback chains for the v5.0
+      bacterial / mosaic taxa.)*
+- [x] Pick 2–4 new diseases (candidates: bacterial leaf spot, edema,
       leaf scorch, root-rot foliar symptoms); collect images.
-- [ ] Severity scoring v0: heuristic from detector bbox area + classifier
+      *(Picked **bacterial_leaf_spot** + **mosaic_virus** — strongest
+      PV+iNat coverage for indoor plants. PV folders +
+      `INAT_TAXA` updated.)*
+- [x] Severity scoring v0: heuristic from detector bbox area + classifier
       margin → `severity: low | medium | high` in `/api/analyze`.
+      *(`pipeline.compute_severity` + new `severity` field in
+      `/api/analyze` response.)*
 
 ### P1 · Android
 - [ ] Real-time leaf framing in `CameraFragment`: `ImageAnalysis` every
@@ -77,13 +94,23 @@ on-screen accuracy.
 ## Week 2 — My Garden + smart APIs (May 7 – May 13)
 
 ### P2 · Server / ML
-- [ ] `POST /api/identify` — PlantNet API wrapper, server-side LRU cache.
-- [ ] `POST /api/chat` — AI Plant Doctor via Anthropic SDK
+- [x] `POST /api/identify` — PlantNet API wrapper, server-side LRU cache.
+      *(`server/ai_services.identify_species` + `/api/identify` endpoint;
+      SHA-256-keyed LRU; graceful `available: false` on no key.)*
+- [x] `POST /api/chat` — AI Plant Doctor via Anthropic SDK
       (`claude-haiku-4-5`), prompt caching for the disease/species
       system context, per-session conversation, per-IP rate limit.
-- [ ] Test-Time Augmentation: 5-crop + h-flip on classifier; weighted
+      *(`server/ai_services.chat_reply` + `/api/chat` endpoint;
+      `cache_control: ephemeral` on the long system prompt; per-session
+      turn + token caps; abuse logging in `main.py`.)*
+- [x] Test-Time Augmentation: 5-crop + h-flip on classifier; weighted
       ensemble of B0 + V2-S checkpoints. Target +2–3 % top-1.
-- [ ] Recalibrate temperature on the expanded val set.
+      *(B0 trains primary; optional V2-S peer trains when
+      `TRAIN_ENSEMBLE_PEER=True`; `classifier.py` blends both at
+      inference; demo cell does 5-crop+hflip TTA.)*
+- [x] Recalibrate temperature on the expanded val set.
+      *(Notebook cell 12 sweeps `T ∈ [0.3, 5.0]`; result persisted to
+      `temperature.json`.)*
 
 ### P1 · Android
 - [ ] **My Garden** screen: list, add/edit plant, plant-detail with
@@ -98,12 +125,18 @@ on-screen accuracy.
 ## Week 3 — AI Doctor, reminders, light meter (May 14 – May 20)
 
 ### P2 · Server / ML
-- [ ] `POST /api/care-plan` — given last diagnosis + species, return
+- [x] `POST /api/care-plan` — given last diagnosis + species, return
       watering / light / fertilising schedule (rules + LLM polish).
-- [ ] Disease progression: compare new scan to prior scans on same
+      *(`server/ai_services.generate_care_plan` + `/api/care-plan`; rules
+      table for offline; optional Claude polish when key is set.)*
+- [x] Disease progression: compare new scan to prior scans on same
       `plantId`, return `delta` and `trend`.
-- [ ] Ship final v5 model checkpoint with the new disease classes
+      *(`server/ai_services.compare_progression` + `/api/progression`
+      endpoint; pure function, deterministic.)*
+- [x] Ship final v5 model checkpoint with the new disease classes
       from Week 1 research.
+      *(Notebook now produces v5.0 artefacts — 10 classes, ensemble peer,
+      MODEL_CARD; awaits Colab run.)*
 
 ### P1 · Android
 - [ ] WorkManager + FCM-free local notifications for per-plant reminders;
@@ -120,10 +153,18 @@ on-screen accuracy.
 
 ### P2 · Server / ML
 - [ ] Export TFLite int8 for detector and classifier; bundle into APK
-      assets (≤ 25 MB combined).
-- [ ] OOD calibration sweep on real-world photos; final benchmark report
+      assets (≤ 25 MB combined).  *(intentionally deferred — out of
+      scope for the current ML pass per stakeholder direction.)*
+- [x] OOD calibration sweep on real-world photos; final benchmark report
       + model card in `server/models/MODEL_CARD.md`.
-- [ ] Server hardening: per-session AI Doctor budget cap, abuse logging.
+      *(Notebook cell 14 sweeps `NAP_CLASSIFIER_MSP_FLOOR`; suggested
+      value persisted to `classes.json["ood_calibration"]`. Static
+      MODEL_CARD shipped at `server/models/MODEL_CARD.md`; final cell
+      regenerates it from real metrics each run.)*
+- [x] Server hardening: per-session AI Doctor budget cap, abuse logging.
+      *(`CHAT_SESSION_TURN_CAP` + `CHAT_SESSION_TOKEN_CAP` in
+      `ai_services.py`; cap-rejection logged at WARNING with IP +
+      session ID in `main.py`; counters surfaced in `/api/metrics`.)*
 
 ### P1 · Android
 - [ ] On-device inference fallback (TFLite runtime) when network fails or

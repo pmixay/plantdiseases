@@ -1,15 +1,14 @@
 """
-Bilingual disease information database for PlantScope v4.5.
+Bilingual disease information database for PlantScope v5.0.
 
-Stage 2 classifier outputs ONE OF 8 disease classes — the bilingual
-content for each lives in ``DISEASES_DATABASE`` below. v4.5 drops the
-pest classes (mealybug / scale / aphids / spider_mites / thrips /
-whitefly) and the broad ``leaf_spot`` bucket; pests are now surfaced
-as a UI hint section instead via ``PEST_INFO`` + each disease's
-``possible_pest_causes`` field.
+Stage 2 classifier outputs ONE OF 10 disease classes — the bilingual
+content for each lives in ``DISEASES_DATABASE`` below. Pests are not
+classifier outputs; they remain a UI hint section via ``PEST_INFO``
+and each disease's ``possible_pest_causes`` field.
 
-Final 8 classes: ``anthracnose``, ``gray_mold``, ``healthy``,
-``iron_chlorosis``, ``late_blight``, ``not_a_plant``, ``powdery_mildew``,
+Final 10 classes (alphabetical): ``anthracnose``,
+``bacterial_leaf_spot``, ``gray_mold``, ``healthy``, ``iron_chlorosis``,
+``late_blight``, ``mosaic_virus``, ``not_a_plant``, ``powdery_mildew``,
 ``sunburn``. Authoritative list: ``server/models/classes.json``.
 """
 
@@ -284,6 +283,76 @@ DISEASES_DATABASE = {
         ],
         "is_healthy": False,
         "possible_pest_causes": []
+    },
+
+    "bacterial_leaf_spot": {
+        "name_en": "Bacterial Leaf Spot",
+        "name_ru": "Бактериальная пятнистость",
+        "description_en": "Small angular brown-to-black water-soaked spots, often surrounded by a yellow halo. Caused by Pseudomonas or Xanthomonas bacteria — common on dieffenbachia, philodendron, syngonium, anthurium and other Araceae kept in damp, poorly ventilated rooms. Spots stay confined to areas between leaf veins because the bacteria spread through the water film on the leaf surface.",
+        "description_ru": "Мелкие угловатые тёмные пятна со слегка водянистой каймой и жёлтым ореолом вокруг. Вызывают бактерии Pseudomonas и Xanthomonas — часто встречаются на диффенбахиях, филодендронах, сингониумах и других ароидных в сырых плохо проветриваемых комнатах. Пятна остаются между жилками — бактерии переносятся плёнкой воды на поверхности листа.",
+        "treatment_en": [
+            "Remove and bin (do not compost) all visibly affected leaves",
+            "Move the plant away from neighbours — bacterial spots spread quickly",
+            "Stop misting and overhead watering; water at the soil level only",
+            "Spray a copper-based fungicide (copper hydroxide / copper sulfate) per label",
+            "Sterilise scissors with isopropyl alcohol before each cut"
+        ],
+        "treatment_ru": [
+            "Удалите и выбросьте (не в компост) все поражённые листья",
+            "Изолируйте растение от соседей — бактерия быстро перемещается",
+            "Прекратите опрыскивание и полив сверху; поливайте только под корень",
+            "Обработайте препаратом на основе меди (хлорокись меди / медный купорос) по инструкции",
+            "Ножницы перед каждым срезом протирайте изопропиловым спиртом"
+        ],
+        "prevention_en": [
+            "Keep leaves dry — water the soil, not the foliage",
+            "Provide good air circulation; avoid crowding plants together",
+            "Quarantine new plants for 2 weeks before placing them with the rest",
+            "Avoid handling plants when leaves are wet"
+        ],
+        "prevention_ru": [
+            "Держите листья сухими — поливайте под корень, а не сверху",
+            "Обеспечьте циркуляцию воздуха; не ставьте растения вплотную",
+            "Новые растения держите 2 недели на карантине",
+            "Не трогайте растения, когда листья мокрые — бактерии переносятся руками"
+        ],
+        "is_healthy": False,
+        "possible_pest_causes": []
+    },
+
+    "mosaic_virus": {
+        "name_en": "Mosaic Virus",
+        "name_ru": "Мозаичный вирус",
+        "description_en": "Irregular light-and-dark green or yellow mottling, often with crinkled or distorted leaves. Caused by tobamoviruses (TMV / ToMV) and related viruses transmitted by aphids, thrips or contaminated tools. Common on hoya, brugmansia, dracaena and indoor edibles like peppers. There is no cure: virus-infected plants stay infected for life and remain a source of spread to healthy neighbours.",
+        "description_ru": "Светло-тёмная зелёно-жёлтая мозаика на листьях, часто со скрученностью или искривлением. Вызывают тобамовирусы (TMV / ToMV) и родственные вирусы; переносятся тлёй, трипсами и заражённым инструментом. Часто встречается на хойе, бругмансии, драцене и комнатных перцах. Лекарства нет: заражённое растение остаётся источником вируса до конца жизни.",
+        "treatment_en": [
+            "Isolate the plant immediately — viruses spread on hands and tools",
+            "There is no cure; if symptoms are severe, the safest option is to dispose of the plant",
+            "Sterilise pots, tools, and your hands with 10% bleach or 70% alcohol after handling",
+            "Inspect neighbours over the following weeks for early mottling",
+            "Control aphids and thrips, the main vector pests, on remaining plants"
+        ],
+        "treatment_ru": [
+            "Сразу изолируйте растение — вирусы переносятся через руки и инструмент",
+            "Лечения нет; при сильных симптомах безопаснее всего утилизировать растение",
+            "Дезинфицируйте горшки, инструмент и руки 10% хлоркой или 70% спиртом",
+            "В течение нескольких недель осматривайте соседние растения на мозаику",
+            "Боритесь с тлёй и трипсами на остальных растениях — это переносчики"
+        ],
+        "prevention_en": [
+            "Buy plants from reputable sources; reject any with mottled leaves",
+            "Sterilise scissors and stakes between plants",
+            "Keep aphid and thrips populations under control — they spread the virus",
+            "Wash hands after handling tobacco products before touching plants (TMV survives in cured tobacco)"
+        ],
+        "prevention_ru": [
+            "Покупайте растения у проверенных продавцов; не берите с пятнистыми листьями",
+            "Дезинфицируйте ножницы и опоры между растениями",
+            "Контролируйте тлю и трипсов — они переносят вирус",
+            "Мойте руки после контакта с табаком перед работой с растениями (TMV выживает в табаке)"
+        ],
+        "is_healthy": False,
+        "possible_pest_causes": ["aphids", "whitefly"]
     },
 
     "unknown": {

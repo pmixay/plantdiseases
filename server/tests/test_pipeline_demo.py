@@ -61,30 +61,31 @@ def test_not_a_plant_class_is_present():
     assert "not_a_plant" in DEFAULT_CLASS_NAMES
 
 
-def test_v47_taxonomy_is_disease_only():
-    """v4.5/v4.7 carry the same 8 disease-only classes; pests live in
-    PEST_INFO and are surfaced via possible_pest_causes hints, not as
-    classifier outputs. The backbone changed in v4.7 (V2-S → B0) but
-    the taxonomy is stable."""
+def test_v50_taxonomy_is_disease_only():
+    """v5.0 carries 10 disease-only classes (added bacterial_leaf_spot
+    and mosaic_virus on top of the v4.5/v4.7 set of 8). Pests still
+    live in PEST_INFO and are surfaced via possible_pest_causes hints,
+    not as classifier outputs."""
     from classifier import DEFAULT_CLASS_NAMES
 
     expected = {
-        "anthracnose", "gray_mold", "healthy", "iron_chlorosis",
-        "late_blight", "not_a_plant", "powdery_mildew", "sunburn",
+        "anthracnose", "bacterial_leaf_spot", "gray_mold", "healthy",
+        "iron_chlorosis", "late_blight", "mosaic_virus", "not_a_plant",
+        "powdery_mildew", "sunburn",
     }
     assert set(DEFAULT_CLASS_NAMES) == expected, (
-        f"v4.5 class set drift: extra={set(DEFAULT_CLASS_NAMES) - expected} "
+        f"v5.0 class set drift: extra={set(DEFAULT_CLASS_NAMES) - expected} "
         f"missing={expected - set(DEFAULT_CLASS_NAMES)}"
     )
-    # Pests must NOT be classifier outputs in v4.5.
+    # Pests must NOT be classifier outputs.
     for pest in ("aphids", "mealybug", "scale_insect", "spider_mites",
                  "thrips", "whitefly"):
         assert pest not in DEFAULT_CLASS_NAMES, (
-            f"v4.5 must drop pest class {pest} (it's a hint, not a label)"
+            f"v5.0 must drop pest class {pest} (it's a hint, not a label)"
         )
-    # Old broad bucket also retired.
-    for removed in ("leaf_spot", "blight", "leaf_mold", "mosaic_virus", "rust"):
-        assert removed not in DEFAULT_CLASS_NAMES, f"v4.5 must drop {removed}"
+    # Old broad buckets stay retired.
+    for removed in ("leaf_spot", "blight", "leaf_mold", "rust"):
+        assert removed not in DEFAULT_CLASS_NAMES, f"v5.0 must keep {removed} retired"
 
 
 def test_top_k_and_warnings_keys_in_result():

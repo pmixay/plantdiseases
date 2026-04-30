@@ -105,6 +105,7 @@ def test_analyze_response_contract(client, png_bytes):
         "all_probs",
         "top_k",
         "warnings",
+        "severity",
         "pipeline_mode",
         "elapsed_ms",
         "server_version",
@@ -114,6 +115,7 @@ def test_analyze_response_contract(client, png_bytes):
 
     assert 0.0 <= body["confidence"] <= 1.0
     assert 0.0 <= body["uncertainty"] <= 1.0
+    assert body["severity"] in ("low", "medium", "high")
     assert isinstance(body["treatment"], list)
     assert isinstance(body["all_probs"], dict)
     assert isinstance(body["top_k"], list)
