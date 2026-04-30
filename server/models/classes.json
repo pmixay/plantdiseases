@@ -1,6 +1,7 @@
 {
-  "_comment": "PlantScope v5.0 — 10 houseplant disease classes. Stage 1 detector is single-class (leaf); the disease decision is owned by Stage 2. Pests (spider_mites/aphids/mealybug/scale_insect/whitefly) are NOT classifier outputs — they appear as 'possible_pest_causes' hints per disease (see server/diseases_data.py PEST_INFO). Order matches sorted(ImageFolder.classes), i.e. alphabetical. v5.0 changes: +2 classes (bacterial_leaf_spot, mosaic_virus); EfficientNet-B0 @ 240 stays the production primary, optional EfficientNetV2-S @ 300 ensemble peer ('ensemble.peer_*' fields). This file is regenerated automatically by train_notebook.ipynb final cell after each training run; the values below are the v5.0 defaults that match the notebook.",
-  "model_version": "5.0.0",
+  "_comment": "PlantVision 1.1 — 10 houseplant disease classes. Stage 1 detector is single-class (leaf); the disease decision is owned by Stage 2. Pests (spider_mites/aphids/mealybug/scale_insect/whitefly) are NOT classifier outputs — they appear as 'possible_pest_causes' hints per disease (see server/diseases_data.py PEST_INFO). Order matches sorted(ImageFolder.classes), i.e. alphabetical. EfficientNet-B0 @ 240 is the production primary; an optional EfficientNetV2-S @ 300 ensemble peer is loaded when classifier_v2s*.onnx is present. This file is regenerated automatically by the final cell of train_notebook.ipynb after each training run; the values below are defaults that match the notebook.",
+  "model_name": "plantvision",
+  "model_version": "1.1",
   "architecture": {
     "detector": "YOLOv8n (single-class leaf)",
     "classifier": "EfficientNet-B0 (torchvision, IMAGENET1K_V1)",

@@ -30,9 +30,9 @@ data class TopKEntry(
 )
 
 /**
- * v4.5 hint surfaced in the UI under each diagnosis: the pests whose
- * damage pattern can be confused with this disease. Resolved server-side
- * from `diseases_data.PEST_INFO` and the disease's `possible_pest_causes`.
+ * Hint surfaced in the UI under each diagnosis: the pests whose damage
+ * pattern can be confused with this disease. Resolved server-side from
+ * `diseases_data.PEST_INFO` and the disease's `possible_pest_causes`.
  */
 data class PossiblePestCause(
     @SerializedName("key") val key: String,

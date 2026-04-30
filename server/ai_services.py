@@ -1,5 +1,5 @@
 """
-PlantScope v5.0 — AI / smart-API services.
+PlantVision — AI / smart-API services.
 
 Houses the supporting endpoints layered on top of the disease classifier:
 
@@ -174,9 +174,9 @@ def identify_species(image_bytes: bytes, *, organ: str = "leaf") -> dict:
 # Minimal long-form context for the LLM. Stable prefix → benefits from
 # Anthropic prompt caching (5-min TTL), so repeat turns within a
 # session don't pay for re-tokenising the system prompt.
-_DOCTOR_SYSTEM_PROMPT = """You are PlantScope's friendly AI Plant Doctor, helping
+_DOCTOR_SYSTEM_PROMPT = """You are PlantDiseases' friendly AI Plant Doctor, helping
 people care for their houseplants. Your knowledge is grounded in the
-PlantScope v5.0 disease taxonomy:
+PlantVision disease taxonomy:
 
 - anthracnose: dark sunken spots with halo, fungal
 - bacterial_leaf_spot: angular brown spots with yellow halo, bacterial

@@ -24,7 +24,6 @@ import com.plantdiseases.app.util.LocaleHelper
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
-    private var isFirstLaunch = false
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
@@ -36,7 +35,6 @@ class MainActivity : AppCompatActivity() {
 
         // Check onboarding
         if (!OnboardingActivity.isOnboardingDone(this)) {
-            isFirstLaunch = true
             startActivity(Intent(this, OnboardingActivity::class.java))
             finish()
             return

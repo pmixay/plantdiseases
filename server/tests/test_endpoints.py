@@ -21,13 +21,13 @@ def test_version_contract(client):
     assert r.status_code == 200
     body = r.json()
     assert body["detector_arch"] == "YOLOv8n (single-class leaf)"
-    # v4.7: classifier_arch is derived from the actually-loaded backend
-    # so the value depends on which weights the test environment has.
+    # classifier_arch is derived from the actually-loaded backend so
+    # the value depends on which weights the test environment has.
     # In the test harness no weights are present so we get the demo
-    # heuristic; a production server would surface "EfficientNet ... px /
-    # onnx backend". We assert structure, not the exact backbone string.
+    # heuristic. We assert structure, not the exact backbone string.
     assert isinstance(body["classifier_arch"], str)
     assert body["classifier_arch"] != ""
+    assert body["classifier_name"] == "plantvision"
     assert body["stages"] == 2
     assert body["focus"] == "houseplants"
     assert body["pipeline_mode"] in ("full", "partial", "demo")

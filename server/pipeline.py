@@ -1,5 +1,5 @@
 """
-Two-stage houseplant disease detection pipeline (v5.0).
+PlantVision two-stage houseplant disease detection pipeline.
 
 Stage 1 (Detector)   — YOLOv8n single-class. Locates ``leaf`` bboxes.
 Stage 2 (Classifier) — EfficientNet-B0 (ONNX) + optional V2-S ensemble
@@ -7,48 +7,30 @@ Stage 2 (Classifier) — EfficientNet-B0 (ONNX) + optional V2-S ensemble
                        up to 10 houseplant condition classes including
                        ``not_a_plant``.
 
-v5.0 additions on top of the v4.x logic that follows below:
+Behaviour summary:
+
 * **Severity scoring** — each ``analyze`` response carries a
   ``severity: low | medium | high`` derived from (a) the relative bbox
   area of the diagnosed disease, (b) the disease confidence margin
   over ``healthy`` and (c) whether the disease class is degenerative
   (``late_blight``, ``mosaic_virus`` always escalate one level).
 * **TTA at inference** — horizontal-flip averaging is applied to the
-  primary classifier output (peer is excluded from TTA to keep CPU
-  budget bounded). Roughly +1 % top-1 vs cold inference.
+  primary classifier output. Roughly +1 % top-1 vs cold inference.
 * **Ensemble** — when the V2-S peer is loaded, its softmax is blended
-  with the primary inside ``DiseaseClassifier`` itself, transparent to
-  this file. The pipeline only sees a calmer, better-calibrated
-  distribution.
+  with the primary inside ``DiseaseClassifier``. The pipeline sees only
+  the calmer, better-calibrated distribution.
+* **Mean voting** across valid bboxes (one noisy edge crop can't win
+  the room).
+* **Size filter** drops tiny detections (<32 px or <0.5 % image area)
+  before classification.
+* **Healthy fallback** — disease verdicts with weak margin or sub-
+  ``DISEASE_MIN_CONFIDENCE`` confidence are downgraded to ``healthy``
+  and the suspected disease is surfaced as a warning.
+* **Temperature scaling** — when ``temperature.json`` is present, we
+  recalibrate probabilities before voting; otherwise T=1.0 (no-op).
 
-v4.1 design changes vs v4:
-
-* **Mean voting** instead of max-disease primary-box selection. v4
-  picked the bbox with the highest non-healthy softmax mass — which
-  is, by construction, biased toward "found a disease". A single
-  noisy edge crop with ``leaf_spot=0.8`` would outvote nine clean
-  ``healthy=0.7`` predictions. v4.1 averages softmax distributions
-  across valid bboxes; one outlier no longer wins the room.
-* **Size filter** on bboxes. Tiny detections (<1% of image area or
-  <32px) are dropped before classification — they were the dominant
-  source of v4 false-positives on real indoor photos.
-* **Healthy fallback margin**. When the averaged top-1 is a disease
-  but its margin over ``healthy`` is below ``HEALTHY_FALLBACK_MARGIN``
-  the prediction is downgraded to ``healthy``. This compensates for
-  the residual overconfidence of EfficientNet on out-of-distribution
-  inputs without hard-rerouting (which v3 did and v4 explicitly
-  removed).
-* **Disease confidence threshold**. If top-1 is a disease but the
-  averaged confidence is below ``DISEASE_MIN_CONFIDENCE`` we surface
-  ``healthy`` and attach a soft warning. The model already gates
-  ``low_confidence`` on per-crop level; this is the per-image gate.
-* **Temperature scaling** (optional). If ``temperature.json`` is
-  present next to the classifier weights, probabilities are recalibrated
-  before voting. Models trained with v4.1 notebook produce this file
-  automatically; older v4 models default to ``T=1.0`` (no-op).
-
-Stage 1 detector still owns localisation only — the disease decision
-remains 100% on the classifier side, as in v4.
+Stage 1 owns localisation only. The disease decision remains 100 % on
+the classifier side.
 """
 
 from __future__ import annotations
@@ -69,39 +51,27 @@ logger = logging.getLogger(__name__)
 MIN_CROP_SIZE = 32
 CROP_PADDING_RATIO = 0.10
 
-# v4.6: bboxes smaller than this fraction of the full image area
-# get dropped before classification. v4.1 used 0.01 which was too
-# aggressive on wide shots — a 4032×3024 phone photo at 1% = 350×350,
-# i.e. nearly the entire visible leaf at typical shooting distance.
-# Real noise bboxes (corner FPs, lighting artefacts) are almost
-# always <0.5% of the image; 0.005 is the natural break point.
+# Bboxes smaller than this fraction of the full image area get dropped
+# before classification. Real noise bboxes (corner FPs, lighting
+# artefacts) are almost always <0.5 % of the image.
 MIN_BBOX_AREA_FRAC = 0.005
 
-# v4 healthy gate (kept). These trigger the soft ``uncertain_healthy``
-# warning when top-1 is healthy but weak.
+# Healthy gate — triggers the soft ``uncertain_healthy`` warning when
+# top-1 is healthy but weak.
 HEALTHY_MIN_CONFIDENCE = 0.55
 HEALTHY_MARGIN = 0.10
 
-# v4.1 new: disease-side gate. If averaged top-1 is a disease but its
-# softmax mass is below this threshold, we downgrade to healthy.
-# Calibrated against v4 misfires on backlit / indoor / blurry shots
-# where the model gives ~50-60% to a disease but ~40% to healthy —
-# the right call there is "not confident enough to claim disease".
+# Disease-side gate. If averaged top-1 is a disease but its softmax
+# mass is below this threshold, we downgrade to healthy.
 DISEASE_MIN_CONFIDENCE = 0.65
 
-# v4.1 new: if averaged top-1 is a disease but its margin over
-# ``healthy`` is below this, downgrade. Catches the case where the
-# model is split close to 50/50 between a disease and healthy across
-# the image — there's no good reason to commit to disease then.
+# If averaged top-1 is a disease but its margin over ``healthy`` is
+# below this, downgrade.
 HEALTHY_FALLBACK_MARGIN = 0.15
 
-# v4.7: NAP (out-of-distribution) gate. The detector still occasionally
-# flags non-leaf textures (curtains, fabrics, hands at green tone) as
-# leaves with low confidence. When the detector confidence is below this
-# AND the classifier's max-softmax-probability (MSP) is also weak, we
-# route to ``not_a_plant`` instead of guessing a disease/healthy label.
-# Calibrated so noisy frames cleanly reject without sniping good shots:
-# real plant detections almost always score >0.45 by Stage 1.
+# NAP (out-of-distribution) gate. When the detector confidence is below
+# this AND the classifier's max-softmax-probability (MSP) is also weak,
+# we route to ``not_a_plant`` instead of guessing a disease label.
 NAP_DETECTOR_CONF_FLOOR = 0.40
 NAP_CLASSIFIER_MSP_FLOOR = 0.45
 
@@ -109,10 +79,9 @@ NAP_CLASSIFIER_MSP_FLOOR = 0.45
 # and to know when to apply the healthy fallback.
 _NON_DISEASE = {"healthy", "not_a_plant"}
 
-# v5.0: classes that escalate severity by one level on principle. They
-# have aggressive systemic spread (mosaic virus is incurable; late
-# blight can wipe out a plant in days under indoor humidity) and the UI
-# benefits from a stronger nudge to act quickly.
+# Classes that escalate severity by one level on principle. They have
+# aggressive systemic spread (mosaic virus is incurable; late blight can
+# wipe out a plant in days under indoor humidity).
 _DEGENERATIVE_DISEASES = {"late_blight", "mosaic_virus"}
 
 # Severity thresholds (relative bbox area). Calibrated against typical
@@ -135,8 +104,8 @@ TOP_K_ALTERNATIVES = 3
 def _load_temperature(classifier_path: Path | None) -> float:
     """Look for ``temperature.json`` next to the classifier weights.
 
-    v4.1 training notebook writes it automatically. Returns 1.0 (no-op)
-    for v4 models or when the file is missing/malformed.
+    The training notebook writes it automatically. Returns 1.0 (no-op)
+    when the file is missing or malformed.
     """
     candidates: list[Path] = []
     if classifier_path is not None:
@@ -185,8 +154,8 @@ class PlantDiseasePipeline:
     ):
         self.detector = LeafDetector(detector_path)
         self.classifier = DiseaseClassifier(classifier_path)
-        # v4.1: opt-in temperature scaling. Defaults to 1.0 (no-op) if
-        # temperature.json is absent — keeps backward-compat with v4.
+        # Opt-in temperature scaling. Defaults to 1.0 (no-op) if
+        # temperature.json is absent.
         self.temperature = _load_temperature(classifier_path)
         logger.info(
             "Pipeline ready  detector=%s  classifier=%s (%s backend)  T=%.3f",
@@ -245,10 +214,10 @@ class PlantDiseasePipeline:
                 "elapsed_ms": round(elapsed, 1),
             }
 
-        # v4.1: mean voting across valid bboxes (size-filtered).
+        # Mean voting across valid bboxes (size-filtered).
         primary, classification = self._pick_primary(img, detections)
 
-        # v4.7: secondary NAP gate. Even if Stage 1 returned a bbox, a low
+        # Secondary NAP gate. Even if Stage 1 returned a bbox, a low
         # detector confidence combined with a low classifier max-softmax
         # is the classic OOD signature: the detector glommed onto a
         # plant-coloured texture and the classifier had no clean answer
@@ -272,12 +241,9 @@ class PlantDiseasePipeline:
             )
             classification = self._reroute_to_nap(classification)
 
-        # v4.7 bug fix: previous threshold (HEALTHY_MIN_CONFIDENCE * 0.5
-        # = 0.275) was effectively no gate at all — almost any non-NAP
-        # non-healthy class above 27.5% softmax fired the diseased flag,
-        # which contradicted the much stricter DISEASE_MIN_CONFIDENCE
-        # logic in _pick_primary. Tighten to the same threshold so the
-        # detector overlay and the disease verdict can't disagree.
+        # ``is_diseased`` shares the disease verdict's confidence
+        # threshold so the detector overlay and the verdict never
+        # disagree.
         is_diseased = (
             classification["class_name"] not in _NON_DISEASE
             and classification["confidence"] >= DISEASE_MIN_CONFIDENCE
@@ -295,9 +261,9 @@ class PlantDiseasePipeline:
             classification, self.classifier.CLASS_NAMES,
         )
 
-        # v5.0: severity scoring. We compute it on the *post-fallback*
-        # class so the UI severity always agrees with the displayed
-        # diagnosis (a downgrade-to-healthy ⇒ severity=low).
+        # Severity scoring. We compute it on the *post-fallback* class
+        # so the UI severity always agrees with the displayed diagnosis
+        # (a downgrade-to-healthy ⇒ severity=low).
         severity = compute_severity(
             class_name=final["class_name"],
             confidence=float(final["confidence"]),
@@ -333,7 +299,7 @@ class PlantDiseasePipeline:
     _MAX_RECLASSIFY = 4
 
     def _pick_primary(self, img: Image.Image, detections: list[dict]):
-        """Mean-voting primary classification over valid bboxes (v4.1).
+        """Mean-voting primary classification over valid bboxes.
 
         Pipeline:
           1. Drop bboxes smaller than ``MIN_CROP_SIZE`` or
@@ -377,10 +343,9 @@ class PlantDiseasePipeline:
         # 2. Rank by detector confidence and cap.
         ranked = sorted(sized, key=lambda d: -d["confidence"])[: self._MAX_RECLASSIFY]
 
-        # 3. Classify all bboxes in a single batched forward pass when
-        # the backend supports dynamic batch (ONNX/PyTorch). Cuts the
-        # per-call setup cost on CPU — the dominant overhead for ≤4
-        # boxes — without changing numerics.
+        # 3. Classify all bboxes in a single batched forward pass.
+        # Cuts the per-call setup cost on CPU — the dominant overhead
+        # for ≤4 boxes — without changing numerics.
         crops = [self._extract_crop(img, box) for box in ranked]
         cls_results = self.classifier.classify_batch(crops)
 
@@ -405,17 +370,16 @@ class PlantDiseasePipeline:
         healthy_p = float(mean_probs.get("healthy", 0.0))
 
         # 5a. Healthy fallback: if averaged top-1 is a disease but its
-        # margin over healthy is small, downgrade. This is the main
-        # patch against the v4 false-positive disease pattern.
+        # margin over healthy is small, downgrade.
         #
         # Confidence semantics on fallback: we don't surface the raw
         # ``healthy`` probability — for an overconfident model that's
-        # often 3-5%, which reads to the user as "97% sick" even though
-        # the actual signal is "we're not confident enough to claim a
-        # disease". Instead we report ``1 - top1_disease_conf`` — i.e.
-        # how confident we are it is NOT this disease — clamped to be
-        # at least the raw healthy prob (we never lie downward) and at
-        # most 0.95 (we don't claim certainty we never had).
+        # often 3-5 %, which reads to the user as "97 % sick" even
+        # though the actual signal is "we're not confident enough to
+        # claim a disease". Instead we report ``1 - top1_disease_conf``
+        # — clamped to be at least the raw healthy prob (we never lie
+        # downward) and at most 0.95 (we don't claim certainty we never
+        # had).
         downgraded = False
         suspected_disease: Optional[str] = None
         if top1_class not in _NON_DISEASE and "healthy" in mean_probs:
@@ -505,12 +469,11 @@ class PlantDiseasePipeline:
     def _reroute_to_nap(self, classification: dict) -> dict:
         """Rewrite an OOD-gated classification to a confident NAP verdict.
 
-        Used when the secondary NAP gate fires after voting. We don't
-        invent confidence — we report ``1 - cls_msp`` (i.e. how confident
-        we are it is NOT the suspected disease), bounded to a sensible
-        range so the UI doesn't claim 100% certainty about negativity
-        either. Probability mass is moved into ``not_a_plant`` and the
-        rest is renormalised so all_probs/top_k still sum to 1.
+        We don't invent confidence — we report ``1 - cls_msp`` (i.e. how
+        confident we are it is NOT the suspected disease), bounded so
+        the UI doesn't claim 100 % certainty about negativity either.
+        Probability mass is moved into ``not_a_plant`` and the rest is
+        renormalised so all_probs/top_k still sum to 1.
         """
         names = list(classification.get("all_probs", {}).keys()) or self.classifier.CLASS_NAMES
         msp = float(classification.get("confidence", 0.0))
@@ -643,7 +606,7 @@ def _apply_postprocessing_rules(
     Three checks:
       * ``uncertain_healthy`` — top-1 is healthy but confidence/margin
         below thresholds. Surfaces alternatives, no class swap.
-      * ``disease_uncertain`` — the v4.1 healthy-fallback fired in
+      * ``disease_uncertain`` — the healthy-fallback fired in
         ``_pick_primary``: top-1 was a disease but margin/threshold was
         weak so the class was downgraded to healthy. We attach a
         warning that names the suspected disease so the UI can show

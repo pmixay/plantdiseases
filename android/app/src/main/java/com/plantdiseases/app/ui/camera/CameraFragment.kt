@@ -4,12 +4,16 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.ColorStateList
+import android.graphics.drawable.GradientDrawable
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.Uri
 import android.os.Bundle
+import android.os.SystemClock
+import android.util.Size
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
@@ -34,6 +38,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 class CameraFragment : Fragment() {
 
@@ -41,15 +47,23 @@ class CameraFragment : Fragment() {
     private val binding get() = _binding!!
 
     private var imageCapture: ImageCapture? = null
+    private var imageAnalysis: ImageAnalysis? = null
     private var cameraProvider: ProcessCameraProvider? = null
     private var camera: Camera? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private lateinit var scaleGestureDetector: ScaleGestureDetector
+    private var analyzerExecutor: ExecutorService? = null
+
+    // Auto-capture state. We require the frame analyzer to report
+    // GREEN continuously for AUTO_CAPTURE_HOLD_MS *and* a Laplacian
+    // variance above MIN_SHARPNESS before triggering the shutter.
+    private var greenStableSince: Long = 0L
+    private var autoCaptureInFlight = false
+    private var lastQuality: LeafFrameAnalyzer.Quality? = null
 
     private val PREFS_NAME = "plantdiseases_prefs"
     private val KEY_GRID_OVERLAY = "grid_overlay_enabled"
 
-    // Permission launcher
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -61,7 +75,6 @@ class CameraFragment : Fragment() {
         }
     }
 
-    // Gallery picker launcher
     private val galleryLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
@@ -85,16 +98,17 @@ class CameraFragment : Fragment() {
         loadRecentScans()
         registerNetworkCallback()
         restoreGridOverlay()
+        applyFrameQuality(LeafFrameAnalyzer.Quality.RED)
     }
 
     private fun setupUI() {
-        binding.btnCapture.setOnClickListener { takePhoto() }
+        binding.btnCapture.setOnClickListener { takePhoto(auto = false) }
         binding.btnGallery.setOnClickListener { galleryLauncher.launch("image/*") }
         binding.btnFlash.setOnClickListener { toggleFlash() }
         binding.btnGrantPermission.setOnClickListener {
             permissionLauncher.launch(Manifest.permission.CAMERA)
         }
-        binding.tvScanHint.text = getString(R.string.scan_hint)
+        binding.tvScanHint.text = getString(R.string.frame_hint_red)
 
         binding.cameraPreview.setOnTouchListener { _, event ->
             scaleGestureDetector.onTouchEvent(event)
@@ -162,11 +176,10 @@ class CameraFragment : Fragment() {
                 val result = future.get()
                 if (_binding == null) return@addListener
                 if (result.isFocusSuccessful) {
-                    binding.focusIndicator.setBackgroundTintList(
-                        android.content.res.ColorStateList.valueOf(
+                    binding.focusIndicator.backgroundTintList =
+                        ColorStateList.valueOf(
                             ContextCompat.getColor(requireContext(), R.color.healthy_green)
                         )
-                    )
                     Haptics.light(requireContext())
                     binding.focusIndicator.animate()
                         .alpha(0f)
@@ -174,37 +187,21 @@ class CameraFragment : Fragment() {
                         .setStartDelay(400)
                         .withEndAction {
                             _binding?.focusIndicator?.visibility = View.GONE
-                            _binding?.focusIndicator?.setBackgroundTintList(null)
+                            _binding?.focusIndicator?.backgroundTintList = null
                         }
                         .start()
                 } else {
-                    binding.focusIndicator.setBackgroundTintList(
-                        android.content.res.ColorStateList.valueOf(
+                    binding.focusIndicator.backgroundTintList =
+                        ColorStateList.valueOf(
                             ContextCompat.getColor(requireContext(), R.color.disease_red)
                         )
-                    )
                     binding.focusIndicator.animate()
-                        .translationXBy(6f).setDuration(50)
+                        .alpha(0f)
+                        .setDuration(500)
+                        .setStartDelay(600)
                         .withEndAction {
-                            _binding?.focusIndicator?.animate()
-                                ?.translationXBy(-12f)?.setDuration(50)
-                                ?.withEndAction {
-                                    _binding?.focusIndicator?.animate()
-                                        ?.translationXBy(6f)?.setDuration(50)
-                                        ?.withEndAction {
-                                            _binding?.focusIndicator?.animate()
-                                                ?.alpha(0f)
-                                                ?.setDuration(500)
-                                                ?.setStartDelay(200)
-                                                ?.withEndAction {
-                                                    _binding?.focusIndicator?.visibility = View.GONE
-                                                    _binding?.focusIndicator?.setBackgroundTintList(null)
-                                                }
-                                                ?.start()
-                                        }
-                                        ?.start()
-                                }
-                                ?.start()
+                            _binding?.focusIndicator?.visibility = View.GONE
+                            _binding?.focusIndicator?.backgroundTintList = null
                         }
                         .start()
                 }
@@ -254,15 +251,31 @@ class CameraFragment : Fragment() {
                 .setTargetRotation(rotation)
                 .build()
 
+            // Real-time framing analyzer. STRATEGY_KEEP_ONLY_LATEST drops
+            // backpressured frames so we never queue work behind the
+            // preview when the device is under load.
+            val executor = analyzerExecutor ?: Executors.newSingleThreadExecutor()
+                .also { analyzerExecutor = it }
+            imageAnalysis = ImageAnalysis.Builder()
+                .setTargetResolution(Size(320, 240))
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
+                .build()
+                .apply {
+                    setAnalyzer(executor, LeafFrameAnalyzer { signal ->
+                        view?.post { onFrameSignal(signal) }
+                    })
+                }
+
             val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
 
             try {
                 cameraProvider?.unbindAll()
                 camera = cameraProvider?.bindToLifecycle(
-                    viewLifecycleOwner, cameraSelector, preview, imageCapture
+                    viewLifecycleOwner, cameraSelector,
+                    preview, imageCapture, imageAnalysis,
                 )
 
-                // Enable torch control
                 binding.btnFlash.visibility =
                     if (camera?.cameraInfo?.hasFlashUnit() == true) View.VISIBLE else View.GONE
 
@@ -272,8 +285,54 @@ class CameraFragment : Fragment() {
         }, ContextCompat.getMainExecutor(requireContext()))
     }
 
-    private fun takePhoto() {
-        val imageCapture = imageCapture ?: return
+    private fun onFrameSignal(signal: LeafFrameAnalyzer.FrameSignal) {
+        if (_binding == null || autoCaptureInFlight) return
+        applyFrameQuality(signal.quality)
+
+        // Auto-capture: green-stable for AUTO_CAPTURE_HOLD_MS AND
+        // sharpness above MIN_SHARPNESS. The Laplacian-variance proxy
+        // is computed on the green channel of the same downsampled
+        // grid the framing logic uses, so it costs nothing extra.
+        val now = SystemClock.elapsedRealtime()
+        if (signal.quality == LeafFrameAnalyzer.Quality.GREEN) {
+            if (greenStableSince == 0L) greenStableSince = now
+            val held = now - greenStableSince
+            if (held >= AUTO_CAPTURE_HOLD_MS && signal.sharpness >= MIN_SHARPNESS) {
+                autoCaptureInFlight = true
+                takePhoto(auto = true)
+            }
+        } else {
+            greenStableSince = 0L
+        }
+    }
+
+    private fun applyFrameQuality(quality: LeafFrameAnalyzer.Quality) {
+        if (lastQuality == quality) return
+        lastQuality = quality
+        val (colorRes, hintRes) = when (quality) {
+            LeafFrameAnalyzer.Quality.GREEN ->
+                R.color.scan_frame_green to R.string.frame_hint_green
+            LeafFrameAnalyzer.Quality.AMBER ->
+                R.color.scan_frame_amber to R.string.frame_hint_amber
+            LeafFrameAnalyzer.Quality.RED ->
+                R.color.scan_frame_red to R.string.frame_hint_red
+        }
+        val color = ContextCompat.getColor(requireContext(), colorRes)
+        val drawable = binding.scanFrame.background?.mutate() as? GradientDrawable
+        // 3 dp matches drawable/scan_frame.xml. Alpha picked so the ring
+        // reads as confident colour without overpowering the preview
+        // underneath.
+        val strokePx = (3 * resources.displayMetrics.density).toInt().coerceAtLeast(3)
+        val tinted = (color and 0x00FFFFFF) or STROKE_ALPHA_MASK
+        drawable?.setStroke(strokePx, tinted)
+        binding.tvScanHint.setText(hintRes)
+    }
+
+    private fun takePhoto(auto: Boolean) {
+        val imageCapture = imageCapture ?: run {
+            autoCaptureInFlight = false
+            return
+        }
 
         binding.btnCapture.isEnabled = false
 
@@ -281,7 +340,6 @@ class CameraFragment : Fragment() {
         playShutterFlash()
 
         val photoFile = ImageUtils.createImageFile(requireContext())
-
         val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
 
         imageCapture.takePicture(
@@ -290,11 +348,20 @@ class CameraFragment : Fragment() {
             object : ImageCapture.OnImageSavedCallback {
                 override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                     binding.btnCapture.isEnabled = true
-                    checkPlantAndNavigate(photoFile.absolutePath)
+                    autoCaptureInFlight = false
+                    greenStableSince = 0L
+                    if (auto) {
+                        // Stable-green + sharp: skip the green-content
+                        // dialog because we already validated both.
+                        navigateToAnalysis(photoFile.absolutePath)
+                    } else {
+                        checkPlantAndNavigate(photoFile.absolutePath)
+                    }
                 }
 
                 override fun onError(exception: ImageCaptureException) {
                     binding.btnCapture.isEnabled = true
+                    autoCaptureInFlight = false
                     Toast.makeText(
                         requireContext(),
                         getString(R.string.capture_error),
@@ -405,6 +472,11 @@ class CameraFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         loadRecentScans()
+        // Wipe stale auto-capture state so coming back from another
+        // screen doesn't fire the shutter while the user is still
+        // re-orienting.
+        greenStableSince = 0L
+        autoCaptureInFlight = false
     }
 
     private fun registerNetworkCallback() {
@@ -438,6 +510,19 @@ class CameraFragment : Fragment() {
             cm.unregisterNetworkCallback(it)
         }
         networkCallback = null
+        analyzerExecutor?.shutdown()
+        analyzerExecutor = null
+        imageAnalysis = null
         _binding = null
+    }
+
+    companion object {
+        private const val AUTO_CAPTURE_HOLD_MS = 1500L
+        // Empirically tuned against the Laplacian variance computed on
+        // the 160-px green-channel grid: hand-held indoor shots score
+        // 200+, severely blurred ones score below 60.
+        private const val MIN_SHARPNESS = 120.0
+        // ~80 % alpha, leaving the underlying preview readable.
+        private const val STROKE_ALPHA_MASK = 0xCC shl 24
     }
 }

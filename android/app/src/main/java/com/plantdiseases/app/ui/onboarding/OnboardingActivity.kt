@@ -36,27 +36,22 @@ class OnboardingActivity : AppCompatActivity() {
         binding = ActivityOnboardingBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        val isRu = LocaleHelper.isRussian(this)
-
         val pages = listOf(
             OnboardingPage(
                 R.raw.onboarding_scan,
-                if (isRu) "Сканируй" else "Scan",
-                if (isRu) "Наведите камеру на лист растения и сделайте фото за пару секунд"
-                else "Point your camera at a plant leaf and take a photo in seconds"
+                getString(R.string.onboarding_scan_title),
+                getString(R.string.onboarding_scan_body),
             ),
             OnboardingPage(
                 R.raw.onboarding_diagnose,
-                if (isRu) "Узнай болезнь" else "Get Diagnosis",
-                if (isRu) "Двухэтапная нейросеть найдёт поражённую область и определит болезнь"
-                else "A two-stage neural network locates the affected area and identifies the disease"
+                getString(R.string.onboarding_diagnose_title),
+                getString(R.string.onboarding_diagnose_body),
             ),
             OnboardingPage(
-                R.raw.onboarding_treat,
-                if (isRu) "Получи лечение" else "Get Treatment",
-                if (isRu) "Получите пошаговые рекомендации по лечению и профилактике"
-                else "Get step-by-step treatment and prevention recommendations"
-            )
+                R.raw.onboarding_care,
+                getString(R.string.onboarding_care_title),
+                getString(R.string.onboarding_care_body),
+            ),
         )
 
         binding.viewPager.adapter = OnboardingAdapter(pages)

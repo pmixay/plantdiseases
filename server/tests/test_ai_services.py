@@ -1,4 +1,4 @@
-"""Smoke tests for v5.0 smart APIs.
+"""Smoke tests for the smart APIs.
 
 External services (PlantNet, Anthropic) are intentionally NOT mocked
 into pretending to be present — the test fixtures don't set the API

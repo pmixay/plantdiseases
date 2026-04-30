@@ -1,7 +1,8 @@
-# PlantDiseases — Sprint Plan
+# PlantDiseases 1.1 — Sprint Plan
 
 **Window:** 2026-04-30 → 2026-05-30 (4 weeks)
 **Team:** P1 = Android · P2 = Server / ML
+**Classifier:** PlantVision (10-class houseplant disease pipeline)
 **Goal:** lift the project from a working pipeline in demo mode to a
 portfolio-grade app comparable to PictureThis on UX, feature breadth and
 on-screen accuracy.
@@ -12,8 +13,8 @@ on-screen accuracy.
 
 - **ML server-side (P2) — implemented in code; weights still need a
   Colab T4 run.** Notebook (`server/train_notebook.ipynb`) trains the
-  full v5.0 pipeline (10 classes incl. 2 new: `bacterial_leaf_spot`,
-  `mosaic_virus`; +30% iNat scrape; SHA-256 dedup; EXIF strip; B0 +
+  full PlantVision 1.1 pipeline (10 classes incl. `bacterial_leaf_spot`
+  and `mosaic_virus`; +30% iNat scrape; SHA-256 dedup; EXIF strip; B0 +
   optional V2-S ensemble; 5-crop+hflip TTA; OOD calibration sweep;
   auto-generated MODEL_CARD). Server endpoints
   (`/api/identify`, `/api/chat`, `/api/care-plan`, `/api/progression`),
@@ -50,7 +51,7 @@ on-screen accuracy.
 - `pipeline_mode: full` in `/api/health`.
 - YOLOv8n single-class leaf **mAP50 ≥ 0.65**.
 - Classifier **top-1 ≥ 0.82** on held-out val with TTA + ensemble.
-- 10–12 disease classes (10 today after v5.0 expansion).
+- 10–12 disease classes (10 in PlantVision 1.1).
 - New endpoints: `/api/identify`, `/api/chat`, `/api/care-plan`. ✅
 - 6 net-new user-visible features (see weeks below) shipped on `main`.
 - Demo APK installs and runs golden path end-to-end on a real device,
@@ -67,7 +68,7 @@ on-screen accuracy.
       *(Code ready on `claude/enhance-ml-model-oWEyI` — actual T4 run is
       operator action.)*
 - [x] Expand iNat scrape ~+30 % per existing class; rerun split + train.
-      *(`TARGET_PER_TAXON` 600 → 800; new fallback chains for the v5.0
+      *(`TARGET_PER_TAXON` 600 → 800; new fallback chains for the
       bacterial / mosaic taxa.)*
 - [x] Pick 2–4 new diseases (candidates: bacterial leaf spot, edema,
       leaf scorch, root-rot foliar symptoms); collect images.
@@ -80,14 +81,27 @@ on-screen accuracy.
       `/api/analyze` response.)*
 
 ### P1 · Android
-- [ ] Real-time leaf framing in `CameraFragment`: `ImageAnalysis` every
+- [x] Real-time leaf framing in `CameraFragment`: `ImageAnalysis` every
       ~5th frame at 160 px, HSV ratio + centroid → red/amber/green frame.
-- [ ] Auto-capture when frame is green-stable ≥ 1.5 s and Laplacian
-      variance is good.
-- [ ] Onboarding redesign: 3 Lottie pages (scan, diagnose, care).
-- [ ] Room migration v2→v3: add `Plant(id, name, species, nickname,
+      *(`LeafFrameAnalyzer` runs on a single-thread executor with
+      `STRATEGY_KEEP_ONLY_LATEST`; YUV→RGB conversion is in-place,
+      sampled at the longest-side / 160 step. Quality drives the
+      `scan_frame` stroke colour and the on-screen hint.)*
+- [x] Auto-capture when frame is green-stable ≥ 1.5 s and Laplacian
+      variance is good. *(Hold time `AUTO_CAPTURE_HOLD_MS = 1500`; the
+      sharpness gate uses the green-channel Laplacian variance from the
+      same downsampled grid, threshold `MIN_SHARPNESS = 120`. Auto
+      captures bypass the green-content dialog because both signals are
+      already validated.)*
+- [x] Onboarding redesign: 3 Lottie pages (scan, diagnose, care).
+      *(Renamed `onboarding_treat.json` → `onboarding_care.json`, new
+      bilingual copy emphasising the auto-capture + bilingual care plan
+      flow.)*
+- [x] Room migration v2→v3: add `Plant(id, name, species, nickname,
       iconUri, createdAt)` and nullable `plantId` on `ScanEntity`. No UI
-      yet.
+      yet. *(New `PlantEntity` + `PlantDao`; `ScanEntity.plantId`
+      foreign-keyed to plants with `ON DELETE SET NULL`. Legacy v1→v2
+      migration dropped — never shipped to production.)*
 
 ---
 
@@ -133,10 +147,10 @@ on-screen accuracy.
       `plantId`, return `delta` and `trend`.
       *(`server/ai_services.compare_progression` + `/api/progression`
       endpoint; pure function, deterministic.)*
-- [x] Ship final v5 model checkpoint with the new disease classes
-      from Week 1 research.
-      *(Notebook now produces v5.0 artefacts — 10 classes, ensemble peer,
-      MODEL_CARD; awaits Colab run.)*
+- [x] Ship final PlantVision 1.1 model checkpoint with the new disease
+      classes from Week 1 research.
+      *(Notebook now produces PlantVision 1.1 artefacts — 10 classes,
+      ensemble peer, MODEL_CARD; awaits Colab run.)*
 
 ### P1 · Android
 - [ ] WorkManager + FCM-free local notifications for per-plant reminders;

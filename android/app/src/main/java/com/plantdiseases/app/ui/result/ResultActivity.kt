@@ -413,20 +413,17 @@ class ResultActivity : AppCompatActivity() {
         binding.alternativesLayout.removeAllViews()
 
         val diseaseNames = mapOf(
-            // PlantScope v4.5 — 8 disease classes (pests are now hints, not labels)
+            // PlantVision — 10 disease classes (pests are hints, not labels)
             "healthy" to (if (isRu) "Здоровое растение" else "Healthy Plant"),
             "powdery_mildew" to (if (isRu) "Мучнистая роса" else "Powdery Mildew"),
             "anthracnose" to (if (isRu) "Антракноз" else "Anthracnose"),
+            "bacterial_leaf_spot" to (if (isRu) "Бактериальная пятнистость" else "Bacterial Leaf Spot"),
             "gray_mold" to (if (isRu) "Серая гниль" else "Gray Mold"),
             "iron_chlorosis" to (if (isRu) "Железный хлороз" else "Iron Chlorosis"),
             "late_blight" to (if (isRu) "Фитофтороз" else "Late Blight"),
+            "mosaic_virus" to (if (isRu) "Мозаичный вирус" else "Mosaic Virus"),
             "sunburn" to (if (isRu) "Солнечный ожог" else "Sunburn"),
             "not_a_plant" to (if (isRu) "Не растение" else "Not a Plant"),
-            // Legacy v3.x names — kept so older cached scans render labels.
-            "blight" to (if (isRu) "Фитофтороз" else "Blight"),
-            "rust" to (if (isRu) "Ржавчина" else "Rust"),
-            "mosaic_virus" to (if (isRu) "Мозаичный вирус" else "Mosaic Virus"),
-            "leaf_mold" to (if (isRu) "Листовая плесень" else "Leaf Mold")
         )
 
         top3.forEachIndexed { index, entry ->

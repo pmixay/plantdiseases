@@ -1,16 +1,13 @@
 """
-PlantDiseases Server — FastAPI backend with the PlantScope v4.7 two-stage
+PlantDiseases Server — FastAPI backend with the PlantVision two-stage
 houseplant disease pipeline.
 
 Stage 1:  YOLOv8n            — locate leaves (single class)
 Stage 2:  EfficientNet-B0    — classify cropped leaf regions; mean-voted
                                across bboxes, ONNX (INT8 dynamic on MatMul).
-                               v4.5 trained EfficientNetV2-S @ 320; v4.7
-                               switched to B0 @ 240 for a better fit to the
-                               ~7-8k dataset and ~4× faster CPU inference.
                                The classifier loader auto-detects either
-                               backbone from the state dict so old V2-S
-                               checkpoints keep working.
+                               EfficientNet-B0 or EfficientNetV2-S from
+                               the state dict.
 """
 
 import asyncio
@@ -54,7 +51,7 @@ except Exception:  # pragma: no cover
 try:
     from . import __version__ as APP_VERSION  # type: ignore
 except Exception:
-    APP_VERSION = "5.0.0"
+    APP_VERSION = "1.1"
 
 # Limit Pillow decompression to prevent zip-bomb DoS
 Image.MAX_IMAGE_PIXELS = 20_000_000  # ~4500×4500
@@ -86,11 +83,12 @@ logger = logging.getLogger("plantdiseases")
 # ── Configuration ────────────────────────────────────────────────────
 MODELS_DIR = Path("models")
 DETECTOR_PATH = MODELS_DIR / "detector.pt"       # YOLOv8 weights (auto-prefers detector.onnx if present)
-# Classifier: v4.7 = EfficientNet-B0 @ 240 ; v4.5 = EfficientNetV2-S @ 320.
-# The loader (classifier.py:_load_pytorch_model) auto-detects the backbone
-# from the state dict shape; classes.json carries the canonical img_size.
+# PlantVision classifier: EfficientNet-B0 @ 240, optional EfficientNetV2-S
+# @ 300 ensemble peer. The loader (classifier.py:_load_pytorch_model)
+# auto-detects the backbone from the state dict shape; classes.json carries
+# the canonical img_size.
 # Production preference order: classifier_int8.onnx → classifier.onnx → .pth.
-CLASSIFIER_PATH = MODELS_DIR / "classifier.pth"
+CLASSIFIER_PATH = MODELS_DIR / "classifier.pth"  # PlantVision weights
 
 MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE", 10 * 1024 * 1024))  # 10 MB
 MAX_IMAGE_DIMENSION = int(os.getenv("MAX_IMAGE_DIMENSION", 4096))
@@ -382,9 +380,9 @@ async def version():
     """Server version and model architecture.
 
     The classifier architecture string is derived from the actually-loaded
-    backend so the response stays accurate across v4.5 (EfficientNetV2-S
-    @ 320) and v4.7 (EfficientNet-B0 @ 240) checkpoints. In demo mode we
-    surface the heuristic explicitly.
+    backend so the response stays accurate across both EfficientNet-B0
+    @ 240 and EfficientNetV2-S @ 300 checkpoints. In demo mode we surface
+    the heuristic explicitly.
     """
     if pipeline is None:
         cls_arch = "unknown"
@@ -393,12 +391,13 @@ async def version():
     else:
         backend = getattr(pipeline.classifier, "backend", "unknown")
         img_size = getattr(pipeline.classifier, "img_size", 0)
-        cls_arch = f"EfficientNet (torchvision) @ {img_size} px / {backend} backend"
+        cls_arch = f"PlantVision EfficientNet @ {img_size} px / {backend} backend"
     ensemble_size = (
         pipeline.classifier.ensemble_size if pipeline and pipeline.classifier else 0
     )
     return {
         "version": APP_VERSION,
+        "classifier_name": "plantvision",
         "pipeline_mode": pipeline.mode if pipeline else "unknown",
         "detector_arch": "YOLOv8n (single-class leaf)",
         "classifier_arch": cls_arch,
@@ -598,8 +597,8 @@ async def analyze_image(image: UploadFile = File(...)):
     if "uncertain_healthy" in warnings:
         is_healthy_effective = False
 
-    # v4.5: pests are not classifier outputs — they're a hint section
-    # rendered next to the diagnosis. Resolve the disease's
+    # Pests are not classifier outputs — they're a hint section rendered
+    # next to the diagnosis. Resolve the disease's
     # ``possible_pest_causes`` keys into the full pest cards here so
     # the client doesn't need a second lookup table.
     possible_pests = pest_hints(class_name)
@@ -628,7 +627,7 @@ async def analyze_image(image: UploadFile = File(...)):
     })
 
 
-# ── v5.0: smart APIs ────────────────────────────────────────────────
+# ── Smart APIs ──────────────────────────────────────────────────────
 
 
 class ChatRequest(BaseModel):  # type: ignore[misc]

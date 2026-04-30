@@ -1,33 +1,27 @@
 """
-Stage 2 — Houseplant Disease Classifier.
+Stage 2 — PlantVision houseplant disease classifier.
 
 Classifies a (preferably cropped) leaf region into one of 10
 houseplant-relevant condition classes including the rejection class
 ``not_a_plant``. Class names + input resolution live in
 ``models/classes.json``; if the file is missing a built-in default is
-used (v5.0 = EfficientNet-B0 @ 240, optional V2-S @ 300 ensemble).
+used (EfficientNet-B0 @ 240, optional V2-S @ 300 ensemble).
 
-v5.0 changes vs v4.7:
-* +2 disease classes — ``bacterial_leaf_spot`` and ``mosaic_virus``.
-  Both are common houseplant problems with clean visual signatures
-  (yellow-haloed angular spots / mottled green-yellow patterns) and
-  strong PV+iNat data sources.
-* Optional second checkpoint (``classifier_v2s.onnx``) loaded as an
-  ensemble peer and weighted-averaged at inference. Falls back to the
-  single classifier when the peer is missing.
+Optional second checkpoint (``classifier_v2s.onnx``) loaded as an
+ensemble peer and weighted-averaged at inference. Falls back to the
+single classifier when the peer is missing.
 
 The classifier prefers ONNX Runtime (CPU EP) when an ``.onnx`` weight
-is present — that's the path the training notebook now produces and
-the recommended default for production deployment. Loading order:
+is present — that's the path the training notebook produces and the
+recommended default for production deployment. Loading order:
 
 1. ``classifier_int8.onnx`` (dynamic-quantized, smallest + fastest)
 2. ``classifier.onnx``      (FP32 ONNX)
 3. ``classifier.pth``       (PyTorch fallback)
 
 The PyTorch fallback auto-detects the backbone from the state dict
-shape, so v4.0/4.1/4.7 ``classifier.pth`` (EfficientNet-B0 @ 240) and
-v4.5 ``classifier.pth`` (EfficientNetV2-S @ 320) checkpoints both
-load cleanly without server-side reconfiguration.
+shape so either EfficientNet-B0 @ 240 or EfficientNetV2-S @ 320
+checkpoints load cleanly without server-side reconfiguration.
 
 If none of those load successfully we fall back to a colour heuristic
 so the server is usable in demo mode.
@@ -44,27 +38,20 @@ from PIL import Image
 
 logger = logging.getLogger(__name__)
 
-# Match the v4.7 training notebook (EfficientNet-B0 @ 240). The v4.5
-# notebook trained EfficientNetV2-S @ 320 — we still honour that when
-# classes.json declares it. This default is only used when classes.json
-# is missing AND the backbone resolution can't be inferred from the
-# state dict — keep it pinned to the latest train recipe.
+# Default training resolution (EfficientNet-B0 @ 240). Used only when
+# classes.json is missing AND the backbone resolution can't be inferred
+# from the state dict.
 DEFAULT_IMG_SIZE = 240
-# Legacy fallback size for v4.5 EfficientNetV2-S checkpoints when
-# classes.json is missing. We still honour classes.json["training"]
-# ["img_size"] when present (single source of truth).
-LEGACY_V2S_IMG_SIZE = 320
+# Fallback resolution for EfficientNetV2-S checkpoints. classes.json
+# ["training"]["img_size"] remains the single source of truth.
+V2S_IMG_SIZE = 320
 
 # Alphabetical — must match training-time ``sorted(ImageFolder.classes)``.
-# Mirrors what the v4.0 notebook actually shipped (8 classes). The
-# notebook can train up to 11 classes (aphids/thrips/whitefly added in
-# v4.1) but those depend on iNat returning enough samples; if missing,
-# MIN_TRAIN_PER_CLASS auto-drops them and the resulting checkpoint is
-# 8-class. Loader (_load_pytorch_model + ONNX path) will both expand
-# OR truncate this list to match the actual head width and prefer the
-# class names declared in classes.json when present.
+# Loader (_load_pytorch_model + ONNX path) will both expand OR truncate
+# this list to match the actual head width and prefer the class names
+# declared in classes.json when present.
 DEFAULT_CLASS_NAMES = [
-    # PlantScope v5.0 — 10 houseplant disease classes (alphabetical),
+    # PlantVision — 10 houseplant disease classes (alphabetical),
     # matching sorted(ImageFolder.classes) at training time.
     "anthracnose",
     "bacterial_leaf_spot",
@@ -131,13 +118,12 @@ def _resolve_onnx_path(model_path: Path | None) -> Path | None:
 
 
 def _resolve_ensemble_path(model_path: Path | None) -> Path | None:
-    """v5.0: optional secondary backbone (V2-S) co-located with the primary.
+    """Optional secondary backbone (V2-S) co-located with the primary.
 
     The notebook can train a second checkpoint at higher resolution and
     export it as ``classifier_v2s.onnx`` (or ``_int8`` variant). When
     present we weighted-average its softmax with the primary's at
-    inference. Missing peer → primary-only inference; the field
-    ``ensemble_size`` in ``/api/version`` reflects the actual count.
+    inference.
     """
     if model_path is None:
         return None
@@ -160,9 +146,9 @@ class DiseaseClassifier:
         self._torch_model = None        # torch.nn.Module
         self._torch_device = None       # torch.device
 
-        # v5.0: optional ensemble peer (V2-S @ higher res). Loaded only
-        # if a sibling ``classifier_v2s*.onnx`` is found next to the
-        # primary; otherwise inference stays single-model.
+        # Optional ensemble peer (V2-S @ higher res). Loaded only if a
+        # sibling ``classifier_v2s*.onnx`` is found next to the primary;
+        # otherwise inference stays single-model.
         self._peer_session = None
         self._peer_input_name: str = ""
         self._peer_img_size: int = 0
@@ -298,11 +284,11 @@ class DiseaseClassifier:
 
         self._torch_model = net
         self._torch_device = torch.device("cpu")
-        # If classes.json was missing we have to guess. The v4.7 train
-        # recipe pins B0 to 240; v4.5 V2-S used 320. Honour whatever
-        # came from classes.json when present (img_size != default).
+        # If classes.json was missing we have to guess. B0 trains at 240;
+        # V2-S uses 320. Honour whatever came from classes.json when
+        # present (img_size != default).
         if is_v2s and self.img_size == DEFAULT_IMG_SIZE:
-            self.img_size = LEGACY_V2S_IMG_SIZE
+            self.img_size = V2S_IMG_SIZE
         self.is_loaded = True
         self.backend = "torch"
         logger.info(
@@ -312,7 +298,11 @@ class DiseaseClassifier:
         )
 
     def _attach_peer(self, path: Path, meta: dict) -> None:
-        """Load the optional V2-S ensemble peer and validate its head."""
+        """Load the optional V2-S ensemble peer and validate its head.
+
+        Missing peer → primary-only inference; the field
+        ``ensemble_size`` in ``/api/version`` reflects the actual count.
+        """
         import onnxruntime as ort
 
         opts = ort.SessionOptions()
@@ -362,8 +352,8 @@ class DiseaseClassifier:
         """Classify N crops in a single forward pass when possible.
 
         ONNX (the production path) and PyTorch both support dynamic
-        batch — the v4.5 export sets ``dynamic_axes={'input':{0:'batch'}}``
-        — so we save the per-call setup cost (~5-10 ms each on CPU) by
+        batch — the export sets ``dynamic_axes={'input':{0:'batch'}}`` —
+        so we save the per-call setup cost (~5-10 ms each on CPU) by
         running one stacked inference. Demo mode falls back to per-image
         evaluation; the heuristic is cheap enough that batching adds no
         value there.
@@ -447,7 +437,7 @@ class DiseaseClassifier:
         logits = logits - logits.max(axis=1, keepdims=True)
         e = np.exp(logits)
         probs = e / e.sum(axis=1, keepdims=True)
-        # v5.0: blend with the optional V2-S peer when present.
+        # Blend with the optional V2-S peer when present.
         probs = self._blend_with_peer(probs, [img])
         return self._format_result(probs[0])
 
@@ -521,12 +511,10 @@ class DiseaseClassifier:
             return {"class_name": "unknown", "confidence": 0.0,
                     "all_probs": {}, "low_confidence": True}
 
-        # Demo branches map to the v5.0 10-class taxonomy. Pests stay
-        # UI hints, not classes. New v5.0 buckets (bacterial_leaf_spot,
-        # mosaic_virus) are routed by green/yellow contrast variance.
-        # Standard deviation of the green channel separates uniformly
-        # green ("healthy") from mottled ("mosaic") and clean from
-        # spotted ("bacterial").
+        # Demo branches map to the 10-class PlantVision taxonomy. Pests
+        # stay UI hints, not classes. Standard deviation of the green
+        # channel separates uniformly green ("healthy") from mottled
+        # ("mosaic") and clean from spotted ("bacterial").
         g_std = float(arr[:, :, 1].std())
 
         if green_ratio < 0.32 and "not_a_plant" in names:
