@@ -17,7 +17,7 @@ diagnoses are not meaningful).
 
 We are running a 4-week sprint (Apr 30 → May 30, 2026) to:
 
-1. Train the v4.7 weights and expand the dataset.
+1. Train the PlantVision 1.1 weights and expand the dataset.
 2. Add plant **species identification** (PlantNet API) on top of disease
    detection.
 3. Ship **My Garden**, **care reminders**, an **AI Plant Doctor** chat,
@@ -52,7 +52,7 @@ Per-week, per-engineer task list lives in [`ROADMAP.md`](ROADMAP.md).
 └──────────────────────┘         └──────────────────────────────────┘
 ```
 
-### Two-stage pipeline (v4.7)
+### Two-stage pipeline (PlantVision 1.1)
 
 ```
 Full photo (any composition — hand, wall, background are fine)
@@ -101,13 +101,12 @@ disease. A second-line MSP-based OOD gate
 case where Stage 1 fires weakly on a non-leaf texture.
 
 **Why EfficientNet-B0 and not V2-S.** The classifier dataset is on the
-order of ~7-8k images across 8 classes. EfficientNetV2-S (21M params) was
-oversized for that, with elevated overfit risk on the long-tail classes
-(anthracnose, sunburn). B0 (5M params) is a better capacity match,
-trains faster on a free Colab T4 (~30-40 min vs ~70-95 min), and runs
-~4× faster on a CPU-only production VPS — directly user-visible latency.
-The classifier loader auto-detects either backbone, so a v4.5 V2-S
-checkpoint still loads cleanly.
+order of ~10-12k images across 10 classes. EfficientNetV2-S (21M params)
+was oversized for that, with elevated overfit risk on the long-tail
+classes. B0 (5M params) is a better capacity match, trains faster on a
+free Colab T4, and runs ~4× faster on a CPU-only production VPS —
+directly user-visible latency. The classifier loader auto-detects either
+backbone, and an optional V2-S peer can be loaded as an ensemble.
 
 ---
 
@@ -119,25 +118,25 @@ Stage 1 (YOLOv8n) is **single-class**:
 |---|-------|
 | 0 | `leaf` |
 
-The "is this leaf diseased?" decision belongs entirely to Stage 2 —
-v3.x's two-class detector (`leaf` / `diseased_leaf`) introduced a strong
-"flag everything as diseased" bias that propagated into the
-postprocessing gate. v4 dropped it.
+The "is this leaf diseased?" decision belongs entirely to Stage 2.
 
-Stage 2 (EfficientNet-B0 in v4.7, EfficientNetV2-S in v4.5) classifies
-the primary leaf crop into one of eight houseplant-focused classes
-(alphabetical, matching `sorted(ImageFolder.classes)` at training time):
+Stage 2 (EfficientNet-B0 @ 240; optional EfficientNetV2-S @ 300 ensemble
+peer) classifies the primary leaf crop into one of ten houseplant-focused
+classes (alphabetical, matching `sorted(ImageFolder.classes)` at training
+time):
 
 | # | Class | EN name | RU name |
 |---|-------|---------|---------|
-| 0 | `anthracnose`     | Anthracnose      | Антракноз            |
-| 1 | `gray_mold`       | Gray Mold        | Серая гниль          |
-| 2 | `healthy`         | Healthy Plant    | Здоровое растение    |
-| 3 | `iron_chlorosis`  | Iron Chlorosis   | Железный хлороз      |
-| 4 | `late_blight`     | Late Blight      | Фитофтороз           |
-| 5 | `not_a_plant`     | Not a Plant      | Не растение          |
-| 6 | `powdery_mildew`  | Powdery Mildew   | Мучнистая роса       |
-| 7 | `sunburn`         | Sunburn          | Солнечный ожог       |
+| 0 | `anthracnose`         | Anthracnose          | Антракноз             |
+| 1 | `bacterial_leaf_spot` | Bacterial Leaf Spot  | Бактериальная пятнистость |
+| 2 | `gray_mold`           | Gray Mold            | Серая гниль           |
+| 3 | `healthy`             | Healthy Plant        | Здоровое растение     |
+| 4 | `iron_chlorosis`      | Iron Chlorosis       | Железный хлороз       |
+| 5 | `late_blight`         | Late Blight          | Фитофтороз            |
+| 6 | `mosaic_virus`        | Mosaic Virus         | Мозаичный вирус       |
+| 7 | `not_a_plant`         | Not a Plant          | Не растение           |
+| 8 | `powdery_mildew`      | Powdery Mildew       | Мучнистая роса        |
+| 9 | `sunburn`             | Sunburn              | Солнечный ожог        |
 
 Canonical list: [`server/models/classes.json`](server/models/classes.json).
 Bilingual descriptions, treatments and prevention tips live in
@@ -208,9 +207,9 @@ identical, but the results are not meaningful.
 ## Training the models
 
 Training runs **only in Google Colab** via
-[`server/train_notebook.ipynb`](server/train_notebook.ipynb). The v4.7
-notebook runs end-to-end on a free-tier T4 in roughly 50-70 minutes
-(down from ~70-95 min on the v4.5 V2-S recipe):
+[`server/train_notebook.ipynb`](server/train_notebook.ipynb). The
+notebook runs end-to-end on a free-tier T4 in roughly ~3 hours including
+the optional V2-S ensemble peer:
 
 1. Install dependencies and sanity-check the GPU.
 2. Clone **PlantDoc** for the YOLO-side and pull supporting sources
@@ -236,7 +235,7 @@ notebook runs end-to-end on a free-tier T4 in roughly 50-70 minutes
 8. Export `detector.pt`/`detector.onnx`, `classifier.pth`/`classifier.onnx`/
    `classifier_int8.onnx`, and `classes.json` (the notebook regenerates
    `classes.json` with the alphabetical class list, val accuracy
-   numbers and the v4.7 model version).
+   numbers and the PlantVision 1.1 model version).
 
 Drop the model files into `server/models/` and restart the server — the
 pipeline auto-detects real vs demo mode and prefers ONNX INT8 when
@@ -250,7 +249,7 @@ present.
 |--------|------|-------------|
 | `GET` | `/api/health` | Liveness + pipeline status + uptime |
 | `GET` | `/api/version` | Server version + model architecture |
-| `GET` | `/api/classes` | 9 classes with bilingual names |
+| `GET` | `/api/classes` | 10 classes with bilingual names |
 | `GET` | `/api/metrics` | Counters for requests, errors, latency |
 | `GET` | `/api/metrics/prometheus` | Prometheus exposition format |
 | `POST` | `/api/analyze` | Upload image → get diagnosis |
@@ -292,7 +291,7 @@ WebP, or BMP; up to 10 MB, up to 4096 px per side).
   },
   "pipeline_mode": "full",
   "elapsed_ms": 145.3,
-  "server_version": "3.0.0"
+  "server_version": "1.1"
 }
 ```
 
@@ -408,7 +407,7 @@ server/
 ├── docker-compose.yml       # Compose stack for production
 └── models/
     ├── detector.pt          # YOLOv8n weights
-    ├── classifier.pth       # EfficientNet-B0 weights (or V2-S if v4.5)
+    ├── classifier.pth       # PlantVision EfficientNet-B0 (or V2-S) weights
     └── classes.json         # Canonical class list + model version
 ```
 

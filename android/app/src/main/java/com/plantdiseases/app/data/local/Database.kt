@@ -1,14 +1,34 @@
 package com.plantdiseases.app.data.local
 
 import androidx.room.*
-import androidx.room.migration.Migration
-import androidx.sqlite.db.SupportSQLiteDatabase
+
+@Entity(
+    tableName = "plants",
+    indices = [Index(value = ["created_at"])]
+)
+data class PlantEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(name = "name") val name: String,
+    @ColumnInfo(name = "species") val species: String? = null,
+    @ColumnInfo(name = "nickname") val nickname: String? = null,
+    @ColumnInfo(name = "icon_uri") val iconUri: String? = null,
+    @ColumnInfo(name = "created_at") val createdAt: Long = System.currentTimeMillis(),
+)
 
 @Entity(
     tableName = "scans",
+    foreignKeys = [
+        ForeignKey(
+            entity = PlantEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["plant_id"],
+            onDelete = ForeignKey.SET_NULL,
+        )
+    ],
     indices = [
         Index(value = ["timestamp"]),
-        Index(value = ["is_healthy"])
+        Index(value = ["is_healthy"]),
+        Index(value = ["plant_id"]),
     ]
 )
 data class ScanEntity(
@@ -35,7 +55,10 @@ data class ScanEntity(
     // Diagnostic flags from the pipeline post-processing rules
     // (e.g. "uncertain_healthy", "detector_classifier_mismatch"),
     // serialised as a JSON array of strings.
-    @ColumnInfo(name = "warnings") val warnings: String? = null
+    @ColumnInfo(name = "warnings") val warnings: String? = null,
+    // Optional foreign key into `plants`. Null until the user assigns the
+    // scan to a plant from the result screen ("Add to garden" flow).
+    @ColumnInfo(name = "plant_id") val plantId: Long? = null,
 )
 
 @Dao
@@ -52,45 +75,43 @@ interface ScanDao {
     @Insert
     suspend fun insert(scan: ScanEntity): Long
 
-    @Delete
-    suspend fun delete(scan: ScanEntity)
-
     @Query("DELETE FROM scans WHERE id = :id")
     suspend fun deleteById(id: Long)
-
-    @Query("SELECT COUNT(*) FROM scans")
-    suspend fun getCount(): Int
-
-    @Query("SELECT COUNT(*) FROM scans WHERE is_healthy = 1")
-    suspend fun getHealthyCount(): Int
-
-    @Query("SELECT COUNT(*) FROM scans WHERE is_healthy = 0")
-    suspend fun getDiseasedCount(): Int
-
-    @Query("SELECT disease_name FROM scans WHERE is_healthy = 0 GROUP BY disease_name ORDER BY COUNT(*) DESC LIMIT 1")
-    suspend fun getMostCommonDisease(): String?
-
-    @Query("SELECT disease_name_ru FROM scans WHERE is_healthy = 0 GROUP BY disease_name_ru ORDER BY COUNT(*) DESC LIMIT 1")
-    suspend fun getMostCommonDiseaseRu(): String?
 
     @Query("DELETE FROM scans")
     suspend fun deleteAll()
 }
 
-@Database(entities = [ScanEntity::class], version = 2, exportSchema = false)
+@Dao
+interface PlantDao {
+    @Query("SELECT * FROM plants ORDER BY created_at DESC")
+    suspend fun getAllPlants(): List<PlantEntity>
+
+    @Query("SELECT * FROM plants WHERE id = :id")
+    suspend fun getPlantById(id: Long): PlantEntity?
+
+    @Insert
+    suspend fun insert(plant: PlantEntity): Long
+
+    @Update
+    suspend fun update(plant: PlantEntity)
+
+    @Query("DELETE FROM plants WHERE id = :id")
+    suspend fun deleteById(id: Long)
+}
+
+@Database(
+    entities = [ScanEntity::class, PlantEntity::class],
+    version = 3,
+    exportSchema = false,
+)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun scanDao(): ScanDao
+    abstract fun plantDao(): PlantDao
 
     companion object {
         @Volatile
         private var INSTANCE: AppDatabase? = null
-
-        // v1 → v2: add nullable `warnings` column for pipeline post-processing flags.
-        private val MIGRATION_1_2 = object : Migration(1, 2) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE scans ADD COLUMN warnings TEXT")
-            }
-        }
 
         fun getInstance(context: android.content.Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
@@ -99,7 +120,9 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "plantdiseases_db"
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    // No legacy migrations: pre-1.1 schemas were never
+                    // shipped to production.
+                    .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance
                 instance

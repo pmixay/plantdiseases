@@ -85,6 +85,12 @@
     <string name="onboarding_next">Далее</string>
     <string name="onboarding_skip">Пропустить</string>
     <string name="onboarding_start">Начать</string>
+    <string name="onboarding_scan_title">Сканируй</string>
+    <string name="onboarding_scan_body">Поднесите камеру к листу — PlantDiseases подсветит рамку зелёным и автоматически сделает снимок, как только кадр стабилизируется.</string>
+    <string name="onboarding_diagnose_title">Узнай болезнь</string>
+    <string name="onboarding_diagnose_body">PlantVision находит лист, определяет болезнь и показывает топ-3 кандидата с уверенностью модели.</string>
+    <string name="onboarding_care_title">Уход</string>
+    <string name="onboarding_care_body">Получите двуязычные рекомендации по лечению, профилактике и расписание полива и света под ваш диагноз.</string>
 
     <!-- Result -->
     <string name="new_scan">Новый скан</string>
@@ -185,4 +191,10 @@
     <!-- Camera grid overlay -->
     <string name="grid_overlay">Сетка</string>
     <string name="zoom_indicator">%sx</string>
+
+    <!-- Real-time leaf framing (PlantVision auto-capture) -->
+    <string name="frame_hint_red">Наведите на лист растения</string>
+    <string name="frame_hint_amber">Поместите лист в кадр</string>
+    <string name="frame_hint_green">Держите ровно…</string>
+    <string name="frame_hint_capturing">Готово</string>
 </resources>

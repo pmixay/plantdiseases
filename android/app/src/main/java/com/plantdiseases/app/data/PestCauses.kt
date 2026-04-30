@@ -4,15 +4,13 @@ package com.plantdiseases.app.data
  * Local mirror of `server/diseases_data.py::PEST_INFO` and the
  * per-disease `possible_pest_causes` lists.
  *
- * Pests are not classifier outputs in v4.5 — they're surfaced under
- * each diagnosis as a hint section ("could the same look come from a
+ * Pests are not classifier outputs — they're surfaced under each
+ * diagnosis as a hint section ("could the same look come from a
  * pest?"). The server returns the same data in
  * `AnalysisResponse.possible_pest_causes`; this local table makes the
  * UI work for cached/history scans where the JSON wasn't persisted.
  *
- * Keep this in sync with the server registry. The data is small and
- * stable (5 pests, 8 diseases), so a static mirror avoids a DB
- * schema migration without sacrificing correctness.
+ * Keep this in sync with the server registry.
  */
 object PestCauses {
 
@@ -77,15 +75,17 @@ object PestCauses {
 
     /** disease class key → list of pest keys whose damage can be confused with it. */
     private val MAPPING: Map<String, List<String>> = mapOf(
-        "anthracnose"     to listOf("spider_mites"),
-        "gray_mold"       to listOf("mealybug"),
-        "iron_chlorosis"  to listOf("spider_mites", "aphids", "scale_insect", "mealybug", "whitefly"),
-        "powdery_mildew"  to listOf("mealybug"),
+        "anthracnose"         to listOf("spider_mites"),
+        "bacterial_leaf_spot" to listOf("aphids"),
+        "gray_mold"           to listOf("mealybug"),
+        "iron_chlorosis"      to listOf("spider_mites", "aphids", "scale_insect", "mealybug", "whitefly"),
+        "mosaic_virus"        to listOf("aphids"),
+        "powdery_mildew"      to listOf("mealybug"),
         // Empty (no pest can be confused with these visually):
-        "healthy"         to emptyList(),
-        "late_blight"     to emptyList(),
-        "not_a_plant"    to emptyList(),
-        "sunburn"         to emptyList(),
+        "healthy"             to emptyList(),
+        "late_blight"         to emptyList(),
+        "not_a_plant"         to emptyList(),
+        "sunburn"             to emptyList(),
     )
 
     /** Resolve a disease class to the bilingual pest cards. */

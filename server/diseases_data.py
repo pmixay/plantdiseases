@@ -1,7 +1,7 @@
 """
-Bilingual disease information database for PlantScope v5.0.
+Bilingual disease information database for PlantVision.
 
-Stage 2 classifier outputs ONE OF 10 disease classes — the bilingual
+Stage 2 classifier outputs one of 10 disease classes — the bilingual
 content for each lives in ``DISEASES_DATABASE`` below. Pests are not
 classifier outputs; they remain a UI hint section via ``PEST_INFO``
 and each disease's ``possible_pest_causes`` field.
@@ -390,8 +390,8 @@ DISEASES_DATABASE = {
 
 # ── Pest hint registry ───────────────────────────────────────────────
 #
-# Pests are NOT classifier outputs in v4.5; they're surfaced as a UI
-# hint section ("possible pest causes") on each disease card. Diseases
+# Pests are NOT classifier outputs; they're surfaced as a UI hint
+# section ("possible pest causes") on each disease card. Diseases
 # reference these keys via ``possible_pest_causes``. Single source of
 # truth: name, short summary (what it looks like), the 1-line
 # "if you see this" hint and a category for grouping.

@@ -1,4 +1,4 @@
-# PlantScope v5.0 — Model Card
+# PlantVision 1.1 — Model Card
 
 **Status:** trained checkpoints not bundled in the repo (size). Reproduce
 via `server/train_notebook.ipynb` on a Colab T4. The notebook drops
@@ -28,8 +28,8 @@ hints driven by `server/diseases_data.py::PEST_INFO`.
 
 ## Training data
 
-| Source | Licence | Used for | Approx volume (v5.0) |
-|--------|---------|----------|----------------------|
+| Source | Licence | Used for | Approx volume |
+|--------|---------|----------|---------------|
 | PlantDoc OD | CC-BY 4.0 | YOLO single-class leaf | ~2 600 images / ~8 700 bboxes |
 | PlantVillage (sparse-checkout) | CC-BY-3.0 | classifier — `powdery_mildew`, `iron_chlorosis`, `late_blight`, `sunburn`, `bacterial_leaf_spot`, `mosaic_virus` | up to 800 / class |
 | iNaturalist Open Data (CC0/CC-BY/CC-BY-SA) | per-photo | classifier — fungal diseases + `bacterial_leaf_spot` (Pseudomonas syringae, Xanthomonas) and `mosaic_virus` (Tobamovirus) | up to 800 / class |

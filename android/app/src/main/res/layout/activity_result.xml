@@ -409,7 +409,7 @@
 
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- Possible pest causes (v4.5: pests are hints, not classes) -->
+            <!-- Possible pest causes (pests are hints, not classifier outputs) -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/card_pest_causes"
                 android:layout_width="match_parent"

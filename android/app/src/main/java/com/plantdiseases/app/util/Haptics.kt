@@ -14,10 +14,8 @@ object Haptics {
 
     fun medium(context: Context) = vibrate(context, 50L)
 
-    fun success(context: Context) = playEffect(
-        context,
-        VibrationEffect.createWaveform(longArrayOf(0, 30, 80, 30), -1)
-    )
+    fun success(context: Context) =
+        playEffect(context, VibrationEffect.createWaveform(longArrayOf(0, 30, 80, 30), -1))
 
     private fun vibrate(context: Context, durationMs: Long) =
         playEffect(context, VibrationEffect.createOneShot(durationMs, VibrationEffect.DEFAULT_AMPLITUDE))

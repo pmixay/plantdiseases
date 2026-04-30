@@ -61,11 +61,10 @@ def test_not_a_plant_class_is_present():
     assert "not_a_plant" in DEFAULT_CLASS_NAMES
 
 
-def test_v50_taxonomy_is_disease_only():
-    """v5.0 carries 10 disease-only classes (added bacterial_leaf_spot
-    and mosaic_virus on top of the v4.5/v4.7 set of 8). Pests still
-    live in PEST_INFO and are surfaced via possible_pest_causes hints,
-    not as classifier outputs."""
+def test_taxonomy_is_disease_only():
+    """PlantVision carries 10 disease-only classes. Pests live in
+    PEST_INFO and are surfaced via possible_pest_causes hints, not as
+    classifier outputs."""
     from classifier import DEFAULT_CLASS_NAMES
 
     expected = {
@@ -74,18 +73,15 @@ def test_v50_taxonomy_is_disease_only():
         "powdery_mildew", "sunburn",
     }
     assert set(DEFAULT_CLASS_NAMES) == expected, (
-        f"v5.0 class set drift: extra={set(DEFAULT_CLASS_NAMES) - expected} "
+        f"class set drift: extra={set(DEFAULT_CLASS_NAMES) - expected} "
         f"missing={expected - set(DEFAULT_CLASS_NAMES)}"
     )
     # Pests must NOT be classifier outputs.
     for pest in ("aphids", "mealybug", "scale_insect", "spider_mites",
                  "thrips", "whitefly"):
         assert pest not in DEFAULT_CLASS_NAMES, (
-            f"v5.0 must drop pest class {pest} (it's a hint, not a label)"
+            f"must drop pest class {pest} (it's a hint, not a label)"
         )
-    # Old broad buckets stay retired.
-    for removed in ("leaf_spot", "blight", "leaf_mold", "rust"):
-        assert removed not in DEFAULT_CLASS_NAMES, f"v5.0 must keep {removed} retired"
 
 
 def test_top_k_and_warnings_keys_in_result():
@@ -104,9 +100,8 @@ def test_top_k_and_warnings_keys_in_result():
 
 
 def test_healthy_gate_attaches_warning_without_rerouting():
-    """v4 healthy gate is soft: a low margin attaches the
-    ``uncertain_healthy`` warning but DOES NOT swap the class. This is
-    the explicit fix for v3.x's "every plant is sick" regression."""
+    """The healthy gate is soft: a low margin attaches the
+    ``uncertain_healthy`` warning but DOES NOT swap the class."""
     from pipeline import HEALTHY_MARGIN, _apply_postprocessing_rules
 
     probs = {
@@ -130,13 +125,13 @@ def test_healthy_gate_attaches_warning_without_rerouting():
     }
     out = _apply_postprocessing_rules(classification, list(probs.keys()))
 
-    # v4 contract: warning is attached, but the class stays healthy.
-    assert out["class_name"] == "healthy", "v4 gate must NOT reroute the class"
+    # Contract: warning is attached, but the class stays healthy.
+    assert out["class_name"] == "healthy", "gate must NOT reroute the class"
     assert "uncertain_healthy" in out["warnings"]
 
 
 def test_healthy_gate_silent_on_high_confidence():
-    """If healthy is well above the v4 thresholds, no warning is added."""
+    """If healthy is well above the thresholds, no warning is added."""
     from pipeline import _apply_postprocessing_rules
 
     probs = {
@@ -180,7 +175,7 @@ def test_low_confidence_warning_is_propagated():
 
 
 def test_healthy_fallback_emits_disease_uncertain_warning():
-    """When v4.1 healthy fallback fires, the postprocessor must surface
+    """When the healthy fallback fires, the postprocessor must surface
     a ``disease_uncertain:<class>`` warning so the UI can show the
     user which disease was ruled out as borderline."""
     from pipeline import _apply_postprocessing_rules
@@ -207,9 +202,9 @@ def test_healthy_fallback_emits_disease_uncertain_warning():
 
 
 def test_ood_reroute_to_nap_produces_consistent_distribution():
-    """v4.7: when the secondary OOD gate fires, _reroute_to_nap must
-    rewrite the classification so that ``not_a_plant`` is the top class
-    AND the published probability mass adds up to ~1, with the original
+    """When the secondary OOD gate fires, _reroute_to_nap must rewrite
+    the classification so that ``not_a_plant`` is the top class AND the
+    published probability mass adds up to ~1, with the original
     runner-up classes preserved in proportion (so the UI's alternatives
     list still makes sense)."""
     from pipeline import PlantDiseasePipeline
@@ -262,26 +257,21 @@ def test_postprocessor_emits_nap_ood_warning():
 
 
 def test_is_diseased_uses_disease_min_confidence():
-    """v4.7 bug fix: previously the ``is_diseased`` flag fired at
-    HEALTHY_MIN_CONFIDENCE * 0.5 = 0.275, which silently disagreed with
-    the much stricter DISEASE_MIN_CONFIDENCE = 0.65 used in voting. The
-    detector overlay would say "diseased region" while the disease
-    verdict had already been downgraded to healthy. Both signals must
-    use the same threshold."""
+    """The ``is_diseased`` flag must share the disease verdict's
+    confidence threshold so the detector overlay and the verdict can't
+    disagree (overlay says "diseased region" while verdict says
+    healthy)."""
     from pipeline import _NON_DISEASE, DISEASE_MIN_CONFIDENCE
 
-    # Sanity check: DISEASE_MIN_CONFIDENCE > HEALTHY_MIN_CONFIDENCE * 0.5
-    # so this test would have caught the regression.
     assert DISEASE_MIN_CONFIDENCE >= 0.5
     assert "healthy" in _NON_DISEASE
     assert "not_a_plant" in _NON_DISEASE
 
 
 def test_healthy_fallback_keeps_top_k_consistent_with_class_name():
-    """Regression for v4.1 bug: after fallback, top_k[0] used to be the
-    suspected disease while class_name said healthy. Pipeline now
-    redistributes mass so the chosen class is the actual top-1 in
-    all_probs / top_k."""
+    """After the healthy fallback fires, the chosen class must be the
+    actual top-1 in all_probs / top_k — UI cannot show ``healthy`` while
+    top_k[0] is a disease."""
     from pipeline import _apply_postprocessing_rules
 
     # Synthetic post-fallback classification: class_name="healthy" with
