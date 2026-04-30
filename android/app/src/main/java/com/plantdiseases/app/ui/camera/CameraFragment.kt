@@ -253,13 +253,16 @@ class CameraFragment : Fragment() {
 
             // Real-time framing analyzer. STRATEGY_KEEP_ONLY_LATEST drops
             // backpressured frames so we never queue work behind the
-            // preview when the device is under load.
+            // preview when the device is under load. setTargetResolution
+            // is deprecated in CameraX 1.3 in favour of ResolutionSelector
+            // but still works and keeps the dependency surface minimal.
             val executor = analyzerExecutor ?: Executors.newSingleThreadExecutor()
                 .also { analyzerExecutor = it }
-            imageAnalysis = ImageAnalysis.Builder()
+            @Suppress("DEPRECATION")
+            val analysisBuilder = ImageAnalysis.Builder()
                 .setTargetResolution(Size(320, 240))
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
+            imageAnalysis = analysisBuilder
                 .build()
                 .apply {
                     setAnalyzer(executor, LeafFrameAnalyzer { signal ->
@@ -522,7 +525,9 @@ class CameraFragment : Fragment() {
         // the 160-px green-channel grid: hand-held indoor shots score
         // 200+, severely blurred ones score below 60.
         private const val MIN_SHARPNESS = 120.0
-        // ~80 % alpha, leaving the underlying preview readable.
-        private const val STROKE_ALPHA_MASK = 0xCC shl 24
+        // 0xCC000000 as a signed Int (~80 % alpha), leaves the preview
+        // readable through the stroke. Written as a negative literal so
+        // it stays a compile-time `const`.
+        private const val STROKE_ALPHA_MASK: Int = -0x34000000
     }
 }
