@@ -529,7 +529,9 @@ class ResultActivity : AppCompatActivity() {
             )
         }
         text.addView(TextView(this).apply {
-            text = candidate.displayCommonName
+            // Qualify with `this.text` — the enclosing scope binds `text`
+            // to the outer LinearLayout val and would otherwise win.
+            this.text = candidate.displayCommonName
                 ?: candidate.scientificName
                 ?: getString(R.string.species_suggest_unknown_name)
             textSize = 14f
