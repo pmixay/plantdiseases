@@ -284,14 +284,8 @@ async def lifespan(app: FastAPI):
         )
         logger.info("Pipeline initialised (mode=%s)", pipeline.mode)
     except Exception as e:
-        # Fail fast — the server has no demo / heuristic fallback. An
-        # operator who sees this error needs to drop trained weights into
-        # `models/` before the API can come back up.
-        logger.error("Pipeline initialisation failed: %s", e)
-        if _inference_executor is not None:
-            _inference_executor.shutdown(wait=False)
-            _inference_executor = None
-        raise
+        logger.error("Failed to initialise pipeline: %s", e)
+        pipeline = PlantDiseasePipeline()
     yield
     logger.info("Server shutting down")
     if _inference_executor is not None:
@@ -362,20 +356,14 @@ def _open_image(contents: bytes) -> Image.Image:
 
 @app.get("/api/health")
 async def health_check():
-    """Health check — server status, pipeline mode, uptime, request count.
-
-    The server fails fast if model weights are missing, so reaching this
-    endpoint already implies the two-stage pipeline is loaded. The
-    ``detector_loaded`` and ``classifier_loaded`` booleans are kept for
-    backwards compatibility with older clients.
-    """
+    """Health check — server status, model state, pipeline mode, uptime, request count."""
     uptime = time.time() - SERVER_START_TIME if SERVER_START_TIME else 0
     return {
         "status": "ok",
         "version": APP_VERSION,
         "pipeline_mode": pipeline.mode if pipeline else "unknown",
-        "detector_loaded": pipeline is not None,
-        "classifier_loaded": pipeline is not None,
+        "detector_loaded": pipeline.detector.is_loaded if pipeline else False,
+        "classifier_loaded": pipeline.classifier.is_loaded if pipeline else False,
         "num_classes": len(pipeline.classifier.CLASS_NAMES) if pipeline else 0,
         "uptime_seconds": round(uptime, 1),
         "total_requests": _snapshot_metrics()["total_requests"],
@@ -387,6 +375,8 @@ async def version():
     """Server version and model architecture."""
     if pipeline is None:
         cls_arch = "unknown"
+    elif not pipeline.classifier.is_loaded:
+        cls_arch = "demo (HSV heuristic)"
     else:
         backend = getattr(pipeline.classifier, "backend", "unknown")
         img_size = getattr(pipeline.classifier, "img_size", 0)

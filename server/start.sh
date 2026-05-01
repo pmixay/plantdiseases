@@ -80,28 +80,15 @@ pip install --quiet -r requirements.txt
 
 mkdir -p models logs
 
-# Production refuses to start without trained weights — there is no
-# heuristic / demo fallback. Detector accepts .pt or .onnx; classifier
-# accepts ONNX INT8, ONNX FP32, or PyTorch .pth.
-detector_present=0
-[[ -f "models/detector.pt" || -f "models/detector.onnx" ]] && detector_present=1
-classifier_present=0
-if [[ -f "models/classifier_int8.onnx" \
-   || -f "models/classifier.onnx" \
-   || -f "models/classifier.pth" ]]; then
-    classifier_present=1
+if [[ -f "models/detector.pt" && -f "models/classifier.pth" ]]; then
+    echo "[+] Both models found — running in FULL mode"
+elif [[ -f "models/detector.pt" || -f "models/classifier.pth" ]]; then
+    echo "[!] Only one model found — running in PARTIAL mode"
+else
+    echo "[!] No trained models found — running in DEMO mode"
+    echo "    Train in Colab via train_notebook.ipynb, then drop"
+    echo "    detector.pt, classifier.pth, classes.json into server/models/"
 fi
-
-if [[ "$detector_present" -ne 1 || "$classifier_present" -ne 1 ]]; then
-    echo "ERROR: Trained model weights are required to start the server." >&2
-    echo "  Detector   needs: models/detector.pt (or detector.onnx)" >&2
-    echo "  Classifier needs: models/classifier_int8.onnx, classifier.onnx," >&2
-    echo "                    or classifier.pth" >&2
-    echo "  Train in Colab via train_notebook.ipynb and drop the artefacts" >&2
-    echo "  into server/models/, then restart." >&2
-    exit 1
-fi
-echo "[+] Trained weights detected — starting in FULL mode"
 
 echo
 echo "[+] Starting server on http://0.0.0.0:${PORT}"

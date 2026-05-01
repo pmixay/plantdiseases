@@ -1,9 +1,8 @@
 # Deployment Guide
 
 Production deployment notes for the PlantDiseases FastAPI server. The
-Android client takes the API base URL at build time through the Gradle
-`API_BASE_URL` property, so a release APK is pinned to the production
-endpoint and there is no in-app picker.
+Android client needs no server-side change — point it at the public URL
+through **Profile → Server URL**.
 
 Code paths and env var names below match `server/main.py`, `server/Dockerfile`
 and `server/docker-compose.yml`.
@@ -42,8 +41,7 @@ docker compose up -d --build
 
 Model weights go under `server/models/` on the host; the container
 mounts it read-only (`./models:/app/models:ro`). Without weights the
-server refuses to start — there is no demo / heuristic fallback. Drop
-trained weights into the volume and restart.
+server runs in demo mode (colour-based heuristics).
 
 Smoke test:
 
@@ -170,10 +168,7 @@ Before opening the service to the public:
 - [ ] `RATE_LIMIT_RPS` tuned for expected traffic (default `1.0` is per-IP).
 - [ ] `MAX_FILE_SIZE` aligned with nginx `client_max_body_size`.
 - [ ] `proxy_read_timeout` ≥ `INFERENCE_TIMEOUT`.
-- [ ] Model files (`detector.pt` or `.onnx`, `classifier_int8.onnx` /
-      `classifier.onnx` / `classifier.pth`, and `classes.json`) present
-      under `server/models/` — the server refuses to start without
-      them, there is no demo fallback.
+- [ ] Model files (`detector.pt`, `classifier.pth`, `classes.json`) present under `server/models/` — otherwise the server stays in demo mode (acceptable for a jury demo, not for a prod launch).
 - [ ] `/api/health` reports `pipeline_mode: "full"`.
 - [ ] `classes.json` `num_classes` matches the classifier head size (the server logs a mismatch otherwise).
 - [ ] Logs are rotating (`LOG_DIR`) and being shipped off-box.
@@ -183,3 +178,36 @@ Before opening the service to the public:
 - [ ] Docker image built from a tagged commit, not `latest`.
 - [ ] Android app `network_security_config.xml` points at the production HTTPS host (HTTP cleartext is only allowed for `10.0.2.2` / `localhost`).
 - [ ] Smoke test: `curl -F "image=@leaf.jpg" https://.../api/analyze` returns a bilingual diagnosis with `pipeline_mode: "full"`.
+
+---
+
+## 7. Post-deploy smoke QA (Android client + server)
+
+Run this on a real device with the production URL configured. Target: under 5 minutes end-to-end.
+
+**Server reachability**
+- [ ] `curl https://.../api/health` returns 200 with `status: "ok"` and `pipeline_mode: "full"`.
+- [ ] `Profile → Server Diagnostics` shows green dot, server version, pipeline mode and class count populated (no `—`).
+- [ ] Tap the refresh button on the diagnostics card — values blink to `Checking…` and reload.
+
+**Happy-path scan**
+- [ ] Take a clear photo of a healthy leaf → diagnosis screen shows `Healthy` with confidence ≥ 70 %.
+- [ ] Take a photo of a known-diseased leaf → correct disease label, treatment + prevention lists are non-empty in both EN and RU (toggle via `Profile → Language`).
+- [ ] Scan appears in `Gallery` and `Profile` stats increment (`Total Scans`, healthy/diseased counts).
+
+**Error states (each must show a clear card with a one-tap Retry that re-uses the same photo)**
+- [ ] **Timeout**: throttle network or stop the API container mid-request → `Server Not Responding` card, `Continue` (offline) visible, image preview still shown above the error.
+- [ ] **No network**: enable airplane mode → `No Internet Connection` card with offline fallback CTA.
+- [ ] **429 rate limit**: hit `/api/analyze` rapidly from same IP (or set `RATE_LIMIT_RPS=0.1`) → `Server Busy` card; retry succeeds after the `Retry-After` window.
+- [ ] **503 server starting / pipeline unavailable**: restart the server and scan within the warm-up window → `Server is warming up` card with offline fallback; retry succeeds once `/api/health` reports `pipeline_mode: "full"`.
+- [ ] **Unsupported image (400/415)**: pick a non-image file or an unsupported format from the gallery → `Unsupported image` card; Retry button re-runs analysis on the same selection.
+- [ ] After every error card, the captured image preview is still visible at the top of the screen and Retry does **not** re-prompt the user to pick a photo.
+
+**Localization**
+- [ ] Switch to Russian: every new diagnostics row (`Пайплайн`, `Версия сервера`, `Классов болезней`) and every new error card title/body renders in RU with no `@string/...` fallbacks.
+
+**Regressions**
+- [ ] Onboarding still launches from `Profile → How to Use`.
+- [ ] `Clear All History` empties stats and gallery.
+- [ ] Light Meter entry still opens.
+

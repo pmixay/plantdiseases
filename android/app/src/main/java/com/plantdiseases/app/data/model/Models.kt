@@ -104,31 +104,21 @@ data class ScanHistoryItem(
     val timestamp: Long
 )
 
-/**
- * AI Doctor chat request — mirrors the server `/api/chat` payload.
- *
- * `diagnosis` is the optional latest analyse-shaped dict (class_name,
- * confidence, severity, warnings) so the LLM can ground its answer in the
- * actual classifier output.
- */
+/** AI Doctor chat request */
 data class ChatRequest(
     @SerializedName("session_id") val sessionId: String,
     @SerializedName("message") val message: String,
-    @SerializedName("locale") val locale: String = "en",
-    @SerializedName("diagnosis") val diagnosis: Map<String, Any>? = null,
+    @SerializedName("context") val context: ChatContext? = null,
 )
 
-/**
- * AI Doctor chat response. `available=false` means the server refused the
- * call (no API key, budget cap, transient API error). `reply` is the
- * Markdown-friendly answer; `reason` explains a refusal so the UI can show
- * a friendly message instead of an empty bubble.
- */
+data class ChatContext(
+    @SerializedName("disease") val disease: String?,
+    @SerializedName("plant_name") val plantName: String,
+)
+
 data class ChatResponse(
-    @SerializedName("available") val available: Boolean = false,
-    @SerializedName("reply") val reply: String = "",
-    @SerializedName("reason") val reason: String? = null,
-    @SerializedName("fallback") val fallback: String? = null,
+    @SerializedName("reply") val reply: String,
+    @SerializedName("suggested_questions") val suggestedQuestions: List<String>? = null,
 )
 
 /** Server health check response */

@@ -73,31 +73,23 @@ if not exist "models" mkdir models
 if not exist "logs" mkdir logs
 
 echo.
-rem Production refuses to start without trained weights — there is no
-rem heuristic / demo fallback. Detector accepts .pt or .onnx; classifier
-rem accepts ONNX INT8, ONNX FP32, or PyTorch .pth.
-set DETECTOR_OK=0
-if exist "models\detector.pt"   set DETECTOR_OK=1
-if exist "models\detector.onnx" set DETECTOR_OK=1
-
-set CLASSIFIER_OK=0
-if exist "models\classifier_int8.onnx" set CLASSIFIER_OK=1
-if exist "models\classifier.onnx"      set CLASSIFIER_OK=1
-if exist "models\classifier.pth"       set CLASSIFIER_OK=1
-
-if "%DETECTOR_OK%"=="0" goto missing_weights
-if "%CLASSIFIER_OK%"=="0" goto missing_weights
-echo [+] Trained weights detected - starting in FULL mode
-goto start_server
-
-:missing_weights
-echo ERROR: Trained model weights are required to start the server.
-echo   Detector   needs: models\detector.pt (or detector.onnx)
-echo   Classifier needs: models\classifier_int8.onnx, classifier.onnx,
-echo                     or classifier.pth
-echo   Train in Colab via train_notebook.ipynb and drop the artefacts
-echo   into server\models\, then restart.
-exit /b 1
+if exist "models\detector.pt" (
+    if exist "models\classifier.pth" (
+        echo [+] Both models found - running in FULL mode
+        goto start_server
+    )
+)
+if exist "models\detector.pt" (
+    echo [!] Only detector model found - running in PARTIAL mode
+    goto start_server
+)
+if exist "models\classifier.pth" (
+    echo [!] Only classifier model found - running in PARTIAL mode
+    goto start_server
+)
+echo [!] No trained models found - running in DEMO mode
+echo     Train in Colab via train_notebook.ipynb, then copy detector.pt,
+echo     classifier.pth and classes.json into server\models\
 
 :start_server
 echo.

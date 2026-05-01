@@ -4,8 +4,6 @@ import com.google.gson.Gson
 import com.plantdiseases.app.data.local.ScanDao
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.AnalysisResponse
-import com.plantdiseases.app.data.model.ChatRequest
-import com.plantdiseases.app.data.model.ChatResponse
 import com.plantdiseases.app.data.model.HealthResponse
 import com.plantdiseases.app.data.model.ScanHistoryItem
 import com.plantdiseases.app.data.remote.ApiService
@@ -39,6 +37,10 @@ class ScanRepository(
                     Result.success(response.body()!!)
                 } else if (response.code() == 429) {
                     Result.failure(RateLimitException())
+                } else if (response.code() == 503) {
+                    Result.failure(ServerStartingException())
+                } else if (response.code() == 400 || response.code() == 415) {
+                    Result.failure(UnsupportedImageException())
                 } else {
                     Result.failure(Exception("Server error: ${response.code()} ${response.message()}"))
                 }
@@ -52,36 +54,6 @@ class ScanRepository(
                 Result.failure(e)
             }
         }
-
-    /**
-     * Send a chat turn to the AI Plant Doctor (`/api/chat`).
-     *
-     * Returns success with the server payload (which itself can be a soft
-     * "available=false" answer the UI can render). Returns failure only on
-     * actual transport / HTTP errors so the caller can show a connectivity
-     * error rather than a placeholder bubble.
-     */
-    suspend fun chat(request: ChatRequest): Result<ChatResponse> = withContext(Dispatchers.IO) {
-        try {
-            val response = apiService.chat(request)
-            val body = response.body()
-            if (response.isSuccessful && body != null) {
-                Result.success(body)
-            } else if (response.code() == 429) {
-                Result.failure(RateLimitException())
-            } else {
-                Result.failure(Exception("Server error: ${response.code()}"))
-            }
-        } catch (e: SocketTimeoutException) {
-            Result.failure(ServerTimeoutException())
-        } catch (e: UnknownHostException) {
-            Result.failure(NoNetworkException())
-        } catch (e: java.net.ConnectException) {
-            Result.failure(ServerTimeoutException())
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
 
     /** Check server health */
     suspend fun checkServerHealth(): Result<HealthResponse> =
@@ -103,6 +75,8 @@ class ScanRepository(
     class ServerTimeoutException : Exception("Server is not responding")
     class NoNetworkException : Exception("No network connection")
     class RateLimitException : Exception("Server is busy, please wait")
+    class ServerStartingException : Exception("Server is starting / pipeline unavailable")
+    class UnsupportedImageException : Exception("Unsupported image format")
 
     /** Save analysis result to local DB */
     suspend fun saveScan(imagePath: String, result: AnalysisResponse): Long =

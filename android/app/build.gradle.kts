@@ -58,6 +58,10 @@ android {
         buildConfig = true
     }
 
+    androidResources {
+        noCompress += "tflite"
+    }
+
     lint {
         abortOnError = false
         checkReleaseBuilds = false
@@ -131,6 +135,9 @@ dependencies {
     // ViewPager2
     implementation("androidx.viewpager2:viewpager2:1.0.0")
 
+    // Preferences DataStore
+    implementation("androidx.datastore:datastore-preferences:1.0.0")
+
     // Shimmer effect for skeleton loading
     implementation("com.facebook.shimmer:shimmer:0.5.0")
 
@@ -139,4 +146,7 @@ dependencies {
 
     // WorkManager (plant reminders)
     implementation("androidx.work:work-runtime-ktx:2.9.0")
+
+    // On-device fallback inference
+    implementation("org.tensorflow:tensorflow-lite:2.16.1")
 }
