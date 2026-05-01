@@ -19,6 +19,7 @@ import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.databinding.FragmentProfileBinding
+import com.plantdiseases.app.ui.camera.LightMeterActivity
 import com.plantdiseases.app.ui.onboarding.OnboardingActivity
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.ThemeHelper
@@ -55,6 +56,11 @@ class ProfileFragment : Fragment() {
         // How to Use — re-open onboarding
         binding.cardHowToUse.setOnClickListener {
             startActivity(Intent(requireContext(), OnboardingActivity::class.java))
+        }
+
+        // Light Meter
+        binding.cardLightMeter.setOnClickListener {
+            startActivity(Intent(requireContext(), LightMeterActivity::class.java))
         }
 
         // Profile empty state CTA

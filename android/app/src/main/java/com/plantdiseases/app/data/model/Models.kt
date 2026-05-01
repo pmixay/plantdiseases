@@ -104,6 +104,23 @@ data class ScanHistoryItem(
     val timestamp: Long
 )
 
+/** AI Doctor chat request */
+data class ChatRequest(
+    @SerializedName("session_id") val sessionId: String,
+    @SerializedName("message") val message: String,
+    @SerializedName("context") val context: ChatContext? = null,
+)
+
+data class ChatContext(
+    @SerializedName("disease") val disease: String?,
+    @SerializedName("plant_name") val plantName: String,
+)
+
+data class ChatResponse(
+    @SerializedName("reply") val reply: String,
+    @SerializedName("suggested_questions") val suggestedQuestions: List<String>? = null,
+)
+
 /** Server health check response */
 data class HealthResponse(
     @SerializedName("status") val status: String,

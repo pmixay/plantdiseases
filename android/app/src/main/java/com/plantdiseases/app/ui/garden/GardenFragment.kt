@@ -1,5 +1,6 @@
 package com.plantdiseases.app.ui.garden
 
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.text.InputType
@@ -9,12 +10,15 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.animation.DecelerateInterpolator
+import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.PopupMenu
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.setPadding
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
@@ -29,6 +33,8 @@ import com.plantdiseases.app.data.local.PlantEntity
 import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
+import com.plantdiseases.app.util.ReminderManager
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class GardenFragment : Fragment() {
@@ -39,6 +45,7 @@ class GardenFragment : Fragment() {
     private lateinit var emptyState: LinearLayout
     private lateinit var summaryTitle: TextView
     private lateinit var summaryBody: TextView
+    private lateinit var addPlantFab: View
 
     private val plantRepository: PlantRepository
         get() = (requireActivity().application as PlantDiseasesApp).plantRepository
@@ -195,6 +202,7 @@ class GardenFragment : Fragment() {
             }
             setOnClickListener { showPlantDialog(null) }
         }
+        addPlantFab = fab
         root.addView(fab)
     }
 
@@ -364,6 +372,7 @@ class GardenFragment : Fragment() {
             .setNegativeButton(R.string.cancel, null)
             .setPositiveButton(R.string.delete) { _, _ ->
                 lifecycleScope.launch {
+                    ReminderManager.cancelAll(requireContext(), plant.id)
                     plantRepository.deletePlant(plant.id)
                     Toast.makeText(
                         requireContext(),
@@ -447,9 +456,9 @@ class GardenFragment : Fragment() {
                 name.first.error = getString(R.string.plant_name_required)
                 return@setOnClickListener
             }
-            // Dismiss before the coroutine so the keyboard fully hides
-            // during the IO suspend — otherwise root is still shrunk when
-            // renderPlants() runs and Gravity.BOTTOM places the FAB wrong.
+            // Render after IME settles so the bottom FAB is measured
+            // against the full garden root, not the resized window.
+            hideKeyboard(dialog.window?.decorView ?: name.second)
             dialog.dismiss()
             lifecycleScope.launch {
                 plantRepository.savePlant(
@@ -458,8 +467,44 @@ class GardenFragment : Fragment() {
                     nickname.second.text?.toString(),
                     existing,
                 )
-                loadPlants()
+                awaitKeyboardClosed()
+                renderPlants(plantRepository.getPlants())
+                stabilizeFloatingAddButton()
             }
+        }
+    }
+
+    private fun hideKeyboard(anchor: View) {
+        root.findFocus()?.clearFocus()
+        val inputManager = requireContext()
+            .getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        inputManager.hideSoftInputFromWindow(anchor.windowToken, 0)
+    }
+
+    private suspend fun awaitKeyboardClosed() {
+        repeat(10) {
+            val imeVisible = ViewCompat.getRootWindowInsets(root)
+                ?.isVisible(WindowInsetsCompat.Type.ime()) == true
+            if (!imeVisible) {
+                delay(48)
+                return
+            }
+            delay(32)
+        }
+        delay(96)
+    }
+
+    private fun stabilizeFloatingAddButton() {
+        if (!::addPlantFab.isInitialized) return
+        addPlantFab.translationX = 0f
+        addPlantFab.translationY = 0f
+        addPlantFab.bringToFront()
+        addPlantFab.requestLayout()
+        root.post {
+            addPlantFab.translationX = 0f
+            addPlantFab.translationY = 0f
+            addPlantFab.bringToFront()
+            addPlantFab.requestLayout()
         }
     }
 

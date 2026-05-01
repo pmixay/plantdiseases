@@ -7,6 +7,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.net.Uri
 import android.os.Bundle
+import android.speech.tts.TextToSpeech
 import android.text.InputType
 import android.util.Log
 import android.util.TypedValue
@@ -44,6 +45,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.util.Locale
 
 class ResultActivity : AppCompatActivity() {
 
@@ -52,6 +54,9 @@ class ResultActivity : AppCompatActivity() {
     private var scaleFactor = 1.0f
     private lateinit var scaleGestureDetector: ScaleGestureDetector
     private var skeletonAnimator: ValueAnimator? = null
+
+    private var tts: TextToSpeech? = null
+    private var ttsReady = false
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
@@ -71,6 +76,7 @@ class ResultActivity : AppCompatActivity() {
         binding.toolbar.setNavigationOnClickListener { finish() }
         setupPinchToZoom()
         setupStickyHeader()
+        initTts()
         loadResult(scanId)
     }
 
@@ -321,6 +327,9 @@ class ResultActivity : AppCompatActivity() {
 
             // Animate cards from bottom
             animateCardsIn()
+
+            // Wire up TTS speak button
+            setupSpeakButton(scan, isRu)
         }
     }
 
@@ -893,9 +902,96 @@ class ResultActivity : AppCompatActivity() {
         TypedValue.COMPLEX_UNIT_DIP, this, resources.displayMetrics
     )
 
+    // ─── TTS ──────────────────────────────────────────────────────────────────
+
+    private fun initTts() {
+        tts = TextToSpeech(this) { status ->
+            ttsReady = (status == TextToSpeech.SUCCESS)
+        }
+    }
+
+    private fun setupSpeakButton(scan: ScanEntity, isRu: Boolean) {
+        binding.btnSpeak.setOnClickListener {
+            if (!ttsReady) {
+                Toast.makeText(this, R.string.speak_unavailable, Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            Haptics.tick(this)
+            if (tts?.isSpeaking == true) {
+                tts?.stop()
+                updateSpeakButton(false)
+            } else {
+                if (speakResult(scan, isRu)) {
+                    updateSpeakButton(true)
+                }
+            }
+        }
+        tts?.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+            override fun onStart(utteranceId: String?) {}
+            override fun onDone(utteranceId: String?) {
+                runOnUiThread { updateSpeakButton(false) }
+            }
+            @Deprecated("Deprecated in Java")
+            override fun onError(utteranceId: String?) {
+                runOnUiThread { updateSpeakButton(false) }
+            }
+        })
+    }
+
+    private fun speakResult(scan: ScanEntity, isRu: Boolean): Boolean {
+        val repository = (application as PlantDiseasesApp).scanRepository
+        val diseaseName = if (isRu) scan.diseaseNameRu else scan.diseaseName
+        val description = if (isRu) scan.descriptionRu else scan.description
+        val steps = repository.parseStringList(
+            if (isRu) scan.treatmentRu else scan.treatment
+        ).take(3)
+
+        val text = buildString {
+            append(diseaseName)
+            append(". ")
+            append(description)
+            if (steps.isNotEmpty()) {
+                append(". ")
+                if (isRu) append("Лечение. ") else append("Treatment. ")
+                steps.forEachIndexed { i, step ->
+                    append("${i + 1}. $step. ")
+                }
+            }
+        }
+
+        val locale = if (isRu) Locale("ru") else Locale.ENGLISH
+        val availability = tts?.setLanguage(locale) ?: TextToSpeech.LANG_MISSING_DATA
+        if (availability == TextToSpeech.LANG_MISSING_DATA ||
+            availability == TextToSpeech.LANG_NOT_SUPPORTED
+        ) {
+            Toast.makeText(this, R.string.speak_unavailable, Toast.LENGTH_SHORT).show()
+            updateSpeakButton(false)
+            return false
+        }
+        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "result")
+        return true
+    }
+
+    private fun updateSpeakButton(speaking: Boolean) {
+        binding.btnSpeak.setIconResource(
+            if (speaking) R.drawable.ic_close else R.drawable.ic_speak
+        )
+        binding.btnSpeak.contentDescription = getString(
+            if (speaking) R.string.speak_stop else R.string.speak_read_aloud
+        )
+    }
+
+    override fun onPause() {
+        super.onPause()
+        tts?.stop()
+        updateSpeakButton(false)
+    }
+
     override fun onDestroy() {
         skeletonAnimator?.cancel()
         skeletonAnimator = null
+        tts?.shutdown()
+        tts = null
         super.onDestroy()
     }
 

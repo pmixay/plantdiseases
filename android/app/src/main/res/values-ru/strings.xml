@@ -254,4 +254,52 @@
     <string name="entry_deleted">Запись удалена</string>
     <string name="edit_entry">Изменить запись</string>
     <string name="entry_updated">Запись обновлена</string>
+
+    <!-- Reminders -->
+    <string name="reminders">Напоминания</string>
+    <string name="reminder_watering">Полив</string>
+    <string name="reminder_check">Осмотр</string>
+    <string name="reminder_fertilize">Удобрение</string>
+    <string name="reminder_every_days">Каждые %d дн.</string>
+    <string name="reminder_at_time">В %1$02d:%2$02d</string>
+    <string name="reminder_save">Сохранить</string>
+    <string name="reminder_notifications_permission">Разрешите уведомления, чтобы включить напоминания.</string>
+    <string name="reminder_notif_watering">Полейте %s!</string>
+    <string name="reminder_notif_check">Пора осмотреть %s!</string>
+    <string name="reminder_notif_fertilize">Пора удобрить %s!</string>
+    <string name="reminder_subtitle">Настройте расписание ухода</string>
+    <!-- Doctor Chat -->
+    <string name="doctor_title">ИИ-врач растений</string>
+    <string name="doctor_subtitle">Задайте любой вопрос о здоровье растения</string>
+    <string name="doctor_hint">Симптомы, уход, лечение…</string>
+    <string name="doctor_send">Отправить</string>
+    <string name="doctor_thinking">Думаю…</string>
+    <string name="doctor_offline">Сервер недоступен. Проверьте подключение.</string>
+    <string name="doctor_q1">Болезнь заразна для других растений?</string>
+    <string name="doctor_q2">Причина и как предотвратить рецидив?</string>
+    <string name="doctor_q3">Самое быстрое домашнее лечение?</string>
+    <string name="doctor_clear">Очистить чат</string>
+    <!-- Light Meter -->
+    <string name="light_meter">Люксметр</string>
+    <string name="light_meter_hint">Сравните освещение с потребностями растения</string>
+    <string name="light_plant_type">Тип растения</string>
+    <string name="light_lux">лк</string>
+    <string name="light_too_dark">Слишком темно</string>
+    <string name="light_ideal">Хорошее освещение</string>
+    <string name="light_too_bright">Слишком ярко</string>
+    <string name="light_measuring">Измерение…</string>
+    <string name="light_no_sensor">Нет датчика освещённости — направьте камеру</string>
+    <string name="light_ideal_range">Норма для %1$s: %2$d – %3$d лк</string>
+    <string name="light_tip_dark">Подвиньте ближе к окну или добавьте фитолампу.</string>
+    <string name="light_tip_ideal">Отличное место! Растение будет процветать.</string>
+    <string name="light_tip_bright">Притените тонкой шторой или отодвиньте чуть дальше.</string>
+    <string name="light_species_general">Универсальные</string>
+    <string name="light_species_succulent">Суккулент</string>
+    <string name="light_species_tropical">Тропические</string>
+    <string name="light_species_fern">Папоротник</string>
+    <string name="light_species_vegetable">Овощи / Зелень</string>
+    <!-- TTS -->
+    <string name="speak_read_aloud">Озвучить</string>
+    <string name="speak_stop">Стоп</string>
+    <string name="speak_unavailable">Озвучивание недоступно для этого языка.</string>
 </resources>

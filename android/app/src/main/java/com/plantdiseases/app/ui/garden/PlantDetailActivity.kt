@@ -252,6 +252,9 @@ class PlantDetailActivity : AppCompatActivity() {
         row.addView(actionButton(R.string.add_note, R.drawable.ic_care) { showNoteDialog() })
         row.addView(actionButton(R.string.add_photo_log, R.drawable.ic_gallery) { pickPhoto.launch(arrayOf("image/*")) })
         row.addView(actionButton(R.string.log_watering, R.drawable.ic_watering) { showWateringDialog() })
+        row.addView(iconActionButton(R.drawable.ic_care, R.string.reminders) {
+            currentPlant?.let { ReminderScheduleSheet.show(supportFragmentManager, it) }
+        })
         return row
     }
 
@@ -263,6 +266,23 @@ class PlantDetailActivity : AppCompatActivity() {
             cornerRadius = 16.dp()
             iconPadding = 4.dp()
             layoutParams = LinearLayout.LayoutParams(0, 50.dp(), 1f).apply {
+                marginEnd = 8.dp()
+            }
+            backgroundTintList = android.content.res.ColorStateList.valueOf(getColor(R.color.primary))
+            setOnClickListener {
+                Haptics.tick(this@PlantDetailActivity)
+                action()
+            }
+        }
+
+    private fun iconActionButton(iconRes: Int, contentDescRes: Int, action: () -> Unit): View =
+        MaterialButton(this).apply {
+            setIconResource(iconRes)
+            iconPadding = 0
+            iconSize = 22.dp()
+            cornerRadius = 16.dp()
+            contentDescription = getString(contentDescRes)
+            layoutParams = LinearLayout.LayoutParams(50.dp(), 50.dp()).apply {
                 marginEnd = 8.dp()
             }
             backgroundTintList = android.content.res.ColorStateList.valueOf(getColor(R.color.primary))

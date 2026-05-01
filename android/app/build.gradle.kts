@@ -134,4 +134,7 @@ dependencies {
 
     // ExifInterface (used for orientation correction in ImageUtils)
     implementation("androidx.exifinterface:exifinterface:1.3.7")
+
+    // WorkManager (plant reminders)
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
 }

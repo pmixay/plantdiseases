@@ -71,11 +71,17 @@ on-screen accuracy.
   header with icon + subtitle; language switcher moved from toolbar menu
   to Profile screen; brighter green gradients shared across garden hero /
   toolbar / primary buttons.
+- Week 3 Android work is now active in the local branch: per-plant local
+  reminders use WorkManager notification jobs with editable interval/time;
+  Light Meter measures ambient-light sensor lux with CameraX luminance
+  fallback; result screen has a TTS read-aloud toggle. Android AI Doctor
+  chat is intentionally not exposed in UI for this pass per product
+  direction; server `/api/chat` remains a later integration option.
 - CI remains the build verification path for Android. Local Windows SDK
   setup is not treated as a blocker for feature work.
 - Main blockers before demo-quality release: run the Colab training job,
-  ship model weights, finish care reminders / AI Doctor / light meter,
-  and complete golden-path QA on a real device.
+  ship model weights, let GitHub CI validate the Android branch, and
+  complete golden-path QA on a real device.
 
 ## Targets (Definition of Done)
 
@@ -187,13 +193,16 @@ on-screen accuracy.
       ensemble peer, MODEL_CARD; awaits Colab run.)*
 
 ### P1 · Android
-- [ ] WorkManager + FCM-free local notifications for per-plant reminders;
-      editable schedule UI.
+- [x] WorkManager + FCM-free local notifications for per-plant reminders;
+      editable interval/time schedule UI. Runtime notification permission
+      is requested on Android 13+.
 - [ ] AI Plant Doctor chat: bottom-sheet conversation, Markdown rendering,
       suggested follow-up questions, persisted per plant.
-- [ ] Light meter: ambient-light sensor + camera luminance fallback,
+      *(Deferred on Android UI in this pass; do not expose until prompt /
+      endpoint contract is finalized.)*
+- [x] Light meter: ambient-light sensor + camera luminance fallback,
       lux estimation, recommendation vs species ideal.
-- [ ] Voice-over diagnosis (TTS read-aloud toggle on result screen).
+- [x] Voice-over diagnosis (TTS read-aloud toggle on result screen).
 
 ---
 

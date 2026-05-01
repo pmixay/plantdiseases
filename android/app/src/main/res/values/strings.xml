@@ -250,4 +250,52 @@
     <string name="entry_deleted">Entry deleted</string>
     <string name="edit_entry">Edit entry</string>
     <string name="entry_updated">Entry updated</string>
+
+    <!-- Reminders -->
+    <string name="reminders">Reminders</string>
+    <string name="reminder_watering">Watering</string>
+    <string name="reminder_check">Health check</string>
+    <string name="reminder_fertilize">Fertilizing</string>
+    <string name="reminder_every_days">Every %d days</string>
+    <string name="reminder_at_time">At %1$02d:%2$02d</string>
+    <string name="reminder_save">Save</string>
+    <string name="reminder_notifications_permission">Allow notifications to enable plant reminders.</string>
+    <string name="reminder_notif_watering">Time to water %s!</string>
+    <string name="reminder_notif_check">Time to check on %s!</string>
+    <string name="reminder_notif_fertilize">Time to fertilize %s!</string>
+    <string name="reminder_subtitle">Set care schedules for this plant</string>
+    <!-- Doctor Chat -->
+    <string name="doctor_title">AI Plant Doctor</string>
+    <string name="doctor_subtitle">Ask anything about your plant\'s health</string>
+    <string name="doctor_hint">Ask about symptoms, care, treatment…</string>
+    <string name="doctor_send">Send</string>
+    <string name="doctor_thinking">Thinking…</string>
+    <string name="doctor_offline">Server is offline. Check your connection.</string>
+    <string name="doctor_q1">Is this disease spreading to other plants?</string>
+    <string name="doctor_q2">What caused this? How to prevent recurrence?</string>
+    <string name="doctor_q3">What\'s the fastest home treatment?</string>
+    <string name="doctor_clear">Clear chat</string>
+    <!-- Light Meter -->
+    <string name="light_meter">Light Meter</string>
+    <string name="light_meter_hint">Measure room light against plant needs</string>
+    <string name="light_plant_type">Plant type</string>
+    <string name="light_lux">lux</string>
+    <string name="light_too_dark">Too dark</string>
+    <string name="light_ideal">Good light</string>
+    <string name="light_too_bright">Too bright</string>
+    <string name="light_measuring">Measuring…</string>
+    <string name="light_no_sensor">No ambient light sensor — point camera at the area</string>
+    <string name="light_ideal_range">Ideal for %1$s: %2$d – %3$d lux</string>
+    <string name="light_tip_dark">Move closer to a window or add a grow light.</string>
+    <string name="light_tip_ideal">Great spot! Your plant will thrive here.</string>
+    <string name="light_tip_bright">Diffuse with a sheer curtain or move slightly back.</string>
+    <string name="light_species_general">All-purpose</string>
+    <string name="light_species_succulent">Succulent</string>
+    <string name="light_species_tropical">Tropical</string>
+    <string name="light_species_fern">Fern</string>
+    <string name="light_species_vegetable">Vegetable</string>
+    <!-- TTS -->
+    <string name="speak_read_aloud">Read aloud</string>
+    <string name="speak_stop">Stop</string>
+    <string name="speak_unavailable">Voice-over is not available for this language.</string>
 </resources>
