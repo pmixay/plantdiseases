@@ -7,6 +7,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.net.Uri
 import android.os.Bundle
+import android.text.InputType
 import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
@@ -17,11 +18,14 @@ import android.animation.ValueAnimator
 import android.view.animation.DecelerateInterpolator
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.tabs.TabLayout
+import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.textfield.TextInputLayout
 import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.resource.bitmap.CenterCrop
@@ -252,10 +256,12 @@ class ResultActivity : AppCompatActivity() {
                 cardLowConfidence.visibility = View.GONE
                 // Share a "not a plant" verdict makes no sense — hide it.
                 btnShare.visibility = View.GONE
+                btnAddToGarden.visibility = View.GONE
                 btnRetryAnalysis.visibility = View.VISIBLE
             } else {
                 tvDescription.text = if (isRu) scan.descriptionRu else scan.description
                 btnShare.visibility = View.VISIBLE
+                btnAddToGarden.visibility = View.VISIBLE
                 buildPipelineWarnings(scan, repository)
                 buildAlternativeDiagnoses(scan, repository, isRu)
                 buildPestCauses(scan, isRu)
@@ -266,6 +272,15 @@ class ResultActivity : AppCompatActivity() {
             tvDate.text = ImageUtils.formatTimestamp(scan.timestamp)
 
             btnNewScan.setOnClickListener { finish() }
+
+            btnAddToGarden.text = if (scan.plantId == null) {
+                getString(R.string.add_to_garden)
+            } else {
+                getString(R.string.added_to_garden)
+            }
+            btnAddToGarden.setOnClickListener {
+                showAddToGardenDialog(scan)
+            }
 
             btnShare.setOnClickListener {
                 shareWithImage(scan, repository, isRu)
@@ -307,6 +322,105 @@ class ResultActivity : AppCompatActivity() {
             // Animate cards from bottom
             animateCardsIn()
         }
+    }
+
+    private fun showAddToGardenDialog(scan: ScanEntity) {
+        val app = application as PlantDiseasesApp
+        lifecycleScope.launch {
+            val plants = app.plantRepository.getPlants()
+            if (plants.isEmpty()) {
+                showCreatePlantForScanDialog(scan)
+                return@launch
+            }
+
+            val labels = plants.map { summary ->
+                summary.plant.nickname?.takeIf { it.isNotBlank() }
+                    ?: summary.plant.name
+            }.toTypedArray()
+
+            MaterialAlertDialogBuilder(this@ResultActivity)
+                .setTitle(R.string.add_to_garden)
+                .setItems(labels) { _, which ->
+                    lifecycleScope.launch {
+                        app.plantRepository.assignScanToPlant(scan.id, plants[which].plant.id)
+                        binding.btnAddToGarden.text = getString(R.string.added_to_garden)
+                        Toast.makeText(
+                            this@ResultActivity,
+                            getString(R.string.scan_added_to_garden),
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                }
+                .setPositiveButton(R.string.create_new_plant) { _, _ ->
+                    showCreatePlantForScanDialog(scan)
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        }
+    }
+
+    private fun showCreatePlantForScanDialog(scan: ScanEntity) {
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 8.dpToPx(), 0, 0)
+        }
+        val name = resultInputField(getString(R.string.plant_name), scan.diseaseName)
+        val species = resultInputField(getString(R.string.plant_species), null)
+        val nickname = resultInputField(getString(R.string.plant_nickname), null)
+        container.addView(name.first)
+        container.addView(species.first)
+        container.addView(nickname.first)
+
+        val dialog = MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.create_new_plant)
+            .setView(container)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.save, null)
+            .show()
+
+        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val plantName = name.second.text?.toString()?.trim().orEmpty()
+            if (plantName.isEmpty()) {
+                name.first.error = getString(R.string.plant_name_required)
+                return@setOnClickListener
+            }
+            val app = application as PlantDiseasesApp
+            lifecycleScope.launch {
+                val plantId = app.plantRepository.savePlant(
+                    plantName,
+                    species.second.text?.toString(),
+                    nickname.second.text?.toString(),
+                )
+                app.plantRepository.assignScanToPlant(scan.id, plantId)
+                binding.btnAddToGarden.text = getString(R.string.added_to_garden)
+                Toast.makeText(
+                    this@ResultActivity,
+                    getString(R.string.scan_added_to_garden),
+                    Toast.LENGTH_SHORT,
+                ).show()
+                dialog.dismiss()
+            }
+        }
+    }
+
+    private fun resultInputField(
+        hint: String,
+        value: String?,
+    ): Pair<TextInputLayout, TextInputEditText> {
+        val input = TextInputEditText(this).apply {
+            setText(value.orEmpty())
+            inputType = InputType.TYPE_CLASS_TEXT
+            setSingleLine(true)
+        }
+        val layout = TextInputLayout(this).apply {
+            this.hint = hint
+            addView(input)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { bottomMargin = 10.dpToPx() }
+        }
+        return layout to input
     }
 
     private fun setupTreatmentPreventionTabs(scan: ScanEntity, repository: ScanRepository, isRu: Boolean) {

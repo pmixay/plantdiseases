@@ -197,4 +197,57 @@
     <string name="frame_hint_amber">Поместите лист в кадр</string>
     <string name="frame_hint_green">Держите ровно…</string>
     <string name="frame_hint_capturing">Готово</string>
+    <!-- My Garden -->
+    <string name="tab_garden">Сад</string>
+    <string name="garden_title">Мой сад</string>
+    <string name="garden_subtitle">Все растения, история сканов, заметки, фото и полив в одном зелёном месте.</string>
+    <plurals name="garden_summary">
+        <item quantity="one">%1$d растение под наблюдением, %2$d сканов</item>
+        <item quantity="few">%1$d растения под наблюдением, %2$d сканов</item>
+        <item quantity="many">%1$d растений под наблюдением, %2$d сканов</item>
+        <item quantity="other">%1$d растения под наблюдением, %2$d сканов</item>
+    </plurals>
+    <plurals name="scan_count">
+        <item quantity="one">%d скан</item>
+        <item quantity="few">%d скана</item>
+        <item quantity="many">%d сканов</item>
+        <item quantity="other">%d скана</item>
+    </plurals>
+    <string name="add_plant">Добавить</string>
+    <string name="add_first_plant">Добавить растение</string>
+    <string name="edit_plant">Редактировать</string>
+    <string name="plant_name">Название растения</string>
+    <string name="plant_species">Вид</string>
+    <string name="plant_nickname">Никнейм</string>
+    <string name="plant_name_required">Укажите название</string>
+    <string name="plant_species_unknown">Вид не указан</string>
+    <string name="empty_garden_title">Ваш сад готов</string>
+    <string name="empty_garden_hint">Добавьте первое растение, чтобы хранить сканы, заметки и полив вместе.</string>
+    <string name="latest_scan_format">Последний скан: %s</string>
+    <string name="no_scans_attached">Сканы ещё не привязаны</string>
+    <string name="plant_detail_title">Растение</string>
+    <string name="scans">Сканы</string>
+    <string name="journal">Журнал</string>
+    <string name="waterings">Поливы</string>
+    <string name="timeline">История</string>
+    <string name="plant_journal">Журнал</string>
+    <string name="add_note">Заметка</string>
+    <string name="add_photo_log">Фото</string>
+    <string name="log_watering">Полив</string>
+    <string name="empty_plant_scans_title">У растения пока нет сканов</string>
+    <string name="empty_plant_scans_hint">Нажмите «Добавить в сад» на экране диагноза, чтобы собрать историю.</string>
+    <string name="empty_journal_title">Пока нет напоминаний и заметок</string>
+    <string name="empty_journal_hint">Записывайте полив, фото и свободные заметки, чтобы видеть уход в динамике.</string>
+    <string name="timeline_scan_meta">%1$s - уверенность %2$d%%</string>
+    <string name="note_entry">Свободная заметка</string>
+    <string name="photo_entry">Фото в журнале</string>
+    <string name="watering_entry">Полив</string>
+    <string name="note_hint">Что изменилось? Новые листья, пятна, грунт, свет...</string>
+    <string name="watering_hint">Опционально: объём, удобрение, влажность грунта...</string>
+    <string name="photo_caption_hint">Опциональная подпись к фото</string>
+    <string name="journal_text_required">Сначала напишите заметку</string>
+    <string name="add_to_garden">В сад</string>
+    <string name="added_to_garden">В саду</string>
+    <string name="create_new_plant">Создать растение</string>
+    <string name="scan_added_to_garden">Скан добавлен в сад</string>
 </resources>

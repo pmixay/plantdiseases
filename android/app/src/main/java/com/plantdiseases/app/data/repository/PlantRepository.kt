@@ -1,0 +1,128 @@
+package com.plantdiseases.app.data.repository
+
+import com.plantdiseases.app.data.local.PlantDao
+import com.plantdiseases.app.data.local.PlantEntity
+import com.plantdiseases.app.data.local.PlantJournalDao
+import com.plantdiseases.app.data.local.PlantJournalEntity
+import com.plantdiseases.app.data.local.ScanDao
+import com.plantdiseases.app.data.local.ScanEntity
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+class PlantRepository(
+    private val plantDao: PlantDao,
+    private val journalDao: PlantJournalDao,
+    private val scanDao: ScanDao,
+) {
+    suspend fun getPlants(): List<PlantSummary> = withContext(Dispatchers.IO) {
+        plantDao.getAllPlants().map { plant ->
+            val scans = scanDao.getScansForPlant(plant.id)
+            PlantSummary(
+                plant = plant,
+                scanCount = scans.size,
+                latestScan = scans.maxByOrNull { it.timestamp },
+                lastJournalEntry = journalDao.getEntriesForPlant(plant.id).firstOrNull(),
+            )
+        }
+    }
+
+    suspend fun getPlant(id: Long): PlantEntity? = withContext(Dispatchers.IO) {
+        plantDao.getPlantById(id)
+    }
+
+    suspend fun savePlant(
+        name: String,
+        species: String?,
+        nickname: String?,
+        existing: PlantEntity? = null,
+    ): Long = withContext(Dispatchers.IO) {
+        val cleanSpecies = species?.trim()?.takeIf { it.isNotEmpty() }
+        val cleanNickname = nickname?.trim()?.takeIf { it.isNotEmpty() }
+        if (existing == null) {
+            plantDao.insert(
+                PlantEntity(
+                    name = name.trim(),
+                    species = cleanSpecies,
+                    nickname = cleanNickname,
+                )
+            )
+        } else {
+            plantDao.update(
+                existing.copy(
+                    name = name.trim(),
+                    species = cleanSpecies,
+                    nickname = cleanNickname,
+                )
+            )
+            existing.id
+        }
+    }
+
+    suspend fun deletePlant(id: Long) = withContext(Dispatchers.IO) {
+        plantDao.deleteById(id)
+    }
+
+    suspend fun assignScanToPlant(scanId: Long, plantId: Long?) = withContext(Dispatchers.IO) {
+        scanDao.assignScanToPlant(scanId, plantId)
+    }
+
+    suspend fun getScansForPlant(plantId: Long): List<ScanEntity> = withContext(Dispatchers.IO) {
+        scanDao.getScansForPlant(plantId)
+    }
+
+    suspend fun getJournalEntries(plantId: Long): List<PlantJournalEntity> =
+        withContext(Dispatchers.IO) {
+            journalDao.getEntriesForPlant(plantId)
+        }
+
+    suspend fun addNote(plantId: Long, text: String) = addJournalEntry(
+        PlantJournalEntity(
+            plantId = plantId,
+            type = JournalType.NOTE.value,
+            text = text.trim(),
+        )
+    )
+
+    suspend fun addWatering(plantId: Long, text: String?) = addJournalEntry(
+        PlantJournalEntity(
+            plantId = plantId,
+            type = JournalType.WATERING.value,
+            text = text?.trim()?.takeIf { it.isNotEmpty() },
+        )
+    )
+
+    suspend fun addPhoto(plantId: Long, photoUri: String, text: String?) = addJournalEntry(
+        PlantJournalEntity(
+            plantId = plantId,
+            type = JournalType.PHOTO.value,
+            text = text?.trim()?.takeIf { it.isNotEmpty() },
+            photoUri = photoUri,
+        )
+    )
+
+    private suspend fun addJournalEntry(entry: PlantJournalEntity): Long =
+        withContext(Dispatchers.IO) {
+            journalDao.insert(entry)
+        }
+
+    suspend fun deleteJournalEntry(id: Long) = withContext(Dispatchers.IO) {
+        journalDao.deleteById(id)
+    }
+
+    data class PlantSummary(
+        val plant: PlantEntity,
+        val scanCount: Int,
+        val latestScan: ScanEntity?,
+        val lastJournalEntry: PlantJournalEntity?,
+    )
+
+    enum class JournalType(val value: String) {
+        NOTE("note"),
+        PHOTO("photo"),
+        WATERING("watering");
+
+        companion object {
+            fun from(value: String) = entries.firstOrNull { it.value == value } ?: NOTE
+        }
+    }
+}

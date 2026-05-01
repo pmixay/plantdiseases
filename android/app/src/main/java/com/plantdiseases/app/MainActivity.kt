@@ -95,6 +95,7 @@ class MainActivity : AppCompatActivity() {
                     // Clear gallery badge when opening gallery tab
                     clearGalleryBadge()
                 }
+                R.id.gardenFragment -> supportActionBar?.title = getString(R.string.tab_garden)
                 R.id.guideFragment -> supportActionBar?.title = getString(R.string.tab_guide)
                 R.id.profileFragment -> supportActionBar?.title = getString(R.string.tab_profile)
             }

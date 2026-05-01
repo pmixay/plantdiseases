@@ -197,4 +197,53 @@
     <string name="frame_hint_amber">Bring the leaf into the frame</string>
     <string name="frame_hint_green">Hold steady…</string>
     <string name="frame_hint_capturing">Captured</string>
+    <!-- My Garden -->
+    <string name="tab_garden">Garden</string>
+    <string name="garden_title">My Garden</string>
+    <string name="garden_subtitle">Track every plant, scan timeline, notes, photos and watering in one calm green place.</string>
+    <plurals name="garden_summary">
+        <item quantity="one">%1$d plant watched with %2$d scans</item>
+        <item quantity="other">%1$d plants watched with %2$d scans</item>
+    </plurals>
+    <plurals name="scan_count">
+        <item quantity="one">%d scan</item>
+        <item quantity="other">%d scans</item>
+    </plurals>
+    <string name="add_plant">Add plant</string>
+    <string name="add_first_plant">Add first plant</string>
+    <string name="edit_plant">Edit plant</string>
+    <string name="plant_name">Plant name</string>
+    <string name="plant_species">Species</string>
+    <string name="plant_nickname">Nickname</string>
+    <string name="plant_name_required">Name is required</string>
+    <string name="plant_species_unknown">Species not set</string>
+    <string name="empty_garden_title">Your garden is ready</string>
+    <string name="empty_garden_hint">Add your first plant to keep scans, care notes and watering history together.</string>
+    <string name="latest_scan_format">Last scan: %s</string>
+    <string name="no_scans_attached">No scans attached yet</string>
+    <string name="plant_detail_title">Plant detail</string>
+    <string name="scans">Scans</string>
+    <string name="journal">Journal</string>
+    <string name="waterings">Waterings</string>
+    <string name="timeline">Timeline</string>
+    <string name="plant_journal">Journal</string>
+    <string name="add_note">Note</string>
+    <string name="add_photo_log">Photo</string>
+    <string name="log_watering">Water</string>
+    <string name="empty_plant_scans_title">No scans for this plant</string>
+    <string name="empty_plant_scans_hint">Use Add to garden from a diagnosis result to build this plant timeline.</string>
+    <string name="empty_journal_title">No reminders or notes yet</string>
+    <string name="empty_journal_hint">Log watering, photos and free-text notes so the care history stays visible.</string>
+    <string name="timeline_scan_meta">%1$s - %2$d%% confidence</string>
+    <string name="note_entry">Free-text note</string>
+    <string name="photo_entry">Photo log</string>
+    <string name="watering_entry">Watering log</string>
+    <string name="note_hint">What changed? New leaves, spots, soil, light...</string>
+    <string name="watering_hint">Optional: amount, fertilizer, soil moisture...</string>
+    <string name="photo_caption_hint">Optional caption for this photo</string>
+    <string name="journal_text_required">Write a note first</string>
+    <string name="add_to_garden">Add to garden</string>
+    <string name="added_to_garden">In garden</string>
+    <string name="create_new_plant">Create new plant</string>
+    <string name="scan_added_to_garden">Scan added to garden</string>
 </resources>

@@ -49,6 +49,10 @@
             android:name=".ui.result.ResultActivity"
             android:screenOrientation="portrait" />
 
+        <activity
+            android:name=".ui.garden.PlantDetailActivity"
+            android:screenOrientation="portrait" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

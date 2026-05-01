@@ -9,6 +9,10 @@
         android:icon="@drawable/ic_gallery"
         android:title="@string/tab_gallery" />
     <item
+        android:id="@+id/gardenFragment"
+        android:icon="@drawable/ic_garden"
+        android:title="@string/tab_garden" />
+    <item
         android:id="@+id/guideFragment"
         android:icon="@drawable/ic_guide"
         android:title="@string/tab_guide" />

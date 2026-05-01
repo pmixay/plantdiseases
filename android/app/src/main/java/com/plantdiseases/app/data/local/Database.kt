@@ -16,6 +16,30 @@ data class PlantEntity(
 )
 
 @Entity(
+    tableName = "plant_journal",
+    foreignKeys = [
+        ForeignKey(
+            entity = PlantEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["plant_id"],
+            onDelete = ForeignKey.CASCADE,
+        )
+    ],
+    indices = [
+        Index(value = ["plant_id"]),
+        Index(value = ["timestamp"]),
+    ]
+)
+data class PlantJournalEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(name = "plant_id") val plantId: Long,
+    @ColumnInfo(name = "type") val type: String,
+    @ColumnInfo(name = "text") val text: String? = null,
+    @ColumnInfo(name = "photo_uri") val photoUri: String? = null,
+    @ColumnInfo(name = "timestamp") val timestamp: Long = System.currentTimeMillis(),
+)
+
+@Entity(
     tableName = "scans",
     foreignKeys = [
         ForeignKey(
@@ -72,8 +96,14 @@ interface ScanDao {
     @Query("SELECT * FROM scans WHERE id = :id")
     suspend fun getScanById(id: Long): ScanEntity?
 
+    @Query("SELECT * FROM scans WHERE plant_id = :plantId ORDER BY timestamp DESC")
+    suspend fun getScansForPlant(plantId: Long): List<ScanEntity>
+
     @Insert
     suspend fun insert(scan: ScanEntity): Long
+
+    @Query("UPDATE scans SET plant_id = :plantId WHERE id = :scanId")
+    suspend fun assignScanToPlant(scanId: Long, plantId: Long?)
 
     @Query("DELETE FROM scans WHERE id = :id")
     suspend fun deleteById(id: Long)
@@ -100,14 +130,27 @@ interface PlantDao {
     suspend fun deleteById(id: Long)
 }
 
+@Dao
+interface PlantJournalDao {
+    @Query("SELECT * FROM plant_journal WHERE plant_id = :plantId ORDER BY timestamp DESC")
+    suspend fun getEntriesForPlant(plantId: Long): List<PlantJournalEntity>
+
+    @Insert
+    suspend fun insert(entry: PlantJournalEntity): Long
+
+    @Query("DELETE FROM plant_journal WHERE id = :id")
+    suspend fun deleteById(id: Long)
+}
+
 @Database(
-    entities = [ScanEntity::class, PlantEntity::class],
-    version = 3,
+    entities = [ScanEntity::class, PlantEntity::class, PlantJournalEntity::class],
+    version = 4,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun scanDao(): ScanDao
     abstract fun plantDao(): PlantDao
+    abstract fun plantJournalDao(): PlantJournalDao
 
     companion object {
         @Volatile

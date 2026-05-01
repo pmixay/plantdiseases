@@ -3,6 +3,7 @@ package com.plantdiseases.app
 import android.app.Application
 import com.plantdiseases.app.data.local.AppDatabase
 import com.plantdiseases.app.data.remote.PlantApiClient
+import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.ThemeHelper
@@ -13,6 +14,9 @@ class PlantDiseasesApp : Application() {
     val apiClient: PlantApiClient by lazy { PlantApiClient(this) }
     val scanRepository: ScanRepository by lazy {
         ScanRepository(database.scanDao(), apiClient)
+    }
+    val plantRepository: PlantRepository by lazy {
+        PlantRepository(database.plantDao(), database.plantJournalDao(), database.scanDao())
     }
 
     override fun onCreate() {
