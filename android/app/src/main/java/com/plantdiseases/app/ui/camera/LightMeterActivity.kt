@@ -100,6 +100,10 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
 
         // AppBar
         val appBar = AppBarLayout(this).apply {
+            layoutParams = androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams(
+                androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams.MATCH_PARENT,
+                androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams.WRAP_CONTENT,
+            )
             setBackgroundResource(R.drawable.bg_toolbar_gradient)
             elevation = 0f
         }
