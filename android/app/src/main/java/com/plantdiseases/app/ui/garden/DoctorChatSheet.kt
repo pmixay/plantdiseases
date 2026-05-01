@@ -317,6 +317,7 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
             ).apply { bottomMargin = 10.dp() }
         }
 
+        val bubbleMaxWidth = (resources.displayMetrics.widthPixels * 0.78f).toInt()
         val bubble = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundResource(
@@ -326,14 +327,13 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply {
-                maxWidth = (resources.displayMetrics.widthPixels * 0.78f).toInt()
-            }
+            )
         }
 
         bubble.addView(TextView(requireContext()).apply {
             text = applyMarkdown(content)
             textSize = 15f
+            maxWidth = bubbleMaxWidth
             setTextColor(
                 requireContext().getColor(if (isUser) R.color.on_primary else R.color.on_surface)
             )
