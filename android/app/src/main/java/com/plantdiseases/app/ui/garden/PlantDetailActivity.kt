@@ -23,7 +23,6 @@ import com.bumptech.glide.load.resource.bitmap.CenterCrop
 import com.bumptech.glide.load.resource.bitmap.RoundedCorners
 import com.google.android.material.appbar.AppBarLayout
 import com.google.android.material.appbar.MaterialToolbar
-import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.tabs.TabLayout
@@ -50,6 +49,8 @@ class PlantDetailActivity : AppCompatActivity() {
     private lateinit var emptyScans: LinearLayout
     private lateinit var emptyJournal: LinearLayout
     private lateinit var tabLayout: TabLayout
+    private lateinit var toolbar: MaterialToolbar
+    private lateinit var toolbarTitle: TextView
     private var plantId: Long = -1L
     private var currentPlant: PlantEntity? = null
 
@@ -84,21 +85,45 @@ class PlantDetailActivity : AppCompatActivity() {
         }
 
         val appBar = AppBarLayout(this).apply {
+            layoutParams = androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams(
+                androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams.MATCH_PARENT,
+                androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams.WRAP_CONTENT,
+            )
             setBackgroundResource(R.drawable.bg_toolbar_gradient)
             elevation = 0f
         }
-        val toolbar = MaterialToolbar(this).apply {
+        toolbar = MaterialToolbar(this).apply {
             layoutParams = AppBarLayout.LayoutParams(
                 AppBarLayout.LayoutParams.MATCH_PARENT,
-                resources.getDimensionPixelSize(
-                    androidx.appcompat.R.dimen.abc_action_bar_default_height_material
-                ),
+                72.dp(),
             )
             setNavigationIcon(R.drawable.ic_back)
             setNavigationIconTint(getColor(R.color.toolbar_title))
             setTitleTextColor(getColor(R.color.toolbar_title))
-            title = getString(R.string.plant_detail_title)
+            setTitleTextAppearance(this@PlantDetailActivity, R.style.TextAppearance_App_Toolbar)
+            title = ""
             setNavigationOnClickListener { finish() }
+            toolbarTitle = TextView(this@PlantDetailActivity).apply {
+                text = getString(R.string.plant_detail_title)
+                textSize = 22f
+                maxLines = 2
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setLineSpacing(1.dp().toFloat(), 1f)
+                setTextColor(getColor(R.color.toolbar_title))
+                typeface = android.graphics.Typeface.create(
+                    "sans-serif-medium",
+                    android.graphics.Typeface.NORMAL,
+                )
+                layoutParams = androidx.appcompat.widget.Toolbar.LayoutParams(
+                    androidx.appcompat.widget.Toolbar.LayoutParams.MATCH_PARENT,
+                    androidx.appcompat.widget.Toolbar.LayoutParams.WRAP_CONTENT,
+                    Gravity.CENTER_VERTICAL,
+                ).apply {
+                    marginStart = 52.dp()
+                    marginEnd = 16.dp()
+                }
+            }
+            addView(toolbarTitle)
         }
         appBar.addView(toolbar)
         root.addView(appBar)
@@ -141,6 +166,7 @@ class PlantDetailActivity : AppCompatActivity() {
         journal: List<PlantJournalEntity>,
     ) {
         content.removeAllViews()
+        toolbarTitle.text = plant.nickname?.takeIf { it.isNotBlank() } ?: plant.name
         content.addView(buildHeader(plant, scans, journal))
         content.addView(buildActionRow())
         content.addView(buildTabs())
@@ -195,7 +221,8 @@ class PlantDetailActivity : AppCompatActivity() {
         body.addView(TextView(this).apply {
             text = plant.species?.takeIf { it.isNotBlank() } ?: getString(R.string.plant_species_unknown)
             textSize = 15f
-            setTextColor(getColor(R.color.on_primary_secondary))
+            setTextColor(getColor(R.color.on_primary))
+            alpha = 0.86f
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -235,7 +262,8 @@ class PlantDetailActivity : AppCompatActivity() {
         box.addView(TextView(this).apply {
             text = label
             textSize = 11f
-            setTextColor(getColor(R.color.on_primary_secondary))
+            setTextColor(getColor(R.color.on_primary))
+            alpha = 0.86f
         })
         return box
     }
@@ -247,49 +275,65 @@ class PlantDetailActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 14.dp() }
+            ).apply { topMargin = 12.dp() }
         }
-        row.addView(actionButton(R.string.add_note, R.drawable.ic_care) { showNoteDialog() })
-        row.addView(actionButton(R.string.add_photo_log, R.drawable.ic_gallery) { pickPhoto.launch(arrayOf("image/*")) })
-        row.addView(actionButton(R.string.log_watering, R.drawable.ic_watering) { showWateringDialog() })
-        row.addView(iconActionButton(R.drawable.ic_care, R.string.reminders) {
+        row.addView(actionTile(R.string.add_note, R.drawable.ic_note_pencil) { showNoteDialog() })
+        row.addView(actionTile(R.string.add_photo_log, R.drawable.ic_gallery) { pickPhoto.launch(arrayOf("image/*")) })
+        row.addView(actionTile(R.string.log_watering, R.drawable.ic_watering) { showWateringDialog() })
+        row.addView(actionTile(R.string.reminders, R.drawable.ic_clock) {
             currentPlant?.let { ReminderScheduleSheet.show(supportFragmentManager, it) }
         })
         return row
     }
 
-    private fun actionButton(labelRes: Int, iconRes: Int, action: () -> Unit): View =
-        MaterialButton(this).apply {
-            text = getString(labelRes)
-            textSize = 12f
-            setIconResource(iconRes)
-            cornerRadius = 16.dp()
-            iconPadding = 4.dp()
-            layoutParams = LinearLayout.LayoutParams(0, 50.dp(), 1f).apply {
-                marginEnd = 8.dp()
+    private fun actionTile(labelRes: Int, iconRes: Int, action: () -> Unit): View =
+        MaterialCardView(this).apply {
+            radius = 18.dp().toFloat()
+            cardElevation = 0f
+            strokeWidth = 1.dp()
+            strokeColor = getColor(R.color.card_stroke)
+            setCardBackgroundColor(getColor(R.color.surface))
+            isClickable = true
+            foreground = selectable()
+            contentDescription = getString(labelRes)
+            layoutParams = LinearLayout.LayoutParams(0, 66.dp(), 1f).apply {
+                marginStart = 4.dp()
+                marginEnd = 4.dp()
             }
-            backgroundTintList = android.content.res.ColorStateList.valueOf(getColor(R.color.primary))
             setOnClickListener {
                 Haptics.tick(this@PlantDetailActivity)
                 action()
             }
-        }
-
-    private fun iconActionButton(iconRes: Int, contentDescRes: Int, action: () -> Unit): View =
-        MaterialButton(this).apply {
-            setIconResource(iconRes)
-            iconPadding = 0
-            iconSize = 22.dp()
-            cornerRadius = 16.dp()
-            contentDescription = getString(contentDescRes)
-            layoutParams = LinearLayout.LayoutParams(50.dp(), 50.dp()).apply {
-                marginEnd = 8.dp()
-            }
-            backgroundTintList = android.content.res.ColorStateList.valueOf(getColor(R.color.primary))
-            setOnClickListener {
-                Haptics.tick(this@PlantDetailActivity)
-                action()
-            }
+            addView(LinearLayout(this@PlantDetailActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                layoutParams = FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                )
+                setPadding(4.dp(), 7.dp(), 4.dp(), 6.dp())
+                addView(ImageView(this@PlantDetailActivity).apply {
+                    setImageResource(iconRes)
+                    setColorFilter(getColor(R.color.primary))
+                    layoutParams = LinearLayout.LayoutParams(24.dp(), 24.dp())
+                })
+                addView(TextView(this@PlantDetailActivity).apply {
+                    text = getString(labelRes)
+                    textSize = 11f
+                    gravity = Gravity.CENTER
+                    maxLines = 1
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    setTextColor(getColor(R.color.on_surface))
+                    typeface = android.graphics.Typeface.create(
+                        "sans-serif-medium",
+                        android.graphics.Typeface.NORMAL,
+                    )
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ).apply { topMargin = 5.dp() }
+                })
+            })
         }
 
     private fun buildTabs(): View {
