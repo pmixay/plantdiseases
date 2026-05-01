@@ -21,15 +21,16 @@
   ],
   "detector_classes": ["leaf"],
   "training": {
-    "img_size": 256,
-    "loss": "class-balanced CE (inverse-frequency × healthy 0.35) + label_smoothing=0.05",
+    "img_size": 288,
+    "loss": "class-balanced CE (inverse-frequency × healthy 0.25) + label_smoothing=0.05",
     "label_smoothing": 0.05,
     "cutmix_prob": 0.4,
     "mixup_prob": 0.2,
     "mixup_alpha": 0.2,
     "sampler": "natural distribution (no WeightedRandomSampler)",
     "primary_metric": "disease_macro_f1",
-    "healthy_downweight": 0.35,
+    "healthy_downweight": 0.25,
     "_note": "Real values overwritten by the final cell of train_notebook.ipynb after each run."
-  }
+  },
+  "proxy_trained_classes": ["bacterial_leaf_spot", "late_blight", "sunburn"]
 }

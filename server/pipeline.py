@@ -53,9 +53,18 @@ CROP_PADDING_RATIO = 0.10
 MIN_BBOX_AREA_FRAC = 0.005
 
 # Healthy gate — triggers the soft ``uncertain_healthy`` warning when
-# top-1 is healthy but weak.
-HEALTHY_MIN_CONFIDENCE = 0.55
+# top-1 is healthy but weak. Bumped 0.55 → 0.75 after the live-data
+# eval found 79 % of sick leaves classified as healthy, often at high
+# confidence; tighter floor + disease-mass floor below catch most of
+# those without nuking healthy recall on truly clean photos.
+HEALTHY_MIN_CONFIDENCE = 0.75
 HEALTHY_MARGIN = 0.10
+# Even when top-1 = healthy with confidence ≥ HEALTHY_MIN_CONFIDENCE, if
+# the strongest disease has non-trivial mass we still surface an
+# ``uncertain_healthy`` warning + the suspected disease in top_k. Live
+# eval showed sunburn → healthy 0.78 with anthracnose ≈ 0.18 — a hard
+# threshold misses these, a per-disease mass floor catches them.
+HEALTHY_DISEASE_FLOOR = 0.18
 
 # Disease-side gate. If averaged top-1 is a disease but its softmax
 # mass is below this threshold, we downgrade to healthy.
@@ -74,6 +83,12 @@ NAP_CLASSIFIER_MSP_FLOOR = 0.45
 # Classes that are not "diseases" — used to compute disease scores
 # and to know when to apply the healthy fallback.
 _NON_DISEASE = {"healthy", "not_a_plant"}
+
+# Classes whose training relied on visual proxies from non-houseplant
+# datasets (PV field crops, strawberry leaf scorch as sunburn proxy,
+# bacterial spot from tomato/pepper). Live eval shows F1≈0 on these —
+# we surface a warning so the UI can mark verdicts as experimental.
+_PROXY_TRAINED = {"bacterial_leaf_spot", "late_blight", "sunburn"}
 
 # Classes that escalate severity by one level on principle. They have
 # aggressive systemic spread (mosaic virus is incurable; late blight can
@@ -620,16 +635,31 @@ def _apply_postprocessing_rules(
 
     if top1_name == "healthy" and "healthy" in class_names:
         margin = top1_prob - top2_prob
-        if top1_prob < HEALTHY_MIN_CONFIDENCE or margin < HEALTHY_MARGIN:
+        # Strongest disease (excludes healthy / not_a_plant from the floor).
+        worst_disease = max(
+            ((n, p) for n, p in probs.items() if n not in _NON_DISEASE),
+            key=lambda kv: kv[1],
+            default=(None, 0.0),
+        )
+        weak = top1_prob < HEALTHY_MIN_CONFIDENCE or margin < HEALTHY_MARGIN
+        disease_floor_hit = worst_disease[1] >= HEALTHY_DISEASE_FLOOR
+        if weak or disease_floor_hit:
             warnings.append("uncertain_healthy")
+            if disease_floor_hit and worst_disease[0]:
+                warnings.append(f"disease_suspected:{worst_disease[0]}")
             logger.info(
-                "healthy gate soft-warning  top1=%.3f  margin=%.3f",
-                top1_prob, margin,
+                "healthy gate soft-warning  top1=%.3f  margin=%.3f  worst_disease=%s/%.3f",
+                top1_prob, margin, worst_disease[0], worst_disease[1],
             )
 
     suspected = classification.get("_suspected_disease")
     if suspected:
         warnings.append(f"disease_uncertain:{suspected}")
+
+    # Proxy-trained classes carry structurally lower precision on
+    # houseplants — flag them whenever they win.
+    if top1_name in _PROXY_TRAINED:
+        warnings.append(f"proxy_trained:{top1_name}")
 
     if classification.get("_ood_gated"):
         # Helps the UI explain "we routed this to Not-a-Plant because the
