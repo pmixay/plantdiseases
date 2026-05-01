@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <!--
+        Read-aloud (TTS) toggles between the speaker icon and a stop
+        icon while playback is active; ResultActivity flips the icon /
+        title via findItem(R.id.action_speak).
+    -->
+    <item
+        android:id="@+id/action_speak"
+        android:icon="@drawable/ic_speak"
+        android:iconTint="@color/toolbar_title"
+        android:title="@string/speak_read_aloud"
+        app:showAsAction="ifRoom" />
+
+    <item
+        android:id="@+id/action_delete"
+        android:icon="@drawable/ic_delete"
+        android:iconTint="@color/toolbar_title"
+        android:title="@string/delete_scan"
+        app:showAsAction="never" />
+
+</menu>

@@ -78,10 +78,70 @@ class ResultActivity : AppCompatActivity() {
         }
 
         binding.toolbar.setNavigationOnClickListener { finish() }
+        setupToolbarMenu()
         setupPinchToZoom()
         setupStickyHeader()
         initTts()
         loadResult(scanId)
+    }
+
+    private var toolbarSpeakItem: android.view.MenuItem? = null
+    private var pendingScanForToolbar: ScanEntity? = null
+
+    private fun setupToolbarMenu() {
+        binding.toolbar.inflateMenu(R.menu.result_toolbar_menu)
+        toolbarSpeakItem = binding.toolbar.menu.findItem(R.id.action_speak)
+        binding.toolbar.setOnMenuItemClickListener { item ->
+            val scan = pendingScanForToolbar ?: return@setOnMenuItemClickListener false
+            when (item.itemId) {
+                R.id.action_speak -> {
+                    onSpeakAction(scan)
+                    true
+                }
+                R.id.action_delete -> {
+                    onDeleteAction(scan)
+                    true
+                }
+                else -> false
+            }
+        }
+    }
+
+    private fun onSpeakAction(scan: ScanEntity) {
+        if (!ttsReady) {
+            Toast.makeText(this, R.string.speak_unavailable, Toast.LENGTH_SHORT).show()
+            return
+        }
+        Haptics.tick(this)
+        if (tts?.isSpeaking == true) {
+            tts?.stop()
+            updateSpeakIcon(speaking = false)
+        } else if (speakResult(scan, LocaleHelper.isRussian(this))) {
+            updateSpeakIcon(speaking = true)
+        }
+    }
+
+    private fun onDeleteAction(scan: ScanEntity) {
+        MaterialAlertDialogBuilder(this@ResultActivity)
+            .setTitle(R.string.delete_scan)
+            .setMessage(R.string.delete_scan_confirm)
+            .setPositiveButton(R.string.delete) { _, _ ->
+                val appInstance = application as PlantDiseasesApp
+                lifecycleScope.launch {
+                    runCatching { File(scan.imagePath).delete() }
+                    appInstance.scanRepository.deleteScan(scan.id)
+                    finish()
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun updateSpeakIcon(speaking: Boolean) {
+        toolbarSpeakItem?.let { item ->
+            item.setIcon(if (speaking) R.drawable.ic_close else R.drawable.ic_speak)
+            item.title = getString(if (speaking) R.string.speak_stop else R.string.speak_read_aloud)
+        }
     }
 
     private fun setupPinchToZoom() {
@@ -276,10 +336,11 @@ class ResultActivity : AppCompatActivity() {
                 cardPestCauses.visibility = View.GONE
                 cardPipelineWarning.visibility = View.GONE
                 cardLowConfidence.visibility = View.GONE
-                // Share a "not a plant" verdict makes no sense — hide it.
+                // Share / add-to-garden don't make sense for a NAP verdict —
+                // collapse the bottom bar to just the "new scan" button so
+                // it expands to fill the row.
                 btnShare.visibility = View.GONE
                 btnAddToGarden.visibility = View.GONE
-                btnRetryAnalysis.visibility = View.VISIBLE
             } else {
                 tvDescription.text = if (isRu) scan.descriptionRu else scan.description
                 btnShare.visibility = View.VISIBLE
@@ -309,13 +370,14 @@ class ResultActivity : AppCompatActivity() {
                 shareWithImage(scan, repository, isRu)
             }
 
-            // Low confidence (only shown for actual disease diagnoses).
+            // Low-confidence card carries its own retry button now —
+            // the action belongs next to the warning text, not in the
+            // global bottom bar where it duplicates "New scan".
             if (!isNotAPlant && scan.confidence < 0.5f && !isHealthyVerdict) {
                 cardLowConfidence.visibility = View.VISIBLE
                 btnRetryAnalysis.visibility = View.VISIBLE
-            } else if (!isNotAPlant) {
+            } else {
                 cardLowConfidence.visibility = View.GONE
-                btnRetryAnalysis.visibility = View.GONE
             }
 
             btnRetryAnalysis.setOnClickListener {
@@ -326,27 +388,12 @@ class ResultActivity : AppCompatActivity() {
                 finish()
             }
 
-            btnDelete.setOnClickListener {
-                MaterialAlertDialogBuilder(this@ResultActivity)
-                    .setTitle(R.string.delete_scan)
-                    .setMessage(R.string.delete_scan_confirm)
-                    .setPositiveButton(R.string.delete) { _, _ ->
-                        val appInstance = application as PlantDiseasesApp
-                        lifecycleScope.launch {
-                            try { File(scan.imagePath).delete() } catch (_: Exception) {}
-                            appInstance.scanRepository.deleteScan(scan.id)
-                            finish()
-                        }
-                    }
-                    .setNegativeButton(R.string.cancel, null)
-                    .show()
-            }
-
             // Animate cards from bottom
             animateCardsIn()
 
-            // Wire up TTS speak button
-            setupSpeakButton(scan, isRu)
+            // Toolbar overflow menu owns the read-aloud / delete actions.
+            pendingScanForToolbar = scan
+            updateSpeakIcon(speaking = false)
         }
     }
 
@@ -1089,35 +1136,22 @@ class ResultActivity : AppCompatActivity() {
     private fun initTts() {
         tts = TextToSpeech(this) { status ->
             ttsReady = (status == TextToSpeech.SUCCESS)
-        }
-    }
-
-    private fun setupSpeakButton(scan: ScanEntity, isRu: Boolean) {
-        binding.btnSpeak.setOnClickListener {
-            if (!ttsReady) {
-                Toast.makeText(this, R.string.speak_unavailable, Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-            Haptics.tick(this)
-            if (tts?.isSpeaking == true) {
-                tts?.stop()
-                updateSpeakButton(false)
-            } else {
-                if (speakResult(scan, isRu)) {
-                    updateSpeakButton(true)
-                }
+            // Hook the progress listener once we know TTS is alive so the
+            // toolbar speak icon can flip back to the play state when
+            // playback ends or errors out.
+            if (ttsReady) {
+                tts?.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+                    override fun onStart(utteranceId: String?) {}
+                    override fun onDone(utteranceId: String?) {
+                        runOnUiThread { updateSpeakIcon(speaking = false) }
+                    }
+                    @Deprecated("Deprecated in Java")
+                    override fun onError(utteranceId: String?) {
+                        runOnUiThread { updateSpeakIcon(speaking = false) }
+                    }
+                })
             }
         }
-        tts?.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
-            override fun onStart(utteranceId: String?) {}
-            override fun onDone(utteranceId: String?) {
-                runOnUiThread { updateSpeakButton(false) }
-            }
-            @Deprecated("Deprecated in Java")
-            override fun onError(utteranceId: String?) {
-                runOnUiThread { updateSpeakButton(false) }
-            }
-        })
     }
 
     private fun speakResult(scan: ScanEntity, isRu: Boolean): Boolean {
@@ -1147,26 +1181,17 @@ class ResultActivity : AppCompatActivity() {
             availability == TextToSpeech.LANG_NOT_SUPPORTED
         ) {
             Toast.makeText(this, R.string.speak_unavailable, Toast.LENGTH_SHORT).show()
-            updateSpeakButton(false)
+            updateSpeakIcon(speaking = false)
             return false
         }
         tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "result")
         return true
     }
 
-    private fun updateSpeakButton(speaking: Boolean) {
-        binding.btnSpeak.setIconResource(
-            if (speaking) R.drawable.ic_close else R.drawable.ic_speak
-        )
-        binding.btnSpeak.contentDescription = getString(
-            if (speaking) R.string.speak_stop else R.string.speak_read_aloud
-        )
-    }
-
     override fun onPause() {
         super.onPause()
         tts?.stop()
-        updateSpeakButton(false)
+        updateSpeakIcon(speaking = false)
     }
 
     override fun onDestroy() {

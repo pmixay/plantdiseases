@@ -523,25 +523,44 @@
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
+                    android:orientation="vertical"
                     android:padding="14dp">
 
-                    <ImageView
-                        android:layout_width="22dp"
-                        android:layout_height="22dp"
-                        android:src="@drawable/ic_warning"
-                        android:contentDescription="@null"
-                        android:importantForAccessibility="no" />
-
-                    <TextView
-                        android:layout_width="0dp"
+                    <LinearLayout
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginStart="10dp"
-                        android:text="@string/low_confidence_warning"
-                        android:textSize="13sp"
-                        android:textColor="@color/warning_amber" />
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <ImageView
+                            android:layout_width="22dp"
+                            android:layout_height="22dp"
+                            android:src="@drawable/ic_warning"
+                            android:contentDescription="@null"
+                            android:importantForAccessibility="no" />
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginStart="10dp"
+                            android:text="@string/low_confidence_warning"
+                            android:textSize="13sp"
+                            android:textColor="@color/warning_amber" />
+
+                    </LinearLayout>
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_retry_analysis"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="end"
+                        android:layout_marginTop="6dp"
+                        android:text="@string/retry_analysis"
+                        android:textColor="@color/warning_amber"
+                        app:icon="@drawable/ic_scan"
+                        app:iconTint="@color/warning_amber" />
 
                 </LinearLayout>
 
@@ -551,7 +570,13 @@
 
     </androidx.core.widget.NestedScrollView>
 
-    <!-- Bottom action bar — replaces stacked buttons -->
+    <!--
+        Bottom action bar. Three buttons max so each text label has
+        room to breathe — utility actions (read aloud, delete) live in
+        the toolbar overflow menu, and the "retry same image" hint
+        lives inside the low-confidence warning card where it's
+        actually contextual.
+    -->
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/bottom_action_bar"
         android:layout_width="match_parent"
@@ -569,15 +594,24 @@
             android:paddingVertical="8dp"
             android:paddingHorizontal="16dp">
 
+            <!--
+                Primary CTA keeps an inline icon so "В сад" / "Add to
+                garden" still reads as a glance-cue. Secondary button
+                drops the icon to save horizontal room for its longer
+                "Новый скан" / "New Scan" label without truncating.
+            -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_add_to_garden"
                 android:layout_width="0dp"
                 android:layout_height="48dp"
-                android:layout_weight="1.25"
+                android:layout_weight="1.7"
                 android:layout_marginEnd="8dp"
                 android:text="@string/add_to_garden"
+                android:maxLines="1"
+                android:ellipsize="end"
                 app:icon="@drawable/ic_garden"
                 app:iconGravity="textStart"
+                app:iconPadding="6dp"
                 app:cornerRadius="16dp"
                 app:backgroundTint="@color/primary" />
 
@@ -586,61 +620,24 @@
                 style="@style/Widget.Material3.Button.TonalButton"
                 android:layout_width="0dp"
                 android:layout_height="48dp"
-                android:layout_weight="0.95"
+                android:layout_weight="1.0"
                 android:layout_marginEnd="8dp"
                 android:text="@string/new_scan"
-                app:icon="@drawable/ic_scan"
-                app:iconGravity="textStart"
-                app:cornerRadius="16dp"
-                app:iconTint="@color/primary" />
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:textAllCaps="false"
+                app:cornerRadius="16dp" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_share"
                 style="@style/Widget.Material3.Button.TonalButton"
                 android:layout_width="48dp"
                 android:layout_height="48dp"
-                android:layout_marginEnd="8dp"
+                android:contentDescription="@string/share"
                 app:icon="@drawable/ic_share"
                 app:iconGravity="textStart"
                 app:iconPadding="0dp"
                 app:iconTint="@color/primary"
-                app:cornerRadius="16dp" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_retry_analysis"
-                style="@style/Widget.Material3.Button.TonalButton"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:layout_marginEnd="8dp"
-                android:visibility="gone"
-                app:icon="@drawable/ic_scan"
-                app:iconGravity="textStart"
-                app:iconPadding="0dp"
-                app:iconTint="@color/primary"
-                app:cornerRadius="16dp" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_speak"
-                style="@style/Widget.Material3.Button.TonalButton"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:layout_marginEnd="8dp"
-                android:contentDescription="@string/speak_read_aloud"
-                app:icon="@drawable/ic_speak"
-                app:iconGravity="textStart"
-                app:iconPadding="0dp"
-                app:iconTint="@color/primary"
-                app:cornerRadius="16dp" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_delete"
-                style="@style/Widget.Material3.Button.TextButton"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                app:icon="@drawable/ic_delete"
-                app:iconGravity="textStart"
-                app:iconPadding="0dp"
-                app:iconTint="@color/disease_red"
                 app:cornerRadius="16dp" />
 
         </LinearLayout>
