@@ -1,24 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Brand — botanical green palette -->
-    <color name="primary">#1F7A3F</color>
-    <color name="primary_dark">#0F4D25</color>
-    <color name="primary_light">#D7EDE0</color>
-    <color name="primary_variant">#2A8F4F</color>
+    <color name="primary">#1F8A4C</color>
+    <color name="primary_dark">#0D4A2A</color>
+    <color name="primary_light">#DDF5E4</color>
+    <color name="primary_variant">#2FB062</color>
     <color name="on_primary">#FFFFFF</color>
     <color name="on_primary_secondary">#B0FFFFFF</color>
-    <color name="secondary">#66C07A</color>
+    <color name="secondary">#7ED957</color>
     <color name="on_secondary">#FFFFFF</color>
     <color name="accent_lime">#7ED957</color>
 
     <!-- Gradient stops (ordered dark -> medium -> light) -->
-    <color name="gradient_start">#0F4D25</color>
-    <color name="gradient_mid">#1F7A3F</color>
-    <color name="gradient_end">#2FB062</color>
+    <color name="gradient_start">#0D4A2A</color>
+    <color name="gradient_mid">#1F8A4C</color>
+    <color name="gradient_end">#8BE66F</color>
 
     <!-- Toolbar background (subtle vertical gradient, no harsh diagonal) -->
-    <color name="toolbar_top">#1F7A3F</color>
-    <color name="toolbar_bottom">#196832</color>
+    <color name="toolbar_top">#0D4A2A</color>
+    <color name="toolbar_bottom">#2FB062</color>
     <color name="toolbar_title">#FFFFFF</color>
 
     <!-- Surface -->

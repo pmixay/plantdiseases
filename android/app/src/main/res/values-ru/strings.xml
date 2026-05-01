@@ -207,13 +207,14 @@
         <item quantity="other">%d скана</item>
     </plurals>
     <string name="add_plant">Добавить</string>
-    <string name="add_first_plant">Добавить растение</string>
     <string name="edit_plant">Редактировать</string>
     <string name="plant_name">Название растения</string>
     <string name="plant_species">Вид</string>
     <string name="plant_nickname">Никнейм</string>
     <string name="plant_name_required">Укажите название</string>
     <string name="plant_species_unknown">Вид не указан</string>
+    <string name="plant_dialog_add_subtitle">Создайте аккуратный профиль для сканов, заметок, фото и полива.</string>
+    <string name="plant_dialog_edit_subtitle">Поддерживайте профиль растения точным по мере роста.</string>
     <string name="empty_garden_title">Ваш сад готов</string>
     <string name="empty_garden_hint">Добавьте первое растение, чтобы хранить сканы, заметки и полив вместе.</string>
     <string name="latest_scan_format">Последний скан: %s</string>
@@ -243,4 +244,6 @@
     <string name="added_to_garden">В саду</string>
     <string name="create_new_plant">Создать растение</string>
     <string name="scan_added_to_garden">Скан добавлен в сад</string>
+    <string name="change_language">Сменить</string>
+    <string name="language_hint">Переключение между русским и английским.</string>
 </resources>

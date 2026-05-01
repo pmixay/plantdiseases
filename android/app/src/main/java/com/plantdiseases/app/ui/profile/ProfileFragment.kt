@@ -2,12 +2,15 @@ package com.plantdiseases.app.ui.profile
 
 import android.content.Intent
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
+import androidx.core.os.LocaleListCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
@@ -59,9 +62,22 @@ class ProfileFragment : Fragment() {
             findNavController().navigate(R.id.cameraFragment)
         }
 
+        binding.btnLanguage.setOnClickListener {
+            switchLanguage()
+        }
+
         setupThemeChips()
         loadStats()
         checkServerHealth()
+    }
+
+    private fun switchLanguage() {
+        val newLang = LocaleHelper.toggleLanguage(requireContext())
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(newLang))
+        } else {
+            requireActivity().recreate()
+        }
     }
 
     private fun setupThemeChips() {

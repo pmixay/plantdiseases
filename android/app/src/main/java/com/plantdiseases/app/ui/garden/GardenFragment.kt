@@ -130,27 +130,9 @@ class GardenFragment : Fragment() {
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             ).apply { topMargin = 6.dp() }
         }
-        val addButton = MaterialButton(requireContext()).apply {
-            text = getString(R.string.add_plant)
-            setIconResource(R.drawable.ic_garden)
-            cornerRadius = 18.dp()
-            backgroundTintList = android.content.res.ColorStateList.valueOf(
-                requireContext().getColor(R.color.surface)
-            )
-            setTextColor(requireContext().getColor(R.color.primary))
-            iconTint = android.content.res.ColorStateList.valueOf(
-                requireContext().getColor(R.color.primary)
-            )
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                48.dp(),
-            ).apply { topMargin = 18.dp() }
-            setOnClickListener { showPlantDialog(null) }
-        }
         hero.addView(icon)
         hero.addView(summaryTitle)
         hero.addView(summaryBody)
-        hero.addView(addButton)
         card.addView(hero)
         content.addView(card)
     }
@@ -187,19 +169,6 @@ class GardenFragment : Fragment() {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             ).apply { topMargin = 8.dp() }
-        })
-        emptyState.addView(MaterialButton(requireContext()).apply {
-            text = getString(R.string.add_first_plant)
-            setIconResource(R.drawable.ic_garden)
-            cornerRadius = 18.dp()
-            backgroundTintList = android.content.res.ColorStateList.valueOf(
-                requireContext().getColor(R.color.primary)
-            )
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                50.dp(),
-            ).apply { topMargin = 18.dp() }
-            setOnClickListener { showPlantDialog(null) }
         })
         content.addView(emptyState)
     }
@@ -359,17 +328,63 @@ class GardenFragment : Fragment() {
     private fun showPlantDialog(existing: PlantEntity?) {
         val container = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, 8.dp(), 0, 0)
+            setPadding(0, 0, 0, 0)
+        }
+
+        val header = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(18.dp(), 18.dp(), 18.dp(), 18.dp())
+            setBackgroundResource(R.drawable.bg_garden_hero)
+        }
+        header.addView(FrameLayout(requireContext()).apply {
+            setBackgroundResource(R.drawable.bg_circle_semi)
+            layoutParams = LinearLayout.LayoutParams(52.dp(), 52.dp())
+            addView(ImageView(requireContext()).apply {
+                setImageResource(R.drawable.ic_garden)
+                setColorFilter(requireContext().getColor(R.color.on_primary))
+                layoutParams = FrameLayout.LayoutParams(28.dp(), 28.dp(), Gravity.CENTER)
+            })
+        })
+        header.addView(LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                .apply { marginStart = 14.dp() }
+            addView(TextView(requireContext()).apply {
+                text = getString(if (existing == null) R.string.add_plant else R.string.edit_plant)
+                textSize = 20f
+                setTextColor(requireContext().getColor(R.color.on_primary))
+                typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+            })
+            addView(TextView(requireContext()).apply {
+                text = getString(
+                    if (existing == null) R.string.plant_dialog_add_subtitle
+                    else R.string.plant_dialog_edit_subtitle
+                )
+                textSize = 13f
+                setTextColor(requireContext().getColor(R.color.on_primary_secondary))
+                setLineSpacing(3.dp().toFloat(), 1f)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = 3.dp() }
+            })
+        })
+
+        val fields = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(18.dp(), 18.dp(), 18.dp(), 4.dp())
         }
         val name = inputField(getString(R.string.plant_name), existing?.name, InputType.TYPE_CLASS_TEXT)
         val species = inputField(getString(R.string.plant_species), existing?.species, InputType.TYPE_CLASS_TEXT)
         val nickname = inputField(getString(R.string.plant_nickname), existing?.nickname, InputType.TYPE_CLASS_TEXT)
-        container.addView(name.first)
-        container.addView(species.first)
-        container.addView(nickname.first)
+        fields.addView(name.first)
+        fields.addView(species.first)
+        fields.addView(nickname.first)
+        container.addView(header)
+        container.addView(fields)
 
         val dialog = MaterialAlertDialogBuilder(requireContext())
-            .setTitle(if (existing == null) R.string.add_plant else R.string.edit_plant)
             .setView(container)
             .setNegativeButton(R.string.cancel, null)
             .setPositiveButton(R.string.save, null)

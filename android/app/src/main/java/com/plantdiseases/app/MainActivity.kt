@@ -2,14 +2,9 @@ package com.plantdiseases.app
 
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.os.Bundle
-import android.view.Menu
-import android.view.MenuItem
 import android.view.animation.OvershootInterpolator
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.app.AppCompatDelegate
-import androidx.core.os.LocaleListCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -150,27 +145,4 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    override fun onCreateOptionsMenu(menu: Menu): Boolean {
-        menuInflater.inflate(R.menu.menu_main, menu)
-        return true
-    }
-
-    // Smooth language change
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        return when (item.itemId) {
-            R.id.action_language -> {
-                val newLang = LocaleHelper.toggleLanguage(this)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    // API 33+: smooth locale change without recreate
-                    val localeList = LocaleListCompat.forLanguageTags(newLang)
-                    AppCompatDelegate.setApplicationLocales(localeList)
-                } else {
-                    // Fallback for older APIs
-                    recreate()
-                }
-                true
-            }
-            else -> super.onOptionsItemSelected(item)
-        }
-    }
 }
