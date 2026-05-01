@@ -89,11 +89,7 @@ class RetryInterceptor(
     }
 }
 
-/**
- * Retrofit client. The base URL is resolved through [ServerConfig] on every
- * request so users can change the server address at runtime (Profile screen)
- * without restarting the app.
- */
+/** Retrofit client using the build-time API base URL. */
 class PlantApiClient(private val context: Context) {
 
     private val client: OkHttpClient = run {
@@ -113,23 +109,9 @@ class PlantApiClient(private val context: Context) {
             .build()
     }
 
-    @Volatile private var cachedBaseUrl: String = ServerConfig.getBaseUrl(context)
-    @Volatile private var cachedService: ApiService = buildService(cachedBaseUrl)
-
-    /** Returns the up-to-date [ApiService], rebuilding Retrofit when the URL changes. */
-    val apiService: ApiService
-        get() {
-            val current = ServerConfig.getBaseUrl(context)
-            if (current != cachedBaseUrl) {
-                synchronized(this) {
-                    if (current != cachedBaseUrl) {
-                        cachedBaseUrl = current
-                        cachedService = buildService(current)
-                    }
-                }
-            }
-            return cachedService
-        }
+    val apiService: ApiService by lazy {
+        buildService(ServerConfig.getBaseUrl(context))
+    }
 
     private fun buildService(baseUrl: String): ApiService =
         Retrofit.Builder()

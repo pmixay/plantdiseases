@@ -136,14 +136,7 @@
     <string name="server_online">Онлайн</string>
     <string name="server_offline">Недоступен</string>
     <string name="server_checking">Проверка…</string>
-    <string name="server_url_setting">URL сервера</string>
-    <string name="server_url_hint">http://10.0.2.2:8000/</string>
-    <string name="server_url_help">Для эмулятора используйте 10.0.2.2, для физического устройства — IP компьютера в той же сети.</string>
     <string name="save">Сохранить</string>
-    <string name="reset_to_default">По умолчанию</string>
-    <string name="server_url_saved">URL сервера сохранён</string>
-    <string name="server_url_invalid">Неверный URL</string>
-    <string name="server_url_reset">Сброшен на значение по умолчанию</string>
 
     <!-- Top-3 alternatives -->
     <string name="why_this_diagnosis">Почему этот диагноз?</string>

@@ -17,8 +17,13 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // Server URL — change to your server address
-        buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:8000/\"")
+        val configuredApiBaseUrl = providers.gradleProperty("API_BASE_URL")
+            .orElse("https://78.17.40.155:8000/")
+            .get()
+            .let { if (it.endsWith("/")) it else "$it/" }
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+        buildConfigField("String", "API_BASE_URL", "\"$configuredApiBaseUrl\"")
     }
 
     signingConfigs {

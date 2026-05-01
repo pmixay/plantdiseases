@@ -23,7 +23,12 @@ on-screen accuracy.
   shipped on this branch.
 - Android client covers the core scan flow (camera, gallery, history,
   guide, profile, share, multi-bbox overlay, top-3, blur/green pre-checks,
-  bilingual EN/RU, Material 3, onboarding).
+  bilingual EN/RU, Material 3, onboarding), plus **My Garden** with plant
+  list, add/edit flow, plant detail timeline, free-text journal, photo
+  log, watering log, and result-screen "Add to garden".
+- Android networking now uses a build-time API base URL only. The default
+  production endpoint is `https://78.17.40.155:8000/`; local overrides are
+  supplied through the Gradle `API_BASE_URL` property, not through app UI.
 - Server is hardened (rate limiter, magic-byte validation, Prometheus,
   Docker, non-root). CI runs on push.
 - Confirmed scope: portfolio demo, $20–50/mo budget for paid services,
@@ -36,7 +41,7 @@ on-screen accuracy.
 |-----------------------------|----------|--------------|
 | Disease detection           | demo     | trained      |
 | Plant species ID            | —        | yes (PlantNet) |
-| My Garden / per-plant log   | —        | yes          |
+| My Garden / per-plant log   | yes      | yes          |
 | Care reminders + push       | —        | yes          |
 | AI Plant Doctor chat        | —        | yes (Claude Haiku) |
 | Light meter                 | —        | yes          |
@@ -45,6 +50,22 @@ on-screen accuracy.
 | Real-time framing + auto-capture | —   | yes          |
 | Offline on-device inference | —        | yes (TFLite) |
 | Bilingual EN/RU             | yes      | yes (kept)   |
+
+## Current stage (May 1, 2026)
+
+- Android portfolio shell is active: scan, gallery, guide, profile,
+  result details, My Garden, per-plant journal and add-to-garden are in
+  code.
+- Camera scan UI no longer uses a hard square outline over the preview;
+  the analyzer still drives quality hints and auto-capture behavior.
+- Runtime server switching has been removed from the app. Server endpoint
+  is a build parameter with production default
+  `https://78.17.40.155:8000/`.
+- CI remains the build verification path for Android. Local Windows SDK
+  setup is not treated as a blocker for feature work.
+- Main blockers before demo-quality release: run the Colab training job,
+  ship model weights, finish care reminders / AI Doctor / light meter,
+  and complete golden-path QA on a real device.
 
 ## Targets (Definition of Done)
 
@@ -127,12 +148,15 @@ on-screen accuracy.
       `temperature.json`.)*
 
 ### P1 · Android
-- [ ] **My Garden** screen: list, add/edit plant, plant-detail with
+- [x] **My Garden** screen: list, add/edit plant, plant-detail with
       timeline of scans.
-- [ ] Plant journal: free-text notes, photo log, watering log per plant.
-- [ ] "Add to garden" CTA on result screen → assigns scan to a plant.
-- [ ] Empty states with custom illustrations (no plants, no scans, no
+- [x] Plant journal: free-text notes, photo log, watering log per plant.
+- [x] "Add to garden" CTA on result screen → assigns scan to a plant.
+- [x] Empty states with custom illustrations (no plants, no scans, no
       reminders).
+- [x] Remove runtime server URL picker from Profile; API host is now
+      provided only at build time through `API_BASE_URL`.
+- [x] Remove hard square scan-frame outline from Camera preview.
 
 ---
 

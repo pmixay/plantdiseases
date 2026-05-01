@@ -45,9 +45,6 @@
 
     <!-- Misc -->
     <color name="scan_frame_color">#80FFFFFF</color>
-    <color name="scan_frame_red">#E53935</color>
-    <color name="scan_frame_amber">#FFB300</color>
-    <color name="scan_frame_green">#43A047</color>
     <color name="bottom_panel_bg">#EDF5EE</color>
     <color name="icon_bg">#E4F1E7</color>
     <color name="semi_transparent">#40000000</color>

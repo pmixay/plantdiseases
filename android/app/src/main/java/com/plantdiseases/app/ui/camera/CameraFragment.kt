@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
-import android.graphics.drawable.GradientDrawable
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -312,22 +311,11 @@ class CameraFragment : Fragment() {
     private fun applyFrameQuality(quality: LeafFrameAnalyzer.Quality) {
         if (lastQuality == quality) return
         lastQuality = quality
-        val (colorRes, hintRes) = when (quality) {
-            LeafFrameAnalyzer.Quality.GREEN ->
-                R.color.scan_frame_green to R.string.frame_hint_green
-            LeafFrameAnalyzer.Quality.AMBER ->
-                R.color.scan_frame_amber to R.string.frame_hint_amber
-            LeafFrameAnalyzer.Quality.RED ->
-                R.color.scan_frame_red to R.string.frame_hint_red
+        val hintRes = when (quality) {
+            LeafFrameAnalyzer.Quality.GREEN -> R.string.frame_hint_green
+            LeafFrameAnalyzer.Quality.AMBER -> R.string.frame_hint_amber
+            LeafFrameAnalyzer.Quality.RED -> R.string.frame_hint_red
         }
-        val color = ContextCompat.getColor(requireContext(), colorRes)
-        val drawable = binding.scanFrame.background?.mutate() as? GradientDrawable
-        // 3 dp matches drawable/scan_frame.xml. Alpha picked so the ring
-        // reads as confident colour without overpowering the preview
-        // underneath.
-        val strokePx = (3 * resources.displayMetrics.density).toInt().coerceAtLeast(3)
-        val tinted = (color and 0x00FFFFFF) or STROKE_ALPHA_MASK
-        drawable?.setStroke(strokePx, tinted)
         binding.tvScanHint.setText(hintRes)
     }
 
@@ -525,9 +513,5 @@ class CameraFragment : Fragment() {
         // the 160-px green-channel grid: hand-held indoor shots score
         // 200+, severely blurred ones score below 60.
         private const val MIN_SHARPNESS = 120.0
-        // 0xCC000000 as a signed Int (~80 % alpha), leaves the preview
-        // readable through the stroke. Written as a negative literal so
-        // it stays a compile-time `const`.
-        private const val STROKE_ALPHA_MASK: Int = -0x34000000
     }
 }
