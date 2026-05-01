@@ -23,7 +23,12 @@ on-screen accuracy.
   shipped on this branch.
 - Android client covers the core scan flow (camera, gallery, history,
   guide, profile, share, multi-bbox overlay, top-3, blur/green pre-checks,
-  bilingual EN/RU, Material 3, onboarding).
+  bilingual EN/RU, Material 3, onboarding), plus **My Garden** with plant
+  list, add/edit flow, plant detail timeline, free-text journal, photo
+  log, watering log, and result-screen "Add to garden".
+- Android networking now uses a build-time API base URL only. The default
+  production endpoint is `https://78.17.40.155:8000/`; local overrides are
+  supplied through the Gradle `API_BASE_URL` property, not through app UI.
 - Server is hardened (rate limiter, magic-byte validation, Prometheus,
   Docker, non-root). CI runs on push.
 - Confirmed scope: portfolio demo, $20–50/mo budget for paid services,
@@ -36,15 +41,55 @@ on-screen accuracy.
 |-----------------------------|----------|--------------|
 | Disease detection           | demo     | trained      |
 | Plant species ID            | —        | yes (PlantNet) |
-| My Garden / per-plant log   | —        | yes          |
-| Care reminders + push       | —        | yes          |
-| AI Plant Doctor chat        | —        | yes (Claude Haiku) |
-| Light meter                 | —        | yes          |
-| Severity scoring            | —        | yes          |
+| My Garden / per-plant log   | yes      | yes          |
+| Care reminders + push       | local WorkManager | yes          |
+| AI Plant Doctor chat        | local stub shell | yes (Claude Haiku) |
+| Light meter                 | sensor + camera fallback | yes          |
+| Severity scoring            | server code ready | yes          |
 | Disease progression chart   | —        | yes          |
-| Real-time framing + auto-capture | —   | yes          |
-| Offline on-device inference | —        | yes (TFLite) |
+| Real-time framing + auto-capture | yes | yes          |
+| Offline on-device inference | TFLite runtime fallback | yes (TFLite) |
 | Bilingual EN/RU             | yes      | yes (kept)   |
+
+## Current stage (May 1, 2026)
+
+- Android portfolio shell is active: scan, gallery, guide, profile,
+  result details, My Garden, per-plant journal and add-to-garden are in
+  code.
+- Camera scan UI no longer uses a hard square outline over the preview;
+  the analyzer still drives quality hints and auto-capture behavior.
+- Runtime server switching has been removed from the app. Server endpoint
+  is a build parameter with production default
+  `https://78.17.40.155:8000/`.
+- Garden / journal polish: long-press a plant card to edit or delete the
+  plant (journal cascades, scans unlink); long-press a journal entry to
+  edit text or delete it. Plant card row layout fixed so name/species/last
+  scan no longer collapse against the icon. The fragment-level FAB is the
+  single Add-plant entry point; old toolbar / empty-state "Add plant"
+  affordances are removed.
+- UX polish (commit `bfd1d54`): add/edit plant dialog has a green gradient
+  header with icon + subtitle; language switcher moved from toolbar menu
+  to Profile screen; brighter green gradients shared across garden hero /
+  toolbar / primary buttons.
+- Week 3 Android work is now active in the local branch: per-plant local
+  reminders use WorkManager notification jobs with editable interval/time;
+  Light Meter measures ambient-light sensor lux with CameraX luminance
+  fallback; result screen has a TTS read-aloud toggle. Android AI Doctor
+  is exposed as a local stub bottom sheet: conversation UI, simple
+  Markdown rendering, suggested follow-up chips, and per-plant Room
+  persistence are wired; the single reply generator is isolated so it can
+  be swapped to server `/api/chat` later.
+- Week 4 offline fallback is wired on Android: when network/server
+  analysis fails, `Continue` runs a bundled TFLite classifier asset if
+  present (`plantvision_classifier.tflite`, `classifier.tflite`, or
+  compatible fallback names). If no model asset is bundled yet, the app
+  falls back to the existing local color/contrast estimate so result UI
+  testing still works without the API.
+- CI remains the build verification path for Android. Local Windows SDK
+  setup is not treated as a blocker for feature work.
+- Main blockers before demo-quality release: run the Colab training job,
+  ship model weights, let GitHub CI validate the Android branch, and
+  complete golden-path QA on a real device.
 
 ## Targets (Definition of Done)
 
@@ -127,12 +172,15 @@ on-screen accuracy.
       `temperature.json`.)*
 
 ### P1 · Android
-- [ ] **My Garden** screen: list, add/edit plant, plant-detail with
+- [x] **My Garden** screen: list, add/edit plant, plant-detail with
       timeline of scans.
-- [ ] Plant journal: free-text notes, photo log, watering log per plant.
-- [ ] "Add to garden" CTA on result screen → assigns scan to a plant.
-- [ ] Empty states with custom illustrations (no plants, no scans, no
+- [x] Plant journal: free-text notes, photo log, watering log per plant.
+- [x] "Add to garden" CTA on result screen → assigns scan to a plant.
+- [x] Empty states with custom illustrations (no plants, no scans, no
       reminders).
+- [x] Remove runtime server URL picker from Profile; API host is now
+      provided only at build time through `API_BASE_URL`.
+- [x] Remove hard square scan-frame outline from Camera preview.
 
 ---
 
@@ -153,13 +201,18 @@ on-screen accuracy.
       ensemble peer, MODEL_CARD; awaits Colab run.)*
 
 ### P1 · Android
-- [ ] WorkManager + FCM-free local notifications for per-plant reminders;
-      editable schedule UI.
-- [ ] AI Plant Doctor chat: bottom-sheet conversation, Markdown rendering,
-      suggested follow-up questions, persisted per plant.
-- [ ] Light meter: ambient-light sensor + camera luminance fallback,
+- [x] WorkManager + FCM-free local notifications for per-plant reminders;
+      editable interval/time schedule UI. Runtime notification permission
+      is requested on Android 13+.
+- [x] AI Plant Doctor chat shell: bottom-sheet conversation, simple
+      Markdown rendering, suggested follow-up questions, persisted per
+      plant.
+      *(Current reply source is a local placeholder; replace
+      `buildLocalDoctorReply` with server `/api/chat` when prompt /
+      endpoint contract is finalized.)*
+- [x] Light meter: ambient-light sensor + camera luminance fallback,
       lux estimation, recommendation vs species ideal.
-- [ ] Voice-over diagnosis (TTS read-aloud toggle on result screen).
+- [x] Voice-over diagnosis (TTS read-aloud toggle on result screen).
 
 ---
 
@@ -181,8 +234,13 @@ on-screen accuracy.
       session ID in `main.py`; counters surfaced in `/api/metrics`.)*
 
 ### P1 · Android
-- [ ] On-device inference fallback (TFLite runtime) when network fails or
+- [x] On-device inference fallback (TFLite runtime) when network fails or
       airplane mode is on.
+      *(Android runtime wrapper added via TensorFlow Lite. It loads a
+      bundled classifier + optional labels from APK assets, maps the top
+      class into the existing `AnalysisResponse`, persists the scan, and
+      keeps the color/contrast estimate as a second-level fallback until
+      final exported TFLite weights are committed.)*
 - [ ] **Disease progression view**: severity-over-time chart per plant,
       before/after image side-by-side.
 - [ ] **Time-lapse mode**: schedule daily fixed-angle reminder, stitch

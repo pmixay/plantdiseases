@@ -2,12 +2,15 @@ package com.plantdiseases.app.ui.profile
 
 import android.content.Intent
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
+import androidx.core.os.LocaleListCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
@@ -16,9 +19,9 @@ import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.databinding.FragmentProfileBinding
+import com.plantdiseases.app.ui.camera.LightMeterActivity
 import com.plantdiseases.app.ui.onboarding.OnboardingActivity
 import com.plantdiseases.app.util.LocaleHelper
-import com.plantdiseases.app.util.ServerConfig
 import com.plantdiseases.app.util.ThemeHelper
 import kotlinx.coroutines.launch
 
@@ -55,40 +58,31 @@ class ProfileFragment : Fragment() {
             startActivity(Intent(requireContext(), OnboardingActivity::class.java))
         }
 
+        // Light Meter
+        binding.cardLightMeter.setOnClickListener {
+            startActivity(Intent(requireContext(), LightMeterActivity::class.java))
+        }
+
         // Profile empty state CTA
         binding.btnStartScan.setOnClickListener {
             findNavController().navigate(R.id.cameraFragment)
         }
 
+        binding.btnLanguage.setOnClickListener {
+            switchLanguage()
+        }
+
         setupThemeChips()
-        setupServerUrlEditor()
         loadStats()
         checkServerHealth()
     }
 
-    private fun setupServerUrlEditor() {
-        val current = ServerConfig.getBaseUrl(requireContext())
-        binding.etServerUrl.setText(current)
-
-        binding.btnSaveServerUrl.setOnClickListener {
-            val raw = binding.etServerUrl.text?.toString().orEmpty()
-            val normalised = ServerConfig.setBaseUrl(requireContext(), raw)
-            if (normalised == null) {
-                binding.tilServerUrl.error = getString(R.string.server_url_invalid)
-                return@setOnClickListener
-            }
-            binding.tilServerUrl.error = null
-            binding.etServerUrl.setText(normalised)
-            Toast.makeText(requireContext(), R.string.server_url_saved, Toast.LENGTH_SHORT).show()
-            checkServerHealth()
-        }
-
-        binding.btnResetServerUrl.setOnClickListener {
-            val defaultUrl = ServerConfig.resetToDefault(requireContext())
-            binding.tilServerUrl.error = null
-            binding.etServerUrl.setText(defaultUrl)
-            Toast.makeText(requireContext(), R.string.server_url_reset, Toast.LENGTH_SHORT).show()
-            checkServerHealth()
+    private fun switchLanguage() {
+        val newLang = LocaleHelper.toggleLanguage(requireContext())
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(newLang))
+        } else {
+            requireActivity().recreate()
         }
     }
 

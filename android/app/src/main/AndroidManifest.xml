@@ -11,6 +11,7 @@
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:name=".PlantDiseasesApp"
@@ -47,6 +48,14 @@
 
         <activity
             android:name=".ui.result.ResultActivity"
+            android:screenOrientation="portrait" />
+
+        <activity
+            android:name=".ui.garden.PlantDetailActivity"
+            android:screenOrientation="portrait" />
+
+        <activity
+            android:name=".ui.camera.LightMeterActivity"
             android:screenOrientation="portrait" />
 
         <provider

@@ -15,6 +15,11 @@
         android:label="@string/tab_gallery" />
 
     <fragment
+        android:id="@+id/gardenFragment"
+        android:name="com.plantdiseases.app.ui.garden.GardenFragment"
+        android:label="@string/tab_garden" />
+
+    <fragment
         android:id="@+id/guideFragment"
         android:name="com.plantdiseases.app.ui.guide.GuideFragment"
         android:label="@string/tab_guide" />

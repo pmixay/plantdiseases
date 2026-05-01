@@ -130,20 +130,29 @@
     <string name="no_network">No Internet Connection</string>
     <string name="no_network_detail">Check your network connection and try again.</string>
     <string name="offline_banner">No internet connection</string>
+    <string name="offline_analysis_title">Running offline check</string>
+    <string name="offline_analysis_detail">Trying the on-device model, then a visual fallback.</string>
+    <string name="offline_healthy_description">Offline check found mostly green tissue and no strong brown high-contrast damage pattern. This is a rough visual estimate for testing the app when the server is unavailable.</string>
+    <string name="offline_healthy_description_ru">Локальная проверка видит в основном зелёные участки и не находит выраженного коричневого контрастного повреждения. Это примерная оценка для тестирования приложения без сервера.</string>
+    <string name="offline_disease_description">Offline check found a noticeable brown or dark high-contrast pattern compared with the green area. This is not a medical diagnosis; it only helps preview the result UI without the server.</string>
+    <string name="offline_disease_description_ru">Локальная проверка нашла заметный коричневый или тёмный контрастный рисунок на фоне зелёных участков. Это не настоящий диагноз, а режим для просмотра экрана результата без сервера.</string>
+    <string name="offline_disease_treatment_1">Isolate the plant from others until a real scan is available.</string>
+    <string name="offline_disease_treatment_1_ru">Изолируйте растение от других до настоящего анализа.</string>
+    <string name="offline_disease_treatment_2">Remove heavily damaged leaves with clean tools.</string>
+    <string name="offline_disease_treatment_2_ru">Удалите сильно повреждённые листья чистым инструментом.</string>
+    <string name="offline_disease_treatment_3">Avoid overwatering and improve airflow around the plant.</string>
+    <string name="offline_disease_treatment_3_ru">Не переливайте растение и улучшите циркуляцию воздуха.</string>
+    <string name="offline_prevention_1">Retake a server-backed scan when the API is online.</string>
+    <string name="offline_prevention_1_ru">Повторите анализ через сервер, когда API будет доступен.</string>
+    <string name="offline_prevention_2">Use steady light and frame one clear leaf for better results.</string>
+    <string name="offline_prevention_2_ru">Снимайте один чёткий лист при ровном освещении для более точного результата.</string>
 
     <!-- Server status -->
     <string name="server_status">Server Status</string>
     <string name="server_online">Online</string>
     <string name="server_offline">Offline</string>
     <string name="server_checking">Checking…</string>
-    <string name="server_url_setting">Server URL</string>
-    <string name="server_url_hint">http://10.0.2.2:8000/</string>
-    <string name="server_url_help">Use 10.0.2.2 for the Android emulator, or your PC IP on the same WiFi.</string>
     <string name="save">Save</string>
-    <string name="reset_to_default">Reset to default</string>
-    <string name="server_url_saved">Server URL saved</string>
-    <string name="server_url_invalid">Invalid URL</string>
-    <string name="server_url_reset">Reset to default URL</string>
 
     <!-- Top-3 alternatives -->
     <string name="why_this_diagnosis">Why This Diagnosis?</string>
@@ -197,4 +206,113 @@
     <string name="frame_hint_amber">Bring the leaf into the frame</string>
     <string name="frame_hint_green">Hold steady…</string>
     <string name="frame_hint_capturing">Captured</string>
+    <!-- My Garden -->
+    <string name="tab_garden">Garden</string>
+    <string name="garden_title">My Garden</string>
+    <string name="garden_subtitle">Track every plant, scan timeline, notes, photos and watering in one calm green place.</string>
+    <plurals name="garden_summary">
+        <item quantity="one">%1$d plant watched with %2$d scans</item>
+        <item quantity="other">%1$d plants watched with %2$d scans</item>
+    </plurals>
+    <plurals name="scan_count">
+        <item quantity="one">%d scan</item>
+        <item quantity="other">%d scans</item>
+    </plurals>
+    <string name="add_plant">Add plant</string>
+    <string name="edit_plant">Edit plant</string>
+    <string name="plant_name">Plant name</string>
+    <string name="plant_species">Species</string>
+    <string name="plant_nickname">Nickname</string>
+    <string name="plant_name_required">Name is required</string>
+    <string name="plant_species_unknown">Species not set</string>
+    <string name="plant_dialog_add_subtitle">Create a clean care profile for scans, notes, photos and watering.</string>
+    <string name="plant_dialog_edit_subtitle">Keep this plant profile accurate as it grows.</string>
+    <string name="empty_garden_title">Your garden is ready</string>
+    <string name="empty_garden_hint">Add your first plant to keep scans, care notes and watering history together.</string>
+    <string name="latest_scan_format">Last scan: %s</string>
+    <string name="no_scans_attached">No scans attached yet</string>
+    <string name="plant_detail_title">Plant detail</string>
+    <string name="scans">Scans</string>
+    <string name="journal">Journal</string>
+    <string name="waterings">Waterings</string>
+    <string name="timeline">Timeline</string>
+    <string name="plant_journal">Journal</string>
+    <string name="add_note">Note</string>
+    <string name="add_photo_log">Photo</string>
+    <string name="log_watering">Water</string>
+    <string name="empty_plant_scans_title">No scans for this plant</string>
+    <string name="empty_plant_scans_hint">Use Add to garden from a diagnosis result to build this plant timeline.</string>
+    <string name="empty_journal_title">No reminders or notes yet</string>
+    <string name="empty_journal_hint">Log watering, photos and free-text notes so the care history stays visible.</string>
+    <string name="timeline_scan_meta">%1$s - %2$d%% confidence</string>
+    <string name="note_entry">Free-text note</string>
+    <string name="photo_entry">Photo log</string>
+    <string name="watering_entry">Watering log</string>
+    <string name="note_hint">What changed? New leaves, spots, soil, light...</string>
+    <string name="watering_hint">Optional: amount, fertilizer, soil moisture...</string>
+    <string name="photo_caption_hint">Optional caption for this photo</string>
+    <string name="journal_text_required">Write a note first</string>
+    <string name="add_to_garden">Add to garden</string>
+    <string name="added_to_garden">In garden</string>
+    <string name="create_new_plant">Create new plant</string>
+    <string name="scan_added_to_garden">Scan added to garden</string>
+    <string name="change_language">Change</string>
+    <string name="language_hint">Switch between English and Russian.</string>
+    <string name="delete_plant">Delete plant</string>
+    <string name="delete_plant_confirm">Delete this plant? Journal entries will be removed too. Scans will be unlinked.</string>
+    <string name="plant_deleted">Plant deleted</string>
+    <string name="delete_entry">Delete entry</string>
+    <string name="delete_entry_confirm">Delete this journal entry? This cannot be undone.</string>
+    <string name="entry_deleted">Entry deleted</string>
+    <string name="edit_entry">Edit entry</string>
+    <string name="entry_updated">Entry updated</string>
+
+    <!-- Reminders -->
+    <string name="reminders">Reminders</string>
+    <string name="reminder_watering">Watering</string>
+    <string name="reminder_check">Health check</string>
+    <string name="reminder_fertilize">Fertilizing</string>
+    <string name="reminder_every_days">Every %d days</string>
+    <string name="reminder_at_time">At %1$02d:%2$02d</string>
+    <string name="reminder_save">Save</string>
+    <string name="reminder_notifications_permission">Allow notifications to enable plant reminders.</string>
+    <string name="reminder_notif_watering">Time to water %s!</string>
+    <string name="reminder_notif_check">Time to check on %s!</string>
+    <string name="reminder_notif_fertilize">Time to fertilize %s!</string>
+    <string name="reminder_subtitle">Set care schedules for this plant</string>
+    <!-- Doctor Chat -->
+    <string name="doctor_title">AI Plant Doctor</string>
+    <string name="doctor_subtitle">Local care assistant stub</string>
+    <string name="doctor_stub_subtitle">Saved chat, ready for server AI later</string>
+    <string name="doctor_hint">Ask about symptoms, care, treatment…</string>
+    <string name="doctor_send">Send</string>
+    <string name="doctor_thinking">Thinking…</string>
+    <string name="doctor_offline">Server is offline. Check your connection.</string>
+    <string name="doctor_q1">Is this disease spreading to other plants?</string>
+    <string name="doctor_q2">What caused this? How to prevent recurrence?</string>
+    <string name="doctor_q3">What\'s the fastest home treatment?</string>
+    <string name="doctor_clear">Clear chat</string>
+    <!-- Light Meter -->
+    <string name="light_meter">Light Meter</string>
+    <string name="light_meter_hint">Measure room light against plant needs</string>
+    <string name="light_plant_type">Plant type</string>
+    <string name="light_lux">lux</string>
+    <string name="light_too_dark">Too dark</string>
+    <string name="light_ideal">Good light</string>
+    <string name="light_too_bright">Too bright</string>
+    <string name="light_measuring">Measuring…</string>
+    <string name="light_no_sensor">No ambient light sensor — point camera at the area</string>
+    <string name="light_ideal_range">Ideal for %1$s: %2$d – %3$d lux</string>
+    <string name="light_tip_dark">Move closer to a window or add a grow light.</string>
+    <string name="light_tip_ideal">Great spot! Your plant will thrive here.</string>
+    <string name="light_tip_bright">Diffuse with a sheer curtain or move slightly back.</string>
+    <string name="light_species_general">All-purpose</string>
+    <string name="light_species_succulent">Succulent</string>
+    <string name="light_species_tropical">Tropical</string>
+    <string name="light_species_fern">Fern</string>
+    <string name="light_species_vegetable">Vegetable</string>
+    <!-- TTS -->
+    <string name="speak_read_aloud">Read aloud</string>
+    <string name="speak_stop">Stop</string>
+    <string name="speak_unavailable">Voice-over is not available for this language.</string>
 </resources>

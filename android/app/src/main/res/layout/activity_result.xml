@@ -570,16 +570,29 @@
             android:paddingHorizontal="16dp">
 
             <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_new_scan"
+                android:id="@+id/btn_add_to_garden"
                 android:layout_width="0dp"
                 android:layout_height="48dp"
-                android:layout_weight="1"
+                android:layout_weight="1.25"
+                android:layout_marginEnd="8dp"
+                android:text="@string/add_to_garden"
+                app:icon="@drawable/ic_garden"
+                app:iconGravity="textStart"
+                app:cornerRadius="16dp"
+                app:backgroundTint="@color/primary" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_new_scan"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="0.95"
                 android:layout_marginEnd="8dp"
                 android:text="@string/new_scan"
                 app:icon="@drawable/ic_scan"
                 app:iconGravity="textStart"
                 app:cornerRadius="16dp"
-                app:backgroundTint="@color/primary" />
+                app:iconTint="@color/primary" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_share"
@@ -601,6 +614,19 @@
                 android:layout_marginEnd="8dp"
                 android:visibility="gone"
                 app:icon="@drawable/ic_scan"
+                app:iconGravity="textStart"
+                app:iconPadding="0dp"
+                app:iconTint="@color/primary"
+                app:cornerRadius="16dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_speak"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:layout_marginEnd="8dp"
+                android:contentDescription="@string/speak_read_aloud"
+                app:icon="@drawable/ic_speak"
                 app:iconGravity="textStart"
                 app:iconPadding="0dp"
                 app:iconTint="@color/primary"

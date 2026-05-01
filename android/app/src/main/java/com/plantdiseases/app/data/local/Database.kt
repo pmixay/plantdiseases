@@ -16,6 +16,30 @@ data class PlantEntity(
 )
 
 @Entity(
+    tableName = "plant_journal",
+    foreignKeys = [
+        ForeignKey(
+            entity = PlantEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["plant_id"],
+            onDelete = ForeignKey.CASCADE,
+        )
+    ],
+    indices = [
+        Index(value = ["plant_id"]),
+        Index(value = ["timestamp"]),
+    ]
+)
+data class PlantJournalEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(name = "plant_id") val plantId: Long,
+    @ColumnInfo(name = "type") val type: String,
+    @ColumnInfo(name = "text") val text: String? = null,
+    @ColumnInfo(name = "photo_uri") val photoUri: String? = null,
+    @ColumnInfo(name = "timestamp") val timestamp: Long = System.currentTimeMillis(),
+)
+
+@Entity(
     tableName = "scans",
     foreignKeys = [
         ForeignKey(
@@ -61,6 +85,84 @@ data class ScanEntity(
     @ColumnInfo(name = "plant_id") val plantId: Long? = null,
 )
 
+// ─── Plant Reminder Entity ──────────────────────────────────────────────────
+
+@Entity(
+    tableName = "plant_reminders",
+    foreignKeys = [
+        ForeignKey(
+            entity = PlantEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["plant_id"],
+            onDelete = ForeignKey.CASCADE,
+        )
+    ],
+    indices = [
+        Index(value = ["plant_id"]),
+        Index(value = ["plant_id", "type"], unique = true),
+    ]
+)
+data class PlantReminderEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(name = "plant_id") val plantId: Long,
+    @ColumnInfo(name = "type") val type: String,          // "watering" | "check" | "fertilize"
+    @ColumnInfo(name = "interval_days") val intervalDays: Int = 7,
+    @ColumnInfo(name = "hour") val hour: Int = 9,
+    @ColumnInfo(name = "minute") val minute: Int = 0,
+    @ColumnInfo(name = "enabled") val enabled: Boolean = false,
+)
+
+@Dao
+interface PlantReminderDao {
+    @Query("SELECT * FROM plant_reminders WHERE plant_id = :plantId")
+    suspend fun getForPlant(plantId: Long): List<PlantReminderEntity>
+
+    @Query("SELECT * FROM plant_reminders WHERE plant_id = :plantId AND type = :type LIMIT 1")
+    suspend fun getByPlantAndType(plantId: Long, type: String): PlantReminderEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(reminder: PlantReminderEntity): Long
+
+    @Query("DELETE FROM plant_reminders WHERE plant_id = :plantId")
+    suspend fun deleteByPlant(plantId: Long)
+}
+
+// ─── Chat Message Entity ─────────────────────────────────────────────────────
+
+@Entity(
+    tableName = "chat_messages",
+    foreignKeys = [
+        ForeignKey(
+            entity = PlantEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["plant_id"],
+            onDelete = ForeignKey.CASCADE,
+        )
+    ],
+    indices = [Index(value = ["plant_id"])]
+)
+data class ChatMessageEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(name = "plant_id") val plantId: Long,
+    @ColumnInfo(name = "role") val role: String,       // "user" | "bot"
+    @ColumnInfo(name = "content") val content: String,
+    @ColumnInfo(name = "timestamp") val timestamp: Long = System.currentTimeMillis(),
+)
+
+@Dao
+interface ChatMessageDao {
+    @Query("SELECT * FROM chat_messages WHERE plant_id = :plantId ORDER BY timestamp ASC")
+    suspend fun getForPlant(plantId: Long): List<ChatMessageEntity>
+
+    @Insert
+    suspend fun insert(message: ChatMessageEntity): Long
+
+    @Query("DELETE FROM chat_messages WHERE plant_id = :plantId")
+    suspend fun deleteForPlant(plantId: Long)
+}
+
+// ─── Original DAOs ───────────────────────────────────────────────────────────
+
 @Dao
 interface ScanDao {
     @Query("SELECT * FROM scans ORDER BY timestamp DESC")
@@ -72,8 +174,14 @@ interface ScanDao {
     @Query("SELECT * FROM scans WHERE id = :id")
     suspend fun getScanById(id: Long): ScanEntity?
 
+    @Query("SELECT * FROM scans WHERE plant_id = :plantId ORDER BY timestamp DESC")
+    suspend fun getScansForPlant(plantId: Long): List<ScanEntity>
+
     @Insert
     suspend fun insert(scan: ScanEntity): Long
+
+    @Query("UPDATE scans SET plant_id = :plantId WHERE id = :scanId")
+    suspend fun assignScanToPlant(scanId: Long, plantId: Long?)
 
     @Query("DELETE FROM scans WHERE id = :id")
     suspend fun deleteById(id: Long)
@@ -100,14 +208,41 @@ interface PlantDao {
     suspend fun deleteById(id: Long)
 }
 
+@Dao
+interface PlantJournalDao {
+    @Query("SELECT * FROM plant_journal WHERE plant_id = :plantId ORDER BY timestamp DESC")
+    suspend fun getEntriesForPlant(plantId: Long): List<PlantJournalEntity>
+
+    @Query("SELECT * FROM plant_journal WHERE id = :id")
+    suspend fun getById(id: Long): PlantJournalEntity?
+
+    @Insert
+    suspend fun insert(entry: PlantJournalEntity): Long
+
+    @Update
+    suspend fun update(entry: PlantJournalEntity)
+
+    @Query("DELETE FROM plant_journal WHERE id = :id")
+    suspend fun deleteById(id: Long)
+}
+
 @Database(
-    entities = [ScanEntity::class, PlantEntity::class],
-    version = 3,
+    entities = [
+        ScanEntity::class,
+        PlantEntity::class,
+        PlantJournalEntity::class,
+        PlantReminderEntity::class,
+        ChatMessageEntity::class,
+    ],
+    version = 6,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun scanDao(): ScanDao
     abstract fun plantDao(): PlantDao
+    abstract fun plantJournalDao(): PlantJournalDao
+    abstract fun plantReminderDao(): PlantReminderDao
+    abstract fun chatMessageDao(): ChatMessageDao
 
     companion object {
         @Volatile

@@ -3,6 +3,8 @@ package com.plantdiseases.app.data.remote
 import android.content.Context
 import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.data.model.AnalysisResponse
+import com.plantdiseases.app.data.model.ChatRequest
+import com.plantdiseases.app.data.model.ChatResponse
 import com.plantdiseases.app.data.model.HealthResponse
 import com.plantdiseases.app.util.ServerConfig
 import okhttp3.Interceptor
@@ -12,7 +14,11 @@ import okhttp3.Response
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
-import retrofit2.http.*
+import retrofit2.http.Body
+import retrofit2.http.GET
+import retrofit2.http.Multipart
+import retrofit2.http.POST
+import retrofit2.http.Part
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
@@ -26,6 +32,9 @@ interface ApiService {
 
     @GET("api/health")
     suspend fun healthCheck(): retrofit2.Response<HealthResponse>
+
+    @POST("api/chat")
+    suspend fun chat(@Body request: ChatRequest): retrofit2.Response<ChatResponse>
 }
 
 /**
@@ -89,11 +98,7 @@ class RetryInterceptor(
     }
 }
 
-/**
- * Retrofit client. The base URL is resolved through [ServerConfig] on every
- * request so users can change the server address at runtime (Profile screen)
- * without restarting the app.
- */
+/** Retrofit client using the build-time API base URL. */
 class PlantApiClient(private val context: Context) {
 
     private val client: OkHttpClient = run {
@@ -113,23 +118,9 @@ class PlantApiClient(private val context: Context) {
             .build()
     }
 
-    @Volatile private var cachedBaseUrl: String = ServerConfig.getBaseUrl(context)
-    @Volatile private var cachedService: ApiService = buildService(cachedBaseUrl)
-
-    /** Returns the up-to-date [ApiService], rebuilding Retrofit when the URL changes. */
-    val apiService: ApiService
-        get() {
-            val current = ServerConfig.getBaseUrl(context)
-            if (current != cachedBaseUrl) {
-                synchronized(this) {
-                    if (current != cachedBaseUrl) {
-                        cachedBaseUrl = current
-                        cachedService = buildService(current)
-                    }
-                }
-            }
-            return cachedService
-        }
+    val apiService: ApiService by lazy {
+        buildService(ServerConfig.getBaseUrl(context))
+    }
 
     private fun buildService(baseUrl: String): ApiService =
         Retrofit.Builder()
