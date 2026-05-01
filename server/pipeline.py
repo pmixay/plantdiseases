@@ -75,20 +75,25 @@ DISEASE_MIN_CONFIDENCE = 0.65
 HEALTHY_FALLBACK_MARGIN = 0.15
 
 # NAP (out-of-distribution) gate. When the detector confidence is below
-# this AND the classifier's max-softmax-probability (MSP) is also weak,
-# we route to ``not_a_plant`` instead of guessing a disease label.
+# ``NAP_DETECTOR_CONF_FLOOR`` AND the classifier's max-softmax-probability
+# (MSP) is also weak, we route to ``not_a_plant`` instead of guessing a
+# disease label. The MSP floor is overridable via classes.json: model
+# 1.2 disables it because temperature scaling (T=0.52) + label smoothing
+# leave the MSP under-confident enough that a hard floor over-triggers.
 NAP_DETECTOR_CONF_FLOOR = 0.40
-NAP_CLASSIFIER_MSP_FLOOR = 0.45
+NAP_CLASSIFIER_MSP_FLOOR_DEFAULT = 0.45
 
 # Classes that are not "diseases" — used to compute disease scores
 # and to know when to apply the healthy fallback.
 _NON_DISEASE = {"healthy", "not_a_plant"}
 
-# Classes whose training relied on visual proxies from non-houseplant
-# datasets (PV field crops, strawberry leaf scorch as sunburn proxy,
-# bacterial spot from tomato/pepper). Live eval shows F1≈0 on these —
-# we surface a warning so the UI can mark verdicts as experimental.
-_PROXY_TRAINED = {"bacterial_leaf_spot", "late_blight", "sunburn"}
+# Default proxy-trained classes when the classifier checkpoint doesn't
+# carry its own ``proxy_trained_classes`` list. PlantVision 1.2 ships an
+# extended list (incl. iron_chlorosis, mosaic_virus) — read it from
+# classes.json at construction time so this default is rarely used.
+_DEFAULT_PROXY_TRAINED = frozenset(
+    {"bacterial_leaf_spot", "late_blight", "sunburn"}
+)
 
 # Classes that escalate severity by one level on principle. They have
 # aggressive systemic spread (mosaic virus is incurable; late blight can
@@ -138,6 +143,46 @@ def _load_temperature(classifier_path: Path | None) -> float:
     return 1.0
 
 
+def _resolve_proxy_trained(meta: dict) -> frozenset[str]:
+    """Pull ``proxy_trained_classes`` from classes.json, fall back to
+    the built-in default set when the field is missing or malformed.
+    """
+    raw = meta.get("proxy_trained_classes") if isinstance(meta, dict) else None
+    if not isinstance(raw, list) or not all(isinstance(x, str) for x in raw):
+        return _DEFAULT_PROXY_TRAINED
+    return frozenset(raw)
+
+
+def _resolve_msp_floor(meta: dict) -> float:
+    """Read the OOD MSP floor from ``ood_calibration``.
+
+    Contract:
+      * dict missing entirely → use the historical default.
+      * ``suggested_classifier_msp_floor: <number>`` → use that value.
+      * ``suggested_classifier_msp_floor: null`` (explicit) → MSP gate
+        OFF (return 0.0). PlantVision 1.2 sets it to null because
+        T=0.52 + label_smoothing keeps MSP too soft to be a reliable
+        OOD signal; rely on detector confidence + the not_a_plant
+        head output instead.
+    """
+    if not isinstance(meta, dict):
+        return NAP_CLASSIFIER_MSP_FLOOR_DEFAULT
+    cal = meta.get("ood_calibration")
+    if not isinstance(cal, dict):
+        return NAP_CLASSIFIER_MSP_FLOOR_DEFAULT
+    if "suggested_classifier_msp_floor" not in cal:
+        return NAP_CLASSIFIER_MSP_FLOOR_DEFAULT
+    val = cal.get("suggested_classifier_msp_floor")
+    if val is None:
+        # Explicit null → operator told us not to gate on MSP.
+        return 0.0
+    try:
+        floor = float(val)
+    except (TypeError, ValueError):
+        return NAP_CLASSIFIER_MSP_FLOOR_DEFAULT
+    return max(0.0, min(floor, 1.0))
+
+
 def _apply_temperature(probs: dict[str, float], T: float) -> dict[str, float]:
     """Apply temperature scaling on already-softmaxed probabilities.
 
@@ -168,12 +213,21 @@ class PlantDiseasePipeline:
         # Opt-in temperature scaling. Defaults to 1.0 (no-op) if
         # temperature.json is absent.
         self.temperature = _load_temperature(classifier_path)
+        # Resolve proxy-trained set and OOD MSP floor from the classifier
+        # metadata so model updates don't need code edits. Both fields
+        # have safe defaults for older checkpoints without metadata.
+        meta = getattr(self.classifier, "meta", None) or {}
+        self.proxy_trained = _resolve_proxy_trained(meta)
+        self.nap_msp_floor = _resolve_msp_floor(meta)
         logger.info(
-            "Pipeline ready  detector=%s  classifier=%s (%s backend)  T=%.3f",
+            "Pipeline ready  detector=%s  classifier=%s (%s backend)  T=%.3f  "
+            "MSP floor=%s  proxy=%s",
             "MODEL" if self.detector.is_loaded else "DEMO",
             "MODEL" if self.classifier.is_loaded else "DEMO",
             getattr(self.classifier, "backend", "demo"),
             self.temperature,
+            "off" if self.nap_msp_floor <= 0 else f"{self.nap_msp_floor:.2f}",
+            sorted(self.proxy_trained),
         )
 
     @property
@@ -239,16 +293,24 @@ class PlantDiseasePipeline:
         det_conf = float(stage1.get("confidence", 0.0))
         cls_msp = float(classification.get("confidence", 0.0))
         cls_name = classification["class_name"]
+        # The MSP half of the OOD gate is opt-in: when the model's
+        # temperature scaling pushes MSP too low to be informative,
+        # classes.json sets ``suggested_classifier_msp_floor`` to null
+        # and we drop the MSP check entirely (rely on the detector and
+        # the dedicated not_a_plant class head instead).
+        msp_floor = self.nap_msp_floor
+        msp_check_enabled = msp_floor > 0
         if (
             cls_name not in _NON_DISEASE
             and det_conf < NAP_DETECTOR_CONF_FLOOR
-            and cls_msp < NAP_CLASSIFIER_MSP_FLOOR
+            and (not msp_check_enabled or cls_msp < msp_floor)
             and "not_a_plant" in self.classifier.CLASS_NAMES
         ):
             logger.info(
-                "OOD gate triggered (det=%.3f<%.2f, msp=%.3f<%.2f) → not_a_plant",
+                "OOD gate triggered (det=%.3f<%.2f, msp=%.3f%s) → not_a_plant",
                 det_conf, NAP_DETECTOR_CONF_FLOOR,
-                cls_msp, NAP_CLASSIFIER_MSP_FLOOR,
+                cls_msp,
+                f"<{msp_floor:.2f}" if msp_check_enabled else "<off>",
             )
             classification = self._reroute_to_nap(classification)
 
@@ -269,7 +331,9 @@ class PlantDiseasePipeline:
         )
 
         final = _apply_postprocessing_rules(
-            classification, self.classifier.CLASS_NAMES,
+            classification,
+            self.classifier.CLASS_NAMES,
+            proxy_trained=self.proxy_trained,
         )
 
         # Severity scoring. We compute it on the *post-fallback* class
@@ -611,6 +675,8 @@ def _build_top_k(probs: dict[str, float], k: int) -> list[dict]:
 def _apply_postprocessing_rules(
     classification: dict,
     class_names: list[str],
+    *,
+    proxy_trained: "frozenset[str] | set[str] | None" = None,
 ) -> dict:
     """Soft postprocessing: warnings only, no class re-routing.
 
@@ -657,8 +723,11 @@ def _apply_postprocessing_rules(
         warnings.append(f"disease_uncertain:{suspected}")
 
     # Proxy-trained classes carry structurally lower precision on
-    # houseplants — flag them whenever they win.
-    if top1_name in _PROXY_TRAINED:
+    # houseplants — flag them whenever they win. The set is sourced
+    # from classes.json at pipeline construction time; the default
+    # below is a conservative fallback for older checkpoints.
+    proxy_set = proxy_trained if proxy_trained is not None else _DEFAULT_PROXY_TRAINED
+    if top1_name in proxy_set:
         warnings.append(f"proxy_trained:{top1_name}")
 
     if classification.get("_ood_gated"):

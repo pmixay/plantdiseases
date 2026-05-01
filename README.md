@@ -7,24 +7,26 @@ advice.
 
 ---
 
-## Project status (Apr 2026)
+## Project status (May 2026)
 
 The pipeline and the Android client are feature-complete for the core
-scan flow. **Real model weights have not been trained yet** — without
-`server/models/detector.pt` and `classifier.pth` the server falls back
-to a colour-heuristic demo mode (the API contract is identical, but the
-diagnoses are not meaningful).
+scan flow and **PlantVision 1.2 weights are trained** (val top-1 0.91,
+disease macro-F1 0.87, T = 0.52 calibrated on val NLL). Drop
+`detector.pt`, `classifier.pth` (or ONNX) and `temperature.json` into
+`server/models/` to run in full mode; without weights the server falls
+back to a colour-heuristic demo mode (the API contract is identical
+but the diagnoses are not meaningful).
 
-We are running a 4-week sprint (Apr 30 → May 30, 2026) to:
+PlantVision 1.2 quirks the pipeline now adapts to via `classes.json`:
 
-1. Train the PlantVision 1.1 weights and expand the dataset.
-2. Add plant **species identification** (PlantNet API) on top of disease
-   detection.
-3. Ship **My Garden**, **care reminders**, an **AI Plant Doctor** chat,
-   a **light meter** and **on-device offline inference**.
-4. Push the UI to portfolio-grade polish (real-time leaf framing,
-   severity scoring, disease-progression charts, time-lapse,
-   Material You).
+- `proxy_trained_classes` extends to **5** classes
+  (`bacterial_leaf_spot`, `iron_chlorosis`, `late_blight`,
+  `mosaic_virus`, `sunburn`) — the server attaches a
+  `proxy_trained:<class>` warning whenever any of them wins.
+- `ood_calibration.suggested_classifier_msp_floor: null` — the MSP
+  half of the OOD gate is disabled because T = 0.52 + label smoothing
+  leave the max softmax under-confident; the server falls back to the
+  detector confidence + the dedicated `not_a_plant` class.
 
 Per-week, per-engineer task list lives in [`ROADMAP.md`](ROADMAP.md).
 
@@ -52,7 +54,7 @@ Per-week, per-engineer task list lives in [`ROADMAP.md`](ROADMAP.md).
 └──────────────────────┘         └──────────────────────────────────┘
 ```
 
-### Two-stage pipeline (PlantVision 1.1)
+### Two-stage pipeline (PlantVision 1.2)
 
 ```
 Full photo (any composition — hand, wall, background are fine)
@@ -235,7 +237,7 @@ the optional V2-S ensemble peer:
 8. Export `detector.pt`/`detector.onnx`, `classifier.pth`/`classifier.onnx`/
    `classifier_int8.onnx`, and `classes.json` (the notebook regenerates
    `classes.json` with the alphabetical class list, val accuracy
-   numbers and the PlantVision 1.1 model version).
+   numbers and the PlantVision 1.2 model version).
 
 Drop the model files into `server/models/` and restart the server — the
 pipeline auto-detects real vs demo mode and prefers ONNX INT8 when
