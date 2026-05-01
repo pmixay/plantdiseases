@@ -17,8 +17,13 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
+        // Default API base URL. Plain HTTP because the production
+        // uvicorn process listens on port 8000 with no TLS in front.
+        // When you put nginx / Let's Encrypt in front of the server,
+        // override this at build time:
+        //   ./gradlew :app:assembleDebug -PAPI_BASE_URL=https://api.example.com/
         val configuredApiBaseUrl = providers.gradleProperty("API_BASE_URL")
-            .orElse("https://78.17.40.155:8000/")
+            .orElse("http://78.17.40.155:8000/")
             .get()
             .let { if (it.endsWith("/")) it else "$it/" }
             .replace("\\", "\\\\")
