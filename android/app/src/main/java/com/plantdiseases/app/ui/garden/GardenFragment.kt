@@ -447,6 +447,10 @@ class GardenFragment : Fragment() {
                 name.first.error = getString(R.string.plant_name_required)
                 return@setOnClickListener
             }
+            // Dismiss before the coroutine so the keyboard fully hides
+            // during the IO suspend — otherwise root is still shrunk when
+            // renderPlants() runs and Gravity.BOTTOM places the FAB wrong.
+            dialog.dismiss()
             lifecycleScope.launch {
                 plantRepository.savePlant(
                     plantName,
@@ -454,7 +458,6 @@ class GardenFragment : Fragment() {
                     nickname.second.text?.toString(),
                     existing,
                 )
-                dialog.dismiss()
                 loadPlants()
             }
         }
