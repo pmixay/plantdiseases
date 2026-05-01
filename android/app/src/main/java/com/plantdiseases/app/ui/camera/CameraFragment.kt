@@ -102,7 +102,14 @@ class CameraFragment : Fragment() {
 
     private fun setupUI() {
         binding.btnCapture.setOnClickListener { takePhoto(auto = false) }
-        binding.btnGallery.setOnClickListener { galleryLauncher.launch("image/*") }
+        binding.btnGallery.setOnClickListener {
+            // Freeze auto-capture while the gallery picker is alive AND
+            // until either the user returns with an image (we navigate
+            // away) or cancels (we re-arm in onResume).
+            autoCaptureInFlight = true
+            greenStableSince = 0L
+            galleryLauncher.launch("image/*")
+        }
         binding.btnFlash.setOnClickListener { toggleFlash() }
         binding.btnGrantPermission.setOnClickListener {
             permissionLauncher.launch(Manifest.permission.CAMERA)
@@ -414,6 +421,13 @@ class CameraFragment : Fragment() {
     }
 
     private fun navigateToAnalysis(imagePath: String) {
+        // Freeze auto-capture the moment we know we're leaving —
+        // startActivity() is async and the analyzer keeps producing
+        // frames until AnalysisActivity is RESUMED. Without this a
+        // gallery-selected image could race with a stale auto-capture
+        // shutter call, double-firing the analysis flow.
+        autoCaptureInFlight = true
+        greenStableSince = 0L
         val intent = Intent(requireContext(), AnalysisActivity::class.java).apply {
             putExtra(AnalysisActivity.EXTRA_IMAGE_PATH, imagePath)
         }
@@ -508,10 +522,15 @@ class CameraFragment : Fragment() {
     }
 
     companion object {
-        private const val AUTO_CAPTURE_HOLD_MS = 1500L
-        // Empirically tuned against the Laplacian variance computed on
-        // the 160-px green-channel grid: hand-held indoor shots score
-        // 200+, severely blurred ones score below 60.
-        private const val MIN_SHARPNESS = 120.0
+        // Hold time before auto-capture fires. Bumped from 1.5 s to
+        // 2.0 s so the user has to actually compose the shot — a
+        // glance across a green object no longer triggers it.
+        private const val AUTO_CAPTURE_HOLD_MS = 2000L
+        // Sharpness floor on the global green-channel Laplacian
+        // variance. Hand-held indoor shots of plants score 200+,
+        // severely blurred ones below 60. Raised from 120 to 220 so
+        // smooth-textured greens (a wall, a couch fabric) get
+        // rejected even when the analyzer is otherwise convinced.
+        private const val MIN_SHARPNESS = 220.0
     }
 }
