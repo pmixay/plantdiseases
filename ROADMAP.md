@@ -61,6 +61,16 @@ on-screen accuracy.
 - Runtime server switching has been removed from the app. Server endpoint
   is a build parameter with production default
   `https://78.17.40.155:8000/`.
+- Garden / journal polish: long-press a plant card to edit or delete the
+  plant (journal cascades, scans unlink); long-press a journal entry to
+  edit text or delete it. Plant card row layout fixed so name/species/last
+  scan no longer collapse against the icon. The fragment-level FAB is the
+  single Add-plant entry point; old toolbar / empty-state "Add plant"
+  affordances are removed.
+- UX polish (commit `bfd1d54`): add/edit plant dialog has a green gradient
+  header with icon + subtitle; language switcher moved from toolbar menu
+  to Profile screen; brighter green gradients shared across garden hero /
+  toolbar / primary buttons.
 - CI remains the build verification path for Android. Local Windows SDK
   setup is not treated as a blocker for feature work.
 - Main blockers before demo-quality release: run the Colab training job,
