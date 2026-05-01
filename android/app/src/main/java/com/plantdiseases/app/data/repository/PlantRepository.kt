@@ -109,6 +109,12 @@ class PlantRepository(
         journalDao.deleteById(id)
     }
 
+    suspend fun updateJournalEntryText(id: Long, text: String?) = withContext(Dispatchers.IO) {
+        val existing = journalDao.getById(id) ?: return@withContext
+        val cleaned = text?.trim()?.takeIf { it.isNotEmpty() }
+        journalDao.update(existing.copy(text = cleaned))
+    }
+
     data class PlantSummary(
         val plant: PlantEntity,
         val scanCount: Int,

@@ -12,7 +12,9 @@ import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.PopupMenu
 import android.widget.TextView
+import android.widget.Toast
 import androidx.core.view.setPadding
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
@@ -242,6 +244,7 @@ class GardenFragment : Fragment() {
             strokeColor = requireContext().getColor(R.color.card_stroke)
             setCardBackgroundColor(requireContext().getColor(R.color.surface))
             isClickable = true
+            isLongClickable = true
             foreground = typedSelectable()
             setOnClickListener {
                 Haptics.tick(requireContext())
@@ -250,12 +253,21 @@ class GardenFragment : Fragment() {
                         .putExtra(PlantDetailActivity.EXTRA_PLANT_ID, plant.id)
                 )
             }
+            setOnLongClickListener { anchor ->
+                Haptics.medium(requireContext())
+                showPlantContextMenu(anchor, plant)
+                true
+            }
         }
 
         val row = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(16.dp())
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+            )
         }
         val iconWrap = FrameLayout(requireContext()).apply {
             setBackgroundResource(R.drawable.bg_icon_circle)
@@ -323,6 +335,45 @@ class GardenFragment : Fragment() {
         row.addView(edit)
         card.addView(row)
         return card
+    }
+
+    private fun showPlantContextMenu(anchor: View, plant: PlantEntity) {
+        PopupMenu(requireContext(), anchor).apply {
+            menu.add(0, 1, 0, getString(R.string.edit_plant))
+            menu.add(0, 2, 1, getString(R.string.delete_plant))
+            setOnMenuItemClickListener { item ->
+                when (item.itemId) {
+                    1 -> {
+                        showPlantDialog(plant); true
+                    }
+                    2 -> {
+                        confirmDeletePlant(plant); true
+                    }
+                    else -> false
+                }
+            }
+            show()
+        }
+    }
+
+    private fun confirmDeletePlant(plant: PlantEntity) {
+        val title = plant.nickname?.takeIf { it.isNotBlank() } ?: plant.name
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(title)
+            .setMessage(R.string.delete_plant_confirm)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.delete) { _, _ ->
+                lifecycleScope.launch {
+                    plantRepository.deletePlant(plant.id)
+                    Toast.makeText(
+                        requireContext(),
+                        R.string.plant_deleted,
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                    loadPlants()
+                }
+            }
+            .show()
     }
 
     private fun showPlantDialog(existing: PlantEntity?) {

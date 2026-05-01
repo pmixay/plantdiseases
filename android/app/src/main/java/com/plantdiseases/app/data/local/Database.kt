@@ -135,8 +135,14 @@ interface PlantJournalDao {
     @Query("SELECT * FROM plant_journal WHERE plant_id = :plantId ORDER BY timestamp DESC")
     suspend fun getEntriesForPlant(plantId: Long): List<PlantJournalEntity>
 
+    @Query("SELECT * FROM plant_journal WHERE id = :id")
+    suspend fun getById(id: Long): PlantJournalEntity?
+
     @Insert
     suspend fun insert(entry: PlantJournalEntity): Long
+
+    @Update
+    suspend fun update(entry: PlantJournalEntity)
 
     @Query("DELETE FROM plant_journal WHERE id = :id")
     suspend fun deleteById(id: Long)

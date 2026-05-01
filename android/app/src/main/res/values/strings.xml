@@ -242,4 +242,12 @@
     <string name="scan_added_to_garden">Scan added to garden</string>
     <string name="change_language">Change</string>
     <string name="language_hint">Switch between English and Russian.</string>
+    <string name="delete_plant">Delete plant</string>
+    <string name="delete_plant_confirm">Delete this plant? Journal entries will be removed too. Scans will be unlinked.</string>
+    <string name="plant_deleted">Plant deleted</string>
+    <string name="delete_entry">Delete entry</string>
+    <string name="delete_entry_confirm">Delete this journal entry? This cannot be undone.</string>
+    <string name="entry_deleted">Entry deleted</string>
+    <string name="edit_entry">Edit entry</string>
+    <string name="entry_updated">Entry updated</string>
 </resources>

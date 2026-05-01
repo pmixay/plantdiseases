@@ -11,7 +11,9 @@ import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.PopupMenu
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.setPadding
@@ -446,7 +448,96 @@ class PlantDetailActivity : AppCompatActivity() {
         }
         row.addView(text)
         card.addView(row)
+        card.isLongClickable = true
+        card.setOnLongClickListener { anchor ->
+            Haptics.medium(this)
+            showJournalContextMenu(anchor, entry)
+            true
+        }
         return card
+    }
+
+    private fun showJournalContextMenu(anchor: View, entry: PlantJournalEntity) {
+        PopupMenu(this, anchor).apply {
+            menu.add(0, 1, 0, getString(R.string.edit_entry))
+            menu.add(0, 2, 1, getString(R.string.delete_entry))
+            setOnMenuItemClickListener { item ->
+                when (item.itemId) {
+                    1 -> {
+                        showEditJournalDialog(entry); true
+                    }
+                    2 -> {
+                        confirmDeleteJournalEntry(entry); true
+                    }
+                    else -> false
+                }
+            }
+            show()
+        }
+    }
+
+    private fun showEditJournalDialog(entry: PlantJournalEntity) {
+        val type = PlantRepository.JournalType.from(entry.type)
+        val hintRes = when (type) {
+            PlantRepository.JournalType.NOTE -> R.string.note_hint
+            PlantRepository.JournalType.WATERING -> R.string.watering_hint
+            PlantRepository.JournalType.PHOTO -> R.string.photo_caption_hint
+        }
+        val allowEmpty = type != PlantRepository.JournalType.NOTE
+
+        val input = TextInputEditText(this).apply {
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            minLines = 3
+            maxLines = 6
+            setText(entry.text.orEmpty())
+        }
+        val inputLayout = TextInputLayout(this).apply {
+            hint = getString(hintRes)
+            addView(input)
+            setPadding(0, 8.dp(), 0, 0)
+        }
+        val dialog = MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.edit_entry)
+            .setView(inputLayout)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.save, null)
+            .show()
+        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val text = input.text?.toString()?.trim().orEmpty()
+            if (!allowEmpty && text.isEmpty()) {
+                inputLayout.error = getString(R.string.journal_text_required)
+                return@setOnClickListener
+            }
+            lifecycleScope.launch {
+                plantRepository.updateJournalEntryText(entry.id, text)
+                Toast.makeText(
+                    this@PlantDetailActivity,
+                    R.string.entry_updated,
+                    Toast.LENGTH_SHORT,
+                ).show()
+                loadPlant()
+            }
+            dialog.dismiss()
+        }
+    }
+
+    private fun confirmDeleteJournalEntry(entry: PlantJournalEntity) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.delete_entry)
+            .setMessage(R.string.delete_entry_confirm)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.delete) { _, _ ->
+                lifecycleScope.launch {
+                    plantRepository.deleteJournalEntry(entry.id)
+                    Toast.makeText(
+                        this@PlantDetailActivity,
+                        R.string.entry_deleted,
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                    loadPlant()
+                }
+            }
+            .show()
     }
 
     private fun baseCard(): MaterialCardView = MaterialCardView(this).apply {
