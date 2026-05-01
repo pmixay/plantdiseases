@@ -1,8 +1,9 @@
 # Deployment Guide
 
 Production deployment notes for the PlantDiseases FastAPI server. The
-Android client needs no server-side change — point it at the public URL
-through **Profile → Server URL**.
+Android client takes the API base URL at build time through the Gradle
+`API_BASE_URL` property, so a release APK is pinned to the production
+endpoint and there is no in-app picker.
 
 Code paths and env var names below match `server/main.py`, `server/Dockerfile`
 and `server/docker-compose.yml`.

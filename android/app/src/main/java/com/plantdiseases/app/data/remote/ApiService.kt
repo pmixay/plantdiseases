@@ -1,12 +1,10 @@
 package com.plantdiseases.app.data.remote
 
-import android.content.Context
 import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.data.model.AnalysisResponse
 import com.plantdiseases.app.data.model.ChatRequest
 import com.plantdiseases.app.data.model.ChatResponse
 import com.plantdiseases.app.data.model.HealthResponse
-import com.plantdiseases.app.util.ServerConfig
 import okhttp3.Interceptor
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
@@ -27,7 +25,7 @@ interface ApiService {
     @Multipart
     @POST("api/analyze")
     suspend fun analyzeImage(
-        @Part image: MultipartBody.Part
+        @Part image: MultipartBody.Part,
     ): retrofit2.Response<AnalysisResponse>
 
     @GET("api/health")
@@ -45,7 +43,7 @@ interface ApiService {
 class RetryInterceptor(
     private val maxRetries: Int = 3,
     private val initialDelayMs: Long = 1000,
-    private val maxDelayMs: Long = 8000
+    private val maxDelayMs: Long = 8000,
 ) : Interceptor {
 
     @Throws(IOException::class)
@@ -98,8 +96,8 @@ class RetryInterceptor(
     }
 }
 
-/** Retrofit client using the build-time API base URL. */
-class PlantApiClient(private val context: Context) {
+/** Retrofit client backed by the build-time API base URL. */
+class PlantApiClient {
 
     private val client: OkHttpClient = run {
         val logging = HttpLoggingInterceptor().apply {
@@ -119,14 +117,11 @@ class PlantApiClient(private val context: Context) {
     }
 
     val apiService: ApiService by lazy {
-        buildService(ServerConfig.getBaseUrl(context))
-    }
-
-    private fun buildService(baseUrl: String): ApiService =
         Retrofit.Builder()
-            .baseUrl(baseUrl)
+            .baseUrl(BuildConfig.API_BASE_URL)
             .client(client)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
             .create(ApiService::class.java)
+    }
 }

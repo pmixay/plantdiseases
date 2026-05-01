@@ -39,9 +39,7 @@
     <string name="status_disease">Disease Detected</string>
     <string name="status_not_a_plant">Not a Plant</string>
     <string name="not_a_plant_diagnosis_name">Not a plant in frame</string>
-    <string name="not_a_plant_result_title">This doesn\'t look like a plant</string>
     <string name="not_a_plant_result_body">The model couldn\'t find a plant leaf in this photo. Try retaking the picture so the leaf fills most of the frame, with steady hands and good lighting.</string>
-    <string name="not_a_plant_retry_hint">Tip: get closer to a single leaf on a plain background.</string>
     <string name="description_label">Description</string>
     <string name="treatment_label">Treatment</string>
     <string name="prevention_label">Prevention</string>
@@ -130,22 +128,6 @@
     <string name="no_network">No Internet Connection</string>
     <string name="no_network_detail">Check your network connection and try again.</string>
     <string name="offline_banner">No internet connection</string>
-    <string name="offline_analysis_title">Running offline check</string>
-    <string name="offline_analysis_detail">Trying the on-device model, then a visual fallback.</string>
-    <string name="offline_healthy_description">Offline check found mostly green tissue and no strong brown high-contrast damage pattern. This is a rough visual estimate for testing the app when the server is unavailable.</string>
-    <string name="offline_healthy_description_ru">Локальная проверка видит в основном зелёные участки и не находит выраженного коричневого контрастного повреждения. Это примерная оценка для тестирования приложения без сервера.</string>
-    <string name="offline_disease_description">Offline check found a noticeable brown or dark high-contrast pattern compared with the green area. This is not a medical diagnosis; it only helps preview the result UI without the server.</string>
-    <string name="offline_disease_description_ru">Локальная проверка нашла заметный коричневый или тёмный контрастный рисунок на фоне зелёных участков. Это не настоящий диагноз, а режим для просмотра экрана результата без сервера.</string>
-    <string name="offline_disease_treatment_1">Isolate the plant from others until a real scan is available.</string>
-    <string name="offline_disease_treatment_1_ru">Изолируйте растение от других до настоящего анализа.</string>
-    <string name="offline_disease_treatment_2">Remove heavily damaged leaves with clean tools.</string>
-    <string name="offline_disease_treatment_2_ru">Удалите сильно повреждённые листья чистым инструментом.</string>
-    <string name="offline_disease_treatment_3">Avoid overwatering and improve airflow around the plant.</string>
-    <string name="offline_disease_treatment_3_ru">Не переливайте растение и улучшите циркуляцию воздуха.</string>
-    <string name="offline_prevention_1">Retake a server-backed scan when the API is online.</string>
-    <string name="offline_prevention_1_ru">Повторите анализ через сервер, когда API будет доступен.</string>
-    <string name="offline_prevention_2">Use steady light and frame one clear leaf for better results.</string>
-    <string name="offline_prevention_2_ru">Снимайте один чёткий лист при ровном освещении для более точного результата.</string>
 
     <!-- Server status -->
     <string name="server_status">Server Status</string>
@@ -168,9 +150,9 @@
     <string name="model_pipeline">Pipeline</string>
     <string name="model_arch_value">YOLOv8n + EfficientNet-B0</string>
     <string name="model_params_value">~8M total</string>
-    <string name="model_classes_value">7 diseases + healthy + not-a-plant</string>
+    <string name="model_classes_value">8 diseases + healthy + not-a-plant</string>
     <string name="model_pipeline_value">Two-stage: locate → classify</string>
-    <string name="model_description">Stage 1 (YOLOv8n) locates every leaf in the photo. Stage 2 (EfficientNet-B0 @ 240 px) classifies the cropped leaf region into one of 7 houseplant diseases or healthy, and rejects frames without a plant via a dedicated not-a-plant class plus an MSP/OOD gate.</string>
+    <string name="model_description">Stage 1 (YOLOv8n) locates every leaf in the photo. Stage 2 (EfficientNet-B0 @ 240 px) classifies the cropped leaf region into one of 8 houseplant diseases or healthy, and rejects frames without a plant via a dedicated not-a-plant class plus an MSP/OOD gate.</string>
 
     <!-- Rate limit -->
     <string name="server_busy">Server Busy</string>
@@ -282,12 +264,12 @@
     <string name="reminder_subtitle">Set care schedules for this plant</string>
     <!-- Doctor Chat -->
     <string name="doctor_title">AI Plant Doctor</string>
-    <string name="doctor_subtitle">Local care assistant stub</string>
-    <string name="doctor_stub_subtitle">Saved chat, ready for server AI later</string>
+    <string name="doctor_stub_subtitle">Ask the AI about this plant — replies need a server connection</string>
     <string name="doctor_hint">Ask about symptoms, care, treatment…</string>
     <string name="doctor_send">Send</string>
     <string name="doctor_thinking">Thinking…</string>
-    <string name="doctor_offline">Server is offline. Check your connection.</string>
+    <string name="doctor_offline">Server is offline. Check your connection and try again.</string>
+    <string name="doctor_unavailable">The AI Plant Doctor is unavailable right now. Try again later.</string>
     <string name="doctor_q1">Is this disease spreading to other plants?</string>
     <string name="doctor_q2">What caused this? How to prevent recurrence?</string>
     <string name="doctor_q3">What\'s the fastest home treatment?</string>
