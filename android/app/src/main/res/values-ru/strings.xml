@@ -270,7 +270,8 @@
     <string name="reminder_subtitle">Настройте расписание ухода</string>
     <!-- Doctor Chat -->
     <string name="doctor_title">ИИ-врач растений</string>
-    <string name="doctor_subtitle">Задайте любой вопрос о здоровье растения</string>
+    <string name="doctor_subtitle">Локальная заглушка ассистента по уходу</string>
+    <string name="doctor_stub_subtitle">Чат сохраняется и готов к серверному ИИ</string>
     <string name="doctor_hint">Симптомы, уход, лечение…</string>
     <string name="doctor_send">Отправить</string>
     <string name="doctor_thinking">Думаю…</string>

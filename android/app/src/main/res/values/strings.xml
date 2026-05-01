@@ -266,7 +266,8 @@
     <string name="reminder_subtitle">Set care schedules for this plant</string>
     <!-- Doctor Chat -->
     <string name="doctor_title">AI Plant Doctor</string>
-    <string name="doctor_subtitle">Ask anything about your plant\'s health</string>
+    <string name="doctor_subtitle">Local care assistant stub</string>
+    <string name="doctor_stub_subtitle">Saved chat, ready for server AI later</string>
     <string name="doctor_hint">Ask about symptoms, care, treatment…</string>
     <string name="doctor_send">Send</string>
     <string name="doctor_thinking">Thinking…</string>

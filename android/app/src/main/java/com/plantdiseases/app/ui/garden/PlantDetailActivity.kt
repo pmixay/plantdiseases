@@ -169,6 +169,7 @@ class PlantDetailActivity : AppCompatActivity() {
         toolbarTitle.text = plant.nickname?.takeIf { it.isNotBlank() } ?: plant.name
         content.addView(buildHeader(plant, scans, journal))
         content.addView(buildActionRow())
+        content.addView(buildDoctorEntry(plant, scans))
         content.addView(buildTabs())
 
         timelineContainer = LinearLayout(this).apply {
@@ -332,6 +333,73 @@ class PlantDetailActivity : AppCompatActivity() {
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT,
                     ).apply { topMargin = 5.dp() }
+                })
+            })
+        }
+
+    private fun buildDoctorEntry(plant: PlantEntity, scans: List<ScanEntity>): View =
+        MaterialCardView(this).apply {
+            radius = 18.dp().toFloat()
+            cardElevation = 0f
+            strokeWidth = 1.dp()
+            strokeColor = getColor(R.color.card_stroke)
+            setCardBackgroundColor(getColor(R.color.surface))
+            isClickable = true
+            foreground = selectable()
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = 10.dp() }
+            setOnClickListener {
+                Haptics.tick(this@PlantDetailActivity)
+                DoctorChatSheet.show(
+                    supportFragmentManager,
+                    plant,
+                    scans.maxByOrNull { it.timestamp }?.diseaseName,
+                )
+            }
+            addView(LinearLayout(this@PlantDetailActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(14.dp(), 12.dp(), 14.dp(), 12.dp())
+                addView(FrameLayout(this@PlantDetailActivity).apply {
+                    setBackgroundResource(R.drawable.bg_icon_circle)
+                    layoutParams = LinearLayout.LayoutParams(42.dp(), 42.dp())
+                    addView(ImageView(this@PlantDetailActivity).apply {
+                        setImageResource(R.drawable.ic_care)
+                        setColorFilter(getColor(R.color.primary))
+                        layoutParams = FrameLayout.LayoutParams(23.dp(), 23.dp(), Gravity.CENTER)
+                    })
+                })
+                addView(LinearLayout(this@PlantDetailActivity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                        .apply { marginStart = 12.dp() }
+                    addView(TextView(this@PlantDetailActivity).apply {
+                        text = getString(R.string.doctor_title)
+                        textSize = 15f
+                        setTextColor(getColor(R.color.on_surface))
+                        typeface = android.graphics.Typeface.create(
+                            "sans-serif-medium",
+                            android.graphics.Typeface.NORMAL,
+                        )
+                    })
+                    addView(TextView(this@PlantDetailActivity).apply {
+                        text = getString(R.string.doctor_stub_subtitle)
+                        textSize = 12f
+                        setTextColor(getColor(R.color.on_surface_secondary))
+                        maxLines = 1
+                        ellipsize = android.text.TextUtils.TruncateAt.END
+                        layoutParams = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                        ).apply { topMargin = 2.dp() }
+                    })
+                })
+                addView(ImageView(this@PlantDetailActivity).apply {
+                    setImageResource(R.drawable.ic_chevron_right)
+                    setColorFilter(getColor(R.color.on_surface_secondary))
+                    layoutParams = LinearLayout.LayoutParams(22.dp(), 22.dp())
                 })
             })
         }

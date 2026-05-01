@@ -42,12 +42,12 @@ on-screen accuracy.
 | Disease detection           | demo     | trained      |
 | Plant species ID            | —        | yes (PlantNet) |
 | My Garden / per-plant log   | yes      | yes          |
-| Care reminders + push       | —        | yes          |
-| AI Plant Doctor chat        | —        | yes (Claude Haiku) |
-| Light meter                 | —        | yes          |
-| Severity scoring            | —        | yes          |
+| Care reminders + push       | local WorkManager | yes          |
+| AI Plant Doctor chat        | local stub shell | yes (Claude Haiku) |
+| Light meter                 | sensor + camera fallback | yes          |
+| Severity scoring            | server code ready | yes          |
 | Disease progression chart   | —        | yes          |
-| Real-time framing + auto-capture | —   | yes          |
+| Real-time framing + auto-capture | yes | yes          |
 | Offline on-device inference | —        | yes (TFLite) |
 | Bilingual EN/RU             | yes      | yes (kept)   |
 
@@ -75,8 +75,10 @@ on-screen accuracy.
   reminders use WorkManager notification jobs with editable interval/time;
   Light Meter measures ambient-light sensor lux with CameraX luminance
   fallback; result screen has a TTS read-aloud toggle. Android AI Doctor
-  chat is intentionally not exposed in UI for this pass per product
-  direction; server `/api/chat` remains a later integration option.
+  is exposed as a local stub bottom sheet: conversation UI, simple
+  Markdown rendering, suggested follow-up chips, and per-plant Room
+  persistence are wired; the single reply generator is isolated so it can
+  be swapped to server `/api/chat` later.
 - CI remains the build verification path for Android. Local Windows SDK
   setup is not treated as a blocker for feature work.
 - Main blockers before demo-quality release: run the Colab training job,
@@ -196,9 +198,11 @@ on-screen accuracy.
 - [x] WorkManager + FCM-free local notifications for per-plant reminders;
       editable interval/time schedule UI. Runtime notification permission
       is requested on Android 13+.
-- [ ] AI Plant Doctor chat: bottom-sheet conversation, Markdown rendering,
-      suggested follow-up questions, persisted per plant.
-      *(Deferred on Android UI in this pass; do not expose until prompt /
+- [x] AI Plant Doctor chat shell: bottom-sheet conversation, simple
+      Markdown rendering, suggested follow-up questions, persisted per
+      plant.
+      *(Current reply source is a local placeholder; replace
+      `buildLocalDoctorReply` with server `/api/chat` when prompt /
       endpoint contract is finalized.)*
 - [x] Light meter: ambient-light sensor + camera luminance fallback,
       lux estimation, recommendation vs species ideal.

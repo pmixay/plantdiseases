@@ -27,8 +27,6 @@ import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.ChatMessageEntity
 import com.plantdiseases.app.data.local.PlantEntity
-import com.plantdiseases.app.data.model.ChatContext
-import com.plantdiseases.app.data.model.ChatRequest
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.launch
@@ -243,7 +241,6 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
         suggestionsContainer.visibility = View.GONE
 
         val repo = (requireActivity().application as PlantDiseasesApp).plantRepository
-        val app = requireActivity().application as PlantDiseasesApp
         val isRu = LocaleHelper.isRussian(requireContext())
         val now = System.currentTimeMillis()
 
@@ -266,24 +263,7 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
                 ChatMessageEntity(plantId = plant.id, role = "user", content = text, timestamp = now)
             )
 
-            val reply: String = try {
-                val request = ChatRequest(
-                    sessionId = "plant_${plant.id}",
-                    message = text,
-                    context = ChatContext(
-                        disease = latestDisease,
-                        plantName = plant.name,
-                    ),
-                )
-                val response = app.apiClient.apiService.chat(request)
-                if (response.isSuccessful) {
-                    response.body()?.reply ?: getString(R.string.doctor_offline)
-                } else {
-                    getString(R.string.doctor_offline)
-                }
-            } catch (e: Exception) {
-                getString(R.string.doctor_offline)
-            }
+            val reply = buildLocalDoctorReply(text, isRu)
 
             // Remove thinking bubble
             thinkingView?.let { messagesLayout.removeView(it) }
@@ -293,11 +273,56 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
             addMessageBubble("bot", reply, replyTime)
             scrollToBottom()
 
-            // Persist bot reply (don't persist error messages)
-            if (reply != getString(R.string.doctor_offline)) {
-                repo.saveChatMessage(
-                    ChatMessageEntity(plantId = plant.id, role = "bot", content = reply, timestamp = replyTime)
-                )
+            repo.saveChatMessage(
+                ChatMessageEntity(plantId = plant.id, role = "bot", content = reply, timestamp = replyTime)
+            )
+        }
+    }
+
+    /**
+     * Local placeholder for the future server-backed assistant.
+     *
+     * To connect the real AI later, replace this method with the existing
+     * Retrofit `/api/chat` request using `sessionId = "plant_${plant.id}"`,
+     * `message = userMessage`, and context fields below. The bottom sheet,
+     * Markdown rendering, follow-up chips, and Room persistence are already
+     * wired around this single reply-producing boundary.
+     */
+    private fun buildLocalDoctorReply(userMessage: String, isRu: Boolean): String {
+        val displayName = plant.nickname?.takeIf { it.isNotBlank() } ?: plant.name
+        val species = plant.species?.takeIf { it.isNotBlank() }
+        val disease = latestDisease?.takeIf { it.isNotBlank() }
+        val topic = userMessage.take(120)
+
+        return if (isRu) {
+            buildString {
+                append("**Заглушка Plant Doctor.** Я пока работаю без серверного ИИ, но уже сохраняю диалог для растения **")
+                append(displayName)
+                append("**.\n\n")
+                append("**Контекст:** ")
+                append(species ?: "вид не указан")
+                disease?.let { append(", последний диагноз: ").append(it) }
+                append(".\n\n")
+                append("По вопросу: \"").append(topic).append("\".\n")
+                append("1. Проверьте новые пятна, влажность почвы и освещение.\n")
+                append("2. Сравните состояние с последним сканом в Timeline.\n")
+                append("3. Если симптомы усиливаются, сделайте новый скан и добавьте заметку в журнал.\n\n")
+                append("Позже этот ответ будет заменён серверным `/api/chat`, без переделки UI.")
+            }
+        } else {
+            buildString {
+                append("**Plant Doctor placeholder.** I am running locally for now, but this chat is already persisted for **")
+                append(displayName)
+                append("**.\n\n")
+                append("**Context:** ")
+                append(species ?: "species not set")
+                disease?.let { append(", latest diagnosis: ").append(it) }
+                append(".\n\n")
+                append("For: \"").append(topic).append("\".\n")
+                append("1. Check new spots, soil moisture, and current light.\n")
+                append("2. Compare changes against the latest scan in Timeline.\n")
+                append("3. If symptoms progress, take a fresh scan and add a journal note.\n\n")
+                append("Later this reply can be replaced by server `/api/chat` without changing the UI.")
             }
         }
     }
