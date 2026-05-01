@@ -41,15 +41,21 @@ class PlantRepository(
         species: String?,
         nickname: String?,
         existing: PlantEntity? = null,
+        scientificName: String? = null,
+        commonName: String? = null,
     ): Long = withContext(Dispatchers.IO) {
         val cleanSpecies = species?.trim()?.takeIf { it.isNotEmpty() }
         val cleanNickname = nickname?.trim()?.takeIf { it.isNotEmpty() }
+        val cleanScientific = scientificName?.trim()?.takeIf { it.isNotEmpty() }
+        val cleanCommon = commonName?.trim()?.takeIf { it.isNotEmpty() }
         if (existing == null) {
             plantDao.insert(
                 PlantEntity(
                     name = name.trim(),
                     species = cleanSpecies,
                     nickname = cleanNickname,
+                    scientificName = cleanScientific,
+                    commonName = cleanCommon,
                 )
             )
         } else {
@@ -58,6 +64,11 @@ class PlantRepository(
                     name = name.trim(),
                     species = cleanSpecies,
                     nickname = cleanNickname,
+                    // Preserve previously-stored canonical names when the
+                    // caller didn't pass new values (edit dialog without a
+                    // re-identification step).
+                    scientificName = cleanScientific ?: existing.scientificName,
+                    commonName = cleanCommon ?: existing.commonName,
                 )
             )
             existing.id

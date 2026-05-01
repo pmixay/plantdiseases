@@ -28,6 +28,7 @@ import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.PlantEntity
 import com.plantdiseases.app.data.local.PlantReminderEntity
+import com.plantdiseases.app.data.model.CarePlanResponse
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ReminderManager
 import com.plantdiseases.app.worker.PlantReminderWorker
@@ -37,6 +38,12 @@ class ReminderScheduleSheet : BottomSheetDialogFragment() {
 
     private lateinit var plant: PlantEntity
     private var pendingSaveAfterPermission = false
+    /**
+     * Optional care-plan defaults supplied by the caller. Applied once,
+     * after Room reminders load, only for rows the user hasn't already
+     * customised — manual edits always win over server suggestions.
+     */
+    private var carePlanDefaults: CarePlanResponse? = null
 
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -317,6 +324,7 @@ class ReminderScheduleSheet : BottomSheetDialogFragment() {
         val repo = (requireActivity().application as PlantDiseasesApp).plantRepository
         lifecycleScope.launch {
             val reminders = repo.getReminders(plant.id)
+            val customisedTypes = mutableSetOf<String>()
             reminders.forEach { r ->
                 val row = when (r.type) {
                     PlantReminderWorker.TYPE_WATERING -> waterRow
@@ -330,8 +338,51 @@ class ReminderScheduleSheet : BottomSheetDialogFragment() {
                 row.minutePicker.value = (r.minute / 15).coerceIn(0, 3)
                 row.refreshLabels()
                 row.intervalRow.visibility = if (r.enabled) View.VISIBLE else View.GONE
+                customisedTypes += r.type
+            }
+            applyCarePlanDefaults(customisedTypes)
+        }
+    }
+
+    /**
+     * Care-plan-driven defaults. Only fills in rows the user hasn't already
+     * saved a custom value for — saved reminders always take priority.
+     *
+     *  - watering:  `wateringDaysInt` if numeric, else leave the row alone
+     *               (the server's `as_needed` cadence is intentionally not
+     *               translated into a fixed reminder).
+     *  - fertilise: `fertiliseWeeks * 7` days.
+     *  - check:     half the watering cadence, capped to [3, 14] days, so
+     *               diseased plants get a sane health-check rhythm out of
+     *               the box.
+     */
+    private fun applyCarePlanDefaults(alreadyCustomised: Set<String>) {
+        val plan = carePlanDefaults ?: return
+
+        if (PlantReminderWorker.TYPE_WATERING !in alreadyCustomised) {
+            plan.wateringDaysInt?.let { days ->
+                waterRow.picker.value = days.coerceIn(waterRow.picker.minValue, waterRow.picker.maxValue)
+                waterRow.switch.isChecked = true
+                waterRow.intervalRow.visibility = View.VISIBLE
             }
         }
+        if (PlantReminderWorker.TYPE_FERTILIZE !in alreadyCustomised && plan.fertiliseWeeks > 0) {
+            val days = (plan.fertiliseWeeks * 7)
+                .coerceIn(fertilizeRow.picker.minValue, fertilizeRow.picker.maxValue)
+            fertilizeRow.picker.value = days
+            fertilizeRow.switch.isChecked = true
+            fertilizeRow.intervalRow.visibility = View.VISIBLE
+        }
+        if (PlantReminderWorker.TYPE_CHECK !in alreadyCustomised) {
+            val baseDays = plan.wateringDaysInt ?: 7
+            val checkDays = (baseDays / 2).coerceIn(3, 14)
+            checkRow.picker.value = checkDays.coerceIn(
+                checkRow.picker.minValue, checkRow.picker.maxValue
+            )
+            checkRow.switch.isChecked = true
+            checkRow.intervalRow.visibility = View.VISIBLE
+        }
+        listOf(waterRow, checkRow, fertilizeRow).forEach { it.refreshLabels() }
     }
 
     private fun saveReminders() {
@@ -399,6 +450,24 @@ class ReminderScheduleSheet : BottomSheetDialogFragment() {
         fun show(fm: FragmentManager, plant: PlantEntity) {
             val sheet = ReminderScheduleSheet().apply {
                 this.plant = plant
+            }
+            sheet.show(fm, TAG)
+        }
+
+        /**
+         * Open the sheet pre-populated with care-plan defaults (watering /
+         * fertilising cadence, derived health-check interval). Existing saved
+         * reminders for the plant still win — defaults are only applied to
+         * the rows the user hasn't already customised.
+         */
+        fun showWithCarePlanDefaults(
+            fm: FragmentManager,
+            plant: PlantEntity,
+            plan: CarePlanResponse,
+        ) {
+            val sheet = ReminderScheduleSheet().apply {
+                this.plant = plant
+                this.carePlanDefaults = plan
             }
             sheet.show(fm, TAG)
         }

@@ -130,21 +130,21 @@
 
 ### P1 · Android
 
-- [ ] Wire Retrofit models and repository methods for `/api/identify`.
-- [ ] Add species suggestion flow to Add-to-Garden:
+- [x] Wire Retrofit models and repository methods for `/api/identify`.
+- [x] Add species suggestion flow to Add-to-Garden:
   - user can scan or reuse current result image;
   - app shows PlantNet suggestions;
   - user accepts one candidate or keeps manual text.
-- [ ] Store accepted `scientificName` and display/common name separately where possible.
-- [ ] Wire `/api/care-plan` into Plant detail and Result screen.
-- [ ] Add a Care Plan card:
+- [x] Store accepted `scientificName` and display/common name separately where possible.
+- [x] Wire `/api/care-plan` into Plant detail and Result screen.
+- [x] Add a Care Plan card:
   - watering;
   - light;
   - humidity;
   - fertilizing;
   - disease-specific warnings;
   - “generated for species / unknown species” label.
-- [ ] Make reminder creation use care-plan defaults when available.
+- [x] Make reminder creation use care-plan defaults when available.
 
 ---
 

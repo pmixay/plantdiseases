@@ -9,10 +9,19 @@ import androidx.room.*
 data class PlantEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     @ColumnInfo(name = "name") val name: String,
+    /**
+     * Free-text species (legacy field, kept for back-compat). When the user
+     * accepts a PlantNet suggestion this stays in sync with `commonName`
+     * for display, while the canonical Latin name lives in `scientificName`.
+     */
     @ColumnInfo(name = "species") val species: String? = null,
     @ColumnInfo(name = "nickname") val nickname: String? = null,
     @ColumnInfo(name = "icon_uri") val iconUri: String? = null,
     @ColumnInfo(name = "created_at") val createdAt: Long = System.currentTimeMillis(),
+    /** Latin / scientific name as returned by PlantNet (e.g. "Ficus elastica"). */
+    @ColumnInfo(name = "scientific_name") val scientificName: String? = null,
+    /** Localised common name (e.g. "Rubber Plant"). */
+    @ColumnInfo(name = "common_name") val commonName: String? = null,
 )
 
 @Entity(
@@ -234,7 +243,7 @@ interface PlantJournalDao {
         PlantReminderEntity::class,
         ChatMessageEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {

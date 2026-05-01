@@ -33,7 +33,9 @@ import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.PlantEntity
 import com.plantdiseases.app.data.local.PlantJournalEntity
 import com.plantdiseases.app.data.local.ScanEntity
+import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.repository.PlantRepository
+import com.plantdiseases.app.ui.common.CarePlanCardView
 import com.plantdiseases.app.ui.result.ResultActivity
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
@@ -169,6 +171,7 @@ class PlantDetailActivity : AppCompatActivity() {
         toolbarTitle.text = plant.nickname?.takeIf { it.isNotBlank() } ?: plant.name
         content.addView(buildHeader(plant, scans, journal))
         content.addView(buildActionRow())
+        content.addView(buildCarePlanSlot(plant, scans))
         content.addView(buildDoctorEntry(plant, scans))
         content.addView(buildTabs())
 
@@ -336,6 +339,74 @@ class PlantDetailActivity : AppCompatActivity() {
                 })
             })
         }
+
+    /**
+     * Care Plan slot. The card itself takes care of loading / error / filled
+     * states; we just construct it, place it under the action row, and kick
+     * off the network call.
+     */
+    private fun buildCarePlanSlot(plant: PlantEntity, scans: List<ScanEntity>): View {
+        val card = CarePlanCardView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = 12.dp() }
+        }
+
+        val speciesHint = plant.scientificName?.takeIf { it.isNotBlank() }
+            ?: plant.commonName?.takeIf { it.isNotBlank() }
+            ?: plant.species?.takeIf { it.isNotBlank() }
+        card.showLoading(speciesHint)
+
+        val latestScan = scans.maxByOrNull { it.timestamp }
+        val classKey = latestScan?.let { resolveClassKey(it) } ?: "unknown"
+        val isRu = LocaleHelper.isRussian(this)
+
+        lifecycleScope.launch {
+            val app = application as PlantDiseasesApp
+            val request = CarePlanRequest(
+                disease = classKey,
+                species = speciesHint,
+                light = "bright_indirect",
+                locale = if (isRu) "ru" else "en",
+            )
+            val result = app.scanRepository.fetchCarePlan(request)
+            result.onSuccess { plan ->
+                card.bind(
+                    plan = plan,
+                    speciesDisplay = speciesHint,
+                    showApplyToReminders = true,
+                    onApplyToReminders = { applied ->
+                        ReminderScheduleSheet.showWithCarePlanDefaults(
+                            supportFragmentManager, plant, applied,
+                        )
+                    },
+                )
+            }.onFailure {
+                card.showError(onRetry = {
+                    val replacement = buildCarePlanSlot(plant, scans)
+                    val idx = content.indexOfChild(card)
+                    if (idx >= 0) {
+                        content.removeViewAt(idx)
+                        content.addView(replacement, idx)
+                    }
+                })
+            }
+        }
+        return card
+    }
+
+    /**
+     * Best-effort: read the disease class key from the scan's stored top
+     * probability (canonical model class name like "powdery_mildew"); fall
+     * back to a normalised lowercase of the human-readable name.
+     */
+    private fun resolveClassKey(scan: ScanEntity): String {
+        val app = application as PlantDiseasesApp
+        return app.scanRepository.parseAllProbs(scan.allProbs)
+            .entries.maxByOrNull { it.value }?.key
+            ?: scan.diseaseName.lowercase().replace(' ', '_')
+    }
 
     private fun buildDoctorEntry(plant: PlantEntity, scans: List<ScanEntity>): View =
         MaterialCardView(this).apply {

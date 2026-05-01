@@ -328,4 +328,42 @@
     <string name="speak_read_aloud">Read aloud</string>
     <string name="speak_stop">Stop</string>
     <string name="speak_unavailable">Voice-over is not available for this language.</string>
+
+    <!-- Care Plan -->
+    <string name="care_plan_title">Care Plan</string>
+    <string name="care_plan_subtitle_species">Tailored for %s</string>
+    <string name="care_plan_subtitle_unknown">Generic plan — species not set</string>
+    <string name="care_plan_loading">Building your care plan…</string>
+    <string name="care_plan_unavailable">Care plan is unavailable. Tap retry to try again.</string>
+    <string name="care_plan_retry">Retry</string>
+    <string name="care_plan_watering">Watering</string>
+    <string name="care_plan_fertilising">Fertilising</string>
+    <string name="care_plan_humidity">Humidity</string>
+    <string name="care_plan_light">Light</string>
+    <string name="care_plan_disease_note">Disease note</string>
+    <string name="care_plan_watering_days">Every %d days</string>
+    <string name="care_plan_watering_as_needed">Only when soil dries out</string>
+    <string name="care_plan_fertilising_weeks">Every %d weeks</string>
+    <string name="care_plan_follow_up">Re-check in %d days</string>
+    <string name="care_plan_light_low">Low light</string>
+    <string name="care_plan_light_medium">Medium light</string>
+    <string name="care_plan_light_bright">Bright indirect</string>
+    <string name="care_plan_light_direct">Direct sun</string>
+    <string name="care_plan_use_for_reminders">Use as reminder defaults</string>
+    <string name="care_plan_reminders_applied">Care-plan defaults loaded</string>
+
+    <!-- Species suggestion (PlantNet) -->
+    <string name="species_suggest_title">Identify from photo</string>
+    <string name="species_suggest_hint">Use this scan to ask PlantNet for the most likely species.</string>
+    <string name="species_suggest_button">Suggest species</string>
+    <string name="species_suggest_loading">Asking PlantNet…</string>
+    <string name="species_suggest_unavailable_title">PlantNet unavailable</string>
+    <string name="species_suggest_unavailable_body">Quota or upstream issue. Add the species manually for now.</string>
+    <string name="species_suggest_pick">Use this species</string>
+    <string name="species_suggest_keep_manual">Keep manual entry</string>
+    <string name="species_suggest_match">%d%% match</string>
+    <string name="species_suggest_no_results">No confident matches found.</string>
+    <string name="species_suggest_unknown_name">Unnamed candidate</string>
+    <string name="species_scientific_label">Scientific name</string>
+    <string name="species_common_label">Common name</string>
 </resources>

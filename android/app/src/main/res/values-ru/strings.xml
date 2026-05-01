@@ -332,4 +332,42 @@
     <string name="speak_read_aloud">Озвучить</string>
     <string name="speak_stop">Стоп</string>
     <string name="speak_unavailable">Озвучивание недоступно для этого языка.</string>
+
+    <!-- Care Plan -->
+    <string name="care_plan_title">План ухода</string>
+    <string name="care_plan_subtitle_species">Подобрано для %s</string>
+    <string name="care_plan_subtitle_unknown">Общий план — вид не указан</string>
+    <string name="care_plan_loading">Готовим план ухода…</string>
+    <string name="care_plan_unavailable">План ухода недоступен. Нажмите «Повторить».</string>
+    <string name="care_plan_retry">Повторить</string>
+    <string name="care_plan_watering">Полив</string>
+    <string name="care_plan_fertilising">Подкормка</string>
+    <string name="care_plan_humidity">Влажность</string>
+    <string name="care_plan_light">Свет</string>
+    <string name="care_plan_disease_note">На случай болезни</string>
+    <string name="care_plan_watering_days">Раз в %d дн.</string>
+    <string name="care_plan_watering_as_needed">Только когда грунт подсохнет</string>
+    <string name="care_plan_fertilising_weeks">Раз в %d нед.</string>
+    <string name="care_plan_follow_up">Проверить через %d дн.</string>
+    <string name="care_plan_light_low">Слабое освещение</string>
+    <string name="care_plan_light_medium">Среднее освещение</string>
+    <string name="care_plan_light_bright">Яркое рассеянное</string>
+    <string name="care_plan_light_direct">Прямые лучи</string>
+    <string name="care_plan_use_for_reminders">Подставить в напоминания</string>
+    <string name="care_plan_reminders_applied">План ухода применён</string>
+
+    <!-- Species suggestion (PlantNet) -->
+    <string name="species_suggest_title">Определить по фото</string>
+    <string name="species_suggest_hint">Используем этот снимок, чтобы спросить PlantNet о наиболее вероятном виде.</string>
+    <string name="species_suggest_button">Подобрать вид</string>
+    <string name="species_suggest_loading">Спрашиваем PlantNet…</string>
+    <string name="species_suggest_unavailable_title">PlantNet недоступен</string>
+    <string name="species_suggest_unavailable_body">Квота закончилась или сервис недоступен. Введите вид вручную.</string>
+    <string name="species_suggest_pick">Выбрать этот вид</string>
+    <string name="species_suggest_keep_manual">Оставить ввод вручную</string>
+    <string name="species_suggest_match">совпадение %d%%</string>
+    <string name="species_suggest_no_results">Уверенных совпадений не найдено.</string>
+    <string name="species_suggest_unknown_name">Без названия</string>
+    <string name="species_scientific_label">Научное название</string>
+    <string name="species_common_label">Бытовое название</string>
 </resources>
