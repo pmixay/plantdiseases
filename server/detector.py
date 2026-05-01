@@ -30,7 +30,11 @@ logger = logging.getLogger(__name__)
 
 DETECTOR_IMG_SIZE = 640
 DETECTOR_CLASSES = ("leaf",)
-MIN_CONFIDENCE = 0.25
+# Detector training data (PlantDoc) is heavy on close-up agricultural
+# leaves and short on indoor wide-frame compositions, so we bias toward
+# higher recall at inference. The OOD gate downstream (detector
+# confidence + classifier MSP) cleans up the extra false positives.
+MIN_CONFIDENCE = 0.15
 MAX_DETECTIONS = 10
 
 

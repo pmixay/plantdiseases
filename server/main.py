@@ -576,11 +576,12 @@ async def analyze_image(image: UploadFile = File(...)):
             "is_healthy": bool(info.get("is_healthy", False)),
         })
 
+    # `is_healthy` mirrors the displayed class name so the client's
+    # status badge can never contradict the diagnosis text. Uncertainty
+    # is conveyed by the `warnings` array (`uncertain_healthy`,
+    # `disease_uncertain:<class>`) and the top-k alternatives card,
+    # not by silently flipping this boolean.
     is_healthy_effective = bool(disease_info.get("is_healthy", False))
-    # A healthy verdict that got re-routed or flagged as uncertain is NOT
-    # a confident green badge anymore.
-    if "uncertain_healthy" in warnings:
-        is_healthy_effective = False
 
     # Pests are not classifier outputs — they're a hint section rendered
     # next to the diagnosis. Resolve the disease's

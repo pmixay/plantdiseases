@@ -163,6 +163,18 @@ class ResultActivity : AppCompatActivity() {
     private fun displayResult(scan: ScanEntity, repository: ScanRepository) {
         val isRu = LocaleHelper.isRussian(this)
         val isNotAPlant = isNotAPlantScan(scan, repository)
+        // Use the persisted classifier top-class as the source of truth
+        // for the status badge: as long as the diagnosis text says
+        // "Healthy Plant", the badge must agree. Falls back to the
+        // server's `is_healthy` boolean for legacy rows that pre-date
+        // `all_probs` persistence.
+        val topClassKey = repository.parseAllProbs(scan.allProbs)
+            .entries.maxByOrNull { it.value }?.key
+        val isHealthyVerdict = when (topClassKey) {
+            "healthy" -> true
+            null -> scan.isHealthy
+            else -> false
+        }
         val diseaseName = when {
             isNotAPlant -> getString(R.string.not_a_plant_diagnosis_name)
             isRu -> scan.diseaseNameRu
@@ -179,7 +191,7 @@ class ResultActivity : AppCompatActivity() {
             // YOLOv8 bbox overlay — only when we actually found a diseased
             // region. NAP and healthy verdicts skip the overlay.
             val regions = repository.parseRegions(scan.regions)
-            if (!isNotAPlant && !scan.isHealthy && regions.isNotEmpty()) {
+            if (!isNotAPlant && !isHealthyVerdict && regions.isNotEmpty()) {
                 val origBounds = ImageUtils.getImageDimensions(scan.imagePath)
                 val primaryIdx = scan.primaryRegionIndex ?: -1
                 val overlayBoxes = regions.mapIndexed { i, r ->
@@ -239,7 +251,7 @@ class ResultActivity : AppCompatActivity() {
                     ivStatusIcon.setImageResource(R.drawable.ic_warning)
                     ivStatusIcon.setColorFilter(getColor(R.color.neutral_blue))
                 }
-                scan.isHealthy -> {
+                isHealthyVerdict -> {
                     cardStatus.setCardBackgroundColor(getColor(R.color.healthy_green_bg))
                     tvStatusLabel.text = getString(R.string.status_healthy)
                     tvStatusLabel.setTextColor(getColor(R.color.healthy_green))
@@ -298,7 +310,7 @@ class ResultActivity : AppCompatActivity() {
             }
 
             // Low confidence (only shown for actual disease diagnoses).
-            if (!isNotAPlant && scan.confidence < 0.5f && !scan.isHealthy) {
+            if (!isNotAPlant && scan.confidence < 0.5f && !isHealthyVerdict) {
                 cardLowConfidence.visibility = View.VISIBLE
                 btnRetryAnalysis.visibility = View.VISIBLE
             } else if (!isNotAPlant) {
@@ -946,8 +958,19 @@ class ResultActivity : AppCompatActivity() {
             result
         }
 
-        if (!scan.isHealthy) {
-            val regions = (application as PlantDiseasesApp).scanRepository.parseRegions(scan.regions)
+        // Skip the red highlight when the verdict is healthy or NAP.
+        // Use the persisted top-class to be consistent with the badge
+        // routing in `displayResult`; fall back to the legacy boolean.
+        val repo = (application as PlantDiseasesApp).scanRepository
+        val topClassKey = repo.parseAllProbs(scan.allProbs)
+            .entries.maxByOrNull { it.value }?.key
+        val isHealthyVerdict = when (topClassKey) {
+            "healthy" -> true
+            null -> scan.isHealthy
+            else -> false
+        }
+        if (!isHealthyVerdict) {
+            val regions = repo.parseRegions(scan.regions)
             val primary = regions.getOrNull(scan.primaryRegionIndex ?: -1)
             if (primary != null) {
                 val scaleX = finalBitmap.width.toFloat() / rawW

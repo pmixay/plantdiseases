@@ -255,22 +255,53 @@ class PlantDiseasePipeline:
             len(detections), stage1["confidence"],
         )
 
-        # No leaf in frame → short-circuit to ``not_a_plant``.
+        # No leaf bbox from Stage 1. The detector was trained on
+        # PlantDoc (close-up agricultural shots) so it under-reports on
+        # indoor wide-frame photos where a clear plant is visible.
+        # Don't auto-route to NAP — fall back to classifying the full
+        # image and let the classifier's dedicated `not_a_plant` head
+        # (trained on COCO val2017 negatives) make the call. This
+        # preserves correct labels for wide-frame plant photos that
+        # YOLO missed, while still routing genuine non-plant images to
+        # NAP via the classifier's own decision.
         if not detections:
+            cls_full = self.classifier.classify(img)
+            calibrated = _apply_temperature(cls_full["all_probs"], self.temperature)
+            classification = {
+                **cls_full,
+                "all_probs": calibrated,
+                "_voted_over": 0,
+                "_no_detection": True,
+            }
+            final = _apply_postprocessing_rules(
+                classification,
+                self.classifier.CLASS_NAMES,
+                proxy_trained=self.proxy_trained,
+            )
+            severity = compute_severity(
+                class_name=final["class_name"],
+                confidence=float(final["confidence"]),
+                healthy_prob=float(final["all_probs"].get("healthy", 0.0)),
+                primary_box=None,
+                image_size=img.size,
+                is_diseased=(
+                    final["class_name"] not in _NON_DISEASE
+                    and final["confidence"] >= DISEASE_MIN_CONFIDENCE
+                ),
+            )
             elapsed = (time.perf_counter() - t0) * 1000
-            probs = {n: 0.0 for n in self.classifier.CLASS_NAMES}
-            if "not_a_plant" in probs:
-                probs["not_a_plant"] = 1.0
-            top_k = _build_top_k(probs, TOP_K_ALTERNATIVES)
             return {
-                "class_name": "not_a_plant",
-                "confidence": 1.0,
-                "all_probs": probs,
-                "top_k": top_k,
-                "warnings": [],
-                "severity": "low",
+                "class_name": final["class_name"],
+                "confidence": final["confidence"],
+                "all_probs": final["all_probs"],
+                "top_k": final["top_k"],
+                "warnings": final["warnings"],
+                "severity": severity,
                 "detection": {
-                    "is_diseased": False,
+                    "is_diseased": (
+                        final["class_name"] not in _NON_DISEASE
+                        and final["confidence"] >= DISEASE_MIN_CONFIDENCE
+                    ),
                     "detector_confidence": 0.0,
                     "regions": [],
                     "primary_region": None,
