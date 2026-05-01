@@ -1,6 +1,7 @@
 package com.plantdiseases.app.worker
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
@@ -20,6 +21,7 @@ class PlantReminderWorker(
     params: WorkerParameters,
 ) : CoroutineWorker(context, params) {
 
+    @SuppressLint("MissingPermission") // permission checked at line below before notify()
     override suspend fun doWork(): Result {
         val plantId = inputData.getLong(KEY_PLANT_ID, -1L)
         val reminderType = inputData.getString(KEY_REMINDER_TYPE) ?: return Result.failure()
