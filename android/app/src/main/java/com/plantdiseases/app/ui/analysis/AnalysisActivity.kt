@@ -17,6 +17,7 @@ import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.AnalysisResponse
 import com.plantdiseases.app.databinding.ActivityAnalysisBinding
+import com.plantdiseases.app.ml.TfliteOfflineAnalyzer
 import com.plantdiseases.app.ui.result.ResultActivity
 import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.LocaleHelper
@@ -184,7 +185,8 @@ class AnalysisActivity : AppCompatActivity() {
         val app = application as PlantDiseasesApp
         lifecycleScope.launch {
             val response = withContext(Dispatchers.IO) {
-                buildOfflineAnalysisResponse(imagePath)
+                TfliteOfflineAnalyzer(this@AnalysisActivity).analyze(imagePath)
+                    ?: buildOfflineAnalysisResponse(imagePath)
             }
             val scanId = app.scanRepository.saveScan(imagePath, response)
 

@@ -131,7 +131,7 @@
     <string name="no_network_detail">Check your network connection and try again.</string>
     <string name="offline_banner">No internet connection</string>
     <string name="offline_analysis_title">Running offline check</string>
-    <string name="offline_analysis_detail">Using a local color heuristic for design testing.</string>
+    <string name="offline_analysis_detail">Trying the on-device model, then a visual fallback.</string>
     <string name="offline_healthy_description">Offline check found mostly green tissue and no strong brown high-contrast damage pattern. This is a rough visual estimate for testing the app when the server is unavailable.</string>
     <string name="offline_healthy_description_ru">Локальная проверка видит в основном зелёные участки и не находит выраженного коричневого контрастного повреждения. Это примерная оценка для тестирования приложения без сервера.</string>
     <string name="offline_disease_description">Offline check found a noticeable brown or dark high-contrast pattern compared with the green area. This is not a medical diagnosis; it only helps preview the result UI without the server.</string>

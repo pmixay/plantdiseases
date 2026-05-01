@@ -48,7 +48,7 @@ on-screen accuracy.
 | Severity scoring            | server code ready | yes          |
 | Disease progression chart   | —        | yes          |
 | Real-time framing + auto-capture | yes | yes          |
-| Offline on-device inference | —        | yes (TFLite) |
+| Offline on-device inference | TFLite runtime fallback | yes (TFLite) |
 | Bilingual EN/RU             | yes      | yes (kept)   |
 
 ## Current stage (May 1, 2026)
@@ -79,6 +79,12 @@ on-screen accuracy.
   Markdown rendering, suggested follow-up chips, and per-plant Room
   persistence are wired; the single reply generator is isolated so it can
   be swapped to server `/api/chat` later.
+- Week 4 offline fallback is wired on Android: when network/server
+  analysis fails, `Continue` runs a bundled TFLite classifier asset if
+  present (`plantvision_classifier.tflite`, `classifier.tflite`, or
+  compatible fallback names). If no model asset is bundled yet, the app
+  falls back to the existing local color/contrast estimate so result UI
+  testing still works without the API.
 - CI remains the build verification path for Android. Local Windows SDK
   setup is not treated as a blocker for feature work.
 - Main blockers before demo-quality release: run the Colab training job,
@@ -228,8 +234,13 @@ on-screen accuracy.
       session ID in `main.py`; counters surfaced in `/api/metrics`.)*
 
 ### P1 · Android
-- [ ] On-device inference fallback (TFLite runtime) when network fails or
+- [x] On-device inference fallback (TFLite runtime) when network fails or
       airplane mode is on.
+      *(Android runtime wrapper added via TensorFlow Lite. It loads a
+      bundled classifier + optional labels from APK assets, maps the top
+      class into the existing `AnalysisResponse`, persists the scan, and
+      keeps the color/contrast estimate as a second-level fallback until
+      final exported TFLite weights are committed.)*
 - [ ] **Disease progression view**: severity-over-time chart per plant,
       before/after image side-by-side.
 - [ ] **Time-lapse mode**: schedule daily fixed-angle reminder, stitch

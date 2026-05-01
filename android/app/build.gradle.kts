@@ -58,6 +58,10 @@ android {
         buildConfig = true
     }
 
+    androidResources {
+        noCompress += "tflite"
+    }
+
     lint {
         abortOnError = false
         checkReleaseBuilds = false
@@ -142,4 +146,7 @@ dependencies {
 
     // WorkManager (plant reminders)
     implementation("androidx.work:work-runtime-ktx:2.9.0")
+
+    // On-device fallback inference
+    implementation("org.tensorflow:tensorflow-lite:2.16.1")
 }
