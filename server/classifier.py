@@ -15,8 +15,9 @@ recommended default for production deployment. Loading order:
 2. ``classifier.onnx``      (FP32 ONNX)
 3. ``classifier.pth``       (PyTorch fallback)
 
-If none of those load successfully we fall back to a colour heuristic
-so the server is usable in demo mode.
+The classifier REQUIRES trained weights — startup fails fast when none
+of the three files load successfully. There is no heuristic / demo
+fallback.
 """
 
 from __future__ import annotations
@@ -50,6 +51,10 @@ NORM_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 NORM_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
 LOW_CONFIDENCE_THRESHOLD = 0.35
+
+
+class ClassifierWeightsMissing(RuntimeError):
+    """Raised when no usable classifier weights load successfully."""
 
 
 def _load_metadata(model_dir: Path) -> dict:
@@ -90,8 +95,7 @@ class DiseaseClassifier:
     """Houseplant disease classifier (ONNX preferred, PyTorch fallback)."""
 
     def __init__(self, model_path: Path | None = None):
-        self.is_loaded = False
-        self.backend = "demo"           # "onnx" | "torch" | "demo"
+        self.backend = ""               # "onnx" | "torch"
         self._onnx_session = None
         self._onnx_input_name: str = ""
         self._torch_model = None
@@ -102,21 +106,33 @@ class DiseaseClassifier:
         self.NUM_CLASSES = len(self.CLASS_NAMES)
         self.img_size = _resolve_img_size(meta)
 
+        load_errors: list[str] = []
         onnx_path = _resolve_onnx_path(model_path)
         if onnx_path is not None:
             try:
                 self._load_onnx(onnx_path)
             except Exception as e:
+                load_errors.append(f"ONNX ({onnx_path}): {e}")
                 logger.error("ONNX classifier failed to load (%s): %s", onnx_path, e)
 
         if not self.is_loaded and model_path and model_path.exists():
             try:
                 self._load_pytorch_model(model_path)
             except Exception as e:
+                load_errors.append(f"PyTorch ({model_path}): {e}")
                 logger.error("Failed to load PyTorch classifier %s: %s", model_path, e)
 
         if not self.is_loaded:
-            logger.warning("Classifier: no model — running in DEMO mode")
+            raise ClassifierWeightsMissing(
+                "No classifier weights could be loaded. Place "
+                "classifier_int8.onnx, classifier.onnx, or classifier.pth in "
+                "models/ before starting the server. "
+                + (f"Tried: {'; '.join(load_errors)}" if load_errors else "")
+            )
+
+    @property
+    def is_loaded(self) -> bool:
+        return bool(self.backend)
 
     # ── loaders ──────────────────────────────────────────────────────
 
@@ -148,7 +164,6 @@ class DiseaseClassifier:
 
         self._onnx_session = sess
         self._onnx_input_name = inp.name
-        self.is_loaded = True
         self.backend = "onnx"
         logger.info(
             "Classifier (ONNX) loaded from %s (%d classes, img_size=%d)",
@@ -186,7 +201,6 @@ class DiseaseClassifier:
 
         self._torch_model = net
         self._torch_device = torch.device("cpu")
-        self.is_loaded = True
         self.backend = "torch"
         logger.info(
             "Classifier (PyTorch EfficientNet-B0) loaded from %s (%d classes, img_size=%d)",
@@ -204,18 +218,14 @@ class DiseaseClassifier:
     def classify(self, img: Image.Image) -> dict:
         if self.backend == "onnx":
             return self._classify_onnx(img)
-        if self.backend == "torch":
-            return self._classify_torch(img)
-        return self._classify_demo(img)
+        return self._classify_torch(img)
 
     def classify_batch(self, imgs: list[Image.Image]) -> list[dict]:
         if not imgs:
             return []
         if self.backend == "onnx":
             return self._classify_onnx_batch(imgs)
-        if self.backend == "torch":
-            return self._classify_torch_batch(imgs)
-        return [self._classify_demo(im) for im in imgs]
+        return self._classify_torch_batch(imgs)
 
     # ── preprocessing (NumPy) ────────────────────────────────────────
 
@@ -236,17 +246,12 @@ class DiseaseClassifier:
     def _classify_onnx(self, img: Image.Image) -> dict:
         x = self._preprocess(img)
         logits = self._onnx_session.run(None, {self._onnx_input_name: x})[0]
-        logits = logits - logits.max(axis=1, keepdims=True)
-        e = np.exp(logits)
-        probs = e / e.sum(axis=1, keepdims=True)
-        return self._format_result(probs[0])
+        return self._format_result(_softmax(logits)[0])
 
     def _classify_onnx_batch(self, imgs: list[Image.Image]) -> list[dict]:
         x = self._preprocess_batch(imgs)
         logits = self._onnx_session.run(None, {self._onnx_input_name: x})[0]
-        logits = logits - logits.max(axis=1, keepdims=True)
-        e = np.exp(logits)
-        probs = e / e.sum(axis=1, keepdims=True)
+        probs = _softmax(logits)
         return [self._format_result(probs[i]) for i in range(probs.shape[0])]
 
     # ── PyTorch inference ────────────────────────────────────────────
@@ -256,19 +261,14 @@ class DiseaseClassifier:
         x = torch.from_numpy(self._preprocess(img))
         with torch.no_grad():
             logits = self._torch_model(x).cpu().numpy()
-        logits = logits - logits.max(axis=1, keepdims=True)
-        e = np.exp(logits)
-        probs = e / e.sum(axis=1, keepdims=True)
-        return self._format_result(probs[0])
+        return self._format_result(_softmax(logits)[0])
 
     def _classify_torch_batch(self, imgs: list[Image.Image]) -> list[dict]:
         import torch
         x = torch.from_numpy(self._preprocess_batch(imgs))
         with torch.no_grad():
             logits = self._torch_model(x).cpu().numpy()
-        logits = logits - logits.max(axis=1, keepdims=True)
-        e = np.exp(logits)
-        probs = e / e.sum(axis=1, keepdims=True)
+        probs = _softmax(logits)
         return [self._format_result(probs[i]) for i in range(probs.shape[0])]
 
     def _format_result(self, probs: np.ndarray) -> dict:
@@ -284,69 +284,9 @@ class DiseaseClassifier:
             "low_confidence": top_conf < LOW_CONFIDENCE_THRESHOLD,
         }
 
-    # ── demo mode (deterministic colour heuristics) ──────────────────
 
-    @staticmethod
-    def _image_seed(img: Image.Image) -> int:
-        small = np.array(img.resize((16, 16)), dtype=np.uint8)
-        return int(small.sum()) % (2**31)
-
-    def _classify_demo(self, img: Image.Image) -> dict:
-        rng = np.random.RandomState(self._image_seed(img))
-        arr = np.array(img.resize((64, 64)), dtype=np.float32)
-        r_mean = float(arr[:, :, 0].mean())
-        g_mean = float(arr[:, :, 1].mean())
-        b_mean = float(arr[:, :, 2].mean())
-        total = r_mean + g_mean + b_mean + 1e-6
-        green_ratio = g_mean / total
-        brown_ratio = r_mean / total
-        brightness = total / 3.0
-
-        names = self.CLASS_NAMES
-        if not names:
-            return {"class_name": "unknown", "confidence": 0.0,
-                    "all_probs": {}, "low_confidence": True}
-
-        g_std = float(arr[:, :, 1].std())
-
-        if green_ratio < 0.32 and "not_a_plant" in names:
-            cls, conf = "not_a_plant", 0.60 + rng.uniform(0, 0.20)
-        elif green_ratio > 0.42 and g_std < 35 and "healthy" in names:
-            cls, conf = "healthy", 0.78 + rng.uniform(0, 0.15)
-        elif green_ratio > 0.36 and g_std > 50 and "mosaic_virus" in names:
-            cls, conf = "mosaic_virus", 0.55 + rng.uniform(0, 0.20)
-        elif brightness > 190 and g_mean < 170:
-            pool = [n for n in ("powdery_mildew", "gray_mold") if n in names]
-            cls = rng.choice(pool) if pool else names[0]
-            conf = 0.55 + rng.uniform(0, 0.25)
-        elif brown_ratio > 0.42 and g_std > 45:
-            pool = [n for n in ("bacterial_leaf_spot", "anthracnose") if n in names]
-            cls = rng.choice(pool) if pool else names[0]
-            conf = 0.55 + rng.uniform(0, 0.20)
-        elif brown_ratio > 0.42:
-            pool = [n for n in ("anthracnose", "late_blight", "sunburn") if n in names]
-            cls = rng.choice(pool) if pool else names[0]
-            conf = 0.55 + rng.uniform(0, 0.25)
-        elif r_mean > g_mean and r_mean > 140:
-            pool = [n for n in ("anthracnose", "iron_chlorosis") if n in names]
-            cls = rng.choice(pool) if pool else names[0]
-            conf = 0.55 + rng.uniform(0, 0.25)
-        else:
-            pool = [n for n in ("iron_chlorosis", "gray_mold") if n in names]
-            cls = rng.choice(pool) if pool else names[0]
-            conf = 0.50 + rng.uniform(0, 0.25)
-
-        probs = {n: 0.0 for n in names}
-        probs[cls] = round(conf, 4)
-        leftover = 1.0 - conf
-        others = [n for n in names if n != cls]
-        if others:
-            rnd = rng.dirichlet(np.ones(len(others))) * leftover
-            for name, p in zip(others, rnd, strict=False):
-                probs[name] = round(float(p), 4)
-        return {
-            "class_name": cls,
-            "confidence": round(float(conf), 4),
-            "all_probs": probs,
-            "low_confidence": conf < LOW_CONFIDENCE_THRESHOLD,
-        }
+def _softmax(logits: np.ndarray) -> np.ndarray:
+    """Stable row-wise softmax for a (B, C) logits array."""
+    shifted = logits - logits.max(axis=1, keepdims=True)
+    e = np.exp(shifted)
+    return e / e.sum(axis=1, keepdims=True)

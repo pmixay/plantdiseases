@@ -155,11 +155,11 @@ start.bat
 
 The script creates a virtual environment, installs CPU-only PyTorch
 plus the rest of `requirements.txt`, and launches FastAPI on
-`http://localhost:8000`. Without trained weights the server runs in a
-**demo mode** driven by colour heuristics — the API contract is
-identical, but the results are not meaningful. Demo mode exists only
-so contributors can run the API locally; production must ship trained
-weights.
+`http://localhost:8000`. **Trained weights are required to start the
+server** — without `detector.pt` (or `detector.onnx`) and a classifier
+checkpoint under `server/models/` the script refuses to start. There is
+no heuristic / demo fallback because partial answers from a fake
+model misrepresent plant health.
 
 ### Android app
 
@@ -210,8 +210,9 @@ including the optional V2-S ensemble peer:
    `classes.json`.
 
 Drop the model files into `server/models/` and restart the server —
-the pipeline auto-detects real vs demo mode and prefers ONNX INT8 when
-present.
+the pipeline prefers ONNX INT8 when present, then ONNX FP32, then
+PyTorch `.pth`. The server refuses to come up if none of the three
+load successfully.
 
 ---
 

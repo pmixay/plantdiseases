@@ -156,7 +156,12 @@ def _apply_temperature(probs: dict[str, float], T: float) -> dict[str, float]:
 
 
 class PlantDiseasePipeline:
-    """Orchestrates the two-stage detection → classification pipeline."""
+    """Orchestrates the two-stage detection → classification pipeline.
+
+    Both stages MUST load real weights — startup raises if either is
+    missing, propagating the error to the FastAPI lifespan so the server
+    fails fast instead of serving meaningless results.
+    """
 
     def __init__(
         self,
@@ -169,24 +174,16 @@ class PlantDiseasePipeline:
         # temperature.json is absent.
         self.temperature = _load_temperature(classifier_path)
         logger.info(
-            "Pipeline ready  detector=%s  classifier=%s (%s backend)  T=%.3f",
-            "MODEL" if self.detector.is_loaded else "DEMO",
-            "MODEL" if self.classifier.is_loaded else "DEMO",
-            getattr(self.classifier, "backend", "demo"),
+            "Pipeline ready  classifier=%s backend  T=%.3f",
+            getattr(self.classifier, "backend", "unknown"),
             self.temperature,
         )
 
     @property
-    def is_loaded(self) -> bool:
-        return self.detector.is_loaded or self.classifier.is_loaded
-
-    @property
     def mode(self) -> str:
-        if self.detector.is_loaded and self.classifier.is_loaded:
-            return "full"
-        if self.detector.is_loaded or self.classifier.is_loaded:
-            return "partial"
-        return "demo"
+        # Kept for API/log shape compatibility — always "full" in
+        # production now that demo mode has been removed.
+        return "full"
 
     # ── main entry point ─────────────────────────────────────────────
 

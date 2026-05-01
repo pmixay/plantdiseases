@@ -42,7 +42,8 @@ docker compose up -d --build
 
 Model weights go under `server/models/` on the host; the container
 mounts it read-only (`./models:/app/models:ro`). Without weights the
-server runs in demo mode (colour-based heuristics).
+server refuses to start — there is no demo / heuristic fallback. Drop
+trained weights into the volume and restart.
 
 Smoke test:
 
@@ -169,7 +170,10 @@ Before opening the service to the public:
 - [ ] `RATE_LIMIT_RPS` tuned for expected traffic (default `1.0` is per-IP).
 - [ ] `MAX_FILE_SIZE` aligned with nginx `client_max_body_size`.
 - [ ] `proxy_read_timeout` ≥ `INFERENCE_TIMEOUT`.
-- [ ] Model files (`detector.pt`, `classifier.pth`, `classes.json`) present under `server/models/` — otherwise the server stays in demo mode (acceptable for a jury demo, not for a prod launch).
+- [ ] Model files (`detector.pt` or `.onnx`, `classifier_int8.onnx` /
+      `classifier.onnx` / `classifier.pth`, and `classes.json`) present
+      under `server/models/` — the server refuses to start without
+      them, there is no demo fallback.
 - [ ] `/api/health` reports `pipeline_mode: "full"`.
 - [ ] `classes.json` `num_classes` matches the classifier head size (the server logs a mismatch otherwise).
 - [ ] Logs are rotating (`LOG_DIR`) and being shipped off-box.

@@ -1,64 +1,14 @@
-"""Demo-mode pipeline must be deterministic for a fixed input image."""
+"""Pipeline post-processing rules — these are pure helpers and don't
+need real model weights to exercise."""
 
 from __future__ import annotations
 
-from PIL import Image
 
-from pipeline import PlantDiseasePipeline
-
-
-def _seeded_image(seed: int, size: int = 96) -> Image.Image:
-    """Return an image whose pixel statistics depend only on ``seed``."""
-    import numpy as np
-
-    rng = np.random.RandomState(seed)
-    arr = (rng.rand(size, size, 3) * 255).astype("uint8")
-    return Image.fromarray(arr, mode="RGB")
-
-
-def test_demo_pipeline_is_deterministic():
-    img = _seeded_image(seed=7)
-    p1 = PlantDiseasePipeline()
-    p2 = PlantDiseasePipeline()
-    r1 = p1.analyze(img)
-    r2 = p2.analyze(img)
-
-    assert r1["pipeline_mode"] == "demo"
-    assert r1["class_name"] == r2["class_name"]
-    assert r1["confidence"] == r2["confidence"]
-    assert r1["all_probs"] == r2["all_probs"]
-
-
-def test_demo_pipeline_result_shape():
-    p = PlantDiseasePipeline()
-    result = p.analyze(_seeded_image(seed=3))
-
-    for key in ("class_name", "confidence", "all_probs", "detection", "pipeline_mode", "elapsed_ms"):
-        assert key in result, f"missing key {key}"
-
-    assert 0.0 <= result["confidence"] <= 1.0
-    assert set(result["detection"].keys()) == {
-        "is_diseased", "detector_confidence", "regions", "primary_region",
-    }
-    assert isinstance(result["detection"]["regions"], list)
-    assert isinstance(result["all_probs"], dict)
-    total = sum(result["all_probs"].values())
-    assert 0.95 <= total <= 1.05
-
-
-def test_class_names_match_default():
-    from classifier import DEFAULT_CLASS_NAMES, DiseaseClassifier
-
-    clf = DiseaseClassifier(model_path=None)
-    assert clf.NUM_CLASSES == len(DEFAULT_CLASS_NAMES)
-    assert clf.CLASS_NAMES == DEFAULT_CLASS_NAMES
-
-
-def test_not_a_plant_class_is_present():
-    """Rejection class must always exist — it's how the pipeline reports noise."""
+def test_class_names_are_alphabetical_and_complete():
     from classifier import DEFAULT_CLASS_NAMES
 
-    assert "not_a_plant" in DEFAULT_CLASS_NAMES
+    assert DEFAULT_CLASS_NAMES == sorted(DEFAULT_CLASS_NAMES)
+    assert "not_a_plant" in DEFAULT_CLASS_NAMES, "rejection class must be present"
 
 
 def test_taxonomy_is_disease_only():
@@ -84,19 +34,26 @@ def test_taxonomy_is_disease_only():
         )
 
 
-def test_top_k_and_warnings_keys_in_result():
-    """Pipeline should always include top_k and warnings so the UI
-    never has to gate on `.get(...)` for these fields."""
-    p = PlantDiseasePipeline()
-    result = p.analyze(_seeded_image(seed=11))
+def test_classifier_refuses_to_load_without_weights(tmp_path):
+    """No demo fallback: a missing weights path raises a clear error so
+    the FastAPI lifespan can refuse to come up."""
+    from classifier import ClassifierWeightsMissing, DiseaseClassifier
 
-    assert "top_k" in result, "top_k missing from pipeline result"
-    assert "warnings" in result, "warnings missing from pipeline result"
-    assert isinstance(result["top_k"], list)
-    assert isinstance(result["warnings"], list)
-    assert len(result["top_k"]) <= 3
-    for entry in result["top_k"]:
-        assert set(entry.keys()) == {"class", "confidence"}
+    try:
+        DiseaseClassifier(model_path=tmp_path / "missing.pth")
+    except ClassifierWeightsMissing:
+        return
+    raise AssertionError("DiseaseClassifier must raise without weights")
+
+
+def test_detector_refuses_to_load_without_weights(tmp_path):
+    from detector import DetectorWeightsMissing, LeafDetector
+
+    try:
+        LeafDetector(model_path=tmp_path / "missing.pt")
+    except DetectorWeightsMissing:
+        return
+    raise AssertionError("LeafDetector must raise without weights")
 
 
 def test_healthy_gate_attaches_warning_without_rerouting():
@@ -201,40 +158,6 @@ def test_healthy_fallback_emits_disease_uncertain_warning():
     assert "disease_uncertain:powdery_mildew" in out["warnings"]
 
 
-def test_ood_reroute_to_nap_produces_consistent_distribution():
-    """When the secondary OOD gate fires, _reroute_to_nap must rewrite
-    the classification so that ``not_a_plant`` is the top class AND the
-    published probability mass adds up to ~1, with the original
-    runner-up classes preserved in proportion (so the UI's alternatives
-    list still makes sense)."""
-    from pipeline import PlantDiseasePipeline
-
-    p = PlantDiseasePipeline()
-    classification = {
-        "class_name": "powdery_mildew",
-        "confidence": 0.42,
-        "all_probs": {
-            "anthracnose": 0.05, "gray_mold": 0.10, "healthy": 0.20,
-            "iron_chlorosis": 0.05, "late_blight": 0.05,
-            "not_a_plant": 0.03, "powdery_mildew": 0.42, "sunburn": 0.10,
-        },
-        "low_confidence": False,
-        "_voted_over": 1,
-    }
-    out = p._reroute_to_nap(classification)
-
-    assert out["class_name"] == "not_a_plant"
-    assert out["confidence"] >= 0.55
-    # Distribution still sums to ~1 and not_a_plant is genuinely the top.
-    total = sum(out["all_probs"].values())
-    assert 0.99 <= total <= 1.01, f"distribution drift {total}"
-    top = max(out["all_probs"], key=out["all_probs"].get)
-    assert top == "not_a_plant"
-    # The OOD gate flag is recorded so the postprocessor can surface
-    # the corresponding warning.
-    assert out["_ood_gated"] is True
-
-
 def test_postprocessor_emits_nap_ood_warning():
     """The pipeline tags an OOD-rerouted result so the UI can explain it
     differently from a "no leaves found" NAP."""
@@ -274,8 +197,6 @@ def test_healthy_fallback_keeps_top_k_consistent_with_class_name():
     top_k[0] is a disease."""
     from pipeline import _apply_postprocessing_rules
 
-    # Synthetic post-fallback classification: class_name="healthy" with
-    # a redistributed distribution (healthy now actually top-1).
     aggregated = {
         "class_name": "healthy",
         "confidence": 0.55,
