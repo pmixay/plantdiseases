@@ -130,6 +130,22 @@
     <string name="no_network">Нет интернета</string>
     <string name="no_network_detail">Проверьте подключение к сети и повторите попытку.</string>
     <string name="offline_banner">Нет подключения к интернету</string>
+    <string name="offline_analysis_title">Локальная проверка</string>
+    <string name="offline_analysis_detail">Используем цветовую эвристику для тестирования дизайна.</string>
+    <string name="offline_healthy_description">Локальная проверка видит в основном зелёные участки и не находит выраженного коричневого контрастного повреждения. Это примерная оценка для тестирования приложения без сервера.</string>
+    <string name="offline_healthy_description_ru">Локальная проверка видит в основном зелёные участки и не находит выраженного коричневого контрастного повреждения. Это примерная оценка для тестирования приложения без сервера.</string>
+    <string name="offline_disease_description">Локальная проверка нашла заметный коричневый или тёмный контрастный рисунок на фоне зелёных участков. Это не настоящий диагноз, а режим для просмотра экрана результата без сервера.</string>
+    <string name="offline_disease_description_ru">Локальная проверка нашла заметный коричневый или тёмный контрастный рисунок на фоне зелёных участков. Это не настоящий диагноз, а режим для просмотра экрана результата без сервера.</string>
+    <string name="offline_disease_treatment_1">Изолируйте растение от других до настоящего анализа.</string>
+    <string name="offline_disease_treatment_1_ru">Изолируйте растение от других до настоящего анализа.</string>
+    <string name="offline_disease_treatment_2">Удалите сильно повреждённые листья чистым инструментом.</string>
+    <string name="offline_disease_treatment_2_ru">Удалите сильно повреждённые листья чистым инструментом.</string>
+    <string name="offline_disease_treatment_3">Не переливайте растение и улучшите циркуляцию воздуха.</string>
+    <string name="offline_disease_treatment_3_ru">Не переливайте растение и улучшите циркуляцию воздуха.</string>
+    <string name="offline_prevention_1">Повторите анализ через сервер, когда API будет доступен.</string>
+    <string name="offline_prevention_1_ru">Повторите анализ через сервер, когда API будет доступен.</string>
+    <string name="offline_prevention_2">Снимайте один чёткий лист при ровном освещении для более точного результата.</string>
+    <string name="offline_prevention_2_ru">Снимайте один чёткий лист при ровном освещении для более точного результата.</string>
 
     <!-- Server status -->
     <string name="server_status">Статус сервера</string>

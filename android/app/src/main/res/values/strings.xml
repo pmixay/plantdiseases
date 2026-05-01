@@ -130,6 +130,22 @@
     <string name="no_network">No Internet Connection</string>
     <string name="no_network_detail">Check your network connection and try again.</string>
     <string name="offline_banner">No internet connection</string>
+    <string name="offline_analysis_title">Running offline check</string>
+    <string name="offline_analysis_detail">Using a local color heuristic for design testing.</string>
+    <string name="offline_healthy_description">Offline check found mostly green tissue and no strong brown high-contrast damage pattern. This is a rough visual estimate for testing the app when the server is unavailable.</string>
+    <string name="offline_healthy_description_ru">Локальная проверка видит в основном зелёные участки и не находит выраженного коричневого контрастного повреждения. Это примерная оценка для тестирования приложения без сервера.</string>
+    <string name="offline_disease_description">Offline check found a noticeable brown or dark high-contrast pattern compared with the green area. This is not a medical diagnosis; it only helps preview the result UI without the server.</string>
+    <string name="offline_disease_description_ru">Локальная проверка нашла заметный коричневый или тёмный контрастный рисунок на фоне зелёных участков. Это не настоящий диагноз, а режим для просмотра экрана результата без сервера.</string>
+    <string name="offline_disease_treatment_1">Isolate the plant from others until a real scan is available.</string>
+    <string name="offline_disease_treatment_1_ru">Изолируйте растение от других до настоящего анализа.</string>
+    <string name="offline_disease_treatment_2">Remove heavily damaged leaves with clean tools.</string>
+    <string name="offline_disease_treatment_2_ru">Удалите сильно повреждённые листья чистым инструментом.</string>
+    <string name="offline_disease_treatment_3">Avoid overwatering and improve airflow around the plant.</string>
+    <string name="offline_disease_treatment_3_ru">Не переливайте растение и улучшите циркуляцию воздуха.</string>
+    <string name="offline_prevention_1">Retake a server-backed scan when the API is online.</string>
+    <string name="offline_prevention_1_ru">Повторите анализ через сервер, когда API будет доступен.</string>
+    <string name="offline_prevention_2">Use steady light and frame one clear leaf for better results.</string>
+    <string name="offline_prevention_2_ru">Снимайте один чёткий лист при ровном освещении для более точного результата.</string>
 
     <!-- Server status -->
     <string name="server_status">Server Status</string>
