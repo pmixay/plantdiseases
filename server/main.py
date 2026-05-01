@@ -5,9 +5,6 @@ houseplant disease pipeline.
 Stage 1:  YOLOv8n            — locate leaves (single class)
 Stage 2:  EfficientNet-B0    — classify cropped leaf regions; mean-voted
                                across bboxes, ONNX (INT8 dynamic on MatMul).
-                               The classifier loader auto-detects either
-                               EfficientNet-B0 or EfficientNetV2-S from
-                               the state dict.
 """
 
 import asyncio
@@ -83,11 +80,9 @@ logger = logging.getLogger("plantdiseases")
 # ── Configuration ────────────────────────────────────────────────────
 MODELS_DIR = Path("models")
 DETECTOR_PATH = MODELS_DIR / "detector.pt"       # YOLOv8 weights (auto-prefers detector.onnx if present)
-# PlantVision classifier: EfficientNet-B0 @ 240, optional EfficientNetV2-S
-# @ 300 ensemble peer. The loader (classifier.py:_load_pytorch_model)
-# auto-detects the backbone from the state dict shape; classes.json carries
-# the canonical img_size.
-# Production preference order: classifier_int8.onnx → classifier.onnx → .pth.
+# PlantVision classifier: EfficientNet-B0. classes.json carries the
+# canonical img_size. Production preference order:
+# classifier_int8.onnx → classifier.onnx → .pth.
 CLASSIFIER_PATH = MODELS_DIR / "classifier.pth"  # PlantVision weights
 
 MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE", 10 * 1024 * 1024))  # 10 MB
@@ -377,13 +372,7 @@ async def health_check():
 
 @app.get("/api/version")
 async def version():
-    """Server version and model architecture.
-
-    The classifier architecture string is derived from the actually-loaded
-    backend so the response stays accurate across both EfficientNet-B0
-    @ 240 and EfficientNetV2-S @ 300 checkpoints. In demo mode we surface
-    the heuristic explicitly.
-    """
+    """Server version and model architecture."""
     if pipeline is None:
         cls_arch = "unknown"
     elif not pipeline.classifier.is_loaded:
@@ -392,16 +381,12 @@ async def version():
         backend = getattr(pipeline.classifier, "backend", "unknown")
         img_size = getattr(pipeline.classifier, "img_size", 0)
         cls_arch = f"PlantVision EfficientNet @ {img_size} px / {backend} backend"
-    ensemble_size = (
-        pipeline.classifier.ensemble_size if pipeline and pipeline.classifier else 0
-    )
     return {
         "version": APP_VERSION,
         "classifier_name": "plantvision",
         "pipeline_mode": pipeline.mode if pipeline else "unknown",
         "detector_arch": "YOLOv8n (single-class leaf)",
         "classifier_arch": cls_arch,
-        "ensemble_size": ensemble_size,
         "stages": 2,
         "focus": "houseplants",
     }

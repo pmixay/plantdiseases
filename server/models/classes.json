@@ -1,11 +1,10 @@
 {
-  "_comment": "PlantVision 1.1 — 10 houseplant disease classes. Stage 1 detector is single-class (leaf); the disease decision is owned by Stage 2. Pests (spider_mites/aphids/mealybug/scale_insect/whitefly) are NOT classifier outputs — they appear as 'possible_pest_causes' hints per disease (see server/diseases_data.py PEST_INFO). Order matches sorted(ImageFolder.classes), i.e. alphabetical. EfficientNet-B0 @ 240 is the production primary; an optional EfficientNetV2-S @ 300 ensemble peer is loaded when classifier_v2s*.onnx is present. This file is regenerated automatically by the final cell of train_notebook.ipynb after each training run; the values below are defaults that match the notebook.",
+  "_comment": "PlantVision — 10 houseplant disease classes. Stage 1 detector is single-class (leaf); the disease decision is owned by Stage 2 (EfficientNet-B0). Pests (spider_mites/aphids/mealybug/scale_insect/whitefly) are NOT classifier outputs — they appear as 'possible_pest_causes' hints per disease (see server/diseases_data.py PEST_INFO). Order matches sorted(ImageFolder.classes), i.e. alphabetical. This file is regenerated automatically by the final cell of train_notebook.ipynb after each training run; the values below are defaults that match the notebook.",
   "model_name": "plantvision",
-  "model_version": "1.1",
+  "model_version": "1.2",
   "architecture": {
     "detector": "YOLOv8n (single-class leaf)",
-    "classifier": "EfficientNet-B0 (torchvision, IMAGENET1K_V1)",
-    "ensemble_peer": "EfficientNetV2-S @ 300 (optional, weight=0.45)"
+    "classifier": "EfficientNet-B0 (torchvision, IMAGENET1K_V1)"
   },
   "num_classes": 10,
   "class_names": [
@@ -22,22 +21,15 @@
   ],
   "detector_classes": ["leaf"],
   "training": {
-    "img_size": 240,
-    "loss": "CrossEntropy(label_smoothing=0.05)",
+    "img_size": 256,
+    "loss": "class-balanced CE (inverse-frequency × healthy 0.35) + label_smoothing=0.05",
     "label_smoothing": 0.05,
     "cutmix_prob": 0.4,
     "mixup_prob": 0.2,
     "mixup_alpha": 0.2,
-    "sampler": "WeightedRandomSampler (single balancing source)",
-    "cutmix_safe": "no mixing across not_a_plant <-> plant classes",
-    "mixup_safe": "no mixing across not_a_plant <-> plant classes",
-    "yolo_cache": "disk",
+    "sampler": "natural distribution (no WeightedRandomSampler)",
+    "primary_metric": "disease_macro_f1",
+    "healthy_downweight": 0.35,
     "_note": "Real values overwritten by the final cell of train_notebook.ipynb after each run."
-  },
-  "ensemble": {
-    "peer_arch": "EfficientNetV2-S",
-    "peer_img_size": 300,
-    "peer_weight": 0.45,
-    "_note": "Loaded only if classifier_v2s*.onnx is present next to the primary checkpoint."
   }
 }

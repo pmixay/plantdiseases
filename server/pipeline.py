@@ -2,10 +2,9 @@
 PlantVision two-stage houseplant disease detection pipeline.
 
 Stage 1 (Detector)   — YOLOv8n single-class. Locates ``leaf`` bboxes.
-Stage 2 (Classifier) — EfficientNet-B0 (ONNX) + optional V2-S ensemble
-                       peer. Classifies cropped leaf regions into one of
-                       up to 10 houseplant condition classes including
-                       ``not_a_plant``.
+Stage 2 (Classifier) — EfficientNet-B0 (ONNX). Classifies cropped leaf
+                       regions into one of up to 10 houseplant
+                       condition classes including ``not_a_plant``.
 
 Behaviour summary:
 
@@ -15,10 +14,7 @@ Behaviour summary:
   over ``healthy`` and (c) whether the disease class is degenerative
   (``late_blight``, ``mosaic_virus`` always escalate one level).
 * **TTA at inference** — horizontal-flip averaging is applied to the
-  primary classifier output. Roughly +1 % top-1 vs cold inference.
-* **Ensemble** — when the V2-S peer is loaded, its softmax is blended
-  with the primary inside ``DiseaseClassifier``. The pipeline sees only
-  the calmer, better-calibrated distribution.
+  classifier output. Roughly +1 % top-1 vs cold inference.
 * **Mean voting** across valid bboxes (one noisy edge crop can't win
   the room).
 * **Size filter** drops tiny detections (<32 px or <0.5 % image area)

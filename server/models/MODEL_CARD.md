@@ -1,8 +1,9 @@
-# PlantVision 1.1 — Model Card
+# PlantVision — Model Card
 
 **Status:** trained checkpoints not bundled in the repo (size). Reproduce
-via `server/train_notebook.ipynb` on a Colab T4. The notebook drops
-artefacts into `server/models/` after `Run All`.
+via `server/train_notebook.ipynb` on a Colab A100 (or T4 with reduced
+batch). The notebook drops artefacts into `server/models/` after `Run All`
+and overwrites this file with run-specific metrics.
 
 ## What the model does
 
@@ -13,8 +14,7 @@ rejection class.
 | Stage | Architecture | Params | Input | Output |
 |-------|--------------|--------|-------|--------|
 | Detector | YOLOv8n single-class | ~3.0 M | 640 × 640 RGB | `leaf` bboxes |
-| Classifier (primary) | EfficientNet-B0 (torchvision IMAGENET1K_V1) | ~5.3 M | 240 × 240 RGB | 10-way softmax |
-| Classifier (peer, optional) | EfficientNetV2-S (torchvision IMAGENET1K_V1) | ~21 M | 300 × 300 RGB | 10-way softmax, blended at weight 0.45 |
+| Classifier | EfficientNet-B0 (torchvision IMAGENET1K_V1) | ~5.3 M | 256 × 256 RGB | 10-way softmax |
 
 ## Class taxonomy (alphabetical)
 
@@ -31,10 +31,11 @@ hints driven by `server/diseases_data.py::PEST_INFO`.
 | Source | Licence | Used for | Approx volume |
 |--------|---------|----------|---------------|
 | PlantDoc OD | CC-BY 4.0 | YOLO single-class leaf | ~2 600 images / ~8 700 bboxes |
-| PlantVillage (sparse-checkout) | CC-BY-3.0 | classifier — `powdery_mildew`, `iron_chlorosis`, `late_blight`, `sunburn`, `bacterial_leaf_spot`, `mosaic_virus` | up to 800 / class |
-| iNaturalist Open Data (CC0/CC-BY/CC-BY-SA) | per-photo | classifier — fungal diseases + `bacterial_leaf_spot` (Pseudomonas syringae, Xanthomonas) and `mosaic_virus` (Tobamovirus) | up to 800 / class |
-| Houseplant Species (Kaggle) | mixed (research-only) | classifier — `healthy` via Stage-1 multi-crop | up to 2 500 |
-| COCO val2017 | CC-BY 4.0 | classifier — `not_a_plant`, plant-like categories filtered out | up to 1 800 |
+| PlantVillage (sparse-checkout) | CC-BY-3.0 | classifier disease classes | up to 800 / class |
+| iNaturalist Open Data | per-photo CC0/CC-BY/CC-BY-SA | classifier diseases | up to 800 / class |
+| Houseplant Species (Kaggle) | mixed (research-only) | classifier `healthy` via Stage-1 single-crop | 800 photos |
+| COCO val2017 | CC-BY 4.0 | classifier `not_a_plant` (plant-like categories filtered) | up to 1 800 |
+| User real-world (RAW/real_world/) | proprietary | classifier — all classes, in-train + held-out 20 % | per-class |
 
 The notebook deduplicates by SHA-256 hash before ingest and groups iNat
 photos by observation ID so the train/val split never leaks photos of the
@@ -44,76 +45,73 @@ same physical leaf across the boundary.
 
 | Aspect | Value |
 |--------|-------|
-| Resolution (primary) | 240 × 240 |
-| Resolution (peer V2-S) | 300 × 300 |
+| Resolution | 256 × 256 |
 | Optimiser | AdamW, weight decay 1e-4 |
 | Schedule | Linear warmup 1 ep + cosine annealing |
-| Phase A (head only) | 8 epochs @ 1e-3 |
-| Phase B (fine-tune `features.5+` ⇢ classifier) | 14 epochs @ 5e-5, early-stopping patience 5 |
-| Loss | CE with label smoothing 0.05 (focal-CE optional via `USE_FOCAL_LOSS`) |
-| Sampler | `WeightedRandomSampler` (single source of class balancing) |
-| Augmentations | TrivialAugmentWide + warm-light tint + random side shadow + motion blur + JPEG quality jitter + RandomErasing |
-| Mixing | CutMix prob 0.4 (α=1.0) and MixUp prob 0.2 (α=0.2), NAP-safe permutation |
+| Phase A (head only) | 10 epochs @ 1e-3·sqrt(B/96) |
+| Phase B (fine-tune `features.5+` ⇢ classifier) | 22 epochs @ 5e-5·sqrt(B/96), early-stopping patience 8 (on disease F1) |
+| Primary metric | **disease macro-F1** (8 диагнозов, без `healthy` / `not_a_plant`) |
+| Loss | class-balanced CE: inverse-frequency weights × asymmetric down-weighting `healthy` × 0.35; label smoothing 0.05 |
+| Sampler | natural distribution (no `WeightedRandomSampler` — would double-weight against the loss) |
+| HP→healthy build | 800 photos × 1 crop (largest bbox), 30 % with hard-aug (blur + JPEG q=15-30) |
+| Augmentations | TrivialAugmentWide + warm-light tint + random shadow + motion blur + JPEG quality jitter + RandomErasing |
+| Mixing | CutMix prob 0.4 (α=1.0), MixUp prob 0.2 (α=0.2), NAP-safe permutation |
 | EMA decay | 0.999 |
 | Gradient clip | 1.0 |
-| Mixed precision | AMP on (auto-disabled on CPU) |
-| Determinism | seeded; `deterministic=True` flag |
-| TTA at eval | h-flip; final test pass also adds 5-crop averaging |
+| Mixed precision | bf16 on Ampere+, fp16+GradScaler otherwise |
+| Acceleration | `torch.compile` reduce-overhead (auto-disabled on CPU) |
+| TTA at eval | h-flip; demo also runs 5-crop averaging |
 | Calibration | Temperature scaling on val NLL, grid 0.3-5.0 |
 | Quantisation | Dynamic INT8 on MatMul only (Conv stays FP32) |
-| OOD calibration | Sweep across `NAP_DETECTOR_CONF_FLOOR` × `NAP_CLASSIFIER_MSP_FLOOR` on a held-out real-world set |
+| OOD calibration | Sweep across `NAP_DETECTOR_CONF_FLOOR` × `NAP_CLASSIFIER_MSP_FLOOR` |
 
 ## Compute budget
 
-Targets a Colab T4 free tier (16 GB GPU, 13 GB system RAM, 60 GB disk).
-End-to-end is ~3.5 hours: detector ~70 min, classifier B0 ~70 min, optional
-V2-S peer ~40 min on a smaller resolution.
+A100-40 GB end-to-end ≈ 30-40 min (detector ~10 min, classifier ~25 min).
+T4 fallback ≈ 2-3 hours.
 
 ## Inference characteristics
 
 | Path | Latency (2-core CPU VPS, batch=1) | Notes |
 |------|----------------------------------|-------|
 | Detector ONNX FP32 | ~80–110 ms | 640 px |
-| Classifier B0 ONNX INT8 | ~25–40 ms | 240 px, MatMul-only quant |
-| Classifier B0 + V2-S ensemble | ~80–120 ms | weighted-average softmax |
-| Full pipeline `/api/analyze` (4 bboxes batched) | ~150–250 ms | ensemble off → ~120 ms |
+| Classifier ONNX INT8 | ~30–45 ms | 256 px, MatMul-only quant |
+| Full pipeline `/api/analyze` (4 bboxes batched) | ~120–180 ms | |
 
 ## Known limitations
 
-* Trained on ~10–12 k images across 10 classes; expect the long tail
-  (uncommon variegated species, atypical lighting) to confuse the model.
-* `mosaic_virus` and `iron_chlorosis` overlap visually on Hoya / Ficus;
-  the temperature-scaled top-1 is rarely > 0.7 on those.
-* `late_blight` proxy data come from PV tomato/potato; visual transfer
-  to ornamentals is reasonable but imperfect.
+* `mosaic_virus` ↔ `iron_chlorosis` пересекаются на жёлтых листьях.
+* `late_blight` proxy — field-crop (PV tomato/potato), transfer на indoor ornamentals имперфектный.
+* `bacterial_leaf_spot` / `sunburn` обучены через визуальные proxy.
+* `anthracnose` слабый класс (мало iNat данных) — добавь real-world фото в `RAW/real_world/anthracnose/` для следующего прогона.
 * The `not_a_plant` class is calibrated against COCO indoor textures.
-  Outdoor / agricultural backgrounds may be flagged less reliably.
 
 ## Risks and mitigations
 
-* **Hallucinated certainty** — the disease classes have built-in confidence
+* **Healthy bias** — main risk vector. Mitigated by class-balanced CE
+  with `healthy × 0.35`, dropped `WeightedRandomSampler`, hard-aug on
+  30 % HP crops, and a per-epoch `predicted_healthy / true_healthy`
+  monitor that alarms above 2.0.
+* **Hallucinated certainty** — disease classes have built-in confidence
   gates (`HEALTHY_FALLBACK_MARGIN`, `DISEASE_MIN_CONFIDENCE`,
   `NAP_*_FLOOR`) that downgrade weak verdicts to `healthy` or
-  `not_a_plant` rather than asserting a disease.
+  `not_a_plant`.
 * **Pest confusion** — pests with disease-like leaf damage are surfaced
   as `possible_pest_causes` hints rather than misclassified.
-* **Bacterial vs fungal** — bacterial_leaf_spot and anthracnose share
-  brown spotting; the classifier separates them via halo / texture
-  cues but the UI advice is conservative (always recommends isolation
-  + sanitation regardless of which one wins).
 
 ## Evaluation
 
 Generated automatically by the final notebook cell:
 
-* Per-class precision / recall / F1 on the held-out 15 % val split,
-  with TTA h-flip.
+* Per-class precision / recall / F1 on the held-out val split (15 %
+  stratified + 20 % of real-world per class), with TTA h-flip.
 * Confusion matrix (printed + saved to `classes.json`).
-* PyTorch ⇄ ONNX FP32 ⇄ ONNX INT8 drift sanity-check.
+* PyTorch ⇄ ONNX FP32 ⇄ ONNX INT8 disease-F1 drift check.
 * Temperature scaling delta NLL.
-* `ensemble_size=2` blended val accuracy when the V2-S peer trained.
+* Healthy bias ratio.
 
 Targets (Definition of Done):
 
 * YOLOv8n single-class leaf **mAP@50 ≥ 0.65**
-* Classifier ensemble + TTA top-1 ≥ **0.82** on held-out val
+* Classifier **disease macro-F1 ≥ 0.55** on held-out val
+* Healthy bias ratio ≤ 1.5
