@@ -219,21 +219,35 @@ class ScanRepository(
         diseaseNameRu = diseaseNameRu,
         confidence = confidence,
         isHealthy = isHealthy,
-        isNotAPlant = isNotAPlantEntity(this),
+        isNotAPlant = isNotAPlantScan(this),
         timestamp = timestamp
     )
 
+    /** Persisted top-class key from `all_probs`; null when not stored. */
+    fun topClassKey(scan: ScanEntity): String? =
+        parseAllProbs(scan.allProbs).entries.maxByOrNull { it.value }?.key
+
     /**
-     * NAP detection at storage level: prefer the canonical class key from
-     * `all_probs`; fall back to the localized display name (covers legacy
-     * scans without `all_probs`).
+     * NAP detection: prefer the canonical class key from `all_probs`;
+     * fall back to the localised display name (covers legacy scans
+     * without `all_probs`).
      */
-    private fun isNotAPlantEntity(entity: ScanEntity): Boolean {
-        val topKey = parseAllProbs(entity.allProbs)
-            .entries.maxByOrNull { it.value }?.key
-        if (topKey == "not_a_plant") return true
-        return entity.diseaseName.equals("Not a Plant", ignoreCase = true) ||
-            entity.diseaseNameRu == "Не растение"
+    fun isNotAPlantScan(scan: ScanEntity): Boolean {
+        if (topClassKey(scan) == "not_a_plant") return true
+        return scan.diseaseName.equals("Not a Plant", ignoreCase = true) ||
+            scan.diseaseNameRu == "Не растение"
+    }
+
+    /**
+     * "Healthy" verdict for the result UI. Uses the persisted top-class
+     * key (locale-independent) so the status badge can never contradict
+     * the diagnosis text. Falls back to the server's `is_healthy` flag
+     * for legacy rows that pre-date `all_probs` persistence.
+     */
+    fun isHealthyVerdict(scan: ScanEntity): Boolean = when (topClassKey(scan)) {
+        "healthy" -> true
+        null -> scan.isHealthy
+        else -> false
     }
 
     /**
@@ -257,7 +271,7 @@ class ScanRepository(
         val diseaseRuByEn = mutableMapOf<String, String>()
         for (s in all) {
             when {
-                isNotAPlantEntity(s) -> notAPlant++
+                isNotAPlantScan(s) -> notAPlant++
                 s.isHealthy -> healthy++
                 else -> {
                     diseased++

@@ -125,7 +125,7 @@
 
                 </LinearLayout>
 
-                <!-- Details: pipeline / version / classes -->
+                <!-- Details: version / classes -->
                 <LinearLayout
                     android:id="@+id/diagnostics_details"
                     android:layout_width="match_parent"
@@ -136,31 +136,6 @@
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:orientation="horizontal">
-
-                        <TextView
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:text="@string/diagnostics_pipeline"
-                            android:textSize="13sp"
-                            android:textColor="@color/on_surface_secondary" />
-
-                        <TextView
-                            android:id="@+id/tv_diag_pipeline"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/diagnostics_value_dash"
-                            android:textSize="13sp"
-                            android:textColor="@color/on_surface"
-                            android:fontFamily="sans-serif-medium" />
-
-                    </LinearLayout>
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="6dp"
                         android:orientation="horizontal">
 
                         <TextView

@@ -9,9 +9,9 @@ shots and mis-fire on wide indoor compositions).
 The detector is single-class (``plant_leaf``). The "is it diseased?"
 decision is delegated 100 % to Stage 2 (classifier).
 
-When no trained weights are present, the detector falls back to a
-deterministic HSV colour heuristic so the server is usable in demo
-mode. The heuristic also returns a single ``plant_leaf`` bbox.
+Loading is fail-fast: if no usable artefact is found, ``__init__``
+raises ``DetectorLoadError`` so the API never boots in a half-broken
+state. There is no heuristic / demo fallback path.
 
 ONNX is loaded transparently: ``YOLO('detector.onnx')`` works exactly
 like the .pt path. Production deployments should ship ``detector.onnx``.
@@ -23,7 +23,6 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-import cv2
 import numpy as np
 from PIL import Image
 
@@ -36,6 +35,10 @@ DETECTOR_CLASSES = ("plant_leaf",)
 # (detector confidence + classifier MaxLogit) cleans up false positives.
 MIN_CONFIDENCE = 0.15
 MAX_DETECTIONS = 10
+
+
+class DetectorLoadError(RuntimeError):
+    """Raised when no usable detector artefact can be loaded."""
 
 
 def _resolve_detector_path(model_path: Path | None) -> Path | None:
@@ -56,19 +59,22 @@ class LeafDetector:
 
     def __init__(self, model_path: Path | None = None):
         self.model = None
-        self.is_loaded = False
         self.device = "cpu"
-        self._model_path = model_path
 
         resolved = _resolve_detector_path(model_path)
-        if resolved is not None:
-            try:
-                self._load_model(resolved)
-            except Exception as e:
-                logger.error("Failed to load YOLO detector %s: %s", resolved, e)
+        if resolved is None:
+            raise DetectorLoadError(
+                "Cannot start without a trained detector. "
+                "Expected detector.onnx or detector.pt next to the configured model path."
+            )
+        try:
+            self._load_model(resolved)
+        except Exception as e:
+            raise DetectorLoadError(f"Failed to load YOLO detector {resolved}: {e}") from e
 
-        if not self.is_loaded:
-            logger.warning("Detector: no YOLO weights found, running in DEMO mode")
+    @property
+    def is_loaded(self) -> bool:
+        return self.model is not None
 
     def _load_model(self, path: Path) -> None:
         from ultralytics import YOLO  # type: ignore
@@ -79,7 +85,6 @@ class LeafDetector:
             np.zeros((DETECTOR_IMG_SIZE, DETECTOR_IMG_SIZE, 3), dtype=np.uint8),
             imgsz=DETECTOR_IMG_SIZE, verbose=False, device=self.device,
         )
-        self.is_loaded = True
         logger.info("YOLOv8 detector loaded from %s", path)
 
     # ── public API ───────────────────────────────────────────────────
@@ -98,13 +103,6 @@ class LeafDetector:
                           pipeline may override this after consulting
                           the classifier (disease-aware selection).
         """
-        if self.is_loaded:
-            return self._detect_real(img)
-        return self._detect_demo(img)
-
-    # ── real inference (YOLOv8 / ONNX via Ultralytics) ───────────────
-
-    def _detect_real(self, img: Image.Image) -> dict:
         arr = np.array(img)
         results = self.model.predict(
             arr,
@@ -136,40 +134,6 @@ class LeafDetector:
             })
         detections.sort(key=lambda d: -d["confidence"])
         return self._build_result(detections)
-
-    # ── demo mode (HSV heuristic, single leaf bbox) ──────────────────
-
-    def _detect_demo(self, img: Image.Image) -> dict:
-        arr = np.array(img.resize((320, 320)))
-        hsv = cv2.cvtColor(arr, cv2.COLOR_RGB2HSV)
-        green_mask = cv2.inRange(hsv, (25, 30, 30), (95, 255, 255))
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-        green_mask = cv2.morphologyEx(green_mask, cv2.MORPH_OPEN, kernel)
-
-        green_ratio = float(green_mask.sum()) / 255.0 / green_mask.size
-        if green_ratio < 0.05:
-            return self._empty_result()
-
-        sx = img.width / 320.0
-        sy = img.height / 320.0
-        contours, _ = cv2.findContours(green_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        if not contours:
-            return self._empty_result()
-
-        largest = max(contours, key=cv2.contourArea)
-        if cv2.contourArea(largest) <= 500:
-            return self._empty_result()
-
-        gx, gy, gw, gh = cv2.boundingRect(largest)
-        det = {
-            "x": int(gx * sx),
-            "y": int(gy * sy),
-            "width": int(max(1, gw * sx)),
-            "height": int(max(1, gh * sy)),
-            "class": "plant_leaf",
-            "confidence": round(float(min(0.95, 0.60 + green_ratio)), 4),
-        }
-        return self._build_result([det])
 
     # ── helpers ──────────────────────────────────────────────────────
 

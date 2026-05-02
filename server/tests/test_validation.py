@@ -66,5 +66,5 @@ def test_valid_image_accepted(client, fmt, content_type):
     r = _post_image(client, buf.getvalue(), f"leaf.{fmt.lower()}", content_type)
     assert r.status_code == 200, r.text
     body = r.json()
-    for key in ("disease_name", "confidence", "all_probs", "pipeline_mode", "detection"):
+    for key in ("disease_name", "confidence", "all_probs", "detection"):
         assert key in body

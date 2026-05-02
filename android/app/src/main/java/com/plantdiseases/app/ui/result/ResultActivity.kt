@@ -222,19 +222,8 @@ class ResultActivity : AppCompatActivity() {
 
     private fun displayResult(scan: ScanEntity, repository: ScanRepository) {
         val isRu = LocaleHelper.isRussian(this)
-        val isNotAPlant = isNotAPlantScan(scan, repository)
-        // Use the persisted classifier top-class as the source of truth
-        // for the status badge: as long as the diagnosis text says
-        // "Healthy Plant", the badge must agree. Falls back to the
-        // server's `is_healthy` boolean for legacy rows that pre-date
-        // `all_probs` persistence.
-        val topClassKey = repository.parseAllProbs(scan.allProbs)
-            .entries.maxByOrNull { it.value }?.key
-        val isHealthyVerdict = when (topClassKey) {
-            "healthy" -> true
-            null -> scan.isHealthy
-            else -> false
-        }
+        val isNotAPlant = repository.isNotAPlantScan(scan)
+        val isHealthyVerdict = repository.isHealthyVerdict(scan)
         val diseaseName = when {
             isNotAPlant -> getString(R.string.not_a_plant_diagnosis_name)
             isRu -> scan.diseaseNameRu
@@ -833,26 +822,6 @@ class ResultActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * NAP detection. Two redundant signals:
-     * 1. The classifier's top-class key (`not_a_plant`) read from the
-     *    persisted `all_probs` JSON. This is locale-independent and the
-     *    canonical signal — it survives renaming the displayed disease.
-     * 2. The displayed disease name (EN or RU) as a fallback for legacy
-     *    rows from before `all_probs` was persisted.
-     *
-     * We accept either signal. If the persisted top class is missing
-     * (older scan without `all_probs`), we still recognise NAP via the
-     * stored localized name.
-     */
-    private fun isNotAPlantScan(scan: ScanEntity, repository: ScanRepository): Boolean {
-        val topKey = repository.parseAllProbs(scan.allProbs)
-            .entries.maxByOrNull { it.value }?.key
-        if (topKey == "not_a_plant") return true
-        return scan.diseaseName.equals("Not a Plant", ignoreCase = true) ||
-            scan.diseaseNameRu == "Не растение"
-    }
-
     private fun shareWithImage(scan: ScanEntity, repository: ScanRepository, isRu: Boolean) {
         val shareText = buildString {
             append(if (isRu) "🌿 PlantDiseases — Диагноз\n\n" else "🌿 PlantDiseases — Diagnosis\n\n")
@@ -948,18 +917,9 @@ class ResultActivity : AppCompatActivity() {
             result
         }
 
-        // Skip the red highlight when the verdict is healthy or NAP.
-        // Use the persisted top-class to be consistent with the badge
-        // routing in `displayResult`; fall back to the legacy boolean.
+        // Skip the red highlight when the verdict is healthy.
         val repo = (application as PlantDiseasesApp).scanRepository
-        val topClassKey = repo.parseAllProbs(scan.allProbs)
-            .entries.maxByOrNull { it.value }?.key
-        val isHealthyVerdict = when (topClassKey) {
-            "healthy" -> true
-            null -> scan.isHealthy
-            else -> false
-        }
-        if (!isHealthyVerdict) {
+        if (!repo.isHealthyVerdict(scan)) {
             val regions = repo.parseRegions(scan.regions)
             val primary = regions.getOrNull(scan.primaryRegionIndex ?: -1)
             if (primary != null) {
@@ -1148,8 +1108,7 @@ class ResultActivity : AppCompatActivity() {
 
     private fun buildCarePlanCard(scan: ScanEntity, repository: ScanRepository, isRu: Boolean) {
         val container = binding.contentLayout
-        val classKey = repository.parseAllProbs(scan.allProbs)
-            .entries.maxByOrNull { it.value }?.key
+        val classKey = repository.topClassKey(scan)
             ?: scan.diseaseName.lowercase().replace(' ', '_')
 
         // Reuse a single card across re-binds.

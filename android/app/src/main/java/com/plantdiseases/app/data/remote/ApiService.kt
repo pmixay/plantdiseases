@@ -1,6 +1,5 @@
 package com.plantdiseases.app.data.remote
 
-import android.content.Context
 import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.data.model.AnalysisResponse
 import com.plantdiseases.app.data.model.CarePlanRequest
@@ -113,7 +112,7 @@ class RetryInterceptor(
 }
 
 /** Retrofit client using the build-time API base URL. */
-class PlantApiClient(private val context: Context) {
+class PlantApiClient {
 
     private val client: OkHttpClient = run {
         val logging = HttpLoggingInterceptor().apply {
@@ -133,14 +132,11 @@ class PlantApiClient(private val context: Context) {
     }
 
     val apiService: ApiService by lazy {
-        buildService(ServerConfig.getBaseUrl(context))
-    }
-
-    private fun buildService(baseUrl: String): ApiService =
         Retrofit.Builder()
-            .baseUrl(baseUrl)
+            .baseUrl(ServerConfig.baseUrl)
             .client(client)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
             .create(ApiService::class.java)
+    }
 }

@@ -168,38 +168,13 @@ def test_load_conformal_config_rejects_unknown_method(tmp_path):
     assert load_conformal_config(tmp_path) is None
 
 
-def test_pipeline_emits_prediction_set_when_calibration_loaded(tmp_path):
-    """Smoke test: drop a conformal.json next to a fake model dir and
-    confirm the pipeline reads it and surfaces a prediction_set."""
-    from PIL import Image
-
-    from pipeline import PlantDiseasePipeline
-
-    (tmp_path / "conformal.json").write_text(json.dumps({
-        "method": "aps", "alpha": 0.1, "q_hat": 0.95,
-    }))
-    fake_classifier_path = tmp_path / "classifier.pth"  # doesn't need to exist
-    pipe = PlantDiseasePipeline(detector_path=None,
-                                classifier_path=fake_classifier_path)
-    assert pipe.conformal is not None
-
-    img = Image.new("RGB", (96, 96), color=(40, 150, 60))
-    out = pipe.analyze(img)
-    assert "prediction_set" in out
-    ps = out["prediction_set"]
-    assert ps is not None
-    assert ps["method"] == "aps"
-    assert 0.0 < ps["coverage"] <= 1.0
-    assert isinstance(ps["classes"], list) and len(ps["classes"]) >= 1
-
-
-def test_pipeline_omits_prediction_set_without_calibration(tmp_path):
-    from PIL import Image
-
-    from pipeline import PlantDiseasePipeline
-
-    pipe = PlantDiseasePipeline()
-    assert pipe.conformal is None
-    img = Image.new("RGB", (96, 96), color=(40, 150, 60))
-    out = pipe.analyze(img)
-    assert out.get("prediction_set") is None
+def test_load_conformal_config_searches_classifier_dir(tmp_path):
+    """The pipeline asks ``load_conformal_config(classifier_dir)``; the
+    helper must pick up the calibration file dropped next to the
+    weights."""
+    payload = {"method": "aps", "alpha": 0.1, "q_hat": 0.95}
+    (tmp_path / "conformal.json").write_text(json.dumps(payload))
+    cfg = load_conformal_config(tmp_path)
+    assert cfg is not None
+    assert cfg.method == "aps"
+    assert cfg.q_hat == pytest.approx(0.95)

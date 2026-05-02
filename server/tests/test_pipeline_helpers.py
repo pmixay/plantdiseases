@@ -1,20 +1,14 @@
-"""Demo-mode pipeline must be deterministic for a fixed input image."""
+"""Pure-helper tests for the PlantVision pipeline.
+
+These tests only exercise the deterministic helpers (post-processing
+rules, healthy fallback, OOD reroute, severity scoring, taxonomy
+constants). They do not instantiate ``PlantDiseasePipeline`` directly
+because production startup is fail-fast and requires trained weights.
+The HTTP-level contract is covered separately in ``test_endpoints.py``
+via the ``FakePipeline`` injected by ``conftest.py``.
+"""
 
 from __future__ import annotations
-
-from PIL import Image
-
-from pipeline import PlantDiseasePipeline
-
-
-def _seeded_image(seed: int, size: int = 96) -> Image.Image:
-    """Return an image whose pixel statistics depend only on ``seed``."""
-    import numpy as np
-
-    rng = np.random.RandomState(seed)
-    arr = (rng.rand(size, size, 3) * 255).astype("uint8")
-    return Image.fromarray(arr, mode="RGB")
-
 
 # Canonical alphabetical 11-class taxonomy (PlantVision 2.0).
 EXPECTED_CLASSES = {
@@ -36,45 +30,6 @@ def _uniform_probs() -> dict[str, float]:
     """A flat distribution over the v2.0 class set."""
     n = len(EXPECTED_CLASSES)
     return {name: 1.0 / n for name in sorted(EXPECTED_CLASSES)}
-
-
-def test_demo_pipeline_is_deterministic():
-    img = _seeded_image(seed=7)
-    p1 = PlantDiseasePipeline()
-    p2 = PlantDiseasePipeline()
-    r1 = p1.analyze(img)
-    r2 = p2.analyze(img)
-
-    assert r1["pipeline_mode"] == "demo"
-    assert r1["class_name"] == r2["class_name"]
-    assert r1["confidence"] == r2["confidence"]
-    assert r1["all_probs"] == r2["all_probs"]
-
-
-def test_demo_pipeline_result_shape():
-    p = PlantDiseasePipeline()
-    result = p.analyze(_seeded_image(seed=3))
-
-    for key in ("class_name", "confidence", "all_probs", "detection",
-                "pipeline_mode", "elapsed_ms"):
-        assert key in result, f"missing key {key}"
-
-    assert 0.0 <= result["confidence"] <= 1.0
-    assert set(result["detection"].keys()) == {
-        "is_diseased", "detector_confidence", "regions", "primary_region",
-    }
-    assert isinstance(result["detection"]["regions"], list)
-    assert isinstance(result["all_probs"], dict)
-    total = sum(result["all_probs"].values())
-    assert 0.95 <= total <= 1.05
-
-
-def test_class_names_match_default():
-    from classifier import DEFAULT_CLASS_NAMES, DiseaseClassifier
-
-    clf = DiseaseClassifier(model_path=None)
-    assert clf.NUM_CLASSES == len(DEFAULT_CLASS_NAMES)
-    assert clf.CLASS_NAMES == DEFAULT_CLASS_NAMES
 
 
 def test_not_a_plant_class_is_present():
@@ -104,20 +59,6 @@ def test_taxonomy_is_v2_disease_only():
         assert pest not in DEFAULT_CLASS_NAMES, (
             f"must not have pest class {pest}"
         )
-
-
-def test_top_k_and_warnings_keys_in_result():
-    """Pipeline should always include top_k and warnings."""
-    p = PlantDiseasePipeline()
-    result = p.analyze(_seeded_image(seed=11))
-
-    assert "top_k" in result
-    assert "warnings" in result
-    assert isinstance(result["top_k"], list)
-    assert isinstance(result["warnings"], list)
-    assert len(result["top_k"]) <= 3
-    for entry in result["top_k"]:
-        assert set(entry.keys()) == {"class", "confidence"}
 
 
 def test_healthy_gate_attaches_warning_without_rerouting():
@@ -198,39 +139,6 @@ def test_healthy_fallback_emits_disease_uncertain_warning():
 
     assert out["class_name"] == "healthy"
     assert "disease_uncertain:powdery_mildew" in out["warnings"]
-
-
-def test_ood_reroute_to_nap_produces_consistent_distribution():
-    """When the secondary OOD gate fires, _reroute_to_nap must rewrite
-    the classification so that ``not_a_plant`` is the top class AND the
-    published probability mass adds up to ~1."""
-    from pipeline import PlantDiseasePipeline
-
-    p = PlantDiseasePipeline()
-    probs = _uniform_probs()
-    probs["powdery_mildew"] = 0.42
-    probs["healthy"] = 0.20
-    probs["not_a_plant"] = 0.03
-    s = sum(probs.values())
-    probs = {k: v / s for k, v in probs.items()}
-
-    classification = {
-        "class_name": "powdery_mildew",
-        "confidence": probs["powdery_mildew"],
-        "all_probs": probs,
-        "max_logit": 1.5,
-        "low_confidence": False,
-        "_voted_over": 1,
-    }
-    out = p._reroute_to_nap(classification)
-
-    assert out["class_name"] == "not_a_plant"
-    assert out["confidence"] >= 0.55
-    total = sum(out["all_probs"].values())
-    assert 0.99 <= total <= 1.01, f"distribution drift {total}"
-    top = max(out["all_probs"], key=out["all_probs"].get)
-    assert top == "not_a_plant"
-    assert out["_ood_gated"] is True
 
 
 def test_postprocessor_emits_nap_ood_warning():
@@ -319,3 +227,69 @@ def test_healthy_fallback_keeps_top_k_consistent_with_class_name():
     assert out["top_k"][0]["class"] == out["class_name"], (
         f"top_k[0]={out['top_k'][0]} but class_name={out['class_name']}"
     )
+
+
+def test_severity_low_for_non_disease():
+    """compute_severity must short-circuit to "low" for healthy / NAP."""
+    from pipeline import compute_severity
+
+    assert compute_severity(
+        class_name="healthy", confidence=0.95, healthy_prob=0.95,
+        primary_box=None, image_size=(640, 640), is_diseased=False,
+    ) == "low"
+    assert compute_severity(
+        class_name="not_a_plant", confidence=0.80, healthy_prob=0.10,
+        primary_box=None, image_size=(640, 640), is_diseased=False,
+    ) == "low"
+
+
+def test_severity_escalates_with_area_and_margin():
+    """A widespread, confident disease must score high; a tiny faint
+    bbox must stay low."""
+    from pipeline import compute_severity
+
+    big_box = {"width": 400, "height": 400}  # >35 % of a 640×640 frame
+    small_box = {"width": 30, "height": 30}
+
+    high = compute_severity(
+        class_name="leaf_spot_fungal", confidence=0.92, healthy_prob=0.05,
+        primary_box=big_box, image_size=(640, 640), is_diseased=True,
+    )
+    low = compute_severity(
+        class_name="leaf_spot_fungal", confidence=0.66, healthy_prob=0.40,
+        primary_box=small_box, image_size=(640, 640), is_diseased=True,
+    )
+    assert high == "high"
+    assert low == "low"
+
+
+def test_healthy_fallback_helper_fires_on_weak_margin():
+    """`_maybe_apply_healthy_fallback` must downgrade a weak disease
+    verdict — the suspected class is reported back so the postprocessor
+    can surface a `disease_uncertain:<class>` warning."""
+    from pipeline import HEALTHY_FALLBACK_MARGIN, _maybe_apply_healthy_fallback
+
+    probs = {n: 0.01 for n in EXPECTED_CLASSES}
+    probs["powdery_mildew"] = 0.40
+    probs["healthy"] = 0.40 - (HEALTHY_FALLBACK_MARGIN / 2)
+    s = sum(probs.values())
+    probs = {k: v / s for k, v in probs.items()}
+    out = _maybe_apply_healthy_fallback(probs, "powdery_mildew", probs["powdery_mildew"])
+
+    assert out is not None
+    assert out["suspected"] == "powdery_mildew"
+    assert 0.0 < out["top1_conf"] <= 1.0
+
+
+def test_healthy_fallback_helper_skips_strong_disease_verdict():
+    """A confident disease verdict with healthy well below must be left alone."""
+    from pipeline import _maybe_apply_healthy_fallback
+
+    strong_probs = {n: 0.01 for n in EXPECTED_CLASSES}
+    strong_probs["powdery_mildew"] = 0.85
+    strong_probs["healthy"] = 0.05
+    s = sum(strong_probs.values())
+    strong_probs = {k: v / s for k, v in strong_probs.items()}
+    assert _maybe_apply_healthy_fallback(
+        strong_probs, "powdery_mildew", strong_probs["powdery_mildew"],
+    ) is None

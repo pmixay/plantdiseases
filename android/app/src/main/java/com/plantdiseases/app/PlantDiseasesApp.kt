@@ -14,7 +14,7 @@ import com.plantdiseases.app.util.ThemeHelper
 class PlantDiseasesApp : Application() {
 
     val database: AppDatabase by lazy { AppDatabase.getInstance(this) }
-    val apiClient: PlantApiClient by lazy { PlantApiClient(this) }
+    val apiClient: PlantApiClient by lazy { PlantApiClient() }
     val scanRepository: ScanRepository by lazy {
         ScanRepository(database.scanDao(), apiClient)
     }

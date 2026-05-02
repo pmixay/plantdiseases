@@ -40,22 +40,27 @@
 
         <activity
             android:name=".ui.onboarding.OnboardingActivity"
+            android:exported="false"
             android:screenOrientation="portrait" />
 
         <activity
             android:name=".ui.analysis.AnalysisActivity"
+            android:exported="false"
             android:screenOrientation="portrait" />
 
         <activity
             android:name=".ui.result.ResultActivity"
+            android:exported="false"
             android:screenOrientation="portrait" />
 
         <activity
             android:name=".ui.garden.PlantDetailActivity"
+            android:exported="false"
             android:screenOrientation="portrait" />
 
         <activity
             android:name=".ui.camera.LightMeterActivity"
+            android:exported="false"
             android:screenOrientation="portrait" />
 
         <provider
