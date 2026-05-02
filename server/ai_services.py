@@ -38,7 +38,7 @@ import time
 from collections import OrderedDict
 from typing import Any, Optional
 
-from config import get_int, get_float, get_str
+from config import get_float, get_int, get_str
 
 logger = logging.getLogger(__name__)
 

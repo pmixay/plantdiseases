@@ -15,7 +15,6 @@ import io
 import ipaddress
 import logging
 import math
-import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
