@@ -11,7 +11,6 @@ def test_health_contract(client):
     body = r.json()
     assert body["status"] == "ok"
     assert "version" in body
-    assert body["pipeline_mode"] in ("full", "partial", "demo")
     assert body["num_classes"] == len(DEFAULT_CLASS_NAMES)
     assert body["uptime_seconds"] >= 0
 
@@ -21,16 +20,10 @@ def test_version_contract(client):
     assert r.status_code == 200
     body = r.json()
     assert body["detector_arch"] == "YOLOv8n (single-class plant_leaf, indoor-trained)"
-    # classifier_arch is derived from the actually-loaded backend so
-    # the value depends on which weights the test environment has.
-    # In the test harness no weights are present so we get the demo
-    # heuristic. We assert structure, not the exact backbone string.
-    assert isinstance(body["classifier_arch"], str)
-    assert body["classifier_arch"] != ""
+    assert isinstance(body["classifier_arch"], str) and body["classifier_arch"]
     assert body["classifier_name"] == "plantvision"
     assert body["stages"] == 2
     assert body["focus"] == "houseplants"
-    assert body["pipeline_mode"] in ("full", "partial", "demo")
 
 
 def test_classes_contract(client):
@@ -61,7 +54,7 @@ def test_metrics_json(client):
         "total_errors",
         "avg_latency_ms",
         "class_counts",
-        "pipeline_mode",
+        "ai_doctor",
     ):
         assert key in body
 
@@ -78,7 +71,7 @@ def test_metrics_prometheus_format(client):
     assert "# TYPE plantdiseases_uptime_seconds gauge" in text
     assert "plantdiseases_requests_total" in text
     assert "plantdiseases_analyses_total" in text
-    assert "plantdiseases_pipeline_mode_info" in text
+    assert "plantdiseases_build_info" in text
 
 
 def test_analyze_response_contract(client, png_bytes):
@@ -107,7 +100,6 @@ def test_analyze_response_contract(client, png_bytes):
         "warnings",
         "severity",
         "prediction_set",
-        "pipeline_mode",
         "elapsed_ms",
         "server_version",
     }

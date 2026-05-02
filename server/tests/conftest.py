@@ -4,6 +4,12 @@ The server module imports (`main`, `pipeline`, ...) use top-level imports
 that expect the `server/` directory to be on ``sys.path``, so we prepend
 it here before any test collects. We also disable the rate limiter at
 process level (it is exercised explicitly in ``test_middleware.py``).
+
+The production server is fail-fast: it refuses to start without trained
+weights. Tests would never have weights available, so we substitute a
+``FakePipeline`` that mirrors the real pipeline's response shape using
+deterministic dummy probabilities. The fake honours the canonical class
+list so all contract tests still bite.
 """
 
 from __future__ import annotations
@@ -22,7 +28,7 @@ if str(SERVER_DIR) not in sys.path:
 
 # Make sure main.py reads a permissive rate limit on import. Tests that
 # want to exercise the 429 path re-tune the middleware through the
-# ``_rate_limit`` fixture below.
+# ``rate_limited_client`` fixture below.
 os.environ.setdefault("RATE_LIMIT_RPS", "1000")
 
 
@@ -45,11 +51,77 @@ def jpeg_bytes() -> bytes:
     return _encode_image(img, "JPEG")
 
 
-@pytest.fixture
-def brown_png_bytes() -> bytes:
-    """A brown-toned image — the demo detector should flag this as diseased."""
-    img = Image.new("RGB", (128, 128), color=(130, 80, 40))
-    return _encode_image(img, "PNG")
+# ── Fake pipeline (no weights required) ─────────────────────────────
+
+
+class _FakeClassifier:
+    backend = "fake"
+    img_size = 256
+
+    def __init__(self):
+        from classifier import DEFAULT_CLASS_NAMES
+
+        self.CLASS_NAMES = list(DEFAULT_CLASS_NAMES)
+        self.NUM_CLASSES = len(self.CLASS_NAMES)
+
+
+class _FakeDetector:
+    is_loaded = True
+
+
+class FakePipeline:
+    """Minimal stand-in for ``PlantDiseasePipeline`` used in tests.
+
+    Returns the same response shape as the real pipeline but always
+    classifies as ``healthy`` with low confidence. Tests that exercise
+    behaviour beyond the contract patch ``main.pipeline`` directly.
+    """
+
+    def __init__(self, *args, **kwargs):
+        # Accept (and ignore) the same kwargs as the real pipeline so
+        # the lifespan handler can construct us without special-casing.
+        self.classifier = _FakeClassifier()
+        self.detector = _FakeDetector()
+
+    def analyze(self, img: Image.Image) -> dict:
+        names = self.classifier.CLASS_NAMES
+        flat = 1.0 / len(names)
+        probs = {n: round(flat, 4) for n in names}
+        # Bias healthy slightly so verdicts are deterministic.
+        probs["healthy"] = round(flat + 0.1, 4)
+        s = sum(probs.values())
+        probs = {n: round(p / s, 4) for n, p in probs.items()}
+        top_k = sorted(probs.items(), key=lambda kv: -kv[1])[:3]
+        return {
+            "class_name": "healthy",
+            "confidence": probs["healthy"],
+            "all_probs": probs,
+            "top_k": [{"class": n, "confidence": p} for n, p in top_k],
+            "warnings": [],
+            "severity": "low",
+            "prediction_set": None,
+            "detection": {
+                "is_diseased": False,
+                "detector_confidence": 0.0,
+                "regions": [],
+                "primary_region": None,
+            },
+            "elapsed_ms": 0.0,
+        }
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _stub_pipeline_for_lifespan():
+    """Replace ``PlantDiseasePipeline`` with the fake before lifespan runs."""
+    import main as server_main
+    import pipeline as pipeline_module
+
+    server_main.PlantDiseasePipeline = FakePipeline  # type: ignore[assignment]
+    pipeline_module.PlantDiseasePipeline = FakePipeline  # type: ignore[assignment]
+    yield
+
+
+# ── HTTP test clients ───────────────────────────────────────────────
 
 
 def _find_rate_limit_middleware(app):

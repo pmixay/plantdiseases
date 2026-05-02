@@ -182,7 +182,6 @@ class ProfileFragment : Fragment() {
         binding.tvServerStatus.text = getString(R.string.server_checking)
         setStatusIndicatorColor(R.color.on_surface_secondary)
         val dash = getString(R.string.diagnostics_value_dash)
-        binding.tvDiagPipeline.text = dash
         binding.tvDiagVersion.text = dash
         binding.tvDiagClasses.text = dash
 
@@ -193,14 +192,12 @@ class ProfileFragment : Fragment() {
             result.onSuccess { health ->
                 binding.tvServerStatus.text = getString(R.string.server_online)
                 setStatusIndicatorColor(R.color.healthy_green)
-                binding.tvDiagPipeline.text = health.pipelineMode.ifBlank { dash }
                 binding.tvDiagVersion.text = health.version.ifBlank { dash }
                 binding.tvDiagClasses.text = if (health.numClasses > 0)
                     health.numClasses.toString() else dash
             }.onFailure {
                 binding.tvServerStatus.text = getString(R.string.server_offline)
                 setStatusIndicatorColor(R.color.disease_red)
-                binding.tvDiagPipeline.text = dash
                 binding.tvDiagVersion.text = dash
                 binding.tvDiagClasses.text = dash
             }

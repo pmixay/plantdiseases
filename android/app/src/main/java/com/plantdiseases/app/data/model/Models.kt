@@ -65,7 +65,6 @@ data class AnalysisResponse(
     @SerializedName("top_k") val topK: List<TopKEntry>? = null,
     @SerializedName("warnings") val warnings: List<String>? = null,
     @SerializedName("prediction_set") val predictionSet: PredictionSet? = null,
-    @SerializedName("pipeline_mode") val pipelineMode: String? = null,
     @SerializedName("elapsed_ms") val elapsedMs: Float? = null
 )
 
@@ -193,9 +192,6 @@ data class CarePlanResponse(
 data class HealthResponse(
     @SerializedName("status") val status: String,
     @SerializedName("version") val version: String,
-    @SerializedName("pipeline_mode") val pipelineMode: String,
-    @SerializedName("detector_loaded") val detectorLoaded: Boolean,
-    @SerializedName("classifier_loaded") val classifierLoaded: Boolean,
     @SerializedName("num_classes") val numClasses: Int,
     @SerializedName("uptime_seconds") val uptimeSeconds: Double? = null,
     @SerializedName("total_requests") val totalRequests: Int? = null

@@ -8,8 +8,10 @@ rem Usage:
 rem     start.bat                 start server (default port 8000)
 rem     start.bat --port 9000     custom port
 rem
-rem Train models in Colab via train_notebook.ipynb, then drop
-rem detector.pt, classifier.pth and classes.json into server\models\.
+rem Models are trained in Colab via train_notebook.ipynb. Drop the
+rem resulting detector.{pt,onnx}, classifier.{pth,onnx} and
+rem classes.json into server\models\ before starting - the server is
+rem fail-fast and will refuse to start without trained weights.
 setlocal enabledelayedexpansion
 
 cd /d "%~dp0"
@@ -35,7 +37,8 @@ echo.
 echo   --port PORT   Server port (default: 8000)
 echo.
 echo Train models in Colab via train_notebook.ipynb, then drop
-echo detector.pt, classifier.pth and classes.json into server\models\.
+echo detector.{pt,onnx}, classifier.{pth,onnx} and classes.json into
+echo server\models\. The server will not start without them.
 exit /b 0
 
 :args_done
@@ -72,24 +75,23 @@ pip install --quiet -r requirements.txt
 if not exist "models" mkdir models
 if not exist "logs" mkdir logs
 
-echo.
-if exist "models\detector.pt" (
-    if exist "models\classifier.pth" (
-        echo [+] Both models found - running in FULL mode
-        goto start_server
-    )
-)
-if exist "models\detector.pt" (
-    echo [!] Only detector model found - running in PARTIAL mode
-    goto start_server
-)
-if exist "models\classifier.pth" (
-    echo [!] Only classifier model found - running in PARTIAL mode
-    goto start_server
-)
-echo [!] No trained models found - running in DEMO mode
-echo     Train in Colab via train_notebook.ipynb, then copy detector.pt,
-echo     classifier.pth and classes.json into server\models\
+rem Sanity-check trained artefacts before exec'ing uvicorn.
+set DETECTOR_PRESENT=0
+set CLASSIFIER_PRESENT=0
+if exist "models\detector.pt"          set DETECTOR_PRESENT=1
+if exist "models\detector.onnx"        set DETECTOR_PRESENT=1
+if exist "models\classifier.pth"        set CLASSIFIER_PRESENT=1
+if exist "models\classifier.onnx"       set CLASSIFIER_PRESENT=1
+if exist "models\classifier_int8.onnx"  set CLASSIFIER_PRESENT=1
+if "%DETECTOR_PRESENT%"=="0" goto missing_models
+if "%CLASSIFIER_PRESENT%"=="0" goto missing_models
+goto start_server
+
+:missing_models
+echo [!] Trained model artefacts missing under server\models\.
+echo     Need detector.{pt,onnx} AND classifier.{pth,onnx,int8.onnx}.
+echo     Train in Colab via train_notebook.ipynb, then copy them in.
+exit /b 1
 
 :start_server
 echo.

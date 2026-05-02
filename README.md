@@ -10,10 +10,10 @@ advice.
 ## Project status
 
 The Android client and the server contracts are feature-complete; the
-ML pipeline is migrating to **PlantVision 2.0**, which changes the
-class taxonomy, backbones and training recipe. While the v2.0 weights
-are being trained the server runs in **demo mode** for the new
-classes (the API contract is unchanged).
+ML pipeline runs **PlantVision 2.0**. The server is **fail-fast** —
+without trained `detector.{pt,onnx}` and `classifier.{pth,onnx}`
+artefacts under `server/models/`, the API refuses to start.
+There is no offline / demo / heuristic fallback on either side.
 
 What changed vs v1.x:
 
@@ -204,23 +204,24 @@ cd server
 start.bat
 ```
 
-The script creates a virtual environment, installs CPU-only PyTorch plus
-the rest of `requirements.txt`, and launches FastAPI on
-`http://localhost:8000`. Without trained weights the server runs in a
-**demo mode** driven by colour heuristics — the API contract is
-identical, but the results are not meaningful.
+The script creates a virtual environment, installs CPU-only PyTorch
+plus the rest of `requirements.txt`, and launches FastAPI on
+`http://localhost:8000`. Trained weights (`detector.{pt,onnx}` and
+`classifier.{pth,onnx}` plus `classes.json`) must be present under
+`server/models/`; the script refuses to start without them — there
+is no demo fallback.
 
 ### Android app
 
 1. Open `android/` in Android Studio (Hedgehog 2023.1 or newer).
 2. Sync Gradle → run on a device or emulator.
-3. Set the server URL at runtime in **Profile → Server URL**. The shipped
-   default (`http://10.0.2.2:8000/`) points at the emulator loopback; on
-   a real device, type the PC's LAN IP, e.g. `http://192.168.1.42:8000/`.
+3. The server URL is baked in at build time via `BuildConfig.API_BASE_URL`.
+   Override it from the command line, e.g.
+   `./gradlew :app:assembleDebug -PAPI_BASE_URL=http://192.168.1.42:8000/`.
 
-> Cleartext HTTP is only allowed for `10.0.2.2`, `localhost`, and
-> `127.0.0.1`. For production, terminate TLS on the server (see
-> `DEPLOYMENT.md`).
+> Cleartext HTTP is allowed only for the IPs listed in
+> `network_security_config.xml`. For production, terminate TLS on the
+> server (see [`DEPLOYMENT.md`](DEPLOYMENT.md)).
 
 ---
 
@@ -269,8 +270,8 @@ Datasets:
   **not** download the full OpenImages tarball.
 
 Drop the model files into `server/models/` and restart the server — the
-pipeline auto-detects real vs demo mode and prefers ONNX INT8 when
-present.
+pipeline prefers `classifier_int8.onnx` over `classifier.onnx` over
+`classifier.pth`, and `detector.onnx` over `detector.pt`.
 
 ---
 
@@ -278,12 +279,16 @@ present.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/health` | Liveness + pipeline status + uptime |
+| `GET` | `/api/health` | Liveness + uptime + class count |
 | `GET` | `/api/version` | Server version + model architecture |
 | `GET` | `/api/classes` | 11 classes with bilingual names |
 | `GET` | `/api/metrics` | Counters for requests, errors, latency |
 | `GET` | `/api/metrics/prometheus` | Prometheus exposition format |
 | `POST` | `/api/analyze` | Upload image → get diagnosis |
+| `POST` | `/api/identify` | PlantNet species identification (graceful when unconfigured) |
+| `POST` | `/api/chat` | AI Plant Doctor (Anthropic; graceful when unconfigured) |
+| `POST` | `/api/care-plan` | Watering / fertilising / humidity schedule |
+| `POST` | `/api/progression` | Compare two scans → trend verdict |
 
 ### `POST /api/analyze`
 
@@ -320,7 +325,6 @@ WebP, or BMP; up to 10 MB, up to 4096 px per side).
     "healthy": 0.05, "powdery_mildew": 0.87, "leaf_spot_fungal": 0.04,
     "...": "..."
   },
-  "pipeline_mode": "full",
   "elapsed_ms": 145.3,
   "server_version": "2.0"
 }
@@ -365,8 +369,6 @@ Full production notes are in [`DEPLOYMENT.md`](DEPLOYMENT.md).
   primary-region highlight, via `FileProvider`.
 - Blur pre-check (Laplacian variance) and green-content pre-check
   (HSV ratio) to skip obviously bad uploads.
-- Configurable server URL from Profile → Server URL, no rebuild
-  required.
 - Retry interceptor with capped exponential backoff; honours the
   server's `Retry-After` seconds header.
 - Pinch-to-zoom on the result image, edge-to-edge display, predictive
@@ -397,7 +399,7 @@ android/app/src/main/
 │   │   ├── remote/ApiService.kt     # Retrofit API
 │   │   ├── model/Models.kt          # Data models
 │   │   ├── repository/ScanRepository.kt
-│   │   └── GuideDataProvider.kt     # Offline care guide
+│   │   └── GuideDataProvider.kt     # Bundled care guide content
 │   ├── ui/
 │   │   ├── camera/                  # Camera scanner
 │   │   ├── gallery/                 # Scan history grid
@@ -407,7 +409,7 @@ android/app/src/main/
 │   │   └── result/                  # Diagnosis result
 │   └── util/
 │       ├── LocaleHelper.kt          # Language switching
-│       ├── ServerConfig.kt          # Runtime server URL
+│       ├── ServerConfig.kt          # Build-time API base URL
 │       ├── ThemeHelper.kt           # Light/Dark/System theme
 │       └── ImageUtils.kt            # Image processing
 └── res/
@@ -429,7 +431,7 @@ server/
 ├── start.bat                # Windows startup script
 ├── main.py                  # FastAPI server (endpoints, middleware)
 ├── pipeline.py              # Two-stage pipeline orchestrator
-├── detector.py              # Stage 1: YOLOv8n (+ HSV demo fallback)
+├── detector.py              # Stage 1: YOLOv8n single-class plant_leaf
 ├── classifier.py            # Stage 2: MobileNetV3-Large (KD ← V2-S)
 ├── diseases_data.py         # Bilingual houseplant disease database
 ├── train_notebook.ipynb     # End-to-end v2.0 training recipe

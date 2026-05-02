@@ -139,7 +139,6 @@
     <string name="save">Save</string>
     <string name="diagnostics_title">Server Diagnostics</string>
     <string name="diagnostics_subtitle">Live status of the analysis backend</string>
-    <string name="diagnostics_pipeline">Pipeline</string>
     <string name="diagnostics_version">Server version</string>
     <string name="diagnostics_classes">Disease classes</string>
     <string name="diagnostics_refresh">Refresh</string>

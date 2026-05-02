@@ -16,8 +16,6 @@ Behaviour summary:
   area of the diagnosed disease, (b) the disease confidence margin
   over ``healthy`` and (c) whether the disease class is degenerative
   (``viral_disease`` always escalates one level — incurable).
-* **TTA at inference** — horizontal-flip averaging is applied to the
-  classifier output. Roughly +1 % top-1 vs cold inference.
 * **Mean voting** across valid bboxes (one noisy edge crop can't win
   the room).
 * **Size filter** drops tiny detections (<32 px or <0.5 % image area)
@@ -189,10 +187,15 @@ def _apply_temperature(probs: dict[str, float], T: float) -> dict[str, float]:
 class PlantDiseasePipeline:
     """Orchestrates the two-stage detection → classification pipeline."""
 
+    # Cap the number of bboxes we re-classify per request. Distilled
+    # MobileNetV3-L on CPU costs ~10-15 ms per crop in INT8 ONNX, so
+    # 4 boxes adds ~40-60 ms — well within the 150 ms budget.
+    _MAX_RECLASSIFY = 4
+
     def __init__(
         self,
-        detector_path: Path | None = None,
-        classifier_path: Path | None = None,
+        detector_path: Path,
+        classifier_path: Path,
     ):
         self.detector = LeafDetector(detector_path)
         self.classifier = DiseaseClassifier(classifier_path)
@@ -200,31 +203,17 @@ class PlantDiseasePipeline:
         meta = getattr(self.classifier, "meta", None) or {}
         self.nap_max_logit_floor = _resolve_max_logit_floor(meta)
         self.conformal: ConformalConfig | None = load_conformal_config(
-            classifier_path.parent if classifier_path else None
+            classifier_path.parent
         )
         logger.info(
-            "Pipeline ready  detector=%s  classifier=%s (%s backend)  T=%.3f  "
+            "Pipeline ready  classifier=%s backend  T=%.3f  "
             "MaxLogit floor=%s  conformal=%s",
-            "MODEL" if self.detector.is_loaded else "DEMO",
-            "MODEL" if self.classifier.is_loaded else "DEMO",
-            getattr(self.classifier, "backend", "demo"),
+            self.classifier.backend,
             self.temperature,
             "off" if self.nap_max_logit_floor <= 0 else f"{self.nap_max_logit_floor:.2f}",
             "off" if self.conformal is None
             else f"{self.conformal.method}@{self.conformal.coverage_target:.0%}",
         )
-
-    @property
-    def is_loaded(self) -> bool:
-        return self.detector.is_loaded or self.classifier.is_loaded
-
-    @property
-    def mode(self) -> str:
-        if self.detector.is_loaded and self.classifier.is_loaded:
-            return "full"
-        if self.detector.is_loaded or self.classifier.is_loaded:
-            return "partial"
-        return "demo"
 
     # ── main entry point ─────────────────────────────────────────────
 
@@ -245,50 +234,7 @@ class PlantDiseasePipeline:
         # plant photos that YOLO missed, while still routing genuine
         # non-plant images to NAP via the classifier's own decision.
         if not detections:
-            cls_full = self.classifier.classify(img)
-            calibrated = _apply_temperature(cls_full["all_probs"], self.temperature)
-            classification = {
-                **cls_full,
-                "all_probs": calibrated,
-                "_voted_over": 0,
-                "_no_detection": True,
-            }
-            final = _apply_postprocessing_rules(
-                classification,
-                self.classifier.CLASS_NAMES,
-            )
-            severity = compute_severity(
-                class_name=final["class_name"],
-                confidence=float(final["confidence"]),
-                healthy_prob=float(final["all_probs"].get("healthy", 0.0)),
-                primary_box=None,
-                image_size=img.size,
-                is_diseased=(
-                    final["class_name"] not in _NON_DISEASE
-                    and final["confidence"] >= DISEASE_MIN_CONFIDENCE
-                ),
-            )
-            elapsed = (time.perf_counter() - t0) * 1000
-            return {
-                "class_name": final["class_name"],
-                "confidence": final["confidence"],
-                "all_probs": final["all_probs"],
-                "top_k": final["top_k"],
-                "warnings": final["warnings"],
-                "severity": severity,
-                "prediction_set": self._build_prediction_set(final["all_probs"]),
-                "detection": {
-                    "is_diseased": (
-                        final["class_name"] not in _NON_DISEASE
-                        and final["confidence"] >= DISEASE_MIN_CONFIDENCE
-                    ),
-                    "detector_confidence": 0.0,
-                    "regions": [],
-                    "primary_region": None,
-                },
-                "pipeline_mode": self.mode,
-                "elapsed_ms": round(elapsed, 1),
-            }
+            return self._analyze_no_detection(img, t0)
 
         # Mean voting across valid bboxes (size-filtered).
         primary, classification = self._pick_primary(img, detections)
@@ -299,28 +245,10 @@ class PlantDiseasePipeline:
         # plant-coloured texture and the classifier had no clean answer
         # to give. Route to NAP rather than emitting a guessed disease.
         det_conf = float(stage1.get("confidence", 0.0))
-        max_logit = float(classification.get("max_logit", 0.0))
-        cls_name = classification["class_name"]
-        ml_floor = self.nap_max_logit_floor
-        ml_check_enabled = ml_floor > 0
-        if (
-            cls_name not in _NON_DISEASE
-            and det_conf < NAP_DETECTOR_CONF_FLOOR
-            and (not ml_check_enabled or max_logit < ml_floor)
-            and "not_a_plant" in self.classifier.CLASS_NAMES
-        ):
-            logger.info(
-                "OOD gate triggered (det=%.3f<%.2f, max_logit=%.3f%s) → not_a_plant",
-                det_conf, NAP_DETECTOR_CONF_FLOOR,
-                max_logit,
-                f"<{ml_floor:.2f}" if ml_check_enabled else "<off>",
-            )
+        if self._should_route_to_nap(classification, det_conf):
             classification = self._reroute_to_nap(classification)
 
-        is_diseased = (
-            classification["class_name"] not in _NON_DISEASE
-            and classification["confidence"] >= DISEASE_MIN_CONFIDENCE
-        )
+        is_diseased = self._is_diseased(classification)
 
         logger.info(
             "Stage 2 → class=%s  confidence=%.3f  primary_box=%s  voted_over=%d",
@@ -330,10 +258,7 @@ class PlantDiseasePipeline:
             classification.get("_voted_over", 1),
         )
 
-        final = _apply_postprocessing_rules(
-            classification,
-            self.classifier.CLASS_NAMES,
-        )
+        final = _apply_postprocessing_rules(classification, self.classifier.CLASS_NAMES)
 
         severity = compute_severity(
             class_name=final["class_name"],
@@ -344,6 +269,58 @@ class PlantDiseasePipeline:
             is_diseased=is_diseased,
         )
 
+        return self._build_response(
+            final=final,
+            severity=severity,
+            is_diseased=is_diseased,
+            stage1_confidence=stage1["confidence"],
+            regions=detections,
+            primary_region=primary,
+            t0=t0,
+        )
+
+    # ── analysis helpers ─────────────────────────────────────────────
+
+    def _analyze_no_detection(self, img: Image.Image, t0: float) -> dict:
+        cls_full = self.classifier.classify(img)
+        calibrated = _apply_temperature(cls_full["all_probs"], self.temperature)
+        classification = {
+            **cls_full,
+            "all_probs": calibrated,
+            "_voted_over": 0,
+            "_no_detection": True,
+        }
+        final = _apply_postprocessing_rules(classification, self.classifier.CLASS_NAMES)
+        is_diseased = self._is_diseased(final)
+        severity = compute_severity(
+            class_name=final["class_name"],
+            confidence=float(final["confidence"]),
+            healthy_prob=float(final["all_probs"].get("healthy", 0.0)),
+            primary_box=None,
+            image_size=img.size,
+            is_diseased=is_diseased,
+        )
+        return self._build_response(
+            final=final,
+            severity=severity,
+            is_diseased=is_diseased,
+            stage1_confidence=0.0,
+            regions=[],
+            primary_region=None,
+            t0=t0,
+        )
+
+    def _build_response(
+        self,
+        *,
+        final: dict,
+        severity: str,
+        is_diseased: bool,
+        stage1_confidence: float,
+        regions: list[dict],
+        primary_region: Optional[dict],
+        t0: float,
+    ) -> dict:
         elapsed = (time.perf_counter() - t0) * 1000
         return {
             "class_name": final["class_name"],
@@ -355,20 +332,40 @@ class PlantDiseasePipeline:
             "prediction_set": self._build_prediction_set(final["all_probs"]),
             "detection": {
                 "is_diseased": is_diseased,
-                "detector_confidence": stage1["confidence"],
-                "regions": detections,
-                "primary_region": primary,
+                "detector_confidence": stage1_confidence,
+                "regions": regions,
+                "primary_region": primary_region,
             },
-            "pipeline_mode": self.mode,
             "elapsed_ms": round(elapsed, 1),
         }
 
-    # ── helpers ──────────────────────────────────────────────────────
+    @staticmethod
+    def _is_diseased(classification: dict) -> bool:
+        return (
+            classification["class_name"] not in _NON_DISEASE
+            and classification["confidence"] >= DISEASE_MIN_CONFIDENCE
+        )
 
-    # Cap the number of bboxes we re-classify per request. Distilled
-    # MobileNetV3-L on CPU costs ~10-15 ms per crop in INT8 ONNX, so
-    # 4 boxes adds ~40-60 ms — well within the 150 ms budget.
-    _MAX_RECLASSIFY = 4
+    def _should_route_to_nap(self, classification: dict, det_conf: float) -> bool:
+        cls_name = classification["class_name"]
+        if cls_name in _NON_DISEASE:
+            return False
+        if "not_a_plant" not in self.classifier.CLASS_NAMES:
+            return False
+        if det_conf >= NAP_DETECTOR_CONF_FLOOR:
+            return False
+        ml_floor = self.nap_max_logit_floor
+        if ml_floor > 0:
+            max_logit = float(classification.get("max_logit", 0.0))
+            if max_logit >= ml_floor:
+                return False
+        logger.info(
+            "OOD gate triggered (det=%.3f<%.2f, max_logit=%.3f%s) → not_a_plant",
+            det_conf, NAP_DETECTOR_CONF_FLOOR,
+            float(classification.get("max_logit", 0.0)),
+            f"<{ml_floor:.2f}" if ml_floor > 0 else "<off>",
+        )
+        return True
 
     def _build_prediction_set(self, probs: dict[str, float]) -> dict | None:
         """Return the conformal prediction set or ``None`` if unconfigured.
@@ -397,28 +394,7 @@ class PlantDiseasePipeline:
         the voted crops so the OOD gate sees the strongest in-bbox
         signal we got, not the per-crop average.
         """
-        W, H = img.size
-        img_area = max(W * H, 1)
-
-        sized: list[dict] = []
-        for d in detections:
-            w = int(d.get("width", 0))
-            h = int(d.get("height", 0))
-            if w < MIN_CROP_SIZE or h < MIN_CROP_SIZE:
-                continue
-            if (w * h) / img_area < MIN_BBOX_AREA_FRAC:
-                continue
-            sized.append(d)
-
-        # If everything got filtered, take the single largest bbox.
-        if not sized:
-            sized = [
-                max(
-                    detections,
-                    key=lambda d: int(d.get("width", 0)) * int(d.get("height", 0)),
-                )
-            ]
-
+        sized = self._size_filter(detections, img.size)
         ranked = sorted(sized, key=lambda d: -d["confidence"])[: self._MAX_RECLASSIFY]
         crops = [self._extract_crop(img, box) for box in ranked]
         cls_results = self.classifier.classify_batch(crops)
@@ -427,7 +403,7 @@ class PlantDiseasePipeline:
         sum_probs: dict[str, float] = {n: 0.0 for n in self.classifier.CLASS_NAMES}
         max_logit_seen = -float("inf")
 
-        for box, cls_res in zip(ranked, cls_results, strict=False):
+        for box, cls_res in zip(ranked, cls_results, strict=True):
             calibrated = _apply_temperature(cls_res["all_probs"], self.temperature)
             results.append((box, {**cls_res, "all_probs": calibrated}))
             for n, p in calibrated.items():
@@ -441,66 +417,21 @@ class PlantDiseasePipeline:
 
         top1_class = max(mean_probs, key=mean_probs.get)
         top1_conf = float(mean_probs[top1_class])
-        healthy_p = float(mean_probs.get("healthy", 0.0))
 
-        # Healthy fallback: if averaged top-1 is a disease but its
-        # margin over healthy is small, downgrade.
-        downgraded = False
-        suspected_disease: Optional[str] = None
-        if top1_class not in _NON_DISEASE and "healthy" in mean_probs:
-            margin = top1_conf - healthy_p
-            disease_top_conf = top1_conf
-            fallback_reason: Optional[str] = None
-            if margin < HEALTHY_FALLBACK_MARGIN:
-                fallback_reason = f"margin={margin:.3f}<{HEALTHY_FALLBACK_MARGIN}"
-            elif top1_conf < DISEASE_MIN_CONFIDENCE:
-                fallback_reason = (
-                    f"threshold={top1_conf:.3f}<{DISEASE_MIN_CONFIDENCE}"
-                )
-            if fallback_reason is not None:
-                inverted_conf = max(healthy_p, 1.0 - disease_top_conf)
-                inverted_conf = min(inverted_conf, 0.95)
-                logger.info(
-                    "Healthy fallback (%s)  was=%s/%.3f  → healthy/%.3f",
-                    fallback_reason, top1_class, disease_top_conf, inverted_conf,
-                )
-                suspected_disease = top1_class
-                target_healthy = max(inverted_conf, healthy_p)
-                delta = min(
-                    disease_top_conf - inverted_conf,
-                    mean_probs[suspected_disease],
-                )
-                if delta > 0:
-                    mean_probs[suspected_disease] -= delta
-                    mean_probs["healthy"] = mean_probs.get("healthy", 0.0) + delta
-                total = sum(mean_probs.values())
-                if total > 0:
-                    mean_probs = {n: p / total for n, p in mean_probs.items()}
-                top1_class = "healthy"
-                top1_conf = float(mean_probs["healthy"])
-                downgraded = True
-                if top1_conf < target_healthy:
-                    top1_conf = target_healthy
-
-        # Pick primary bbox: prefer one whose own top-1 matches the
-        # aggregated decision (most "representative" of the call).
-        matching = [
-            (box, cls) for box, cls in results
-            if (cls.get("class_name") == top1_class) or (
-                downgraded and top1_class == "healthy"
-                and max(cls["all_probs"], key=cls["all_probs"].get) == "healthy"
-            )
-        ]
-        if matching:
-            primary_box = max(
-                matching,
-                key=lambda r: float(r[1]["all_probs"].get(top1_class, 0.0)),
-            )[0]
+        downgrade = _maybe_apply_healthy_fallback(mean_probs, top1_class, top1_conf)
+        if downgrade is not None:
+            mean_probs = downgrade["mean_probs"]
+            top1_class = "healthy"
+            top1_conf = downgrade["top1_conf"]
+            suspected_disease: Optional[str] = downgrade["suspected"]
         else:
-            primary_box = max(
-                results,
-                key=lambda r: int(r[0].get("width", 0)) * int(r[0].get("height", 0)),
-            )[0]
+            suspected_disease = None
+
+        primary_box = self._select_primary_box(
+            results=results,
+            top1_class=top1_class,
+            downgraded=downgrade is not None,
+        )
 
         aggregated_cls = {
             "class_name": top1_class,
@@ -512,6 +443,52 @@ class PlantDiseasePipeline:
             "_suspected_disease": suspected_disease,
         }
         return primary_box, aggregated_cls
+
+    @staticmethod
+    def _size_filter(detections: list[dict], image_size: tuple[int, int]) -> list[dict]:
+        """Drop tiny bboxes; if everything filters out, keep the largest."""
+        W, H = image_size
+        img_area = max(W * H, 1)
+        sized = [
+            d for d in detections
+            if int(d.get("width", 0)) >= MIN_CROP_SIZE
+            and int(d.get("height", 0)) >= MIN_CROP_SIZE
+            and (int(d.get("width", 0)) * int(d.get("height", 0))) / img_area
+                >= MIN_BBOX_AREA_FRAC
+        ]
+        if sized:
+            return sized
+        return [
+            max(
+                detections,
+                key=lambda d: int(d.get("width", 0)) * int(d.get("height", 0)),
+            )
+        ]
+
+    @staticmethod
+    def _select_primary_box(
+        *,
+        results: list[tuple[dict, dict]],
+        top1_class: str,
+        downgraded: bool,
+    ) -> dict:
+        """Prefer a bbox whose own top-1 matches the aggregated decision."""
+        matching = [
+            (box, cls) for box, cls in results
+            if cls.get("class_name") == top1_class or (
+                downgraded and top1_class == "healthy"
+                and max(cls["all_probs"], key=cls["all_probs"].get) == "healthy"
+            )
+        ]
+        if matching:
+            return max(
+                matching,
+                key=lambda r: float(r[1]["all_probs"].get(top1_class, 0.0)),
+            )[0]
+        return max(
+            results,
+            key=lambda r: int(r[0].get("width", 0)) * int(r[0].get("height", 0)),
+        )[0]
 
     def _reroute_to_nap(self, classification: dict) -> dict:
         """Rewrite an OOD-gated classification to a confident NAP verdict.
@@ -571,6 +548,59 @@ class PlantDiseasePipeline:
 
 # ── pure helpers (exposed for tests) ─────────────────────────────────
 
+
+def _maybe_apply_healthy_fallback(
+    mean_probs: dict[str, float],
+    top1_class: str,
+    top1_conf: float,
+) -> dict | None:
+    """Downgrade weak disease verdicts to ``healthy``.
+
+    Returns the rewritten state on downgrade, or ``None`` to keep the
+    original verdict. Mutates the caller's ``mean_probs`` only when
+    downgrading.
+    """
+    if top1_class in _NON_DISEASE or "healthy" not in mean_probs:
+        return None
+
+    healthy_p = float(mean_probs.get("healthy", 0.0))
+    margin = top1_conf - healthy_p
+
+    if margin >= HEALTHY_FALLBACK_MARGIN and top1_conf >= DISEASE_MIN_CONFIDENCE:
+        return None
+
+    reason = (
+        f"margin={margin:.3f}<{HEALTHY_FALLBACK_MARGIN}"
+        if margin < HEALTHY_FALLBACK_MARGIN
+        else f"threshold={top1_conf:.3f}<{DISEASE_MIN_CONFIDENCE}"
+    )
+    inverted_conf = min(max(healthy_p, 1.0 - top1_conf), 0.95)
+    logger.info(
+        "Healthy fallback (%s)  was=%s/%.3f  → healthy/%.3f",
+        reason, top1_class, top1_conf, inverted_conf,
+    )
+
+    target_healthy = max(inverted_conf, healthy_p)
+    delta = min(top1_conf - inverted_conf, mean_probs[top1_class])
+    if delta > 0:
+        mean_probs[top1_class] -= delta
+        mean_probs["healthy"] = mean_probs.get("healthy", 0.0) + delta
+
+    total = sum(mean_probs.values())
+    if total > 0:
+        mean_probs = {n: p / total for n, p in mean_probs.items()}
+
+    new_conf = float(mean_probs["healthy"])
+    if new_conf < target_healthy:
+        new_conf = target_healthy
+
+    return {
+        "mean_probs": mean_probs,
+        "top1_conf": new_conf,
+        "suspected": top1_class,
+    }
+
+
 def compute_severity(
     *,
     class_name: str,
@@ -620,14 +650,6 @@ def compute_severity(
     return "low"
 
 
-def _build_top_k(probs: dict[str, float], k: int) -> list[dict]:
-    ordered = sorted(probs.items(), key=lambda item: item[1], reverse=True)[:k]
-    return [
-        {"class": name, "confidence": round(float(conf), 4)}
-        for name, conf in ordered
-    ]
-
-
 def _apply_postprocessing_rules(
     classification: dict,
     class_names: list[str],
@@ -643,10 +665,13 @@ def _apply_postprocessing_rules(
       * ``low_confidence`` — top-1 below the healthy threshold.
     """
     probs = classification["all_probs"]
-    top_k = _build_top_k(probs, TOP_K_ALTERNATIVES)
+    ordered = sorted(probs.items(), key=lambda item: item[1], reverse=True)
+    top_k = [
+        {"class": name, "confidence": round(float(conf), 4)}
+        for name, conf in ordered[:TOP_K_ALTERNATIVES]
+    ]
     warnings: list[str] = []
 
-    ordered = sorted(probs.items(), key=lambda item: item[1], reverse=True)
     top1_name, top1_prob = ordered[0]
     top2_prob = ordered[1][1] if len(ordered) > 1 else 0.0
 

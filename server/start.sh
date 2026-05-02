@@ -11,8 +11,9 @@
 #     ./start.sh --port 9000  # custom port
 #
 # Models are trained in Colab via train_notebook.ipynb. Drop the
-# resulting detector.pt, classifier.pth and classes.json into
-# server/models/ before starting the server in FULL mode.
+# resulting detector.{pt,onnx}, classifier.{pth,onnx} and classes.json
+# into server/models/ before starting — the server is fail-fast and
+# will refuse to start without trained weights.
 #
 set -euo pipefail
 
@@ -31,7 +32,8 @@ Usage: $0 [--port PORT]
   --port PORT   Server port (default: 8000)
 
 Train models in Colab via train_notebook.ipynb, then drop
-detector.pt, classifier.pth and classes.json into server/models/.
+detector.{pt,onnx}, classifier.{pth,onnx} and classes.json into
+server/models/. The server will not start without them.
 USAGE
             exit 0
             ;;
@@ -80,14 +82,17 @@ pip install --quiet -r requirements.txt
 
 mkdir -p models logs
 
-if [[ -f "models/detector.pt" && -f "models/classifier.pth" ]]; then
-    echo "[+] Both models found — running in FULL mode"
-elif [[ -f "models/detector.pt" || -f "models/classifier.pth" ]]; then
-    echo "[!] Only one model found — running in PARTIAL mode"
-else
-    echo "[!] No trained models found — running in DEMO mode"
-    echo "    Train in Colab via train_notebook.ipynb, then drop"
-    echo "    detector.pt, classifier.pth, classes.json into server/models/"
+# Sanity-check artefacts before exec'ing uvicorn so the operator sees
+# the real cause instead of a stack trace from the lifespan handler.
+detector_present=0
+classifier_present=0
+[[ -f models/detector.pt   || -f models/detector.onnx ]]                                       && detector_present=1
+[[ -f models/classifier.pth || -f models/classifier.onnx || -f models/classifier_int8.onnx ]] && classifier_present=1
+if [[ $detector_present -eq 0 || $classifier_present -eq 0 ]]; then
+    echo "[!] Trained model artefacts missing under server/models/." >&2
+    echo "    Need detector.{pt,onnx} AND classifier.{pth,onnx,int8.onnx}." >&2
+    echo "    Train in Colab via train_notebook.ipynb, then copy them in." >&2
+    exit 1
 fi
 
 echo

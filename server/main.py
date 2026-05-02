@@ -27,6 +27,7 @@ from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from PIL import Image, UnidentifiedImageError
+from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response as StarletteResponse
 
@@ -39,14 +40,6 @@ from ai_services import (
 )
 from diseases_data import DISEASES_DATABASE
 from pipeline import PlantDiseasePipeline
-
-try:  # Pydantic v2 — request bodies for the new endpoints.
-    from pydantic import BaseModel, Field
-except Exception:  # pragma: no cover
-    BaseModel = object  # type: ignore[assignment]
-
-    def Field(*args, **kwargs):  # type: ignore[no-redef]
-        return None
 
 try:
     from . import __version__ as APP_VERSION  # type: ignore
@@ -83,10 +76,11 @@ logger = logging.getLogger("plantdiseases")
 # ── Configuration ────────────────────────────────────────────────────
 MODELS_DIR = Path("models")
 DETECTOR_PATH = MODELS_DIR / "detector.pt"       # YOLOv8 weights (auto-prefers detector.onnx if present)
-# PlantVision classifier: EfficientNet-B0. classes.json carries the
-# canonical img_size. Production preference order:
+# PlantVision classifier: distilled MobileNetV3-Large student (KD ←
+# EfficientNetV2-S teacher). classes.json carries the canonical
+# img_size. Production preference order:
 # classifier_int8.onnx → classifier.onnx → .pth.
-CLASSIFIER_PATH = MODELS_DIR / "classifier.pth"  # PlantVision weights
+CLASSIFIER_PATH = MODELS_DIR / "classifier.pth"
 
 MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE", 10 * 1024 * 1024))  # 10 MB
 MAX_IMAGE_DIMENSION = int(os.getenv("MAX_IMAGE_DIMENSION", 4096))
@@ -277,18 +271,25 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 # ── Lifecycle ────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Fail-fast startup: raise (i.e. abort boot) when models can't load.
+
+    The product contract is server-only inference; a half-broken
+    pipeline that silently degrades to heuristics is worse than no
+    server because clients can't tell the difference until users
+    notice bad diagnoses.
+    """
     global pipeline, SERVER_START_TIME, _inference_executor
     SERVER_START_TIME = time.time()
     _inference_executor = _get_inference_executor()
-    try:
-        pipeline = PlantDiseasePipeline(
-            detector_path=DETECTOR_PATH,
-            classifier_path=CLASSIFIER_PATH,
-        )
-        logger.info("Pipeline initialised (mode=%s)", pipeline.mode)
-    except Exception as e:
-        logger.error("Failed to initialise pipeline: %s", e)
-        pipeline = PlantDiseasePipeline()
+    pipeline = PlantDiseasePipeline(
+        detector_path=DETECTOR_PATH,
+        classifier_path=CLASSIFIER_PATH,
+    )
+    logger.info(
+        "Pipeline initialised (classifier=%s, %d classes)",
+        pipeline.classifier.backend,
+        pipeline.classifier.NUM_CLASSES,
+    )
     yield
     logger.info("Server shutting down")
     if _inference_executor is not None:
@@ -359,15 +360,14 @@ def _open_image(contents: bytes) -> Image.Image:
 
 @app.get("/api/health")
 async def health_check():
-    """Health check — server status, model state, pipeline mode, uptime, request count."""
+    """Health check — server status, uptime, request count."""
+    if pipeline is None:
+        raise HTTPException(status_code=503, detail="Pipeline not ready")
     uptime = time.time() - SERVER_START_TIME if SERVER_START_TIME else 0
     return {
         "status": "ok",
         "version": APP_VERSION,
-        "pipeline_mode": pipeline.mode if pipeline else "unknown",
-        "detector_loaded": pipeline.detector.is_loaded if pipeline else False,
-        "classifier_loaded": pipeline.classifier.is_loaded if pipeline else False,
-        "num_classes": len(pipeline.classifier.CLASS_NAMES) if pipeline else 0,
+        "num_classes": len(pipeline.classifier.CLASS_NAMES),
         "uptime_seconds": round(uptime, 1),
         "total_requests": _snapshot_metrics()["total_requests"],
     }
@@ -377,22 +377,15 @@ async def health_check():
 async def version():
     """Server version and model architecture."""
     if pipeline is None:
-        cls_arch = "unknown"
-    elif not pipeline.classifier.is_loaded:
-        cls_arch = "demo (HSV heuristic)"
-    else:
-        backend = getattr(pipeline.classifier, "backend", "unknown")
-        img_size = getattr(pipeline.classifier, "img_size", 0)
-        cls_arch = (
-            f"PlantVision MobileNetV3-L (KD ← EfficientNetV2-S) @ "
-            f"{img_size} px / {backend} backend"
-        )
+        raise HTTPException(status_code=503, detail="Pipeline not ready")
     return {
         "version": APP_VERSION,
         "classifier_name": "plantvision",
-        "pipeline_mode": pipeline.mode if pipeline else "unknown",
         "detector_arch": "YOLOv8n (single-class plant_leaf, indoor-trained)",
-        "classifier_arch": cls_arch,
+        "classifier_arch": (
+            f"PlantVision MobileNetV3-L (KD ← EfficientNetV2-S) @ "
+            f"{pipeline.classifier.img_size} px / {pipeline.classifier.backend} backend"
+        ),
         "stages": 2,
         "focus": "houseplants",
     }
@@ -423,7 +416,6 @@ async def metrics():
     return {
         "uptime_seconds": round(uptime, 1),
         **snap,
-        "pipeline_mode": pipeline.mode if pipeline else "unknown",
         "ai_doctor": chat_metrics_snapshot(),
     }
 
@@ -440,7 +432,6 @@ async def metrics_prometheus():
     """Prometheus text exposition (v0.0.4) of the same counters as /api/metrics."""
     snap = _snapshot_metrics()
     uptime = time.time() - SERVER_START_TIME if SERVER_START_TIME else 0
-    mode = pipeline.mode if pipeline else "unknown"
     version = _prom_label(APP_VERSION)
 
     lines = [
@@ -459,9 +450,9 @@ async def metrics_prometheus():
         "# HELP plantdiseases_analyze_latency_ms_avg Average analyse latency in milliseconds.",
         "# TYPE plantdiseases_analyze_latency_ms_avg gauge",
         f"plantdiseases_analyze_latency_ms_avg {snap['avg_latency_ms']}",
-        "# HELP plantdiseases_pipeline_mode_info Pipeline mode and server version (value is always 1).",
-        "# TYPE plantdiseases_pipeline_mode_info gauge",
-        f'plantdiseases_pipeline_mode_info{{mode="{_prom_label(mode)}",version="{version}"}} 1',
+        "# HELP plantdiseases_build_info Build version label.",
+        "# TYPE plantdiseases_build_info gauge",
+        f'plantdiseases_build_info{{version="{version}"}} 1',
         "# HELP plantdiseases_class_predictions_total Count of predictions per class.",
         "# TYPE plantdiseases_class_predictions_total counter",
     ]
@@ -551,8 +542,8 @@ async def analyze_image(image: UploadFile = File(...)):
     _record_analysis(class_name, elapsed * 1000)
 
     logger.info(
-        "Analysis complete: class=%s confidence=%.3f time=%.2fs file=%s mode=%s warnings=%s",
-        class_name, confidence, elapsed, image.filename, result["pipeline_mode"], warnings,
+        "Analysis complete: class=%s confidence=%.3f time=%.2fs file=%s warnings=%s",
+        class_name, confidence, elapsed, image.filename, warnings,
     )
 
     rounded_probs = {k: round(v, 4) for k, v in all_probs.items()}
@@ -630,7 +621,6 @@ async def analyze_image(image: UploadFile = File(...)):
         "top_k": top_k_localised,
         "warnings": warnings,
         "prediction_set": prediction_set,
-        "pipeline_mode": result["pipeline_mode"],
         "elapsed_ms": result["elapsed_ms"],
         "server_version": APP_VERSION,
     })
@@ -639,21 +629,21 @@ async def analyze_image(image: UploadFile = File(...)):
 # ── Smart APIs ──────────────────────────────────────────────────────
 
 
-class ChatRequest(BaseModel):  # type: ignore[misc]
+class ChatRequest(BaseModel):
     session_id: str = Field(..., min_length=1, max_length=64)
     message: str = Field(..., min_length=1, max_length=2000)
     locale: str = Field(default="en", max_length=8)
     diagnosis: dict | None = None
 
 
-class CarePlanRequest(BaseModel):  # type: ignore[misc]
+class CarePlanRequest(BaseModel):
     disease: str = Field(..., min_length=1, max_length=64)
     species: str | None = Field(default=None, max_length=128)
     light: str = Field(default="bright_indirect", max_length=32)
     locale: str = Field(default="en", max_length=8)
 
 
-class ProgressionRequest(BaseModel):  # type: ignore[misc]
+class ProgressionRequest(BaseModel):
     current: dict
     previous: dict | None = None
 

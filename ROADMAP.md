@@ -85,13 +85,13 @@ hygiene → DINOv2 probe → V2-S fine-tune → KD → ONNX/INT8 export).
 ## Where we stand
 
 - **Product baseline changed to server-only inference.** Android is a thin Kotlin / CameraX / Material 3 client over a Python FastAPI server. Diagnosis and AI Doctor replies round-trip to the server. No on-device fallback is treated as a feature: if the server is unavailable, the app shows a clear error and retry path instead of a degraded local guess.
-- **ML architecture is defined.** PlantVision uses Stage 1 YOLOv8n single-class leaf detection and Stage 2 EfficientNet-B0 classification over cropped leaf regions, with mean-voted softmax, temperature scaling, healthy fallback, and MSP/OOD not-a-plant gating.
-- **Class space is fixed for the next release.** Current classifier config is 10 classes: `anthracnose`, `bacterial_leaf_spot`, `gray_mold`, `healthy`, `iron_chlorosis`, `late_blight`, `mosaic_virus`, `not_a_plant`, `powdery_mildew`, `sunburn`. `bacterial_leaf_spot`, `late_blight`, and `sunburn` are proxy-trained classes and need extra real-world validation before demo claims.
+- **ML architecture is defined.** PlantVision 2.0 uses Stage 1 YOLOv8n single-class leaf detection and Stage 2 distilled MobileNetV3-Large student (KD ← EfficientNetV2-S teacher) over cropped leaf regions, with mean-voted softmax, temperature scaling, healthy fallback, MaxLogit-based OOD gate, and conformal RAPS prediction sets.
+- **Class space is fixed at 11 (PlantVision 2.0):** `bacterial_leaf_spot`, `edema`, `gray_mold_botrytis`, `healthy`, `leaf_scorch_underwatering`, `leaf_spot_fungal`, `not_a_plant`, `nutrient_deficiency`, `powdery_mildew`, `sunburn_or_scorch`, `viral_disease`. Pests are out of the taxonomy; `late_blight` and `iron_chlorosis` were retired vs v1.x.
 - **Server endpoints exist.** `/api/analyze`, `/api/identify`, `/api/chat`, `/api/care-plan`, `/api/progression`, `/api/health`, `/api/version`, `/api/classes`, `/api/metrics`, and `/api/metrics/prometheus` are in scope.
 - **Server hardening is already strong.** The backend has magic-byte image validation, Pillow decompression-bomb guard, dimension / size limits, per-IP rate limiting, inference timeout, security headers, request logging, metrics, non-root Docker, and health checks.
 - **Android core app is broad.** The client has scan, gallery/history, My Garden, per-plant journal/logs, reminders, AI Doctor UI, light meter, TTS, EN/RU strings, Material 3, dark/light/system theme, edge-to-edge, and predictive back.
 - **Android networking is intentionally narrow right now.** The current Retrofit surface calls `/api/analyze`, `/api/health`, and `/api/chat`. Server endpoints for species ID, care plan, and progression exist, but Android still needs first-class client wiring for them.
-- **Current branch focus:** `claude/cleanup-unused-code-S7D4D` removes local/demo fallbacks and stale config, tightens server-only behavior, and rewrites docs around quality-first deployment.
+- **Server / Android behaviour is fail-fast.** Server refuses to start without trained weights; Android has no on-device inference. Client errors are explicit ("server unreachable", "rate limited", etc.) with a retry CTA — never a silent local guess.
 
 ---
 
@@ -133,7 +133,7 @@ hygiene → DINOv2 probe → V2-S fine-tune → KD → ONNX/INT8 export).
 
 ## Targets — Definition of Done
 
-- `/api/health` reports `pipeline_mode: full`.
+- `/api/health` returns 200 with `status: "ok"` and the current `num_classes`.
 - Model artefacts shipped under `server/models/`: `detector.pt` or `detector.onnx`, `classifier.pth` or ONNX, `temperature.json`, updated `classes.json`, and `MODEL_CARD.md`.
 - YOLOv8n single-class leaf detector: **mAP50 ≥ 0.65**.
 - EfficientNet-B0 classifier: **top-1 ≥ 0.82** on held-out validation with TTA + calibration.
@@ -159,7 +159,7 @@ hygiene → DINOv2 probe → V2-S fine-tune → KD → ONNX/INT8 export).
 
 - [ ] Run `server/train_notebook.ipynb` end-to-end on Colab T4 / A100.
 - [ ] Publish `detector.pt`, `classifier.pth` or ONNX, `temperature.json`, and updated `classes.json` into `server/models/`.
-- [ ] Verify `/api/health` reports `pipeline_mode = full` on a clean machine.
+- [ ] Verify `/api/health` returns 200 with `status: "ok"` on a clean machine (the server is fail-fast, so a successful health check implies all weights loaded).
 - [ ] Export and benchmark ONNX / INT8 classifier path; confirm production loads quantized ONNX before `.pth`.
 - [ ] Produce first `MODEL_CARD.md` with dataset sources, class list, validation metrics, known limitations, and proxy-trained classes.
 - [ ] Build a small real-world OOD set: hands, desks, walls, fabric, plant pots, empty rooms, screenshots.

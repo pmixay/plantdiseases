@@ -72,7 +72,20 @@ PKGS = [
     'opencv-python-headless', 'tqdm', 'matplotlib',
     'requests', 'roboflow',
 ]
-subprocess.check_call(PIP + PKGS)""")
+subprocess.check_call(PIP + PKGS)
+
+# Reproducibility — seed PyTorch / NumPy / Python's RNG. We do NOT set
+# `cudnn.benchmark=False`; the small accuracy noise from non-deterministic
+# kernels is acceptable for a 10-min training cell, and benchmark mode
+# is a real wall-clock win.
+import random
+import numpy as np
+import torch
+SEED = 0
+random.seed(SEED)
+np.random.seed(SEED)
+torch.manual_seed(SEED)
+torch.cuda.manual_seed_all(SEED)""")
 
 
 # 2. Hierarchical schema ---------------------------------------------
@@ -524,13 +537,20 @@ def fetch_plantvillage_studio():
         img.save(out / f'pv_{n}.jpg', quality=92)
     print('PlantVillage val_studio populated.')""")
 
-code("""# ---- Group-aware split: train → val_indomain (10%) ----------------------
-def make_val_indomain(ratio=0.10, seed=0):
+code("""# ---- Group-aware split: train → {val_indomain, conformal_cal} ---------
+def make_group_split(dest_root: Path, ratio: float, seed: int, label: str):
+    \"\"\"Move a group-aware fraction of train/<cls>/ into dest_root/<cls>/.
+
+    Same plant_id (sidecar 'plant_id') always lands together — never
+    split across train and the held-out slice. Falls back to image stem
+    when no sidecar is present.
+    \"\"\"
     rng = random.Random(seed)
     moved = 0
     for cls in CLASSES:
         cls_dir = TRAIN_ROOT / cls
-        if not cls_dir.exists(): continue
+        if not cls_dir.exists():
+            continue
         groups: dict[str, list[Path]] = {}
         for img in cls_dir.glob('*.[jp][pn]g'):
             ann = read_sidecar(img)
@@ -538,46 +558,26 @@ def make_val_indomain(ratio=0.10, seed=0):
             groups.setdefault(pid, []).append(img)
         ids = sorted(groups.keys())
         rng.shuffle(ids)
-        n_val = max(1, int(len(ids) * ratio))
-        out = VAL_INDOMAIN / cls
+        n_take = max(1, int(len(ids) * ratio))
+        out = dest_root / cls
         out.mkdir(parents=True, exist_ok=True)
-        for pid in ids[:n_val]:
+        for pid in ids[:n_take]:
             for img in groups[pid]:
                 dst = out / img.name
-                if dst.exists(): continue
+                if dst.exists():
+                    continue
                 shutil.move(str(img), str(dst))
                 sc = img.with_suffix('.json')
                 if sc.exists():
                     shutil.move(str(sc), str(dst.with_suffix('.json')))
                 moved += 1
-    print(f'val_indomain populated  (moved={moved})')
+    print(f'{label} populated  (moved={moved})')
 
-# Same idea — split a fraction of train into a conformal cal-set.
+def make_val_indomain(ratio=0.10, seed=0):
+    make_group_split(VAL_INDOMAIN, ratio, seed, 'val_indomain')
+
 def make_conformal_cal(ratio=0.05, seed=1):
-    rng = random.Random(seed)
-    moved = 0
-    for cls in CLASSES:
-        cls_dir = TRAIN_ROOT / cls
-        if not cls_dir.exists(): continue
-        groups: dict[str, list[Path]] = {}
-        for img in cls_dir.glob('*.[jp][pn]g'):
-            ann = read_sidecar(img)
-            pid = (ann or {}).get('plant_id', img.stem)
-            groups.setdefault(pid, []).append(img)
-        ids = sorted(groups.keys()); rng.shuffle(ids)
-        n_cal = max(1, int(len(ids) * ratio))
-        out = CONFORMAL_CAL / cls
-        out.mkdir(parents=True, exist_ok=True)
-        for pid in ids[:n_cal]:
-            for img in groups[pid]:
-                dst = out / img.name
-                if dst.exists(): continue
-                shutil.move(str(img), str(dst))
-                sc = img.with_suffix('.json')
-                if sc.exists():
-                    shutil.move(str(sc), str(dst.with_suffix('.json')))
-                moved += 1
-    print(f'conformal_cal populated  (moved={moved})')""")
+    make_group_split(CONFORMAL_CAL, ratio, seed, 'conformal_cal')""")
 
 code("""# ---- Orchestrate the full fetch -----------------------------------------
 def report_class_counts(root: Path):
@@ -1117,7 +1117,9 @@ def closure():
     loss.backward(); return loss
 opt.step(closure)
 T_val = float(T_param.detach())
-json.dump({'temperature': T_val}, open('models/temperature.json', 'w'), indent=2)
+Path('models/temperature.json').write_text(
+    json.dumps({'temperature': T_val}, indent=2),
+)
 print(f'fitted T={T_val:.3f}')
 
 id_max_logit = logits_val.max(dim=1).values.numpy()
@@ -1137,6 +1139,9 @@ def _raps_score(p_sorted, lam, k_reg):
     ranks = np.arange(1, len(p_sorted) + 1, dtype=np.float64)
     return cs + lam * np.maximum(0.0, ranks - k_reg)
 
+def _score(p_sorted, method, lam, k_reg):
+    return _aps_score(p_sorted) if method == 'aps' else _raps_score(p_sorted, lam, k_reg)
+
 def calibrate_q_hat(cal_probs, cal_labels, *, method='raps', alpha=0.1,
                     lambda_reg=0.01, k_reg=1):
     if not (0.0 < alpha < 1.0): raise ValueError('alpha out of range')
@@ -1145,16 +1150,26 @@ def calibrate_q_hat(cal_probs, cal_labels, *, method='raps', alpha=0.1,
     nonconf = np.empty(n, dtype=np.float64)
     for i in range(n):
         order = np.argsort(-cal_probs[i])
-        ps = cal_probs[i, order]
-        s  = _aps_score(ps) if method == 'aps' else _raps_score(ps, lambda_reg, k_reg)
+        s = _score(cal_probs[i, order], method, lambda_reg, k_reg)
         rank_of_true = int(np.where(order == cal_labels[i])[0][0])
         nonconf[i] = s[rank_of_true]
     q_level = min(1.0, np.ceil((n + 1) * (1.0 - alpha)) / n)
     q_hat = float(np.quantile(nonconf, q_level, method='higher'))
+    # Sanity check: empirical coverage on the cal-set itself should be
+    # ≥ 1 - alpha (within MC noise). Mirrors server/conformal.py.
+    covered = 0
+    for i in range(n):
+        order = np.argsort(-cal_probs[i])
+        s = _score(cal_probs[i, order], method, lambda_reg, k_reg)
+        above = np.where(s >= q_hat)[0]
+        size = max(int(above[0]) + 1 if above.size else len(s), 1)
+        if cal_labels[i] in order[:size]:
+            covered += 1
     return {
         'method': method, 'alpha': alpha, 'q_hat': q_hat,
         'lambda_reg': lambda_reg, 'k_reg': k_reg,
         'calibration_n': int(n),
+        'empirical_coverage': covered / n,
     }
 
 cal_ds, cal_dl = make_eval_loader(CONFORMAL_CAL, IMG)
@@ -1168,7 +1183,7 @@ probs_cal  = torch.softmax(logits_cal / max(T_val, 1e-3), dim=1).numpy()
 
 cfg = calibrate_q_hat(probs_cal, y_cal, method='raps', alpha=0.10,
                       lambda_reg=0.01, k_reg=1)
-json.dump(cfg, open('models/conformal.json', 'w'), indent=2)
+Path('models/conformal.json').write_text(json.dumps(cfg, indent=2))
 print('conformal:', cfg)""")
 
 

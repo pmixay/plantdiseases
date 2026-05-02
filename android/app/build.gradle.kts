@@ -64,8 +64,11 @@ android {
     }
 
     lint {
+        // Don't fail the build on lint warnings, but DO run lint on
+        // release builds — we want to catch regressions before APKs
+        // ship.
         abortOnError = false
-        checkReleaseBuilds = false
+        checkReleaseBuilds = true
     }
 
     compileOptions {

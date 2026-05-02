@@ -139,7 +139,6 @@
     <string name="save">Сохранить</string>
     <string name="diagnostics_title">Диагностика сервера</string>
     <string name="diagnostics_subtitle">Текущее состояние бэкенда анализа</string>
-    <string name="diagnostics_pipeline">Пайплайн</string>
     <string name="diagnostics_version">Версия сервера</string>
     <string name="diagnostics_classes">Классов болезней</string>
     <string name="diagnostics_refresh">Обновить</string>
