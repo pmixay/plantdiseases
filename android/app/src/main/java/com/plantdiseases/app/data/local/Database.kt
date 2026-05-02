@@ -15,7 +15,6 @@ data class PlantEntity(
      * for display, while the canonical Latin name lives in `scientificName`.
      */
     @ColumnInfo(name = "species") val species: String? = null,
-    @ColumnInfo(name = "nickname") val nickname: String? = null,
     @ColumnInfo(name = "icon_uri") val iconUri: String? = null,
     @ColumnInfo(name = "created_at") val createdAt: Long = System.currentTimeMillis(),
     /** Latin / scientific name as returned by PlantNet (e.g. "Ficus elastica"). */
@@ -243,7 +242,7 @@ interface PlantJournalDao {
         PlantReminderEntity::class,
         ChatMessageEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {

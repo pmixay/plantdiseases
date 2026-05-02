@@ -179,7 +179,7 @@ class PlantDetailActivity : AppCompatActivity() {
         journal: List<PlantJournalEntity>,
     ) {
         content.removeAllViews()
-        toolbarTitle.text = plant.nickname?.takeIf { it.isNotBlank() } ?: plant.name
+        toolbarTitle.text = plant.name
         content.addView(buildHeader(plant, scans, journal))
         content.addView(buildActionRow())
         content.addView(buildCarePlanSlot(plant, scans))
@@ -227,7 +227,7 @@ class PlantDetailActivity : AppCompatActivity() {
             setBackgroundResource(R.drawable.bg_garden_hero)
         }
         body.addView(TextView(this).apply {
-            text = plant.nickname?.takeIf { it.isNotBlank() } ?: plant.name
+            text = plant.name
             textSize = 30f
             setTextColor(getColor(R.color.hero_stat_text))
             typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)

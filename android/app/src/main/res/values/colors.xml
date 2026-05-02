@@ -63,4 +63,11 @@
     <color name="shimmer_base">#E0E6E1</color>
     <color name="shimmer_highlight">#F5F8F5</color>
     <color name="camera_scrim">#40000000</color>
+
+    <!-- AI Doctor chat bubbles (toned-down botanical greens, not the
+         saturated brand primary). Text on either bubble uses chat_bubble_text. -->
+    <color name="chat_bubble_bot_bg">#EEF5F0</color>
+    <color name="chat_bubble_user_bg">#D4ECDC</color>
+    <color name="chat_bubble_text">#1F2A22</color>
+    <color name="chat_bubble_text_secondary">#566B5B</color>
 </resources>

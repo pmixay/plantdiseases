@@ -19,6 +19,9 @@ server/**/__pycache__/
 server/.pytest_cache/
 .ruff_cache/
 
+# Server config (contains secrets — copy from server/config.example.json)
+server/config.json
+
 # OS
 .DS_Store
 Thumbs.db

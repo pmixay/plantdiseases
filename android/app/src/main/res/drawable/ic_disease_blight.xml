@@ -1,0 +1,10 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <!-- Wilting / drooping leaf with cracks -->
+    <path android:fillColor="#000000"
+        android:pathData="M4,4c0,7 3,12 9,14 0.5,0.2 1,-0.1 1.2,-0.5 0.2,-0.5 0,-1 -0.5,-1.2 -3.7,-1.5 -6,-4.7 -7,-9C12.6,8.6 16.6,11.4 18.7,16.6 18.9,17.1 19.4,17.3 19.9,17.1 20.4,16.9 20.6,16.4 20.4,15.9 17.7,9.5 12.3,6 5.5,5.4 5.1,5.4 4.8,5.5 4.6,5.7 4.2,6.1 4,6.7 4,7.3z" />
+    <!-- Cracks / dry lines -->
+    <path android:strokeColor="#FFFFFF" android:strokeWidth="0.7" android:fillColor="#00000000"
+        android:pathData="M9,11 L11,13 M11,12 L13,14 M13,11 L15,13" />
+</vector>

@@ -36,7 +36,6 @@ import com.google.android.material.chip.ChipGroup
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.plantdiseases.app.R
 import com.plantdiseases.app.util.LocaleHelper
-import kotlin.math.log10
 import kotlin.math.pow
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -217,7 +216,7 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
         }
         col.addView(tvStatus)
 
-        // Progress bar: log-scale 0..100000 lux
+        // Progress bar: linear scale 0..100000 lux
         progressLight = LinearProgressIndicator(this).apply {
             max = 1000
             progress = 0
@@ -523,11 +522,13 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
         tvStatus.text = statusText
         tvStatus.setTextColor(statusColor)
 
-        // Log-scale progress (0 lux → 0, 100000 lux → 1000)
-        val logProgress = if (lux > 0) {
-            (log10(lux.coerceAtLeast(1f)) / log10(MAX_LUX_DISPLAY) * 1000).toInt().coerceIn(0, 1000)
-        } else 0
-        progressLight.progress = logProgress
+        // Linear progress so the bar position matches the labelled scale
+        // (0 → empty, 100k lux → full). Indoor readings sit toward the
+        // left third, which is the truthful picture of how much usable
+        // light a houseplant gets.
+        val linearProgress = (lux.coerceAtLeast(0f) / MAX_LUX_DISPLAY * 1000)
+            .toInt().coerceIn(0, 1000)
+        progressLight.progress = linearProgress
 
         updateSpeciesDisplay()
         updateTip(lux)

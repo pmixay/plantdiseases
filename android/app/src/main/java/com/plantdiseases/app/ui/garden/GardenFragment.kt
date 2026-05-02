@@ -293,7 +293,7 @@ class GardenFragment : Fragment() {
                 .apply { marginStart = 14.dp() }
         }
         textCol.addView(TextView(requireContext()).apply {
-            text = plant.nickname?.takeIf { it.isNotBlank() } ?: plant.name
+            text = plant.name
             textSize = 18f
             setTextColor(requireContext().getColor(R.color.on_surface))
             typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
@@ -365,9 +365,8 @@ class GardenFragment : Fragment() {
     }
 
     private fun confirmDeletePlant(plant: PlantEntity) {
-        val title = plant.nickname?.takeIf { it.isNotBlank() } ?: plant.name
         MaterialAlertDialogBuilder(requireContext())
-            .setTitle(title)
+            .setTitle(plant.name)
             .setMessage(R.string.delete_plant_confirm)
             .setNegativeButton(R.string.cancel, null)
             .setPositiveButton(R.string.delete) { _, _ ->
@@ -437,10 +436,8 @@ class GardenFragment : Fragment() {
         }
         val name = inputField(getString(R.string.plant_name), existing?.name, InputType.TYPE_CLASS_TEXT)
         val species = inputField(getString(R.string.plant_species), existing?.species, InputType.TYPE_CLASS_TEXT)
-        val nickname = inputField(getString(R.string.plant_nickname), existing?.nickname, InputType.TYPE_CLASS_TEXT)
         fields.addView(name.first)
         fields.addView(species.first)
-        fields.addView(nickname.first)
         container.addView(header)
         container.addView(fields)
 
@@ -464,7 +461,6 @@ class GardenFragment : Fragment() {
                 plantRepository.savePlant(
                     plantName,
                     species.second.text?.toString(),
-                    nickname.second.text?.toString(),
                     existing,
                 )
                 awaitKeyboardClosed()

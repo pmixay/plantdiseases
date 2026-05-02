@@ -105,7 +105,7 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
             typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
         })
         titles.addView(TextView(requireContext()).apply {
-            text = plant.nickname?.takeIf { it.isNotBlank() } ?: plant.name
+            text = plant.name
             textSize = 14f
             setTextColor(requireContext().getColor(R.color.hero_stat_text))
             alpha = 0.8f
@@ -306,7 +306,7 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
      * wired around this single reply-producing boundary.
      */
     private fun buildLocalDoctorReply(userMessage: String, isRu: Boolean): String {
-        val displayName = plant.nickname?.takeIf { it.isNotBlank() } ?: plant.name
+        val displayName = plant.name
         val species = plant.species?.takeIf { it.isNotBlank() }
         val disease = latestDisease?.takeIf { it.isNotBlank() }
         val topic = userMessage.take(120)
@@ -376,20 +376,14 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
             text = applyMarkdown(content)
             textSize = 15f
             maxWidth = bubbleMaxWidth
-            setTextColor(
-                requireContext().getColor(if (isUser) R.color.on_primary else R.color.on_surface)
-            )
+            setTextColor(requireContext().getColor(R.color.chat_bubble_text))
             setLineSpacing(3.dp().toFloat(), 1f)
         })
         bubble.addView(TextView(requireContext()).apply {
             text = formatTime(timestamp)
             textSize = 10f
-            setTextColor(
-                requireContext().getColor(
-                    if (isUser) android.R.color.white else R.color.on_surface_secondary
-                )
-            )
-            alpha = 0.7f
+            setTextColor(requireContext().getColor(R.color.chat_bubble_text_secondary))
+            alpha = 0.85f
             gravity = Gravity.END
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,

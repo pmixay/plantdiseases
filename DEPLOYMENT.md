@@ -4,25 +4,43 @@ Production deployment notes for the PlantDiseases FastAPI server. The
 Android client needs no server-side change — point it at the public URL
 through **Profile → Server URL**.
 
-Code paths and env var names below match `server/main.py`, `server/Dockerfile`
-and `server/docker-compose.yml`.
+Configuration keys below match `server/main.py`, `server/ai_services.py`
+and `server/config.example.json`. The server reads `server/config.json`
+first; environment variables are still honoured as a fallback so existing
+Docker / CI deployments keep working.
 
 ---
 
-## 1. Production environment variables
+## 1. Production configuration
 
-| Variable | Default | Purpose |
+The recommended path is to copy the committed example file:
+
+```bash
+cp server/config.example.json server/config.json
+$EDITOR server/config.json
+```
+
+`server/config.json` is gitignored. JSON sections (`server`, `limits`,
+`ai`, `plantnet`) are flattened so each leaf key maps to the same name
+as the legacy environment variable.
+
+| Key | Default | Purpose |
 |---|---|---|
-| `CORS_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | Comma-separated list of explicit allowed origins. **Do not set to `*` in production.** |
-| `TRUSTED_PROXIES` | *(empty)* | Comma-separated IPs or CIDRs whose `X-Forwarded-For` header is honoured. Required when the server sits behind nginx/cloudflare; otherwise attacker-supplied `X-Forwarded-For` headers are ignored, which is safer but breaks rate-limiting by real client IP. |
-| `FORWARDED_ALLOW_IPS` | `127.0.0.1` | Passed to uvicorn `--forwarded-allow-ips`; controls which peers can update `Host` / scheme via forwarded headers. |
-| `RATE_LIMIT_RPS` | `1.0` | Per-IP request rate limit. Rate-limited responses return `429` with a `Retry-After` header. |
-| `MAX_FILE_SIZE` | `10485760` (10 MB) | Hard cap on uploaded bytes. |
-| `MAX_IMAGE_DIMENSION` | `4096` | Pixel limit per side, in addition to Pillow decompression-bomb guard. |
-| `INFERENCE_TIMEOUT` | `30` | Seconds before `/api/analyze` returns `504`. |
-| `INFER_WORKERS` | `2` | ThreadPoolExecutor workers for model inference. |
-| `LOG_DIR` | `logs` | Rotating file logs (5 MB × 5 backups). |
-| `HOST` / `PORT` | `0.0.0.0` / `8000` | Uvicorn bind. |
+| `cors_origins` | `["http://localhost:3000","http://127.0.0.1:3000"]` | Allowed CORS origins. **Do not set to `["*"]` in production.** |
+| `trusted_proxies` | `[]` | IPs / CIDRs whose `X-Forwarded-For` header is honoured. Required behind nginx / cloudflare; otherwise spoofed `X-Forwarded-For` is ignored. |
+| `forwarded_allow_ips` | `127.0.0.1` | Passed to uvicorn `--forwarded-allow-ips`; controls which peers can update `Host` / scheme via forwarded headers. |
+| `rate_limit_rps` | `1.0` | Per-IP request rate limit. Rate-limited responses return `429` with a `Retry-After` header. |
+| `max_file_size` | `10485760` (10 MB) | Hard cap on uploaded bytes. |
+| `max_image_dimension` | `4096` | Pixel limit per side, in addition to Pillow decompression-bomb guard. |
+| `inference_timeout` | `30` | Seconds before `/api/analyze` returns `504`. |
+| `infer_workers` | `2` | ThreadPoolExecutor workers for model inference. |
+| `log_dir` | `logs` | Rotating file logs (5 MB × 5 backups). |
+| `host` / `port` | `0.0.0.0` / `8000` | Uvicorn bind. |
+| `ai_provider` | `openrouter` | AI Plant Doctor backend (`openrouter` or `anthropic`). |
+| `openrouter_api_key` | *(empty)* | OpenRouter key. Without it the chat returns an offline fallback. |
+| `openrouter_model` | `openai/gpt-oss-120b` | Pinned chat model when `ai_provider=openrouter`. |
+| `anthropic_api_key` / `anthropic_model` | *(empty)* / `claude-haiku-4-5` | Used when `ai_provider=anthropic`. |
+| `plantnet_api_key` | *(empty)* | PlantNet identify key (optional). |
 
 ---
 
