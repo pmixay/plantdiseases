@@ -1,66 +1,66 @@
 {
-  "_comment": "PlantVision houseplant classifier — disease-F1 primary metric",
-  "model_version": "1.2",
+  "_comment": "PlantVision houseplant classifier — disease-F1 primary metric on the indoor real-world validation set",
+  "model_version": "2.0",
   "architecture": {
-    "detector": "YOLOv8n (single-class leaf)",
-    "classifier": "EfficientNet-B0 (IMAGENET1K_V1)"
+    "detector": "YOLOv8n (single-class plant_leaf, indoor-trained)",
+    "classifier": "EfficientNetV2-S (timm tf_efficientnetv2_s.in21k_ft_in1k) → distilled MobileNetV3-Large student"
   },
-  "num_classes": 10,
+  "num_classes": 11,
   "class_names": [
-    "anthracnose",
     "bacterial_leaf_spot",
-    "gray_mold",
+    "edema",
+    "gray_mold_botrytis",
     "healthy",
-    "iron_chlorosis",
-    "late_blight",
-    "mosaic_virus",
+    "leaf_scorch_underwatering",
+    "leaf_spot_fungal",
     "not_a_plant",
+    "nutrient_deficiency",
     "powdery_mildew",
-    "sunburn"
+    "sunburn_or_scorch",
+    "viral_disease"
   ],
   "detector_classes": [
-    "leaf"
+    "plant_leaf"
   ],
-  "val_accuracy_torch_tta": 0.9102,
-  "val_disease_f1_torch_tta": 0.8732,
-  "val_accuracy_onnx_fp32": 0.9122,
-  "val_accuracy_onnx_int8": 0.9122,
-  "val_disease_f1_onnx_fp32": 0.8768,
-  "val_disease_f1_onnx_int8": 0.8768,
-  "healthy_bias_ratio": 0.84,
-  "temperature": 0.52,
   "training": {
-    "img_size": 288,
-    "batch_size": 192,
-    "cutmix_prob": 0.4,
-    "mixup_prob": 0.2,
-    "mixup_alpha": 0.2,
+    "img_size": 256,
+    "batch_size": 128,
+    "precision": "bf16-mixed",
+    "optimizer": "AdamW",
+    "weight_decay": 1e-4,
     "label_smoothing": 0.05,
-    "ema_decay": 0.999,
-    "grad_clip": 1.0,
-    "class_balanced_loss": true,
-    "healthy_downweight": 0.25,
-    "sampler": "natural distribution (no WeightedRandomSampler)",
-    "primary_metric": "disease_macro_f1",
-    "tta": "hflip",
-    "augmentation": "TrivialAugment + WarmLight + JPEG + RandomErasing + MotionBlur + RandomShadow",
-    "hp_target": 800,
-    "hp_crops_per_photo": 1,
-    "hp_hard_aug_ratio": 0.3,
-    "real_world_in_train": true,
-    "calibration": "temperature scaling on val NLL",
-    "quantization": "dynamic INT8 on MatMul"
+    "lr_schedule": "cosine + warmup 1 epoch",
+    "schedule": {
+      "head_only_epochs": 3,
+      "head_lr": 3e-3,
+      "unfreeze_last_stages": 2,
+      "finetune_epochs": 13,
+      "head_lr_finetune": 5e-4,
+      "backbone_lr_finetune": 5e-5
+    },
+    "loss": "logit_adjustment_ce",
+    "logit_adjustment_tau": 1.0,
+    "mixup_prob": 0.1,
+    "cutmix_prob": 0.15,
+    "augmentations": "indoor: WB shift (warm/cool), glare, defocus/motion blur, JPEG, ISP-imitation, soft shadows. Strong hue/solarize disabled.",
+    "primary_metric": "indoor_val_disease_macro_f1",
+    "primary_val_set": "indoor_real_world_v1 (frozen, 500-1000 user photos)",
+    "isolated_val_slice": "plantvillage_transfer (background-bias monitor; never used for train)",
+    "calibration": "temperature scaling on indoor val NLL",
+    "quantization": "dynamic INT8 on MatMul for student",
+    "diagnostic_baseline": "DINOv2-S frozen + linear probe (5-8 epochs, batch 256, no MixUp/CutMix)"
   },
-  "ood_calibration": {
-    "suggested_classifier_msp_floor": null,
-    "_msp_floor_note": "MSP unreliable due to T=0.52 (under-confident logits + label_smoothing). Rely on YOLO detector + not_a_plant class instead."
+  "distillation": {
+    "teacher": "EfficientNetV2-S (or ConvNeXt-Tiny challenger)",
+    "student": "MobileNetV3-Large (5.5M params)",
+    "loss": "alpha*CE + (1-alpha)*tau^2*KL(student||teacher)",
+    "alpha": 0.35,
+    "tau": 3.5,
+    "epochs": 12
   },
-  "proxy_trained_classes": [
-    "bacterial_leaf_spot",
-    "iron_chlorosis",
-    "late_blight",
-    "mosaic_virus",
-    "sunburn"
-  ],
-  "_proxy_trained_note": "Trained on non-houseplant visual proxies (PV tomato/pepper bacterial, PV potato/tomato late blight, strawberry leaf scorch ≈ sunburn). Live eval shows F1≈0 on these classes — server surfaces \"proxy_trained:<class>\" warning when they win."
+  "ood": {
+    "score": "max_logit",
+    "_score_note": "MSP is unreliable when temperature scaling drives logits low; MaxLogit (Hendrycks 2019) is robust and bias-free under T<<1. Production combines: detector confidence + calibrated classifier confidence + MaxLogit OOD score.",
+    "fallback_score": "GEN (Liu CVPR 2023) for ViT branches if added"
+  }
 }

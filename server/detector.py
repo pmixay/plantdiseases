@@ -1,16 +1,17 @@
 """
-Stage 1 — Leaf detector.
+Stage 1 — Plant-leaf detector.
 
-YOLOv8n trained on PlantDoc to localise plant leaves in real photos.
-**v4 is single-class:** the detector outputs ``leaf`` bboxes only — the
-"is it diseased?" decision is delegated to Stage 2 (classifier). This
-fixes a v3.x bias where a skewed two-class detector ('leaf' /
-'diseased_leaf') flagged almost every leaf as diseased and propagated
-that signal into the postprocessing gate.
+YOLOv8n trained on **indoor leaf bboxes** (300–800 hand-labelled
+indoor photos plus targeted Roboflow Universe houseplant slices, NOT
+PlantDoc — agricultural close-ups bias localisation toward field
+shots and mis-fire on wide indoor compositions).
+
+The detector is single-class (``plant_leaf``). The "is it diseased?"
+decision is delegated 100 % to Stage 2 (classifier).
 
 When no trained weights are present, the detector falls back to a
 deterministic HSV colour heuristic so the server is usable in demo
-mode. The heuristic also returns a single ``leaf`` bbox.
+mode. The heuristic also returns a single ``plant_leaf`` bbox.
 
 ONNX is loaded transparently: ``YOLO('detector.onnx')`` works exactly
 like the .pt path. Production deployments should ship ``detector.onnx``.
@@ -29,11 +30,10 @@ from PIL import Image
 logger = logging.getLogger(__name__)
 
 DETECTOR_IMG_SIZE = 640
-DETECTOR_CLASSES = ("leaf",)
-# Detector training data (PlantDoc) is heavy on close-up agricultural
-# leaves and short on indoor wide-frame compositions, so we bias toward
-# higher recall at inference. The OOD gate downstream (detector
-# confidence + classifier MSP) cleans up the extra false positives.
+DETECTOR_CLASSES = ("plant_leaf",)
+# Indoor-trained detector — recall-biased so that wide-frame indoor
+# compositions don't drop the only leaf bbox. The OOD gate downstream
+# (detector confidence + classifier MaxLogit) cleans up false positives.
 MIN_CONFIDENCE = 0.15
 MAX_DETECTIONS = 10
 
@@ -131,7 +131,7 @@ class LeafDetector:
                 "y": int(max(0, round(y1))),
                 "width": int(max(1, round(x2 - x1))),
                 "height": int(max(1, round(y2 - y1))),
-                "class": "leaf",
+                "class": "plant_leaf",
                 "confidence": round(float(conf), 4),
             })
         detections.sort(key=lambda d: -d["confidence"])
@@ -166,7 +166,7 @@ class LeafDetector:
             "y": int(gy * sy),
             "width": int(max(1, gw * sx)),
             "height": int(max(1, gh * sy)),
-            "class": "leaf",
+            "class": "plant_leaf",
             "confidence": round(float(min(0.95, 0.60 + green_ratio)), 4),
         }
         return self._build_result([det])

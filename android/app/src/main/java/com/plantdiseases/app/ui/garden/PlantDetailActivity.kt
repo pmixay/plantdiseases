@@ -16,6 +16,8 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.setPadding
 import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
@@ -93,12 +95,21 @@ class PlantDetailActivity : AppCompatActivity() {
             )
             setBackgroundResource(R.drawable.bg_toolbar_gradient)
             elevation = 0f
+            ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets ->
+                val topInset = insets.getInsets(WindowInsetsCompat.Type.systemBars()).top
+                view.setPadding(0, topInset, 0, 0)
+                insets
+            }
         }
         toolbar = MaterialToolbar(this).apply {
             layoutParams = AppBarLayout.LayoutParams(
                 AppBarLayout.LayoutParams.MATCH_PARENT,
-                72.dp(),
+                64.dp(),
             )
+            setContentInsetStartWithNavigation(0)
+            setContentInsetsAbsolute(0, 0)
+            setContentInsetsRelative(0, 0)
+            setPadding(16.dp(), 0, 16.dp(), 0)
             setNavigationIcon(R.drawable.ic_back)
             setNavigationIconTint(getColor(R.color.toolbar_title))
             setTitleTextColor(getColor(R.color.toolbar_title))
@@ -121,8 +132,8 @@ class PlantDetailActivity : AppCompatActivity() {
                     androidx.appcompat.widget.Toolbar.LayoutParams.WRAP_CONTENT,
                     Gravity.CENTER_VERTICAL,
                 ).apply {
-                    marginStart = 52.dp()
-                    marginEnd = 16.dp()
+                    marginStart = 48.dp()
+                    marginEnd = 0
                 }
             }
             addView(toolbarTitle)
@@ -141,7 +152,7 @@ class PlantDetailActivity : AppCompatActivity() {
         }
         content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(16.dp(), 16.dp(), 16.dp(), 28.dp())
+            setPadding(16.dp(), 16.dp(), 16.dp(), 32.dp())
         }
         scroll.addView(content)
         root.addView(scroll)
@@ -212,21 +223,21 @@ class PlantDetailActivity : AppCompatActivity() {
         }
         val body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(20.dp())
+            setPadding(20.dp(), 22.dp(), 20.dp(), 20.dp())
             setBackgroundResource(R.drawable.bg_garden_hero)
         }
         body.addView(TextView(this).apply {
             text = plant.nickname?.takeIf { it.isNotBlank() } ?: plant.name
             textSize = 30f
-            setTextColor(getColor(R.color.on_primary))
+            setTextColor(getColor(R.color.hero_stat_text))
             typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
             maxLines = 2
         })
         body.addView(TextView(this).apply {
             text = plant.species?.takeIf { it.isNotBlank() } ?: getString(R.string.plant_species_unknown)
             textSize = 15f
-            setTextColor(getColor(R.color.on_primary))
-            alpha = 0.86f
+            setTextColor(getColor(R.color.hero_stat_text))
+            alpha = 0.82f
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -242,32 +253,32 @@ class PlantDetailActivity : AppCompatActivity() {
         }
         stats.addView(statPill(getString(R.string.scans), scans.size.toString()))
         stats.addView(statPill(getString(R.string.journal), journal.size.toString()))
-        stats.addView(statPill(getString(R.string.waterings), journal.count { it.type == PlantRepository.JournalType.WATERING.value }.toString()))
+        stats.addView(statPill(getString(R.string.waterings), journal.count { it.type == PlantRepository.JournalType.WATERING.value }.toString(), endMargin = false))
         body.addView(stats)
         card.addView(body)
         return card
     }
 
-    private fun statPill(label: String, value: String): View {
+    private fun statPill(label: String, value: String, endMargin: Boolean = true): View {
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            background = getDrawable(R.drawable.bg_hint_pill)
-            setPadding(10.dp(), 9.dp(), 10.dp(), 9.dp())
+            background = getDrawable(R.drawable.bg_plant_stat_pill)
+            setPadding(10.dp(), 10.dp(), 10.dp(), 10.dp())
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                .apply { marginEnd = 8.dp() }
+                .apply { if (endMargin) marginEnd = 8.dp() }
         }
         box.addView(TextView(this).apply {
             text = value
             textSize = 18f
-            setTextColor(getColor(R.color.on_primary))
+            setTextColor(getColor(R.color.hero_stat_text))
             typeface = android.graphics.Typeface.DEFAULT_BOLD
         })
         box.addView(TextView(this).apply {
             text = label
             textSize = 11f
-            setTextColor(getColor(R.color.on_primary))
-            alpha = 0.86f
+            setTextColor(getColor(R.color.hero_stat_text))
+            alpha = 0.82f
         })
         return box
     }

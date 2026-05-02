@@ -1,10 +1,13 @@
 """
 PlantVision two-stage houseplant disease detection pipeline.
 
-Stage 1 (Detector)   — YOLOv8n single-class. Locates ``leaf`` bboxes.
-Stage 2 (Classifier) — EfficientNet-B0 (ONNX). Classifies cropped leaf
-                       regions into one of up to 10 houseplant
-                       condition classes including ``not_a_plant``.
+Stage 1 (Detector)   — YOLOv8n single-class. Locates ``plant_leaf``
+                       bboxes (indoor-trained on user/Roboflow Universe
+                       indoor leaf crops, not PlantDoc).
+Stage 2 (Classifier) — distilled MobileNetV3-Large student (KD ←
+                       EfficientNetV2-S teacher) at 256 px. Classifies
+                       cropped leaf regions into one of the 11 v2.0
+                       classes including ``not_a_plant``.
 
 Behaviour summary:
 
@@ -12,7 +15,7 @@ Behaviour summary:
   ``severity: low | medium | high`` derived from (a) the relative bbox
   area of the diagnosed disease, (b) the disease confidence margin
   over ``healthy`` and (c) whether the disease class is degenerative
-  (``late_blight``, ``mosaic_virus`` always escalate one level).
+  (``viral_disease`` always escalates one level — incurable).
 * **TTA at inference** — horizontal-flip averaging is applied to the
   classifier output. Roughly +1 % top-1 vs cold inference.
 * **Mean voting** across valid bboxes (one noisy edge crop can't win
@@ -24,6 +27,10 @@ Behaviour summary:
   and the suspected disease is surfaced as a warning.
 * **Temperature scaling** — when ``temperature.json`` is present, we
   recalibrate probabilities before voting; otherwise T=1.0 (no-op).
+* **OOD gating** — combines detector confidence with a **MaxLogit**
+  (Hendrycks 2019) score from the classifier. Plain MSP becomes
+  unreliable under temperature scaling and label smoothing; MaxLogit
+  is robust to both because it operates on the raw logits.
 
 Stage 1 owns localisation only. The disease decision remains 100 % on
 the classifier side.
@@ -40,6 +47,7 @@ from typing import Optional
 from PIL import Image
 
 from classifier import DiseaseClassifier
+from conformal import ConformalConfig, load_conformal_config, prediction_set
 from detector import LeafDetector
 
 logger = logging.getLogger(__name__)
@@ -53,17 +61,12 @@ CROP_PADDING_RATIO = 0.10
 MIN_BBOX_AREA_FRAC = 0.005
 
 # Healthy gate — triggers the soft ``uncertain_healthy`` warning when
-# top-1 is healthy but weak. Bumped 0.55 → 0.75 after the live-data
-# eval found 79 % of sick leaves classified as healthy, often at high
-# confidence; tighter floor + disease-mass floor below catch most of
-# those without nuking healthy recall on truly clean photos.
+# top-1 is healthy but weak.
 HEALTHY_MIN_CONFIDENCE = 0.75
 HEALTHY_MARGIN = 0.10
 # Even when top-1 = healthy with confidence ≥ HEALTHY_MIN_CONFIDENCE, if
 # the strongest disease has non-trivial mass we still surface an
-# ``uncertain_healthy`` warning + the suspected disease in top_k. Live
-# eval showed sunburn → healthy 0.78 with anthracnose ≈ 0.18 — a hard
-# threshold misses these, a per-disease mass floor catches them.
+# ``uncertain_healthy`` warning + the suspected disease in top_k.
 HEALTHY_DISEASE_FLOOR = 0.18
 
 # Disease-side gate. If averaged top-1 is a disease but its softmax
@@ -74,31 +77,29 @@ DISEASE_MIN_CONFIDENCE = 0.65
 # below this, downgrade.
 HEALTHY_FALLBACK_MARGIN = 0.15
 
-# NAP (out-of-distribution) gate. When the detector confidence is below
-# ``NAP_DETECTOR_CONF_FLOOR`` AND the classifier's max-softmax-probability
-# (MSP) is also weak, we route to ``not_a_plant`` instead of guessing a
-# disease label. The MSP floor is overridable via classes.json: model
-# 1.2 disables it because temperature scaling (T=0.52) + label smoothing
-# leave the MSP under-confident enough that a hard floor over-triggers.
+# NAP (out-of-distribution) gate.
+#
+# We replaced the historical Maximum-Softmax-Probability (MSP) floor
+# with a **MaxLogit** score (Hendrycks 2019) because MSP collapses
+# under temperature scaling: at T=0.5 with label_smoothing=0.05, even
+# a clear in-distribution sample never crosses MSP=0.45. MaxLogit is
+# scale-free w.r.t. temperature and unaffected by label smoothing.
+#
+# A sample is treated as OOD when BOTH:
+#   * the YOLO detector confidence is below ``NAP_DETECTOR_CONF_FLOOR``
+#   * the classifier MaxLogit is below ``NAP_MAX_LOGIT_FLOOR``
+# The MaxLogit floor is overridable via classes.json.
 NAP_DETECTOR_CONF_FLOOR = 0.40
-NAP_CLASSIFIER_MSP_FLOOR_DEFAULT = 0.45
+NAP_MAX_LOGIT_FLOOR_DEFAULT = 4.0
 
 # Classes that are not "diseases" — used to compute disease scores
 # and to know when to apply the healthy fallback.
 _NON_DISEASE = {"healthy", "not_a_plant"}
 
-# Default proxy-trained classes when the classifier checkpoint doesn't
-# carry its own ``proxy_trained_classes`` list. PlantVision 1.2 ships an
-# extended list (incl. iron_chlorosis, mosaic_virus) — read it from
-# classes.json at construction time so this default is rarely used.
-_DEFAULT_PROXY_TRAINED = frozenset(
-    {"bacterial_leaf_spot", "late_blight", "sunburn"}
-)
-
-# Classes that escalate severity by one level on principle. They have
-# aggressive systemic spread (mosaic virus is incurable; late blight can
-# wipe out a plant in days under indoor humidity).
-_DEGENERATIVE_DISEASES = {"late_blight", "mosaic_virus"}
+# Classes that escalate severity by one level on principle. Viral
+# infections are incurable and remain a source of spread to neighbours,
+# so any high-confidence viral verdict deserves the bump.
+_DEGENERATIVE_DISEASES = {"viral_disease"}
 
 # Severity thresholds (relative bbox area). Calibrated against typical
 # indoor phone shots: a single leaf at arm's length covers roughly
@@ -143,44 +144,29 @@ def _load_temperature(classifier_path: Path | None) -> float:
     return 1.0
 
 
-def _resolve_proxy_trained(meta: dict) -> frozenset[str]:
-    """Pull ``proxy_trained_classes`` from classes.json, fall back to
-    the built-in default set when the field is missing or malformed.
-    """
-    raw = meta.get("proxy_trained_classes") if isinstance(meta, dict) else None
-    if not isinstance(raw, list) or not all(isinstance(x, str) for x in raw):
-        return _DEFAULT_PROXY_TRAINED
-    return frozenset(raw)
-
-
-def _resolve_msp_floor(meta: dict) -> float:
-    """Read the OOD MSP floor from ``ood_calibration``.
+def _resolve_max_logit_floor(meta: dict) -> float:
+    """Read the OOD MaxLogit floor from classes.json ``ood`` section.
 
     Contract:
       * dict missing entirely → use the historical default.
-      * ``suggested_classifier_msp_floor: <number>`` → use that value.
-      * ``suggested_classifier_msp_floor: null`` (explicit) → MSP gate
-        OFF (return 0.0). PlantVision 1.2 sets it to null because
-        T=0.52 + label_smoothing keeps MSP too soft to be a reliable
-        OOD signal; rely on detector confidence + the not_a_plant
-        head output instead.
+      * ``ood.max_logit_floor: <number>`` → use that value.
+      * ``ood.max_logit_floor: null`` → MaxLogit gate OFF (return 0.0).
     """
     if not isinstance(meta, dict):
-        return NAP_CLASSIFIER_MSP_FLOOR_DEFAULT
-    cal = meta.get("ood_calibration")
-    if not isinstance(cal, dict):
-        return NAP_CLASSIFIER_MSP_FLOOR_DEFAULT
-    if "suggested_classifier_msp_floor" not in cal:
-        return NAP_CLASSIFIER_MSP_FLOOR_DEFAULT
-    val = cal.get("suggested_classifier_msp_floor")
+        return NAP_MAX_LOGIT_FLOOR_DEFAULT
+    ood = meta.get("ood")
+    if not isinstance(ood, dict):
+        return NAP_MAX_LOGIT_FLOOR_DEFAULT
+    if "max_logit_floor" not in ood:
+        return NAP_MAX_LOGIT_FLOOR_DEFAULT
+    val = ood.get("max_logit_floor")
     if val is None:
-        # Explicit null → operator told us not to gate on MSP.
         return 0.0
     try:
         floor = float(val)
     except (TypeError, ValueError):
-        return NAP_CLASSIFIER_MSP_FLOOR_DEFAULT
-    return max(0.0, min(floor, 1.0))
+        return NAP_MAX_LOGIT_FLOOR_DEFAULT
+    return max(0.0, floor)
 
 
 def _apply_temperature(probs: dict[str, float], T: float) -> dict[str, float]:
@@ -210,24 +196,22 @@ class PlantDiseasePipeline:
     ):
         self.detector = LeafDetector(detector_path)
         self.classifier = DiseaseClassifier(classifier_path)
-        # Opt-in temperature scaling. Defaults to 1.0 (no-op) if
-        # temperature.json is absent.
         self.temperature = _load_temperature(classifier_path)
-        # Resolve proxy-trained set and OOD MSP floor from the classifier
-        # metadata so model updates don't need code edits. Both fields
-        # have safe defaults for older checkpoints without metadata.
         meta = getattr(self.classifier, "meta", None) or {}
-        self.proxy_trained = _resolve_proxy_trained(meta)
-        self.nap_msp_floor = _resolve_msp_floor(meta)
+        self.nap_max_logit_floor = _resolve_max_logit_floor(meta)
+        self.conformal: ConformalConfig | None = load_conformal_config(
+            classifier_path.parent if classifier_path else None
+        )
         logger.info(
             "Pipeline ready  detector=%s  classifier=%s (%s backend)  T=%.3f  "
-            "MSP floor=%s  proxy=%s",
+            "MaxLogit floor=%s  conformal=%s",
             "MODEL" if self.detector.is_loaded else "DEMO",
             "MODEL" if self.classifier.is_loaded else "DEMO",
             getattr(self.classifier, "backend", "demo"),
             self.temperature,
-            "off" if self.nap_msp_floor <= 0 else f"{self.nap_msp_floor:.2f}",
-            sorted(self.proxy_trained),
+            "off" if self.nap_max_logit_floor <= 0 else f"{self.nap_max_logit_floor:.2f}",
+            "off" if self.conformal is None
+            else f"{self.conformal.method}@{self.conformal.coverage_target:.0%}",
         )
 
     @property
@@ -255,15 +239,11 @@ class PlantDiseasePipeline:
             len(detections), stage1["confidence"],
         )
 
-        # No leaf bbox from Stage 1. The detector was trained on
-        # PlantDoc (close-up agricultural shots) so it under-reports on
-        # indoor wide-frame photos where a clear plant is visible.
-        # Don't auto-route to NAP — fall back to classifying the full
+        # No leaf bbox from Stage 1: fall back to classifying the full
         # image and let the classifier's dedicated `not_a_plant` head
-        # (trained on COCO val2017 negatives) make the call. This
-        # preserves correct labels for wide-frame plant photos that
-        # YOLO missed, while still routing genuine non-plant images to
-        # NAP via the classifier's own decision.
+        # make the call. This preserves correct labels for wide-frame
+        # plant photos that YOLO missed, while still routing genuine
+        # non-plant images to NAP via the classifier's own decision.
         if not detections:
             cls_full = self.classifier.classify(img)
             calibrated = _apply_temperature(cls_full["all_probs"], self.temperature)
@@ -276,7 +256,6 @@ class PlantDiseasePipeline:
             final = _apply_postprocessing_rules(
                 classification,
                 self.classifier.CLASS_NAMES,
-                proxy_trained=self.proxy_trained,
             )
             severity = compute_severity(
                 class_name=final["class_name"],
@@ -297,6 +276,7 @@ class PlantDiseasePipeline:
                 "top_k": final["top_k"],
                 "warnings": final["warnings"],
                 "severity": severity,
+                "prediction_set": self._build_prediction_set(final["all_probs"]),
                 "detection": {
                     "is_diseased": (
                         final["class_name"] not in _NON_DISEASE
@@ -314,40 +294,29 @@ class PlantDiseasePipeline:
         primary, classification = self._pick_primary(img, detections)
 
         # Secondary NAP gate. Even if Stage 1 returned a bbox, a low
-        # detector confidence combined with a low classifier max-softmax
+        # detector confidence combined with a low classifier MaxLogit
         # is the classic OOD signature: the detector glommed onto a
         # plant-coloured texture and the classifier had no clean answer
         # to give. Route to NAP rather than emitting a guessed disease.
-        # We only override when the classifier *isn't* already saying NAP
-        # (no double-negative routing) and isn't confident in healthy
-        # (a confident healthy verdict is its own valid signal).
         det_conf = float(stage1.get("confidence", 0.0))
-        cls_msp = float(classification.get("confidence", 0.0))
+        max_logit = float(classification.get("max_logit", 0.0))
         cls_name = classification["class_name"]
-        # The MSP half of the OOD gate is opt-in: when the model's
-        # temperature scaling pushes MSP too low to be informative,
-        # classes.json sets ``suggested_classifier_msp_floor`` to null
-        # and we drop the MSP check entirely (rely on the detector and
-        # the dedicated not_a_plant class head instead).
-        msp_floor = self.nap_msp_floor
-        msp_check_enabled = msp_floor > 0
+        ml_floor = self.nap_max_logit_floor
+        ml_check_enabled = ml_floor > 0
         if (
             cls_name not in _NON_DISEASE
             and det_conf < NAP_DETECTOR_CONF_FLOOR
-            and (not msp_check_enabled or cls_msp < msp_floor)
+            and (not ml_check_enabled or max_logit < ml_floor)
             and "not_a_plant" in self.classifier.CLASS_NAMES
         ):
             logger.info(
-                "OOD gate triggered (det=%.3f<%.2f, msp=%.3f%s) → not_a_plant",
+                "OOD gate triggered (det=%.3f<%.2f, max_logit=%.3f%s) → not_a_plant",
                 det_conf, NAP_DETECTOR_CONF_FLOOR,
-                cls_msp,
-                f"<{msp_floor:.2f}" if msp_check_enabled else "<off>",
+                max_logit,
+                f"<{ml_floor:.2f}" if ml_check_enabled else "<off>",
             )
             classification = self._reroute_to_nap(classification)
 
-        # ``is_diseased`` shares the disease verdict's confidence
-        # threshold so the detector overlay and the verdict never
-        # disagree.
         is_diseased = (
             classification["class_name"] not in _NON_DISEASE
             and classification["confidence"] >= DISEASE_MIN_CONFIDENCE
@@ -364,12 +333,8 @@ class PlantDiseasePipeline:
         final = _apply_postprocessing_rules(
             classification,
             self.classifier.CLASS_NAMES,
-            proxy_trained=self.proxy_trained,
         )
 
-        # Severity scoring. We compute it on the *post-fallback* class
-        # so the UI severity always agrees with the displayed diagnosis
-        # (a downgrade-to-healthy ⇒ severity=low).
         severity = compute_severity(
             class_name=final["class_name"],
             confidence=float(final["confidence"]),
@@ -387,6 +352,7 @@ class PlantDiseasePipeline:
             "top_k": final["top_k"],
             "warnings": final["warnings"],
             "severity": severity,
+            "prediction_set": self._build_prediction_set(final["all_probs"]),
             "detection": {
                 "is_diseased": is_diseased,
                 "detector_confidence": stage1["confidence"],
@@ -399,32 +365,41 @@ class PlantDiseasePipeline:
 
     # ── helpers ──────────────────────────────────────────────────────
 
-    # Cap the number of bboxes we re-classify per request. With ONNX
-    # INT8 EfficientNet-B0 each call costs ~20-30ms on CPU, so 4 boxes
-    # adds ~100ms worst case which is acceptable for our 150ms budget.
+    # Cap the number of bboxes we re-classify per request. Distilled
+    # MobileNetV3-L on CPU costs ~10-15 ms per crop in INT8 ONNX, so
+    # 4 boxes adds ~40-60 ms — well within the 150 ms budget.
     _MAX_RECLASSIFY = 4
+
+    def _build_prediction_set(self, probs: dict[str, float]) -> dict | None:
+        """Return the conformal prediction set or ``None`` if unconfigured.
+
+        Honest UX: clients should render the *set* — "leaf_spot_fungal
+        OR bacterial_leaf_spot at 90 % coverage" — instead of pretending
+        the top-1 was a single confident answer. The dict is keyed by
+        ``classes`` / ``coverage`` / ``method`` so the client doesn't
+        need to know about the calibration internals.
+        """
+        cfg = self.conformal
+        if cfg is None or not probs:
+            return None
+        classes = prediction_set(probs, cfg)
+        return {
+            "classes": classes,
+            "coverage": cfg.coverage_target,
+            "method": cfg.method,
+        }
 
     def _pick_primary(self, img: Image.Image, detections: list[dict]):
         """Mean-voting primary classification over valid bboxes.
 
-        Pipeline:
-          1. Drop bboxes smaller than ``MIN_CROP_SIZE`` or
-             ``MIN_BBOX_AREA_FRAC`` of image area. These are noise.
-          2. Sort by detector confidence, cap to ``_MAX_RECLASSIFY``.
-          3. Classify each, average softmax distributions.
-          4. Apply temperature scaling (no-op when T=1.0).
-          5. Apply healthy fallback if top-1 is a disease with weak
-             margin over ``healthy`` or below ``DISEASE_MIN_CONFIDENCE``.
-          6. Pick the primary bbox: the one whose own top-1 matches the
-             aggregated top-1 (most "representative"). Falls back to
-             the largest bbox if no per-box prediction matches.
-
-        Returns ``(primary_box, classification_dict)``.
+        Returns ``(primary_box, classification_dict)``. The aggregated
+        classification dict carries the **maximum** ``max_logit`` across
+        the voted crops so the OOD gate sees the strongest in-bbox
+        signal we got, not the per-crop average.
         """
         W, H = img.size
         img_area = max(W * H, 1)
 
-        # 1. Size filter — drop noise bboxes.
         sized: list[dict] = []
         for d in detections:
             w = int(d.get("width", 0))
@@ -436,8 +411,6 @@ class PlantDiseasePipeline:
             sized.append(d)
 
         # If everything got filtered, take the single largest bbox.
-        # We never want to skip classification entirely when the detector
-        # found leaves — otherwise we'd misroute to ``not_a_plant``.
         if not sized:
             sized = [
                 max(
@@ -446,51 +419,37 @@ class PlantDiseasePipeline:
                 )
             ]
 
-        # 2. Rank by detector confidence and cap.
         ranked = sorted(sized, key=lambda d: -d["confidence"])[: self._MAX_RECLASSIFY]
-
-        # 3. Classify all bboxes in a single batched forward pass.
-        # Cuts the per-call setup cost on CPU — the dominant overhead
-        # for ≤4 boxes — without changing numerics.
         crops = [self._extract_crop(img, box) for box in ranked]
         cls_results = self.classifier.classify_batch(crops)
 
         results: list[tuple[dict, dict]] = []
         sum_probs: dict[str, float] = {n: 0.0 for n in self.classifier.CLASS_NAMES}
+        max_logit_seen = -float("inf")
 
         for box, cls_res in zip(ranked, cls_results, strict=False):
-            # 4. Per-crop temperature scaling. Doing it before averaging
-            # is correct: averaging T-scaled distributions ≠ T-scaling
-            # the average.
             calibrated = _apply_temperature(cls_res["all_probs"], self.temperature)
             results.append((box, {**cls_res, "all_probs": calibrated}))
             for n, p in calibrated.items():
                 sum_probs[n] = sum_probs.get(n, 0.0) + float(p)
+            ml = float(cls_res.get("max_logit", 0.0))
+            if ml > max_logit_seen:
+                max_logit_seen = ml
 
         n_boxes = max(len(results), 1)
         mean_probs = {name: total / n_boxes for name, total in sum_probs.items()}
 
-        # 5. Determine top-1 from the averaged distribution.
         top1_class = max(mean_probs, key=mean_probs.get)
         top1_conf = float(mean_probs[top1_class])
         healthy_p = float(mean_probs.get("healthy", 0.0))
 
-        # 5a. Healthy fallback: if averaged top-1 is a disease but its
+        # Healthy fallback: if averaged top-1 is a disease but its
         # margin over healthy is small, downgrade.
-        #
-        # Confidence semantics on fallback: we don't surface the raw
-        # ``healthy`` probability — for an overconfident model that's
-        # often 3-5 %, which reads to the user as "97 % sick" even
-        # though the actual signal is "we're not confident enough to
-        # claim a disease". Instead we report ``1 - top1_disease_conf``
-        # — clamped to be at least the raw healthy prob (we never lie
-        # downward) and at most 0.95 (we don't claim certainty we never
-        # had).
         downgraded = False
         suspected_disease: Optional[str] = None
         if top1_class not in _NON_DISEASE and "healthy" in mean_probs:
             margin = top1_conf - healthy_p
-            disease_top_conf = top1_conf  # remember before we overwrite
+            disease_top_conf = top1_conf
             fallback_reason: Optional[str] = None
             if margin < HEALTHY_FALLBACK_MARGIN:
                 fallback_reason = f"margin={margin:.3f}<{HEALTHY_FALLBACK_MARGIN}"
@@ -499,8 +458,6 @@ class PlantDiseasePipeline:
                     f"threshold={top1_conf:.3f}<{DISEASE_MIN_CONFIDENCE}"
                 )
             if fallback_reason is not None:
-                # Confidence = "we are 1-p_disease confident this is NOT
-                # the suspected disease", bounded [healthy_p, 0.95].
                 inverted_conf = max(healthy_p, 1.0 - disease_top_conf)
                 inverted_conf = min(inverted_conf, 0.95)
                 logger.info(
@@ -508,13 +465,6 @@ class PlantDiseasePipeline:
                     fallback_reason, top1_class, disease_top_conf, inverted_conf,
                 )
                 suspected_disease = top1_class
-                # Redistribute probability mass so all_probs/top_k stay
-                # consistent with the chosen class_name. Without this
-                # the UI saw healthy as class_name but the suspected
-                # disease still ranked #1 in top_k — a confusing
-                # contradiction. We move (disease_p - inverted_conf)
-                # from the suspected disease into healthy and
-                # renormalize so the distribution still sums to 1.
                 target_healthy = max(inverted_conf, healthy_p)
                 delta = min(
                     disease_top_conf - inverted_conf,
@@ -523,28 +473,20 @@ class PlantDiseasePipeline:
                 if delta > 0:
                     mean_probs[suspected_disease] -= delta
                     mean_probs["healthy"] = mean_probs.get("healthy", 0.0) + delta
-                # Renormalize defensively in case temperature scaling
-                # left a sub-1 sum or floating-point drift accumulated.
                 total = sum(mean_probs.values())
                 if total > 0:
                     mean_probs = {n: p / total for n, p in mean_probs.items()}
                 top1_class = "healthy"
                 top1_conf = float(mean_probs["healthy"])
                 downgraded = True
-                # Sanity: confidence we report should never be below
-                # the original inverted bound after renormalisation.
                 if top1_conf < target_healthy:
                     top1_conf = target_healthy
 
-        # 6. Pick primary bbox: prefer one whose own top-1 matches the
+        # Pick primary bbox: prefer one whose own top-1 matches the
         # aggregated decision (most "representative" of the call).
-        # Fall back to the largest bbox if nothing matches.
         matching = [
             (box, cls) for box, cls in results
             if (cls.get("class_name") == top1_class) or (
-                # If we downgraded to healthy in aggregation but no
-                # per-crop is healthy by argmax (rare), still allow the
-                # match by checking whose healthy prob is highest.
                 downgraded and top1_class == "healthy"
                 and max(cls["all_probs"], key=cls["all_probs"].get) == "healthy"
             )
@@ -560,15 +502,14 @@ class PlantDiseasePipeline:
                 key=lambda r: int(r[0].get("width", 0)) * int(r[0].get("height", 0)),
             )[0]
 
-        # 7. Build aggregated classification dict in the same shape
-        # the rest of the pipeline already expects.
         aggregated_cls = {
             "class_name": top1_class,
             "confidence": top1_conf,
             "all_probs": mean_probs,
+            "max_logit": max_logit_seen if max_logit_seen != -float("inf") else 0.0,
             "low_confidence": top1_conf < HEALTHY_MIN_CONFIDENCE,
-            "_voted_over": n_boxes,  # for logging/telemetry
-            "_suspected_disease": suspected_disease,  # set only on healthy fallback
+            "_voted_over": n_boxes,
+            "_suspected_disease": suspected_disease,
         }
         return primary_box, aggregated_cls
 
@@ -586,9 +527,6 @@ class PlantDiseasePipeline:
         nap_conf = max(min(1.0 - msp, 0.95), 0.55)
         probs = {n: 0.0 for n in names}
         probs["not_a_plant"] = nap_conf
-        # Spread the rest over the remaining classes proportional to
-        # the original distribution (so e.g. a "healthy" runner-up
-        # still ranks above other diseases in the alternatives list).
         leftover = 1.0 - nap_conf
         original = classification.get("all_probs") or {}
         residual_total = sum(
@@ -603,6 +541,7 @@ class PlantDiseasePipeline:
             "class_name": "not_a_plant",
             "confidence": nap_conf,
             "all_probs": probs,
+            "max_logit": float(classification.get("max_logit", 0.0)),
             "low_confidence": False,
             "_voted_over": classification.get("_voted_over", 1),
             "_suspected_disease": None,
@@ -641,19 +580,7 @@ def compute_severity(
     image_size: tuple[int, int],
     is_diseased: bool,
 ) -> str:
-    """Heuristic severity scoring (low / medium / high).
-
-    Inputs combine three independent signals:
-      1. Relative bbox area — how much of the frame is the lesion
-         occupying. Tiny localised spots stay "low" even at high
-         confidence; full-leaf coverage escalates.
-      2. Confidence margin over healthy — how decisive the model is
-         about it being a disease at all. Hedged calls cap at "low".
-      3. Class-level prior for degenerative diseases (late_blight,
-         mosaic_virus) which always step up one level.
-
-    Returns ``low`` for healthy / NAP / non-diseased verdicts.
-    """
+    """Heuristic severity scoring (low / medium / high)."""
     if not is_diseased or class_name in _NON_DISEASE:
         return "low"
 
@@ -668,8 +595,6 @@ def compute_severity(
 
     margin = max(0.0, float(confidence) - float(healthy_prob))
 
-    # Score in [0, 6] from area + margin, then bucket. Each axis worth
-    # up to 3 points so neither one alone can pin the result.
     if area_frac >= SEVERITY_AREA_HIGH:
         area_pts = 3
     elif area_frac >= SEVERITY_AREA_LOW:
@@ -706,8 +631,6 @@ def _build_top_k(probs: dict[str, float], k: int) -> list[dict]:
 def _apply_postprocessing_rules(
     classification: dict,
     class_names: list[str],
-    *,
-    proxy_trained: "frozenset[str] | set[str] | None" = None,
 ) -> dict:
     """Soft postprocessing: warnings only, no class re-routing.
 
@@ -716,11 +639,8 @@ def _apply_postprocessing_rules(
         below thresholds. Surfaces alternatives, no class swap.
       * ``disease_uncertain`` — the healthy-fallback fired in
         ``_pick_primary``: top-1 was a disease but margin/threshold was
-        weak so the class was downgraded to healthy. We attach a
-        warning that names the suspected disease so the UI can show
-        "borderline call, ruled out X".
-      * ``low_confidence`` — top-1 below the healthy threshold. Lets
-        the UI tone down the badge without fighting the model.
+        weak so the class was downgraded to healthy.
+      * ``low_confidence`` — top-1 below the healthy threshold.
     """
     probs = classification["all_probs"]
     top_k = _build_top_k(probs, TOP_K_ALTERNATIVES)
@@ -732,7 +652,6 @@ def _apply_postprocessing_rules(
 
     if top1_name == "healthy" and "healthy" in class_names:
         margin = top1_prob - top2_prob
-        # Strongest disease (excludes healthy / not_a_plant from the floor).
         worst_disease = max(
             ((n, p) for n, p in probs.items() if n not in _NON_DISEASE),
             key=lambda kv: kv[1],
@@ -753,18 +672,7 @@ def _apply_postprocessing_rules(
     if suspected:
         warnings.append(f"disease_uncertain:{suspected}")
 
-    # Proxy-trained classes carry structurally lower precision on
-    # houseplants — flag them whenever they win. The set is sourced
-    # from classes.json at pipeline construction time; the default
-    # below is a conservative fallback for older checkpoints.
-    proxy_set = proxy_trained if proxy_trained is not None else _DEFAULT_PROXY_TRAINED
-    if top1_name in proxy_set:
-        warnings.append(f"proxy_trained:{top1_name}")
-
     if classification.get("_ood_gated"):
-        # Helps the UI explain "we routed this to Not-a-Plant because the
-        # detector + classifier signals were both weak" rather than the
-        # default "no leaves found" explanation.
         warnings.append("nap_ood_gated")
 
     if classification.get("low_confidence"):

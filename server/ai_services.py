@@ -176,21 +176,25 @@ def identify_species(image_bytes: bytes, *, organ: str = "leaf") -> dict:
 # session don't pay for re-tokenising the system prompt.
 _DOCTOR_SYSTEM_PROMPT = """You are PlantDiseases' friendly AI Plant Doctor, helping
 people care for their houseplants. Your knowledge is grounded in the
-PlantVision disease taxonomy:
+PlantVision v2.0 disease taxonomy (11 classes):
 
-- anthracnose: dark sunken spots with halo, fungal
 - bacterial_leaf_spot: angular brown spots with yellow halo, bacterial
-- gray_mold: fuzzy grey growth, fungal (Botrytis cinerea)
+- edema: corky water-blister bumps on leaf undersides; physiological,
+  caused by overwatering in cool dim weather
+- gray_mold_botrytis: fuzzy grey growth, fungal (Botrytis cinerea)
 - healthy: no disease detected
-- iron_chlorosis: interveinal yellowing with green veins
-- late_blight: fast-spreading water-soaked brown patches (Phytophthora)
-- mosaic_virus: light/dark green or yellow mottling, viral, incurable
+- leaf_scorch_underwatering: crispy brown leaf tips/edges, chronic
+  under-watering or salty hard water
+- leaf_spot_fungal: umbrella class for anthracnose / cercospora /
+  alternaria — dark spots, halos, concentric rings
 - not_a_plant: image does not contain a plant
+- nutrient_deficiency: covers iron, nitrogen, magnesium, potassium —
+  interveinal or whole-leaf yellowing, edge burn
 - powdery_mildew: white powdery coating, fungal
-- sunburn: dry brown patches on sun-facing leaves
-
-Common houseplant pests (NOT diseases, but cause similar symptoms):
-spider mites, aphids, mealybugs, scale insects, whitefly, thrips.
+- sunburn_or_scorch: dry brown patches on the sun-facing side of
+  leaves or directly under harsh grow-lights
+- viral_disease: umbrella class for mosaic, leaf curl and ringspot;
+  incurable
 
 Style guide:
 - Keep replies SHORT (3-6 sentences). Specific, actionable, friendly.
@@ -410,16 +414,17 @@ _BASE_PLANS = {
 }
 
 _DISEASE_ADJUSTMENT = {
-    "powdery_mildew":     {"humidity": "30-45%", "note": "Lower humidity; improve airflow."},
-    "gray_mold":          {"humidity": "30-50%", "note": "Lower humidity; remove debris weekly."},
-    "anthracnose":        {"note": "Bottom-water only; remove affected leaves."},
-    "bacterial_leaf_spot":{"note": "No misting; bottom-water; isolate the plant."},
-    "iron_chlorosis":     {"note": "Add chelated iron + magnesium feed at next watering."},
-    "late_blight":        {"watering_days": "as_needed", "note": "Reduce watering; isolate immediately."},
-    "mosaic_virus":       {"note": "Isolate; sanitise tools; the virus has no cure."},
-    "sunburn":            {"note": "Move out of direct midday sun; bright indirect light only."},
-    "healthy":            {"note": "Keep your current routine; monitor weekly."},
-    "not_a_plant":        {"note": "Try a clearer photo of a single leaf."},
+    "powdery_mildew":            {"humidity": "30-45%", "note": "Lower humidity; improve airflow."},
+    "gray_mold_botrytis":        {"humidity": "30-50%", "note": "Lower humidity; remove debris weekly."},
+    "leaf_spot_fungal":          {"note": "Bottom-water only; remove affected leaves; copper fungicide weekly."},
+    "bacterial_leaf_spot":       {"note": "No misting; bottom-water; isolate the plant."},
+    "viral_disease":             {"note": "Isolate; sanitise tools; the virus has no cure."},
+    "edema":                     {"watering_days": "as_needed", "note": "Reduce watering; raise light and airflow."},
+    "sunburn_or_scorch":         {"note": "Move out of direct midday sun; bright indirect light only."},
+    "leaf_scorch_underwatering": {"watering_days": "as_needed", "note": "Soak-water; flush salts; raise humidity."},
+    "nutrient_deficiency":       {"note": "Half-strength balanced NPK; chelated Fe + Mg if interveinal yellowing."},
+    "healthy":                   {"note": "Keep your current routine; monitor weekly."},
+    "not_a_plant":               {"note": "Try a clearer photo of a single leaf."},
 }
 
 

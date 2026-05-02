@@ -29,20 +29,23 @@ data class TopKEntry(
     @SerializedName("is_healthy") val isHealthy: Boolean? = null
 )
 
+/** One class inside a conformal prediction set, with bilingual labels. */
+data class PredictionSetItem(
+    @SerializedName("class") val className: String,
+    @SerializedName("name_en") val nameEn: String? = null,
+    @SerializedName("name_ru") val nameRu: String? = null,
+)
+
 /**
- * Hint surfaced in the UI under each diagnosis: the pests whose damage
- * pattern can be confused with this disease. Resolved server-side from
- * `diseases_data.PEST_INFO` and the disease's `possible_pest_causes`.
+ * Conformal prediction set — the classes the model can't rule out at
+ * the configured coverage level (e.g. 90 %). Surfaced honestly when
+ * calibration data is loaded server-side; the field is null otherwise.
  */
-data class PossiblePestCause(
-    @SerializedName("key") val key: String,
-    @SerializedName("name_en") val nameEn: String,
-    @SerializedName("name_ru") val nameRu: String,
-    @SerializedName("category") val category: String? = null,
-    @SerializedName("summary_en") val summaryEn: String? = null,
-    @SerializedName("summary_ru") val summaryRu: String? = null,
-    @SerializedName("hint_en") val hintEn: String? = null,
-    @SerializedName("hint_ru") val hintRu: String? = null
+data class PredictionSet(
+    @SerializedName("classes") val classes: List<String> = emptyList(),
+    @SerializedName("coverage") val coverage: Float = 0f,
+    @SerializedName("method") val method: String? = null,
+    @SerializedName("items") val items: List<PredictionSetItem> = emptyList(),
 )
 
 /** Response from the server after analyzing an image */
@@ -61,7 +64,7 @@ data class AnalysisResponse(
     @SerializedName("all_probs") val allProbs: Map<String, Float>? = null,
     @SerializedName("top_k") val topK: List<TopKEntry>? = null,
     @SerializedName("warnings") val warnings: List<String>? = null,
-    @SerializedName("possible_pest_causes") val possiblePestCauses: List<PossiblePestCause>? = null,
+    @SerializedName("prediction_set") val predictionSet: PredictionSet? = null,
     @SerializedName("pipeline_mode") val pipelineMode: String? = null,
     @SerializedName("elapsed_ms") val elapsedMs: Float? = null
 )

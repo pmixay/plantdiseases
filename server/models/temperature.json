@@ -1,5 +1,4 @@
 {
-  "temperature": 0.52,
-  "val_nll_raw": 0.4679,
-  "val_nll_calibrated": 0.308
+  "temperature": 1.0,
+  "_note": "Reset for retraining cycle on the new 11-class taxonomy. Will be re-fit on the indoor_real_world_v1 val NLL after training."
 }
