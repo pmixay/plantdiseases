@@ -9,7 +9,6 @@ tests stay deterministic on CI.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -22,7 +21,6 @@ from conformal import (
     prediction_set,
     raps_score,
 )
-
 
 CLASSES = ["a", "b", "c", "d", "e"]
 

@@ -20,6 +20,7 @@ import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 class AnalysisActivity : AppCompatActivity() {
 

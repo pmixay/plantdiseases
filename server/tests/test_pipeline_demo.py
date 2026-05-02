@@ -184,7 +184,8 @@ def test_healthy_fallback_emits_disease_uncertain_warning():
     probs = _uniform_probs()
     probs["healthy"] = 0.55
     probs["powdery_mildew"] = 0.15
-    s = sum(probs.values()); probs = {k: v / s for k, v in probs.items()}
+    s = sum(probs.values())
+    probs = {k: v / s for k, v in probs.items()}
 
     classification = {
         "class_name": "healthy",
@@ -210,7 +211,8 @@ def test_ood_reroute_to_nap_produces_consistent_distribution():
     probs["powdery_mildew"] = 0.42
     probs["healthy"] = 0.20
     probs["not_a_plant"] = 0.03
-    s = sum(probs.values()); probs = {k: v / s for k, v in probs.items()}
+    s = sum(probs.values())
+    probs = {k: v / s for k, v in probs.items()}
 
     classification = {
         "class_name": "powdery_mildew",
@@ -238,7 +240,8 @@ def test_postprocessor_emits_nap_ood_warning():
 
     probs = _uniform_probs()
     probs["not_a_plant"] = 0.7
-    s = sum(probs.values()); probs = {k: v / s for k, v in probs.items()}
+    s = sum(probs.values())
+    probs = {k: v / s for k, v in probs.items()}
     classification = {
         "class_name": "not_a_plant",
         "confidence": probs["not_a_plant"],
@@ -302,7 +305,8 @@ def test_healthy_fallback_keeps_top_k_consistent_with_class_name():
     probs = _uniform_probs()
     probs["healthy"] = 0.55
     probs["powdery_mildew"] = 0.15
-    s = sum(probs.values()); probs = {k: v / s for k, v in probs.items()}
+    s = sum(probs.values())
+    probs = {k: v / s for k, v in probs.items()}
     aggregated = {
         "class_name": "healthy",
         "confidence": probs["healthy"],
