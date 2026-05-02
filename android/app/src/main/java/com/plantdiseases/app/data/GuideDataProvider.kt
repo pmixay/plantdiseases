@@ -402,7 +402,7 @@ PREVENTION:
 • Своевременно убирайте опавшие листья
 • Обеспечьте расстояние между растениями
             """.trimIndent(),
-            iconRes = R.drawable.ic_disease,
+            iconRes = R.drawable.ic_prevention,
             category = GuideCategory.COMMON_DISEASES
         ),
 

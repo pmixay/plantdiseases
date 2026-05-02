@@ -106,9 +106,9 @@ class PlantDetailActivity : AppCompatActivity() {
                 AppBarLayout.LayoutParams.MATCH_PARENT,
                 64.dp(),
             )
-            contentInsetStartWithNavigation = 0
-            contentInsetStart = 0
-            contentInsetEnd = 0
+            setContentInsetStartWithNavigation(0)
+            setContentInsetsAbsolute(0, 0)
+            setContentInsetsRelative(0, 0)
             setPadding(16.dp(), 0, 16.dp(), 0)
             setNavigationIcon(R.drawable.ic_back)
             setNavigationIconTint(getColor(R.color.toolbar_title))
