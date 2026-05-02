@@ -29,6 +29,25 @@ data class TopKEntry(
     @SerializedName("is_healthy") val isHealthy: Boolean? = null
 )
 
+/** One class inside a conformal prediction set, with bilingual labels. */
+data class PredictionSetItem(
+    @SerializedName("class") val className: String,
+    @SerializedName("name_en") val nameEn: String? = null,
+    @SerializedName("name_ru") val nameRu: String? = null,
+)
+
+/**
+ * Conformal prediction set — the classes the model can't rule out at
+ * the configured coverage level (e.g. 90 %). Surfaced honestly when
+ * calibration data is loaded server-side; the field is null otherwise.
+ */
+data class PredictionSet(
+    @SerializedName("classes") val classes: List<String> = emptyList(),
+    @SerializedName("coverage") val coverage: Float = 0f,
+    @SerializedName("method") val method: String? = null,
+    @SerializedName("items") val items: List<PredictionSetItem> = emptyList(),
+)
+
 /** Response from the server after analyzing an image */
 data class AnalysisResponse(
     @SerializedName("disease_name") val diseaseName: String,
@@ -45,6 +64,7 @@ data class AnalysisResponse(
     @SerializedName("all_probs") val allProbs: Map<String, Float>? = null,
     @SerializedName("top_k") val topK: List<TopKEntry>? = null,
     @SerializedName("warnings") val warnings: List<String>? = null,
+    @SerializedName("prediction_set") val predictionSet: PredictionSet? = null,
     @SerializedName("pipeline_mode") val pipelineMode: String? = null,
     @SerializedName("elapsed_ms") val elapsedMs: Float? = null
 )

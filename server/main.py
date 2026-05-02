@@ -589,6 +589,29 @@ async def analyze_image(image: UploadFile = File(...)):
     # not by silently flipping this boolean.
     is_healthy_effective = bool(disease_info.get("is_healthy", False))
 
+    # Conformal prediction set: classes the model can't rule out at the
+    # configured coverage level. Annotated with bilingual names so the
+    # UI can render "leaf_spot_fungal OR bacterial_leaf_spot @ 90%"
+    # without a second lookup table. ``None`` when calibration data
+    # isn't yet available — clients must treat it as optional.
+    prediction_set = result.get("prediction_set")
+    if prediction_set is not None:
+        prediction_set = {
+            **prediction_set,
+            "items": [
+                {
+                    "class": cls,
+                    "name_en": DISEASES_DATABASE.get(cls, DISEASES_DATABASE["unknown"]).get(
+                        "name_en", cls.replace("_", " ").title()
+                    ),
+                    "name_ru": DISEASES_DATABASE.get(cls, DISEASES_DATABASE["unknown"]).get(
+                        "name_ru", cls
+                    ),
+                }
+                for cls in prediction_set["classes"]
+            ],
+        }
+
     return JSONResponse(content={
         "disease_name": disease_info["name_en"],
         "disease_name_ru": disease_info["name_ru"],
@@ -606,6 +629,7 @@ async def analyze_image(image: UploadFile = File(...)):
         "all_probs": rounded_probs,
         "top_k": top_k_localised,
         "warnings": warnings,
+        "prediction_set": prediction_set,
         "pipeline_mode": result["pipeline_mode"],
         "elapsed_ms": result["elapsed_ms"],
         "server_version": APP_VERSION,

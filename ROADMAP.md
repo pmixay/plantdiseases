@@ -26,9 +26,43 @@ hint either).
   (MSP collapses under temperature scaling and label smoothing).
 - PlantVillage moved out of the train set; kept as a frozen
   `val_studio` slice for transfer + background-bias monitoring only.
+- **Calibration:** temperature scaling **plus** inductive conformal
+  prediction (RAPS, Angelopoulos 2021) calibrated on a 1–2 k user-
+  photo holdout. Production response carries an honest
+  `prediction_set` with a 90 % coverage guarantee instead of a
+  potentially mis-calibrated single "0.99" answer. Server-side
+  module: `server/conformal.py`; calibration artefact:
+  `models/conformal.json`.
+- **Quantisation:** dynamic INT8-on-MatMul → **static INT8 QDQ**
+  with a 500-photo `val_realworld` calibration reader. Dynamic
+  quant only touched ~0.2 % of MobileNetV3-Large parameters; static
+  QDQ is a real speed-up but ORT does not guarantee accuracy, so
+  the export cell **fails loudly if disease F1 drops by > 0.02 vs
+  FP32**.
 - Primary metric: disease macro-F1 on **`indoor_real_world_v1`** —
   a frozen 500–1000 user-photo validation set. Without it, no
   shipping decision.
+
+**Eval protocol (three independent val slices):**
+
+| Slice | Role | Pass criterion |
+|---|---|---|
+| `val_indomain` (group-aware holdout from `train/`) | early stopping + schedule decisions | non-decreasing for ≥ 4 epochs |
+| `val_realworld` (`indoor_real_world_v1`) | **primary — ship/no-ship gate** | disease macro-F1 in **0.70 – 0.78** target band; no rare class with recall = 0; healthy-bias < 1.5 |
+| `val_studio` (`plantvillage_studio`) | transfer / background-bias monitor | tracked, never blocking |
+
+Each epoch logs **macro-F1 over diseases + per-class recall + confusion matrix + healthy-bias** on all three slices. Top-1 alone hides healthy collapse and rare-class death.
+
+**Engineering keepers from the legacy pipeline** (good already, do not rewrite): disease macro-F1 as primary metric, healthy-bias monitor each epoch, group-aware splits by `plant_id`, hardlinks for image stores, sparse checkout for big repos, ONNX sanity drift-check after every quantization step.
+
+**Optional — once v2.0 weights land:**
+- **DeepCore**-style coreset / dataset pruning if iteration time
+  becomes a bottleneck (Guo et al. 2022). Random selection stays as
+  the no-op control.
+- **No dataset distillation.** ROI is weak at our resolution and
+  ambiguous label boundaries.
+- **Model pruning is low priority.** KD into MobileNetV3-Large +
+  static INT8 already covers ~95 % of the runtime budget.
 
 The classifier needs a fresh training cycle on the new taxonomy
 before it can be re-shipped. Until then the server runs in DEMO

@@ -106,6 +106,7 @@ def test_analyze_response_contract(client, png_bytes):
         "top_k",
         "warnings",
         "severity",
+        "prediction_set",
         "pipeline_mode",
         "elapsed_ms",
         "server_version",

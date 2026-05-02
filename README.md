@@ -39,9 +39,19 @@ What changed vs v1.x:
 - **PlantVillage** moved out of the train set; kept only as a frozen
   `val_studio` slice (transfer / background-bias monitor — Noyan 2022:
   49 % accuracy from 8 background pixels).
-- **Primary metric:** disease macro-F1 on `indoor_real_world_v1` —
-  a frozen 500–1000 user-photo validation set across different
-  devices, windows, lamps, distances. Without it, no shipping decision.
+- **Calibration:** temperature scaling **plus** inductive conformal
+  prediction (RAPS, Angelopoulos 2021). Production response carries
+  a `prediction_set` with a 90 % coverage guarantee instead of a
+  potentially mis-calibrated single "0.99" answer.
+- **Quantisation:** dynamic INT8-on-MatMul → **static INT8 QDQ** with
+  a 500-photo `val_realworld` calibration reader; export step
+  re-evaluates and refuses to ship if disease F1 drops by > 0.02 vs
+  FP32.
+- **Eval protocol — three independent val slices:** `val_indomain`
+  (early stopping), `val_realworld` (primary ship gate; target
+  macro-F1 ∈ 0.70 – 0.78), `val_studio` (transfer / background-bias
+  monitor). Each epoch logs disease macro-F1 + per-class recall +
+  confusion matrix + healthy-bias on all three.
 
 Per-week, per-engineer task list lives in [`ROADMAP.md`](ROADMAP.md).
 Full training recipe lives in

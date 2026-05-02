@@ -23,13 +23,18 @@ Coarse-group rationale:
 - `nutrient_deficiency` covers Fe + N + Mg + K.
 
 ## Validation contract
-**Primary metric:** disease macro-F1 on `indoor_real_world_v1`
-(frozen 500–1000 user photos, varied devices/windows/lamps/distances).
-Decisions to ship are made on this number.
 
-`plantvillage_studio` is kept as an **isolated transfer / background-bias
-slice** (Noyan 2022: 49 % accuracy from 8 background pixels). It is
-**never** in train.
+Three independent slices, three reports per release:
+
+| Slice | Role | Pass criterion |
+|---|---|---|
+| `val_indomain` | early stopping + schedule decisions | non-decreasing for ≥ 4 epochs |
+| `val_realworld` (`indoor_real_world_v1`) | **primary — ship/no-ship gate** | disease macro-F1 in **0.70 – 0.78**; no class with recall = 0; healthy-bias < 1.5 |
+| `val_studio` (`plantvillage_studio`) | transfer / background-bias monitor (Noyan 2022) | tracked, never blocking |
+
+Each epoch logs disease macro-F1 + per-class recall + confusion matrix
++ healthy-bias on all three slices. Top-1 alone hides healthy collapse
+and rare-class death.
 
 ## Training recipe
 - Optimiser: AdamW, weight_decay=1e-4, label_smoothing=0.05
@@ -42,8 +47,14 @@ slice** (Noyan 2022: 49 % accuracy from 8 background pixels). It is
   ISP-imitation, soft shadows. MixUp 0.10, CutMix 0.10–0.20. No strong
   hue shift / Solarize (colour is a disease signal).
 - Distillation: KD into MobileNetV3-Large (5.5 M params), 12 epochs.
-- Calibration: temperature scaling on indoor val NLL.
-- Quantisation: dynamic INT8 on MatMul.
+- Calibration: temperature scaling on `val_realworld` NLL **plus**
+  inductive conformal prediction (RAPS, Angelopoulos 2021) calibrated
+  on a 1–2 k user-photo holdout. Persisted to `models/conformal.json`;
+  consumed by `server/conformal.py`. Coverage target: 90 % (`alpha=0.10`).
+- Quantisation: **static INT8 QDQ** with a 500-photo `val_realworld`
+  calibration reader. The export step re-evaluates the INT8 model on
+  `val_realworld` and refuses to write the artefact if disease F1
+  drops by more than 0.02 vs FP32.
 
 ## OOD detection
 - Score: **MaxLogit** (Hendrycks 2019) — robust to temperature scaling
@@ -51,6 +62,13 @@ slice** (Noyan 2022: 49 % accuracy from 8 background pixels). It is
 - Production combines: detector confidence + calibrated classifier
   confidence + MaxLogit score.
 - For ViT branches we'd swap in GEN (Liu CVPR 2023).
+
+## Optional follow-ups (post-v2.0)
+- **DeepCore** (Guo et al. 2022) coreset / dataset pruning if
+  iteration time becomes a bottleneck. Random selection stays as the
+  no-op control. **No** dataset distillation — ROI weak at our
+  resolution. Model pruning is low priority — KD + static INT8 cover
+  ~95 % of the runtime budget.
 
 ## Pre-training data hygiene
 - SHA-256 + pHash (Hamming ≤ 8) dedup.
