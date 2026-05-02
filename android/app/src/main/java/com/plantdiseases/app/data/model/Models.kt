@@ -29,22 +29,6 @@ data class TopKEntry(
     @SerializedName("is_healthy") val isHealthy: Boolean? = null
 )
 
-/**
- * Hint surfaced in the UI under each diagnosis: the pests whose damage
- * pattern can be confused with this disease. Resolved server-side from
- * `diseases_data.PEST_INFO` and the disease's `possible_pest_causes`.
- */
-data class PossiblePestCause(
-    @SerializedName("key") val key: String,
-    @SerializedName("name_en") val nameEn: String,
-    @SerializedName("name_ru") val nameRu: String,
-    @SerializedName("category") val category: String? = null,
-    @SerializedName("summary_en") val summaryEn: String? = null,
-    @SerializedName("summary_ru") val summaryRu: String? = null,
-    @SerializedName("hint_en") val hintEn: String? = null,
-    @SerializedName("hint_ru") val hintRu: String? = null
-)
-
 /** Response from the server after analyzing an image */
 data class AnalysisResponse(
     @SerializedName("disease_name") val diseaseName: String,
@@ -61,7 +45,6 @@ data class AnalysisResponse(
     @SerializedName("all_probs") val allProbs: Map<String, Float>? = null,
     @SerializedName("top_k") val topK: List<TopKEntry>? = null,
     @SerializedName("warnings") val warnings: List<String>? = null,
-    @SerializedName("possible_pest_causes") val possiblePestCauses: List<PossiblePestCause>? = null,
     @SerializedName("pipeline_mode") val pipelineMode: String? = null,
     @SerializedName("elapsed_ms") val elapsedMs: Float? = null
 )

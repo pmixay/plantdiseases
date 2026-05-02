@@ -85,7 +85,7 @@ def test_progression_baseline_when_no_previous():
     import ai_services as ai
 
     out = ai.compare_progression(
-        current={"class_name": "powdery_mildew", "confidence": 0.7,
+        current={"class_name": "leaf_spot_fungal", "confidence": 0.7,
                  "severity": "medium"},
         previous=None,
     )
@@ -97,9 +97,9 @@ def test_progression_worsening_on_severity_step_up():
     import ai_services as ai
 
     out = ai.compare_progression(
-        current={"class_name": "powdery_mildew", "confidence": 0.85,
+        current={"class_name": "leaf_spot_fungal", "confidence": 0.85,
                  "severity": "high"},
-        previous={"class_name": "powdery_mildew", "confidence": 0.65,
+        previous={"class_name": "leaf_spot_fungal", "confidence": 0.65,
                   "severity": "medium"},
     )
     assert out["trend"] == "worsening"
@@ -111,7 +111,7 @@ def test_progression_improving_disease_to_healthy():
 
     out = ai.compare_progression(
         current={"class_name": "healthy", "confidence": 0.92, "severity": "low"},
-        previous={"class_name": "powdery_mildew", "confidence": 0.7,
+        previous={"class_name": "viral_disease", "confidence": 0.7,
                   "severity": "medium"},
     )
     assert out["trend"] == "improving"

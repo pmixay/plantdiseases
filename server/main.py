@@ -2,9 +2,12 @@
 PlantDiseases Server — FastAPI backend with the PlantVision two-stage
 houseplant disease pipeline.
 
-Stage 1:  YOLOv8n            — locate leaves (single class)
-Stage 2:  EfficientNet-B0    — classify cropped leaf regions; mean-voted
-                               across bboxes, ONNX (INT8 dynamic on MatMul).
+Stage 1:  YOLOv8n              — locate plant leaves (single class)
+Stage 2:  MobileNetV3-Large    — distilled student (KD from
+                                 EfficientNetV2-S teacher), classifies
+                                 cropped leaf regions; mean-voted
+                                 across bboxes, ONNX (INT8 dynamic
+                                 on MatMul).
 """
 
 import asyncio
@@ -34,7 +37,7 @@ from ai_services import (
     generate_care_plan,
     identify_species,
 )
-from diseases_data import DISEASES_DATABASE, pest_hints
+from diseases_data import DISEASES_DATABASE
 from pipeline import PlantDiseasePipeline
 
 try:  # Pydantic v2 — request bodies for the new endpoints.
@@ -48,7 +51,7 @@ except Exception:  # pragma: no cover
 try:
     from . import __version__ as APP_VERSION  # type: ignore
 except Exception:
-    APP_VERSION = "1.2"
+    APP_VERSION = "2.0"
 
 # Limit Pillow decompression to prevent zip-bomb DoS
 Image.MAX_IMAGE_PIXELS = 20_000_000  # ~4500×4500
@@ -380,12 +383,15 @@ async def version():
     else:
         backend = getattr(pipeline.classifier, "backend", "unknown")
         img_size = getattr(pipeline.classifier, "img_size", 0)
-        cls_arch = f"PlantVision EfficientNet @ {img_size} px / {backend} backend"
+        cls_arch = (
+            f"PlantVision MobileNetV3-L (KD ← EfficientNetV2-S) @ "
+            f"{img_size} px / {backend} backend"
+        )
     return {
         "version": APP_VERSION,
         "classifier_name": "plantvision",
         "pipeline_mode": pipeline.mode if pipeline else "unknown",
-        "detector_arch": "YOLOv8n (single-class leaf)",
+        "detector_arch": "YOLOv8n (single-class plant_leaf, indoor-trained)",
         "classifier_arch": cls_arch,
         "stages": 2,
         "focus": "houseplants",
@@ -583,12 +589,6 @@ async def analyze_image(image: UploadFile = File(...)):
     # not by silently flipping this boolean.
     is_healthy_effective = bool(disease_info.get("is_healthy", False))
 
-    # Pests are not classifier outputs — they're a hint section rendered
-    # next to the diagnosis. Resolve the disease's
-    # ``possible_pest_causes`` keys into the full pest cards here so
-    # the client doesn't need a second lookup table.
-    possible_pests = pest_hints(class_name)
-
     return JSONResponse(content={
         "disease_name": disease_info["name_en"],
         "disease_name_ru": disease_info["name_ru"],
@@ -606,7 +606,6 @@ async def analyze_image(image: UploadFile = File(...)):
         "all_probs": rounded_probs,
         "top_k": top_k_localised,
         "warnings": warnings,
-        "possible_pest_causes": possible_pests,
         "pipeline_mode": result["pipeline_mode"],
         "elapsed_ms": result["elapsed_ms"],
         "server_version": APP_VERSION,

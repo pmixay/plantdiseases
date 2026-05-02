@@ -299,11 +299,11 @@ PREVENTION:
         ),
 
         GuideItem(
-            id = "mosaic_virus",
-            titleEn = "Mosaic Virus",
-            titleRu = "Мозаичный вирус",
-            descriptionEn = "Mottled light/dark pattern, no cure exists",
-            descriptionRu = "Пёстрый узор из светлых и тёмных участков, не лечится",
+            id = "viral_disease",
+            titleEn = "Viral Disease (Mosaic / Curl / Ringspot)",
+            titleRu = "Вирусные заболевания (мозаика / курчавость / кольцевая пятнистость)",
+            descriptionEn = "Mottled light/dark pattern, leaf curl or chlorotic rings — no cure exists",
+            descriptionRu = "Пёстрый узор, скрученность листьев или хлоротичные кольца — лечения нет",
             contentEn = """
 Mosaic virus causes a distinctive mottled pattern of light and dark green on leaves. Leaves may be distorted or curled. There is no cure.
 

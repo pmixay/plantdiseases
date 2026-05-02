@@ -20,7 +20,7 @@ def test_version_contract(client):
     r = client.get("/api/version")
     assert r.status_code == 200
     body = r.json()
-    assert body["detector_arch"] == "YOLOv8n (single-class leaf)"
+    assert body["detector_arch"] == "YOLOv8n (single-class plant_leaf, indoor-trained)"
     # classifier_arch is derived from the actually-loaded backend so
     # the value depends on which weights the test environment has.
     # In the test harness no weights are present so we get the demo

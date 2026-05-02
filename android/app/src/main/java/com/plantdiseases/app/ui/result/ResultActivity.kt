@@ -333,7 +333,6 @@ class ResultActivity : AppCompatActivity() {
                 tvDescription.text = getString(R.string.not_a_plant_result_body)
                 cardTreatmentPrevention.visibility = View.GONE
                 cardAlternatives.visibility = View.GONE
-                cardPestCauses.visibility = View.GONE
                 cardPipelineWarning.visibility = View.GONE
                 cardLowConfidence.visibility = View.GONE
                 // Share / add-to-garden don't make sense for a NAP verdict —
@@ -347,7 +346,6 @@ class ResultActivity : AppCompatActivity() {
                 btnAddToGarden.visibility = View.VISIBLE
                 buildPipelineWarnings(scan, repository)
                 buildAlternativeDiagnoses(scan, repository, isRu)
-                buildPestCauses(scan, isRu)
                 setupTreatmentPreventionTabs(scan, repository, isRu)
                 buildCarePlanCard(scan, repository, isRu)
             }
@@ -754,16 +752,17 @@ class ResultActivity : AppCompatActivity() {
         binding.alternativesLayout.removeAllViews()
 
         val diseaseNames = mapOf(
-            // PlantVision — 10 disease classes (pests are hints, not labels)
+            // PlantVision v2.0 — 11 classes
             "healthy" to (if (isRu) "Здоровое растение" else "Healthy Plant"),
             "powdery_mildew" to (if (isRu) "Мучнистая роса" else "Powdery Mildew"),
-            "anthracnose" to (if (isRu) "Антракноз" else "Anthracnose"),
+            "gray_mold_botrytis" to (if (isRu) "Серая гниль (ботритис)" else "Gray Mold (Botrytis)"),
+            "leaf_spot_fungal" to (if (isRu) "Грибковая пятнистость" else "Fungal Leaf Spot"),
             "bacterial_leaf_spot" to (if (isRu) "Бактериальная пятнистость" else "Bacterial Leaf Spot"),
-            "gray_mold" to (if (isRu) "Серая гниль" else "Gray Mold"),
-            "iron_chlorosis" to (if (isRu) "Железный хлороз" else "Iron Chlorosis"),
-            "late_blight" to (if (isRu) "Фитофтороз" else "Late Blight"),
-            "mosaic_virus" to (if (isRu) "Мозаичный вирус" else "Mosaic Virus"),
-            "sunburn" to (if (isRu) "Солнечный ожог" else "Sunburn"),
+            "viral_disease" to (if (isRu) "Вирусное заболевание" else "Viral Disease"),
+            "edema" to (if (isRu) "Эдема (отёчность)" else "Edema (Oedema)"),
+            "sunburn_or_scorch" to (if (isRu) "Солнечный ожог" else "Sunburn / Light Scorch"),
+            "leaf_scorch_underwatering" to (if (isRu) "Краевой ожог (недолив)" else "Leaf Scorch (Under-watering)"),
+            "nutrient_deficiency" to (if (isRu) "Дефицит питания" else "Nutrient Deficiency"),
             "not_a_plant" to (if (isRu) "Не растение" else "Not a Plant"),
         )
 
@@ -852,62 +851,6 @@ class ResultActivity : AppCompatActivity() {
         if (topKey == "not_a_plant") return true
         return scan.diseaseName.equals("Not a Plant", ignoreCase = true) ||
             scan.diseaseNameRu == "Не растение"
-    }
-
-    private fun buildPestCauses(scan: ScanEntity, isRu: Boolean) {
-        // Resolve disease class key from the stored top probability.
-        // ScanRepository.parseAllProbs returns a Map<className, prob>.
-        val repository = (application as PlantDiseasesApp).scanRepository
-        val classKey = repository.parseAllProbs(scan.allProbs)
-            .entries.maxByOrNull { it.value }?.key
-            ?: run {
-                binding.cardPestCauses.visibility = View.GONE
-                return
-            }
-
-        val pests = com.plantdiseases.app.data.PestCauses.forDisease(classKey)
-        if (pests.isEmpty()) {
-            binding.cardPestCauses.visibility = View.GONE
-            return
-        }
-
-        binding.cardPestCauses.visibility = View.VISIBLE
-        binding.pestCausesLayout.removeAllViews()
-
-        pests.forEachIndexed { index, pest ->
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    if (index > 0) topMargin = 12.dpToPx()
-                }
-            }
-
-            val name = TextView(this).apply {
-                text = if (isRu) pest.nameRu else pest.nameEn
-                textSize = 14f
-                setTextColor(getColor(R.color.on_surface))
-                typeface = android.graphics.Typeface.create("sans-serif-medium",
-                    android.graphics.Typeface.NORMAL)
-            }
-            val summary = TextView(this).apply {
-                text = if (isRu) pest.summaryRu else pest.summaryEn
-                textSize = 12f
-                setTextColor(getColor(R.color.on_surface_secondary))
-            }
-            val hint = TextView(this).apply {
-                text = "💡 " + if (isRu) pest.hintRu else pest.hintEn
-                textSize = 12f
-                setTextColor(getColor(R.color.on_surface_secondary))
-                setPadding(0, 4.dpToPx(), 0, 0)
-            }
-            row.addView(name)
-            row.addView(summary)
-            row.addView(hint)
-            binding.pestCausesLayout.addView(row)
-        }
     }
 
     private fun shareWithImage(scan: ScanEntity, repository: ScanRepository, isRu: Boolean) {
@@ -1105,7 +1048,6 @@ class ResultActivity : AppCompatActivity() {
             binding.cardDescription,
             binding.cardTreatmentPrevention,
             binding.cardAlternatives,
-            binding.cardPestCauses,
             binding.cardPipelineWarning,
             binding.cardLowConfidence
         ).filter { it.visibility == View.VISIBLE }

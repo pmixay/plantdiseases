@@ -1,15 +1,14 @@
 """
 Stage 2 — PlantVision houseplant disease classifier.
 
-Classifies a (preferably cropped) leaf region into one of 10
+Classifies a (preferably cropped) leaf region into one of 11
 houseplant-relevant condition classes including the rejection class
 ``not_a_plant``. Class names + input resolution live in
-``models/classes.json``; if the file is missing a built-in default is
-used (EfficientNet-B0).
+``models/classes.json``; if the file is missing a built-in default
+matching the v2.0 taxonomy is used.
 
-The classifier prefers ONNX Runtime (CPU EP) when an ``.onnx`` weight
-is present — that's the path the training notebook produces and the
-recommended default for production deployment. Loading order:
+Production artefact is a distilled MobileNetV3-Large student
+(EfficientNetV2-S teacher → KD). Loading order:
 
 1. ``classifier_int8.onnx`` (dynamic-quantized, smallest + fastest)
 2. ``classifier.onnx``      (FP32 ONNX)
@@ -33,17 +32,20 @@ logger = logging.getLogger(__name__)
 DEFAULT_IMG_SIZE = 256
 
 # Alphabetical — must match training-time ``sorted(ImageFolder.classes)``.
+# Final 11-class taxonomy (v2.0): coarse-grained groups optimised for
+# indoor real-world photos.
 DEFAULT_CLASS_NAMES = [
-    "anthracnose",
     "bacterial_leaf_spot",
-    "gray_mold",
+    "edema",
+    "gray_mold_botrytis",
     "healthy",
-    "iron_chlorosis",
-    "late_blight",
-    "mosaic_virus",
+    "leaf_scorch_underwatering",
+    "leaf_spot_fungal",
     "not_a_plant",
+    "nutrient_deficiency",
     "powdery_mildew",
-    "sunburn",
+    "sunburn_or_scorch",
+    "viral_disease",
 ]
 
 NORM_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
@@ -179,7 +181,10 @@ class DiseaseClassifier:
             self.CLASS_NAMES = self._fit_class_names(self.CLASS_NAMES, ckpt_classes)
             self.NUM_CLASSES = ckpt_classes
 
-        net = models.efficientnet_b0(weights=None)
+        # Production student is MobileNetV3-Large (KD from EfficientNetV2-S).
+        # The torchvision factory matches the timm/torchvision head shape
+        # the training notebook saves.
+        net = models.mobilenet_v3_large(weights=None)
         in_features = net.classifier[-1].in_features
         net.classifier[-1] = nn.Linear(in_features, self.NUM_CLASSES)
         net.load_state_dict(state)
@@ -190,7 +195,8 @@ class DiseaseClassifier:
         self.is_loaded = True
         self.backend = "torch"
         logger.info(
-            "Classifier (PyTorch EfficientNet-B0) loaded from %s (%d classes, img_size=%d)",
+            "Classifier (PyTorch MobileNetV3-Large student) loaded from %s "
+            "(%d classes, img_size=%d)",
             path, self.NUM_CLASSES, self.img_size,
         )
 
@@ -237,18 +243,12 @@ class DiseaseClassifier:
     def _classify_onnx(self, img: Image.Image) -> dict:
         x = self._preprocess(img)
         logits = self._onnx_session.run(None, {self._onnx_input_name: x})[0]
-        logits = logits - logits.max(axis=1, keepdims=True)
-        e = np.exp(logits)
-        probs = e / e.sum(axis=1, keepdims=True)
-        return self._format_result(probs[0])
+        return self._format_result_from_logits(logits[0])
 
     def _classify_onnx_batch(self, imgs: list[Image.Image]) -> list[dict]:
         x = self._preprocess_batch(imgs)
         logits = self._onnx_session.run(None, {self._onnx_input_name: x})[0]
-        logits = logits - logits.max(axis=1, keepdims=True)
-        e = np.exp(logits)
-        probs = e / e.sum(axis=1, keepdims=True)
-        return [self._format_result(probs[i]) for i in range(probs.shape[0])]
+        return [self._format_result_from_logits(logits[i]) for i in range(logits.shape[0])]
 
     # ── PyTorch inference ────────────────────────────────────────────
 
@@ -257,22 +257,25 @@ class DiseaseClassifier:
         x = torch.from_numpy(self._preprocess(img))
         with torch.no_grad():
             logits = self._torch_model(x).cpu().numpy()
-        logits = logits - logits.max(axis=1, keepdims=True)
-        e = np.exp(logits)
-        probs = e / e.sum(axis=1, keepdims=True)
-        return self._format_result(probs[0])
+        return self._format_result_from_logits(logits[0])
 
     def _classify_torch_batch(self, imgs: list[Image.Image]) -> list[dict]:
         import torch
         x = torch.from_numpy(self._preprocess_batch(imgs))
         with torch.no_grad():
             logits = self._torch_model(x).cpu().numpy()
-        logits = logits - logits.max(axis=1, keepdims=True)
-        e = np.exp(logits)
-        probs = e / e.sum(axis=1, keepdims=True)
-        return [self._format_result(probs[i]) for i in range(probs.shape[0])]
+        return [self._format_result_from_logits(logits[i]) for i in range(logits.shape[0])]
 
-    def _format_result(self, probs: np.ndarray) -> dict:
+    def _format_result_from_logits(self, logits: np.ndarray) -> dict:
+        # Stable softmax + keep the raw logit vector around so the
+        # pipeline can score OOD with MaxLogit (Hendrycks 2019), which
+        # stays informative when temperature scaling drives MSP low.
+        shifted = logits - logits.max()
+        e = np.exp(shifted)
+        probs = e / e.sum()
+        return self._build_result(probs, logits)
+
+    def _build_result(self, probs: np.ndarray, logits: np.ndarray) -> dict:
         top_idx = int(np.argmax(probs))
         top_conf = float(probs[top_idx])
         return {
@@ -282,6 +285,11 @@ class DiseaseClassifier:
                 self.CLASS_NAMES[i]: round(float(probs[i]), 4)
                 for i in range(self.NUM_CLASSES)
             },
+            "logits": {
+                self.CLASS_NAMES[i]: float(logits[i])
+                for i in range(self.NUM_CLASSES)
+            },
+            "max_logit": float(logits.max()),
             "low_confidence": top_conf < LOW_CONFIDENCE_THRESHOLD,
         }
 
@@ -306,7 +314,8 @@ class DiseaseClassifier:
         names = self.CLASS_NAMES
         if not names:
             return {"class_name": "unknown", "confidence": 0.0,
-                    "all_probs": {}, "low_confidence": True}
+                    "all_probs": {}, "logits": {}, "max_logit": 0.0,
+                    "low_confidence": True}
 
         g_std = float(arr[:, :, 1].std())
 
@@ -314,26 +323,27 @@ class DiseaseClassifier:
             cls, conf = "not_a_plant", 0.60 + rng.uniform(0, 0.20)
         elif green_ratio > 0.42 and g_std < 35 and "healthy" in names:
             cls, conf = "healthy", 0.78 + rng.uniform(0, 0.15)
-        elif green_ratio > 0.36 and g_std > 50 and "mosaic_virus" in names:
-            cls, conf = "mosaic_virus", 0.55 + rng.uniform(0, 0.20)
+        elif green_ratio > 0.36 and g_std > 50 and "viral_disease" in names:
+            cls, conf = "viral_disease", 0.55 + rng.uniform(0, 0.20)
         elif brightness > 190 and g_mean < 170:
-            pool = [n for n in ("powdery_mildew", "gray_mold") if n in names]
+            pool = [n for n in ("powdery_mildew", "gray_mold_botrytis") if n in names]
             cls = rng.choice(pool) if pool else names[0]
             conf = 0.55 + rng.uniform(0, 0.25)
         elif brown_ratio > 0.42 and g_std > 45:
-            pool = [n for n in ("bacterial_leaf_spot", "anthracnose") if n in names]
+            pool = [n for n in ("bacterial_leaf_spot", "leaf_spot_fungal") if n in names]
             cls = rng.choice(pool) if pool else names[0]
             conf = 0.55 + rng.uniform(0, 0.20)
         elif brown_ratio > 0.42:
-            pool = [n for n in ("anthracnose", "late_blight", "sunburn") if n in names]
+            pool = [n for n in ("leaf_scorch_underwatering", "sunburn_or_scorch")
+                    if n in names]
             cls = rng.choice(pool) if pool else names[0]
             conf = 0.55 + rng.uniform(0, 0.25)
         elif r_mean > g_mean and r_mean > 140:
-            pool = [n for n in ("anthracnose", "iron_chlorosis") if n in names]
+            pool = [n for n in ("nutrient_deficiency", "leaf_spot_fungal") if n in names]
             cls = rng.choice(pool) if pool else names[0]
             conf = 0.55 + rng.uniform(0, 0.25)
         else:
-            pool = [n for n in ("iron_chlorosis", "gray_mold") if n in names]
+            pool = [n for n in ("nutrient_deficiency", "edema") if n in names]
             cls = rng.choice(pool) if pool else names[0]
             conf = 0.50 + rng.uniform(0, 0.25)
 
@@ -345,9 +355,15 @@ class DiseaseClassifier:
             rnd = rng.dirichlet(np.ones(len(others))) * leftover
             for name, p in zip(others, rnd, strict=False):
                 probs[name] = round(float(p), 4)
+        # Synthesise pseudo-logits so the OOD pipeline can run end-to-end
+        # in demo mode without crashing on missing fields. log(p) is
+        # deterministic from probs and preserves argmax/relative ordering.
+        logits = {n: float(np.log(max(p, 1e-12))) for n, p in probs.items()}
         return {
             "class_name": cls,
             "confidence": round(float(conf), 4),
             "all_probs": probs,
+            "logits": logits,
+            "max_logit": max(logits.values()),
             "low_confidence": conf < LOW_CONFIDENCE_THRESHOLD,
         }

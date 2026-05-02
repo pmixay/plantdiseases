@@ -1,4 +1,45 @@
-# PlantDiseases 1.2 — Sprint Plan
+# PlantDiseases 2.0 — Sprint Plan
+
+**Window:** active
+
+**Class taxonomy is now 11 classes (v2.0), not 10:**
+`bacterial_leaf_spot`, `edema`, `gray_mold_botrytis`, `healthy`,
+`leaf_scorch_underwatering`, `leaf_spot_fungal` (= anthracnose +
+cercospora + alternaria), `not_a_plant`, `nutrient_deficiency`
+(= Fe + N + Mg + K), `powdery_mildew`, `sunburn_or_scorch`,
+`viral_disease` (= mosaic + leaf_curl + ringspot).
+
+Removed vs v1.x: `late_blight`, `iron_chlorosis`. Pests are out of
+the taxonomy entirely (no longer surfaced as a "possible pest causes"
+hint either).
+
+**Architecture changes vs v1.x:**
+- Stage 1 detector retrained on **indoor** leaf bboxes; PlantDoc
+  removed (its agricultural close-ups bias the model toward field
+  shots).
+- Stage 2 backbone changed from EfficientNet-B0 → **EfficientNetV2-S**
+  teacher distilled into **MobileNetV3-Large** student (KD α=0.35,
+  τ=3.5).
+- Loss changed from inverse-frequency CE × `HEALTHY_DOWNWEIGHT=0.25`
+  → **Logit Adjustment** (Menon ICLR 2021), τ=1.0.
+- OOD score: **MaxLogit** (Hendrycks 2019) instead of MSP-floor
+  (MSP collapses under temperature scaling and label smoothing).
+- PlantVillage moved out of the train set; kept as a frozen
+  `val_studio` slice for transfer + background-bias monitoring only.
+- Primary metric: disease macro-F1 on **`indoor_real_world_v1`** —
+  a frozen 500–1000 user-photo validation set. Without it, no
+  shipping decision.
+
+The classifier needs a fresh training cycle on the new taxonomy
+before it can be re-shipped. Until then the server runs in DEMO
+mode for the new classes.
+
+See `server/train_notebook.ipynb` for the full v2.0 recipe (data
+hygiene → DINOv2 probe → V2-S fine-tune → KD → ONNX/INT8 export).
+
+---
+
+# PlantDiseases 1.2 — Sprint Plan (legacy, superseded by 2.0)
 
 **Window:** 2026-05-01 → 2026-05-31 (4 weeks)  
 **Team:** P1 = Android · P2 = Server / ML  
