@@ -121,6 +121,71 @@ data class ChatResponse(
     @SerializedName("suggested_questions") val suggestedQuestions: List<String>? = null,
 )
 
+/** PlantNet species candidate from /api/identify. */
+data class SpeciesCandidate(
+    @SerializedName("scientific_name") val scientificName: String?,
+    @SerializedName("common_names") val commonNames: List<String> = emptyList(),
+    @SerializedName("family") val family: String? = null,
+    @SerializedName("genus") val genus: String? = null,
+    @SerializedName("score") val score: Float = 0f,
+) {
+    val displayCommonName: String?
+        get() = commonNames.firstOrNull()?.takeIf { it.isNotBlank() }
+}
+
+/**
+ * /api/identify response. `available=false` is a graceful state when the
+ * server has no PlantNet key, the quota is exhausted, or PlantNet errored —
+ * the UI should fall back to manual species entry, not show an error toast.
+ */
+data class IdentifyResponse(
+    @SerializedName("available") val available: Boolean,
+    @SerializedName("results") val results: List<SpeciesCandidate> = emptyList(),
+    @SerializedName("source") val source: String? = null,
+    @SerializedName("organ") val organ: String? = null,
+    @SerializedName("remaining_requests") val remainingRequests: Int? = null,
+    @SerializedName("cached") val cached: Boolean? = null,
+)
+
+/** /api/care-plan request body. */
+data class CarePlanRequest(
+    @SerializedName("disease") val disease: String,
+    @SerializedName("species") val species: String? = null,
+    @SerializedName("light") val light: String = "bright_indirect",
+    @SerializedName("locale") val locale: String = "en",
+)
+
+/**
+ * /api/care-plan response. `wateringDaysRaw` is `Any?` because the server
+ * may return either an integer interval ("every N days") or the string
+ * `"as_needed"` for diseases where a fixed cadence is unsafe. Callers
+ * should prefer the `wateringDaysInt` / `wateringDaysIsAsNeeded` helpers.
+ */
+data class CarePlanResponse(
+    @SerializedName("species") val species: String,
+    @SerializedName("disease") val disease: String,
+    @SerializedName("light_tier") val lightTier: String,
+    @SerializedName("watering_days") val wateringDaysRaw: Any? = null,
+    @SerializedName("fertilise_weeks") val fertiliseWeeks: Int = 0,
+    @SerializedName("humidity_target") val humidityTarget: String = "",
+    @SerializedName("key_action") val keyAction: String = "",
+    @SerializedName("follow_up_days") val followUpDays: Int = 14,
+    @SerializedName("summary_md") val summaryMd: String? = null,
+) {
+    val wateringDaysInt: Int?
+        get() = when (val v = wateringDaysRaw) {
+            is Number -> v.toInt()
+            is String -> v.toIntOrNull()
+            else -> null
+        }
+
+    val wateringDaysIsAsNeeded: Boolean
+        get() = (wateringDaysRaw as? String)?.equals("as_needed", ignoreCase = true) == true
+
+    val hasSpecies: Boolean
+        get() = species.isNotBlank() && !species.equals("unknown", ignoreCase = true)
+}
+
 /** Server health check response */
 data class HealthResponse(
     @SerializedName("status") val status: String,

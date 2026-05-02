@@ -98,6 +98,7 @@ class DiseaseClassifier:
         self._torch_device = None
 
         meta = _load_metadata(model_path.parent) if model_path else {}
+        self.meta = meta
         self.CLASS_NAMES = _resolve_class_names(meta)
         self.NUM_CLASSES = len(self.CLASS_NAMES)
         self.img_size = _resolve_img_size(meta)

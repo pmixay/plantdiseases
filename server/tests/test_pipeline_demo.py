@@ -268,6 +268,108 @@ def test_is_diseased_uses_disease_min_confidence():
     assert "not_a_plant" in _NON_DISEASE
 
 
+def test_proxy_trained_resolver_reads_classes_json():
+    """Pipeline must source the proxy-trained set from classes.json so
+    PlantVision 1.2 picks up its extended 5-class list (incl. iron_chlorosis
+    and mosaic_virus) without a code change."""
+    from pipeline import _DEFAULT_PROXY_TRAINED, _resolve_proxy_trained
+
+    plantvision_12 = {
+        "proxy_trained_classes": [
+            "bacterial_leaf_spot", "iron_chlorosis", "late_blight",
+            "mosaic_virus", "sunburn",
+        ],
+    }
+    assert _resolve_proxy_trained(plantvision_12) == frozenset({
+        "bacterial_leaf_spot", "iron_chlorosis", "late_blight",
+        "mosaic_virus", "sunburn",
+    })
+
+    # Missing or malformed → safe historical default.
+    assert _resolve_proxy_trained({}) == _DEFAULT_PROXY_TRAINED
+    assert _resolve_proxy_trained({"proxy_trained_classes": "oops"}) == _DEFAULT_PROXY_TRAINED
+
+
+def test_msp_floor_resolver_handles_null_and_explicit_values():
+    """``ood_calibration.suggested_classifier_msp_floor: null`` (the
+    PlantVision 1.2 case) disables the MSP gate entirely; an explicit
+    float is honoured; missing keys fall back to the historical default.
+    """
+    from pipeline import NAP_CLASSIFIER_MSP_FLOOR_DEFAULT, _resolve_msp_floor
+
+    assert _resolve_msp_floor({}) == NAP_CLASSIFIER_MSP_FLOOR_DEFAULT
+    assert _resolve_msp_floor({"ood_calibration": {}}) == NAP_CLASSIFIER_MSP_FLOOR_DEFAULT
+    assert _resolve_msp_floor(
+        {"ood_calibration": {"suggested_classifier_msp_floor": None}}
+    ) == 0.0
+    assert _resolve_msp_floor(
+        {"ood_calibration": {"suggested_classifier_msp_floor": 0.35}}
+    ) == 0.35
+    # Out-of-range values are clamped, not raised.
+    assert _resolve_msp_floor(
+        {"ood_calibration": {"suggested_classifier_msp_floor": 1.5}}
+    ) == 1.0
+
+
+def test_postprocessor_uses_supplied_proxy_set():
+    """``_apply_postprocessing_rules`` honours the per-pipeline proxy
+    set (PlantVision 1.2 includes mosaic_virus)."""
+    from pipeline import _apply_postprocessing_rules
+
+    classification = {
+        "class_name": "mosaic_virus",
+        "confidence": 0.8,
+        "all_probs": {
+            "anthracnose": 0.02, "bacterial_leaf_spot": 0.02,
+            "gray_mold": 0.02, "healthy": 0.04, "iron_chlorosis": 0.02,
+            "late_blight": 0.02, "mosaic_virus": 0.80, "not_a_plant": 0.02,
+            "powdery_mildew": 0.02, "sunburn": 0.02,
+        },
+        "low_confidence": False,
+    }
+    out = _apply_postprocessing_rules(
+        classification,
+        list(classification["all_probs"].keys()),
+        proxy_trained=frozenset({
+            "bacterial_leaf_spot", "iron_chlorosis", "late_blight",
+            "mosaic_virus", "sunburn",
+        }),
+    )
+    assert "proxy_trained:mosaic_virus" in out["warnings"]
+
+    # With the historical default set (no mosaic_virus) the same
+    # classification should NOT carry the proxy warning.
+    out_default = _apply_postprocessing_rules(
+        classification, list(classification["all_probs"].keys()),
+    )
+    assert all(not w.startswith("proxy_trained:") for w in out_default["warnings"])
+
+
+def test_classes_json_in_repo_drives_pipeline_config():
+    """End-to-end check: the committed PlantVision 1.2 classes.json
+    actually produces the expected proxy set + disabled MSP gate when
+    parsed through the pipeline resolvers."""
+    import json
+    from pathlib import Path
+
+    from pipeline import _resolve_msp_floor, _resolve_proxy_trained
+
+    repo_classes = Path(__file__).resolve().parents[1] / "models" / "classes.json"
+    if not repo_classes.exists():  # pragma: no cover - models optional locally
+        return
+
+    meta = json.loads(repo_classes.read_text(encoding="utf-8"))
+    proxy = _resolve_proxy_trained(meta)
+    floor = _resolve_msp_floor(meta)
+
+    # PlantVision 1.2 ships an extended proxy list incl. iron_chlorosis
+    # and mosaic_virus (the yellow-leaf confusion pair) and explicitly
+    # turns off the MSP-based OOD gate via a null suggested floor.
+    assert "iron_chlorosis" in proxy
+    assert "mosaic_virus" in proxy
+    assert floor == 0.0
+
+
 def test_healthy_fallback_keeps_top_k_consistent_with_class_name():
     """After the healthy fallback fires, the chosen class must be the
     actual top-1 in all_probs / top_k — UI cannot show ``healthy`` while

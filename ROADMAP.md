@@ -1,276 +1,311 @@
-# PlantDiseases 1.1 — Sprint Plan
+# PlantDiseases 1.2 — Sprint Plan
 
-**Window:** 2026-04-30 → 2026-05-30 (4 weeks)
-**Team:** P1 = Android · P2 = Server / ML
-**Classifier:** PlantVision (10-class houseplant disease pipeline)
-**Goal:** lift the project from a working pipeline in demo mode to a
-portfolio-grade app comparable to PictureThis on UX, feature breadth and
-on-screen accuracy.
+**Window:** 2026-05-01 → 2026-05-31 (4 weeks)  
+**Team:** P1 = Android · P2 = Server / ML  
+**Classifier:** PlantVision 1.2 — server-only two-stage houseplant disease pipeline  
+**Goal:** turn the current server-first project into a portfolio-grade, demo-ready app comparable to PictureThis / Plantix / NatureID on UX breadth, visible accuracy, and reliability, while keeping the server as the single source of truth.
 
 ---
 
 ## Where we stand
 
-- **ML server-side (P2) — implemented in code; weights still need a
-  Colab T4 run.** Notebook (`server/train_notebook.ipynb`) trains the
-  full PlantVision 1.1 pipeline (10 classes incl. `bacterial_leaf_spot`
-  and `mosaic_virus`; +30% iNat scrape; SHA-256 dedup; EXIF strip; B0 +
-  optional V2-S ensemble; 5-crop+hflip TTA; OOD calibration sweep;
-  auto-generated MODEL_CARD). Server endpoints
-  (`/api/identify`, `/api/chat`, `/api/care-plan`, `/api/progression`),
-  severity scoring on `/api/analyze`, AI-doctor budget caps + abuse
-  logging, ensemble peer auto-discovery in `classifier.py` are all
-  shipped on this branch.
-- Android client covers the core scan flow (camera, gallery, history,
-  guide, profile, share, multi-bbox overlay, top-3, blur/green pre-checks,
-  bilingual EN/RU, Material 3, onboarding), plus **My Garden** with plant
-  list, add/edit flow, plant detail timeline, free-text journal, photo
-  log, watering log, and result-screen "Add to garden".
-- Android networking now uses a build-time API base URL only. The default
-  production endpoint is `https://78.17.40.155:8000/`; local overrides are
-  supplied through the Gradle `API_BASE_URL` property, not through app UI.
-- Server is hardened (rate limiter, magic-byte validation, Prometheus,
-  Docker, non-root). CI runs on push.
-- Confirmed scope: portfolio demo, $20–50/mo budget for paid services,
-  add plant **species ID** alongside disease detection, push accuracy as
-  far as possible.
-
-## Market gap (vs PictureThis / Plantix / NatureID)
-
-| Feature                     | Us today | After sprint |
-|-----------------------------|----------|--------------|
-| Disease detection           | demo     | trained      |
-| Plant species ID            | —        | yes (PlantNet) |
-| My Garden / per-plant log   | yes      | yes          |
-| Care reminders + push       | local WorkManager | yes          |
-| AI Plant Doctor chat        | local stub shell | yes (Claude Haiku) |
-| Light meter                 | sensor + camera fallback | yes          |
-| Severity scoring            | server code ready | yes          |
-| Disease progression chart   | —        | yes          |
-| Real-time framing + auto-capture | yes | yes          |
-| Offline on-device inference | TFLite runtime fallback | yes (TFLite) |
-| Bilingual EN/RU             | yes      | yes (kept)   |
-
-## Current stage (May 1, 2026)
-
-- Android portfolio shell is active: scan, gallery, guide, profile,
-  result details, My Garden, per-plant journal and add-to-garden are in
-  code.
-- Camera scan UI no longer uses a hard square outline over the preview;
-  the analyzer still drives quality hints and auto-capture behavior.
-- Runtime server switching has been removed from the app. Server endpoint
-  is a build parameter with production default
-  `https://78.17.40.155:8000/`.
-- Garden / journal polish: long-press a plant card to edit or delete the
-  plant (journal cascades, scans unlink); long-press a journal entry to
-  edit text or delete it. Plant card row layout fixed so name/species/last
-  scan no longer collapse against the icon. The fragment-level FAB is the
-  single Add-plant entry point; old toolbar / empty-state "Add plant"
-  affordances are removed.
-- UX polish (commit `bfd1d54`): add/edit plant dialog has a green gradient
-  header with icon + subtitle; language switcher moved from toolbar menu
-  to Profile screen; brighter green gradients shared across garden hero /
-  toolbar / primary buttons.
-- Week 3 Android work is now active in the local branch: per-plant local
-  reminders use WorkManager notification jobs with editable interval/time;
-  Light Meter measures ambient-light sensor lux with CameraX luminance
-  fallback; result screen has a TTS read-aloud toggle. Android AI Doctor
-  is exposed as a local stub bottom sheet: conversation UI, simple
-  Markdown rendering, suggested follow-up chips, and per-plant Room
-  persistence are wired; the single reply generator is isolated so it can
-  be swapped to server `/api/chat` later.
-- Week 4 offline fallback is wired on Android: when network/server
-  analysis fails, `Continue` runs a bundled TFLite classifier asset if
-  present (`plantvision_classifier.tflite`, `classifier.tflite`, or
-  compatible fallback names). If no model asset is bundled yet, the app
-  falls back to the existing local color/contrast estimate so result UI
-  testing still works without the API.
-- CI remains the build verification path for Android. Local Windows SDK
-  setup is not treated as a blocker for feature work.
-- Main blockers before demo-quality release: run the Colab training job,
-  ship model weights, let GitHub CI validate the Android branch, and
-  complete golden-path QA on a real device.
-
-## Targets (Definition of Done)
-
-- `pipeline_mode: full` in `/api/health`.
-- YOLOv8n single-class leaf **mAP50 ≥ 0.65**.
-- Classifier **top-1 ≥ 0.82** on held-out val with TTA + ensemble.
-- 10–12 disease classes (10 in PlantVision 1.1).
-- New endpoints: `/api/identify`, `/api/chat`, `/api/care-plan`. ✅
-- 6 net-new user-visible features (see weeks below) shipped on `main`.
-- Demo APK installs and runs golden path end-to-end on a real device,
-  online and offline.
+- **Product baseline changed to server-only inference.** Android is a thin Kotlin / CameraX / Material 3 client over a Python FastAPI server. Diagnosis and AI Doctor replies round-trip to the server. No on-device fallback is treated as a feature: if the server is unavailable, the app shows a clear error and retry path instead of a degraded local guess.
+- **ML architecture is defined.** PlantVision uses Stage 1 YOLOv8n single-class leaf detection and Stage 2 EfficientNet-B0 classification over cropped leaf regions, with mean-voted softmax, temperature scaling, healthy fallback, and MSP/OOD not-a-plant gating.
+- **Class space is fixed for the next release.** Current classifier config is 10 classes: `anthracnose`, `bacterial_leaf_spot`, `gray_mold`, `healthy`, `iron_chlorosis`, `late_blight`, `mosaic_virus`, `not_a_plant`, `powdery_mildew`, `sunburn`. `bacterial_leaf_spot`, `late_blight`, and `sunburn` are proxy-trained classes and need extra real-world validation before demo claims.
+- **Server endpoints exist.** `/api/analyze`, `/api/identify`, `/api/chat`, `/api/care-plan`, `/api/progression`, `/api/health`, `/api/version`, `/api/classes`, `/api/metrics`, and `/api/metrics/prometheus` are in scope.
+- **Server hardening is already strong.** The backend has magic-byte image validation, Pillow decompression-bomb guard, dimension / size limits, per-IP rate limiting, inference timeout, security headers, request logging, metrics, non-root Docker, and health checks.
+- **Android core app is broad.** The client has scan, gallery/history, My Garden, per-plant journal/logs, reminders, AI Doctor UI, light meter, TTS, EN/RU strings, Material 3, dark/light/system theme, edge-to-edge, and predictive back.
+- **Android networking is intentionally narrow right now.** The current Retrofit surface calls `/api/analyze`, `/api/health`, and `/api/chat`. Server endpoints for species ID, care plan, and progression exist, but Android still needs first-class client wiring for them.
+- **Current branch focus:** `claude/cleanup-unused-code-S7D4D` removes local/demo fallbacks and stale config, tightens server-only behavior, and rewrites docs around quality-first deployment.
 
 ---
 
-## Week 1 — Make it real (Apr 30 – May 6)
+## Market gap vs PictureThis / Plantix / NatureID / PlantIn
+
+| Feature | Us today | After sprint |
+|---|---:|---:|
+| Disease detection | architecture ready; weights are ship gate | trained + validated |
+| Not-a-plant rejection | yes, model + OOD gate design | real-world calibrated |
+| Plant species ID | server endpoint | Android flow wired |
+| My Garden / per-plant log | yes | yes, with species-aware scan context |
+| Care reminders | local reminders | permission UX polished |
+| AI Plant Doctor chat | server-backed | polished error / budget states |
+| Care plan | server endpoint | Android care-plan card |
+| Disease progression | server endpoint, pairwise | chart + trend timeline |
+| Compare with healthy | — | result-screen split view |
+| Active-learning feedback | — | uncertain-verdict feedback loop |
+| Offline inference | intentionally out | intentionally out |
+| Demo release APK | not cut | signed APK + golden-path QA |
+
+---
+
+## Current stage — May 1, 2026
+
+- Android analysis flow uploads the prepared image to the server, saves successful responses locally, and routes to Result. Server timeout, no-network, and rate-limit states have dedicated user-facing errors and retry.
+- Android no longer bundles or depends on `TfliteOfflineAnalyzer`. That keeps the demo honest: a failed server means no diagnosis, not a fake local estimate.
+- Scan history stores multi-region detections, all class probabilities, and pipeline warnings. Statistics exclude `not_a_plant` from healthy/diseased rollups.
+- AI Doctor on Android calls `/api/chat`; placeholder local replies are not part of the product baseline.
+- Server startup is fail-fast: if trained detector/classifier artefacts are missing, the API does not start.
+- `classes.json` declares PlantVision 1.2, EfficientNet-B0, 288 px classifier input, 10 classes, and proxy-trained classes that require extra scrutiny.
+- Main blockers before release-quality demo:
+  - run the Colab training notebook and publish real model artefacts;
+  - validate per-class F1 on real indoor plant photos;
+  - wire Android to `/api/identify`, `/api/care-plan`, and `/api/progression`;
+  - cut signed APK through CI;
+  - complete real-device online golden-path QA.
+
+---
+
+## Targets — Definition of Done
+
+- `/api/health` reports `pipeline_mode: full`.
+- Model artefacts shipped under `server/models/`: `detector.pt` or `detector.onnx`, `classifier.pth` or ONNX, `temperature.json`, updated `classes.json`, and `MODEL_CARD.md`.
+- YOLOv8n single-class leaf detector: **mAP50 ≥ 0.65**.
+- EfficientNet-B0 classifier: **top-1 ≥ 0.82** on held-out validation with TTA + calibration.
+- Disease macro-F1: **≥ 0.70** on curated in-domain validation.
+- Per-class real-world F1 floor: **≥ 0.50** or the class is demoted from release claims.
+- `not_a_plant` OOD false-positive rate is manually checked on indoor non-plant photos.
+- `/api/analyze` p50 ≤ 250 ms on target deployment after ONNX / INT8 preference path is confirmed.
+- Android golden path works on a real device:
+  - scan → analyze → result;
+  - add result to Garden;
+  - open AI Doctor;
+  - view care plan;
+  - compare progress for a plant;
+  - handle server error / retry cleanly.
+- CI produces a signed release APK on tag.
+- No offline / demo / heuristic fallback is advertised or silently used.
+
+---
+
+## Week 1 — Make the server real (May 1 – May 7)
 
 ### P2 · Server / ML
-- [ ] Run `train_notebook.ipynb` on Colab T4; ship `detector.pt`,
-      `classifier.pth`, `temperature.json`, `classes.json` to
-      `server/models/`. Verify `/api/health` reports full mode.
-      *(Code ready on `claude/enhance-ml-model-oWEyI` — actual T4 run is
-      operator action.)*
-- [x] Expand iNat scrape ~+30 % per existing class; rerun split + train.
-      *(`TARGET_PER_TAXON` 600 → 800; new fallback chains for the
-      bacterial / mosaic taxa.)*
-- [x] Pick 2–4 new diseases (candidates: bacterial leaf spot, edema,
-      leaf scorch, root-rot foliar symptoms); collect images.
-      *(Picked **bacterial_leaf_spot** + **mosaic_virus** — strongest
-      PV+iNat coverage for indoor plants. PV folders +
-      `INAT_TAXA` updated.)*
-- [x] Severity scoring v0: heuristic from detector bbox area + classifier
-      margin → `severity: low | medium | high` in `/api/analyze`.
-      *(`pipeline.compute_severity` + new `severity` field in
-      `/api/analyze` response.)*
+
+- [ ] Run `server/train_notebook.ipynb` end-to-end on Colab T4 / A100.
+- [ ] Publish `detector.pt`, `classifier.pth` or ONNX, `temperature.json`, and updated `classes.json` into `server/models/`.
+- [ ] Verify `/api/health` reports `pipeline_mode = full` on a clean machine.
+- [ ] Export and benchmark ONNX / INT8 classifier path; confirm production loads quantized ONNX before `.pth`.
+- [ ] Produce first `MODEL_CARD.md` with dataset sources, class list, validation metrics, known limitations, and proxy-trained classes.
+- [ ] Build a small real-world OOD set: hands, desks, walls, fabric, plant pots, empty rooms, screenshots.
+- [ ] Sweep not-a-plant MSP/OOD thresholds against that set and persist selected values.
 
 ### P1 · Android
-- [x] Real-time leaf framing in `CameraFragment`: `ImageAnalysis` every
-      ~5th frame at 160 px, HSV ratio + centroid → red/amber/green frame.
-      *(`LeafFrameAnalyzer` runs on a single-thread executor with
-      `STRATEGY_KEEP_ONLY_LATEST`; YUV→RGB conversion is in-place,
-      sampled at the longest-side / 160 step. Quality drives the
-      `scan_frame` stroke colour and the on-screen hint.)*
-- [x] Auto-capture when frame is green-stable ≥ 1.5 s and Laplacian
-      variance is good. *(Hold time `AUTO_CAPTURE_HOLD_MS = 1500`; the
-      sharpness gate uses the green-channel Laplacian variance from the
-      same downsampled grid, threshold `MIN_SHARPNESS = 120`. Auto
-      captures bypass the green-content dialog because both signals are
-      already validated.)*
-- [x] Onboarding redesign: 3 Lottie pages (scan, diagnose, care).
-      *(Renamed `onboarding_treat.json` → `onboarding_care.json`, new
-      bilingual copy emphasising the auto-capture + bilingual care plan
-      flow.)*
-- [x] Room migration v2→v3: add `Plant(id, name, species, nickname,
-      iconUri, createdAt)` and nullable `plantId` on `ScanEntity`. No UI
-      yet. *(New `PlantEntity` + `PlantDao`; `ScanEntity.plantId`
-      foreign-keyed to plants with `ON DELETE SET NULL`. Legacy v1→v2
-      migration dropped — never shipped to production.)*
+
+- [x] Build debug APK against the production API base URL and confirm all existing screens compile after cleanup.
+- [x] Add a Profile / diagnostics card that calls `/api/health` and shows: online/offline, pipeline mode, server version, and class count.
+- [x] Polish analysis error states:
+  - timeout;
+  - no network;
+  - 429 rate limit;
+  - server starting / pipeline unavailable;
+  - unsupported image.
+- [x] Add one-tap retry from the error card and preserve the selected image after failure.
+- [x] Confirm EN/RU strings for the new server-only error copy.
+- [x] Add smoke QA checklist to `README` or `DEPLOYMENT.md`.
 
 ---
 
-## Week 2 — My Garden + smart APIs (May 7 – May 13)
+## Week 2 — Species + care plan become product features (May 8 – May 14)
 
 ### P2 · Server / ML
-- [x] `POST /api/identify` — PlantNet API wrapper, server-side LRU cache.
-      *(`server/ai_services.identify_species` + `/api/identify` endpoint;
-      SHA-256-keyed LRU; graceful `available: false` on no key.)*
-- [x] `POST /api/chat` — AI Plant Doctor via Anthropic SDK
-      (`claude-haiku-4-5`), prompt caching for the disease/species
-      system context, per-session conversation, per-IP rate limit.
-      *(`server/ai_services.chat_reply` + `/api/chat` endpoint;
-      `cache_control: ephemeral` on the long system prompt; per-session
-      turn + token caps; abuse logging in `main.py`.)*
-- [x] Test-Time Augmentation: 5-crop + h-flip on classifier; weighted
-      ensemble of B0 + V2-S checkpoints. Target +2–3 % top-1.
-      *(B0 trains primary; optional V2-S peer trains when
-      `TRAIN_ENSEMBLE_PEER=True`; `classifier.py` blends both at
-      inference; demo cell does 5-crop+hflip TTA.)*
-- [x] Recalibrate temperature on the expanded val set.
-      *(Notebook cell 12 sweeps `T ∈ [0.3, 5.0]`; result persisted to
-      `temperature.json`.)*
+
+- [ ] Stabilize `/api/identify` response contract:
+  - `available`;
+  - top species candidates;
+  - scientific name;
+  - common names;
+  - score;
+  - quota / missing-key graceful state.
+- [ ] Add integration tests for `/api/identify` with mocked PlantNet responses.
+- [ ] Upgrade `/api/care-plan` from generic rules to species-aware rules.
+- [ ] Add a small curated CSV for common houseplants:
+  - light range;
+  - watering interval;
+  - humidity preference;
+  - temperature range;
+  - fertilizing cadence.
+- [ ] Keep Claude polish optional: rules must return a usable plan even when no LLM key is set.
+- [ ] Add per-disease cautions to care plans, e.g. avoid misting for fungal issues.
 
 ### P1 · Android
-- [x] **My Garden** screen: list, add/edit plant, plant-detail with
-      timeline of scans.
-- [x] Plant journal: free-text notes, photo log, watering log per plant.
-- [x] "Add to garden" CTA on result screen → assigns scan to a plant.
-- [x] Empty states with custom illustrations (no plants, no scans, no
-      reminders).
-- [x] Remove runtime server URL picker from Profile; API host is now
-      provided only at build time through `API_BASE_URL`.
-- [x] Remove hard square scan-frame outline from Camera preview.
+
+- [x] Wire Retrofit models and repository methods for `/api/identify`.
+- [x] Add species suggestion flow to Add-to-Garden:
+  - user can scan or reuse current result image;
+  - app shows PlantNet suggestions;
+  - user accepts one candidate or keeps manual text.
+- [x] Store accepted `scientificName` and display/common name separately where possible.
+- [x] Wire `/api/care-plan` into Plant detail and Result screen.
+- [x] Add a Care Plan card:
+  - watering;
+  - light;
+  - humidity;
+  - fertilizing;
+  - disease-specific warnings;
+  - “generated for species / unknown species” label.
+- [x] Make reminder creation use care-plan defaults when available.
 
 ---
 
-## Week 3 — AI Doctor, reminders, light meter (May 14 – May 20)
+## Week 3 — Progression, feedback, and visible accuracy (May 15 – May 21)
 
 ### P2 · Server / ML
-- [x] `POST /api/care-plan` — given last diagnosis + species, return
-      watering / light / fertilising schedule (rules + LLM polish).
-      *(`server/ai_services.generate_care_plan` + `/api/care-plan`; rules
-      table for offline; optional Claude polish when key is set.)*
-- [x] Disease progression: compare new scan to prior scans on same
-      `plantId`, return `delta` and `trend`.
-      *(`server/ai_services.compare_progression` + `/api/progression`
-      endpoint; pure function, deterministic.)*
-- [x] Ship final PlantVision 1.1 model checkpoint with the new disease
-      classes from Week 1 research.
-      *(Notebook now produces PlantVision 1.1 artefacts — 10 classes,
-      ensemble peer, MODEL_CARD; awaits Colab run.)*
+
+- [ ] Extend `/api/progression` from pairwise comparison to a historical-scan request:
+  - accept ordered scan list;
+  - return smoothed severity series;
+  - trend: improving / stable / worsening;
+  - recovery or decline rate;
+  - confidence caveat.
+- [ ] Add `/api/feedback`:
+  - diagnosis id or scan hash;
+  - user verdict: correct / wrong / unsure / different disease;
+  - optional corrected class;
+  - opt-in image upload flag.
+- [ ] Add metrics:
+  - per-class confidence buckets;
+  - OOD-gated count;
+  - uncertain healthy count;
+  - feedback counts.
+- [ ] Add tests for progression edge cases:
+  - no previous scan;
+  - different disease class;
+  - missing severity;
+  - not-a-plant scan.
+- [ ] Review proxy-trained classes. If a class fails the F1 floor on real photos, mark it as limited or remove it from release claims.
 
 ### P1 · Android
-- [x] WorkManager + FCM-free local notifications for per-plant reminders;
-      editable interval/time schedule UI. Runtime notification permission
-      is requested on Android 13+.
-- [x] AI Plant Doctor chat shell: bottom-sheet conversation, simple
-      Markdown rendering, suggested follow-up questions, persisted per
-      plant.
-      *(Current reply source is a local placeholder; replace
-      `buildLocalDoctorReply` with server `/api/chat` when prompt /
-      endpoint contract is finalized.)*
-- [x] Light meter: ambient-light sensor + camera luminance fallback,
-      lux estimation, recommendation vs species ideal.
-- [x] Voice-over diagnosis (TTS read-aloud toggle on result screen).
+
+- [ ] Disease progression view in Plant detail:
+  - severity-over-time chart;
+  - before/after thumbnails;
+  - trend label;
+  - “needs another scan” empty state.
+- [ ] Result-screen feedback prompt for uncertain verdicts:
+  - “Looks correct”;
+  - “Wrong”;
+  - “Not sure”;
+  - optional corrected disease.
+- [ ] Send feedback only after clear opt-in; no silent photo upload.
+- [ ] Compare-with-healthy mode:
+  - user photo on one side;
+  - canonical healthy reference by species when known;
+  - generic healthy reference when species is unknown.
+- [ ] AI Doctor polish:
+  - show budget / unavailable state from server;
+  - keep chat history per plant;
+  - include current diagnosis and species context in chat request.
+- [ ] Add localized copy explaining uncertainty and why feedback helps.
 
 ---
 
-## Week 4 — Differentiators, polish, offline (May 21 – May 30)
+## Week 4 — Demo polish, release, and QA (May 22 – May 31)
 
 ### P2 · Server / ML
-- [ ] Export TFLite int8 for detector and classifier; bundle into APK
-      assets (≤ 25 MB combined).  *(intentionally deferred — out of
-      scope for the current ML pass per stakeholder direction.)*
-- [x] OOD calibration sweep on real-world photos; final benchmark report
-      + model card in `server/models/MODEL_CARD.md`.
-      *(Notebook cell 14 sweeps `NAP_CLASSIFIER_MSP_FLOOR`; suggested
-      value persisted to `classes.json["ood_calibration"]`. Static
-      MODEL_CARD shipped at `server/models/MODEL_CARD.md`; final cell
-      regenerates it from real metrics each run.)*
-- [x] Server hardening: per-session AI Doctor budget cap, abuse logging.
-      *(`CHAT_SESSION_TURN_CAP` + `CHAT_SESSION_TOKEN_CAP` in
-      `ai_services.py`; cap-rejection logged at WARNING with IP +
-      session ID in `main.py`; counters surfaced in `/api/metrics`.)*
+
+- [ ] Final benchmark pass:
+  - detector mAP;
+  - classifier top-1;
+  - macro-F1;
+  - per-class F1;
+  - OOD false-positive rate;
+  - `/api/analyze` p50 / p95 latency.
+- [ ] Regenerate `MODEL_CARD.md` with final numbers and limitations.
+- [ ] Production deployment check:
+  - Docker image starts as non-root;
+  - health check passes;
+  - TLS terminated;
+  - `CORS_ORIGINS` restricted;
+  - logs rotate;
+  - metrics endpoint reachable.
+- [ ] Add backup rollback path for model artefacts:
+  - `models/current`;
+  - `models/previous`;
+  - documented manual rollback.
+- [ ] Document required environment variables:
+  - PlantNet key;
+  - Anthropic key;
+  - rate limits;
+  - inference timeout;
+  - trusted proxies.
+- [ ] Freeze API contracts used by the demo APK.
 
 ### P1 · Android
-- [x] On-device inference fallback (TFLite runtime) when network fails or
-      airplane mode is on.
-      *(Android runtime wrapper added via TensorFlow Lite. It loads a
-      bundled classifier + optional labels from APK assets, maps the top
-      class into the existing `AnalysisResponse`, persists the scan, and
-      keeps the color/contrast estimate as a second-level fallback until
-      final exported TFLite weights are committed.)*
-- [ ] **Disease progression view**: severity-over-time chart per plant,
-      before/after image side-by-side.
-- [ ] **Time-lapse mode**: schedule daily fixed-angle reminder, stitch
-      frames into a short MP4 via MediaCodec.
-- [ ] **Compare-with-healthy** mode on result screen: split view of user
-      photo + canonical healthy reference for the species.
-- [ ] UX polish: Material You dynamic colours, glassmorphism cards on
-      result screen, hero transitions camera → analysis → result.
-- [ ] Final QA pass: dark-mode, edge-to-edge, RTL safety, golden-path
-      smoke test online + offline. Cut signed demo APK.
+
+- [ ] Material You / UI polish pass:
+  - dynamic colors;
+  - result cards;
+  - camera → analysis → result transition;
+  - Garden hero cards;
+  - empty states.
+- [ ] Final localization pass for EN/RU.
+- [ ] QA pass:
+  - dark mode;
+  - light mode;
+  - edge-to-edge;
+  - Android 13+ notification permission;
+  - no-network;
+  - rate-limit;
+  - server 5xx;
+  - low-confidence;
+  - not-a-plant.
+- [ ] Real-device golden path:
+  - healthy plant;
+  - diseased plant;
+  - blurry image;
+  - not a plant;
+  - Garden + reminders;
+  - AI Doctor;
+  - Care Plan;
+  - Progression chart.
+- [ ] Cut signed demo APK from CI.
+- [ ] Add a 90-second demo script and screenshots to the repo.
+- [ ] Tag release: `v1.2-demo`.
 
 ---
 
-## Out of scope (intentionally)
+## Out of scope
 
-- Google Play public release, Privacy Policy, Data Safety form,
-  monetisation (portfolio target).
-- Outdoor-crop / agricultural workflows.
-- Community / social features, expert consultations.
-- Hilt migration, full ViewModel/StateFlow rewrite.
-- Hardware sensor integrations beyond camera + ambient-light.
-- Toxicity / pet-safety database (separate label space).
+- On-device inference: no TFLite, ONNX Runtime Mobile, MediaPipe, or heuristic fallback.
+- Demo / fake model mode on the server.
+- Google Play public release, Privacy Policy, Data Safety form, monetization.
+- Outdoor crop and agricultural workflows.
+- Community feed, expert consultations, marketplace, or social features.
+- Full Hilt / Compose rewrite.
+- Toxicity / pet-safety database.
+- Hardware integrations beyond camera and ambient light sensor.
+
+---
 
 ## Risks & mitigations
 
-- **Colab session limits during training** → snapshot every epoch to
-  Drive; resume support already in notebook.
-- **PlantNet free tier (500/day)** → add server-side cache + fall back to
-  "unknown species" gracefully.
-- **LLM cost overrun** → strict per-session token cap, prompt caching,
-  Haiku not Sonnet.
-- **Scope creep on UX polish** → Week 4 checklist is the budget; defer
-  anything not on it to a follow-up sprint.
+- **Model weights are not trained in time.**  
+  Mitigation: treat Colab run as the Week 1 ship gate; no APK demo claim until `/api/health` is full.
+
+- **Proxy-trained classes underperform on real indoor photos.**  
+  Mitigation: require per-class F1 floor; demote weak classes from release claims rather than overpromising.
+
+- **PlantNet quota or missing key breaks species ID.**  
+  Mitigation: server returns `available: false`; Android keeps manual species entry.
+
+- **Claude / AI Doctor cost overrun.**  
+  Mitigation: keep per-session turn and token caps; surface unavailable/budget state in UI.
+
+- **Server-only design creates a fragile demo.**  
+  Mitigation: add health status card, clear retry UX, deployment checklist, and smoke test before recording/demo.
+
+- **Too much Week 4 polish.**  
+  Mitigation: prioritize golden path, signed APK, and model card over animations.
+
+- **User trust risk from uncertain diagnoses.**  
+  Mitigation: show uncertainty, top alternatives, feedback prompt, and “not medical / horticultural advice” style caveat in UX where needed.
+
+---
+
+## Suggested immediate commit plan
+
+1. Replace the existing `ROADMAP.md` with this sprint-style plan.
+2. Add server endpoint contract notes for `/api/identify`, `/api/care-plan`, `/api/progression`, and `/api/feedback`.
+3. Add Android TODO issues from Weeks 2–3.
+4. Do not merge release copy until trained weights and final metrics exist.

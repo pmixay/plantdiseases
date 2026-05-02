@@ -34,9 +34,12 @@ import com.bumptech.glide.load.resource.bitmap.RoundedCorners
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.ScanEntity
+import com.plantdiseases.app.data.model.CarePlanRequest
+import com.plantdiseases.app.data.model.SpeciesCandidate
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.ui.analysis.AnalysisActivity
+import com.plantdiseases.app.ui.common.CarePlanCardView
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.LocaleHelper
@@ -57,6 +60,7 @@ class ResultActivity : AppCompatActivity() {
 
     private var tts: TextToSpeech? = null
     private var ttsReady = false
+    private var carePlanCard: CarePlanCardView? = null
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
@@ -74,10 +78,70 @@ class ResultActivity : AppCompatActivity() {
         }
 
         binding.toolbar.setNavigationOnClickListener { finish() }
+        setupToolbarMenu()
         setupPinchToZoom()
         setupStickyHeader()
         initTts()
         loadResult(scanId)
+    }
+
+    private var toolbarSpeakItem: android.view.MenuItem? = null
+    private var pendingScanForToolbar: ScanEntity? = null
+
+    private fun setupToolbarMenu() {
+        binding.toolbar.inflateMenu(R.menu.result_toolbar_menu)
+        toolbarSpeakItem = binding.toolbar.menu.findItem(R.id.action_speak)
+        binding.toolbar.setOnMenuItemClickListener { item ->
+            val scan = pendingScanForToolbar ?: return@setOnMenuItemClickListener false
+            when (item.itemId) {
+                R.id.action_speak -> {
+                    onSpeakAction(scan)
+                    true
+                }
+                R.id.action_delete -> {
+                    onDeleteAction(scan)
+                    true
+                }
+                else -> false
+            }
+        }
+    }
+
+    private fun onSpeakAction(scan: ScanEntity) {
+        if (!ttsReady) {
+            Toast.makeText(this, R.string.speak_unavailable, Toast.LENGTH_SHORT).show()
+            return
+        }
+        Haptics.tick(this)
+        if (tts?.isSpeaking == true) {
+            tts?.stop()
+            updateSpeakIcon(speaking = false)
+        } else if (speakResult(scan, LocaleHelper.isRussian(this))) {
+            updateSpeakIcon(speaking = true)
+        }
+    }
+
+    private fun onDeleteAction(scan: ScanEntity) {
+        MaterialAlertDialogBuilder(this@ResultActivity)
+            .setTitle(R.string.delete_scan)
+            .setMessage(R.string.delete_scan_confirm)
+            .setPositiveButton(R.string.delete) { _, _ ->
+                val appInstance = application as PlantDiseasesApp
+                lifecycleScope.launch {
+                    runCatching { File(scan.imagePath).delete() }
+                    appInstance.scanRepository.deleteScan(scan.id)
+                    finish()
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun updateSpeakIcon(speaking: Boolean) {
+        toolbarSpeakItem?.let { item ->
+            item.setIcon(if (speaking) R.drawable.ic_close else R.drawable.ic_speak)
+            item.title = getString(if (speaking) R.string.speak_stop else R.string.speak_read_aloud)
+        }
     }
 
     private fun setupPinchToZoom() {
@@ -159,6 +223,18 @@ class ResultActivity : AppCompatActivity() {
     private fun displayResult(scan: ScanEntity, repository: ScanRepository) {
         val isRu = LocaleHelper.isRussian(this)
         val isNotAPlant = isNotAPlantScan(scan, repository)
+        // Use the persisted classifier top-class as the source of truth
+        // for the status badge: as long as the diagnosis text says
+        // "Healthy Plant", the badge must agree. Falls back to the
+        // server's `is_healthy` boolean for legacy rows that pre-date
+        // `all_probs` persistence.
+        val topClassKey = repository.parseAllProbs(scan.allProbs)
+            .entries.maxByOrNull { it.value }?.key
+        val isHealthyVerdict = when (topClassKey) {
+            "healthy" -> true
+            null -> scan.isHealthy
+            else -> false
+        }
         val diseaseName = when {
             isNotAPlant -> getString(R.string.not_a_plant_diagnosis_name)
             isRu -> scan.diseaseNameRu
@@ -175,7 +251,7 @@ class ResultActivity : AppCompatActivity() {
             // YOLOv8 bbox overlay — only when we actually found a diseased
             // region. NAP and healthy verdicts skip the overlay.
             val regions = repository.parseRegions(scan.regions)
-            if (!isNotAPlant && !scan.isHealthy && regions.isNotEmpty()) {
+            if (!isNotAPlant && !isHealthyVerdict && regions.isNotEmpty()) {
                 val origBounds = ImageUtils.getImageDimensions(scan.imagePath)
                 val primaryIdx = scan.primaryRegionIndex ?: -1
                 val overlayBoxes = regions.mapIndexed { i, r ->
@@ -235,7 +311,7 @@ class ResultActivity : AppCompatActivity() {
                     ivStatusIcon.setImageResource(R.drawable.ic_warning)
                     ivStatusIcon.setColorFilter(getColor(R.color.neutral_blue))
                 }
-                scan.isHealthy -> {
+                isHealthyVerdict -> {
                     cardStatus.setCardBackgroundColor(getColor(R.color.healthy_green_bg))
                     tvStatusLabel.text = getString(R.string.status_healthy)
                     tvStatusLabel.setTextColor(getColor(R.color.healthy_green))
@@ -260,10 +336,11 @@ class ResultActivity : AppCompatActivity() {
                 cardPestCauses.visibility = View.GONE
                 cardPipelineWarning.visibility = View.GONE
                 cardLowConfidence.visibility = View.GONE
-                // Share a "not a plant" verdict makes no sense — hide it.
+                // Share / add-to-garden don't make sense for a NAP verdict —
+                // collapse the bottom bar to just the "new scan" button so
+                // it expands to fill the row.
                 btnShare.visibility = View.GONE
                 btnAddToGarden.visibility = View.GONE
-                btnRetryAnalysis.visibility = View.VISIBLE
             } else {
                 tvDescription.text = if (isRu) scan.descriptionRu else scan.description
                 btnShare.visibility = View.VISIBLE
@@ -272,6 +349,7 @@ class ResultActivity : AppCompatActivity() {
                 buildAlternativeDiagnoses(scan, repository, isRu)
                 buildPestCauses(scan, isRu)
                 setupTreatmentPreventionTabs(scan, repository, isRu)
+                buildCarePlanCard(scan, repository, isRu)
             }
 
             // Date
@@ -292,13 +370,14 @@ class ResultActivity : AppCompatActivity() {
                 shareWithImage(scan, repository, isRu)
             }
 
-            // Low confidence (only shown for actual disease diagnoses).
-            if (!isNotAPlant && scan.confidence < 0.5f && !scan.isHealthy) {
+            // Low-confidence card carries its own retry button now —
+            // the action belongs next to the warning text, not in the
+            // global bottom bar where it duplicates "New scan".
+            if (!isNotAPlant && scan.confidence < 0.5f && !isHealthyVerdict) {
                 cardLowConfidence.visibility = View.VISIBLE
                 btnRetryAnalysis.visibility = View.VISIBLE
-            } else if (!isNotAPlant) {
+            } else {
                 cardLowConfidence.visibility = View.GONE
-                btnRetryAnalysis.visibility = View.GONE
             }
 
             btnRetryAnalysis.setOnClickListener {
@@ -309,27 +388,12 @@ class ResultActivity : AppCompatActivity() {
                 finish()
             }
 
-            btnDelete.setOnClickListener {
-                MaterialAlertDialogBuilder(this@ResultActivity)
-                    .setTitle(R.string.delete_scan)
-                    .setMessage(R.string.delete_scan_confirm)
-                    .setPositiveButton(R.string.delete) { _, _ ->
-                        val appInstance = application as PlantDiseasesApp
-                        lifecycleScope.launch {
-                            try { File(scan.imagePath).delete() } catch (_: Exception) {}
-                            appInstance.scanRepository.deleteScan(scan.id)
-                            finish()
-                        }
-                    }
-                    .setNegativeButton(R.string.cancel, null)
-                    .show()
-            }
-
             // Animate cards from bottom
             animateCardsIn()
 
-            // Wire up TTS speak button
-            setupSpeakButton(scan, isRu)
+            // Toolbar overflow menu owns the read-aloud / delete actions.
+            pendingScanForToolbar = scan
+            updateSpeakIcon(speaking = false)
         }
     }
 
@@ -376,9 +440,94 @@ class ResultActivity : AppCompatActivity() {
         val name = resultInputField(getString(R.string.plant_name), scan.diseaseName)
         val species = resultInputField(getString(R.string.plant_species), null)
         val nickname = resultInputField(getString(R.string.plant_nickname), null)
+
+        // PlantNet species suggestion strip
+        var pickedScientific: String? = null
+        var pickedCommon: String? = null
+        val suggestionStatus = TextView(this).apply {
+            text = getString(R.string.species_suggest_hint)
+            textSize = 12f
+            setTextColor(getColor(R.color.on_surface_secondary))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = 4.dpToPx(); bottomMargin = 8.dpToPx() }
+        }
+        val suggestBtn = com.google.android.material.button.MaterialButton(
+            this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle,
+        ).apply {
+            text = getString(R.string.species_suggest_button)
+            setIconResource(R.drawable.ic_scan)
+            iconTint = android.content.res.ColorStateList.valueOf(getColor(R.color.primary))
+            setTextColor(getColor(R.color.primary))
+            strokeColor = android.content.res.ColorStateList.valueOf(getColor(R.color.primary))
+            cornerRadius = 14.dpToPx()
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { bottomMargin = 12.dpToPx() }
+        }
+        val candidateChips = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { bottomMargin = 8.dpToPx() }
+        }
+
+        suggestBtn.setOnClickListener {
+            val app = application as PlantDiseasesApp
+            val imageFile = File(scan.imagePath)
+            if (!imageFile.exists()) {
+                suggestionStatus.text = getString(R.string.species_suggest_unavailable_body)
+                return@setOnClickListener
+            }
+            suggestBtn.isEnabled = false
+            suggestionStatus.text = getString(R.string.species_suggest_loading)
+            candidateChips.removeAllViews()
+            candidateChips.visibility = View.GONE
+            lifecycleScope.launch {
+                val res = app.scanRepository.identifySpecies(imageFile)
+                suggestBtn.isEnabled = true
+                res.onSuccess { id ->
+                    if (!id.available || id.results.isEmpty()) {
+                        suggestionStatus.text = if (id.results.isEmpty() && id.available)
+                            getString(R.string.species_suggest_no_results)
+                        else
+                            getString(R.string.species_suggest_unavailable_body)
+                        return@onSuccess
+                    }
+                    suggestionStatus.text = getString(R.string.species_suggest_title)
+                    id.results.take(3).forEach { candidate ->
+                        candidateChips.addView(speciesChip(candidate) { picked ->
+                            pickedScientific = picked.scientificName
+                            pickedCommon = picked.displayCommonName
+                            val display = picked.displayCommonName
+                                ?: picked.scientificName
+                                ?: getString(R.string.species_suggest_unknown_name)
+                            species.second.setText(display)
+                            // Auto-fill plant name with the friendly common
+                            // name if the user hasn't typed anything yet.
+                            if (name.second.text.isNullOrBlank() ||
+                                name.second.text?.toString() == scan.diseaseName) {
+                                name.second.setText(display)
+                            }
+                        })
+                    }
+                    candidateChips.visibility = View.VISIBLE
+                }.onFailure {
+                    suggestionStatus.text = getString(R.string.species_suggest_unavailable_body)
+                }
+            }
+        }
+
         container.addView(name.first)
         container.addView(species.first)
         container.addView(nickname.first)
+        container.addView(suggestionStatus)
+        container.addView(candidateChips)
+        container.addView(suggestBtn)
 
         val dialog = MaterialAlertDialogBuilder(this)
             .setTitle(R.string.create_new_plant)
@@ -396,9 +545,11 @@ class ResultActivity : AppCompatActivity() {
             val app = application as PlantDiseasesApp
             lifecycleScope.launch {
                 val plantId = app.plantRepository.savePlant(
-                    plantName,
-                    species.second.text?.toString(),
-                    nickname.second.text?.toString(),
+                    name = plantName,
+                    species = species.second.text?.toString(),
+                    nickname = nickname.second.text?.toString(),
+                    scientificName = pickedScientific,
+                    commonName = pickedCommon,
                 )
                 app.plantRepository.assignScanToPlant(scan.id, plantId)
                 binding.btnAddToGarden.text = getString(R.string.added_to_garden)
@@ -410,6 +561,73 @@ class ResultActivity : AppCompatActivity() {
                 dialog.dismiss()
             }
         }
+    }
+
+    /** Single tap-to-pick chip in the species-suggestion list. */
+    private fun speciesChip(
+        candidate: SpeciesCandidate,
+        onPick: (SpeciesCandidate) -> Unit,
+    ): View {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = getDrawable(R.drawable.bg_species_chip)
+            setPadding(12.dpToPx(), 10.dpToPx(), 12.dpToPx(), 10.dpToPx())
+            isClickable = true
+            isFocusable = true
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { bottomMargin = 6.dpToPx() }
+            setOnClickListener { onPick(candidate) }
+        }
+        val text = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
+            )
+        }
+        text.addView(TextView(this).apply {
+            // Qualify with `this.text` — the enclosing scope binds `text`
+            // to the outer LinearLayout val and would otherwise win.
+            this.text = candidate.displayCommonName
+                ?: candidate.scientificName
+                ?: getString(R.string.species_suggest_unknown_name)
+            textSize = 14f
+            setTextColor(getColor(R.color.on_surface))
+            typeface = android.graphics.Typeface.create("sans-serif-medium",
+                android.graphics.Typeface.NORMAL)
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        })
+        candidate.scientificName?.let { sci ->
+            if (sci != (candidate.displayCommonName ?: "")) {
+                text.addView(TextView(this).apply {
+                    this.text = sci
+                    textSize = 12f
+                    setTextColor(getColor(R.color.on_surface_secondary))
+                    setTypeface(typeface, android.graphics.Typeface.ITALIC)
+                    maxLines = 1
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                })
+            }
+        }
+        row.addView(text)
+        row.addView(TextView(this).apply {
+            this.text = getString(
+                R.string.species_suggest_match,
+                (candidate.score * 100).toInt().coerceIn(0, 100)
+            )
+            textSize = 12f
+            setTextColor(getColor(R.color.primary))
+            typeface = android.graphics.Typeface.create("sans-serif-medium",
+                android.graphics.Typeface.NORMAL)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { marginStart = 10.dpToPx() }
+        })
+        return row
     }
 
     private fun resultInputField(
@@ -787,8 +1005,19 @@ class ResultActivity : AppCompatActivity() {
             result
         }
 
-        if (!scan.isHealthy) {
-            val regions = (application as PlantDiseasesApp).scanRepository.parseRegions(scan.regions)
+        // Skip the red highlight when the verdict is healthy or NAP.
+        // Use the persisted top-class to be consistent with the badge
+        // routing in `displayResult`; fall back to the legacy boolean.
+        val repo = (application as PlantDiseasesApp).scanRepository
+        val topClassKey = repo.parseAllProbs(scan.allProbs)
+            .entries.maxByOrNull { it.value }?.key
+        val isHealthyVerdict = when (topClassKey) {
+            "healthy" -> true
+            null -> scan.isHealthy
+            else -> false
+        }
+        if (!isHealthyVerdict) {
+            val regions = repo.parseRegions(scan.regions)
             val primary = regions.getOrNull(scan.primaryRegionIndex ?: -1)
             if (primary != null) {
                 val scaleX = finalBitmap.width.toFloat() / rawW
@@ -907,35 +1136,22 @@ class ResultActivity : AppCompatActivity() {
     private fun initTts() {
         tts = TextToSpeech(this) { status ->
             ttsReady = (status == TextToSpeech.SUCCESS)
-        }
-    }
-
-    private fun setupSpeakButton(scan: ScanEntity, isRu: Boolean) {
-        binding.btnSpeak.setOnClickListener {
-            if (!ttsReady) {
-                Toast.makeText(this, R.string.speak_unavailable, Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-            Haptics.tick(this)
-            if (tts?.isSpeaking == true) {
-                tts?.stop()
-                updateSpeakButton(false)
-            } else {
-                if (speakResult(scan, isRu)) {
-                    updateSpeakButton(true)
-                }
+            // Hook the progress listener once we know TTS is alive so the
+            // toolbar speak icon can flip back to the play state when
+            // playback ends or errors out.
+            if (ttsReady) {
+                tts?.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+                    override fun onStart(utteranceId: String?) {}
+                    override fun onDone(utteranceId: String?) {
+                        runOnUiThread { updateSpeakIcon(speaking = false) }
+                    }
+                    @Deprecated("Deprecated in Java")
+                    override fun onError(utteranceId: String?) {
+                        runOnUiThread { updateSpeakIcon(speaking = false) }
+                    }
+                })
             }
         }
-        tts?.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
-            override fun onStart(utteranceId: String?) {}
-            override fun onDone(utteranceId: String?) {
-                runOnUiThread { updateSpeakButton(false) }
-            }
-            @Deprecated("Deprecated in Java")
-            override fun onError(utteranceId: String?) {
-                runOnUiThread { updateSpeakButton(false) }
-            }
-        })
     }
 
     private fun speakResult(scan: ScanEntity, isRu: Boolean): Boolean {
@@ -965,26 +1181,17 @@ class ResultActivity : AppCompatActivity() {
             availability == TextToSpeech.LANG_NOT_SUPPORTED
         ) {
             Toast.makeText(this, R.string.speak_unavailable, Toast.LENGTH_SHORT).show()
-            updateSpeakButton(false)
+            updateSpeakIcon(speaking = false)
             return false
         }
         tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "result")
         return true
     }
 
-    private fun updateSpeakButton(speaking: Boolean) {
-        binding.btnSpeak.setIconResource(
-            if (speaking) R.drawable.ic_close else R.drawable.ic_speak
-        )
-        binding.btnSpeak.contentDescription = getString(
-            if (speaking) R.string.speak_stop else R.string.speak_read_aloud
-        )
-    }
-
     override fun onPause() {
         super.onPause()
         tts?.stop()
-        updateSpeakButton(false)
+        updateSpeakIcon(speaking = false)
     }
 
     override fun onDestroy() {
@@ -993,6 +1200,83 @@ class ResultActivity : AppCompatActivity() {
         tts?.shutdown()
         tts = null
         super.onDestroy()
+    }
+
+    // ─── Care Plan card (server-side /api/care-plan) ───────────────────────
+
+    private fun buildCarePlanCard(scan: ScanEntity, repository: ScanRepository, isRu: Boolean) {
+        val container = binding.contentLayout
+        val classKey = repository.parseAllProbs(scan.allProbs)
+            .entries.maxByOrNull { it.value }?.key
+            ?: scan.diseaseName.lowercase().replace(' ', '_')
+
+        // Reuse a single card across re-binds.
+        val card = carePlanCard ?: CarePlanCardView(this).also { fresh ->
+            carePlanCard = fresh
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = 12.dpToPx() }
+            fresh.layoutParams = lp
+            // Insert just after the Treatment / Prevention card so the
+            // "what's wrong → how to treat → ongoing care" reading order
+            // stays intact.
+            val anchorIdx = container.indexOfChild(binding.cardTreatmentPrevention)
+                .takeIf { it >= 0 } ?: (container.childCount - 1)
+            container.addView(fresh, anchorIdx + 1)
+        }
+
+        val app = application as PlantDiseasesApp
+        card.showLoading(null)
+
+        lifecycleScope.launch {
+            val plantSpecies = scan.plantId?.let { pid ->
+                val plant = app.plantRepository.getPlant(pid)
+                plant?.scientificName?.takeIf { it.isNotBlank() }
+                    ?: plant?.commonName?.takeIf { it.isNotBlank() }
+                    ?: plant?.species?.takeIf { it.isNotBlank() }
+            }
+            card.showLoading(plantSpecies)
+
+            val request = CarePlanRequest(
+                disease = classKey,
+                species = plantSpecies,
+                light = "bright_indirect",
+                locale = if (isRu) "ru" else "en",
+            )
+            val result = app.scanRepository.fetchCarePlan(request)
+            result.onSuccess { plan ->
+                card.bind(
+                    plan = plan,
+                    speciesDisplay = plantSpecies,
+                    showApplyToReminders = scan.plantId != null,
+                    onApplyToReminders = { applied ->
+                        applyCarePlanToReminders(scan, applied)
+                    },
+                )
+            }.onFailure {
+                card.showError(onRetry = { buildCarePlanCard(scan, repository, isRu) })
+            }
+        }
+    }
+
+    private fun applyCarePlanToReminders(
+        scan: ScanEntity,
+        plan: com.plantdiseases.app.data.model.CarePlanResponse,
+    ) {
+        val plantId = scan.plantId ?: return
+        val app = application as PlantDiseasesApp
+        lifecycleScope.launch {
+            val plant = app.plantRepository.getPlant(plantId) ?: return@launch
+            com.plantdiseases.app.ui.garden.ReminderScheduleSheet.showWithCarePlanDefaults(
+                supportFragmentManager, plant, plan,
+            )
+            Toast.makeText(
+                this@ResultActivity,
+                getString(R.string.care_plan_reminders_applied),
+                Toast.LENGTH_SHORT,
+            ).show()
+        }
     }
 
     companion object {

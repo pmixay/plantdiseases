@@ -159,6 +159,17 @@ class AnalysisActivity : AppCompatActivity() {
                             )
                         is com.plantdiseases.app.data.repository.ScanRepository.RateLimitException ->
                             showError(getString(R.string.server_busy), getString(R.string.server_busy_detail))
+                        is com.plantdiseases.app.data.repository.ScanRepository.ServerStartingException ->
+                            showError(
+                                getString(R.string.server_starting),
+                                getString(R.string.server_starting_detail),
+                                allowOfflineFallback = true,
+                            )
+                        is com.plantdiseases.app.data.repository.ScanRepository.UnsupportedImageException ->
+                            showError(
+                                getString(R.string.unsupported_image_title),
+                                getString(R.string.unsupported_image_detail),
+                            )
                         else -> {
                             Log.w(TAG, "Analysis failed", error)
                             showError(

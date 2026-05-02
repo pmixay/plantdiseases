@@ -4,7 +4,10 @@ import com.google.gson.Gson
 import com.plantdiseases.app.data.local.ScanDao
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.AnalysisResponse
+import com.plantdiseases.app.data.model.CarePlanRequest
+import com.plantdiseases.app.data.model.CarePlanResponse
 import com.plantdiseases.app.data.model.HealthResponse
+import com.plantdiseases.app.data.model.IdentifyResponse
 import com.plantdiseases.app.data.model.ScanHistoryItem
 import com.plantdiseases.app.data.remote.ApiService
 import com.plantdiseases.app.data.remote.PlantApiClient
@@ -37,6 +40,10 @@ class ScanRepository(
                     Result.success(response.body()!!)
                 } else if (response.code() == 429) {
                     Result.failure(RateLimitException())
+                } else if (response.code() == 503) {
+                    Result.failure(ServerStartingException())
+                } else if (response.code() == 400 || response.code() == 415) {
+                    Result.failure(UnsupportedImageException())
                 } else {
                     Result.failure(Exception("Server error: ${response.code()} ${response.message()}"))
                 }
@@ -46,6 +53,66 @@ class ScanRepository(
                 Result.failure(NoNetworkException())
             } catch (e: java.net.ConnectException) {
                 Result.failure(ServerTimeoutException())
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+    /**
+     * Ask the server's PlantNet proxy to identify the species in `imageFile`.
+     *
+     * The server normalises the "no API key / quota / upstream error" cases
+     * into a 200 OK with `available=false`, so a `Result.success` here may
+     * still mean "no candidates" — callers must check `IdentifyResponse.available`.
+     */
+    suspend fun identifySpecies(imageFile: File, organ: String = "leaf"): Result<IdentifyResponse> =
+        withContext(Dispatchers.IO) {
+            try {
+                val body = imageFile.asRequestBody("image/jpeg".toMediaTypeOrNull())
+                val part = MultipartBody.Part.createFormData("image", imageFile.name, body)
+                val response = apiService.identifySpecies(part, organ)
+                if (response.isSuccessful && response.body() != null) {
+                    Result.success(response.body()!!)
+                } else if (response.code() == 429) {
+                    Result.failure(RateLimitException())
+                } else if (response.code() == 503) {
+                    Result.failure(ServerStartingException())
+                } else if (response.code() == 400 || response.code() == 415) {
+                    Result.failure(UnsupportedImageException())
+                } else {
+                    Result.failure(Exception("Server error: ${response.code()}"))
+                }
+            } catch (e: SocketTimeoutException) {
+                Result.failure(ServerTimeoutException())
+            } catch (e: UnknownHostException) {
+                Result.failure(NoNetworkException())
+            } catch (e: java.net.ConnectException) {
+                Result.failure(ServerTimeoutException())
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+    /**
+     * Fetch a watering / fertilising / humidity plan for a given disease +
+     * species + light tier. Always returns a usable plan when the server is
+     * reachable; LLM polish (`summaryMd`) is best-effort.
+     */
+    suspend fun fetchCarePlan(request: CarePlanRequest): Result<CarePlanResponse> =
+        withContext(Dispatchers.IO) {
+            try {
+                val response = apiService.carePlan(request)
+                if (response.isSuccessful && response.body() != null) {
+                    Result.success(response.body()!!)
+                } else if (response.code() == 503) {
+                    Result.failure(ServerStartingException())
+                } else {
+                    Result.failure(Exception("Server error: ${response.code()}"))
+                }
+            } catch (e: SocketTimeoutException) {
+                Result.failure(ServerTimeoutException())
+            } catch (e: UnknownHostException) {
+                Result.failure(NoNetworkException())
             } catch (e: Exception) {
                 Result.failure(e)
             }
@@ -71,6 +138,8 @@ class ScanRepository(
     class ServerTimeoutException : Exception("Server is not responding")
     class NoNetworkException : Exception("No network connection")
     class RateLimitException : Exception("Server is busy, please wait")
+    class ServerStartingException : Exception("Server is starting / pipeline unavailable")
+    class UnsupportedImageException : Exception("Unsupported image format")
 
     /** Save analysis result to local DB */
     suspend fun saveScan(imagePath: String, result: AnalysisResponse): Long =

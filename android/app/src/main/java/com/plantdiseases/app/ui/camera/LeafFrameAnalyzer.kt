@@ -30,10 +30,31 @@ class LeafFrameAnalyzer(
         val quality: Quality,
         val greenRatio: Float,
         val centroidOffset: Float, // 0..1, distance from frame centre
-        val sharpness: Double,     // Laplacian variance proxy
+        val sharpness: Double,     // Laplacian variance proxy on the green channel
+        val greenSharpness: Double, // Laplacian variance over green-mask pixels only
     )
 
     private var frameIndex = 0
+
+    private companion object {
+        // Plant-leaf-leaning hue band. The previous 35°-160° caught
+        // yellow-green couches and teal posters; clamping to this
+        // narrower window keeps healthy leaf colours but rejects most
+        // furnishing greens.
+        const val HUE_LOW = 50f
+        const val HUE_HIGH = 135f
+        const val MIN_SAT = 0.25f
+        const val MIN_VAL = 0.18f
+
+        // GREEN-tier gates.
+        const val MIN_GREEN_RATIO = 0.30f       // dominate the frame, not just be in it
+        const val MAX_CENTROID_OFFSET = 0.35f   // green mass must sit near the centre
+        const val MIN_GREEN_SHARPNESS = 60.0    // texture inside the green region — leaves have veins, walls don't
+
+        // RED → AMBER threshold (kept generous so the user gets a hint
+        // even when the leaf is small in the frame).
+        const val MIN_GREEN_RATIO_FOR_AMBER = 0.10f
+    }
 
     override fun analyze(image: ImageProxy) {
         try {
@@ -82,9 +103,14 @@ class LeafFrameAnalyzer(
         var sumX = 0L
         var sumY = 0L
         // Build a compact green-channel grid for Laplacian variance.
+        // We also keep a parallel green-mask grid so leaf-vein texture
+        // can be measured *inside* the green region — a uniform green
+        // wall has near-zero variance there even if the rest of the
+        // frame is busy.
         val gridW = (width / step).coerceAtLeast(8)
         val gridH = (height / step).coerceAtLeast(8)
         val gGrid = IntArray(gridW * gridH)
+        val mask = BooleanArray(gridW * gridH)
         var gi = 0
 
         var py = 0
@@ -111,17 +137,22 @@ class LeafFrameAnalyzer(
                 g = g.coerceIn(0, 255)
                 b = b.coerceIn(0, 255)
 
-                if (gi < gGrid.size) gGrid[gi++] = g
-
-                val hsv = FloatArray(3)
-                Color.RGBToHSV(r, g, b, hsv)
-                val h = hsv[0]
-                val s = hsv[1]
-                val vVal = hsv[2]
-                if (h in 35f..160f && s > 0.20f && vVal > 0.15f) {
-                    greenCount++
-                    sumX += px
-                    sumY += py
+                val cellIdx = gi
+                if (cellIdx < gGrid.size) {
+                    gGrid[cellIdx] = g
+                    val hsv = FloatArray(3)
+                    Color.RGBToHSV(r, g, b, hsv)
+                    val h = hsv[0]
+                    val s = hsv[1]
+                    val vVal = hsv[2]
+                    val isLeafGreen = h in HUE_LOW..HUE_HIGH && s > MIN_SAT && vVal > MIN_VAL
+                    mask[cellIdx] = isLeafGreen
+                    if (isLeafGreen) {
+                        greenCount++
+                        sumX += px
+                        sumY += py
+                    }
+                    gi = cellIdx + 1
                 }
                 sampled++
                 px += step
@@ -155,15 +186,19 @@ class LeafFrameAnalyzer(
             1f
         }
 
-        val sharpness = laplacianVariance(gGrid, gridW, gridH)
+        val sharpness = laplacianVariance(gGrid, gridW, gridH, null)
+        val greenSharpness = laplacianVariance(gGrid, gridW, gridH, mask)
 
         // Tier thresholds:
-        //  GREEN  — clearly framed, centred leaf area
-        //  AMBER  — a leaf is visible but off-centre / sparse
+        //  GREEN  — clearly framed, centred leaf area, with leaf-vein
+        //           texture inside the green region
+        //  AMBER  — a leaf is visible but off-centre / sparse / flat
         //  RED    — no plant signal worth analysing
         val quality = when {
-            greenRatio < 0.06f -> Quality.RED
-            greenRatio >= 0.18f && centreOffset < 0.45f -> Quality.GREEN
+            greenRatio < MIN_GREEN_RATIO_FOR_AMBER -> Quality.RED
+            greenRatio >= MIN_GREEN_RATIO &&
+                centreOffset < MAX_CENTROID_OFFSET &&
+                greenSharpness >= MIN_GREEN_SHARPNESS -> Quality.GREEN
             else -> Quality.AMBER
         }
 
@@ -172,21 +207,41 @@ class LeafFrameAnalyzer(
             greenRatio = greenRatio,
             centroidOffset = centreOffset,
             sharpness = sharpness,
+            greenSharpness = greenSharpness,
         )
     }
 
-    private fun laplacianVariance(grid: IntArray, w: Int, h: Int): Double {
+    /**
+     * Laplacian variance over the green channel grid. When [mask] is
+     * non-null, only cells whose mask AND all four 4-neighbour masks
+     * are set count toward the variance — that limits the score to
+     * the leaf-coloured region and rejects edges between a flat green
+     * wall and any other object behind it.
+     */
+    private fun laplacianVariance(
+        grid: IntArray,
+        w: Int,
+        h: Int,
+        mask: BooleanArray?,
+    ): Double {
         if (w < 3 || h < 3) return 0.0
         var sum = 0.0
         var sumSq = 0.0
         var n = 0
         for (yy in 1 until h - 1) {
             for (xx in 1 until w - 1) {
-                val c = grid[yy * w + xx]
-                val l = grid[(yy - 1) * w + xx] +
-                    grid[(yy + 1) * w + xx] +
-                    grid[yy * w + (xx - 1)] +
-                    grid[yy * w + (xx + 1)] - 4 * c
+                val idx = yy * w + xx
+                if (mask != null) {
+                    if (!mask[idx]) continue
+                    if (!mask[idx - w] || !mask[idx + w] ||
+                        !mask[idx - 1] || !mask[idx + 1]
+                    ) continue
+                }
+                val c = grid[idx]
+                val l = grid[idx - w] +
+                    grid[idx + w] +
+                    grid[idx - 1] +
+                    grid[idx + 1] - 4 * c
                 sum += l
                 sumSq += l.toDouble() * l
                 n++
