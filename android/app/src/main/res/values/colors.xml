@@ -15,6 +15,13 @@
     <color name="gradient_start">#0D4A2A</color>
     <color name="gradient_mid">#1F8A4C</color>
     <color name="gradient_end">#8BE66F</color>
+    <color name="hero_gradient_start">#0F5A34</color>
+    <color name="hero_gradient_mid">#229653</color>
+    <color name="hero_gradient_end">#7ED957</color>
+    <color name="hero_solid">#1F8A4C</color>
+    <color name="hero_stat_bg">#29FFFFFF</color>
+    <color name="hero_stat_stroke">#3DFFFFFF</color>
+    <color name="hero_stat_text">#FFFFFF</color>
 
     <!-- Toolbar background (subtle vertical gradient, no harsh diagonal) -->
     <color name="toolbar_top">#0D4A2A</color>
@@ -51,6 +58,7 @@
     <color name="hint_pill_bg">#80000000</color>
     <color name="divider">#DCE6DE</color>
     <color name="card_stroke">#E3ECE5</color>
+    <color name="soft_error_icon_bg">#F6ECE9</color>
     <color name="search_highlight">#FFF3B0</color>
     <color name="shimmer_base">#E0E6E1</color>
     <color name="shimmer_highlight">#F5F8F5</color>

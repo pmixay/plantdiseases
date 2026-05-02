@@ -74,7 +74,7 @@ PREVENTION:
 • Не ставьте растения слишком близко друг к другу
 • Держите листья сухими
             """.trimIndent(),
-            iconRes = R.drawable.ic_disease,
+            iconRes = R.drawable.ic_prevention,
             category = GuideCategory.COMMON_DISEASES
         ),
 
@@ -128,7 +128,7 @@ PREVENTION:
 • Новые растения держите 2 недели на карантине
 • Перед повторным использованием стерилизуйте горшки и поддоны
             """.trimIndent(),
-            iconRes = R.drawable.ic_disease,
+            iconRes = R.drawable.ic_warning,
             category = GuideCategory.COMMON_DISEASES
         ),
 
@@ -182,7 +182,7 @@ PREVENTION:
 • Зимой поддерживайте температуру выше 18 °C
 • В сырую прохладную погоду осматривайте коллекцию еженедельно
             """.trimIndent(),
-            iconRes = R.drawable.ic_disease,
+            iconRes = R.drawable.ic_error,
             category = GuideCategory.COMMON_DISEASES
         ),
 
@@ -240,7 +240,7 @@ PREVENTION:
 • Используйте хорошо дренированную почвенную смесь
 • Не оставляйте горшки стоять в воде
             """.trimIndent(),
-            iconRes = R.drawable.ic_disease,
+            iconRes = R.drawable.ic_watering,
             category = GuideCategory.COMMON_DISEASES
         ),
 
@@ -294,7 +294,7 @@ PREVENTION:
 • Не ставьте растения слишком близко
 • Поливайте утром, чтобы листья быстро высохли
             """.trimIndent(),
-            iconRes = R.drawable.ic_disease,
+            iconRes = R.drawable.ic_plant_placeholder,
             category = GuideCategory.COMMON_DISEASES
         ),
 
@@ -348,7 +348,7 @@ PREVENTION:
 • Мойте руки перед работой с растениями
 • Не используйте табачные изделия рядом с растениями
             """.trimIndent(),
-            iconRes = R.drawable.ic_disease,
+            iconRes = R.drawable.ic_stats,
             category = GuideCategory.COMMON_DISEASES
         ),
 
@@ -456,7 +456,7 @@ PREVENTION:
 • Своевременно удаляйте мёртвые части растений
 • Поливайте растения утром
             """.trimIndent(),
-            iconRes = R.drawable.ic_disease,
+            iconRes = R.drawable.ic_care,
             category = GuideCategory.COMMON_DISEASES
         ),
 

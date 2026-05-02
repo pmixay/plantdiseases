@@ -17,6 +17,8 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.fragment.app.FragmentManager
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
@@ -99,31 +101,17 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
         titles.addView(TextView(requireContext()).apply {
             text = getString(R.string.doctor_title)
             textSize = 20f
-            setTextColor(requireContext().getColor(R.color.on_primary))
+            setTextColor(requireContext().getColor(R.color.hero_stat_text))
             typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
         })
         titles.addView(TextView(requireContext()).apply {
             text = plant.nickname?.takeIf { it.isNotBlank() } ?: plant.name
             textSize = 14f
-            setTextColor(requireContext().getColor(android.R.color.white))
+            setTextColor(requireContext().getColor(R.color.hero_stat_text))
             alpha = 0.8f
         })
         header.addView(titles)
 
-        // Clear chat button
-        val clearBtn = MaterialButton(requireContext()).apply {
-            text = getString(R.string.doctor_clear)
-            textSize = 11f
-            cornerRadius = 12.dp()
-            setBackgroundColor(0x40FFFFFF)
-            setTextColor(requireContext().getColor(R.color.on_primary))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                36.dp(),
-            )
-            setOnClickListener { clearChat() }
-        }
-        header.addView(clearBtn)
         root.addView(header)
 
         // Messages area
@@ -138,7 +126,7 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
         }
         messagesLayout = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(12.dp(), 12.dp(), 12.dp(), 12.dp())
+            setPadding(20.dp(), 12.dp(), 20.dp(), 12.dp())
         }
         scrollView.addView(messagesLayout)
         root.addView(scrollView)
@@ -150,7 +138,7 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { setMargins(12.dp(), 4.dp(), 12.dp(), 4.dp()) }
+            ).apply { setMargins(20.dp(), 4.dp(), 20.dp(), 8.dp()) }
         }
         val chipScroll = HorizontalScrollView(requireContext()).apply {
             isHorizontalScrollBarEnabled = false
@@ -181,12 +169,36 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
         suggestionsContainer.addView(chipScroll)
         root.addView(suggestionsContainer)
 
+        val clearRow = FrameLayout(requireContext()).apply {
+            setBackgroundColor(requireContext().getColor(R.color.background))
+            setPadding(20.dp(), 4.dp(), 20.dp(), 8.dp())
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+        }
+        clearRow.addView(MaterialButton(requireContext()).apply {
+            text = getString(R.string.doctor_clear)
+            textSize = 13f
+            cornerRadius = 16.dp()
+            minHeight = 48.dp()
+            minWidth = 152.dp()
+            setTextColor(requireContext().getColor(R.color.primary))
+            setBackgroundColor(requireContext().getColor(R.color.surface))
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                48.dp(),
+                Gravity.CENTER,
+            )
+            setOnClickListener { clearChat() }
+        })
+        root.addView(clearRow)
         // Input row
         val inputRow = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setBackgroundColor(requireContext().getColor(R.color.surface))
-            setPadding(12.dp(), 8.dp(), 12.dp(), 8.dp())
+            setPadding(20.dp(), 8.dp(), 20.dp(), 12.dp())
         }
         inputField = TextInputEditText(requireContext()).apply {
             hint = getString(R.string.doctor_hint)
@@ -219,6 +231,11 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
                 }
             }
         })
+        ViewCompat.setOnApplyWindowInsetsListener(inputRow) { view, insets ->
+            val bottomInset = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom
+            view.setPadding(20.dp(), 8.dp(), 20.dp(), 12.dp() + bottomInset)
+            insets
+        }
         root.addView(inputRow)
 
         return root

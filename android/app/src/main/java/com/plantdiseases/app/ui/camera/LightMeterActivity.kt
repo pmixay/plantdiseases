@@ -3,7 +3,6 @@ package com.plantdiseases.app.ui.camera
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
-import android.graphics.Color
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -26,6 +25,8 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.widget.NestedScrollView
 import com.google.android.material.appbar.AppBarLayout
 import com.google.android.material.appbar.MaterialToolbar
@@ -68,7 +69,7 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
             startCameraFallback()
         } else {
             tvStatus.text = getString(R.string.camera_permission_needed)
-            tvStatus.setTextColor(Color.parseColor("#D32F2F"))
+            tvStatus.setTextColor(getColor(R.color.disease_red))
         }
     }
 
@@ -106,12 +107,21 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
             )
             setBackgroundResource(R.drawable.bg_toolbar_gradient)
             elevation = 0f
+            ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets ->
+                val topInset = insets.getInsets(WindowInsetsCompat.Type.systemBars()).top
+                view.setPadding(0, topInset, 0, 0)
+                insets
+            }
         }
         val toolbar = MaterialToolbar(this).apply {
             layoutParams = AppBarLayout.LayoutParams(
                 AppBarLayout.LayoutParams.MATCH_PARENT,
-                resources.getDimensionPixelSize(androidx.appcompat.R.dimen.abc_action_bar_default_height_material),
+                64.dp(),
             )
+            contentInsetStartWithNavigation = 0
+            contentInsetStart = 0
+            contentInsetEnd = 0
+            setPadding(16.dp(), 0, 16.dp(), 0)
             title = getString(R.string.light_meter)
             setNavigationIcon(R.drawable.ic_back)
             setNavigationIconTint(getColor(R.color.toolbar_title))
@@ -353,18 +363,19 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
         }
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.TOP
-            setPadding(16.dp(), 16.dp(), 16.dp(), 16.dp())
+            gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = 64.dp()
+            setPadding(16.dp(), 14.dp(), 16.dp(), 14.dp())
         }
         col.addView(ImageView(this).apply {
             setImageResource(R.drawable.ic_light)
             setColorFilter(getColor(R.color.primary))
-            layoutParams = LinearLayout.LayoutParams(28.dp(), 28.dp())
+            layoutParams = LinearLayout.LayoutParams(24.dp(), 24.dp())
         })
         tvTip = TextView(this).apply {
             text = getString(R.string.light_tip_ideal)
             textSize = 14f
-            setTextColor(getColor(R.color.on_surface_secondary))
+            setTextColor(getColor(R.color.on_surface))
             setLineSpacing(3.dp().toFloat(), 1f)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 .apply { marginStart = 12.dp() }
@@ -436,7 +447,7 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
                 providerFuture.get()
             } catch (_: Exception) {
                 tvStatus.text = getString(R.string.camera_error)
-                tvStatus.setTextColor(Color.parseColor("#D32F2F"))
+                tvStatus.setTextColor(getColor(R.color.disease_red))
                 return@addListener
             }
             cameraProvider = provider
@@ -463,7 +474,7 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
                 )
             } catch (_: Exception) {
                 tvStatus.text = getString(R.string.camera_error)
-                tvStatus.setTextColor(Color.parseColor("#D32F2F"))
+                tvStatus.setTextColor(getColor(R.color.disease_red))
             }
         }, ContextCompat.getMainExecutor(this))
     }
@@ -505,9 +516,9 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
         tvLux.text = if (luxInt > 999) "%,d".format(luxInt) else luxInt.toString()
 
         val (statusText, statusColor) = when {
-            lux < selectedSpecies.minLux -> getString(R.string.light_too_dark) to Color.parseColor("#D32F2F")
+            lux < selectedSpecies.minLux -> getString(R.string.light_too_dark) to getColor(R.color.disease_red)
             lux <= selectedSpecies.maxLux -> getString(R.string.light_ideal) to getColor(R.color.primary)
-            else -> getString(R.string.light_too_bright) to Color.parseColor("#F57C00")
+            else -> getString(R.string.light_too_bright) to getColor(R.color.warning_amber)
         }
         tvStatus.text = statusText
         tvStatus.setTextColor(statusColor)
