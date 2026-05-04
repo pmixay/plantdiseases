@@ -436,6 +436,13 @@ def chat_reply(
         logger.warning("Chat provider %s failed: %s", AI_PROVIDER, e)
         return {"available": False, "reply": "", "reason": "api_error"}
 
+    if not reply_text:
+        # Empty completion (provider stutter, content filter, etc.).
+        # Don't burn the user's turn or token budget on it — the client
+        # will resurface the prompt and retry.
+        logger.warning("Chat provider %s returned empty reply", AI_PROVIDER)
+        return {"available": False, "reply": "", "reason": "empty_reply"}
+
     with _chat_lock:
         sess.messages.append({"role": "user", "content": user_message})
         sess.messages.append({"role": "assistant", "content": reply_text})
@@ -446,10 +453,13 @@ def chat_reply(
         _chat_totals["requests"] += 1
         _chat_totals["tokens_in"] += tin
         _chat_totals["tokens_out"] += tout
-        budget_left_tokens = max(
-            0, CHAT_SESSION_TOKEN_CAP - sess.tokens_in - sess.tokens_out,
-        )
-        budget_left_turns = max(0, CHAT_SESSION_TURN_CAP - sess.turn_count)
+        # Snapshot session counters inside the lock — another concurrent
+        # turn for the same session_id would otherwise mutate them
+        # between the increment and the response build.
+        turns_used = sess.turn_count
+        tokens_used = sess.tokens_in + sess.tokens_out
+        budget_left_tokens = max(0, CHAT_SESSION_TOKEN_CAP - tokens_used)
+        budget_left_turns = max(0, CHAT_SESSION_TURN_CAP - turns_used)
 
     return {
         "available": True,
@@ -459,9 +469,9 @@ def chat_reply(
         "usage": {"input_tokens": tin, "output_tokens": tout},
         "session": {
             "session_id": session_id,
-            "turns_used": sess.turn_count,
+            "turns_used": turns_used,
             "turns_remaining": budget_left_turns,
-            "tokens_used": sess.tokens_in + sess.tokens_out,
+            "tokens_used": tokens_used,
             "tokens_remaining": budget_left_tokens,
         },
     }
