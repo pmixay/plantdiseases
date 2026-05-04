@@ -39,13 +39,11 @@ class PlantRepository(
     suspend fun savePlant(
         name: String,
         species: String?,
-        nickname: String?,
         existing: PlantEntity? = null,
         scientificName: String? = null,
         commonName: String? = null,
     ): Long = withContext(Dispatchers.IO) {
         val cleanSpecies = species?.trim()?.takeIf { it.isNotEmpty() }
-        val cleanNickname = nickname?.trim()?.takeIf { it.isNotEmpty() }
         val cleanScientific = scientificName?.trim()?.takeIf { it.isNotEmpty() }
         val cleanCommon = commonName?.trim()?.takeIf { it.isNotEmpty() }
         if (existing == null) {
@@ -53,7 +51,6 @@ class PlantRepository(
                 PlantEntity(
                     name = name.trim(),
                     species = cleanSpecies,
-                    nickname = cleanNickname,
                     scientificName = cleanScientific,
                     commonName = cleanCommon,
                 )
@@ -63,7 +60,6 @@ class PlantRepository(
                 existing.copy(
                     name = name.trim(),
                     species = cleanSpecies,
-                    nickname = cleanNickname,
                     // Preserve previously-stored canonical names when the
                     // caller didn't pass new values (edit dialog without a
                     // re-identification step).

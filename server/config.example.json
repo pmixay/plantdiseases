@@ -1,0 +1,35 @@
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8000,
+    "log_dir": "logs",
+    "forwarded_allow_ips": "127.0.0.1",
+    "trusted_proxies": [],
+    "cors_origins": ["http://localhost:3000", "http://127.0.0.1:3000"]
+  },
+  "limits": {
+    "max_file_size": 10485760,
+    "max_image_dimension": 4096,
+    "inference_timeout": 30.0,
+    "rate_limit_rps": 1.0,
+    "infer_workers": 2
+  },
+  "ai": {
+    "ai_provider": "openrouter",
+    "openrouter_api_key": "",
+    "openrouter_model": "openai/gpt-oss-120b",
+    "openrouter_base_url": "https://openrouter.ai/api/v1",
+    "anthropic_api_key": "",
+    "anthropic_model": "claude-haiku-4-5",
+    "chat_max_tokens": 512,
+    "chat_session_turn_cap": 20,
+    "chat_session_token_cap": 8000,
+    "chat_session_ttl_sec": 3600
+  },
+  "plantnet": {
+    "plantnet_api_key": "",
+    "plantnet_project": "all",
+    "plantnet_timeout": 8.0,
+    "plantnet_cache_size": 256
+  }
+}

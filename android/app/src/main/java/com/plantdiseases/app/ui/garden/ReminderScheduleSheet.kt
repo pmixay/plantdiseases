@@ -185,7 +185,7 @@ class ReminderScheduleSheet : BottomSheetDialogFragment() {
             typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
         })
         titles.addView(TextView(requireContext()).apply {
-            text = plant.nickname?.takeIf { it.isNotBlank() } ?: plant.name
+            text = plant.name
             textSize = 14f
             setTextColor(requireContext().getColor(android.R.color.white))
             alpha = 0.8f

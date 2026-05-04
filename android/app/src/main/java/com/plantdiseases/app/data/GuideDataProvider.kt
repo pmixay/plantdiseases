@@ -74,7 +74,7 @@ PREVENTION:
 • Не ставьте растения слишком близко друг к другу
 • Держите листья сухими
             """.trimIndent(),
-            iconRes = R.drawable.ic_prevention,
+            iconRes = R.drawable.ic_disease_powdery_mildew,
             category = GuideCategory.COMMON_DISEASES
         ),
 
@@ -128,7 +128,7 @@ PREVENTION:
 • Новые растения держите 2 недели на карантине
 • Перед повторным использованием стерилизуйте горшки и поддоны
             """.trimIndent(),
-            iconRes = R.drawable.ic_warning,
+            iconRes = R.drawable.ic_disease_leaf_spot,
             category = GuideCategory.COMMON_DISEASES
         ),
 
@@ -182,7 +182,7 @@ PREVENTION:
 • Зимой поддерживайте температуру выше 18 °C
 • В сырую прохладную погоду осматривайте коллекцию еженедельно
             """.trimIndent(),
-            iconRes = R.drawable.ic_error,
+            iconRes = R.drawable.ic_disease_blight,
             category = GuideCategory.COMMON_DISEASES
         ),
 
@@ -240,7 +240,7 @@ PREVENTION:
 • Используйте хорошо дренированную почвенную смесь
 • Не оставляйте горшки стоять в воде
             """.trimIndent(),
-            iconRes = R.drawable.ic_watering,
+            iconRes = R.drawable.ic_disease_root_rot,
             category = GuideCategory.COMMON_DISEASES
         ),
 
@@ -294,7 +294,7 @@ PREVENTION:
 • Не ставьте растения слишком близко
 • Поливайте утром, чтобы листья быстро высохли
             """.trimIndent(),
-            iconRes = R.drawable.ic_plant_placeholder,
+            iconRes = R.drawable.ic_disease_leaf_mold,
             category = GuideCategory.COMMON_DISEASES
         ),
 
@@ -348,7 +348,7 @@ PREVENTION:
 • Мойте руки перед работой с растениями
 • Не используйте табачные изделия рядом с растениями
             """.trimIndent(),
-            iconRes = R.drawable.ic_stats,
+            iconRes = R.drawable.ic_disease_viral,
             category = GuideCategory.COMMON_DISEASES
         ),
 
@@ -402,7 +402,7 @@ PREVENTION:
 • Своевременно убирайте опавшие листья
 • Обеспечьте расстояние между растениями
             """.trimIndent(),
-            iconRes = R.drawable.ic_prevention,
+            iconRes = R.drawable.ic_disease_rust,
             category = GuideCategory.COMMON_DISEASES
         ),
 
@@ -456,7 +456,7 @@ PREVENTION:
 • Своевременно удаляйте мёртвые части растений
 • Поливайте растения утром
             """.trimIndent(),
-            iconRes = R.drawable.ic_care,
+            iconRes = R.drawable.ic_disease_botrytis,
             category = GuideCategory.COMMON_DISEASES
         ),
 

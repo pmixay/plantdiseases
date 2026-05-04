@@ -393,10 +393,7 @@ class ResultActivity : AppCompatActivity() {
                 return@launch
             }
 
-            val labels = plants.map { summary ->
-                summary.plant.nickname?.takeIf { it.isNotBlank() }
-                    ?: summary.plant.name
-            }.toTypedArray()
+            val labels = plants.map { it.plant.name }.toTypedArray()
 
             MaterialAlertDialogBuilder(this@ResultActivity)
                 .setTitle(R.string.add_to_garden)
@@ -426,7 +423,6 @@ class ResultActivity : AppCompatActivity() {
         }
         val name = resultInputField(getString(R.string.plant_name), scan.diseaseName)
         val species = resultInputField(getString(R.string.plant_species), null)
-        val nickname = resultInputField(getString(R.string.plant_nickname), null)
 
         // PlantNet species suggestion strip
         var pickedScientific: String? = null
@@ -511,7 +507,6 @@ class ResultActivity : AppCompatActivity() {
 
         container.addView(name.first)
         container.addView(species.first)
-        container.addView(nickname.first)
         container.addView(suggestionStatus)
         container.addView(candidateChips)
         container.addView(suggestBtn)
@@ -534,7 +529,6 @@ class ResultActivity : AppCompatActivity() {
                 val plantId = app.plantRepository.savePlant(
                     name = plantName,
                     species = species.second.text?.toString(),
-                    nickname = nickname.second.text?.toString(),
                     scientificName = pickedScientific,
                     commonName = pickedCommon,
                 )

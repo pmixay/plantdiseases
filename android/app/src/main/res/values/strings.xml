@@ -215,7 +215,6 @@
     <string name="edit_plant">Edit plant</string>
     <string name="plant_name">Plant name</string>
     <string name="plant_species">Species</string>
-    <string name="plant_nickname">Nickname</string>
     <string name="plant_name_required">Name is required</string>
     <string name="plant_species_unknown">Species not set</string>
     <string name="plant_dialog_add_subtitle">Create a clean care profile for scans, notes, photos and watering.</string>

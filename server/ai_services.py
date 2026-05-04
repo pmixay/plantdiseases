@@ -33,32 +33,53 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import os
 import threading
 import time
 from collections import OrderedDict
 from typing import Any, Optional
 
+from config import get_float, get_int, get_str
+
 logger = logging.getLogger(__name__)
 
-# ── Configuration (env-driven; safe defaults for portfolio demo) ────
+# ── Configuration (config.json + env fallback) ──────────────────────
 
-PLANTNET_API_KEY = os.getenv("PLANTNET_API_KEY", "").strip()
-PLANTNET_PROJECT = os.getenv("PLANTNET_PROJECT", "all")
+PLANTNET_API_KEY = get_str("PLANTNET_API_KEY", "").strip()
+PLANTNET_PROJECT = get_str("PLANTNET_PROJECT", "all")
 # Free tier is 500 / day. We expose 5/min as a soft client cap on top
 # of the existing per-IP rate limiter to keep one deploy from burning
 # the daily budget on a single bad actor.
-PLANTNET_TIMEOUT = float(os.getenv("PLANTNET_TIMEOUT", "8.0"))
-PLANTNET_CACHE_SIZE = int(os.getenv("PLANTNET_CACHE_SIZE", "256"))
+PLANTNET_TIMEOUT = get_float("PLANTNET_TIMEOUT", 8.0)
+PLANTNET_CACHE_SIZE = get_int("PLANTNET_CACHE_SIZE", 256)
 
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
-ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-haiku-4-5")
-# Hard caps so a runaway client can't blow the budget. Tune via env
+# Pluggable chat provider. Supported: "openrouter" (default), "anthropic".
+AI_PROVIDER = get_str("AI_PROVIDER", "openrouter").strip().lower()
+
+# OpenRouter (default; routes to openai/gpt-oss-120b unless overridden)
+OPENROUTER_API_KEY = get_str("OPENROUTER_API_KEY", "").strip()
+OPENROUTER_MODEL = get_str("OPENROUTER_MODEL", "openai/gpt-oss-120b").strip()
+OPENROUTER_BASE_URL = get_str("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
+
+ANTHROPIC_API_KEY = get_str("ANTHROPIC_API_KEY", "").strip()
+ANTHROPIC_MODEL = get_str("ANTHROPIC_MODEL", "claude-haiku-4-5")
+# Hard caps so a runaway client can't blow the budget. Tune via config
 # in production.
-CHAT_MAX_TOKENS = int(os.getenv("CHAT_MAX_TOKENS", "512"))
-CHAT_SESSION_TURN_CAP = int(os.getenv("CHAT_SESSION_TURN_CAP", "20"))
-CHAT_SESSION_TOKEN_CAP = int(os.getenv("CHAT_SESSION_TOKEN_CAP", "8000"))
-CHAT_SESSION_TTL_SEC = int(os.getenv("CHAT_SESSION_TTL_SEC", "3600"))
+CHAT_MAX_TOKENS = get_int("CHAT_MAX_TOKENS", 512)
+CHAT_SESSION_TURN_CAP = get_int("CHAT_SESSION_TURN_CAP", 20)
+CHAT_SESSION_TOKEN_CAP = get_int("CHAT_SESSION_TOKEN_CAP", 8000)
+CHAT_SESSION_TTL_SEC = get_int("CHAT_SESSION_TTL_SEC", 3600)
+
+
+def _active_chat_model() -> str:
+    if AI_PROVIDER == "openrouter":
+        return OPENROUTER_MODEL
+    return ANTHROPIC_MODEL
+
+
+def _chat_api_key_present() -> bool:
+    if AI_PROVIDER == "openrouter":
+        return bool(OPENROUTER_API_KEY)
+    return bool(ANTHROPIC_API_KEY)
 
 # Single source of truth for the disease taxonomy used in the LLM
 # system prompt. Imported inside the chat function to avoid a circular
@@ -235,6 +256,79 @@ _chat_lock = threading.Lock()
 _chat_totals = {"requests": 0, "rejected": 0, "tokens_in": 0, "tokens_out": 0}
 
 
+def _call_anthropic(
+    system_blocks: list[dict], user_blocks: list[dict],
+    *, max_tokens: int | None = None,
+) -> tuple[str, int, int]:
+    """Run an Anthropic Claude completion. Returns (text, in_tokens, out_tokens)."""
+    import anthropic  # noqa: WPS433
+
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=20.0)
+    msg = client.messages.create(
+        model=ANTHROPIC_MODEL,
+        max_tokens=max_tokens or CHAT_MAX_TOKENS,
+        system=system_blocks,
+        messages=user_blocks,
+    )
+    text = "".join(
+        getattr(b, "text", "") for b in (msg.content or [])
+        if getattr(b, "type", "") == "text"
+    ).strip()
+    usage = getattr(msg, "usage", None)
+    tin = int(getattr(usage, "input_tokens", 0) or 0) if usage else 0
+    tout = int(getattr(usage, "output_tokens", 0) or 0) if usage else 0
+    return text, tin, tout
+
+
+def _call_openrouter(
+    system_blocks: list[dict], user_blocks: list[dict],
+    *, max_tokens: int | None = None,
+) -> tuple[str, int, int]:
+    """Run an OpenRouter chat completion. Translates Anthropic-shaped
+    system_blocks (list of {"type":"text","text":...}) into a single
+    OpenAI-style system message, then issues a standard chat.completions
+    POST. Returns (text, in_tokens, out_tokens)."""
+    import requests  # noqa: WPS433
+
+    system_text = "\n\n".join(
+        b.get("text", "") for b in system_blocks if b.get("type", "text") == "text"
+    ).strip()
+
+    messages: list[dict] = []
+    if system_text:
+        messages.append({"role": "system", "content": system_text})
+    for m in user_blocks:
+        # user_blocks already use OpenAI-compatible role/content shape.
+        messages.append({"role": m["role"], "content": m["content"]})
+
+    payload = {
+        "model": OPENROUTER_MODEL,
+        "max_tokens": max_tokens or CHAT_MAX_TOKENS,
+        "messages": messages,
+    }
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+        # OpenRouter recommends these for attribution but they are optional.
+        "HTTP-Referer": "https://github.com/pmixay/plantdiseases",
+        "X-Title": "PlantDiseases",
+    }
+    r = requests.post(
+        f"{OPENROUTER_BASE_URL}/chat/completions",
+        headers=headers, json=payload, timeout=20.0,
+    )
+    r.raise_for_status()
+    data = r.json()
+    choices = data.get("choices") or []
+    text = ""
+    if choices:
+        text = ((choices[0].get("message") or {}).get("content") or "").strip()
+    usage = data.get("usage") or {}
+    tin = int(usage.get("prompt_tokens") or 0)
+    tout = int(usage.get("completion_tokens") or 0)
+    return text, tin, tout
+
+
 def _gc_chat_sessions(now: float) -> None:
     stale = [
         sid for sid, sess in _chat_sessions.items()
@@ -266,7 +360,7 @@ def chat_reply(
     if len(user_message) > 2000:
         return {"available": False, "reply": "", "reason": "message_too_long"}
 
-    if not ANTHROPIC_API_KEY:
+    if not _chat_api_key_present():
         return {
             "available": False,
             "reply": "",
@@ -334,27 +428,13 @@ def chat_reply(
     user_blocks = list(history) + [{"role": "user", "content": user_message}]
 
     try:
-        import anthropic  # noqa: WPS433
-
-        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=20.0)
-        msg = client.messages.create(
-            model=ANTHROPIC_MODEL,
-            max_tokens=CHAT_MAX_TOKENS,
-            system=system_blocks,
-            messages=user_blocks,
-        )
+        if AI_PROVIDER == "openrouter":
+            reply_text, tin, tout = _call_openrouter(system_blocks, user_blocks)
+        else:
+            reply_text, tin, tout = _call_anthropic(system_blocks, user_blocks)
     except Exception as e:  # noqa: BLE001
-        logger.warning("Anthropic chat failed: %s", e)
+        logger.warning("Chat provider %s failed: %s", AI_PROVIDER, e)
         return {"available": False, "reply": "", "reason": "api_error"}
-
-    reply_text = "".join(
-        getattr(b, "text", "") for b in (msg.content or [])
-        if getattr(b, "type", "") == "text"
-    ).strip()
-
-    usage = getattr(msg, "usage", None)
-    tin = int(getattr(usage, "input_tokens", 0) or 0) if usage else 0
-    tout = int(getattr(usage, "output_tokens", 0) or 0) if usage else 0
 
     with _chat_lock:
         sess.messages.append({"role": "user", "content": user_message})
@@ -374,7 +454,8 @@ def chat_reply(
     return {
         "available": True,
         "reply": reply_text,
-        "model": ANTHROPIC_MODEL,
+        "model": _active_chat_model(),
+        "provider": AI_PROVIDER,
         "usage": {"input_tokens": tin, "output_tokens": tout},
         "session": {
             "session_id": session_id,
@@ -429,9 +510,9 @@ _DISEASE_ADJUSTMENT = {
 
 
 def _polish_plan_with_llm(plan: dict, locale: str) -> dict:
-    """Optional Claude polish step. Returns the plan with a friendly
+    """Optional LLM polish step. Returns the plan with a friendly
     Markdown summary attached, or the input plan unchanged on failure."""
-    if not ANTHROPIC_API_KEY:
+    if not _chat_api_key_present():
         return plan
     locale_hint = (
         "Write the summary in Russian." if locale.lower().startswith("ru")
@@ -442,20 +523,13 @@ def _polish_plan_with_llm(plan: dict, locale: str) -> dict:
         "points. Keep dosages and intervals exactly as given. "
         + locale_hint
     )
+    system_blocks = [{"type": "text", "text": system}]
+    user_blocks = [{"role": "user", "content": json.dumps(plan, ensure_ascii=False)}]
     try:
-        import anthropic  # noqa: WPS433
-
-        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=12.0)
-        msg = client.messages.create(
-            model=ANTHROPIC_MODEL,
-            max_tokens=300,
-            system=[{"type": "text", "text": system}],
-            messages=[{"role": "user", "content": json.dumps(plan, ensure_ascii=False)}],
-        )
-        polish = "".join(
-            getattr(b, "text", "") for b in (msg.content or [])
-            if getattr(b, "type", "") == "text"
-        ).strip()
+        if AI_PROVIDER == "openrouter":
+            polish, _, _ = _call_openrouter(system_blocks, user_blocks, max_tokens=300)
+        else:
+            polish, _, _ = _call_anthropic(system_blocks, user_blocks, max_tokens=300)
         if polish:
             plan = {**plan, "summary_md": polish}
     except Exception as e:  # noqa: BLE001

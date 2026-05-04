@@ -1,0 +1,24 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <!-- Leaf with clusters of rust pustules -->
+    <path android:fillColor="#000000"
+        android:pathData="M17,3C9.5,3 4,8 4,15c0,2.6 0.6,4.6 1.7,6.3 0.3,0.4 0.9,0.5 1.3,0.2 0.4,-0.3 0.5,-0.9 0.2,-1.3 -0.4,-0.5 -0.7,-1 -1,-1.6C12.4,18.5 18,13.7 19.5,7.2 19.7,6.4 19.9,5.4 20,4.3 20.1,3.5 19.5,3 18.7,3 18.1,3 17.6,3 17,3z" />
+    <!-- Rust clusters: groups of small dots -->
+    <path android:fillColor="#FFFFFF" android:fillAlpha="0.9"
+        android:pathData="M9,9m-0.5,0a0.5,0.5 0 1,0 1,0a0.5,0.5 0 1,0 -1,0z" />
+    <path android:fillColor="#FFFFFF" android:fillAlpha="0.9"
+        android:pathData="M10.2,8.5m-0.4,0a0.4,0.4 0 1,0 0.8,0a0.4,0.4 0 1,0 -0.8,0z" />
+    <path android:fillColor="#FFFFFF" android:fillAlpha="0.9"
+        android:pathData="M9.6,10.2m-0.4,0a0.4,0.4 0 1,0 0.8,0a0.4,0.4 0 1,0 -0.8,0z" />
+    <path android:fillColor="#FFFFFF" android:fillAlpha="0.9"
+        android:pathData="M13,11m-0.5,0a0.5,0.5 0 1,0 1,0a0.5,0.5 0 1,0 -1,0z" />
+    <path android:fillColor="#FFFFFF" android:fillAlpha="0.9"
+        android:pathData="M14,12m-0.4,0a0.4,0.4 0 1,0 0.8,0a0.4,0.4 0 1,0 -0.8,0z" />
+    <path android:fillColor="#FFFFFF" android:fillAlpha="0.9"
+        android:pathData="M12.5,12.4m-0.4,0a0.4,0.4 0 1,0 0.8,0a0.4,0.4 0 1,0 -0.8,0z" />
+    <path android:fillColor="#FFFFFF" android:fillAlpha="0.9"
+        android:pathData="M15.5,8.5m-0.5,0a0.5,0.5 0 1,0 1,0a0.5,0.5 0 1,0 -1,0z" />
+    <path android:fillColor="#FFFFFF" android:fillAlpha="0.9"
+        android:pathData="M16.5,9.5m-0.4,0a0.4,0.4 0 1,0 0.8,0a0.4,0.4 0 1,0 -0.8,0z" />
+</vector>

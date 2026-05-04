@@ -15,7 +15,6 @@ import io
 import ipaddress
 import logging
 import math
-import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -38,6 +37,7 @@ from ai_services import (
     generate_care_plan,
     identify_species,
 )
+from config import get_float, get_int, get_list, get_str
 from diseases_data import DISEASES_DATABASE
 from pipeline import PlantDiseasePipeline
 
@@ -50,7 +50,7 @@ except Exception:
 Image.MAX_IMAGE_PIXELS = 20_000_000  # ~4500×4500
 
 # ── Logging ──────────────────────────────────────────────────────────
-LOG_DIR = Path(os.getenv("LOG_DIR", "logs"))
+LOG_DIR = Path(get_str("LOG_DIR", "logs"))
 LOG_DIR.mkdir(exist_ok=True)
 
 _log_fmt = logging.Formatter(
@@ -82,9 +82,9 @@ DETECTOR_PATH = MODELS_DIR / "detector.pt"       # YOLOv8 weights (auto-prefers 
 # classifier_int8.onnx → classifier.onnx → .pth.
 CLASSIFIER_PATH = MODELS_DIR / "classifier.pth"
 
-MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE", 10 * 1024 * 1024))  # 10 MB
-MAX_IMAGE_DIMENSION = int(os.getenv("MAX_IMAGE_DIMENSION", 4096))
-INFERENCE_TIMEOUT = float(os.getenv("INFERENCE_TIMEOUT", 30.0))
+MAX_FILE_SIZE = get_int("MAX_FILE_SIZE", 10 * 1024 * 1024)  # 10 MB
+MAX_IMAGE_DIMENSION = get_int("MAX_IMAGE_DIMENSION", 4096)
+INFERENCE_TIMEOUT = get_float("INFERENCE_TIMEOUT", 30.0)
 ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp", "image/bmp"}
 IMAGE_MAGIC = (
     b"\xff\xd8\xff",            # JPEG
@@ -93,12 +93,10 @@ IMAGE_MAGIC = (
     b"BM",                      # BMP
 )
 
-RATE_LIMIT_RPS = float(os.getenv("RATE_LIMIT_RPS", 1.0))
-TRUSTED_PROXIES = {
-    p.strip() for p in os.getenv("TRUSTED_PROXIES", "").split(",") if p.strip()
-}
+RATE_LIMIT_RPS = get_float("RATE_LIMIT_RPS", 1.0)
+TRUSTED_PROXIES = set(get_list("TRUSTED_PROXIES", []))
 
-INFER_WORKERS = int(os.getenv("INFER_WORKERS", 2))
+INFER_WORKERS = get_int("INFER_WORKERS", 2)
 _inference_executor: ThreadPoolExecutor | None = None
 
 
@@ -305,8 +303,9 @@ app = FastAPI(
 )
 
 # ── CORS ─────────────────────────────────────────────────────────────
-_cors_raw = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
-ALLOWED_ORIGINS = [o.strip() for o in _cors_raw.split(",") if o.strip()]
+ALLOWED_ORIGINS = get_list(
+    "CORS_ORIGINS", ["http://localhost:3000", "http://127.0.0.1:3000"],
+)
 if ALLOWED_ORIGINS == ["*"]:
     logger.warning("CORS_ORIGINS=* is insecure for production; restrict it in deployment.")
 
@@ -757,8 +756,8 @@ if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
         app,
-        host=os.getenv("HOST", "0.0.0.0"),
-        port=int(os.getenv("PORT", 8000)),
-        forwarded_allow_ips=os.getenv("FORWARDED_ALLOW_IPS", "127.0.0.1"),
+        host=get_str("HOST", "0.0.0.0"),
+        port=get_int("PORT", 8000),
+        forwarded_allow_ips=get_str("FORWARDED_ALLOW_IPS", "127.0.0.1"),
         proxy_headers=True,
     )
