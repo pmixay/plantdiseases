@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Glass-circle outline used by the gallery launcher on the camera
+     screen. Frosted fill so the camera preview stays visible behind. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
-    <stroke android:width="2dp" android:color="@color/on_surface_secondary" />
+    <solid android:color="@color/glass_white_soft" />
+    <stroke
+        android:width="@dimen/glass_stroke_width"
+        android:color="@color/glass_stroke_strong" />
 </shape>

@@ -68,6 +68,13 @@ CHAT_MAX_TOKENS = get_int("CHAT_MAX_TOKENS", 512)
 CHAT_SESSION_TURN_CAP = get_int("CHAT_SESSION_TURN_CAP", 20)
 CHAT_SESSION_TOKEN_CAP = get_int("CHAT_SESSION_TOKEN_CAP", 8000)
 CHAT_SESSION_TTL_SEC = get_int("CHAT_SESSION_TTL_SEC", 3600)
+# Hard cap on retained messages per session — independent of the turn
+# count cap, this protects against very long single-turn messages
+# accumulating unbounded memory before the TTL GC reclaims the session.
+CHAT_SESSION_MAX_MESSAGES = get_int("CHAT_SESSION_MAX_MESSAGES", 60)
+# How many recent messages we forward to the LLM each turn. Keeps the
+# context window predictable independent of total session history.
+CHAT_HISTORY_KEEP_LAST = get_int("CHAT_HISTORY_KEEP_LAST", 12)
 
 
 def _active_chat_model() -> str:
@@ -249,6 +256,13 @@ class _ChatSession:
             return list(self.messages)
         return self.messages[-keep_last:]
 
+    def append(self, role: str, content: str) -> None:
+        """Append a message and enforce CHAT_SESSION_MAX_MESSAGES."""
+        self.messages.append({"role": role, "content": content})
+        excess = len(self.messages) - CHAT_SESSION_MAX_MESSAGES
+        if excess > 0:
+            del self.messages[:excess]
+
 
 _chat_sessions: dict[str, _ChatSession] = {}
 _chat_lock = threading.Lock()
@@ -394,7 +408,7 @@ def chat_reply(
                 "token_cap": CHAT_SESSION_TOKEN_CAP,
             }
         sess.last_active = now
-        history = sess.trim_for_context(keep_last=12)
+        history = sess.trim_for_context(keep_last=CHAT_HISTORY_KEEP_LAST)
 
     # Build the system prompt with prompt caching enabled on the long
     # static disease-taxonomy block. Anthropic SDK 0.30+ supports the
@@ -444,8 +458,8 @@ def chat_reply(
         return {"available": False, "reply": "", "reason": "empty_reply"}
 
     with _chat_lock:
-        sess.messages.append({"role": "user", "content": user_message})
-        sess.messages.append({"role": "assistant", "content": reply_text})
+        sess.append("user", user_message)
+        sess.append("assistant", reply_text)
         sess.tokens_in += tin
         sess.tokens_out += tout
         sess.turn_count += 1

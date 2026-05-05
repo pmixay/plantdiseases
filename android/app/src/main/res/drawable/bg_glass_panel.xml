@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Bottom-rounded panel that hosts the camera shutter / gallery row.
+     Uses glass tint + a subtle leaf-green wash so the controls read as
+     a piece of frosted leaf glass attached to the bottom of the screen. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/glass_white_strong" />
+            <corners
+                android:topLeftRadius="@dimen/radius_xl"
+                android:topRightRadius="@dimen/radius_xl" />
+            <stroke
+                android:width="@dimen/glass_stroke_width"
+                android:color="@color/glass_stroke" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/glass_green_tint_soft" />
+            <corners
+                android:topLeftRadius="@dimen/radius_xl"
+                android:topRightRadius="@dimen/radius_xl" />
+        </shape>
+    </item>
+</layer-list>

@@ -125,3 +125,18 @@ def test_chat_metrics_snapshot_initially_empty():
     assert snap["active_sessions"] == 0
     assert snap["requests"] == 0
     assert snap["rejected"] == 0
+
+
+def test_chat_session_caps_message_history_growth():
+    """The per-session message buffer must not grow without bound even
+    if the turn-count cap is generous: ``CHAT_SESSION_MAX_MESSAGES``
+    enforces a hard ceiling."""
+    import ai_services as ai
+
+    sess = ai._ChatSession("smoke")
+    # Push more messages than the cap and verify trimming.
+    for i in range(ai.CHAT_SESSION_MAX_MESSAGES + 25):
+        sess.append("user" if i % 2 == 0 else "assistant", f"msg {i}")
+    assert len(sess.messages) == ai.CHAT_SESSION_MAX_MESSAGES
+    # The oldest messages should be the ones evicted (FIFO).
+    assert sess.messages[0]["content"] == f"msg {25}"

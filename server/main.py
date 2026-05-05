@@ -490,18 +490,25 @@ async def analyze_image(image: UploadFile = File(...)):
             detail="Unsupported image format. Allowed: JPEG, PNG, WebP, BMP",
         )
 
-    contents = await image.read()
     try:
-        _validate_image_bytes(contents)
-    except HTTPException:
+        contents = await image.read()
+    except Exception as exc:
         _record_error()
-        raise
+        logger.warning("Failed to read upload stream from %s: %s", image.filename, exc)
+        raise HTTPException(status_code=400, detail="Could not read uploaded file") from exc
 
     try:
+        _validate_image_bytes(contents)
         img = _open_image(contents)
     except HTTPException:
         _record_error()
         raise
+    except Exception as exc:
+        # Guard against any non-HTTPException leaking from PIL — return a
+        # consistent 400 instead of letting the request crash with 500.
+        _record_error()
+        logger.exception("Unexpected error while validating image %s: %s", image.filename, exc)
+        raise HTTPException(status_code=400, detail="Cannot read image file") from exc
 
     img_w, img_h = img.size
     if img_w > MAX_IMAGE_DIMENSION or img_h > MAX_IMAGE_DIMENSION:
@@ -548,14 +555,17 @@ async def analyze_image(image: UploadFile = File(...)):
 
     rounded_probs = {k: round(v, 4) for k, v in all_probs.items()}
 
-    # Compute Shannon-entropy uncertainty in [0, 1]; higher = more uncertain.
-    if rounded_probs:
+    # Shannon-entropy uncertainty in [0, 1]; higher = more uncertain.
+    # Guards: empty dict, single-class (log(1)=0) and degenerate
+    # all-zero distributions all collapse to 0.0 instead of NaN.
+    uncertainty = 0.0
+    if len(rounded_probs) > 1:
         vals = [p for p in rounded_probs.values() if p > 0]
-        entropy = -sum(p * math.log(p) for p in vals)
-        max_entropy = math.log(len(rounded_probs))
-        uncertainty = round(entropy / max_entropy, 4) if max_entropy > 0 else 0.0
-    else:
-        uncertainty = 0.0
+        if vals:
+            entropy = -sum(p * math.log(p) for p in vals)
+            max_entropy = math.log(len(rounded_probs))
+            if max_entropy > 0:
+                uncertainty = round(max(0.0, min(1.0, entropy / max_entropy)), 4)
 
     detection = result["detection"]
 
@@ -664,7 +674,12 @@ async def identify_endpoint(image: UploadFile = File(...), organ: str = "leaf"):
     if not image.content_type or image.content_type not in ALLOWED_CONTENT_TYPES:
         _record_error()
         raise HTTPException(status_code=400, detail="Unsupported image format")
-    contents = await image.read()
+    try:
+        contents = await image.read()
+    except Exception as exc:
+        _record_error()
+        logger.warning("Failed to read upload stream for /api/identify: %s", exc)
+        raise HTTPException(status_code=400, detail="Could not read uploaded file") from exc
     try:
         _validate_image_bytes(contents)
     except HTTPException:

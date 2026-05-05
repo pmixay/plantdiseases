@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Dark variant of bg_glass_pill — used for hint badges over white
+     photo backgrounds where the light pill would disappear. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/glass_dark_scrim_strong" />
+    <corners android:radius="@dimen/radius_round" />
+    <stroke
+        android:width="@dimen/glass_stroke_width"
+        android:color="@color/glass_stroke_strong" />
+</shape>

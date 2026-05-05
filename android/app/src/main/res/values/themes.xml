@@ -17,16 +17,76 @@
         <!-- Edge-to-edge: transparent status bar -->
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:navigationBarColor">@color/surface</item>
+        <item name="android:navigationBarColor">@color/background</item>
+
+        <!-- Material default for top app bar uses a tonal surface — we
+             want our liquid-glass header instead, so leave this off. -->
+        <item name="appBarLayoutStyle">@style/Widget.Material3.AppBarLayout</item>
     </style>
 
     <style name="TextAppearance.App.Toolbar" parent="TextAppearance.Material3.TitleLarge">
-        <item name="android:textSize">20sp</item>
+        <item name="android:textSize">@dimen/text_title</item>
         <item name="android:fontFamily">sans-serif-medium</item>
+    </style>
+
+    <style name="TextAppearance.App.Headline" parent="TextAppearance.Material3.HeadlineSmall">
+        <item name="android:textSize">@dimen/text_headline</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textColor">@color/on_surface</item>
+    </style>
+
+    <style name="TextAppearance.App.Title" parent="TextAppearance.Material3.TitleMedium">
+        <item name="android:textSize">@dimen/text_title_sm</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textColor">@color/on_surface</item>
+    </style>
+
+    <style name="TextAppearance.App.Body" parent="TextAppearance.Material3.BodyMedium">
+        <item name="android:textSize">@dimen/text_body</item>
+        <item name="android:textColor">@color/on_surface_secondary</item>
+        <item name="android:lineSpacingExtra">3sp</item>
+    </style>
+
+    <style name="TextAppearance.App.Caption" parent="TextAppearance.Material3.LabelSmall">
+        <item name="android:textSize">@dimen/text_caption</item>
+        <item name="android:textColor">@color/on_surface_secondary</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:letterSpacing">0.08</item>
     </style>
 
     <style name="App.BottomNavIndicator" parent="Widget.Material3.BottomNavigationView.ActiveIndicator">
         <item name="android:color">@color/primary_light</item>
+    </style>
+
+    <!-- ─── Liquid-glass card ────────────────────────────────────
+         Reusable wrapper for content surfaces. Inherits MaterialCardView
+         so existing layouts only need: style="@style/App.GlassCard".
+         The translucent background drawable carries the green tint and
+         the inner-stroke; cardElevation gives the card a subtle drop
+         shadow that simulates depth without overpowering the frosted
+         look. -->
+    <style name="App.GlassCard" parent="Widget.Material3.CardView.Filled">
+        <item name="cardBackgroundColor">@android:color/transparent</item>
+        <item name="cardCornerRadius">@dimen/radius_lg</item>
+        <item name="cardElevation">@dimen/glass_elevation_soft</item>
+        <item name="strokeWidth">0dp</item>
+        <item name="android:background">@drawable/bg_glass_card</item>
+        <item name="contentPadding">@dimen/space_lg</item>
+    </style>
+
+    <style name="App.GlassCard.Strong">
+        <item name="android:background">@drawable/bg_glass_card_strong</item>
+        <item name="cardElevation">@dimen/glass_elevation</item>
+    </style>
+
+    <!-- Compact pill chip for status / count badges. -->
+    <style name="App.GlassPill" parent="">
+        <item name="android:background">@drawable/bg_glass_pill</item>
+        <item name="android:paddingHorizontal">@dimen/space_md</item>
+        <item name="android:paddingVertical">@dimen/space_xs</item>
+        <item name="android:textColor">@color/on_surface</item>
+        <item name="android:textSize">@dimen/text_caption</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
     </style>
 
 </resources>
