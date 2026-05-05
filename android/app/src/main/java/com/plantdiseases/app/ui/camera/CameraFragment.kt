@@ -510,6 +510,10 @@ class CameraFragment : Fragment() {
 
     override fun onDestroyView() {
         super.onDestroyView()
+        // Drain any pending zoom-pill hide before the binding goes — the
+        // runnable null-checks _binding, but cancelling it avoids a
+        // dangling Choreographer callback on the destroyed view.
+        binding.tvZoom.removeCallbacks(hideZoomRunnable)
         networkCallback?.let {
             val cm = requireContext().getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
             cm.unregisterNetworkCallback(it)

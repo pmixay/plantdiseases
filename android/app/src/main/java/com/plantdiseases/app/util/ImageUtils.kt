@@ -234,21 +234,32 @@ object ImageUtils {
      * Green in HSV: H in [35..85], S > 0.2, V > 0.15
      */
     fun hasGreenContent(imagePath: String): Boolean {
+        val options = BitmapFactory.Options().apply {
+            inSampleSize = 8 // Downsample for speed
+        }
+        val bitmap = try {
+            BitmapFactory.decodeFile(imagePath, options) ?: return true
+        } catch (e: OutOfMemoryError) {
+            Log.w(TAG, "hasGreenContent: out of memory decoding", e)
+            return true
+        }
         return try {
-            val options = BitmapFactory.Options().apply {
-                inSampleSize = 8 // Downsample for speed
-            }
-            val bitmap = BitmapFactory.decodeFile(imagePath, options) ?: return true
             val width = bitmap.width
             val height = bitmap.height
             val totalPixels = width * height
-            var greenPixels = 0
 
+            // getPixel-per-cell is hot enough to dominate; bulk-read once
+            // then walk the IntArray with the same step-2 stride.
+            val pixels = IntArray(totalPixels)
+            bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+
+            var greenPixels = 0
+            var sampledPixels = 0
             val hsv = FloatArray(3)
             for (y in 0 until height step 2) {
+                val rowOffset = y * width
                 for (x in 0 until width step 2) {
-                    val pixel = bitmap.getPixel(x, y)
-                    android.graphics.Color.colorToHSV(pixel, hsv)
+                    android.graphics.Color.colorToHSV(pixels[rowOffset + x], hsv)
                     val h = hsv[0]
                     val s = hsv[1]
                     val v = hsv[2]
@@ -256,11 +267,10 @@ object ImageUtils {
                     if (h in 35f..160f && s > 0.2f && v > 0.15f) {
                         greenPixels++
                     }
+                    sampledPixels++
                 }
             }
-            bitmap.recycle()
 
-            val sampledPixels = (totalPixels / 4) // step 2 in both dimensions
             val greenRatio = greenPixels.toFloat() / sampledPixels.coerceAtLeast(1)
             greenRatio >= 0.08f
         } catch (e: OutOfMemoryError) {
@@ -269,6 +279,10 @@ object ImageUtils {
         } catch (e: Exception) {
             Log.w(TAG, "hasGreenContent failed", e)
             true // On error, assume it's a plant
+        } finally {
+            // Run regardless of how the loop exits — the original code
+            // leaked the bitmap on any exception thrown after decode.
+            bitmap.recycle()
         }
     }
 }

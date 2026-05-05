@@ -13,6 +13,7 @@ Stage 2:  MobileNetV3-Large    — distilled student (KD from
 import asyncio
 import io
 import ipaddress
+import json
 import logging
 import math
 import threading
@@ -689,13 +690,19 @@ async def chat_endpoint(payload: ChatRequest, request: Request):
     limiting from the global middleware still applies.
     """
     client_ip = _client_ip(request)
+    # Pydantic doesn't bound dict size; reject oversize diagnosis blobs
+    # before they hit chat_reply so a malicious client can't push a
+    # 10 MB nested dict through the LLM context window.
+    diagnosis = payload.diagnosis
+    if diagnosis is not None and len(json.dumps(diagnosis, default=str)) > 8 * 1024:
+        raise HTTPException(status_code=400, detail="diagnosis context too large")
     result = await asyncio.get_running_loop().run_in_executor(
         _get_inference_executor(),
         lambda: chat_reply(
             session_id=payload.session_id,
             user_message=payload.message,
             locale=payload.locale,
-            diagnosis_context=payload.diagnosis,
+            diagnosis_context=diagnosis,
         ),
     )
     if not result.get("available"):

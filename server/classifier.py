@@ -282,9 +282,10 @@ class DiseaseClassifier:
         return [self._format_result_from_logits(logits[i]) for i in range(logits.shape[0])]
 
     def _format_result_from_logits(self, logits: np.ndarray) -> dict:
-        # Stable softmax + keep the raw logit vector around so the
-        # pipeline can score OOD with MaxLogit (Hendrycks 2019), which
-        # stays informative when temperature scaling drives MSP low.
+        # Stable softmax. The pipeline only needs the scalar `max_logit`
+        # for the OOD gate (Hendrycks 2019) — keeping a per-class logit
+        # dict allocates a second NUM_CLASSES dict on every classify
+        # call without anyone reading it.
         shifted = logits - logits.max()
         e = np.exp(shifted)
         probs = e / e.sum()
@@ -295,10 +296,6 @@ class DiseaseClassifier:
             "confidence": round(top_conf, 4),
             "all_probs": {
                 self.CLASS_NAMES[i]: round(float(probs[i]), 4)
-                for i in range(self.NUM_CLASSES)
-            },
-            "logits": {
-                self.CLASS_NAMES[i]: float(logits[i])
                 for i in range(self.NUM_CLASSES)
             },
             "max_logit": float(logits.max()),
