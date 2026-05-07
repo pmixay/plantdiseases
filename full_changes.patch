@@ -1,0 +1,3393 @@
+diff -ruN '--exclude=*.pyc' '--exclude=__pycache__' '--exclude=.gradle' /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/README.md /home/claude/fixed/project/README.md
+--- /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/README.md	2026-05-05 13:23:09.000000000 +0000
++++ /home/claude/fixed/project/README.md	2026-05-07 09:46:50.250949826 +0000
+@@ -15,43 +15,55 @@
+ artefacts under `server/models/`, the API refuses to start.
+ There is no offline / demo / heuristic fallback on either side.
+ 
+-What changed vs v1.x:
++What changed vs v1.x and v2.0:
+ 
+-- **11 classes** (was 10): `bacterial_leaf_spot`, `edema`,
+-  `gray_mold_botrytis`, `healthy`, `leaf_scorch_underwatering`,
+-  `leaf_spot_fungal` (anthracnose + cercospora + alternaria),
+-  `not_a_plant`, `nutrient_deficiency` (Fe + N + Mg + K),
+-  `powdery_mildew`, `sunburn_or_scorch`, `viral_disease`
+-  (mosaic + leaf_curl + ringspot). `late_blight` and `iron_chlorosis`
+-  are removed. **Pests are out of the taxonomy entirely** (no more
+-  "possible pest causes" hint).
++- **7 trainable classes (v2.1):** `bacterial_leaf_spot`,
++  `gray_mold_botrytis`, `healthy`, `leaf_spot_fungal` (anthracnose +
++  cercospora + alternaria), `not_a_plant`, `powdery_mildew`,
++  `viral_disease` (mosaic + leaf_curl + ringspot). The four
++  physiological conditions originally planned for v2.0 — `edema`,
++  `leaf_scorch_underwatering`, `nutrient_deficiency`,
++  `sunburn_or_scorch` — are **deferred until labelled real-world
++  data is added**: public sources have very few clean indoor
++  examples and proxy-labelling them collapses recall on the disease
++  classes. Re-enabling them later is a config switch in
++  `train_notebook.ipynb` §1, not a re-architecture. **Pests are out
++  of the taxonomy entirely** (no more "possible pest causes" hint).
+ - **Stage 1 detector** retrained on 300–800 indoor leaf bboxes
+   (Roboflow Universe houseplant slices, hand-labelled user uploads).
+-  PlantDoc removed — its agricultural close-ups bias localisation
+-  toward field shots and hurt indoor recall.
++  PlantDoc removed from detector training — its agricultural close-
++  ups bias localisation toward field shots and hurt indoor recall.
+ - **Stage 2 backbone:** EfficientNetV2-S
+   (`tf_efficientnetv2_s.in21k_ft_in1k`) teacher distilled into
+-  MobileNetV3-Large (5.5 M) student.
+-- **Loss:** Logit Adjustment (Menon ICLR 2021), τ=1.0 — replaces the
+-  hand-tuned inverse-frequency CE × `HEALTHY_DOWNWEIGHT=0.25`.
+-- **OOD score:** **MaxLogit** (Hendrycks 2019) — robust to temperature
+-  scaling and label smoothing where MSP collapses.
++  MobileNetV3-Large (5.5 M) student. Distillation uses an **EMA
++  copy** of the student (decay=0.999) and the EMA weights are what
++  ship.
++- **Loss:** Logit Adjustment (Menon ICLR 2021), τ=0.7,
++  label_smoothing=0.05. **Loss-side balancing only** —
++  `WeightedRandomSampler` is **off** by default; stacking sampler +
++  LA over-corrects rare classes (Liu et al. 2024).
++- **OOD score:** **MaxLogit** (Hendrycks 2019) — robust to
++  temperature scaling and label smoothing where MSP collapses.
+ - **PlantVillage** moved out of the train set; kept only as a frozen
+   `val_studio` slice (transfer / background-bias monitor — Noyan 2022:
+   49 % accuracy from 8 background pixels).
+ - **Calibration:** temperature scaling **plus** inductive conformal
+-  prediction (RAPS, Angelopoulos 2021). Production response carries
+-  a `prediction_set` with a 90 % coverage guarantee instead of a
+-  potentially mis-calibrated single "0.99" answer.
+-- **Quantisation:** dynamic INT8-on-MatMul → **static INT8 QDQ** with
+-  a 500-photo `val_realworld` calibration reader; export step
+-  re-evaluates and refuses to ship if disease F1 drops by > 0.02 vs
+-  FP32.
++  prediction (RAPS, Angelopoulos 2021), both fitted on the deployed
++  INT8 ONNX session (not the FP32 torch model). Two dedicated
++  calibration splits: `temperature_cal` (~5 %) for INT8 + temperature,
++  `conformal_cal` (~10 %) for RAPS. Both restricted to the deployment
++  distribution (PlantDoc + iNaturalist), so RAPS exchangeability holds
++  at deploy.
++- **Quantisation:** **static INT8 (QDQ)** with a 500-photo
++  `conformal_cal` calibration reader; export step re-evaluates on
++  `val_realworld` and refuses to ship if disease F1 drops by > 0.05
++  vs FP32 (warning at > 0.02).
+ - **Eval protocol — three independent val slices:** `val_indomain`
+   (early stopping), `val_realworld` (primary ship gate; target
+-  macro-F1 ∈ 0.70 – 0.78), `val_studio` (transfer / background-bias
+-  monitor). Each epoch logs disease macro-F1 + per-class recall +
+-  confusion matrix + healthy-bias on all three.
++  macro-F1 ≥ 0.70, no class with recall=0, healthy-bias < 1.5),
++  `val_studio` (transfer / background-bias monitor — never blocking).
++  Each epoch logs disease macro-F1 + per-class recall + confusion
++  matrix + healthy-bias on all three.
+ 
+ Per-week, per-engineer task list lives in [`ROADMAP.md`](ROADMAP.md).
+ Full training recipe lives in
+@@ -100,7 +112,7 @@
+            ▼
+ ┌────────────────────────────────┐
+ │  Stage 2: Disease Classifier    │  MobileNetV3-Large student (5.5 M, 256 px)
+-│  KD ← EfficientNetV2-S teacher  │  11 classes incl. not_a_plant
++│  KD ← EfficientNetV2-S teacher  │  7 classes incl. not_a_plant
+ │                                 │  ONNX INT8 (~10-15 ms on CPU VPS)
+ └──────────┬─────────────────────┘
+            │
+@@ -281,7 +293,7 @@
+ |--------|------|-------------|
+ | `GET` | `/api/health` | Liveness + uptime + class count |
+ | `GET` | `/api/version` | Server version + model architecture |
+-| `GET` | `/api/classes` | 11 classes with bilingual names |
++| `GET` | `/api/classes` | 7 trainable classes with bilingual names |
+ | `GET` | `/api/metrics` | Counters for requests, errors, latency |
+ | `GET` | `/api/metrics/prometheus` | Prometheus exposition format |
+ | `POST` | `/api/analyze` | Upload image → get diagnosis |
+@@ -434,7 +446,7 @@
+ ├── detector.py              # Stage 1: YOLOv8n single-class plant_leaf
+ ├── classifier.py            # Stage 2: MobileNetV3-Large (KD ← V2-S)
+ ├── diseases_data.py         # Bilingual houseplant disease database
+-├── train_notebook.ipynb     # End-to-end v2.0 training recipe
++├── train_notebook.ipynb     # End-to-end v2.1 training recipe
+ ├── requirements.txt         # Server dependencies
+ ├── Dockerfile               # Non-root, HEALTHCHECK-enabled image
+ ├── docker-compose.yml       # Compose stack for production
+diff -ruN '--exclude=*.pyc' '--exclude=__pycache__' '--exclude=.gradle' /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/ROADMAP.md /home/claude/fixed/project/ROADMAP.md
+--- /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/ROADMAP.md	2026-05-05 13:23:09.000000000 +0000
++++ /home/claude/fixed/project/ROADMAP.md	2026-05-07 10:03:52.524335064 +0000
+@@ -1,75 +1,371 @@
+-# PlantDiseases 2.0 — Sprint Plan
++# PlantDiseases 2.1 — Sprint Plan (3 weeks)
+ 
+-**Window:** active
++**Window:** active · **Team:** P1 = Android · P2 = Server / ML
+ 
+-**Class taxonomy is now 11 classes (v2.0), not 10:**
+-`bacterial_leaf_spot`, `edema`, `gray_mold_botrytis`, `healthy`,
+-`leaf_scorch_underwatering`, `leaf_spot_fungal` (= anthracnose +
+-cercospora + alternaria), `not_a_plant`, `nutrient_deficiency`
+-(= Fe + N + Mg + K), `powdery_mildew`, `sunburn_or_scorch`,
+-`viral_disease` (= mosaic + leaf_curl + ringspot).
++**Class taxonomy is now 7 trainable classes (v2.1):**
++`bacterial_leaf_spot`, `gray_mold_botrytis`, `healthy`,
++`leaf_spot_fungal` (= anthracnose + cercospora + alternaria),
++`not_a_plant`, `powdery_mildew`, `viral_disease` (= mosaic + leaf_curl
+++ ringspot).
++
++**Deferred from the v2.0 design:** `edema`, `leaf_scorch_underwatering`,
++`nutrient_deficiency`, `sunburn_or_scorch`. Public sources have very
++few clean indoor examples for these, and proxy-labelling them
++collapses recall on the disease classes we already have data for.
++Re-enabling them is a config switch in `train_notebook.ipynb` §1
++once a real-world labelled set lands.
+ 
+ Removed vs v1.x: `late_blight`, `iron_chlorosis`. Pests are out of
+ the taxonomy entirely (no longer surfaced as a "possible pest causes"
+ hint either).
+ 
+-**Architecture changes vs v1.x:**
++**Architecture summary:**
+ - Stage 1 detector retrained on **indoor** leaf bboxes; PlantDoc
+-  removed (its agricultural close-ups bias the model toward field
+-  shots).
+-- Stage 2 backbone changed from EfficientNet-B0 → **EfficientNetV2-S**
+-  teacher distilled into **MobileNetV3-Large** student (KD α=0.35,
+-  τ=3.5).
+-- Loss changed from inverse-frequency CE × `HEALTHY_DOWNWEIGHT=0.25`
+-  → **Logit Adjustment** (Menon ICLR 2021), τ=1.0.
+-- OOD score: **MaxLogit** (Hendrycks 2019) instead of MSP-floor
+-  (MSP collapses under temperature scaling and label smoothing).
+-- PlantVillage moved out of the train set; kept as a frozen
+-  `val_studio` slice for transfer + background-bias monitoring only.
+-- **Calibration:** temperature scaling **plus** inductive conformal
+-  prediction (RAPS, Angelopoulos 2021) calibrated on a 1–2 k user-
+-  photo holdout. Production response carries an honest
+-  `prediction_set` with a 90 % coverage guarantee instead of a
+-  potentially mis-calibrated single "0.99" answer. Server-side
+-  module: `server/conformal.py`; calibration artefact:
+-  `models/conformal.json`.
+-- **Quantisation:** dynamic INT8-on-MatMul → **static INT8 QDQ**
+-  with a 500-photo `val_realworld` calibration reader. Dynamic
+-  quant only touched ~0.2 % of MobileNetV3-Large parameters; static
+-  QDQ is a real speed-up but ORT does not guarantee accuracy, so
+-  the export cell **fails loudly if disease F1 drops by > 0.02 vs
+-  FP32**.
+-- Primary metric: disease macro-F1 on **`indoor_real_world_v1`** —
+-  a frozen 500–1000 user-photo validation set. Without it, no
+-  shipping decision.
++  removed from detector training (its agricultural close-ups bias
++  localisation toward field shots).
++- Stage 2 backbone: **EfficientNetV2-S** teacher distilled into
++  **MobileNetV3-Large** student (KD α=0.5, τ=4.0, EMA decay 0.999;
++  the EMA copy is what we save and export).
++- Loss: **Logit Adjustment** (Menon ICLR 2021) τ=0.7 +
++  label_smoothing=0.05. **Loss-side balancing only** —
++  `WeightedRandomSampler` is **off** by default; stacking sampler +
++  LA over-corrects rare classes (Liu et al. 2024).
++- OOD score: **MaxLogit** (Hendrycks 2019).
++- Calibration: temperature + RAPS, both fitted on the deployed INT8
++  ONNX session; dedicated `temperature_cal` (~5 %) and `conformal_cal`
++  (~10 %) splits, both restricted to `plantdoc + inat` so RAPS
++  exchangeability holds at deploy.
++- Quantisation: **static INT8 QDQ** with a 500-photo `conformal_cal`
++  reader; ship gate refuses if disease F1 drops by > 0.05 vs FP32
++  (warning at > 0.02).
++- Primary metric: disease macro-F1 on **`val_realworld`** (≥ 0.70,
++  no class with recall=0, healthy-bias < 1.5).
+ 
+-**Eval protocol (three independent val slices):**
++---
++
++## Confirmed decisions (operator)
++
++These were the open v2.0 → v2.1 migration questions. All three are now
++locked; the codebase already reflects them.
++
++1. **Taxonomy:** v2.1 — 7 trainable classes
++   (`bacterial_leaf_spot`, `gray_mold_botrytis`, `healthy`,
++   `leaf_spot_fungal`, `not_a_plant`, `powdery_mildew`,
++   `viral_disease`). The four physiological conditions stay deferred
++   until a real-world labelled set lands. v2.2 with 11 classes is a
++   separate, post-release effort; some prep work already starts in
++   Week 3 below.
++2. **Production server URL:** unknown for now → release-build HTTPS
++   work is **out of this sprint**. Default `API_BASE_URL` stays at
++   the dev box over HTTP, `network_security_config.xml` keeps
++   `cleartextTrafficPermitted="true"` for all hosts. See "Deferred
++   to a separate sprint" below for the work that will move out
++   when the real prod URL lands.
++3. **KD hyperparameters:** `α=0.5, τ=4.0`, EMA decay 0.999, 10 epochs.
++   Already wired in `train_notebook.ipynb` §5, `classes.json`,
++   `MODEL_CARD.md`, README and ROADMAP architecture summary.
++
++A fourth side-question — whether to keep the four deferred disease
++cards (`edema`, `leaf_scorch_underwatering`, `nutrient_deficiency`,
++`sunburn_or_scorch`) in `server/diseases_data.py` — was defaulted to
++**keep** for v2.2 forward-compat. Server lookup tolerates extras
++(`DISEASES_DATABASE.get(cls, DISEASES_DATABASE['unknown'])`), and
++keeping the cards means re-enabling those classes in v2.2 will be a
++training-time switch, not a content port. Override by deleting the
++four entries if you'd rather have a strictly minimal database.
++
++---
++
++## Done since v2.0 freeze (no need to re-do)
++
++These items are merged on the working branch and do **not** appear in
++the per-week plan below — listed for tracking only.
++
++- [x] **Notebook rewrite to v2.1** — `train_notebook.ipynb` now covers
++      the full 7-class pipeline: group-aware splits, dedup + leakage
++      audit, two dedicated calibration splits, EMA student during KD,
++      mandatory `quant_pre_process`, INT8 drift gate, ship gate.
++- [x] **Server taxonomy sync** — `classes.json`, `classifier.py`
++      `DEFAULT_CLASS_NAMES`, `MODEL_CARD.md`, `tests/test_pipeline_helpers.py`,
++      doctor LLM prompt, README, ROADMAP all on v2.1 (7 classes).
++- [x] **AI Doctor real `/api/chat` flow** — `DoctorChatSheet` no
++      longer uses the local stub. `ChatRequest` / `ChatResponse`
++      models match the server contract (sessionId, message, locale,
++      diagnosis dict; available + reply + reason + fallback +
++      usage + session). Network failures get translated EN/RU error
++      messages and persist in chat history.
++- [x] **`/api/progression` wired** — Models, ApiService and
++      ScanRepository all carry the request / response shapes plus a
++      `scanToProgressionPayload(scan)` helper. UI integration is in
++      Week 2 below.
++- [x] **Rate-limiter clock fix** — `RateLimitMiddleware` now uses
++      `time.monotonic()` for both `_last_cleanup` init and per-request
++      `now`, so an NTP step or DST jump can no longer lock every
++      client out for several minutes.
++- [x] **Pipeline OOD-gate clarity refactor** —
++      `_should_route_to_nap` now evaluates detector_low and
++      max_logit_low explicitly (semantics unchanged, but the new
++      version clearly states "two-of-two", with off-mode when
++      `max_logit_floor ≤ 0`).
++- [x] **`PlantRepository.getLatestScanForPlant(plantId)`** convenience
++      wrapper (delegates to `scanDao.getScansForPlant` which is
++      already `ORDER BY timestamp DESC`).
++- [x] **Dual-mode imports** — `server/main.py`, `ai_services.py` and
++      `pipeline.py` use a try/except wrapper that prefers package
++      imports (`from .config …`) and falls back to flat imports
++      (`from config …`). Both `python -m server.main` and the Docker
++      `uvicorn main:app` run without `PYTHONPATH` hacks.
++- [x] **Retry-After cap raised** — `RetryInterceptor.maxDelayMs` 8 s
++      → 30 s. Server cold-start path can legitimately ask for ~20 s
++      while artefacts deserialise.
++- [x] **`IdentifyResponse.cached`** annotated — server returns
++      `cached: true` on PlantNet cache hits but Android UI does not
++      yet surface it. Field is kept on the wire with a docstring;
++      Week 3 cleanup will surface a "served from cache" indicator.
++
++---
++
++## Week 1 — Train v2.1 weights · feed real chat into UI
++
++### P2 — Server / ML
++
++- [ ] **Train v2.1 weights end-to-end.** Run the rewritten
++      `train_notebook.ipynb` in full on a single A100-40 (or T4 with
++      `BATCH=64`). Time budget: 50–70 min on A100, 2–3× on T4.
++      Expected outputs in `models/`: `classifier_int8.onnx`,
++      `classifier.onnx`, `classifier.pth`, `classes.json`,
++      `temperature.json`, `conformal.json`, `model_card.json`,
++      `training_metrics.json`, `dinov2_probe.json`, `run_log.jsonl`.
++      **Checkpoint:** ship gate must pass — disease macro-F1 ≥ 0.70 on
++      `val_realworld`, no class with recall=0, healthy-bias < 1.5.
++- [ ] **Detector reuse decision.** `detector.{pt,onnx}` is shipped in
++      `server/models/`. If we have a YOLO `data.yaml` for indoor
++      leaves, drop it under `data_v2/` and let §3 of the notebook
++      retrain (mosaic=0.1, 60 epochs, single class). Otherwise re-use
++      the shipped pair as-is.
++- [ ] **Verify start-up against real artefacts.** Boot the server
++      with the freshly-trained `models/` and run
++      `pytest server/tests/`. **Checkpoint:** all 57 tests still
++      green; `/api/version` returns `2.1`; `/api/classes` returns 7
++      classes.
++
++### P1 — Android
++
++- [ ] **Rebuild after Models.kt + DoctorChatSheet rewrite.**
++      `ChatRequest` / `ChatResponse` shapes changed; old call-sites
++      that referenced `ChatContext`, `suggestedQuestions` will break
++      the build. Sweep, fix, run a debug install on a real device.
++      **Checkpoint:** debug build runs; AI Doctor sheet posts to
++      `/api/chat` and receives a real reply.
++- [ ] **AI Doctor session budget UI.** `ChatResponse.session` carries
++      `turns_used / turns_remaining` and `tokens_used /
++      tokens_remaining`. Add a discreet progress chip in
++      `DoctorChatSheet` (visible only when remaining ≤ 20 % of cap).
++      **Checkpoint:** the user sees a "3 / 12 messages left" hint
++      before the cap fires.
++- [ ] **Translate `available=false` into actionable copy.** The
++      `formatChatUnavailable` switch I added handles all current
++      reasons (`session_turn_cap`, `session_token_cap`, `no_api_key`,
++      `message_too_long`, `empty_message`, `empty_reply`,
++      `api_error`). Verify EN + RU strings against the reasons that
++      actually fire by inspecting `server/ai_services.py` after
++      training is live, and add any missing branches.
++- [ ] **Result-screen feedback prompt for low-confidence verdicts.**
++      When `low_confidence=true` or any warning is non-empty, show
++      a single "Did this match what you saw?" thumbs-up / thumbs-
++      down chip on `ResultActivity`. Persist locally for now — the
++      server endpoint comes in Week 3. **Checkpoint:** thumbs press
++      writes a row to a new Room table `feedback`.
++
++---
++
++## Week 2 — Progression · split ResultActivity · CI signed APK
++
++### P2 — Server / ML
++
++- [ ] **`/api/progression` historical extension.** Today the endpoint
++      compares two payloads. Extend it to optionally accept a
++      `history: list[dict]` and return a 5-point sparkline of disease
++      severity scores so the Android timeline can draw a chart.
++      Backwards-compatible with the `current` + `previous` shape.
++      **Checkpoint:** new contract covered by 3 unit tests in
++      `tests/test_endpoints.py`.
++- [ ] **Per-session lock granularity.** `ai_services._chat_lock` is
++      a process-global `asyncio.Lock` that serialises every chat
++      session. Switch to a per-`session_id` lock map (with a
++      janitor that evicts after 10 min idle). **Checkpoint:** two
++      simulated parallel sessions complete in roughly the time of
++      one (load test in `tests/test_ai_services.py`).
++- [ ] **Deploy artefact bundle.** Wire a `make ship-bundle` target
++      that ZIPs `server/models/{detector.pt,detector.onnx,
++      classifier.pth,classifier.onnx,classifier_int8.onnx,
++      classes.json,temperature.json,conformal.json,model_card.json,
++      MODEL_CARD.md}` plus a `MANIFEST.json` with SHA-256s. Used by
++      the rollback path in Week 3.
++- [ ] **MODEL_CARD post-train refresh.** After training is live,
++      copy real `train_counts`, `val_realworld_counts`, INT8 drift
++      number, best KD epoch, T_value, `q_hat` from
++      `model_card.json` into `MODEL_CARD.md`. **Checkpoint:** the
++      printed model card matches `model_card.json` byte-for-byte
++      on the per-class counts.
++
++### P1 — Android
++
++- [ ] **Wire `/api/progression` into PlantDetailActivity.** When
++      the user opens a plant with ≥ 2 scans, fetch a verdict for
++      `latestScan` vs the one before; display the trend chip
++      (`improving` / `stable` / `worsening` / `baseline`) above the
++      timeline. Use the `scanToProgressionPayload(scan)` helper
++      from `ScanRepository`. **Checkpoint:** the chip changes when
++      a fresh scan flips the trend.
++- [ ] **Before / after thumbnails on the trend chip.** Tapping the
++      chip opens a half-sheet with the two compared photos side-
++      by-side, the disease label, the confidence delta and a
++      one-line `delta_severity` explanation.
++- [ ] **Split `ResultActivity.kt` (1189 lines).** Extract the four
++      visible sections into separate composables / view-builders:
++      `ResultHeaderView` (verdict + confidence + prediction set),
++      `ResultTreatmentView` (steps + prevention),
++      `ResultCarePlanView` (already a card; promote to component),
++      `ResultDoctorView` (chat CTA). Keep the activity as a thin
++      coordinator. **Checkpoint:** each new file ≤ 350 lines.
++- [ ] **Cut a signed release APK on tag via CI.** Add a GitHub
++      Actions workflow that, on `v*.*.*` tag push, runs `./gradlew
++      assembleRelease` + signs with the keystore from secrets and
++      uploads the APK as a release asset. (HTTPS / cleartext
++      stripping deferred until the prod URL lands — see "Deferred
++      to a separate sprint" below.) **Checkpoint:** tag → CI green →
++      APK downloadable.
++
++---
++
++## Week 3 — Feedback loop · rollback path · v2.2 prep
++
++### P2 — Server / ML
++
++- [ ] **`POST /api/feedback`** endpoint (was Week 3 of the v2.0
++      plan, now finally landing). Body: `scan_id`, `correct: bool`,
++      optional free-text. Persist to a SQLite append-only ledger
++      under `server/feedback.db`. **Checkpoint:** Android's
++      Week 1 thumbs-press now POSTs through; rate-limited to 1/s
++      per IP.
++- [ ] **Rollback path.** Add `models/current` + `models/previous`
++      symlink-style indirection: the server reads from
++      `models/current/`, an ops switch flips to `previous` if the
++      ship gate misfires post-deploy. Wire into the boot path so
++      a missing or partial bundle falls back to `previous`.
++      **Checkpoint:** removing one file from `current/` boots
++      `previous/` cleanly with a warning log entry.
++- [ ] **Begin v2.2 data work for the four deferred classes.**
++      Cold-start a `data_v2_pending/` tree with at least 100 real
++      indoor photos per deferred class (`edema`,
++      `leaf_scorch_underwatering`, `nutrient_deficiency`,
++      `sunburn_or_scorch`), each with sidecar JSON. Source mix:
++      r/houseplants, iNaturalist (filtered), targeted Roboflow
++      Universe slices, internal photo donations. **Checkpoint:**
++      400 net images with sidecars; `python -c "from train_notebook
++      ... fetch_inat_supplement"`-style smoke test confirms they
++      thread through the loader.
++- [ ] **Negative-sample audit** on the trained `not_a_plant`
++      class. Production logs likely show the OOD gate misfiring on
++      darker leaves and shiny succulents. Pull the lowest-MaxLogit
++      true-positives from prod logs (or staging traffic), label
++      them as additional `not_a_plant` training images for v2.2.
++
++### P1 — Android
++
++- [ ] **Wire feedback POST.** Replace the local Room write from
++      Week 1 with a `POST /api/feedback` round-trip; on failure,
++      keep the row queued in Room and retry on next launch.
++- [ ] **Cold-start UX.** Surface a single 5-second toast "Server is
++      warming up…" once per session when the retry interceptor
++      backs off on a 503 — visible feedback for the now-30-second
++      retry budget on first request after deploy.
++- [ ] **`IdentifyResponse.cached` UI hook.** Server returns
++      `cached: true` on PlantNet cache hits; surface a small "served
++      from cache" pill next to species suggestions on the camera
++      results screen. Field is already on the model — only the UI
++      hook is missing.
++
++---
++
++## Deferred to a separate sprint
++
++Work that is intentionally **not** part of the 3-week plan above —
++listed here so it doesn't get lost. Schedule once the relevant
++prerequisite (prod URL, real-world labelled data, scaling pressure)
++materialises.
++
++### Network security hardening (waiting on prod URL)
++
++- [ ] **HTTPS-only release variant.** Once the operator provides the
++      production URL, do all of the following in one PR:
++    - Replace the default `API_BASE_URL` in `app/build.gradle.kts` for
++      the **release** variant with the HTTPS URL. The **debug** variant
++      keeps the IP/HTTP default for LAN testing.
++    - Split `res/xml/network_security_config.xml` into
++      `network_security_config.xml` (release: cleartext disabled
++      globally, certificates from system) and
++      `network_security_config_debug.xml` (debug: cleartext permitted).
++      Wire via `manifestPlaceholders` per build type.
++    - Add a banner on the Profile → Server URL screen that warns when
++      the user overrides the release default with an HTTP host.
++    - Verify `Strict-Transport-Security` and TLS 1.2+ enforcement on
++      the production endpoint before merging.
++    - **Checkpoint:** Release APK refuses cleartext to any non-debug
++      host; debug LAN testing still works.
++
++### Real-world labelled data for v2.2 (4 physiological classes)
++
++- [ ] **`edema`, `leaf_scorch_underwatering`,
++      `nutrient_deficiency`, `sunburn_or_scorch`.** Target ≥ 200 clean
++      indoor photos per class, with sidecar JSON, before adding them
++      back to the trainable taxonomy. Initial cold-start happens in
++      Week 3 (`data_v2_pending/` tree, ~100 each); the v2.2 training
++      run kicks off when each class clears 200. Sources: r/houseplants,
++      iNaturalist (filtered), Roboflow Universe, internal donations.
++- [ ] **Disease cards** for the four deferred classes are already in
++      `server/diseases_data.py` (forward-compat). Re-enabling them in
++      v2.2 is a one-line config change in `train_notebook.ipynb` §1
++      plus an update to `classifier.py:DEFAULT_CLASS_NAMES` and
++      `tests/test_pipeline_helpers.py:EXPECTED_CLASSES`.
++
++### Scale-driven optimisations (only if hot-path metrics demand it)
++
++- [ ] **Per-`session_id` chat lock map.** The current global
++      `_chat_lock` in `ai_services.py` is held only briefly (around
++      counter reads/writes, never during the LLM call), so contention
++      is theoretical for now. If `/api/metrics` shows lock-wait
++      latency > 5 ms under load, swap to a per-session map with a TTL
++      janitor.
++- [ ] **DeepCore coreset / dataset pruning** (Guo et al. 2022) if
++      iteration time becomes a bottleneck. Random selection stays as
++      the no-op control.
++
++---
++
++## Eval contract (unchanged from notebook §7)
+ 
+ | Slice | Role | Pass criterion |
+ |---|---|---|
+-| `val_indomain` (group-aware holdout from `train/`) | early stopping + schedule decisions | non-decreasing for ≥ 4 epochs |
+-| `val_realworld` (`indoor_real_world_v1`) | **primary — ship/no-ship gate** | disease macro-F1 in **0.70 – 0.78** target band; no rare class with recall = 0; healthy-bias < 1.5 |
+-| `val_studio` (`plantvillage_studio`) | transfer / background-bias monitor | tracked, never blocking |
+-
+-Each epoch logs **macro-F1 over diseases + per-class recall + confusion matrix + healthy-bias** on all three slices. Top-1 alone hides healthy collapse and rare-class death.
+-
+-**Engineering keepers from the legacy pipeline** (good already, do not rewrite): disease macro-F1 as primary metric, healthy-bias monitor each epoch, group-aware splits by `plant_id`, hardlinks for image stores, sparse checkout for big repos, ONNX sanity drift-check after every quantization step.
+-
+-**Optional — once v2.0 weights land:**
+-- **DeepCore**-style coreset / dataset pruning if iteration time
+-  becomes a bottleneck (Guo et al. 2022). Random selection stays as
+-  the no-op control.
+-- **No dataset distillation.** ROI is weak at our resolution and
+-  ambiguous label boundaries.
+-- **Model pruning is low priority.** KD into MobileNetV3-Large +
+-  static INT8 already covers ~95 % of the runtime budget.
++| `val_indomain` | early stopping + schedule decisions | tracked; best EMA checkpoint restored |
++| `val_realworld` | **primary — ship/no-ship gate** | disease macro-F1 ≥ **0.70**; no class with recall=0; healthy-bias < 1.5 |
++| `val_studio` (PlantVillage) | transfer / background-bias monitor | tracked, never blocking |
++| `temperature_cal` | INT8 + temperature scaling | held out, never reported |
++| `conformal_cal` | RAPS calibration | held out; target empirical coverage ≈ 1 − α |
+ 
+-The classifier needs a fresh training cycle on the new taxonomy
+-before it can be re-shipped. Until then the server runs in DEMO
+-mode for the new classes.
++**Engineering keepers from the legacy pipeline** (good already, do not rewrite): disease macro-F1 as primary metric, healthy-bias monitor each epoch, group-aware splits by `(source, plant_id)`, hardlinks for image stores, sparse checkout for big repos, ONNX sanity drift-check after every quantization step.
+ 
+-See `server/train_notebook.ipynb` for the full v2.0 recipe (data
+-hygiene → DINOv2 probe → V2-S fine-tune → KD → ONNX/INT8 export).
++**Explicit non-goals for this sprint:**
++- **No dataset distillation.** ROI is weak at our resolution and
++  ambiguous label boundaries.
++- **No model pruning.** KD into MobileNetV3-Large + static INT8
++  already covers ~95 % of the runtime budget. Revisit only if INT8
++  inference latency on the production server falls outside the SLA.
++
++See `server/train_notebook.ipynb` for the full v2.1 recipe (data
++hygiene → DINOv2 probe → V2-S fine-tune → KD with EMA → ONNX/INT8
++export → temperature + RAPS → ship gate).
+ 
+ ---
+ 
+diff -ruN '--exclude=*.pyc' '--exclude=__pycache__' '--exclude=.gradle' /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/android/app/src/main/java/com/plantdiseases/app/data/model/Models.kt /home/claude/fixed/project/android/app/src/main/java/com/plantdiseases/app/data/model/Models.kt
+--- /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/android/app/src/main/java/com/plantdiseases/app/data/model/Models.kt	2026-05-05 13:23:09.000000000 +0000
++++ /home/claude/fixed/project/android/app/src/main/java/com/plantdiseases/app/data/model/Models.kt	2026-05-07 09:57:34.164111035 +0000
+@@ -106,21 +106,55 @@
+     val timestamp: Long
+ )
+ 
+-/** AI Doctor chat request */
++/**
++ * /api/chat request body. The server expects:
++ *
++ *  - session_id  : stable client-side id, e.g. "plant_${plantId}".
++ *                  Per-session caps (turns, tokens) are tracked
++ *                  server-side off this key.
++ *  - message     : the user's question (≤ 2000 chars).
++ *  - locale      : "en" | "ru" — the server uses this to bias the
++ *                  system prompt towards the right language.
++ *  - diagnosis   : optional dict shaped like an /api/analyze response
++ *                  (or any subset). Used by the server to ground the
++ *                  reply in the latest classifier output. Capped to
++ *                  8 KB on the wire.
++ */
+ data class ChatRequest(
+     @SerializedName("session_id") val sessionId: String,
+     @SerializedName("message") val message: String,
+-    @SerializedName("context") val context: ChatContext? = null,
++    @SerializedName("locale") val locale: String = "en",
++    @SerializedName("diagnosis") val diagnosis: Map<String, Any?>? = null,
+ )
+ 
+-data class ChatContext(
+-    @SerializedName("disease") val disease: String?,
+-    @SerializedName("plant_name") val plantName: String,
++/**
++ * /api/chat response. The server always returns 200 OK; failure /
++ * unavailability is signalled via `available=false` plus a human-
++ * readable `reason`. The UI should surface `fallback` (when present)
++ * verbatim instead of inventing its own copy.
++ */
++data class ChatResponse(
++    @SerializedName("available") val available: Boolean = false,
++    @SerializedName("reply") val reply: String = "",
++    @SerializedName("reason") val reason: String? = null,
++    @SerializedName("fallback") val fallback: String? = null,
++    @SerializedName("model") val model: String? = null,
++    @SerializedName("provider") val provider: String? = null,
++    @SerializedName("usage") val usage: ChatUsage? = null,
++    @SerializedName("session") val session: ChatSession? = null,
++)
++
++data class ChatUsage(
++    @SerializedName("input_tokens") val inputTokens: Int? = null,
++    @SerializedName("output_tokens") val outputTokens: Int? = null,
+ )
+ 
+-data class ChatResponse(
+-    @SerializedName("reply") val reply: String,
+-    @SerializedName("suggested_questions") val suggestedQuestions: List<String>? = null,
++data class ChatSession(
++    @SerializedName("session_id") val sessionId: String,
++    @SerializedName("turns_used") val turnsUsed: Int = 0,
++    @SerializedName("turns_remaining") val turnsRemaining: Int = 0,
++    @SerializedName("tokens_used") val tokensUsed: Int = 0,
++    @SerializedName("tokens_remaining") val tokensRemaining: Int = 0,
+ )
+ 
+ /** PlantNet species candidate from /api/identify. */
+@@ -146,6 +180,10 @@
+     @SerializedName("source") val source: String? = null,
+     @SerializedName("organ") val organ: String? = null,
+     @SerializedName("remaining_requests") val remainingRequests: Int? = null,
++    /** True when the server served this response from its in-memory
++     *  PlantNet cache (saves a quota hit). Currently not surfaced in
++     *  the UI — kept on the wire for future "served from cache"
++     *  indicator next to species suggestions. */
+     @SerializedName("cached") val cached: Boolean? = null,
+ )
+ 
+@@ -196,3 +234,28 @@
+     @SerializedName("uptime_seconds") val uptimeSeconds: Double? = null,
+     @SerializedName("total_requests") val totalRequests: Int? = null
+ )
++
++/**
++ * /api/progression request — current and (optionally) previous scan
++ * payload. Both fields are loosely typed maps because the endpoint is
++ * a pure function over the analyse-shaped dicts the client already
++ * has cached.
++ */
++data class ProgressionRequest(
++    @SerializedName("current") val current: Map<String, Any?>,
++    @SerializedName("previous") val previous: Map<String, Any?>? = null,
++)
++
++/**
++ * /api/progression response. `trend` ∈ {improving, stable, worsening,
++ * baseline}. `baseline` means there was no previous scan to compare
++ * against.
++ */
++data class ProgressionResponse(
++    @SerializedName("trend") val trend: String,
++    @SerializedName("delta_confidence") val deltaConfidence: Float = 0f,
++    @SerializedName("delta_severity") val deltaSeverity: Int = 0,
++    @SerializedName("class_changed") val classChanged: Boolean = false,
++    @SerializedName("previous_class") val previousClass: String? = null,
++    @SerializedName("current_class") val currentClass: String? = null,
++)
+diff -ruN '--exclude=*.pyc' '--exclude=__pycache__' '--exclude=.gradle' /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/android/app/src/main/java/com/plantdiseases/app/data/remote/ApiService.kt /home/claude/fixed/project/android/app/src/main/java/com/plantdiseases/app/data/remote/ApiService.kt
+--- /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/android/app/src/main/java/com/plantdiseases/app/data/remote/ApiService.kt	2026-05-05 13:23:09.000000000 +0000
++++ /home/claude/fixed/project/android/app/src/main/java/com/plantdiseases/app/data/remote/ApiService.kt	2026-05-07 09:57:51.770284748 +0000
+@@ -8,6 +8,8 @@
+ import com.plantdiseases.app.data.model.ChatResponse
+ import com.plantdiseases.app.data.model.HealthResponse
+ import com.plantdiseases.app.data.model.IdentifyResponse
++import com.plantdiseases.app.data.model.ProgressionRequest
++import com.plantdiseases.app.data.model.ProgressionResponse
+ import com.plantdiseases.app.util.ServerConfig
+ import okhttp3.Interceptor
+ import okhttp3.MultipartBody
+@@ -48,17 +50,25 @@
+ 
+     @POST("api/care-plan")
+     suspend fun carePlan(@Body request: CarePlanRequest): retrofit2.Response<CarePlanResponse>
++
++    @POST("api/progression")
++    suspend fun progression(@Body request: ProgressionRequest): retrofit2.Response<ProgressionResponse>
+ }
+ 
+ /**
+  * Retries on transient network failures and on HTTP 429 / 503, honouring the
+  * Retry-After header when present. POST requests are retried at most once to
+  * avoid re-uploading large payloads on slow connections.
++ *
++ * `maxDelayMs` is intentionally high (30 s) because the server's cold-start
++ * path can legitimately ask for ~20 s — model artefacts deserialise on the
++ * first request after deploy. Capping at 8 s used to abandon the retry just
++ * before the server would have been ready.
+  */
+ class RetryInterceptor(
+     private val maxRetries: Int = 3,
+     private val initialDelayMs: Long = 1000,
+-    private val maxDelayMs: Long = 8000
++    private val maxDelayMs: Long = 30_000,
+ ) : Interceptor {
+ 
+     @Throws(IOException::class)
+diff -ruN '--exclude=*.pyc' '--exclude=__pycache__' '--exclude=.gradle' /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/android/app/src/main/java/com/plantdiseases/app/data/repository/PlantRepository.kt /home/claude/fixed/project/android/app/src/main/java/com/plantdiseases/app/data/repository/PlantRepository.kt
+--- /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/android/app/src/main/java/com/plantdiseases/app/data/repository/PlantRepository.kt	2026-05-05 13:23:09.000000000 +0000
++++ /home/claude/fixed/project/android/app/src/main/java/com/plantdiseases/app/data/repository/PlantRepository.kt	2026-05-07 09:43:41.174347987 +0000
+@@ -83,6 +83,11 @@
+         scanDao.getScansForPlant(plantId)
+     }
+ 
++    /** Most-recent scan for a plant, or null if there have been none yet. */
++    suspend fun getLatestScanForPlant(plantId: Long): ScanEntity? = withContext(Dispatchers.IO) {
++        scanDao.getScansForPlant(plantId).firstOrNull()
++    }
++
+     suspend fun getJournalEntries(plantId: Long): List<PlantJournalEntity> =
+         withContext(Dispatchers.IO) {
+             journalDao.getEntriesForPlant(plantId)
+diff -ruN '--exclude=*.pyc' '--exclude=__pycache__' '--exclude=.gradle' /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/android/app/src/main/java/com/plantdiseases/app/data/repository/ScanRepository.kt /home/claude/fixed/project/android/app/src/main/java/com/plantdiseases/app/data/repository/ScanRepository.kt
+--- /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/android/app/src/main/java/com/plantdiseases/app/data/repository/ScanRepository.kt	2026-05-05 13:23:09.000000000 +0000
++++ /home/claude/fixed/project/android/app/src/main/java/com/plantdiseases/app/data/repository/ScanRepository.kt	2026-05-07 09:40:17.364303239 +0000
+@@ -6,8 +6,12 @@
+ import com.plantdiseases.app.data.model.AnalysisResponse
+ import com.plantdiseases.app.data.model.CarePlanRequest
+ import com.plantdiseases.app.data.model.CarePlanResponse
++import com.plantdiseases.app.data.model.ChatRequest
++import com.plantdiseases.app.data.model.ChatResponse
+ import com.plantdiseases.app.data.model.HealthResponse
+ import com.plantdiseases.app.data.model.IdentifyResponse
++import com.plantdiseases.app.data.model.ProgressionRequest
++import com.plantdiseases.app.data.model.ProgressionResponse
+ import com.plantdiseases.app.data.model.ScanHistoryItem
+ import com.plantdiseases.app.data.remote.ApiService
+ import com.plantdiseases.app.data.remote.PlantApiClient
+@@ -118,6 +122,101 @@
+             }
+         }
+ 
++    /**
++     * Send a single AI Plant Doctor turn. The server returns 200 OK
++     * even when no API key is configured or the per-session budget is
++     * exhausted; in that case the response carries `available=false`
++     * and a `reason` / `fallback` string for the UI to display.
++     *
++     * Network-level failures (no connectivity, timeout, unexpected
++     * status) come back as `Result.failure` so the caller can show a
++     * retry CTA.
++     */
++    suspend fun sendChat(request: ChatRequest): Result<ChatResponse> =
++        withContext(Dispatchers.IO) {
++            try {
++                val response = apiService.chat(request)
++                if (response.isSuccessful && response.body() != null) {
++                    Result.success(response.body()!!)
++                } else if (response.code() == 429) {
++                    Result.failure(RateLimitException())
++                } else if (response.code() == 503) {
++                    Result.failure(ServerStartingException())
++                } else if (response.code() == 400) {
++                    // Server rejected our payload (oversize diagnosis,
++                    // empty message, etc.). Surface as a generic
++                    // failure — the UI keeps a chat-level error toast.
++                    Result.failure(Exception("Bad request"))
++                } else {
++                    Result.failure(Exception("Server error: ${response.code()}"))
++                }
++            } catch (e: SocketTimeoutException) {
++                Result.failure(ServerTimeoutException())
++            } catch (e: UnknownHostException) {
++                Result.failure(NoNetworkException())
++            } catch (e: java.net.ConnectException) {
++                Result.failure(ServerTimeoutException())
++            } catch (e: Exception) {
++                Result.failure(e)
++            }
++        }
++
++    /**
++     * Compare the current scan to a previous one and ask the server
++     * for a worsening / improving / stable verdict. Both arguments
++     * should be the analyse-shaped dicts the client already has
++     * (typically built via `scanToProgressionPayload(scan)`).
++     */
++    suspend fun fetchProgression(request: ProgressionRequest): Result<ProgressionResponse> =
++        withContext(Dispatchers.IO) {
++            try {
++                val response = apiService.progression(request)
++                if (response.isSuccessful && response.body() != null) {
++                    Result.success(response.body()!!)
++                } else {
++                    Result.failure(Exception("Server error: ${response.code()}"))
++                }
++            } catch (e: SocketTimeoutException) {
++                Result.failure(ServerTimeoutException())
++            } catch (e: UnknownHostException) {
++                Result.failure(NoNetworkException())
++            } catch (e: Exception) {
++                Result.failure(e)
++            }
++        }
++
++    /**
++     * Build a server-shaped scan dict from a stored ScanEntity. Used
++     * when constructing chat `diagnosis` context and progression
++     * payloads — both endpoints accept the analyse response shape so
++     * the same builder serves both.
++     */
++    fun scanToProgressionPayload(scan: ScanEntity): Map<String, Any?> {
++        val classKey = topClassKey(scan)
++            ?: scan.diseaseName.lowercase().replace(' ', '_')
++        return mapOf(
++            "class_name" to classKey,
++            "disease_name" to scan.diseaseName,
++            "confidence" to scan.confidence.toDouble(),
++            "is_healthy" to scan.isHealthy,
++            "severity" to severityHint(scan),
++            "warnings" to parseWarnings(scan.warnings),
++        )
++    }
++
++    /**
++     * Coarse client-side severity hint. The server's `/api/analyze`
++     * carries an authoritative `severity` field, but cached scans
++     * only have it when the row is post-v2.0 — for older rows we
++     * derive a low/medium/high estimate from confidence + healthy.
++     */
++    private fun severityHint(scan: ScanEntity): String = when {
++        scan.isHealthy -> "low"
++        scan.confidence >= 0.85f -> "high"
++        scan.confidence >= 0.65f -> "medium"
++        else -> "low"
++    }
++
+     /** Check server health */
+     suspend fun checkServerHealth(): Result<HealthResponse> =
+         withContext(Dispatchers.IO) {
+diff -ruN '--exclude=*.pyc' '--exclude=__pycache__' '--exclude=.gradle' /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/android/app/src/main/java/com/plantdiseases/app/ui/garden/DoctorChatSheet.kt /home/claude/fixed/project/android/app/src/main/java/com/plantdiseases/app/ui/garden/DoctorChatSheet.kt
+--- /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/android/app/src/main/java/com/plantdiseases/app/ui/garden/DoctorChatSheet.kt	2026-05-05 13:23:09.000000000 +0000
++++ /home/claude/fixed/project/android/app/src/main/java/com/plantdiseases/app/ui/garden/DoctorChatSheet.kt	2026-05-07 09:41:13.323304301 +0000
+@@ -29,6 +29,7 @@
+ import com.plantdiseases.app.R
+ import com.plantdiseases.app.data.local.ChatMessageEntity
+ import com.plantdiseases.app.data.local.PlantEntity
++import com.plantdiseases.app.data.model.ChatRequest
+ import com.plantdiseases.app.util.Haptics
+ import com.plantdiseases.app.util.LocaleHelper
+ import kotlinx.coroutines.launch
+@@ -257,14 +258,17 @@
+         inputField.setText("")
+         suggestionsContainer.visibility = View.GONE
+ 
+-        val repo = (requireActivity().application as PlantDiseasesApp).plantRepository
++        val app = requireActivity().application as PlantDiseasesApp
++        val plantRepo = app.plantRepository
++        val scanRepo = app.scanRepository
+         val isRu = LocaleHelper.isRussian(requireContext())
+         val now = System.currentTimeMillis()
+ 
+         addMessageBubble("user", text, now)
+         scrollToBottom()
+ 
+-        // Thinking placeholder
++        // Thinking placeholder — removed once the server replies (or
++        // the request fails).
+         val thinkingBubble = buildBubble(
+             getString(R.string.doctor_thinking),
+             isUser = false,
+@@ -275,71 +279,130 @@
+         scrollToBottom()
+ 
+         lifecycleScope.launch {
+-            // Persist user message
+-            repo.saveChatMessage(
+-                ChatMessageEntity(plantId = plant.id, role = "user", content = text, timestamp = now)
++            // Persist the user message before the network round-trip
++            // so it survives a server timeout / process death.
++            plantRepo.saveChatMessage(
++                ChatMessageEntity(plantId = plant.id, role = "user", content = text, timestamp = now),
++            )
++
++            // Pull the latest scan for this plant (if any) and ship a
++            // compact diagnosis context. The server caps this dict at
++            // 8 KB on the wire — we keep it tiny on purpose.
++            val latestScan = plantRepo.getLatestScanForPlant(plant.id)
++            val diagnosis: Map<String, Any?>? = latestScan?.let {
++                val classKey = scanRepo.topClassKey(it)
++                    ?: it.diseaseName.lowercase().replace(' ', '_')
++                mapOf(
++                    "class_name" to classKey,
++                    "disease_name" to it.diseaseName,
++                    "confidence" to it.confidence.toDouble(),
++                    "severity" to severityHint(it.confidence, it.isHealthy),
++                    "is_healthy" to it.isHealthy,
++                    "warnings" to scanRepo.parseWarnings(it.warnings),
++                    "plant_name" to plant.name,
++                    "species" to (plant.scientificName ?: plant.species),
++                )
++            } ?: mapOf(
++                "plant_name" to plant.name,
++                "species" to (plant.scientificName ?: plant.species),
+             )
+ 
+-            val reply = buildLocalDoctorReply(text, isRu)
++            val request = ChatRequest(
++                sessionId = "plant_${plant.id}",
++                message = text,
++                locale = if (isRu) "ru" else "en",
++                diagnosis = diagnosis,
++            )
++            val result = scanRepo.sendChat(request)
+ 
+-            // Remove thinking bubble
++            // Drop the thinking placeholder regardless of outcome.
+             thinkingView?.let { messagesLayout.removeView(it) }
+             thinkingView = null
+ 
+             val replyTime = System.currentTimeMillis()
+-            addMessageBubble("bot", reply, replyTime)
+-            scrollToBottom()
++            val replyText = result.fold(
++                onSuccess = { resp ->
++                    when {
++                        resp.available && resp.reply.isNotBlank() -> resp.reply
++                        // Server declined the turn (no API key, budget,
++                        // empty reply, etc.). Surface its `fallback`
++                        // verbatim if present, else a translated reason.
++                        !resp.fallback.isNullOrBlank() -> resp.fallback
++                        else -> formatChatUnavailable(resp.reason, isRu)
++                    }
++                },
++                onFailure = { err -> formatChatNetworkError(err, isRu) },
++            )
+ 
+-            repo.saveChatMessage(
+-                ChatMessageEntity(plantId = plant.id, role = "bot", content = reply, timestamp = replyTime)
++            addMessageBubble("bot", replyText, replyTime)
++            scrollToBottom()
++            plantRepo.saveChatMessage(
++                ChatMessageEntity(
++                    plantId = plant.id,
++                    role = "bot",
++                    content = replyText,
++                    timestamp = replyTime,
++                ),
+             )
+         }
+     }
+ 
+-    /**
+-     * Local placeholder for the future server-backed assistant.
+-     *
+-     * To connect the real AI later, replace this method with the existing
+-     * Retrofit `/api/chat` request using `sessionId = "plant_${plant.id}"`,
+-     * `message = userMessage`, and context fields below. The bottom sheet,
+-     * Markdown rendering, follow-up chips, and Room persistence are already
+-     * wired around this single reply-producing boundary.
+-     */
+-    private fun buildLocalDoctorReply(userMessage: String, isRu: Boolean): String {
+-        val displayName = plant.name
+-        val species = plant.species?.takeIf { it.isNotBlank() }
+-        val disease = latestDisease?.takeIf { it.isNotBlank() }
+-        val topic = userMessage.take(120)
++    /** Coarse client-side severity bucket for the diagnosis context. */
++    private fun severityHint(confidence: Float, isHealthy: Boolean): String = when {
++        isHealthy -> "low"
++        confidence >= 0.85f -> "high"
++        confidence >= 0.65f -> "medium"
++        else -> "low"
++    }
++
++    /** "Server replied 200 OK with available=false" — translate the reason. */
++    private fun formatChatUnavailable(reason: String?, isRu: Boolean): String {
++        if (isRu) {
++            return when (reason) {
++                "session_turn_cap" ->
++                    "Лимит сообщений в этой сессии исчерпан. Очистите чат, чтобы начать заново."
++                "session_token_cap" ->
++                    "Бюджет токенов сессии исчерпан. Очистите чат, чтобы начать заново."
++                "no_api_key" ->
++                    "AI Plant Doctor временно недоступен (сервер не настроен). Используйте раздел «Лечение» в карточке диагноза."
++                "message_too_long", "empty_message" ->
++                    "Сообщение не отправлено. Сократите запрос и попробуйте снова."
++                "empty_reply", "api_error" ->
++                    "Не удалось получить ответ от ассистента. Попробуйте отправить сообщение ещё раз."
++                else -> "AI Plant Doctor пока недоступен. Попробуйте позже."
++            }
++        }
++        return when (reason) {
++            "session_turn_cap" ->
++                "You hit the per-session message cap. Clear the chat to start over."
++            "session_token_cap" ->
++                "You hit the per-session token budget. Clear the chat to start over."
++            "no_api_key" ->
++                "AI Plant Doctor is offline (server not configured). See the diagnosis Treatment list for now."
++            "message_too_long", "empty_message" ->
++                "The message wasn't sent. Shorten it and try again."
++            "empty_reply", "api_error" ->
++                "The assistant couldn't reply. Try sending the message again."
++            else -> "AI Plant Doctor is unavailable right now. Try again later."
++        }
++    }
+ 
++    /** Network-level failure — the server never gave us an HTTP response. */
++    private fun formatChatNetworkError(err: Throwable, isRu: Boolean): String {
++        val name = err::class.simpleName ?: ""
+         return if (isRu) {
+-            buildString {
+-                append("**Заглушка Plant Doctor.** Я пока работаю без серверного ИИ, но уже сохраняю диалог для растения **")
+-                append(displayName)
+-                append("**.\n\n")
+-                append("**Контекст:** ")
+-                append(species ?: "вид не указан")
+-                disease?.let { append(", последний диагноз: ").append(it) }
+-                append(".\n\n")
+-                append("По вопросу: \"").append(topic).append("\".\n")
+-                append("1. Проверьте новые пятна, влажность почвы и освещение.\n")
+-                append("2. Сравните состояние с последним сканом в Timeline.\n")
+-                append("3. Если симптомы усиливаются, сделайте новый скан и добавьте заметку в журнал.\n\n")
+-                append("Позже этот ответ будет заменён серверным `/api/chat`, без переделки UI.")
++            when {
++                "NoNetwork" in name -> "Нет интернет-соединения. Подключитесь к сети и попробуйте снова."
++                "Timeout" in name -> "Сервер не отвечает. Попробуйте отправить сообщение ещё раз."
++                "RateLimit" in name -> "Слишком частые запросы. Подождите несколько секунд и повторите."
++                else -> "Не удалось связаться с сервером. Попробуйте позже."
+             }
+         } else {
+-            buildString {
+-                append("**Plant Doctor placeholder.** I am running locally for now, but this chat is already persisted for **")
+-                append(displayName)
+-                append("**.\n\n")
+-                append("**Context:** ")
+-                append(species ?: "species not set")
+-                disease?.let { append(", latest diagnosis: ").append(it) }
+-                append(".\n\n")
+-                append("For: \"").append(topic).append("\".\n")
+-                append("1. Check new spots, soil moisture, and current light.\n")
+-                append("2. Compare changes against the latest scan in Timeline.\n")
+-                append("3. If symptoms progress, take a fresh scan and add a journal note.\n\n")
+-                append("Later this reply can be replaced by server `/api/chat` without changing the UI.")
++            when {
++                "NoNetwork" in name -> "No internet connection. Reconnect and try again."
++                "Timeout" in name -> "The server didn't respond. Try sending the message again."
++                "RateLimit" in name -> "Too many requests. Wait a few seconds and try again."
++                else -> "Couldn't reach the server. Try again later."
+             }
+         }
+     }
+diff -ruN '--exclude=*.pyc' '--exclude=__pycache__' '--exclude=.gradle' /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/server/.pytest_cache/.gitignore /home/claude/fixed/project/server/.pytest_cache/.gitignore
+--- /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/server/.pytest_cache/.gitignore	1970-01-01 00:00:00.000000000 +0000
++++ /home/claude/fixed/project/server/.pytest_cache/.gitignore	2026-05-07 09:45:53.863101750 +0000
+@@ -0,0 +1,2 @@
++# Created by pytest automatically.
++*
+diff -ruN '--exclude=*.pyc' '--exclude=__pycache__' '--exclude=.gradle' /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/server/.pytest_cache/CACHEDIR.TAG /home/claude/fixed/project/server/.pytest_cache/CACHEDIR.TAG
+--- /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/server/.pytest_cache/CACHEDIR.TAG	1970-01-01 00:00:00.000000000 +0000
++++ /home/claude/fixed/project/server/.pytest_cache/CACHEDIR.TAG	2026-05-07 09:45:53.863210229 +0000
+@@ -0,0 +1,4 @@
++Signature: 8a477f597d28d172789f06886806bc55
++# This file is a cache directory tag created by pytest.
++# For information about cache directory tags, see:
++#	https://bford.info/cachedir/spec.html
+diff -ruN '--exclude=*.pyc' '--exclude=__pycache__' '--exclude=.gradle' /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/server/.pytest_cache/README.md /home/claude/fixed/project/server/.pytest_cache/README.md
+--- /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/server/.pytest_cache/README.md	1970-01-01 00:00:00.000000000 +0000
++++ /home/claude/fixed/project/server/.pytest_cache/README.md	2026-05-07 09:45:53.862955611 +0000
+@@ -0,0 +1,8 @@
++# pytest cache directory #
++
++This directory contains data from the pytest's cache plugin,
++which provides the `--lf` and `--ff` options, as well as the `cache` fixture.
++
++**Do not** commit this to version control.
++
++See [the docs](https://docs.pytest.org/en/stable/how-to/cache.html) for more information.
+diff -ruN '--exclude=*.pyc' '--exclude=__pycache__' '--exclude=.gradle' /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/server/.pytest_cache/v/cache/lastfailed /home/claude/fixed/project/server/.pytest_cache/v/cache/lastfailed
+--- /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/server/.pytest_cache/v/cache/lastfailed	1970-01-01 00:00:00.000000000 +0000
++++ /home/claude/fixed/project/server/.pytest_cache/v/cache/lastfailed	2026-05-07 09:45:59.457863236 +0000
+@@ -0,0 +1 @@
++{}
+\ No newline at end of file
+diff -ruN '--exclude=*.pyc' '--exclude=__pycache__' '--exclude=.gradle' /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/server/.pytest_cache/v/cache/nodeids /home/claude/fixed/project/server/.pytest_cache/v/cache/nodeids
+--- /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/server/.pytest_cache/v/cache/nodeids	1970-01-01 00:00:00.000000000 +0000
++++ /home/claude/fixed/project/server/.pytest_cache/v/cache/nodeids	2026-05-07 10:00:01.370760489 +0000
+@@ -0,0 +1,59 @@
++[
++  "tests/test_ai_services.py::test_care_plan_offline_has_all_fields",
++  "tests/test_ai_services.py::test_care_plan_unknown_disease_falls_through",
++  "tests/test_ai_services.py::test_chat_metrics_snapshot_initially_empty",
++  "tests/test_ai_services.py::test_chat_reply_no_key_returns_offline_fallback",
++  "tests/test_ai_services.py::test_chat_reply_rejects_empty_or_too_long_messages",
++  "tests/test_ai_services.py::test_chat_session_caps_message_history_growth",
++  "tests/test_ai_services.py::test_identify_species_no_key_returns_graceful_state",
++  "tests/test_ai_services.py::test_progression_baseline_when_no_previous",
++  "tests/test_ai_services.py::test_progression_improving_disease_to_healthy",
++  "tests/test_ai_services.py::test_progression_worsening_on_severity_step_up",
++  "tests/test_conformal.py::test_aps_score_is_cumulative_sorted_descending",
++  "tests/test_conformal.py::test_aps_set_matches_hand_computed_threshold",
++  "tests/test_conformal.py::test_calibrate_q_hat_aps_mode_also_works",
++  "tests/test_conformal.py::test_calibrate_q_hat_meets_marginal_coverage_guarantee",
++  "tests/test_conformal.py::test_calibrate_rejects_bad_inputs",
++  "tests/test_conformal.py::test_load_conformal_config_handles_malformed_json",
++  "tests/test_conformal.py::test_load_conformal_config_rejects_unknown_method",
++  "tests/test_conformal.py::test_load_conformal_config_returns_none_when_missing",
++  "tests/test_conformal.py::test_load_conformal_config_round_trip",
++  "tests/test_conformal.py::test_load_conformal_config_searches_classifier_dir",
++  "tests/test_conformal.py::test_prediction_set_grows_monotonically_with_q_hat",
++  "tests/test_conformal.py::test_prediction_set_is_never_empty",
++  "tests/test_conformal.py::test_raps_adds_size_penalty_only_past_k_reg",
++  "tests/test_endpoints.py::test_analyze_response_contract",
++  "tests/test_endpoints.py::test_classes_contract",
++  "tests/test_endpoints.py::test_health_contract",
++  "tests/test_endpoints.py::test_metrics_json",
++  "tests/test_endpoints.py::test_metrics_prometheus_format",
++  "tests/test_endpoints.py::test_version_contract",
++  "tests/test_middleware.py::test_analyze_rate_limit_returns_429_with_retry_after",
++  "tests/test_middleware.py::test_health_version_classes_not_rate_limited",
++  "tests/test_middleware.py::test_metrics_endpoints_not_rate_limited",
++  "tests/test_middleware.py::test_security_headers_present",
++  "tests/test_pipeline_helpers.py::test_classes_json_in_repo_drives_pipeline_config",
++  "tests/test_pipeline_helpers.py::test_healthy_fallback_emits_disease_uncertain_warning",
++  "tests/test_pipeline_helpers.py::test_healthy_fallback_helper_fires_on_weak_margin",
++  "tests/test_pipeline_helpers.py::test_healthy_fallback_helper_skips_strong_disease_verdict",
++  "tests/test_pipeline_helpers.py::test_healthy_fallback_keeps_top_k_consistent_with_class_name",
++  "tests/test_pipeline_helpers.py::test_healthy_gate_attaches_warning_without_rerouting",
++  "tests/test_pipeline_helpers.py::test_healthy_gate_silent_on_high_confidence",
++  "tests/test_pipeline_helpers.py::test_is_diseased_uses_disease_min_confidence",
++  "tests/test_pipeline_helpers.py::test_low_confidence_warning_is_propagated",
++  "tests/test_pipeline_helpers.py::test_max_logit_floor_resolver_handles_null_and_explicit_values",
++  "tests/test_pipeline_helpers.py::test_not_a_plant_class_is_present",
++  "tests/test_pipeline_helpers.py::test_postprocessor_emits_nap_ood_warning",
++  "tests/test_pipeline_helpers.py::test_severity_escalates_with_area_and_margin",
++  "tests/test_pipeline_helpers.py::test_severity_low_for_non_disease",
++  "tests/test_pipeline_helpers.py::test_taxonomy_is_v21_disease_only",
++  "tests/test_validation.py::test_bogus_magic_bytes_rejected",
++  "tests/test_validation.py::test_empty_file_rejected",
++  "tests/test_validation.py::test_too_high_resolution_rejected",
++  "tests/test_validation.py::test_too_large_file_rejected",
++  "tests/test_validation.py::test_uncertainty_is_well_defined_for_confident_prediction",
++  "tests/test_validation.py::test_unexpected_pil_error_returns_400",
++  "tests/test_validation.py::test_unsupported_content_type_rejected",
++  "tests/test_validation.py::test_valid_image_accepted[JPEG-image/jpeg]",
++  "tests/test_validation.py::test_valid_image_accepted[PNG-image/png]"
++]
+\ No newline at end of file
+diff -ruN '--exclude=*.pyc' '--exclude=__pycache__' '--exclude=.gradle' /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/server/__init__.py /home/claude/fixed/project/server/__init__.py
+--- /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/server/__init__.py	2026-05-05 13:23:09.000000000 +0000
++++ /home/claude/fixed/project/server/__init__.py	2026-05-07 09:38:15.449630927 +0000
+@@ -1 +1 @@
+-__version__ = "2.0"
++__version__ = "2.1"
+diff -ruN '--exclude=*.pyc' '--exclude=__pycache__' '--exclude=.gradle' /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/server/ai_services.py /home/claude/fixed/project/server/ai_services.py
+--- /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/server/ai_services.py	2026-05-05 13:23:09.000000000 +0000
++++ /home/claude/fixed/project/server/ai_services.py	2026-05-07 09:58:44.998589695 +0000
+@@ -38,7 +38,10 @@
+ from collections import OrderedDict
+ from typing import Any, Optional
+ 
+-from config import get_float, get_int, get_str
++try:
++    from .config import get_float, get_int, get_str  # type: ignore[import-not-found]
++except ImportError:
++    from config import get_float, get_int, get_str
+ 
+ logger = logging.getLogger(__name__)
+ 
+@@ -204,26 +207,26 @@
+ # session don't pay for re-tokenising the system prompt.
+ _DOCTOR_SYSTEM_PROMPT = """You are PlantDiseases' friendly AI Plant Doctor, helping
+ people care for their houseplants. Your knowledge is grounded in the
+-PlantVision v2.0 disease taxonomy (11 classes):
++PlantVision v2.1 disease taxonomy (7 trainable classes):
+ 
+ - bacterial_leaf_spot: angular brown spots with yellow halo, bacterial
+-- edema: corky water-blister bumps on leaf undersides; physiological,
+-  caused by overwatering in cool dim weather
+ - gray_mold_botrytis: fuzzy grey growth, fungal (Botrytis cinerea)
+ - healthy: no disease detected
+-- leaf_scorch_underwatering: crispy brown leaf tips/edges, chronic
+-  under-watering or salty hard water
+ - leaf_spot_fungal: umbrella class for anthracnose / cercospora /
+   alternaria — dark spots, halos, concentric rings
+ - not_a_plant: image does not contain a plant
+-- nutrient_deficiency: covers iron, nitrogen, magnesium, potassium —
+-  interveinal or whole-leaf yellowing, edge burn
+ - powdery_mildew: white powdery coating, fungal
+-- sunburn_or_scorch: dry brown patches on the sun-facing side of
+-  leaves or directly under harsh grow-lights
+ - viral_disease: umbrella class for mosaic, leaf curl and ringspot;
+   incurable
+ 
++Physiological conditions (edema, leaf scorch from underwatering,
++nutrient deficiency, sunburn) are NOT yet trained classes — if the
++user's photo shows one of those patterns the classifier will return a
++low-confidence verdict or `not_a_plant`. In that case, ask the user
++about watering, light and fertiliser routine and give physiological
++advice from first principles, but be explicit that the model has not
++diagnosed it.
++
+ Style guide:
+ - Keep replies SHORT (3-6 sentences). Specific, actionable, friendly.
+ - Match the user's language (English or Russian).
+diff -ruN '--exclude=*.pyc' '--exclude=__pycache__' '--exclude=.gradle' /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/server/classifier.py /home/claude/fixed/project/server/classifier.py
+--- /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/server/classifier.py	2026-05-05 13:23:09.000000000 +0000
++++ /home/claude/fixed/project/server/classifier.py	2026-05-07 09:45:25.000675726 +0000
+@@ -1,11 +1,11 @@
+ """
+ Stage 2 — PlantVision houseplant disease classifier.
+ 
+-Classifies a (preferably cropped) leaf region into one of 11
++Classifies a (preferably cropped) leaf region into one of the
+ houseplant-relevant condition classes including the rejection class
+ ``not_a_plant``. Class names + input resolution live in
+ ``models/classes.json``; if the file is missing the built-in default
+-matching the v2.0 taxonomy is used.
++matching the v2.1 taxonomy (7 trainable classes) is used.
+ 
+ Production artefact is a distilled MobileNetV3-Large student
+ (EfficientNetV2-S teacher → KD). Loading order:
+@@ -33,19 +33,17 @@
+ DEFAULT_IMG_SIZE = 256
+ 
+ # Alphabetical — must match training-time ``sorted(ImageFolder.classes)``.
+-# Final 11-class taxonomy (v2.0): coarse-grained groups optimised for
+-# indoor real-world photos.
++# v2.1 trainable taxonomy. The four physiological classes from the v2.0
++# design (``edema``, ``leaf_scorch_underwatering``, ``nutrient_deficiency``,
++# ``sunburn_or_scorch``) are deferred until labelled real-world data is
++# added — see server/models/MODEL_CARD.md.
+ DEFAULT_CLASS_NAMES = [
+     "bacterial_leaf_spot",
+-    "edema",
+     "gray_mold_botrytis",
+     "healthy",
+-    "leaf_scorch_underwatering",
+     "leaf_spot_fungal",
+     "not_a_plant",
+-    "nutrient_deficiency",
+     "powdery_mildew",
+-    "sunburn_or_scorch",
+     "viral_disease",
+ ]
+ 
+diff -ruN '--exclude=*.pyc' '--exclude=__pycache__' '--exclude=.gradle' /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/server/diseases_data.py /home/claude/fixed/project/server/diseases_data.py
+--- /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/server/diseases_data.py	2026-05-05 13:23:09.000000000 +0000
++++ /home/claude/fixed/project/server/diseases_data.py	2026-05-07 09:45:13.271298813 +0000
+@@ -1,15 +1,23 @@
+ """
+ Bilingual disease information database for PlantVision.
+ 
+-Stage 2 classifier outputs one of the 11 v2.0 classes — the bilingual
+-content for each lives in ``DISEASES_DATABASE`` below.
++Stage 2 classifier outputs one of the 7 trainable v2.1 classes — the
++bilingual content for each lives in ``DISEASES_DATABASE`` below.
++
++Trainable v2.1 classes (alphabetical): ``bacterial_leaf_spot``,
++``gray_mold_botrytis``, ``healthy``, ``leaf_spot_fungal``,
++``not_a_plant``, ``powdery_mildew``, ``viral_disease``.
+ 
+-Final 11 classes (alphabetical): ``bacterial_leaf_spot``, ``edema``,
+-``gray_mold_botrytis``, ``healthy``, ``leaf_scorch_underwatering``,
+-``leaf_spot_fungal``, ``not_a_plant``, ``nutrient_deficiency``,
+-``powdery_mildew``, ``sunburn_or_scorch``, ``viral_disease``.
+ Authoritative list: ``server/models/classes.json``.
+ 
++Forward-compat entries for the four physiological conditions deferred
++to a later release (``edema``, ``leaf_scorch_underwatering``,
++``nutrient_deficiency``, ``sunburn_or_scorch``) are kept in the
++database — production lookup is ``DISEASES_DATABASE.get(cls,
++DISEASES_DATABASE['unknown'])`` so unknown labels are tolerated, and
++keeping the cards means re-enabling those classes in v2.2 will be a
++training-time switch, not a content port.
++
+ Pests have been removed from the taxonomy entirely — they are no
+ longer modelled as a hint section.
+ """
+diff -ruN '--exclude=*.pyc' '--exclude=__pycache__' '--exclude=.gradle' /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/server/main.py /home/claude/fixed/project/server/main.py
+--- /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/server/main.py	2026-05-05 13:23:09.000000000 +0000
++++ /home/claude/fixed/project/server/main.py	2026-05-07 09:58:28.187937080 +0000
+@@ -31,21 +31,39 @@
+ from starlette.middleware.base import BaseHTTPMiddleware
+ from starlette.responses import Response as StarletteResponse
+ 
+-from ai_services import (
+-    chat_metrics_snapshot,
+-    chat_reply,
+-    compare_progression,
+-    generate_care_plan,
+-    identify_species,
+-)
+-from config import get_float, get_int, get_list, get_str
+-from diseases_data import DISEASES_DATABASE
+-from pipeline import PlantDiseasePipeline
++# Imports work two ways:
++#   1) Inside Docker (`uvicorn main:app` from /app, flat copy) — `from
++#      ai_services import …` resolves directly.
++#   2) From the repo root (`python -m server.main` or `uvicorn
++#      server.main:app`) — same names live under the `server.` package.
++# The try/except below covers both without forcing PYTHONPATH gymnastics.
++try:
++    from .ai_services import (  # type: ignore[import-not-found]
++        chat_metrics_snapshot,
++        chat_reply,
++        compare_progression,
++        generate_care_plan,
++        identify_species,
++    )
++    from .config import get_float, get_int, get_list, get_str
++    from .diseases_data import DISEASES_DATABASE
++    from .pipeline import PlantDiseasePipeline
++except ImportError:
++    from ai_services import (
++        chat_metrics_snapshot,
++        chat_reply,
++        compare_progression,
++        generate_care_plan,
++        identify_species,
++    )
++    from config import get_float, get_int, get_list, get_str
++    from diseases_data import DISEASES_DATABASE
++    from pipeline import PlantDiseasePipeline
+ 
+ try:
+     from . import __version__ as APP_VERSION  # type: ignore
+ except Exception:
+-    APP_VERSION = "2.0"
++    APP_VERSION = "2.1"
+ 
+ # Limit Pillow decompression to prevent zip-bomb DoS
+ Image.MAX_IMAGE_PIXELS = 20_000_000  # ~4500×4500
+@@ -194,7 +212,7 @@
+         self.min_interval = 1.0 / requests_per_second
+         self._last_request: dict[str, float] = {}
+         self._lock = threading.Lock()
+-        self._last_cleanup = time.time()
++        self._last_cleanup = time.monotonic()
+ 
+     def _cleanup_stale(self, now: float) -> None:
+         cutoff = now - max(self.min_interval * 2, 60.0)
+@@ -214,7 +232,10 @@
+             return await call_next(request)
+ 
+         client_ip = _client_ip(request)
+-        now = time.time()
++        # Use monotonic clock so an NTP step (or daylight-saving jump on
++        # a misconfigured host) cannot lock every client out for
++        # several minutes by making `now - last` go negative.
++        now = time.monotonic()
+ 
+         with self._lock:
+             if now - self._last_cleanup > _RATE_LIMIT_CLEANUP_INTERVAL:
+diff -ruN '--exclude=*.pyc' '--exclude=__pycache__' '--exclude=.gradle' /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/server/models/MODEL_CARD.md /home/claude/fixed/project/server/models/MODEL_CARD.md
+--- /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/server/models/MODEL_CARD.md	2026-05-05 13:23:09.000000000 +0000
++++ /home/claude/fixed/project/server/models/MODEL_CARD.md	2026-05-07 09:38:06.551308573 +0000
+@@ -1,95 +1,119 @@
+-# PlantVision — MODEL_CARD (v2.0)
++# PlantVision — MODEL_CARD (v2.1)
+ 
+ ## Pipeline
+-**Stage 1:** YOLOv8n single-class `plant_leaf` detector, trained on
+-300–800 hand-labelled **indoor** leaf bboxes plus targeted Roboflow
+-Universe houseplant slices. PlantDoc is excluded by design.
+-
+-**Stage 2:** EfficientNetV2-S (`tf_efficientnetv2_s.in21k_ft_in1k`) teacher
+-→ distilled MobileNetV3-Large student (KD, α=0.35, τ=3.5).
+-
+-## Classes (11)
+-`bacterial_leaf_spot`, `edema`, `gray_mold_botrytis`, `healthy`,
+-`leaf_scorch_underwatering`, `leaf_spot_fungal`, `not_a_plant`,
+-`nutrient_deficiency`, `powdery_mildew`, `sunburn_or_scorch`,
+-`viral_disease`.
+-
+-Removed vs v1.x: `late_blight`, `iron_chlorosis` (subsumed into
+-`nutrient_deficiency`). Pests are out of the taxonomy entirely.
+-
+-Coarse-group rationale:
+-- `leaf_spot_fungal` covers anthracnose + cercospora + alternaria.
+-- `viral_disease` covers mosaic + leaf curl + ringspot.
+-- `nutrient_deficiency` covers Fe + N + Mg + K.
+ 
+-## Validation contract
++**Stage 1 — YOLOv8n** single-class `plant_leaf` detector, trained on
++indoor leaf bboxes (300–800 hand-labelled images plus targeted
++Roboflow Universe houseplant slices). PlantDoc is excluded from
++detector training because its agricultural close-ups bias localisation
++toward field shots.
++
++**Stage 2 — EfficientNetV2-S → MobileNetV3-Large** via knowledge
++distillation. Teacher checkpoint is `tf_efficientnetv2_s.in21k_ft_in1k`
++fine-tuned on our 7-class taxonomy with logit-adjustment cross-entropy.
++Student is `torchvision.mobilenet_v3_large` (5.5 M params). KD uses
++`α=0.5, τ=4.0`, and an EMA copy of the student (decay=0.999) is what
++we evaluate, save and export.
++
++## Classes (7 trainable, v2.1)
++
++`bacterial_leaf_spot`, `gray_mold_botrytis`, `healthy`,
++`leaf_spot_fungal`, `not_a_plant`, `powdery_mildew`, `viral_disease`.
++
++`leaf_spot_fungal` is a coarse umbrella for anthracnose / cercospora /
++alternaria — visually overlapping at 256 px and sharing treatment
++advice (copper fungicide, dry foliage, isolate). `viral_disease`
++covers mosaic + leaf curl + ringspot.
++
++### Deferred
++
++`edema`, `leaf_scorch_underwatering`, `nutrient_deficiency`,
++`sunburn_or_scorch` were in the v2.0 design but are deferred until
++labelled real-world data is added. Public sources have very few clean
++indoor examples; including them with proxy labels collapses recall on
++the 7 classes we already have data for. Adding them later is a config
++change in `train_notebook.ipynb` §1, not a re-architecture.
+ 
+-Three independent slices, three reports per release:
++## Validation contract
+ 
+ | Slice | Role | Pass criterion |
+ |---|---|---|
+-| `val_indomain` | early stopping + schedule decisions | non-decreasing for ≥ 4 epochs |
+-| `val_realworld` (`indoor_real_world_v1`) | **primary — ship/no-ship gate** | disease macro-F1 in **0.70 – 0.78**; no class with recall = 0; healthy-bias < 1.5 |
+-| `val_studio` (`plantvillage_studio`) | transfer / background-bias monitor (Noyan 2022) | tracked, never blocking |
+-
+-Each epoch logs disease macro-F1 + per-class recall + confusion matrix
+-+ healthy-bias on all three slices. Top-1 alone hides healthy collapse
+-and rare-class death.
++| `val_indomain` | training-loop metric, drives early stopping | tracked; best EMA checkpoint restored |
++| `val_realworld` | **primary — ship/no-ship gate** | disease macro-F1 ≥ **0.70**; no class with recall = 0; healthy-bias < 1.5 |
++| `val_studio` (PlantVillage) | transfer / background-bias monitor | tracked, never blocking |
++| `temperature_cal` | INT8 activation + temperature scaling | held out, never reported |
++| `conformal_cal` | RAPS calibration | held out, target empirical coverage ≈ 1 − α |
++
++PlantVillage is **excluded** from the real-world gate and from both
++calibration splits — its studio backgrounds violate exchangeability
++with the deployment distribution and would inflate coverage.
+ 
+ ## Training recipe
+-- Optimiser: AdamW, weight_decay=1e-4, label_smoothing=0.05
+-- LR schedule: cosine + 1-epoch warmup
+-- 256 px input, batch=128, bf16-mixed
+-- Phase A (head-only, 3 epochs, lr=3e-3) → Phase B (unfreeze last 2
+-  stages, 12–15 epochs, head lr=5e-4 / backbone lr=5e-5)
+-- Loss: **Logit Adjustment** (Menon ICLR 2021), τ=1.0
+-- Augs: indoor-targeted — WB shift, glare, defocus/motion blur, JPEG,
+-  ISP-imitation, soft shadows. MixUp 0.10, CutMix 0.10–0.20. No strong
+-  hue shift / Solarize (colour is a disease signal).
+-- Distillation: KD into MobileNetV3-Large (5.5 M params), 12 epochs.
+-- Calibration: temperature scaling on `val_realworld` NLL **plus**
+-  inductive conformal prediction (RAPS, Angelopoulos 2021) calibrated
+-  on a 1–2 k user-photo holdout. Persisted to `models/conformal.json`;
+-  consumed by `server/conformal.py`. Coverage target: 90 % (`alpha=0.10`).
+-- Quantisation: **static INT8 QDQ** with a 500-photo `val_realworld`
+-  calibration reader. The export step re-evaluates the INT8 model on
+-  `val_realworld` and refuses to write the artefact if disease F1
+-  drops by more than 0.02 vs FP32.
++
++* Optimiser: AdamW (`weight_decay=1e-4`)
++* LR schedule: cosine + 1-epoch linear warmup
++* 256 px input, batch=96, bf16-mixed (CUDA) / fp32 (CPU fallback)
++* Phase A (head-only, 3 epochs, lr=3e-3) → Phase B (last 2 backbone
++  stages, 15 epochs, head lr=5e-4, backbone lr=5e-5; early-stop on
++  `val_indomain` disease macro-F1)
++* **Loss**: Logit Adjustment cross-entropy (Menon ICLR 2021), τ=0.7,
++  label_smoothing=0.05. Loss-side balancing only —
++  `WeightedRandomSampler` is **off** by default to avoid double
++  rebalancing of rare classes.
++* Augs: indoor-targeted — WB shift, glare, defocus / motion blur,
++  JPEG re-compression, mild ColorJitter (brightness/contrast/sat
++  only), RandomErasing. **No** strong hue rotation / Solarize —
++  colour is a disease signal.
++* Distillation (`α=0.5, τ=4.0`, 10 epochs, EMA student decay=0.999).
++* Calibration: temperature scaling on `temperature_cal` NLL **plus**
++  inductive RAPS conformal prediction on `conformal_cal`. Both fitted
++  on **INT8 ONNX logits** so the calibration matches the deployed
++  model, not the FP32 torch one.
++* Quantisation: **static INT8 (QDQ), 500-image calibration reader on
++  `conformal_cal`**. Export step re-evaluates on `val_realworld` and
++  raises if disease F1 drops by > 0.05 vs FP32 (warning only at > 0.02).
+ 
+ ## OOD detection
+-- Score: **MaxLogit** (Hendrycks 2019) — robust to temperature scaling
+-  and label smoothing where MSP fails.
+-- Production combines: detector confidence + calibrated classifier
+-  confidence + MaxLogit score.
+-- For ViT branches we'd swap in GEN (Liu CVPR 2023).
+-
+-## Optional follow-ups (post-v2.0)
+-- **DeepCore** (Guo et al. 2022) coreset / dataset pruning if
+-  iteration time becomes a bottleneck. Random selection stays as the
+-  no-op control. **No** dataset distillation — ROI weak at our
+-  resolution. Model pruning is low priority — KD + static INT8 cover
+-  ~95 % of the runtime budget.
++
++* **Score**: MaxLogit (Hendrycks 2019). Robust to temperature scaling
++  and label smoothing where MSP collapses.
++* **Production gate**: low detector confidence (< 0.40) **and** low
++  classifier MaxLogit (< 4.0) → re-route the verdict to `not_a_plant`.
+ 
+ ## Pre-training data hygiene
+-- SHA-256 + pHash (Hamming ≤ 8) dedup.
+-- DINOv2 ViT-B/14 embeddings → drop > 2σ from class centroid.
+-- Cleanlab label-issue ranking + FiftyOne embedding browser to triage
+-  top-N suspects.
+-- Manual validation pass: 200–300 photos per class.
+-- Hierarchical sidecar metadata per crop: `plant_id`, `species`,
+-  `diagnosis`, `severity`, `leaf_or_whole_plant`, `capture_session`,
+-  `source`, `label_confidence`, `bbox`. Splits are disjoint by
+-  `plant_id` (never let the same plant appear in train and val).
+-
+-## Time budget on 1× A100-40
+-- 5–10 min DINOv2-S frozen + linear probe (mandatory diagnostic)
+-- ~35 min EfficientNetV2-S fine-tune (teacher)
+-- 10–15 min KD into MobileNetV3-Large student
+-- 5 min temperature calibration + ONNX export
++
++* Per-class SHA-256 + pHash dedup (Hamming ≤ 6) on `TRAIN_ROOT` only.
++  Cross-class similarities are kept on purpose — they help as hard
++  negatives during KD.
++* Sidecar JSON per crop: `plant_id`, `species`, `diagnosis`, `severity`,
++  `leaf_or_whole_plant`, `capture_session`, `source`, `label_confidence`,
++  `bbox`. Group splits use `(source, plant_id)` so the same plant
++  never appears in both `TRAIN_ROOT` and a held-out split.
++* Exact SHA-256 leakage audit between `TRAIN_ROOT` and every held-out
++  split — `RuntimeError` on overlap.
++* `ImageFolder.target_transform` remap on every eval loader, so a
++  slice that is missing one trained class cannot silently shift
++  labels.
++
++## Time budget on 1× A100-40 (rough)
++
++| Phase | Time |
++|---|---|
++| §2 data fetch (cold cache) | 8–15 min |
++| §3 dedup + DINOv2-S probe | 5–10 min |
++| §4 EfficientNetV2-S fine-tune | 25–35 min |
++| §5 KD into MobileNetV3-Large | 8–12 min |
++| §6 ONNX + INT8 + temperature + conformal | 5 min |
++
++Colab T4 is roughly 2-3× slower; reduce `BATCH=64`.
+ 
+ ## Known caveats
+-- `viral_disease` is incurable; the pipeline auto-escalates severity
+-  by one level on any high-confidence viral verdict.
+-- `edema` and `nutrient_deficiency` are physiological / nutritional —
+-  neither is an infection. They were added to give the AI Doctor
+-  honest options for the most common indoor mis-diagnoses.
++
++* `viral_disease` is incurable; the server pipeline auto-escalates
++  severity by one level on any high-confidence viral verdict.
++* `gray_mold_botrytis` recall depends heavily on the iNat supplement.
++  iNat label confidence is set to `0.55` in the sidecar, which is a
++  hint to monitor this class separately during error analysis.
++* `leaf_spot_fungal` is an umbrella class. Treatment is genuinely the
++  same for the three fungi underneath, but downstream reports should
++  not claim sub-class accuracy.
+diff -ruN '--exclude=*.pyc' '--exclude=__pycache__' '--exclude=.gradle' /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/server/models/classes.json /home/claude/fixed/project/server/models/classes.json
+--- /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/server/models/classes.json	2026-05-05 13:23:09.000000000 +0000
++++ /home/claude/fixed/project/server/models/classes.json	2026-05-07 09:37:20.595309624 +0000
+@@ -1,22 +1,13 @@
+ {
+-  "_comment": "PlantVision houseplant classifier — disease-F1 primary metric on the indoor real-world validation set",
+-  "model_version": "2.0",
+-  "architecture": {
+-    "detector": "YOLOv8n (single-class plant_leaf, indoor-trained)",
+-    "classifier": "EfficientNetV2-S (timm tf_efficientnetv2_s.in21k_ft_in1k) → distilled MobileNetV3-Large student"
+-  },
+-  "num_classes": 11,
++  "_comment": "PlantVision 2.1 — placeholder. The notebook (server/train_notebook.ipynb) overwrites this file in §6 with the real values after training. Disease macro-F1 on val_realworld is the primary metric.",
++  "model_version": "2.1",
+   "class_names": [
+     "bacterial_leaf_spot",
+-    "edema",
+     "gray_mold_botrytis",
+     "healthy",
+-    "leaf_scorch_underwatering",
+     "leaf_spot_fungal",
+     "not_a_plant",
+-    "nutrient_deficiency",
+     "powdery_mildew",
+-    "sunburn_or_scorch",
+     "viral_disease"
+   ],
+   "detector_classes": [
+@@ -24,43 +15,31 @@
+   ],
+   "training": {
+     "img_size": 256,
+-    "batch_size": 128,
+-    "precision": "bf16-mixed",
++    "batch_size": 96,
++    "loss": "logit_adjustment_ce",
++    "logit_adjustment_tau": 0.7,
++    "label_smoothing": 0.05,
++    "use_weighted_sampler": false,
+     "optimizer": "AdamW",
+     "weight_decay": 1e-4,
+-    "label_smoothing": 0.05,
+-    "lr_schedule": "cosine + warmup 1 epoch",
+-    "schedule": {
+-      "head_only_epochs": 3,
+-      "head_lr": 3e-3,
+-      "unfreeze_last_stages": 2,
+-      "finetune_epochs": 13,
+-      "head_lr_finetune": 5e-4,
+-      "backbone_lr_finetune": 5e-5
+-    },
+-    "loss": "logit_adjustment_ce",
+-    "logit_adjustment_tau": 1.0,
+-    "mixup_prob": 0.1,
+-    "cutmix_prob": 0.15,
+-    "augmentations": "indoor: WB shift (warm/cool), glare, defocus/motion blur, JPEG, ISP-imitation, soft shadows. Strong hue/solarize disabled.",
+-    "primary_metric": "indoor_val_disease_macro_f1",
+-    "primary_val_set": "indoor_real_world_v1 (frozen, 500-1000 user photos)",
+-    "isolated_val_slice": "plantvillage_transfer (background-bias monitor; never used for train)",
+-    "calibration": "temperature scaling on indoor val NLL",
+-    "quantization": "dynamic INT8 on MatMul for student",
+-    "diagnostic_baseline": "DINOv2-S frozen + linear probe (5-8 epochs, batch 256, no MixUp/CutMix)"
++    "lr_schedule": "cosine + warmup",
++    "precision": "bf16-mixed",
++    "primary_metric": "val_realworld_disease_macro_f1",
++    "primary_val_set": "data_v2/classification/val/realworld",
++    "isolated_val_slice": "data_v2/classification/val/plantvillage_studio"
+   },
+   "distillation": {
+-    "teacher": "EfficientNetV2-S (or ConvNeXt-Tiny challenger)",
+-    "student": "MobileNetV3-Large (5.5M params)",
+-    "loss": "alpha*CE + (1-alpha)*tau^2*KL(student||teacher)",
+-    "alpha": 0.35,
+-    "tau": 3.5,
+-    "epochs": 12
++    "teacher": "tf_efficientnetv2_s.in21k_ft_in1k",
++    "student": "mobilenet_v3_large",
++    "loss": "alpha*KD + (1-alpha)*CE_LA",
++    "alpha": 0.5,
++    "tau": 4.0,
++    "ema_decay": 0.999,
++    "epochs": 10
+   },
+   "ood": {
+     "score": "max_logit",
+-    "_score_note": "MSP is unreliable when temperature scaling drives logits low; MaxLogit (Hendrycks 2019) is robust and bias-free under T<<1. Production combines: detector confidence + calibrated classifier confidence + MaxLogit OOD score.",
+-    "fallback_score": "GEN (Liu CVPR 2023) for ViT branches if added"
++    "max_logit_floor": 4.0,
++    "_score_note": "MaxLogit (Hendrycks 2019). Robust under temperature scaling and label smoothing where MSP fails."
+   }
+ }
+diff -ruN '--exclude=*.pyc' '--exclude=__pycache__' '--exclude=.gradle' /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/server/pipeline.py /home/claude/fixed/project/server/pipeline.py
+--- /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/server/pipeline.py	2026-05-05 13:23:09.000000000 +0000
++++ /home/claude/fixed/project/server/pipeline.py	2026-05-07 09:58:49.011482472 +0000
+@@ -6,8 +6,8 @@
+                        indoor leaf crops, not PlantDoc).
+ Stage 2 (Classifier) — distilled MobileNetV3-Large student (KD ←
+                        EfficientNetV2-S teacher) at 256 px. Classifies
+-                       cropped leaf regions into one of the 11 v2.0
+-                       classes including ``not_a_plant``.
++                       cropped leaf regions into one of the v2.1
++                       trainable classes including ``not_a_plant``.
+ 
+ Behaviour summary:
+ 
+@@ -44,9 +44,14 @@
+ 
+ from PIL import Image
+ 
+-from classifier import DiseaseClassifier
+-from conformal import ConformalConfig, load_conformal_config, prediction_set
+-from detector import LeafDetector
++try:
++    from .classifier import DiseaseClassifier  # type: ignore[import-not-found]
++    from .conformal import ConformalConfig, load_conformal_config, prediction_set
++    from .detector import LeafDetector
++except ImportError:
++    from classifier import DiseaseClassifier
++    from conformal import ConformalConfig, load_conformal_config, prediction_set
++    from detector import LeafDetector
+ 
+ logger = logging.getLogger(__name__)
+ 
+@@ -347,25 +352,50 @@
+         )
+ 
+     def _should_route_to_nap(self, classification: dict, det_conf: float) -> bool:
++        """Two-of-two OOD gate. We re-route to ``not_a_plant`` when the
++        detector AND the classifier both signal "this is not a leaf":
++
++            det_conf < NAP_DETECTOR_CONF_FLOOR
++            AND
++            (max_logit < ml_floor)   -- only when ml_floor > 0
++
++        Both floors must independently fire. Either signal alone is too
++        noisy: a tight crop of an unfamiliar plant can have low
++        MaxLogit even when the detector is confident, and vice versa.
++
++        The historical version short-circuited on detector confidence:
++        a single 0.41-confidence false positive bypassed the MaxLogit
++        check entirely. We now evaluate both gates explicitly and only
++        re-route when both fail.
++        """
+         cls_name = classification["class_name"]
+         if cls_name in _NON_DISEASE:
+             return False
+         if "not_a_plant" not in self.classifier.CLASS_NAMES:
+             return False
+-        if det_conf >= NAP_DETECTOR_CONF_FLOOR:
+-            return False
++
++        detector_low = det_conf < NAP_DETECTOR_CONF_FLOOR
+         ml_floor = self.nap_max_logit_floor
++        max_logit = float(classification.get("max_logit", 0.0))
++        # MaxLogit gate is "off" when the floor is <= 0 (configurable
++        # via classes.json -> ood.max_logit_floor: null). When off, we
++        # require only the detector floor to fire — the historical
++        # behaviour for backwards compatibility.
++        max_logit_low = (ml_floor > 0) and (max_logit < ml_floor)
++
+         if ml_floor > 0:
+-            max_logit = float(classification.get("max_logit", 0.0))
+-            if max_logit >= ml_floor:
+-                return False
+-        logger.info(
+-            "OOD gate triggered (det=%.3f<%.2f, max_logit=%.3f%s) → not_a_plant",
+-            det_conf, NAP_DETECTOR_CONF_FLOOR,
+-            float(classification.get("max_logit", 0.0)),
+-            f"<{ml_floor:.2f}" if ml_floor > 0 else "<off>",
+-        )
+-        return True
++            triggered = detector_low and max_logit_low
++        else:
++            triggered = detector_low
++
++        if triggered:
++            logger.info(
++                "OOD gate triggered (det=%.3f<%.2f, max_logit=%.3f%s) → not_a_plant",
++                det_conf, NAP_DETECTOR_CONF_FLOOR,
++                max_logit,
++                f"<{ml_floor:.2f}" if ml_floor > 0 else " <off>",
++            )
++        return triggered
+ 
+     def _build_prediction_set(self, probs: dict[str, float]) -> dict | None:
+         """Return the conformal prediction set or ``None`` if unconfigured.
+diff -ruN '--exclude=*.pyc' '--exclude=__pycache__' '--exclude=.gradle' /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/server/tests/test_pipeline_helpers.py /home/claude/fixed/project/server/tests/test_pipeline_helpers.py
+--- /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/server/tests/test_pipeline_helpers.py	2026-05-05 13:23:09.000000000 +0000
++++ /home/claude/fixed/project/server/tests/test_pipeline_helpers.py	2026-05-07 09:44:42.747135609 +0000
+@@ -10,24 +10,24 @@
+ 
+ from __future__ import annotations
+ 
+-# Canonical alphabetical 11-class taxonomy (PlantVision 2.0).
++# Canonical alphabetical 7-class taxonomy (PlantVision 2.1).
++# The four physiological classes from the v2.0 design (edema,
++# leaf_scorch_underwatering, nutrient_deficiency, sunburn_or_scorch)
++# are deferred until labelled real-world data is added — see
++# server/models/MODEL_CARD.md.
+ EXPECTED_CLASSES = {
+     "bacterial_leaf_spot",
+-    "edema",
+     "gray_mold_botrytis",
+     "healthy",
+-    "leaf_scorch_underwatering",
+     "leaf_spot_fungal",
+     "not_a_plant",
+-    "nutrient_deficiency",
+     "powdery_mildew",
+-    "sunburn_or_scorch",
+     "viral_disease",
+ }
+ 
+ 
+ def _uniform_probs() -> dict[str, float]:
+-    """A flat distribution over the v2.0 class set."""
++    """A flat distribution over the v2.1 class set."""
+     n = len(EXPECTED_CLASSES)
+     return {name: 1.0 / n for name in sorted(EXPECTED_CLASSES)}
+ 
+@@ -39,8 +39,9 @@
+     assert "not_a_plant" in DEFAULT_CLASS_NAMES
+ 
+ 
+-def test_taxonomy_is_v2_disease_only():
+-    """PlantVision 2.0 carries 11 classes. Pests are out of the taxonomy."""
++def test_taxonomy_is_v21_disease_only():
++    """PlantVision 2.1 carries 7 trainable classes. Pests and physiological
++    conditions are deferred until labelled real-world data is added."""
+     from classifier import DEFAULT_CLASS_NAMES
+ 
+     assert set(DEFAULT_CLASS_NAMES) == EXPECTED_CLASSES, (
+@@ -51,7 +52,13 @@
+     for legacy in ("anthracnose", "gray_mold", "iron_chlorosis",
+                    "late_blight", "mosaic_virus", "sunburn"):
+         assert legacy not in DEFAULT_CLASS_NAMES, (
+-            f"legacy class {legacy} must not be in v2.0 taxonomy"
++            f"legacy class {legacy} must not be in v2.1 taxonomy"
++        )
++    # Deferred — must not appear in v2.1 trainable taxonomy yet.
++    for deferred in ("edema", "leaf_scorch_underwatering",
++                     "nutrient_deficiency", "sunburn_or_scorch"):
++        assert deferred not in DEFAULT_CLASS_NAMES, (
++            f"deferred class {deferred} must not be in v2.1 trainable taxonomy"
+         )
+     # Pests must NOT be classifier outputs.
+     for pest in ("aphids", "mealybug", "scale_insect", "spider_mites",
+@@ -191,7 +198,8 @@
+ 
+ 
+ def test_classes_json_in_repo_drives_pipeline_config():
+-    """End-to-end check: the committed classes.json parses cleanly."""
++    """End-to-end check: the committed classes.json parses cleanly and
++    matches the v2.1 trainable taxonomy."""
+     import json
+     from pathlib import Path
+ 
+@@ -200,9 +208,10 @@
+         return
+ 
+     meta = json.loads(repo_classes.read_text(encoding="utf-8"))
+-    assert meta["num_classes"] == 11
+     assert set(meta["class_names"]) == EXPECTED_CLASSES
++    assert len(meta["class_names"]) == len(EXPECTED_CLASSES)
+     assert meta["detector_classes"] == ["plant_leaf"]
++    assert meta.get("model_version", "").startswith("2.")
+ 
+ 
+ def test_healthy_fallback_keeps_top_k_consistent_with_class_name():
+diff -ruN '--exclude=*.pyc' '--exclude=__pycache__' '--exclude=.gradle' /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/server/train_notebook.ipynb /home/claude/fixed/project/server/train_notebook.ipynb
+--- /home/claude/project/plantdiseases-claude-ml-backend-ui-redesign-eKXe9/server/train_notebook.ipynb	2026-05-05 13:23:09.000000000 +0000
++++ /home/claude/fixed/project/server/train_notebook.ipynb	2026-05-07 09:36:51.963195520 +0000
+@@ -2,48 +2,109 @@
+  "cells": [
+   {
+    "cell_type": "markdown",
+-   "id": "3ff009f2",
+    "metadata": {},
+    "source": [
+-    "# PlantVision 2.1 — Houseplant disease pipeline, patched\n",
++    "# PlantVision 2.1 — houseplant disease pipeline (clean)\n",
+     "\n",
+-    "**Stage 1:** YOLOv8n single-class `plant_leaf` detector — shipped pre-trained in `server/models/detector.{pt,onnx}`. §3 re-trains only when a YOLO dataset is present under `data_v2/`.\n",
++    "This is a single, end-to-end, **deterministic** training notebook that\n",
++    "produces every artefact `server/` reads at runtime:\n",
+     "\n",
+-    "**Stage 2:** EfficientNetV2-S teacher → distilled MobileNetV3-Large student. v2.1 ships **7 trainable classes**: `bacterial_leaf_spot`, `gray_mold_botrytis`, `healthy`, `leaf_spot_fungal`, `not_a_plant`, `powdery_mildew`, `viral_disease`. Four physiological conditions (`edema`, `leaf_scorch_underwatering`, `nutrient_deficiency`, `sunburn_or_scorch`) remain deferred until real labelled recall data is added.\n",
++    "```\n",
++    "models/\n",
++    "├── classifier.pth              ← KD student weights (MobileNetV3-Large)\n",
++    "├── classifier.onnx             ← FP32 export (sanity / fallback)\n",
++    "├── classifier_int8.onnx        ← static INT8 QDQ (production)\n",
++    "├── classes.json                ← {class_names, training.img_size, ood, kd, ...}\n",
++    "├── temperature.json            ← {temperature: T}\n",
++    "├── conformal.json              ← RAPS calibration {q_hat, alpha, ...}\n",
++    "├── detector.{pt,onnx}          ← Stage 1 (only re-trained if a YOLO dataset is supplied)\n",
++    "├── training_metrics.json\n",
++    "└── model_card.json\n",
++    "```\n",
++    "\n",
++    "## Class set — 7 trainable classes (v2.1)\n",
++    "\n",
++    "```\n",
++    "bacterial_leaf_spot, gray_mold_botrytis, healthy, leaf_spot_fungal,\n",
++    "not_a_plant, powdery_mildew, viral_disease\n",
++    "```\n",
++    "\n",
++    "The four physiological conditions from the v2.0 design — `edema`,\n",
++    "`leaf_scorch_underwatering`, `nutrient_deficiency`, `sunburn_or_scorch` —\n",
++    "are **deferred until labelled real-world recall data is added**. Public\n",
++    "sources have very few clean indoor examples for these and including\n",
++    "them with proxy labels collapses recall on the diseases we already\n",
++    "have data for. Adding them later is a config change in §1, not a\n",
++    "re-architecture.\n",
++    "\n",
++    "## Why these decisions\n",
++    "\n",
++    "* **Loss-side balancing only.** Logit Adjustment (Menon ICLR 2021,\n",
++    "  τ=0.7) is used; the `WeightedRandomSampler` is **off** by default to\n",
++    "  avoid double-correction on rare classes. A flag is exposed but the\n",
++    "  default is what we ship.\n",
++    "* **Three independent val slices, one ship gate.**\n",
++    "  `val_realworld` = primary disease macro-F1 gate (≥ 0.70, no class\n",
++    "  with recall=0, healthy-bias < 1.5). `val_indomain` drives early\n",
++    "  stopping. `val_studio` (PlantVillage) is a transfer/background-bias\n",
++    "  monitor — never blocking.\n",
++    "* **Two dedicated calibration splits**, both held out from the train\n",
++    "  set: `temperature_cal` (~5 %) for INT8 calibration + temperature\n",
++    "  scaling, `conformal_cal` (~10 %) for RAPS quantile fitting. Both are\n",
++    "  restricted to the deployment distribution (`plantdoc + inat`),\n",
++    "  never PlantVillage, so conformal exchangeability holds at deploy.\n",
++    "* **EMA student** during KD (decay=0.999) — stabilises the student in\n",
++    "  the small-data regime. The EMA copy is what we export.\n",
++    "* **Static INT8 (QDQ) ships only if `val_realworld` disease F1 drops\n",
++    "  by < 0.02** vs FP32. Larger drops fail the cell loudly.\n",
++    "* **Fail-loud everywhere.** Every block raises `RuntimeError` on\n",
++    "  silent-failure paths (empty splits, taxonomy drift, label leakage,\n",
++    "  zero-recall classes, INT8 drift > 0.05).\n",
+     "\n",
+-    "**Data — public sources, no manual upload:**\n",
+-    "\n",
+-    "* **PlantDoc** real-world leaf/object crops → train + `val_realworld` seed. This fixes the previous iNat-pathogen-only disease source, which produced high label noise and weak real-world recall.\n",
+-    "* **PlantVillage** HF mirror → capped train + `val_studio`; map keys are now normalised before lookup, so classes with commas/parentheses no longer get silently dropped.\n",
+-    "* **iNaturalist** → healthy houseplant leaves and a low-confidence gray-mold/Botrytis supplement only; both fetches require the iNat 'Leaves' annotation so off-host imagery (fruit rot, petals, agar plates, microscopy) does not leak into a low-volume class. Disease labels are not treated as the main source because iNat taxa label organisms, not host-plant diagnoses.\n",
+-    "* **COCO val2017** images without plant-like categories → `not_a_plant`.\n",
++    "Total training time on a single A100-40GB is ≈ 50–70 min (data fetch\n",
++    "included; ≈ 25 min on Colab T4 with smaller batch).\n"
++   ]
++  },
++  {
++   "cell_type": "markdown",
++   "metadata": {},
++   "source": [
++    "## §1 — Setup: deps, schema, taxonomy, eval helpers\n",
+     "\n",
+-    "**Primary metric:** disease macro-F1 on `val_realworld`. Ship gate: disease macro-F1 ≥ 0.70, no disease class with recall=0, healthy-bias < 1.5. Values far above expectation should trigger a leakage audit instead of being treated as an automatic failure.\n",
++    "This cell is idempotent — re-running it does not redo anything besides\n",
++    "imports and folder creation. It also:\n",
+     "\n",
+-    "**Leakage control:** generated classification train/val folders under `data_v2/classification/` are rebuilt at §2 start by default, group splits use `(source, plant_id)`, PlantVillage never enters `val_realworld`, and temperature / conformal calibration use dedicated held-out splits restricted to `{plantdoc, inat}` so calibration matches the deployment distribution and conformal exchangeability holds.\n"
++    "* installs versioned deps,\n",
++    "* sets every seed,\n",
++    "* defines the `CropAnnotation` sidecar schema,\n",
++    "* declares the canonical `CLASSES` list (the alphabetical order is\n",
++    "  what `ImageFolder` will produce at training time and what every\n",
++    "  downstream artefact expects).\n"
+    ]
+   },
+   {
+    "cell_type": "code",
+-   "execution_count": null,
+-   "id": "453ea2ba",
+    "metadata": {},
++   "execution_count": null,
+    "outputs": [],
+    "source": [
+-    "# §1 — Setup: deps, reproducibility, schema, layout, eval helpers\n",
+-    "import sys, subprocess, random, json, hashlib, pathlib, re, os, shutil, time, zipfile, math\n",
++    "# §1 — Setup\n",
++    "import os, sys, subprocess, random, json, hashlib, pathlib, re, shutil, time, zipfile, math\n",
+     "from concurrent.futures import ThreadPoolExecutor, as_completed\n",
+     "from dataclasses import dataclass, asdict\n",
+     "from pathlib import Path\n",
+-    "from typing import List, Optional, Iterable, Dict, Tuple\n",
++    "from typing import List, Optional\n",
+     "\n",
+-    "subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-q',\n",
++    "# Pinned to versions that are known to import together; if your env\n",
++    "# already has matching versions this is a no-op.\n",
++    "PIP_PKGS = [\n",
+     "    'torch>=2.2', 'torchvision', 'timm>=1.0',\n",
+-    "    'ultralytics>=8.2', 'onnx', 'onnxruntime',\n",
+-    "    'imagehash', 'Pillow', 'numpy', 'scikit-learn', 'pandas',\n",
+-    "    'opencv-python-headless', 'tqdm', 'matplotlib',\n",
+-    "    'requests', 'datasets>=2.18', 'PyYAML',\n",
+-    "])\n",
++    "    'ultralytics>=8.2', 'onnx>=1.16', 'onnxruntime>=1.17',\n",
++    "    'imagehash', 'Pillow', 'numpy<2.0', 'scikit-learn>=1.4', 'pandas',\n",
++    "    'opencv-python-headless>=4.9', 'tqdm', 'matplotlib',\n",
++    "    'requests>=2.32', 'datasets>=2.18', 'PyYAML',\n",
++    "]\n",
++    "subprocess.check_call([sys.executable, '-m', 'pip', 'install', '-q', *PIP_PKGS])\n",
+     "\n",
+     "import numpy as np, requests, torch\n",
+     "from torch.utils.data import DataLoader\n",
+@@ -52,18 +113,18 @@
+     "from sklearn.metrics import f1_score, recall_score, confusion_matrix\n",
+     "from tqdm import tqdm\n",
+     "\n",
++    "# ── Reproducibility ─────────────────────────────────────────────\n",
+     "SEED = 0\n",
+-    "random.seed(SEED); np.random.seed(SEED)\n",
+-    "torch.manual_seed(SEED)\n",
++    "random.seed(SEED); np.random.seed(SEED); torch.manual_seed(SEED)\n",
+     "if torch.cuda.is_available():\n",
+     "    torch.cuda.manual_seed_all(SEED)\n",
+-    "    torch.backends.cudnn.benchmark = True\n",
++    "torch.backends.cudnn.benchmark = True       # faster training\n",
++    "torch.backends.cudnn.deterministic = False  # honest about the trade-off\n",
+     "\n",
+     "device = 'cuda' if torch.cuda.is_available() else 'cpu'\n",
+-    "print(f'device={device}')\n",
++    "print(f'device={device}  torch={torch.__version__}')\n",
+     "\n",
+-    "# Sidecar JSON per crop — drives group-aware splits and error-analysis\n",
+-    "# joins by source / capture_session without changing the model head.\n",
++    "# ── Sidecar metadata schema ─────────────────────────────────────\n",
+     "@dataclass\n",
+     "class CropAnnotation:\n",
+     "    plant_id: str\n",
+@@ -74,29 +135,29 @@
+     "    capture_session: str\n",
+     "    source: str                 # inat | coco | plantvillage | plantdoc\n",
+     "    label_confidence: float     # in [0, 1]\n",
+-    "    bbox: List[int]             # [x, y, w, h] — [0,0,0,0] when whole-image\n",
++    "    bbox: List[int]             # [x, y, w, h]; [0,0,0,0] for whole-image\n",
+     "\n",
+     "def write_sidecar(p: Path, ann: CropAnnotation):\n",
+     "    p.with_suffix('.json').write_text(json.dumps(asdict(ann), ensure_ascii=False, indent=2))\n",
+     "def read_sidecar(p: Path):\n",
+     "    s = p.with_suffix('.json'); return json.loads(s.read_text()) if s.exists() else None\n",
+     "\n",
+-    "# Layout — splits are disjoint at (source, plant_id) level.\n",
++    "# ── Folder layout ───────────────────────────────────────────────\n",
+     "ROOT          = pathlib.Path('data_v2')\n",
+     "CLS_ROOT      = ROOT / 'classification'\n",
+     "TRAIN_ROOT    = CLS_ROOT / 'train'\n",
+     "VAL_ROOT      = CLS_ROOT / 'val'\n",
+     "VAL_INDOMAIN  = VAL_ROOT / 'indomain'\n",
+-    "VAL_PRIMARY   = VAL_ROOT / 'realworld'              # ship/no-ship gate\n",
+-    "VAL_STUDIO    = VAL_ROOT / 'plantvillage_studio'    # background-bias monitor\n",
+-    "TEMP_CAL      = VAL_ROOT / 'temperature_cal'        # INT8 calibration + temperature scaling\n",
+-    "CONFORMAL_CAL = VAL_ROOT / 'conformal_cal'\n",
++    "VAL_PRIMARY   = VAL_ROOT / 'realworld'              # ship gate\n",
++    "VAL_STUDIO    = VAL_ROOT / 'plantvillage_studio'    # transfer monitor\n",
++    "TEMP_CAL      = VAL_ROOT / 'temperature_cal'        # INT8 + temperature\n",
++    "CONFORMAL_CAL = VAL_ROOT / 'conformal_cal'          # RAPS\n",
+     "\n",
+-    "# v2.1: 7 trainable classes. The four physiological conditions\n",
+-    "# remain out of the softmax until real labelled recall data is present.\n",
++    "# v2.1 — 7 trainable classes. The four physiological conditions are\n",
++    "# deferred until labelled real-world data is added (see §0).\n",
+     "CLASSES = [\n",
+-    "    'bacterial_leaf_spot', 'gray_mold_botrytis', 'healthy', 'leaf_spot_fungal',\n",
+-    "    'not_a_plant', 'powdery_mildew', 'viral_disease',\n",
++    "    'bacterial_leaf_spot', 'gray_mold_botrytis', 'healthy',\n",
++    "    'leaf_spot_fungal', 'not_a_plant', 'powdery_mildew', 'viral_disease',\n",
+     "]\n",
+     "SPLIT_ROOTS = (VAL_INDOMAIN, VAL_PRIMARY, VAL_STUDIO, TEMP_CAL, CONFORMAL_CAL)\n",
+     "\n",
+@@ -107,9 +168,9 @@
+     "        d.mkdir(parents=True, exist_ok=True)\n",
+     "ensure_layout()\n",
+     "\n",
+-    "# Eval helpers — one evaluate(), independent val loaders.\n",
++    "# ── Eval helpers (used by every later phase) ────────────────────\n",
+     "NORM = T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])\n",
+-    "EVAL_WORKERS = 2\n",
++    "EVAL_WORKERS = min(4, os.cpu_count() or 2)\n",
+     "IMG_EXTS = {'.jpg', '.jpeg', '.png', '.webp', '.bmp'}\n",
+     "\n",
+     "def iter_images(root: Path):\n",
+@@ -117,50 +178,51 @@
+     "        if p.is_file() and p.suffix.lower() in IMG_EXTS:\n",
+     "            yield p\n",
+     "\n",
++    "def count_images(root):\n",
++    "    return sum(1 for _ in iter_images(root)) if Path(root).exists() else 0\n",
++    "\n",
+     "def _seed_worker(worker_id):\n",
+-    "    worker_seed = (SEED + worker_id) % (2**32)\n",
+-    "    np.random.seed(worker_seed)\n",
+-    "    random.seed(worker_seed)\n",
++    "    s = (SEED + worker_id) % (2**32)\n",
++    "    np.random.seed(s); random.seed(s)\n",
+     "\n",
+     "def _loader_kwargs(workers, **extra):\n",
+-    "    kwargs = dict(num_workers=workers, pin_memory=(device == 'cuda'), worker_init_fn=_seed_worker, **extra)\n",
++    "    kw = dict(num_workers=workers,\n",
++    "              pin_memory=(device == 'cuda'),\n",
++    "              worker_init_fn=_seed_worker, **extra)\n",
+     "    if workers > 0:\n",
+-    "        kwargs['persistent_workers'] = True\n",
+-    "        kwargs['prefetch_factor'] = 2\n",
+-    "    return kwargs\n",
+-    "\n",
+-    "def make_eval_loader(root, img_size, batch=128, workers=EVAL_WORKERS,\n",
+-    "                     class_to_idx=None):\n",
+-    "    \"\"\"Build an eval loader whose label space matches training.\n",
+-    "\n",
+-    "    ``ImageFolder`` indexes classes by sorted directory listing — so an\n",
+-    "    eval slice missing any class (for example val_studio has no\n",
+-    "    ``not_a_plant``) can silently shift labels. ``class_to_idx`` is the\n",
+-    "    training class map; targets are remapped so y_true is always\n",
+-    "    comparable to model argmax across the trained classes.\n",
++    "        kw['persistent_workers'] = True\n",
++    "        kw['prefetch_factor'] = 2\n",
++    "    return kw\n",
++    "\n",
++    "def make_eval_loader(root, img_size, batch=128, workers=EVAL_WORKERS, class_to_idx=None):\n",
++    "    \"\"\"Build a deterministic eval loader whose label space matches training.\n",
++    "\n",
++    "    `ImageFolder` indexes classes by sorted directory listing — an eval\n",
++    "    slice that is missing one trained class would silently shift the\n",
++    "    label IDs. `class_to_idx` is the train-time map; we remap `target`\n",
++    "    so y_true is comparable to model `argmax` on every slice.\n",
+     "    \"\"\"\n",
+-    "    tx = T.Compose([T.Resize(int(img_size * 1.05)), T.CenterCrop(img_size), T.ToTensor(), NORM])\n",
++    "    tx = T.Compose([T.Resize(int(img_size * 1.05)),\n",
++    "                    T.CenterCrop(img_size), T.ToTensor(), NORM])\n",
+     "    target_transform = None\n",
+     "    if class_to_idx is not None:\n",
+     "        tmp = ImageFolder(str(root))\n",
+-    "        slice_to_train = {\n",
+-    "            tmp.class_to_idx[c]: class_to_idx[c]\n",
+-    "            for c in tmp.classes if c in class_to_idx\n",
+-    "        }\n",
+-    "        if len(slice_to_train) != len(tmp.classes):\n",
+-    "            unknown = [c for c in tmp.classes if c not in class_to_idx]\n",
++    "        unknown = [c for c in tmp.classes if c not in class_to_idx]\n",
++    "        if unknown:\n",
+     "            raise RuntimeError(\n",
+-    "                f'Eval folder {root} contains classes outside training taxonomy: {unknown}.'\n",
++    "                f'Eval folder {root} has classes outside training taxonomy: {unknown}.'\n",
+     "            )\n",
++    "        slice_to_train = {tmp.class_to_idx[c]: class_to_idx[c] for c in tmp.classes}\n",
+     "        target_transform = slice_to_train.__getitem__\n",
+     "    ds = ImageFolder(str(root), transform=tx, target_transform=target_transform)\n",
+     "    if len(ds) == 0:\n",
+-    "        raise RuntimeError(f'Eval folder is empty: {root}. Run §2 first.')\n",
++    "        raise RuntimeError(f'Eval folder is empty: {root}.  Run §2 first.')\n",
+     "    dl = DataLoader(ds, batch_size=batch, shuffle=False, **_loader_kwargs(workers))\n",
+     "    return ds, dl\n",
+     "\n",
+     "@torch.inference_mode()\n",
+     "def evaluate(model, dl, class_names, device, name=''):\n",
++    "    \"\"\"Disease macro-F1 + per-class recall + confusion matrix + healthy-bias.\"\"\"\n",
+     "    model.eval()\n",
+     "    y_true, y_pred = [], []\n",
+     "    for x, y in dl:\n",
+@@ -170,41 +232,57 @@
+     "    y_true, y_pred = np.asarray(y_true), np.asarray(y_pred)\n",
+     "    disease_idx = [i for i, n in enumerate(class_names) if n not in ('healthy', 'not_a_plant')]\n",
+     "    f1 = float(f1_score(y_true, y_pred, labels=disease_idx, average='macro', zero_division=0))\n",
+-    "    recall = recall_score(y_true, y_pred, labels=list(range(len(class_names))), average=None, zero_division=0)\n",
++    "    recall = recall_score(y_true, y_pred, labels=list(range(len(class_names))),\n",
++    "                          average=None, zero_division=0)\n",
+     "    h = class_names.index('healthy') if 'healthy' in class_names else None\n",
+     "    bias = float((y_pred == h).mean() / max((y_true == h).mean(), 1e-9)) if h is not None else 0.0\n",
++    "    cm = confusion_matrix(y_true, y_pred, labels=list(range(len(class_names)))).tolist()\n",
+     "    print(f'[{name}] disease_macro_f1={f1:.3f}  healthy_bias={bias:.2f}  n={len(y_true)}')\n",
+-    "    if 'val_realworld' in name:\n",
++    "    if 'val_realworld' in name or 'final' in name:\n",
+     "        for c, r in zip(class_names, recall):\n",
+-    "            print(f'    recall[{c:30s}] = {r:.3f}')\n",
++    "            print(f'    recall[{c:25s}] = {r:.3f}')\n",
+     "    return {'name': name, 'disease_macro_f1': f1, 'healthy_bias': bias,\n",
+     "            'per_class_recall': {c: float(r) for c, r in zip(class_names, recall)},\n",
+-    "            'confusion_matrix': confusion_matrix(y_true, y_pred, labels=list(range(len(class_names)))).tolist()}\n"
++    "            'confusion_matrix': cm}\n",
++    "\n",
++    "# Persisted run log — every epoch appends a row. Useful when the colab\n",
++    "# session dies mid-train and you want to compare final to half-trained.\n",
++    "RUN_LOG = Path('models/run_log.jsonl')\n",
++    "RUN_LOG.parent.mkdir(parents=True, exist_ok=True)\n",
++    "def log_run(row: dict):\n",
++    "    row = {'ts': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), **row}\n",
++    "    with RUN_LOG.open('a', encoding='utf-8') as f:\n",
++    "        f.write(json.dumps(row, ensure_ascii=False) + '\\n')\n"
+    ]
+   },
+   {
+    "cell_type": "markdown",
+-   "id": "3ce71243",
+    "metadata": {},
+    "source": [
+-    "## §2 — Data acquisition (PlantDoc + PlantVillage + iNat + COCO) and group splits\n",
++    "## §2 — Data acquisition + group-aware splits\n",
+     "\n",
+-    "* **PlantDoc** supplies real-world leaf crops and object boxes. The HF mirror has train/test splits; train goes to `TRAIN_ROOT`, test seeds `val_realworld`.\n",
+-    "* **PlantVillage** supplies volume for common leaf disease appearances. It is capped per target class and split away from `val_realworld`; its held-out slice remains `val_studio` because PlantVillage is known to contain strong capture/background bias.\n",
+-    "* **iNaturalist** is used for healthy houseplant leaves and a low-confidence Botrytis/gray-mold supplement. It is not the primary disease source because iNat taxa identify organisms; a pathogen taxon is not the same as a host-plant disease diagnosis.\n",
+-    "* **COCO val2017** images without plant-like categories are used as `not_a_plant`.\n",
++    "Public sources only. No manual upload. Every saved image gets a\n",
++    "sidecar JSON so the splitter can be group-aware (`(source, plant_id)`\n",
++    "goes together, never split across train and a held-out set).\n",
++    "\n",
++    "| Source | Role |\n",
++    "|---|---|\n",
++    "| **PlantDoc** (HF) | real-world train + `val_realworld` seed |\n",
++    "| **PlantVillage** (HF) | capped train + `val_studio`. PlantVillage **never** enters `val_realworld`, `temp_cal` or `conformal_cal` (would break exchangeability) |\n",
++    "| **iNaturalist** | healthy houseplant leaves (Ficus / Monstera / …) and a small Botrytis supplement, **`Green Leaves` annotation only** so off-host imagery (fruit rot, agar plates) cannot leak |\n",
++    "| **COCO val2017** | `not_a_plant` images, plant-like categories filtered out |\n",
+     "\n",
+-    "The previous notebook had two major data bugs: PlantVillage map keys were compared after normalisation but the map itself was not normalised, dropping many labels with parentheses/commas; and re-running §2 moved old validation files out of train, then downloaded/copy-created duplicates back into train. This version rebuilds generated classification split folders under `data_v2/classification/` by default while keeping caches and any detector dataset under `data_v2/`, so repeated runs are deterministic and leakage-safe.\n"
++    "Set `REBUILD_GENERATED_SPLITS = False` if you only want to top-up an\n",
++    "existing run.\n"
+    ]
+   },
+   {
+    "cell_type": "code",
+-   "execution_count": null,
+-   "id": "5b2ad355",
+    "metadata": {},
++   "execution_count": null,
+    "outputs": [],
+    "source": [
+-    "# §2 — Data acquisition + leakage-safe group-aware splits\n",
++    "# §2 — Data acquisition + group-aware splits\n",
+     "from io import BytesIO\n",
+     "from PIL import Image as PILImage\n",
+     "\n",
+@@ -217,10 +295,9 @@
+     "            shutil.rmtree(d)\n",
+     "    ensure_layout()\n",
+     "\n",
+-    "# ---- HTTP helpers --------------------------------------------------\n",
++    "# ── HTTP helpers (with backoff) ──────────────────────────────────\n",
+     "def http_get_json(url, params=None, timeout=30, retries=4):\n",
+-    "    last = None\n",
+-    "    delay = 0.8\n",
++    "    last = None; delay = 0.8\n",
+     "    for _ in range(retries):\n",
+     "        try:\n",
+     "            r = requests.get(url, params=params, headers=UA, timeout=timeout)\n",
+@@ -231,14 +308,13 @@
+     "            last = e; time.sleep(delay); delay *= 2\n",
+     "    raise last\n",
+     "\n",
+-    "def http_download(url, dest, timeout=90, retries=4):\n",
++    "def http_download(url, dest, timeout=120, retries=4):\n",
+     "    dest = Path(dest)\n",
+     "    if dest.exists() and dest.stat().st_size > 0:\n",
+     "        return dest\n",
+     "    dest.parent.mkdir(parents=True, exist_ok=True)\n",
+     "    tmp = dest.with_suffix(dest.suffix + '.tmp')\n",
+-    "    last = None\n",
+-    "    delay = 1.0\n",
++    "    last = None; delay = 1.0\n",
+     "    for _ in range(retries):\n",
+     "        try:\n",
+     "            with requests.get(url, headers=UA, stream=True, timeout=timeout) as r:\n",
+@@ -248,11 +324,12 @@
+     "                with open(tmp, 'wb') as f:\n",
+     "                    for chunk in r.iter_content(1 << 20):\n",
+     "                        if chunk: f.write(chunk)\n",
+-    "            tmp.replace(dest)\n",
+-    "            return dest\n",
++    "            tmp.replace(dest); return dest\n",
+     "        except Exception as e:\n",
+     "            last = e\n",
+-    "            tmp.exists() and tmp.unlink()\n",
++    "            if tmp.exists():\n",
++    "                try: tmp.unlink()\n",
++    "                except Exception: pass\n",
+     "            time.sleep(delay); delay *= 2\n",
+     "    raise last\n",
+     "\n",
+@@ -275,10 +352,17 @@
+     "    out.parent.mkdir(parents=True, exist_ok=True)\n",
+     "    img.convert('RGB').save(out, quality=quality)\n",
+     "\n",
+-    "# ---- iNaturalist ---------------------------------------------------\n",
++    "def _valid_image_bytes(body, min_side=160):\n",
++    "    try:\n",
++    "        im = PILImage.open(BytesIO(body)).convert('RGB')\n",
++    "        if min(im.size) < min_side: return None\n",
++    "        return im\n",
++    "    except Exception:\n",
++    "        return None\n",
++    "\n",
++    "# ── iNaturalist (Leaves annotation, research-grade only) ────────\n",
+     "INAT_BASE = 'https://api.inaturalist.org/v1'\n",
+-    "# iNat 'Leaves' annotation: term_id=36, value_id=38 ('Green Leaves').\n",
+-    "INAT_LEAF_TERM_ID, INAT_LEAF_TERM_VALUE_ID = 36, 38\n",
++    "INAT_LEAF_TERM_ID, INAT_LEAF_TERM_VALUE_ID = 36, 38   # 'Plant Phenology' = 'Green Leaves'\n",
+     "\n",
+     "def inat_resolve_taxon(name, rank='genus'):\n",
+     "    res = http_get_json(f'{INAT_BASE}/taxa', {'q': name, 'rank': rank}).get('results') or []\n",
+@@ -303,16 +387,6 @@
+     "    raw = photo.get('url') or ''\n",
+     "    return re.sub(r'/square\\.', f'/{size}.', raw) if raw.startswith('http') else None\n",
+     "\n",
+-    "def _valid_image_bytes(body, min_side=160):\n",
+-    "    try:\n",
+-    "        im = PILImage.open(BytesIO(body)).convert('RGB')\n",
+-    "        w, h = im.size\n",
+-    "        if min(w, h) < min_side:\n",
+-    "            return None\n",
+-    "        return im\n",
+-    "    except Exception:\n",
+-    "        return None\n",
+-    "\n",
+     "def _save_one_inat(item, dest, klass, tx, label_confidence):\n",
+     "    obs, ph = item\n",
+     "    url = _photo_url(ph, 'medium')\n",
+@@ -348,8 +422,10 @@
+     "                n += f.result()\n",
+     "    return n\n",
+     "\n",
+-    "INAT_HEALTHY_TAXA = [('Ficus','genus'),('Monstera','genus'),('Epipremnum','genus'),('Calathea','genus'),\n",
+-    "                     ('Spathiphyllum','genus'),('Dracaena','genus'),('Sansevieria','genus'),('Philodendron','genus')]\n",
++    "INAT_HEALTHY_TAXA = [\n",
++    "    ('Ficus','genus'),('Monstera','genus'),('Epipremnum','genus'),('Calathea','genus'),\n",
++    "    ('Spathiphyllum','genus'),('Dracaena','genus'),('Sansevieria','genus'),('Philodendron','genus'),\n",
++    "]\n",
+     "INAT_BOTRYTIS_TAXA = [('Botrytis cinerea','species'),('Botrytis','genus')]\n",
+     "\n",
+     "def fetch_inat_supplement(healthy_per_taxon=180, botrytis_per_taxon=160):\n",
+@@ -364,7 +440,7 @@
+     "                            label_confidence=0.55)\n",
+     "    print(f'iNat gray_mold_botrytis supplement += {n}')\n",
+     "\n",
+-    "# ---- COCO val2017 → not_a_plant -----------------------------------\n",
++    "# ── COCO val2017 → not_a_plant ──────────────────────────────────\n",
+     "COCO_CACHE = ROOT / 'cache_coco_val2017'\n",
+     "def fetch_coco_for_nap(target_n=1500):\n",
+     "    COCO_CACHE.mkdir(parents=True, exist_ok=True)\n",
+@@ -394,7 +470,7 @@
+     "        n += 1\n",
+     "    print(f'COCO: not_a_plant += {n}')\n",
+     "\n",
+-    "# ---- PlantDoc → real-world train + val_realworld ------------------\n",
++    "# ── PlantDoc (HF) → real-world train + val_realworld seed ───────\n",
+     "def map_plantdoc_label(raw):\n",
+     "    s = re.sub(r'\\s+', ' ', str(raw).strip().lower())\n",
+     "    if 'spider mite' in s or 'mites' in s:\n",
+@@ -405,7 +481,7 @@
+     "        return 'powdery_mildew'\n",
+     "    if 'yellow virus' in s or 'mosaic virus' in s or 'curl virus' in s:\n",
+     "        return 'viral_disease'\n",
+-    "    if any(k in s for k in ['blight', 'rust', 'scab', 'leaf spot', 'mold', 'rot', 'anthracnose']):\n",
++    "    if any(k in s for k in ['blight','rust','scab','leaf spot','mold','rot','anthracnose']):\n",
+     "        return 'leaf_spot_fungal'\n",
+     "    if 'leaf' in s:\n",
+     "        return 'healthy'\n",
+@@ -446,8 +522,7 @@
+     "                if counts.get(key, 0) >= cap:\n",
+     "                    continue\n",
+     "                box = _clip_bbox_xywh(bbox, w, h)\n",
+-    "                if box is None:\n",
+-    "                    dropped += 1; continue\n",
++    "                if box is None: dropped += 1; continue\n",
+     "                crop = img.crop(box)\n",
+     "                image_id = row.get('image_id', i)\n",
+     "                stem = f'plantdoc_{split}_{image_id}_{j}'\n",
+@@ -455,14 +530,15 @@
+     "                if out.exists(): continue\n",
+     "                _save_rgb(crop, out)\n",
+     "                write_sidecar(out, CropAnnotation(\n",
+-    "                    plant_id=f'plantdoc_{split}_{image_id}', species=str(cat).split(' leaf')[0],\n",
++    "                    plant_id=f'plantdoc_{split}_{image_id}',\n",
++    "                    species=str(cat).split(' leaf')[0],\n",
+     "                    diagnosis=target, severity='unknown', leaf_or_whole_plant='leaf',\n",
+     "                    capture_session=f'plantdoc_{split}', source='plantdoc',\n",
+     "                    label_confidence=0.85, bbox=[int(v) for v in bbox]))\n",
+     "                counts[key] = counts.get(key, 0) + 1\n",
+     "    print(f'PlantDoc counts: {counts}\\nPlantDoc dropped: {dropped}')\n",
+     "\n",
+-    "# ---- PlantVillage (HF) → capped train + val_studio ----------------\n",
++    "# ── PlantVillage (HF) → capped train + val_studio ───────────────\n",
+     "def _pv_normalise(s):\n",
+     "    return re.sub(r'[^a-z0-9_]+', '_', str(s).strip().lower()).strip('_')\n",
+     "\n",
+@@ -473,7 +549,8 @@
+     "    'Peach___Bacterial_spot':        'bacterial_leaf_spot',\n",
+     "    'Apple___healthy': 'healthy', 'Blueberry___healthy': 'healthy',\n",
+     "    'Cherry_(including_sour)___healthy': 'healthy', 'Corn_(maize)___healthy': 'healthy',\n",
+-    "    'Grape___healthy': 'healthy', 'Pepper,_bell___healthy': 'healthy', 'Pepper__bell___healthy': 'healthy',\n",
++    "    'Grape___healthy': 'healthy',\n",
++    "    'Pepper,_bell___healthy': 'healthy', 'Pepper__bell___healthy': 'healthy',\n",
+     "    'Potato___healthy': 'healthy', 'Raspberry___healthy': 'healthy',\n",
+     "    'Soybean___healthy': 'healthy', 'Strawberry___healthy': 'healthy',\n",
+     "    'Tomato___healthy': 'healthy',\n",
+@@ -493,13 +570,13 @@
+     "    'Grape___Black_rot':           'leaf_spot_fungal',\n",
+     "    'Grape___Esca_(Black_Measles)':'leaf_spot_fungal',\n",
+     "    'Grape___Leaf_blight_(Isariopsis_Leaf_Spot)': 'leaf_spot_fungal',\n",
+-    "    'Orange___Haunglongbing_(Citrus_greening)':   None,  # HLB is not leaf-spot/fungal in this taxonomy\n",
++    "    'Orange___Haunglongbing_(Citrus_greening)':   None,   # HLB ≠ leaf-spot\n",
+     "    'Cherry_(including_sour)___Powdery_mildew': 'powdery_mildew',\n",
+     "    'Squash___Powdery_mildew':                  'powdery_mildew',\n",
+     "    'Tomato___Tomato_mosaic_virus':           'viral_disease',\n",
+     "    'Tomato___Tomato_Yellow_Leaf_Curl_Virus': 'viral_disease',\n",
+     "    'Tomato___Spider_mites Two-spotted_spider_mite': None,\n",
+-    "    'Strawberry___Leaf_scorch': 'leaf_spot_fungal',\n",
++    "    'Strawberry___Leaf_scorch':  'leaf_spot_fungal',\n",
+     "    'Background_without_leaves': 'not_a_plant',\n",
+     "}\n",
+     "PV_LABEL_MAP = {_pv_normalise(k): v for k, v in PV_LABEL_MAP_RAW.items()}\n",
+@@ -561,20 +638,20 @@
+     "                img = PILImage.open(img)\n",
+     "            _save_rgb(img.convert('RGB'), out)\n",
+     "            write_sidecar(out, CropAnnotation(\n",
+-    "                plant_id=stem, species=str(raw).split('___')[0].replace('_',' '),\n",
++    "                plant_id=stem, species=str(raw).split('___')[0].replace('_', ' '),\n",
+     "                diagnosis=target, severity='unknown', leaf_or_whole_plant='leaf',\n",
+     "                capture_session=f'plantvillage_{split}', source='plantvillage',\n",
+-    "                label_confidence=0.9, bbox=[0,0,0,0]))\n",
++    "                label_confidence=0.9, bbox=[0, 0, 0, 0]))\n",
+     "            counts[key] = counts.get(key, 0) + 1\n",
+     "    print(f'PV counts: {counts}\\nPV dropped/ignored: {dropped}')\n",
+     "\n",
+-    "# ---- Group-aware splits -------------------------------------------\n",
++    "# ── Group-aware splits ──────────────────────────────────────────\n",
+     "def make_group_split(dest_root, ratio, seed, label, allowed_sources=None):\n",
+-    "    \"\"\"Move a group-aware fraction of train/<cls>/ into dest_root/<cls>/.\n",
++    "    \"\"\"Move a fraction of TRAIN_ROOT into dest_root.\n",
+     "\n",
+-    "    Same (source, plant_id) lands together. ``allowed_sources`` prevents\n",
+-    "    studio-only sources such as PlantVillage from leaking into the\n",
+-    "    real-world ship gate.\n",
++    "    Same `(source, plant_id)` lands together. `allowed_sources`\n",
++    "    constrains which sources can populate the split — used to keep\n",
++    "    PlantVillage out of the real-world / calibration splits.\n",
+     "    \"\"\"\n",
+     "    rng = random.Random(seed); moved = 0\n",
+     "    for cls in CLASSES:\n",
+@@ -597,23 +674,19 @@
+     "            for img in groups[gid]:\n",
+     "                dst = out / img.name\n",
+     "                if dst.exists():\n",
+-    "                    # Since §2 rebuilds generated splits, this should not happen.\n",
+     "                    raise RuntimeError(f'Destination already exists: {dst}')\n",
+     "                shutil.move(str(img), str(dst))\n",
+-    "                sc = img.with_suffix('.json')\n",
+-    "                if sc.exists(): shutil.move(str(sc), str(dst.with_suffix('.json')))\n",
++    "                sc_path = img.with_suffix('.json')\n",
++    "                if sc_path.exists():\n",
++    "                    shutil.move(str(sc_path), str(dst.with_suffix('.json')))\n",
+     "                moved += 1\n",
+     "    print(f'{label} populated  (moved={moved})')\n",
+     "\n",
+     "def make_val_realworld(ratio=0.15, seed=2):\n",
+-    "    # PlantVillage is intentionally excluded from the primary gate.\n",
+     "    make_group_split(VAL_PRIMARY, ratio, seed, 'val_realworld',\n",
+     "                     allowed_sources={'inat', 'coco', 'plantdoc'})\n",
+     "def make_val_indomain(ratio=0.10, seed=0):\n",
+     "    make_group_split(VAL_INDOMAIN, ratio, seed, 'val_indomain')\n",
+-    "# PlantVillage is excluded from temperature/conformal calibration: q_hat and\n",
+-    "# the temperature must be fitted on the deployment distribution (realworld +\n",
+-    "# iNat), otherwise conformal exchangeability is violated and coverage drifts.\n",
+     "def make_temperature_cal(ratio=0.05, seed=3):\n",
+     "    make_group_split(TEMP_CAL, ratio, seed, 'temperature_cal',\n",
+     "                     allowed_sources={'plantdoc', 'inat'})\n",
+@@ -621,23 +694,22 @@
+     "    make_group_split(CONFORMAL_CAL, ratio, seed, 'conformal_cal',\n",
+     "                     allowed_sources={'plantdoc', 'inat'})\n",
+     "\n",
+-    "# ---- Run the pipeline ---------------------------------------------\n",
++    "# ── Run the pipeline ────────────────────────────────────────────\n",
+     "fetch_inat_supplement(healthy_per_taxon=180, botrytis_per_taxon=160)\n",
+     "fetch_coco_for_nap(target_n=1500)\n",
+     "fetch_plantdoc(max_train_per_class=500, max_val_per_class=120)\n",
+     "fetch_plantvillage_into_train_and_studio(max_train_per_class=900, max_studio_per_class=300)\n",
+     "make_val_realworld(); make_val_indomain(); make_temperature_cal(); make_conformal_cal()\n",
+     "\n",
+-    "def count_images(root): return sum(1 for _ in iter_images(root))\n",
+     "def report_class_counts(root):\n",
+     "    print(f'\\n{root}:')\n",
+     "    for c in CLASSES:\n",
+-    "        print(f'  {c:30s} {count_images(root/c) if (root/c).exists() else 0:5d}')\n",
++    "        print(f'  {c:25s} {count_images(root/c):5d}')\n",
+     "for r in (TRAIN_ROOT, VAL_PRIMARY, VAL_INDOMAIN, TEMP_CAL, CONFORMAL_CAL, VAL_STUDIO):\n",
+     "    report_class_counts(r)\n",
+     "\n",
+-    "# Hard guard — empty class folders silently produce recall=0 and skew\n",
+-    "# priors. Every shipped class must have train and primary-gate support.\n",
++    "# Hard guard. Empty class folders silently produce recall=0 and skew\n",
++    "# priors. Every shipped class must have train + primary-gate support.\n",
+     "THRESH_TRAIN, THRESH_VAL = 30, 5\n",
+     "under_train = [c for c in CLASSES if count_images(TRAIN_ROOT/c) < THRESH_TRAIN]\n",
+     "under_val   = [c for c in CLASSES if count_images(VAL_PRIMARY/c) < THRESH_VAL]\n",
+@@ -645,30 +717,42 @@
+     "    msg = []\n",
+     "    if under_train: msg.append(f'TRAIN_ROOT < {THRESH_TRAIN}: {under_train}')\n",
+     "    if under_val:   msg.append(f'VAL_PRIMARY < {THRESH_VAL}: {under_val}')\n",
+-    "    raise RuntimeError('\\n'.join(msg) + '\\nAdd/extend a public source for these classes and rerun §2.')\n"
++    "    raise RuntimeError('\\n'.join(msg) +\n",
++    "        '\\nAdd / extend a public source for these classes and rerun §2.')\n"
+    ]
+   },
+   {
+    "cell_type": "markdown",
+-   "id": "011a7253",
+    "metadata": {},
+    "source": [
+-    "## §3 — Cleanup, Stage 1 detector, diagnostic probe\n",
++    "## §3 — Dedup + Stage 1 detector + DINOv2 diagnostic probe\n",
++    "\n",
++    "Three sanity passes before we burn GPU on the teacher:\n",
+     "\n",
+-    "* **Dedup** exact SHA globally and perceptual pHash per class. Cross-class near-duplicates are no longer deleted, because similar-looking healthy/diseased leaves are valid hard examples.\n",
+-    "* **Leakage audit** checks exact image hashes between train and every held-out split.\n",
+-    "* **Stage 1** YOLOv8n is shipped pre-trained; this cell only re-trains when a `data.yaml` exists under `data_v2/`. The export path now follows the Ultralytics API: train the model, load `best.pt`, then export that checkpoint.\n",
+-    "* **DINOv2-S frozen + linear probe** is a feature-quality sanity check. Probe ≫ student → bottleneck is data; probe ≈ student → bottleneck is capacity / augs.\n"
++    "1. **Dedup** the train set (per-class SHA-256 + pHash with Hamming ≤ 6).\n",
++    "   Cross-class similarities are kept on purpose — they are useful as\n",
++    "   hard negatives. Held-out splits are audited (SHA-256 only) but\n",
++    "   never pruned, because pruning a held-out set after the fact biases\n",
++    "   the gate.\n",
++    "\n",
++    "2. **Stage 1 YOLOv8n** is re-trained only when a YOLO dataset is\n",
++    "   present under `data_v2/` (driven by `find_detector_yaml()`). When\n",
++    "   nothing is found we keep the shipped `detector.{pt,onnx}` pair —\n",
++    "   the bigger time win is data hygiene, not yet-another detector run.\n",
++    "\n",
++    "3. **DINOv2-S linear probe** is the cheap \"is the data even\n",
++    "   separable?\" check. If linear-on-frozen-DINOv2 cannot get past 30 %\n",
++    "   on `val_realworld` after 8 epochs, the data is the problem, not\n",
++    "   the model.\n"
+    ]
+   },
+   {
+    "cell_type": "code",
+-   "execution_count": null,
+-   "id": "35825376",
+    "metadata": {},
++   "execution_count": null,
+    "outputs": [],
+    "source": [
+-    "# §3 — Dedup + Stage 1 YOLO + DINOv2 probe\n",
++    "# §3 — Dedup + Stage 1 detector + DINOv2 probe\n",
+     "import imagehash\n",
+     "from PIL import Image as PILImage\n",
+     "from ultralytics import YOLO\n",
+@@ -682,12 +766,7 @@
+     "    return h.hexdigest()\n",
+     "\n",
+     "def dedup_directory(root, phash_threshold=6):\n",
+-    "    \"\"\"Remove duplicates from train only.\n",
+-    "\n",
+-    "    Exact duplicates are dropped within the same class. pHash near-dup\n",
+-    "    pruning is also per class; cross-class similarities are kept for\n",
+-    "    hard-negative learning and later error analysis.\n",
+-    "    \"\"\"\n",
++    "    \"\"\"Per-class SHA-256 + pHash dedup.\"\"\"\n",
+     "    drop = []\n",
+     "    for cls in CLASSES:\n",
+     "        cls_dir = Path(root) / cls\n",
+@@ -705,18 +784,18 @@
+     "            if any(ph - existing <= phash_threshold for existing in seen_phash):\n",
+     "                drop.append((p, 'phash_dup')); continue\n",
+     "            seen_phash.append(ph)\n",
+-    "    for p, reason in drop:\n",
++    "    for p, _reason in drop:\n",
+     "        sc = p.with_suffix('.json')\n",
+     "        try:\n",
+-    "            p.unlink(); sc.exists() and sc.unlink()\n",
++    "            p.unlink()\n",
++    "            if sc.exists(): sc.unlink()\n",
+     "        except Exception:\n",
+     "            pass\n",
+     "    print(f'dedup({root}): dropped={len(drop)}')\n",
+     "\n",
+     "def assert_no_exact_split_leakage(train_root, heldout_roots):\n",
+-    "    train_hash = {}\n",
+-    "    for p in iter_images(train_root):\n",
+-    "        train_hash.setdefault(sha256_file(p), p)\n",
++    "    \"\"\"SHA-256 cross-check between train and every held-out split.\"\"\"\n",
++    "    train_hash = {sha256_file(p): p for p in iter_images(train_root)}\n",
+     "    problems = []\n",
+     "    for root in heldout_roots:\n",
+     "        if not Path(root).exists(): continue\n",
+@@ -724,20 +803,17 @@
+     "            h = sha256_file(p)\n",
+     "            if h in train_hash:\n",
+     "                problems.append((str(train_hash[h]), str(p)))\n",
+-    "                if len(problems) >= 10:\n",
+-    "                    break\n",
+-    "        if len(problems) >= 10:\n",
+-    "            break\n",
++    "                if len(problems) >= 10: break\n",
++    "        if len(problems) >= 10: break\n",
+     "    if problems:\n",
+     "        detail = '\\n'.join(f'train={a}  heldout={b}' for a, b in problems)\n",
+     "        raise RuntimeError('Exact train/heldout leakage detected:\\n' + detail)\n",
+     "    print('leakage audit: no exact SHA overlap between train and held-out splits')\n",
+     "\n",
+-    "# Dedup TRAIN_ROOT only; held-out duplicates are audited, not pruned.\n",
+     "dedup_directory(TRAIN_ROOT)\n",
+     "assert_no_exact_split_leakage(TRAIN_ROOT, SPLIT_ROOTS)\n",
+     "\n",
+-    "# ---- Stage 1 — YOLOv8n single-class plant_leaf -------------------\n",
++    "# ── Stage 1 — YOLOv8n single-class plant_leaf ───────────────────\n",
+     "def find_detector_yaml():\n",
+     "    if not ROOT.exists(): return None\n",
+     "    cands = [p for p in ROOT.rglob('data.yaml') if 'cache_coco' not in str(p)]\n",
+@@ -755,20 +831,20 @@
+     "\n",
+     "yaml_path = find_detector_yaml()\n",
+     "if yaml_path is None:\n",
+-    "    print(f'No YOLO dataset under {ROOT} — skipping Stage 1 training. '\n",
+-    "          f'The shipped detector.{{pt,onnx}} will be used at inference.')\n",
++    "    print(f'No YOLO dataset under {ROOT}.  Stage 1 training skipped — '\n",
++    "          f'the shipped detector.{{pt,onnx}} will be used at inference.')\n",
+     "else:\n",
+     "    spec = yaml.safe_load(yaml_path.read_text())\n",
+-    "    # Fail fast if the dataset is still multi-class; blindly forcing nc=1\n",
+-    "    # corrupts label ids and trains a broken detector.\n",
+     "    for key in ('train', 'val'):\n",
+     "        p = spec.get(key)\n",
+     "        if isinstance(p, str):\n",
+-    "            labels = Path(yaml_path.parent, p).as_posix().replace('/images/', '/labels/')\n",
+-    "            if Path(labels).exists():\n",
+-    "                ids = _yolo_label_ids(labels)\n",
++    "            labels_dir = Path(yaml_path.parent, p).as_posix().replace('/images/', '/labels/')\n",
++    "            if Path(labels_dir).exists():\n",
++    "                ids = _yolo_label_ids(labels_dir)\n",
+     "                if any(i != 0 for i in ids):\n",
+-    "                    raise RuntimeError(f'{key} labels contain class ids {sorted(ids)}; remap to single class 0 first.')\n",
++    "                    raise RuntimeError(\n",
++    "                        f'{key} labels contain class ids {sorted(ids)}; remap to single class 0 first.'\n",
++    "                    )\n",
+     "    spec['names'], spec['nc'] = ['plant_leaf'], 1\n",
+     "    patched = yaml_path.parent / 'plant_leaf.yaml'\n",
+     "    patched.write_text(yaml.safe_dump(spec, sort_keys=False))\n",
+@@ -776,10 +852,12 @@
+     "    detector.train(\n",
+     "        data=str(patched), epochs=60, patience=12, batch=32, imgsz=640,\n",
+     "        optimizer='AdamW', lr0=1e-3, cos_lr=True, amp=True,\n",
+-    "        mosaic=0.5, hsv_h=0.0, hsv_s=0.4, hsv_v=0.4,\n",
++    "        # Indoor leaf bboxes are tight — heavy mosaic = leaks across boxes.\n",
++    "        mosaic=0.1, hsv_h=0.0, hsv_s=0.4, hsv_v=0.4,\n",
+     "        project='runs/detect', name='plant_leaf_indoor_v1', exist_ok=True,\n",
+     "    )\n",
+-    "    best_pt = Path(detector.trainer.best) if getattr(detector, 'trainer', None) else next(Path('runs/detect').rglob('best.pt'))\n",
++    "    best_pt = Path(detector.trainer.best) if getattr(detector, 'trainer', None) else next(\n",
++    "        Path('runs/detect').rglob('best.pt'))\n",
+     "    exported = YOLO(str(best_pt)).export(format='onnx', opset=13, dynamic=False)\n",
+     "    Path('models').mkdir(exist_ok=True)\n",
+     "    shutil.copy(best_pt, 'models/detector.pt')\n",
+@@ -789,38 +867,29 @@
+     "        src = next(best_pt.parent.rglob('*.onnx'), None)\n",
+     "        if src: shutil.copy(src, 'models/detector.onnx')\n",
+     "\n",
+-    "# ---- DINOv2-S diagnostic probe -----------------------------------\n",
++    "# ── DINOv2-S linear probe (diagnostic) ──────────────────────────\n",
+     "PROBE_SIZE = 224\n",
+-    "\n",
+-    "def _ensure_populated(root, name):\n",
+-    "    n = sum(1 for _ in iter_images(root))\n",
+-    "    if n == 0: raise RuntimeError(f'{name} is empty — re-run §2.')\n",
+-    "    return n\n",
+-    "for r, n in [(TRAIN_ROOT, 'TRAIN_ROOT'), (VAL_PRIMARY, 'VAL_PRIMARY')]:\n",
+-    "    _ensure_populated(r, n)\n",
+-    "\n",
+-    "PROBE_TRAIN_TX = T.Compose([\n",
+-    "    T.Resize(int(PROBE_SIZE * 1.05)), T.CenterCrop(PROBE_SIZE),\n",
+-    "    T.ToTensor(), NORM,\n",
+-    "])\n",
+-    "train_ds_probe = ImageFolder(str(TRAIN_ROOT), transform=PROBE_TRAIN_TX)\n",
+-    "train_dl_probe = DataLoader(train_ds_probe, batch_size=256, shuffle=True,\n",
+-    "                            generator=torch.Generator().manual_seed(SEED),\n",
+-    "                            **_loader_kwargs(EVAL_WORKERS, drop_last=False))\n",
+-    "CLASS_NAMES = train_ds_probe.classes\n",
+-    "assert CLASS_NAMES == sorted(CLASSES), (CLASS_NAMES, sorted(CLASSES))\n",
++    "PROBE_TX = T.Compose([T.Resize(int(PROBE_SIZE * 1.05)),\n",
++    "                      T.CenterCrop(PROBE_SIZE), T.ToTensor(), NORM])\n",
++    "train_ds_probe = ImageFolder(str(TRAIN_ROOT), transform=PROBE_TX)\n",
++    "assert train_ds_probe.classes == sorted(CLASSES), (train_ds_probe.classes, sorted(CLASSES))\n",
+     "TRAIN_CLASS_TO_IDX = dict(train_ds_probe.class_to_idx)\n",
+-    "\n",
+-    "val_ds_probe, val_dl_probe = make_eval_loader(\n",
++    "train_dl_probe = DataLoader(\n",
++    "    train_ds_probe, batch_size=256, shuffle=True,\n",
++    "    generator=torch.Generator().manual_seed(SEED),\n",
++    "    **_loader_kwargs(EVAL_WORKERS, drop_last=False),\n",
++    ")\n",
++    "_, val_dl_probe = make_eval_loader(\n",
+     "    VAL_PRIMARY, PROBE_SIZE, batch=256, class_to_idx=TRAIN_CLASS_TO_IDX,\n",
+     ")\n",
+     "\n",
+     "backbone = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14').eval().to(device)\n",
+     "for p in backbone.parameters(): p.requires_grad_(False)\n",
+-    "head = nn.Linear(384, len(CLASS_NAMES)).to(device)\n",
++    "head = nn.Linear(384, len(train_ds_probe.classes)).to(device)\n",
+     "opt = torch.optim.AdamW(head.parameters(), lr=3e-3, weight_decay=1e-4)\n",
+     "loss_fn = nn.CrossEntropyLoss(label_smoothing=0.05)\n",
+     "\n",
++    "probe_curve = []\n",
+     "for ep in range(8):\n",
+     "    head.train()\n",
+     "    for x, y in train_dl_probe:\n",
+@@ -830,37 +899,57 @@
+     "        opt.zero_grad(set_to_none=True)\n",
+     "        loss_fn(head(f), y).backward()\n",
+     "        opt.step()\n",
+-    "    head.eval(); correct = total = 0\n",
++    "    head.eval()\n",
++    "    correct = total = 0\n",
+     "    with torch.inference_mode():\n",
+     "        for x, y in val_dl_probe:\n",
+     "            correct += (head(backbone(x.to(device))).argmax(1) == y.to(device)).sum().item()\n",
+     "            total += y.numel()\n",
+-    "    print(f'ep={ep+1}  val_realworld_top1={correct/total:.3f}')\n"
++    "    top1 = correct / max(total, 1)\n",
++    "    probe_curve.append({'epoch': ep + 1, 'val_realworld_top1': top1})\n",
++    "    print(f'ep={ep+1}  val_realworld_top1={top1:.3f}')\n",
++    "\n",
++    "Path('models/dinov2_probe.json').write_text(json.dumps(probe_curve, indent=2))\n",
++    "log_run({'phase': 'dinov2_probe', 'curve': probe_curve})\n",
++    "if probe_curve[-1]['val_realworld_top1'] < 0.30:\n",
++    "    print('WARN: DINOv2 frozen+probe < 0.30 — your data is hard. '\n",
++    "          'Audit labels in §2 before spending GPU on the teacher.')\n",
++    "\n",
++    "# Free memory before §4.\n",
++    "del backbone, head, train_dl_probe, val_dl_probe\n",
++    "torch.cuda.empty_cache() if device == 'cuda' else None\n"
+    ]
+   },
+   {
+    "cell_type": "markdown",
+-   "id": "ae6287fd",
+    "metadata": {},
+    "source": [
+-    "## §4 — Loss, augs, teacher fine-tune\n",
++    "## §4 — Loss, augs, teacher fine-tune (EfficientNetV2-S)\n",
+     "\n",
+-    "* **Logit Adjustment** (Menon ICLR 2021): training loss uses `CE(logits + τ·logπ, y)`. τ is reduced to 0.7 because the loader now also uses a mild class-balanced sampler; this improves rare-class exposure without over-correcting priors.\n",
+-    "* **Indoor augs**: white-balance shifts, glare, defocus / motion blur proxy, JPEG ringing, mild perspective. Strong hue shifts and solarize remain disabled because colour is a disease signal.\n",
+-    "* **Teacher**: `tf_efficientnetv2_s.in21k_ft_in1k`. Recipe: AdamW, weight_decay=1e-4, label_smoothing=0.05, cosine + warmup, 256 px, batch=128, native bf16 on CUDA. Head-only 3 ep → unfreeze last 2 stages 12–15 ep.\n"
++    "* **Loss:** `LogitAdjustmentLoss(τ=0.7, label_smoothing=0.05)`\n",
++    "  (Menon et al. ICLR 2021). Loss-side rebalancing matched to the\n",
++    "  **training prior** — no `WeightedRandomSampler` by default, because\n",
++    "  stacking the two over-corrects rare classes (Liu et al. 2024,\n",
++    "  *frontiersin*).\n",
++    "* **Sampler off by default.** Set `USE_WEIGHTED_SAMPLER = True` only\n",
++    "  if a single class dominates by > 10×.\n",
++    "* **Two-phase fine-tune:** head-only for 3 epochs (LR=3e-3), then\n",
++    "  unfreeze the last two backbone stages (head LR=5e-4, backbone\n",
++    "  LR=5e-5), early-stop on `val_indomain` disease macro-F1.\n",
++    "* **Augs:** indoor-targeted — WB shift, glare, defocus / motion blur,\n",
++    "  JPEG re-compression, mild ColorJitter, RandomErasing. **No** strong\n",
++    "  hue rotation / Solarize — colour is a disease signal.\n"
+    ]
+   },
+   {
+    "cell_type": "code",
+-   "execution_count": null,
+-   "id": "6583db9f",
+    "metadata": {},
++   "execution_count": null,
+    "outputs": [],
+    "source": [
+-    "# §4 — Loss + augs + teacher fine-tune\n",
++    "# §4 — Loss, augs, teacher fine-tune\n",
+     "import timm, torch.nn.functional as F\n",
+     "from collections import Counter\n",
+-    "from copy import deepcopy\n",
+     "from contextlib import nullcontext\n",
+     "from torch.amp import autocast\n",
+     "from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR\n",
+@@ -868,9 +957,13 @@
+     "from PIL import ImageFilter, ImageEnhance, Image as PILImage\n",
+     "from io import BytesIO\n",
+     "\n",
++    "USE_WEIGHTED_SAMPLER = False   # off by default — see notebook §4 docstring\n",
++    "LA_TAU = 0.7                   # logit adjustment τ\n",
++    "LABEL_SMOOTHING = 0.05\n",
++    "\n",
+     "class LogitAdjustmentLoss(nn.Module):\n",
+-    "    \"\"\"Loss-side Logit Adjustment (Menon et al., ICLR 2021, eq. 4).\"\"\"\n",
+-    "    def __init__(self, class_priors, tau=0.7, label_smoothing=0.05):\n",
++    "    \"\"\"Loss-side Logit Adjustment, Menon et al. ICLR 2021 eq. 4.\"\"\"\n",
++    "    def __init__(self, class_priors, tau=LA_TAU, label_smoothing=LABEL_SMOOTHING):\n",
+     "        super().__init__()\n",
+     "        self.register_buffer('log_prior', torch.log(class_priors.clamp(min=1e-12)))\n",
+     "        self.tau, self.ls = tau, label_smoothing\n",
+@@ -884,7 +977,6 @@
+     "    return pri.clamp(min=1.0) / pri.clamp(min=1.0).sum()\n",
+     "\n",
+     "def make_class_balanced_sampler(ds, power=0.5):\n",
+-    "    \"\"\"Mild rare-class oversampling. power=1 is fully inverse-frequency.\"\"\"\n",
+     "    counts = Counter([y for _, y in ds.samples])\n",
+     "    weights = torch.DoubleTensor([(1.0 / counts[y]) ** power for _, y in ds.samples])\n",
+     "    return WeightedRandomSampler(weights, num_samples=len(weights), replacement=True,\n",
+@@ -908,21 +1000,24 @@
+     "class Glare:\n",
+     "    def __init__(self, p=0.25): self.p = p\n",
+     "    def __call__(self, img):\n",
+-    "        return img if random.random() > self.p else ImageEnhance.Brightness(img).enhance(random.uniform(1.05, 1.35))\n",
++    "        return img if random.random() > self.p else \\\n",
++    "               ImageEnhance.Brightness(img).enhance(random.uniform(1.05, 1.35))\n",
+     "\n",
+     "class DefocusOrMotion:\n",
+     "    def __init__(self, p=0.3): self.p = p\n",
+     "    def __call__(self, img):\n",
+     "        if random.random() > self.p: return img\n",
+-    "        f = ImageFilter.GaussianBlur(radius=random.uniform(0.6, 1.8)) if random.random() < 0.5 \\\n",
+-    "            else ImageFilter.BoxBlur(random.uniform(0.8, 2.0))\n",
++    "        f = (ImageFilter.GaussianBlur(radius=random.uniform(0.6, 1.8))\n",
++    "             if random.random() < 0.5\n",
++    "             else ImageFilter.BoxBlur(random.uniform(0.8, 2.0)))\n",
+     "        return img.filter(f)\n",
+     "\n",
+     "class JpegRecompress:\n",
+     "    def __init__(self, p=0.35, q_range=(50, 92)): self.p, self.q_range = p, q_range\n",
+     "    def __call__(self, img):\n",
+     "        if random.random() > self.p: return img\n",
+-    "        buf = BytesIO(); img.save(buf, format='JPEG', quality=random.randint(*self.q_range))\n",
++    "        buf = BytesIO()\n",
++    "        img.save(buf, format='JPEG', quality=random.randint(*self.q_range))\n",
+     "        buf.seek(0)\n",
+     "        return PILImage.open(buf).convert('RGB').copy()\n",
+     "\n",
+@@ -936,18 +1031,27 @@
+     "    T.ToTensor(), NORM, T.RandomErasing(p=0.12, scale=(0.02, 0.08)),\n",
+     "])\n",
+     "\n",
+-    "# ---- Teacher: EfficientNetV2-S ----------------------------------\n",
+-    "BATCH, IMG = 128, 256\n",
++    "# ── Teacher: EfficientNetV2-S ──────────────────────────────────\n",
++    "BATCH, IMG = 96, 256       # 96 fits comfortably on Colab T4 / A100\n",
+     "train_ds = ImageFolder(str(TRAIN_ROOT), transform=indoor_train_tx)\n",
+     "if len(train_ds) == 0:\n",
+     "    raise RuntimeError('TRAIN_ROOT empty — re-run §2.')\n",
+     "CLASS_NAMES = list(train_ds.classes)\n",
+     "assert CLASS_NAMES == sorted(CLASSES), (CLASS_NAMES, sorted(CLASSES))\n",
+     "TRAIN_CLASS_TO_IDX = dict(train_ds.class_to_idx)\n",
++    "N_CLASSES = len(CLASS_NAMES)\n",
++    "\n",
++    "priors = class_priors_from_imagefolder(train_ds).to(device)\n",
++    "loss_fn = LogitAdjustmentLoss(priors, tau=LA_TAU, label_smoothing=LABEL_SMOOTHING)\n",
+     "\n",
+-    "sampler = make_class_balanced_sampler(train_ds, power=0.5)\n",
+-    "train_dl = DataLoader(train_ds, batch_size=BATCH, sampler=sampler,\n",
+-    "                      **_loader_kwargs(8, drop_last=True))\n",
++    "if USE_WEIGHTED_SAMPLER:\n",
++    "    sampler = make_class_balanced_sampler(train_ds, power=0.5)\n",
++    "    train_dl = DataLoader(train_ds, batch_size=BATCH, sampler=sampler,\n",
++    "                          **_loader_kwargs(min(8, EVAL_WORKERS), drop_last=True))\n",
++    "else:\n",
++    "    train_dl = DataLoader(train_ds, batch_size=BATCH, shuffle=True,\n",
++    "                          generator=torch.Generator().manual_seed(SEED),\n",
++    "                          **_loader_kwargs(min(8, EVAL_WORKERS), drop_last=True))\n",
+     "\n",
+     "val_indomain_ds, val_indomain_dl = make_eval_loader(\n",
+     "    VAL_INDOMAIN, IMG, class_to_idx=TRAIN_CLASS_TO_IDX,\n",
+@@ -965,16 +1069,18 @@
+     "except RuntimeError:\n",
+     "    val_studio_ds = val_studio_dl = None\n",
+     "\n",
+-    "priors = class_priors_from_imagefolder(train_ds).to(device)\n",
+-    "loss_fn = LogitAdjustmentLoss(priors, tau=0.7)\n",
+-    "teacher = timm.create_model('tf_efficientnetv2_s.in21k_ft_in1k',\n",
+-    "                            pretrained=True, num_classes=len(train_ds.classes)).to(device)\n",
++    "teacher = timm.create_model(\n",
++    "    'tf_efficientnetv2_s.in21k_ft_in1k', pretrained=True, num_classes=N_CLASSES,\n",
++    ").to(device)\n",
+     "\n",
+     "def step_eval(model, tag):\n",
+-    "    out = {'indomain': evaluate(model, val_indomain_dl, CLASS_NAMES, device, f'{tag} val_indomain'),\n",
++    "    out = {'indomain':  evaluate(model, val_indomain_dl,  CLASS_NAMES, device, f'{tag} val_indomain'),\n",
+     "           'realworld': evaluate(model, val_realworld_dl, CLASS_NAMES, device, f'{tag} val_realworld')}\n",
+     "    if val_studio_dl is not None:\n",
+     "        out['studio'] = evaluate(model, val_studio_dl, CLASS_NAMES, device, f'{tag} val_studio')\n",
++    "    log_run({'phase': 'teacher', 'tag': tag,\n",
++    "             'realworld_disease_f1': out['realworld']['disease_macro_f1'],\n",
++    "             'realworld_healthy_bias': out['realworld']['healthy_bias']})\n",
+     "    return out\n",
+     "\n",
+     "def _make_sched(opt, n_epochs, n_steps_per_epoch):\n",
+@@ -986,33 +1092,35 @@
+     "    ], milestones=[n_steps_per_epoch])\n",
+     "\n",
+     "def _train_phase(model, opt, n_epochs, scheduler, tag, early_stop=False, patience=4):\n",
+-    "    best, plateau, best_state = -1.0, 0, None\n",
++    "    best_f1, best_state, plateau = -1.0, None, 0\n",
+     "    for ep in range(n_epochs):\n",
+     "        model.train()\n",
+     "        for x, y in train_dl:\n",
+     "            x, y = x.to(device, non_blocking=True), y.to(device)\n",
+     "            with amp_ctx():\n",
+-    "                loss = loss_fn(model(x), y)\n",
++    "                logits = model(x)\n",
++    "                loss = loss_fn(logits, y)\n",
+     "            if not torch.isfinite(loss):\n",
+     "                print(f'WARN: non-finite loss at {tag} ep{ep+1}; skipping batch'); continue\n",
+     "            opt.zero_grad(set_to_none=True)\n",
+     "            loss.backward()\n",
+-    "            torch.nn.utils.clip_grad_norm_([p for p in model.parameters() if p.requires_grad], max_norm=5.0)\n",
++    "            torch.nn.utils.clip_grad_norm_(\n",
++    "                [p for p in model.parameters() if p.requires_grad], max_norm=5.0)\n",
+     "            opt.step(); scheduler.step()\n",
+     "        m = step_eval(model, f'{tag} ep{ep+1}')\n",
+     "        if early_stop:\n",
+     "            f1 = m['indomain']['disease_macro_f1']\n",
+-    "            if f1 > best:\n",
+-    "                best, plateau = f1, 0\n",
++    "            if f1 > best_f1:\n",
++    "                best_f1, plateau = f1, 0\n",
+     "                best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}\n",
+     "            else:\n",
+     "                plateau += 1\n",
+     "                if plateau >= patience:\n",
+-    "                    print(f'early stop @ ep{ep+1}  (best f1={best:.3f})')\n",
++    "                    print(f'early stop @ ep{ep+1}  (best f1={best_f1:.3f})')\n",
+     "                    break\n",
+     "    if early_stop and best_state is not None:\n",
+     "        model.load_state_dict(best_state)\n",
+-    "        print(f'restored best teacher weights  best_indomain_f1={best:.3f}')\n",
++    "        print(f'restored best teacher weights  best_indomain_f1={best_f1:.3f}')\n",
+     "\n",
+     "# Phase 1 — head-only\n",
+     "for n, p in teacher.named_parameters():\n",
+@@ -1021,12 +1129,11 @@
+     "                        lr=3e-3, weight_decay=1e-4)\n",
+     "_train_phase(teacher, opt, 3, _make_sched(opt, 3, len(train_dl)), 'head')\n",
+     "\n",
+-    "# Phase 2 — unfreeze the last two backbone stages. EfficientNetV2-S in\n",
+-    "# timm exposes blocks.0..blocks.5; discover dynamically to avoid stale selectors.\n",
++    "# Phase 2 — unfreeze last two backbone stages\n",
+     "block_idxs = sorted({int(m.group(1)) for n in dict(teacher.named_parameters())\n",
+     "                     if (m := re.match(r'blocks\\.(\\d+)\\.', n))})\n",
+     "if not block_idxs:\n",
+-    "    raise RuntimeError('teacher has no `blocks.N.*` parameters — unexpected backbone topology.')\n",
++    "    raise RuntimeError('teacher has no `blocks.N.*` parameters — backbone topology changed.')\n",
+     "top_blocks = [f'blocks.{i}' for i in block_idxs[-2:]]\n",
+     "unfreeze = top_blocks + ['classifier']\n",
+     "for p in teacher.parameters(): p.requires_grad_(False)\n",
+@@ -1037,8 +1144,7 @@
+     "                   if any(k in n for k in top_blocks) and p.requires_grad]\n",
+     "if not head_params or not backbone_params:\n",
+     "    raise RuntimeError(f'empty optimiser group: head={len(head_params)} backbone={len(backbone_params)}')\n",
+-    "print(f'Phase 2 unfreeze: {top_blocks} + classifier  '\n",
+-    "      f'(head={len(head_params)} params, backbone={len(backbone_params)} params)')\n",
++    "print(f'Phase 2 unfreeze: {top_blocks} + classifier')\n",
+     "opt = torch.optim.AdamW([\n",
+     "    {'params': head_params,     'lr': 5e-4},\n",
+     "    {'params': backbone_params, 'lr': 5e-5},\n",
+@@ -1048,37 +1154,61 @@
+   },
+   {
+    "cell_type": "markdown",
+-   "id": "c9fff78d",
+    "metadata": {},
+    "source": [
+-    "## §5 — KD into MobileNetV3-Large student\n",
++    "## §5 — Knowledge distillation into MobileNetV3-Large\n",
+     "\n",
+-    "KL-divergence on softened logits (T=4) + 0.3 × hard-label loss. 8 epochs, head 5e-4 / backbone 5e-5. The best checkpoint by `val_indomain` disease-F1 is restored before export so the cosine tail cannot silently overwrite a better student.\n"
++    "* **Loss:** `α · KD + (1-α) · CE_LA`, with α=0.5, τ=4.0. CE keeps the\n",
++    "  hard target signal; KD softens the teacher's confidence into a\n",
++    "  matching distribution. We use the same `LogitAdjustmentLoss` for the\n",
++    "  CE branch so the student inherits the teacher's prior correction.\n",
++    "* **EMA student** (decay=0.999) — small-data regime; the EMA copy is\n",
++    "  what we evaluate, save and export. Vanilla weights are noisy step-\n",
++    "  to-step; EMA smooths them out without retraining.\n",
++    "* **Early-stop on `val_indomain` disease macro-F1**, patience=3.\n",
++    "* **Best EMA state restored** before saving.\n"
+    ]
+   },
+   {
+    "cell_type": "code",
+-   "execution_count": null,
+-   "id": "e506d278",
+    "metadata": {},
++   "execution_count": null,
+    "outputs": [],
+    "source": [
+-    "# §5 — Knowledge distillation\n",
++    "# §5 — KD into MobileNetV3-Large with EMA student\n",
++    "from copy import deepcopy\n",
+     "from torchvision import models\n",
+     "\n",
+-    "T_KD, ALPHA = 4.0, 0.7\n",
++    "T_KD, ALPHA = 4.0, 0.5\n",
++    "EMA_DECAY = 0.999\n",
++    "\n",
+     "student = models.mobilenet_v3_large(weights=models.MobileNet_V3_Large_Weights.IMAGENET1K_V2)\n",
+-    "student.classifier[3] = nn.Linear(student.classifier[3].in_features, len(train_ds.classes))\n",
++    "student.classifier[3] = nn.Linear(student.classifier[3].in_features, N_CLASSES)\n",
+     "student = student.to(device)\n",
++    "\n",
++    "# EMA copy. Same arch, frozen — updated by exponential moving average\n",
++    "# every step. Lives on the same device for cheap updates.\n",
++    "ema_student = deepcopy(student).eval()\n",
++    "for p in ema_student.parameters():\n",
++    "    p.requires_grad_(False)\n",
++    "\n",
++    "@torch.no_grad()\n",
++    "def ema_update(ema, online, decay=EMA_DECAY):\n",
++    "    for p_ema, p_on in zip(ema.parameters(), online.parameters()):\n",
++    "        p_ema.mul_(decay).add_(p_on.detach(), alpha=1.0 - decay)\n",
++    "    for b_ema, b_on in zip(ema.buffers(), online.buffers()):\n",
++    "        b_ema.copy_(b_on)\n",
++    "\n",
+     "teacher.eval()\n",
+     "opt = torch.optim.AdamW([\n",
+     "    {'params': student.classifier.parameters(), 'lr': 5e-4},\n",
+     "    {'params': [p for n, p in student.named_parameters() if 'classifier' not in n], 'lr': 5e-5},\n",
+     "], weight_decay=1e-4)\n",
+-    "sched = _make_sched(opt, 8, len(train_dl))\n",
++    "KD_EPOCHS = 10\n",
++    "sched = _make_sched(opt, KD_EPOCHS, len(train_dl))\n",
+     "\n",
+-    "best_f1, best_state, best_ep, plateau, PATIENCE = -1.0, None, 0, 0, 3\n",
+-    "for ep in range(8):\n",
++    "best_f1, best_ema_state, best_ep, plateau, PATIENCE = -1.0, None, 0, 0, 3\n",
++    "for ep in range(KD_EPOCHS):\n",
+     "    student.train()\n",
+     "    for x, y in train_dl:\n",
+     "        x, y = x.to(device, non_blocking=True), y.to(device)\n",
+@@ -1086,9 +1216,11 @@
+     "            with torch.no_grad():\n",
+     "                t_logits = teacher(x)\n",
+     "            s_logits = student(x)\n",
+-    "            kd = F.kl_div(F.log_softmax(s_logits / T_KD, dim=1),\n",
+-    "                          F.softmax(t_logits / T_KD, dim=1),\n",
+-    "                          reduction='batchmean') * (T_KD * T_KD)\n",
++    "            kd = F.kl_div(\n",
++    "                F.log_softmax(s_logits / T_KD, dim=1),\n",
++    "                F.softmax(t_logits / T_KD, dim=1),\n",
++    "                reduction='batchmean',\n",
++    "            ) * (T_KD * T_KD)\n",
+     "            ce = loss_fn(s_logits, y)\n",
+     "            loss = ALPHA * kd + (1 - ALPHA) * ce\n",
+     "        if not torch.isfinite(loss):\n",
+@@ -1097,93 +1229,122 @@
+     "        loss.backward()\n",
+     "        torch.nn.utils.clip_grad_norm_(student.parameters(), max_norm=5.0)\n",
+     "        opt.step(); sched.step()\n",
+-    "    metrics = step_eval(student, f'kd ep{ep+1}')\n",
++    "        ema_update(ema_student, student)\n",
++    "\n",
++    "    metrics = step_eval(ema_student, f'kd-ema ep{ep+1}')\n",
+     "    f1 = metrics['indomain']['disease_macro_f1']\n",
+     "    if f1 > best_f1:\n",
+     "        best_f1, best_ep, plateau = f1, ep + 1, 0\n",
+-    "        best_state = {k: v.detach().cpu().clone() for k, v in student.state_dict().items()}\n",
++    "        best_ema_state = {k: v.detach().cpu().clone() for k, v in ema_student.state_dict().items()}\n",
+     "    else:\n",
+     "        plateau += 1\n",
+     "        if plateau >= PATIENCE:\n",
+     "            print(f'KD early stop @ ep{ep+1}  (best ep={best_ep} f1={best_f1:.3f})')\n",
+     "            break\n",
+     "\n",
+-    "if best_state is not None:\n",
+-    "    student.load_state_dict(best_state)\n",
++    "if best_ema_state is not None:\n",
++    "    ema_student.load_state_dict(best_ema_state)\n",
++    "    student.load_state_dict(best_ema_state)   # online ≡ EMA at export time\n",
++    "\n",
+     "Path('models').mkdir(exist_ok=True)\n",
+     "torch.save(student.state_dict(), 'models/classifier.pth')\n",
+-    "print(f'KD complete  best_indomain_f1={best_f1:.3f}  best_ep={best_ep}')\n"
++    "log_run({'phase': 'kd_done', 'best_indomain_f1': best_f1, 'best_ep': best_ep})\n",
++    "print(f'KD complete  best_indomain_f1={best_f1:.3f}  best_ep={best_ep}')\n",
++    "\n",
++    "# Free the teacher — ONNX export only needs the student.\n",
++    "del teacher\n",
++    "torch.cuda.empty_cache() if device == 'cuda' else None\n"
+    ]
+   },
+   {
+    "cell_type": "markdown",
+-   "id": "132f1638",
+    "metadata": {},
+    "source": [
+-    "## §6 — ONNX, static INT8 (QDQ), temperature, conformal RAPS\n",
++    "## §6 — Production export: ONNX → static INT8 + temperature + conformal\n",
++    "\n",
++    "### Export & quantisation order of operations\n",
+     "\n",
+-    "* Export on **CPU** so the graph stays portable.\n",
+-    "* Run ONNX Runtime quantization pre-processing before static quantization when available; this lets shape inference / graph cleanup happen before QDQ insertion.\n",
+-    "* Static INT8 calibration uses the dedicated `temperature_cal` split, not `val_realworld`.\n",
+-    "* **Quantisation type:** `weight_type=QInt8`, `activation_type=QUInt8` (U8S8), per-channel weights, QDQ format.\n",
+-    "* Temperature scaling is fitted on deployed INT8 ONNX logits from `temperature_cal` using a positive log-temperature parameter.\n",
+-    "* Conformal RAPS is fitted on `conformal_cal` and mirrors `server/conformal.py`.\n",
+-    "* Final reported metrics come from the deployed INT8 ONNX Runtime CPU session, then the ship gate is enforced.\n"
++    "1. Export FP32 ONNX from the **EMA student weights** (via the online\n",
++    "   model that we synced above). CPU export on purpose — keeps any\n",
++    "   future CUDA-only ops out of the graph.\n",
++    "2. Run `quant_pre_process` (symbolic-shape inference). This is **required**\n",
++    "   — the `try/except` import in v2.0 silently skipped it when the\n",
++    "   helper module was missing, which triggered ORT errors at deploy time.\n",
++    "3. Static INT8 (QDQ) calibration uses **`conformal_cal`** (≈ 500\n",
++    "   indoor user-style images, 10 % of train). The previous notebook\n",
++    "   used `temp_cal` (≈ 5 % → ~150 images), which was too small for\n",
++    "   stable per-channel weight quantisation.\n",
++    "4. Re-evaluate INT8 ONNX on `val_realworld`. Drop > 0.05 = `RuntimeError`.\n",
++    "   0.02 < drop ≤ 0.05 = warning ship.\n",
++    "5. Fit temperature on **temperature_cal** logits collected from the\n",
++    "   INT8 ONNX session (so we calibrate the model we actually deploy).\n",
++    "6. Fit conformal RAPS on `conformal_cal` softmax probabilities passed\n",
++    "   through the fitted temperature.\n",
++    "7. Final eval on every val slice via the INT8 ORT session.\n",
++    "8. Persist `classes.json`, `temperature.json`, `conformal.json`,\n",
++    "   `model_card.json`, `training_metrics.json`.\n",
++    "9. **Ship gate** runs last — raises `RuntimeError` if any production\n",
++    "   threshold is violated.\n"
+    ]
+   },
+   {
+    "cell_type": "code",
+-   "execution_count": null,
+-   "id": "8b3cfaec",
+    "metadata": {},
++   "execution_count": null,
+    "outputs": [],
+    "source": [
+     "# §6 — ONNX FP32 → static INT8 + temperature + conformal RAPS\n",
++    "import datetime\n",
+     "import onnxruntime as ort\n",
+     "from onnxruntime.quantization import (\n",
+     "    quantize_static, CalibrationDataReader, QuantFormat, QuantType)\n",
+     "try:\n",
+     "    from onnxruntime.quantization.shape_inference import quant_pre_process\n",
+-    "except Exception:\n",
+-    "    quant_pre_process = None\n",
++    "except ImportError as e:\n",
++    "    raise RuntimeError(\n",
++    "        'onnxruntime.quantization.shape_inference.quant_pre_process is required. '\n",
++    "        'Upgrade onnxruntime to >=1.17 and re-run §1 install.'\n",
++    "    ) from e\n",
+     "\n",
+     "Path('models').mkdir(exist_ok=True)\n",
+     "\n",
+-    "# 1. ONNX FP32 export — on CPU to avoid baking CUDA-only ops in the graph.\n",
++    "# 1. ONNX FP32 export from EMA student weights (already loaded into `student`).\n",
+     "student_cpu = student.cpu().eval()\n",
+-    "raw_onnx = 'models/classifier_raw.onnx'\n",
++    "raw_onnx  = 'models/classifier_raw.onnx'\n",
+     "fp32_onnx = 'models/classifier.onnx'\n",
+     "torch.onnx.export(\n",
+     "    student_cpu, torch.randn(1, 3, IMG, IMG), raw_onnx,\n",
+     "    opset_version=18, input_names=['input'], output_names=['logits'],\n",
+     "    dynamic_axes={'input': {0: 'N'}, 'logits': {0: 'N'}})\n",
+-    "if quant_pre_process is not None:\n",
+-    "    try:\n",
+-    "        quant_pre_process(raw_onnx, fp32_onnx, skip_symbolic_shape=True)\n",
+-    "        print('ONNX quantization pre-processing complete')\n",
+-    "    except Exception as e:\n",
+-    "        print(f'WARN: quant_pre_process failed ({e}); using raw ONNX graph')\n",
+-    "        shutil.copy(raw_onnx, fp32_onnx)\n",
+-    "else:\n",
+-    "    shutil.copy(raw_onnx, fp32_onnx)\n",
++    "quant_pre_process(raw_onnx, fp32_onnx, skip_symbolic_shape=False)\n",
++    "print('ONNX quant_pre_process done')\n",
+     "\n",
+-    "# 2. Static INT8 calibration — dedicated held-out photos, not val_realworld.\n",
+-    "class RealWorldCalibrationReader(CalibrationDataReader):\n",
++    "# 2. Static INT8 calibration from `conformal_cal` (~500 images).\n",
++    "class CalibrationReader(CalibrationDataReader):\n",
+     "    def __init__(self, dataset, n=500, input_name='input'):\n",
+-    "        self.input_name = input_name\n",
+     "        idx = np.random.RandomState(SEED).permutation(len(dataset))[:min(n, len(dataset))]\n",
+-    "        self._iter = iter([(dataset[i][0].unsqueeze(0).numpy().astype(np.float32),) for i in idx])\n",
++    "        self._iter = iter(\n",
++    "            [(dataset[i][0].unsqueeze(0).numpy().astype(np.float32),) for i in idx]\n",
++    "        )\n",
++    "        self.input_name = input_name\n",
+     "    def get_next(self):\n",
+     "        nxt = next(self._iter, None)\n",
+     "        return None if nxt is None else {self.input_name: nxt[0]}\n",
+     "\n",
++    "# Use conformal_cal (~10 %) — bigger and more representative than the\n",
++    "# 5 % temperature_cal slice used previously. Both splits are restricted\n",
++    "# to the deployment distribution (plantdoc + inat).\n",
++    "cal_dataset, cal_dl = make_eval_loader(\n",
++    "    CONFORMAL_CAL, IMG, class_to_idx=TRAIN_CLASS_TO_IDX,\n",
++    ")\n",
+     "quantize_static(\n",
+     "    fp32_onnx, 'models/classifier_int8.onnx',\n",
+-    "    calibration_data_reader=RealWorldCalibrationReader(temp_cal_ds, n=500),\n",
++    "    calibration_data_reader=CalibrationReader(cal_dataset, n=500),\n",
+     "    quant_format=QuantFormat.QDQ,\n",
+     "    activation_type=QuantType.QUInt8,\n",
+     "    weight_type=QuantType.QInt8,\n",
+-    "    per_channel=True)\n",
++    "    per_channel=True,\n",
++    ")\n",
+     "\n",
+     "# 3. Mandatory post-quantization validation on val_realworld.\n",
+     "def _ort_session(path):\n",
+@@ -1224,24 +1385,28 @@
+     "        all_y.append(y.numpy())\n",
+     "    return np.concatenate(all_logits), np.concatenate(all_y)\n",
+     "\n",
+-    "# 4. Temperature scaling on temperature_cal NLL (INT8 logits).\n",
++    "# 4. Temperature scaling on temperature_cal NLL using INT8 logits.\n",
+     "logits_temp_np, y_temp_np = _collect_logits(int8_sess, temp_cal_dl)\n",
+     "logits_temp = torch.from_numpy(logits_temp_np)\n",
+     "y_temp = torch.from_numpy(y_temp_np).long()\n",
+     "\n",
+     "log_T = torch.tensor(0.0, requires_grad=True)\n",
+-    "opt = torch.optim.LBFGS([log_T], lr=0.05, max_iter=50)\n",
++    "opt_T = torch.optim.LBFGS([log_T], lr=0.05, max_iter=50)\n",
+     "def closure():\n",
+-    "    opt.zero_grad()\n",
++    "    opt_T.zero_grad()\n",
+     "    T_now = log_T.exp().clamp(0.05, 10.0)\n",
+     "    loss = F.cross_entropy(logits_temp / T_now, y_temp)\n",
+     "    loss.backward(); return loss\n",
+-    "opt.step(closure)\n",
++    "opt_T.step(closure)\n",
+     "T_val = float(log_T.detach().exp().clamp(0.05, 10.0))\n",
+-    "Path('models/temperature.json').write_text(json.dumps({'temperature': T_val}, indent=2))\n",
+-    "print(f'fitted T={T_val:.3f}  temp_cal MaxLogit mean={logits_temp.max(1).values.numpy().mean():.2f}')\n",
++    "Path('models/temperature.json').write_text(json.dumps({\n",
++    "    'temperature': T_val,\n",
++    "    '_note': 'Fitted with LBFGS on val temperature_cal NLL using INT8 ONNX logits.',\n",
++    "}, indent=2))\n",
++    "print(f'fitted T={T_val:.3f}  '\n",
++    "      f'temp_cal MaxLogit mean={logits_temp.max(1).values.numpy().mean():.2f}')\n",
+     "\n",
+-    "# 5. Conformal RAPS — mirrors server/conformal.py.\n",
++    "# 5. Conformal RAPS on conformal_cal probabilities (after temperature).\n",
+     "def _raps_score(p_sorted, lam, k_reg):\n",
+     "    cs = np.cumsum(p_sorted)\n",
+     "    return cs + lam * np.maximum(0.0, np.arange(1, len(p_sorted)+1, dtype=np.float64) - k_reg)\n",
+@@ -1256,8 +1421,7 @@
+     "        s = _raps_score(cal_probs[i, order], lambda_reg, k_reg)\n",
+     "        nonconf[i] = s[int(np.where(order == cal_labels[i])[0][0])]\n",
+     "    q = float(np.quantile(nonconf, min(1.0, np.ceil((n+1) * (1-alpha)) / n), method='higher'))\n",
+-    "    covered = 0\n",
+-    "    set_sizes = []\n",
++    "    covered, set_sizes = 0, []\n",
+     "    for i in range(n):\n",
+     "        order = np.argsort(-cal_probs[i])\n",
+     "        s = _raps_score(cal_probs[i, order], lambda_reg, k_reg)\n",
+@@ -1270,27 +1434,51 @@
+     "            'calibration_n': int(n), 'empirical_coverage': covered / n,\n",
+     "            'mean_set_size': float(np.mean(set_sizes))}\n",
+     "\n",
+-    "cal_ds, cal_dl = make_eval_loader(\n",
+-    "    CONFORMAL_CAL, IMG, class_to_idx=TRAIN_CLASS_TO_IDX,\n",
+-    ")\n",
+     "logits_cal_np, y_cal_np = _collect_logits(int8_sess, cal_dl)\n",
+     "probs_cal = torch.softmax(torch.from_numpy(logits_cal_np) / T_val, dim=1).numpy()\n",
+     "cfg = calibrate_q_hat(probs_cal, y_cal_np, alpha=0.10)\n",
+     "Path('models/conformal.json').write_text(json.dumps(cfg, indent=2))\n",
+     "print('conformal:', cfg)\n",
+     "\n",
+-    "# Move student back to GPU so anything below that still expects a torch model works.\n",
+-    "student = student.to(device)\n",
+-    "\n",
+-    "# 6. Persist the trained-on class list + img_size so production reads\n",
+-    "# exactly what we trained. Order matches sorted(ImageFolder.classes).\n",
+-    "Path('models/classes.json').write_text(json.dumps({\n",
++    "# 6. Persist class list + img_size — production reads exactly what we shipped.\n",
++    "classes_payload = {\n",
++    "    'model_version': '2.1',\n",
+     "    'class_names': CLASS_NAMES,\n",
+-    "    'training': {'img_size': IMG},\n",
+-    "}, indent=2))\n",
++    "    'detector_classes': ['plant_leaf'],\n",
++    "    'training': {\n",
++    "        'img_size': IMG,\n",
++    "        'batch_size': BATCH,\n",
++    "        'loss': 'logit_adjustment_ce',\n",
++    "        'logit_adjustment_tau': LA_TAU,\n",
++    "        'label_smoothing': LABEL_SMOOTHING,\n",
++    "        'use_weighted_sampler': bool(USE_WEIGHTED_SAMPLER),\n",
++    "        'optimizer': 'AdamW',\n",
++    "        'weight_decay': 1e-4,\n",
++    "        'lr_schedule': 'cosine + warmup',\n",
++    "        'precision': 'bf16-mixed' if device == 'cuda' else 'fp32',\n",
++    "        'primary_metric': 'val_realworld_disease_macro_f1',\n",
++    "        'primary_val_set': 'data_v2/classification/val/realworld',\n",
++    "        'isolated_val_slice': 'data_v2/classification/val/plantvillage_studio',\n",
++    "    },\n",
++    "    'distillation': {\n",
++    "        'teacher': 'tf_efficientnetv2_s.in21k_ft_in1k',\n",
++    "        'student': 'mobilenet_v3_large',\n",
++    "        'loss': 'alpha*KD + (1-alpha)*CE_LA',\n",
++    "        'alpha': ALPHA,\n",
++    "        'tau':   T_KD,\n",
++    "        'ema_decay': EMA_DECAY,\n",
++    "        'epochs': KD_EPOCHS,\n",
++    "    },\n",
++    "    'ood': {\n",
++    "        'score': 'max_logit',\n",
++    "        'max_logit_floor': 4.0,\n",
++    "        '_score_note': 'MaxLogit (Hendrycks 2019) — robust under temperature scaling and label smoothing where MSP fails.',\n",
++    "    },\n",
++    "}\n",
++    "Path('models/classes.json').write_text(json.dumps(classes_payload, indent=2))\n",
+     "print(f'classes.json: {len(CLASS_NAMES)} classes')\n",
+     "\n",
+-    "# 7. Final metrics on all val slices via deployed INT8 ONNX session.\n",
++    "# 7. Final metrics across all val slices via the deployed INT8 ORT session.\n",
+     "class _OnnxModelAdapter:\n",
+     "    \"\"\"Thin wrapper so evaluate() can call model(x) on an ORT session.\"\"\"\n",
+     "    def __init__(self, sess): self.sess = sess\n",
+@@ -1299,7 +1487,6 @@
+     "        out = _ort_logits(self.sess, x.detach().cpu().numpy().astype(np.float32))\n",
+     "        return torch.from_numpy(out).to(x.device)\n",
+     "\n",
+-    "import datetime\n",
+     "int8_adapter = _OnnxModelAdapter(int8_sess)\n",
+     "ONNX_EVAL_DEVICE = 'cpu'\n",
+     "final_metrics = {\n",
+@@ -1308,9 +1495,9 @@
+     "}\n",
+     "if val_studio_dl is not None:\n",
+     "    final_metrics['studio'] = evaluate(int8_adapter, val_studio_dl, CLASS_NAMES, ONNX_EVAL_DEVICE, 'final val_studio')\n",
+-    "\n",
+     "Path('models/training_metrics.json').write_text(json.dumps(final_metrics, indent=2))\n",
+     "\n",
++    "# 8. Model card.\n",
+     "model_card = {\n",
+     "    'version': '2.1',\n",
+     "    'trained_at': datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat(),\n",
+@@ -1318,26 +1505,35 @@
+     "    'img_size': IMG,\n",
+     "    'temperature': T_val,\n",
+     "    'conformal': cfg,\n",
+-    "    'train_counts':         {c: count_images(TRAIN_ROOT  / c) for c in CLASS_NAMES},\n",
+-    "    'val_realworld_counts': {c: count_images(VAL_PRIMARY / c) for c in CLASS_NAMES},\n",
+-    "    'val_indomain_counts':  {c: count_images(VAL_INDOMAIN/ c) for c in CLASS_NAMES},\n",
+-    "    'temperature_cal_counts': {c: count_images(TEMP_CAL / c) for c in CLASS_NAMES},\n",
+-    "    'conformal_cal_counts':   {c: count_images(CONFORMAL_CAL / c) for c in CLASS_NAMES},\n",
++    "    'train_counts':           {c: count_images(TRAIN_ROOT  / c) for c in CLASS_NAMES},\n",
++    "    'val_realworld_counts':   {c: count_images(VAL_PRIMARY / c) for c in CLASS_NAMES},\n",
++    "    'val_indomain_counts':    {c: count_images(VAL_INDOMAIN/ c) for c in CLASS_NAMES},\n",
++    "    'temperature_cal_counts': {c: count_images(TEMP_CAL    / c) for c in CLASS_NAMES},\n",
++    "    'conformal_cal_counts':   {c: count_images(CONFORMAL_CAL/ c) for c in CLASS_NAMES},\n",
++    "    'val_studio_counts':      {c: count_images(VAL_STUDIO  / c) for c in CLASS_NAMES} if val_studio_dl is not None else None,\n",
+     "    'hyperparams': {\n",
+     "        'teacher': 'tf_efficientnetv2_s.in21k_ft_in1k',\n",
+     "        'student': 'mobilenet_v3_large',\n",
+-    "        'kd_alpha': ALPHA, 'kd_tau': T_KD, 'la_tau': 0.7,\n",
+-    "        'label_smoothing': 0.05, 'batch': BATCH, 'img_size': IMG,\n",
+-    "        'sampler': {'type': 'WeightedRandomSampler', 'power': 0.5},\n",
++    "        'kd_alpha': ALPHA, 'kd_tau': T_KD, 'la_tau': LA_TAU,\n",
++    "        'label_smoothing': LABEL_SMOOTHING,\n",
++    "        'use_weighted_sampler': bool(USE_WEIGHTED_SAMPLER),\n",
++    "        'batch': BATCH, 'img_size': IMG,\n",
++    "        'ema_decay': EMA_DECAY,\n",
++    "    },\n",
++    "    'int8': {\n",
++    "        'drift': drift, 'f1_fp32': f1_fp32, 'f1_int8': f1_int8,\n",
++    "        'warn_drift': WARN_DRIFT, 'fail_drift': FAIL_DRIFT,\n",
++    "        'activation_type': 'QUInt8', 'weight_type': 'QInt8',\n",
++    "        'per_channel': True, 'format': 'QDQ',\n",
++    "        'calibration_split': 'conformal_cal',\n",
++    "        'calibration_n': 500,\n",
+     "    },\n",
+-    "    'int8': {'drift': drift, 'f1_fp32': f1_fp32, 'f1_int8': f1_int8,\n",
+-    "             'warn_drift': WARN_DRIFT, 'fail_drift': FAIL_DRIFT,\n",
+-    "             'activation_type': 'QUInt8', 'weight_type': 'QInt8',\n",
+-    "             'per_channel': True, 'format': 'QDQ'},\n",
+     "    'kd': {'best_indomain_disease_f1': best_f1, 'best_epoch': best_ep},\n",
+     "    'reporting_backend': 'onnxruntime_int8_cpu',\n",
+     "    'reproducibility': {\n",
+     "        'seed': SEED,\n",
++    "        'torch': torch.__version__,\n",
++    "        'onnxruntime': ort.__version__,\n",
+     "        'cudnn_deterministic': bool(getattr(torch.backends.cudnn, 'deterministic', False)),\n",
+     "        'cudnn_benchmark':     bool(getattr(torch.backends.cudnn, 'benchmark', True)),\n",
+     "    },\n",
+@@ -1345,7 +1541,7 @@
+     "Path('models/model_card.json').write_text(json.dumps(model_card, indent=2))\n",
+     "print('Persisted: training_metrics.json + model_card.json')\n",
+     "\n",
+-    "# 8. Ship gate.\n",
++    "# 9. Ship gate — runs last so we never accidentally publish a broken model.\n",
+     "MIN_DISEASE_F1, MAX_HEALTHY_BIAS = 0.70, 1.50\n",
+     "rw = final_metrics['realworld']\n",
+     "disease_classes = [c for c in CLASS_NAMES if c not in ('healthy', 'not_a_plant')]\n",
+@@ -1361,25 +1557,25 @@
+     "    raise RuntimeError('SHIP GATE FAILED: ' + '; '.join(failures))\n",
+     "print('SHIP GATE PASSED')\n",
+     "\n",
+-    "# 9. Detector artefact contract.\n",
++    "# 10. Detector artefact contract.\n",
+     "missing = [s for s in ('detector.pt', 'detector.onnx')\n",
+     "           if not Path(f'models/{s}').exists()]\n",
+     "if missing:\n",
+     "    print(f'WARN: {missing} not in models/ — drop the shipped '\n",
+     "          f'server/models/detector.{{pt,onnx}} pair into ./models/ '\n",
+     "          f'before assembling the deploy bundle, or re-run §3 with '\n",
+-    "          f'a YOLO data.yaml under data_v2/.')\n"
++    "          f'a YOLO data.yaml under data_v2/.')\n",
++    "\n",
++    "log_run({'phase': 'export_done', 'f1_fp32': f1_fp32, 'f1_int8': f1_int8, 'T': T_val,\n",
++    "         'q_hat': cfg['q_hat'], 'empirical_coverage': cfg['empirical_coverage']})\n"
+    ]
+   },
+   {
+    "cell_type": "markdown",
+-   "id": "835d2c1c",
+    "metadata": {},
+    "source": [
+     "## §7 — Evaluation contract\n",
+     "\n",
+-    "Three independent slices, three reports per release:\n",
+-    "\n",
+     "| Slice | Role | Pass criterion |\n",
+     "|---|---|---|\n",
+     "| `val_indomain` | training-loop metric, drives early stopping | tracked; best checkpoint restored |\n",
+@@ -1390,26 +1586,27 @@
+     "\n",
+     "Persisted artefacts (all written to `models/` in the notebook CWD):\n",
+     "\n",
+-    "* `classifier_int8.onnx`, `classifier.pth` — model weights.\n",
+-    "* `classes.json` — `{class_names, training.img_size}`. Server reads it at startup so the trained-on taxonomy is the contract.\n",
+-    "* `temperature.json`, `conformal.json` — calibration configs fitted on deployed INT8 ONNX logits, not FP32 torch logits.\n",
+-    "* `detector.{pt,onnx}` — Stage 1 weights, copied from `runs/detect/.../weights/` if §3 retrained, otherwise the operator drops in the shipped pair.\n",
++    "* `classifier_int8.onnx`, `classifier.onnx`, `classifier.pth` — model weights.\n",
++    "* `classes.json` — the contract the server reads at startup.\n",
++    "* `temperature.json`, `conformal.json` — calibration configs fitted on the **deployed INT8 ONNX session**, not the FP32 torch model.\n",
++    "* `detector.{pt,onnx}` — Stage 1 weights (re-trained from §3 if a YOLO `data.yaml` is supplied; the shipped pair otherwise).\n",
++    "* `dinov2_probe.json` — diagnostic linear-probe curve.\n",
+     "* `training_metrics.json` — structured per-class recall + confusion matrix on every val slice.\n",
+-    "* `model_card.json` — provenance: train/val counts per class, hyperparams, INT8 drift, best-KD epoch, repro flags. Required for post-deploy debugging without re-running the notebook.\n"
++    "* `model_card.json` — provenance: train/val counts per class, hyperparams, INT8 drift, best-KD epoch, reproducibility flags.\n",
++    "* `run_log.jsonl` — one JSON-line per epoch / phase, useful for post-mortem.\n"
+    ]
+   }
+  ],
+  "metadata": {
+   "kernelspec": {
+-   "display_name": "Python 3",
+-   "language": "python",
+-   "name": "python3"
++   "name": "python3",
++   "display_name": "Python 3"
+   },
+   "language_info": {
+    "name": "python",
+-   "version": "3.11"
++   "version": "3.10"
+   }
+  },
+  "nbformat": 4,
+  "nbformat_minor": 5
+-}
++}
+\ No newline at end of file
