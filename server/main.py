@@ -31,21 +31,39 @@ from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response as StarletteResponse
 
-from ai_services import (
-    chat_metrics_snapshot,
-    chat_reply,
-    compare_progression,
-    generate_care_plan,
-    identify_species,
-)
-from config import get_float, get_int, get_list, get_str
-from diseases_data import DISEASES_DATABASE
-from pipeline import PlantDiseasePipeline
+# Imports work two ways:
+#   1) Inside Docker (`uvicorn main:app` from /app, flat copy) — `from
+#      ai_services import …` resolves directly.
+#   2) From the repo root (`python -m server.main` or `uvicorn
+#      server.main:app`) — same names live under the `server.` package.
+# The try/except below covers both without forcing PYTHONPATH gymnastics.
+try:
+    from .ai_services import (  # type: ignore[import-not-found]
+        chat_metrics_snapshot,
+        chat_reply,
+        compare_progression,
+        generate_care_plan,
+        identify_species,
+    )
+    from .config import get_float, get_int, get_list, get_str
+    from .diseases_data import DISEASES_DATABASE
+    from .pipeline import PlantDiseasePipeline
+except ImportError:
+    from ai_services import (
+        chat_metrics_snapshot,
+        chat_reply,
+        compare_progression,
+        generate_care_plan,
+        identify_species,
+    )
+    from config import get_float, get_int, get_list, get_str
+    from diseases_data import DISEASES_DATABASE
+    from pipeline import PlantDiseasePipeline
 
 try:
     from . import __version__ as APP_VERSION  # type: ignore
 except Exception:
-    APP_VERSION = "2.0"
+    APP_VERSION = "2.1"
 
 # Limit Pillow decompression to prevent zip-bomb DoS
 Image.MAX_IMAGE_PIXELS = 20_000_000  # ~4500×4500
@@ -194,7 +212,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.min_interval = 1.0 / requests_per_second
         self._last_request: dict[str, float] = {}
         self._lock = threading.Lock()
-        self._last_cleanup = time.time()
+        self._last_cleanup = time.monotonic()
 
     def _cleanup_stale(self, now: float) -> None:
         cutoff = now - max(self.min_interval * 2, 60.0)
@@ -214,7 +232,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         client_ip = _client_ip(request)
-        now = time.time()
+        # Use monotonic clock so an NTP step (or daylight-saving jump on
+        # a misconfigured host) cannot lock every client out for
+        # several minutes by making `now - last` go negative.
+        now = time.monotonic()
 
         with self._lock:
             if now - self._last_cleanup > _RATE_LIMIT_CLEANUP_INTERVAL:

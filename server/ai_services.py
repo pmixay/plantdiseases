@@ -38,7 +38,10 @@ import time
 from collections import OrderedDict
 from typing import Any, Optional
 
-from config import get_float, get_int, get_str
+try:
+    from .config import get_float, get_int, get_str  # type: ignore[import-not-found]
+except ImportError:
+    from config import get_float, get_int, get_str
 
 logger = logging.getLogger(__name__)
 
@@ -204,25 +207,25 @@ def identify_species(image_bytes: bytes, *, organ: str = "leaf") -> dict:
 # session don't pay for re-tokenising the system prompt.
 _DOCTOR_SYSTEM_PROMPT = """You are PlantDiseases' friendly AI Plant Doctor, helping
 people care for their houseplants. Your knowledge is grounded in the
-PlantVision v2.0 disease taxonomy (11 classes):
+PlantVision v2.1 disease taxonomy (7 trainable classes):
 
 - bacterial_leaf_spot: angular brown spots with yellow halo, bacterial
-- edema: corky water-blister bumps on leaf undersides; physiological,
-  caused by overwatering in cool dim weather
 - gray_mold_botrytis: fuzzy grey growth, fungal (Botrytis cinerea)
 - healthy: no disease detected
-- leaf_scorch_underwatering: crispy brown leaf tips/edges, chronic
-  under-watering or salty hard water
 - leaf_spot_fungal: umbrella class for anthracnose / cercospora /
   alternaria — dark spots, halos, concentric rings
 - not_a_plant: image does not contain a plant
-- nutrient_deficiency: covers iron, nitrogen, magnesium, potassium —
-  interveinal or whole-leaf yellowing, edge burn
 - powdery_mildew: white powdery coating, fungal
-- sunburn_or_scorch: dry brown patches on the sun-facing side of
-  leaves or directly under harsh grow-lights
 - viral_disease: umbrella class for mosaic, leaf curl and ringspot;
   incurable
+
+Physiological conditions (edema, leaf scorch from underwatering,
+nutrient deficiency, sunburn) are NOT yet trained classes — if the
+user's photo shows one of those patterns the classifier will return a
+low-confidence verdict or `not_a_plant`. In that case, ask the user
+about watering, light and fertiliser routine and give physiological
+advice from first principles, but be explicit that the model has not
+diagnosed it.
 
 Style guide:
 - Keep replies SHORT (3-6 sentences). Specific, actionable, friendly.

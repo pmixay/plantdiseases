@@ -8,6 +8,8 @@ import com.plantdiseases.app.data.model.ChatRequest
 import com.plantdiseases.app.data.model.ChatResponse
 import com.plantdiseases.app.data.model.HealthResponse
 import com.plantdiseases.app.data.model.IdentifyResponse
+import com.plantdiseases.app.data.model.ProgressionRequest
+import com.plantdiseases.app.data.model.ProgressionResponse
 import com.plantdiseases.app.util.ServerConfig
 import okhttp3.Interceptor
 import okhttp3.MultipartBody
@@ -48,17 +50,25 @@ interface ApiService {
 
     @POST("api/care-plan")
     suspend fun carePlan(@Body request: CarePlanRequest): retrofit2.Response<CarePlanResponse>
+
+    @POST("api/progression")
+    suspend fun progression(@Body request: ProgressionRequest): retrofit2.Response<ProgressionResponse>
 }
 
 /**
  * Retries on transient network failures and on HTTP 429 / 503, honouring the
  * Retry-After header when present. POST requests are retried at most once to
  * avoid re-uploading large payloads on slow connections.
+ *
+ * `maxDelayMs` is intentionally high (30 s) because the server's cold-start
+ * path can legitimately ask for ~20 s — model artefacts deserialise on the
+ * first request after deploy. Capping at 8 s used to abandon the retry just
+ * before the server would have been ready.
  */
 class RetryInterceptor(
     private val maxRetries: Int = 3,
     private val initialDelayMs: Long = 1000,
-    private val maxDelayMs: Long = 8000
+    private val maxDelayMs: Long = 30_000,
 ) : Interceptor {
 
     @Throws(IOException::class)

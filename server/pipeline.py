@@ -6,8 +6,8 @@ Stage 1 (Detector)   — YOLOv8n single-class. Locates ``plant_leaf``
                        indoor leaf crops, not PlantDoc).
 Stage 2 (Classifier) — distilled MobileNetV3-Large student (KD ←
                        EfficientNetV2-S teacher) at 256 px. Classifies
-                       cropped leaf regions into one of the 11 v2.0
-                       classes including ``not_a_plant``.
+                       cropped leaf regions into one of the v2.1
+                       trainable classes including ``not_a_plant``.
 
 Behaviour summary:
 
@@ -44,9 +44,14 @@ from typing import Optional
 
 from PIL import Image
 
-from classifier import DiseaseClassifier
-from conformal import ConformalConfig, load_conformal_config, prediction_set
-from detector import LeafDetector
+try:
+    from .classifier import DiseaseClassifier  # type: ignore[import-not-found]
+    from .conformal import ConformalConfig, load_conformal_config, prediction_set
+    from .detector import LeafDetector
+except ImportError:
+    from classifier import DiseaseClassifier
+    from conformal import ConformalConfig, load_conformal_config, prediction_set
+    from detector import LeafDetector
 
 logger = logging.getLogger(__name__)
 
@@ -347,25 +352,50 @@ class PlantDiseasePipeline:
         )
 
     def _should_route_to_nap(self, classification: dict, det_conf: float) -> bool:
+        """Two-of-two OOD gate. We re-route to ``not_a_plant`` when the
+        detector AND the classifier both signal "this is not a leaf":
+
+            det_conf < NAP_DETECTOR_CONF_FLOOR
+            AND
+            (max_logit < ml_floor)   -- only when ml_floor > 0
+
+        Both floors must independently fire. Either signal alone is too
+        noisy: a tight crop of an unfamiliar plant can have low
+        MaxLogit even when the detector is confident, and vice versa.
+
+        The historical version short-circuited on detector confidence:
+        a single 0.41-confidence false positive bypassed the MaxLogit
+        check entirely. We now evaluate both gates explicitly and only
+        re-route when both fail.
+        """
         cls_name = classification["class_name"]
         if cls_name in _NON_DISEASE:
             return False
         if "not_a_plant" not in self.classifier.CLASS_NAMES:
             return False
-        if det_conf >= NAP_DETECTOR_CONF_FLOOR:
-            return False
+
+        detector_low = det_conf < NAP_DETECTOR_CONF_FLOOR
         ml_floor = self.nap_max_logit_floor
+        max_logit = float(classification.get("max_logit", 0.0))
+        # MaxLogit gate is "off" when the floor is <= 0 (configurable
+        # via classes.json -> ood.max_logit_floor: null). When off, we
+        # require only the detector floor to fire — the historical
+        # behaviour for backwards compatibility.
+        max_logit_low = (ml_floor > 0) and (max_logit < ml_floor)
+
         if ml_floor > 0:
-            max_logit = float(classification.get("max_logit", 0.0))
-            if max_logit >= ml_floor:
-                return False
-        logger.info(
-            "OOD gate triggered (det=%.3f<%.2f, max_logit=%.3f%s) → not_a_plant",
-            det_conf, NAP_DETECTOR_CONF_FLOOR,
-            float(classification.get("max_logit", 0.0)),
-            f"<{ml_floor:.2f}" if ml_floor > 0 else "<off>",
-        )
-        return True
+            triggered = detector_low and max_logit_low
+        else:
+            triggered = detector_low
+
+        if triggered:
+            logger.info(
+                "OOD gate triggered (det=%.3f<%.2f, max_logit=%.3f%s) → not_a_plant",
+                det_conf, NAP_DETECTOR_CONF_FLOOR,
+                max_logit,
+                f"<{ml_floor:.2f}" if ml_floor > 0 else " <off>",
+            )
+        return triggered
 
     def _build_prediction_set(self, probs: dict[str, float]) -> dict | None:
         """Return the conformal prediction set or ``None`` if unconfigured.

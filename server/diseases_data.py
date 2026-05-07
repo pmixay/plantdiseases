@@ -1,14 +1,22 @@
 """
 Bilingual disease information database for PlantVision.
 
-Stage 2 classifier outputs one of the 11 v2.0 classes — the bilingual
-content for each lives in ``DISEASES_DATABASE`` below.
+Stage 2 classifier outputs one of the 7 trainable v2.1 classes — the
+bilingual content for each lives in ``DISEASES_DATABASE`` below.
 
-Final 11 classes (alphabetical): ``bacterial_leaf_spot``, ``edema``,
-``gray_mold_botrytis``, ``healthy``, ``leaf_scorch_underwatering``,
-``leaf_spot_fungal``, ``not_a_plant``, ``nutrient_deficiency``,
-``powdery_mildew``, ``sunburn_or_scorch``, ``viral_disease``.
+Trainable v2.1 classes (alphabetical): ``bacterial_leaf_spot``,
+``gray_mold_botrytis``, ``healthy``, ``leaf_spot_fungal``,
+``not_a_plant``, ``powdery_mildew``, ``viral_disease``.
+
 Authoritative list: ``server/models/classes.json``.
+
+Forward-compat entries for the four physiological conditions deferred
+to a later release (``edema``, ``leaf_scorch_underwatering``,
+``nutrient_deficiency``, ``sunburn_or_scorch``) are kept in the
+database — production lookup is ``DISEASES_DATABASE.get(cls,
+DISEASES_DATABASE['unknown'])`` so unknown labels are tolerated, and
+keeping the cards means re-enabling those classes in v2.2 will be a
+training-time switch, not a content port.
 
 Pests have been removed from the taxonomy entirely — they are no
 longer modelled as a hint section.

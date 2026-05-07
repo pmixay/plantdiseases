@@ -15,43 +15,55 @@ without trained `detector.{pt,onnx}` and `classifier.{pth,onnx}`
 artefacts under `server/models/`, the API refuses to start.
 There is no offline / demo / heuristic fallback on either side.
 
-What changed vs v1.x:
+What changed vs v1.x and v2.0:
 
-- **11 classes** (was 10): `bacterial_leaf_spot`, `edema`,
-  `gray_mold_botrytis`, `healthy`, `leaf_scorch_underwatering`,
-  `leaf_spot_fungal` (anthracnose + cercospora + alternaria),
-  `not_a_plant`, `nutrient_deficiency` (Fe + N + Mg + K),
-  `powdery_mildew`, `sunburn_or_scorch`, `viral_disease`
-  (mosaic + leaf_curl + ringspot). `late_blight` and `iron_chlorosis`
-  are removed. **Pests are out of the taxonomy entirely** (no more
-  "possible pest causes" hint).
+- **7 trainable classes (v2.1):** `bacterial_leaf_spot`,
+  `gray_mold_botrytis`, `healthy`, `leaf_spot_fungal` (anthracnose +
+  cercospora + alternaria), `not_a_plant`, `powdery_mildew`,
+  `viral_disease` (mosaic + leaf_curl + ringspot). The four
+  physiological conditions originally planned for v2.0 — `edema`,
+  `leaf_scorch_underwatering`, `nutrient_deficiency`,
+  `sunburn_or_scorch` — are **deferred until labelled real-world
+  data is added**: public sources have very few clean indoor
+  examples and proxy-labelling them collapses recall on the disease
+  classes. Re-enabling them later is a config switch in
+  `train_notebook.ipynb` §1, not a re-architecture. **Pests are out
+  of the taxonomy entirely** (no more "possible pest causes" hint).
 - **Stage 1 detector** retrained on 300–800 indoor leaf bboxes
   (Roboflow Universe houseplant slices, hand-labelled user uploads).
-  PlantDoc removed — its agricultural close-ups bias localisation
-  toward field shots and hurt indoor recall.
+  PlantDoc removed from detector training — its agricultural close-
+  ups bias localisation toward field shots and hurt indoor recall.
 - **Stage 2 backbone:** EfficientNetV2-S
   (`tf_efficientnetv2_s.in21k_ft_in1k`) teacher distilled into
-  MobileNetV3-Large (5.5 M) student.
-- **Loss:** Logit Adjustment (Menon ICLR 2021), τ=1.0 — replaces the
-  hand-tuned inverse-frequency CE × `HEALTHY_DOWNWEIGHT=0.25`.
-- **OOD score:** **MaxLogit** (Hendrycks 2019) — robust to temperature
-  scaling and label smoothing where MSP collapses.
+  MobileNetV3-Large (5.5 M) student. Distillation uses an **EMA
+  copy** of the student (decay=0.999) and the EMA weights are what
+  ship.
+- **Loss:** Logit Adjustment (Menon ICLR 2021), τ=0.7,
+  label_smoothing=0.05. **Loss-side balancing only** —
+  `WeightedRandomSampler` is **off** by default; stacking sampler +
+  LA over-corrects rare classes (Liu et al. 2024).
+- **OOD score:** **MaxLogit** (Hendrycks 2019) — robust to
+  temperature scaling and label smoothing where MSP collapses.
 - **PlantVillage** moved out of the train set; kept only as a frozen
   `val_studio` slice (transfer / background-bias monitor — Noyan 2022:
   49 % accuracy from 8 background pixels).
 - **Calibration:** temperature scaling **plus** inductive conformal
-  prediction (RAPS, Angelopoulos 2021). Production response carries
-  a `prediction_set` with a 90 % coverage guarantee instead of a
-  potentially mis-calibrated single "0.99" answer.
-- **Quantisation:** dynamic INT8-on-MatMul → **static INT8 QDQ** with
-  a 500-photo `val_realworld` calibration reader; export step
-  re-evaluates and refuses to ship if disease F1 drops by > 0.02 vs
-  FP32.
+  prediction (RAPS, Angelopoulos 2021), both fitted on the deployed
+  INT8 ONNX session (not the FP32 torch model). Two dedicated
+  calibration splits: `temperature_cal` (~5 %) for INT8 + temperature,
+  `conformal_cal` (~10 %) for RAPS. Both restricted to the deployment
+  distribution (PlantDoc + iNaturalist), so RAPS exchangeability holds
+  at deploy.
+- **Quantisation:** **static INT8 (QDQ)** with a 500-photo
+  `conformal_cal` calibration reader; export step re-evaluates on
+  `val_realworld` and refuses to ship if disease F1 drops by > 0.05
+  vs FP32 (warning at > 0.02).
 - **Eval protocol — three independent val slices:** `val_indomain`
   (early stopping), `val_realworld` (primary ship gate; target
-  macro-F1 ∈ 0.70 – 0.78), `val_studio` (transfer / background-bias
-  monitor). Each epoch logs disease macro-F1 + per-class recall +
-  confusion matrix + healthy-bias on all three.
+  macro-F1 ≥ 0.70, no class with recall=0, healthy-bias < 1.5),
+  `val_studio` (transfer / background-bias monitor — never blocking).
+  Each epoch logs disease macro-F1 + per-class recall + confusion
+  matrix + healthy-bias on all three.
 
 Per-week, per-engineer task list lives in [`ROADMAP.md`](ROADMAP.md).
 Full training recipe lives in
@@ -100,7 +112,7 @@ Full photo (any composition — hand, wall, background are fine)
            ▼
 ┌────────────────────────────────┐
 │  Stage 2: Disease Classifier    │  MobileNetV3-Large student (5.5 M, 256 px)
-│  KD ← EfficientNetV2-S teacher  │  11 classes incl. not_a_plant
+│  KD ← EfficientNetV2-S teacher  │  7 classes incl. not_a_plant
 │                                 │  ONNX INT8 (~10-15 ms on CPU VPS)
 └──────────┬─────────────────────┘
            │
@@ -281,7 +293,7 @@ pipeline prefers `classifier_int8.onnx` over `classifier.onnx` over
 |--------|------|-------------|
 | `GET` | `/api/health` | Liveness + uptime + class count |
 | `GET` | `/api/version` | Server version + model architecture |
-| `GET` | `/api/classes` | 11 classes with bilingual names |
+| `GET` | `/api/classes` | 7 trainable classes with bilingual names |
 | `GET` | `/api/metrics` | Counters for requests, errors, latency |
 | `GET` | `/api/metrics/prometheus` | Prometheus exposition format |
 | `POST` | `/api/analyze` | Upload image → get diagnosis |
@@ -434,7 +446,7 @@ server/
 ├── detector.py              # Stage 1: YOLOv8n single-class plant_leaf
 ├── classifier.py            # Stage 2: MobileNetV3-Large (KD ← V2-S)
 ├── diseases_data.py         # Bilingual houseplant disease database
-├── train_notebook.ipynb     # End-to-end v2.0 training recipe
+├── train_notebook.ipynb     # End-to-end v2.1 training recipe
 ├── requirements.txt         # Server dependencies
 ├── Dockerfile               # Non-root, HEALTHCHECK-enabled image
 ├── docker-compose.yml       # Compose stack for production

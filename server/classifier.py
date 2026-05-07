@@ -1,11 +1,11 @@
 """
 Stage 2 — PlantVision houseplant disease classifier.
 
-Classifies a (preferably cropped) leaf region into one of 11
+Classifies a (preferably cropped) leaf region into one of the
 houseplant-relevant condition classes including the rejection class
 ``not_a_plant``. Class names + input resolution live in
 ``models/classes.json``; if the file is missing the built-in default
-matching the v2.0 taxonomy is used.
+matching the v2.1 taxonomy (7 trainable classes) is used.
 
 Production artefact is a distilled MobileNetV3-Large student
 (EfficientNetV2-S teacher → KD). Loading order:
@@ -33,19 +33,17 @@ logger = logging.getLogger(__name__)
 DEFAULT_IMG_SIZE = 256
 
 # Alphabetical — must match training-time ``sorted(ImageFolder.classes)``.
-# Final 11-class taxonomy (v2.0): coarse-grained groups optimised for
-# indoor real-world photos.
+# v2.1 trainable taxonomy. The four physiological classes from the v2.0
+# design (``edema``, ``leaf_scorch_underwatering``, ``nutrient_deficiency``,
+# ``sunburn_or_scorch``) are deferred until labelled real-world data is
+# added — see server/models/MODEL_CARD.md.
 DEFAULT_CLASS_NAMES = [
     "bacterial_leaf_spot",
-    "edema",
     "gray_mold_botrytis",
     "healthy",
-    "leaf_scorch_underwatering",
     "leaf_spot_fungal",
     "not_a_plant",
-    "nutrient_deficiency",
     "powdery_mildew",
-    "sunburn_or_scorch",
     "viral_disease",
 ]
 

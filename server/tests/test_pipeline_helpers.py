@@ -10,24 +10,24 @@ via the ``FakePipeline`` injected by ``conftest.py``.
 
 from __future__ import annotations
 
-# Canonical alphabetical 11-class taxonomy (PlantVision 2.0).
+# Canonical alphabetical 7-class taxonomy (PlantVision 2.1).
+# The four physiological classes from the v2.0 design (edema,
+# leaf_scorch_underwatering, nutrient_deficiency, sunburn_or_scorch)
+# are deferred until labelled real-world data is added — see
+# server/models/MODEL_CARD.md.
 EXPECTED_CLASSES = {
     "bacterial_leaf_spot",
-    "edema",
     "gray_mold_botrytis",
     "healthy",
-    "leaf_scorch_underwatering",
     "leaf_spot_fungal",
     "not_a_plant",
-    "nutrient_deficiency",
     "powdery_mildew",
-    "sunburn_or_scorch",
     "viral_disease",
 }
 
 
 def _uniform_probs() -> dict[str, float]:
-    """A flat distribution over the v2.0 class set."""
+    """A flat distribution over the v2.1 class set."""
     n = len(EXPECTED_CLASSES)
     return {name: 1.0 / n for name in sorted(EXPECTED_CLASSES)}
 
@@ -39,8 +39,9 @@ def test_not_a_plant_class_is_present():
     assert "not_a_plant" in DEFAULT_CLASS_NAMES
 
 
-def test_taxonomy_is_v2_disease_only():
-    """PlantVision 2.0 carries 11 classes. Pests are out of the taxonomy."""
+def test_taxonomy_is_v21_disease_only():
+    """PlantVision 2.1 carries 7 trainable classes. Pests and physiological
+    conditions are deferred until labelled real-world data is added."""
     from classifier import DEFAULT_CLASS_NAMES
 
     assert set(DEFAULT_CLASS_NAMES) == EXPECTED_CLASSES, (
@@ -51,7 +52,13 @@ def test_taxonomy_is_v2_disease_only():
     for legacy in ("anthracnose", "gray_mold", "iron_chlorosis",
                    "late_blight", "mosaic_virus", "sunburn"):
         assert legacy not in DEFAULT_CLASS_NAMES, (
-            f"legacy class {legacy} must not be in v2.0 taxonomy"
+            f"legacy class {legacy} must not be in v2.1 taxonomy"
+        )
+    # Deferred — must not appear in v2.1 trainable taxonomy yet.
+    for deferred in ("edema", "leaf_scorch_underwatering",
+                     "nutrient_deficiency", "sunburn_or_scorch"):
+        assert deferred not in DEFAULT_CLASS_NAMES, (
+            f"deferred class {deferred} must not be in v2.1 trainable taxonomy"
         )
     # Pests must NOT be classifier outputs.
     for pest in ("aphids", "mealybug", "scale_insect", "spider_mites",
@@ -191,7 +198,8 @@ def test_max_logit_floor_resolver_handles_null_and_explicit_values():
 
 
 def test_classes_json_in_repo_drives_pipeline_config():
-    """End-to-end check: the committed classes.json parses cleanly."""
+    """End-to-end check: the committed classes.json parses cleanly and
+    matches the v2.1 trainable taxonomy."""
     import json
     from pathlib import Path
 
@@ -200,9 +208,10 @@ def test_classes_json_in_repo_drives_pipeline_config():
         return
 
     meta = json.loads(repo_classes.read_text(encoding="utf-8"))
-    assert meta["num_classes"] == 11
     assert set(meta["class_names"]) == EXPECTED_CLASSES
+    assert len(meta["class_names"]) == len(EXPECTED_CLASSES)
     assert meta["detector_classes"] == ["plant_leaf"]
+    assert meta.get("model_version", "").startswith("2.")
 
 
 def test_healthy_fallback_keeps_top_k_consistent_with_class_name():
