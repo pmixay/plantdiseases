@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Main shell — toolbar + bottom nav with the navigation host between.
+     The bottom nav uses our background tone so the surface still reads
+     as "page" rather than a hard white strip. -->
 <androidx.coordinatorlayout.widget.CoordinatorLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -40,7 +43,7 @@
         android:layout_gravity="bottom"
         android:background="@color/surface"
         android:clipToPadding="false"
-        app:elevation="8dp"
+        app:elevation="@dimen/glass_elevation"
         app:labelVisibilityMode="labeled"
         app:itemIconTint="@color/bottom_nav_color"
         app:itemTextColor="@color/bottom_nav_color"

@@ -1,22 +1,13 @@
 {
-  "_comment": "PlantVision houseplant classifier — disease-F1 primary metric on the indoor real-world validation set",
-  "model_version": "2.0",
-  "architecture": {
-    "detector": "YOLOv8n (single-class plant_leaf, indoor-trained)",
-    "classifier": "EfficientNetV2-S (timm tf_efficientnetv2_s.in21k_ft_in1k) → distilled MobileNetV3-Large student"
-  },
-  "num_classes": 11,
+  "_comment": "PlantVision 2.1 — placeholder. The notebook (server/train_notebook.ipynb) overwrites this file in §6 with the real values after training. Disease macro-F1 on val_realworld is the primary metric.",
+  "model_version": "2.1",
   "class_names": [
     "bacterial_leaf_spot",
-    "edema",
     "gray_mold_botrytis",
     "healthy",
-    "leaf_scorch_underwatering",
     "leaf_spot_fungal",
     "not_a_plant",
-    "nutrient_deficiency",
     "powdery_mildew",
-    "sunburn_or_scorch",
     "viral_disease"
   ],
   "detector_classes": [
@@ -24,43 +15,31 @@
   ],
   "training": {
     "img_size": 256,
-    "batch_size": 128,
-    "precision": "bf16-mixed",
+    "batch_size": 96,
+    "loss": "logit_adjustment_ce",
+    "logit_adjustment_tau": 0.7,
+    "label_smoothing": 0.05,
+    "use_weighted_sampler": false,
     "optimizer": "AdamW",
     "weight_decay": 1e-4,
-    "label_smoothing": 0.05,
-    "lr_schedule": "cosine + warmup 1 epoch",
-    "schedule": {
-      "head_only_epochs": 3,
-      "head_lr": 3e-3,
-      "unfreeze_last_stages": 2,
-      "finetune_epochs": 13,
-      "head_lr_finetune": 5e-4,
-      "backbone_lr_finetune": 5e-5
-    },
-    "loss": "logit_adjustment_ce",
-    "logit_adjustment_tau": 1.0,
-    "mixup_prob": 0.1,
-    "cutmix_prob": 0.15,
-    "augmentations": "indoor: WB shift (warm/cool), glare, defocus/motion blur, JPEG, ISP-imitation, soft shadows. Strong hue/solarize disabled.",
-    "primary_metric": "indoor_val_disease_macro_f1",
-    "primary_val_set": "indoor_real_world_v1 (frozen, 500-1000 user photos)",
-    "isolated_val_slice": "plantvillage_transfer (background-bias monitor; never used for train)",
-    "calibration": "temperature scaling on indoor val NLL",
-    "quantization": "dynamic INT8 on MatMul for student",
-    "diagnostic_baseline": "DINOv2-S frozen + linear probe (5-8 epochs, batch 256, no MixUp/CutMix)"
+    "lr_schedule": "cosine + warmup",
+    "precision": "bf16-mixed",
+    "primary_metric": "val_realworld_disease_macro_f1",
+    "primary_val_set": "data_v2/classification/val/realworld",
+    "isolated_val_slice": "data_v2/classification/val/plantvillage_studio"
   },
   "distillation": {
-    "teacher": "EfficientNetV2-S (or ConvNeXt-Tiny challenger)",
-    "student": "MobileNetV3-Large (5.5M params)",
-    "loss": "alpha*CE + (1-alpha)*tau^2*KL(student||teacher)",
-    "alpha": 0.35,
-    "tau": 3.5,
-    "epochs": 12
+    "teacher": "tf_efficientnetv2_s.in21k_ft_in1k",
+    "student": "mobilenet_v3_large",
+    "loss": "alpha*KD + (1-alpha)*CE_LA",
+    "alpha": 0.5,
+    "tau": 4.0,
+    "ema_decay": 0.999,
+    "epochs": 10
   },
   "ood": {
     "score": "max_logit",
-    "_score_note": "MSP is unreliable when temperature scaling drives logits low; MaxLogit (Hendrycks 2019) is robust and bias-free under T<<1. Production combines: detector confidence + calibrated classifier confidence + MaxLogit OOD score.",
-    "fallback_score": "GEN (Liu CVPR 2023) for ViT branches if added"
+    "max_logit_floor": 4.0,
+    "_score_note": "MaxLogit (Hendrycks 2019). Robust under temperature scaling and label smoothing where MSP fails."
   }
 }

@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Guide-detail bottom sheet. Header uses an icon-circle + title +
+     glass close button; body is a scrollable text block. -->
 <LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -6,29 +8,28 @@
     android:layout_height="wrap_content"
     android:orientation="vertical"
     android:background="@color/surface"
-    android:paddingBottom="32dp">
+    android:paddingBottom="@dimen/space_3xl">
 
-    <!-- Handle bar -->
+    <!-- Drag handle -->
     <View
         android:layout_width="40dp"
         android:layout_height="4dp"
         android:layout_gravity="center_horizontal"
-        android:layout_marginTop="12dp"
+        android:layout_marginTop="@dimen/space_md"
         android:background="@drawable/bg_handle" />
 
-    <!-- Header -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:padding="20dp">
+        android:padding="@dimen/space_xl">
 
         <ImageView
             android:id="@+id/iv_icon"
             android:layout_width="40dp"
             android:layout_height="40dp"
-            android:padding="6dp"
+            android:padding="@dimen/space_xs"
             android:background="@drawable/bg_icon_circle"
             android:contentDescription="@string/tab_guide"
             app:tint="@color/primary" />
@@ -38,24 +39,23 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:layout_marginStart="12dp"
-            android:textSize="20sp"
+            android:layout_marginStart="@dimen/space_md"
+            android:textSize="@dimen/text_title"
             android:textColor="@color/on_surface"
             android:fontFamily="sans-serif-medium" />
 
         <ImageButton
             android:id="@+id/btn_close"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:background="@drawable/bg_circle_semi"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="@drawable/bg_glass_circle"
             android:src="@drawable/ic_close"
-            android:padding="6dp"
+            android:padding="@dimen/space_xs"
             app:tint="@color/on_surface_secondary"
             android:contentDescription="@string/close" />
 
     </LinearLayout>
 
-    <!-- Content -->
     <androidx.core.widget.NestedScrollView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -65,10 +65,8 @@
             android:id="@+id/tv_content"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:paddingHorizontal="20dp"
-            android:textSize="14sp"
-            android:textColor="@color/on_surface_secondary"
-            android:lineSpacingExtra="4dp" />
+            android:paddingHorizontal="@dimen/space_xl"
+            android:textAppearance="@style/TextAppearance.App.Body" />
 
     </androidx.core.widget.NestedScrollView>
 

@@ -1,7 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    Result screen.
+
+    Refactor notes:
+      • Every diagnostic card uses the new App.GlassCard / *.Strong
+        styles — unified corner radius, padding and translucent green
+        tint.
+      • Skeleton placeholders are wrapped in a ShimmerFrameLayout so
+        the perceived load no longer feels frozen.
+      • Spacing constants (@dimen/space_*) replace the previous mix
+        of 8/12/14/16dp magic numbers.
+-->
 <androidx.coordinatorlayout.widget.CoordinatorLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/background">
@@ -20,7 +33,7 @@
             app:layout_scrollFlags="scroll|exitUntilCollapsed"
             app:contentScrim="@drawable/bg_toolbar_gradient"
             app:expandedTitleGravity="bottom"
-            app:expandedTitleMarginStart="16dp"
+            app:expandedTitleMarginStart="@dimen/space_lg"
             app:expandedTitleTextAppearance="@style/TextAppearance.App.Toolbar"
             app:collapsedTitleTextAppearance="@style/TextAppearance.App.Toolbar"
             app:expandedTitleTextColor="@color/toolbar_title"
@@ -41,17 +54,18 @@
 
     </com.google.android.material.appbar.AppBarLayout>
 
-    <!-- Sticky header: disease name + confidence -->
+    <!-- Sticky header — frosted glass, slides in once the user scrolls
+         past the hero card. -->
     <LinearLayout
         android:id="@+id/sticky_header"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:paddingHorizontal="16dp"
-        android:paddingVertical="8dp"
-        android:background="@color/surface"
-        android:elevation="4dp"
+        android:paddingHorizontal="@dimen/space_lg"
+        android:paddingVertical="@dimen/space_sm"
+        android:background="@drawable/bg_glass_card_strong"
+        android:elevation="@dimen/glass_elevation"
         android:visibility="gone"
         app:layout_behavior="@string/appbar_scrolling_view_behavior">
 
@@ -60,7 +74,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:textSize="16sp"
+            android:textSize="@dimen/text_title_sm"
             android:textColor="@color/on_surface"
             android:fontFamily="sans-serif-medium"
             android:maxLines="1"
@@ -70,47 +84,57 @@
             android:id="@+id/tv_sticky_confidence"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textSize="14sp"
+            android:textSize="@dimen/text_body"
             android:textColor="@color/primary"
             android:fontFamily="sans-serif-medium" />
 
     </LinearLayout>
 
-    <!-- Skeleton loading state -->
-    <LinearLayout
+    <!-- Skeleton loading state — wrapped in shimmer for life signal -->
+    <com.facebook.shimmer.ShimmerFrameLayout
         android:id="@+id/skeleton_layout"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:orientation="vertical"
-        android:padding="16dp"
+        android:padding="@dimen/space_lg"
         android:visibility="visible"
-        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+        app:layout_behavior="@string/appbar_scrolling_view_behavior"
+        app:shimmer_auto_start="true"
+        app:shimmer_base_color="@color/shimmer_base"
+        app:shimmer_highlight_color="@color/shimmer_highlight"
+        app:shimmer_duration="1200">
 
-        <View
+        <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="260dp"
-            android:layout_marginTop="8dp"
-            android:background="@color/surface_variant" />
+            android:layout_height="match_parent"
+            android:orientation="vertical">
 
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="80dp"
-            android:layout_marginTop="16dp"
-            android:background="@color/surface_variant" />
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="260dp"
+                android:layout_marginTop="@dimen/space_sm"
+                android:background="@drawable/bg_glass_card" />
 
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="60dp"
-            android:layout_marginTop="12dp"
-            android:background="@color/surface_variant" />
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="80dp"
+                android:layout_marginTop="@dimen/space_lg"
+                android:background="@drawable/bg_glass_card" />
 
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="100dp"
-            android:layout_marginTop="12dp"
-            android:background="@color/surface_variant" />
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="60dp"
+                android:layout_marginTop="@dimen/space_md"
+                android:background="@drawable/bg_glass_card" />
 
-    </LinearLayout>
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="100dp"
+                android:layout_marginTop="@dimen/space_md"
+                android:background="@drawable/bg_glass_card" />
+
+        </LinearLayout>
+
+    </com.facebook.shimmer.ShimmerFrameLayout>
 
     <androidx.core.widget.NestedScrollView
         android:id="@+id/scroll_view"
@@ -126,15 +150,15 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="16dp">
+            android:padding="@dimen/space_lg">
 
             <!-- Plant image with heatmap overlay -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/card_image"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                app:cardCornerRadius="20dp"
-                app:cardElevation="2dp">
+                app:cardCornerRadius="@dimen/radius_lg"
+                app:cardElevation="@dimen/glass_elevation_soft">
 
                 <FrameLayout
                     android:id="@+id/image_frame"
@@ -154,41 +178,39 @@
                         android:layout_height="match_parent"
                         android:alpha="0" />
 
-                    <!-- Heatmap label -->
+                    <!-- Heatmap badge (frosted-glass on the photo) -->
                     <TextView
                         android:id="@+id/tv_heatmap_label"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_gravity="bottom|start"
-                        android:layout_margin="12dp"
+                        android:layout_margin="@dimen/space_md"
                         android:text="@string/heatmap_label"
                         android:textColor="@android:color/white"
-                        android:textSize="11sp"
+                        android:textSize="@dimen/text_caption"
                         android:fontFamily="sans-serif-medium"
-                        android:background="@drawable/bg_hint_pill"
-                        android:paddingHorizontal="10dp"
-                        android:paddingVertical="4dp"
+                        android:background="@drawable/bg_glass_dark_pill"
+                        android:paddingHorizontal="@dimen/space_md"
+                        android:paddingVertical="@dimen/space_xs"
                         android:visibility="gone" />
 
                 </FrameLayout>
 
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- Combined Status + Confidence + Date card -->
+            <!-- Combined Status + Confidence + Date — primary glass card -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/card_status"
+                style="@style/App.GlassCard.Strong"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                app:cardCornerRadius="16dp"
-                app:cardElevation="0dp"
+                android:layout_marginTop="@dimen/space_lg"
                 android:foreground="?attr/selectableItemBackground">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="16dp">
+                    android:orientation="vertical">
 
                     <!-- Status row -->
                     <LinearLayout
@@ -207,14 +229,14 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:layout_marginStart="12dp"
+                            android:layout_marginStart="@dimen/space_md"
                             android:orientation="vertical">
 
                             <TextView
                                 android:id="@+id/tv_status_label"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:textSize="13sp"
+                                android:textSize="@dimen/text_body_sm"
                                 android:fontFamily="sans-serif-medium"
                                 android:textAllCaps="true"
                                 android:letterSpacing="0.05" />
@@ -236,7 +258,7 @@
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="12dp"
+                        android:layout_marginTop="@dimen/space_md"
                         android:orientation="horizontal">
 
                         <TextView
@@ -244,14 +266,14 @@
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
                             android:text="@string/confidence_label"
-                            android:textSize="14sp"
+                            android:textSize="@dimen/text_body"
                             android:textColor="@color/on_surface_secondary" />
 
                         <TextView
                             android:id="@+id/tv_confidence"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:textSize="14sp"
+                            android:textSize="@dimen/text_body"
                             android:textColor="@color/primary"
                             android:fontFamily="sans-serif-medium" />
 
@@ -261,7 +283,7 @@
                         android:id="@+id/progress_confidence"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
+                        android:layout_marginTop="@dimen/space_sm"
                         app:indicatorColor="@color/primary"
                         app:trackColor="@color/primary_light"
                         app:trackCornerRadius="4dp"
@@ -272,8 +294,8 @@
                         android:id="@+id/tv_date"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
-                        android:textSize="12sp"
+                        android:layout_marginTop="@dimen/space_sm"
+                        android:textSize="@dimen/text_body_sm"
                         android:textColor="@color/on_surface_secondary" />
 
                 </LinearLayout>
@@ -283,50 +305,42 @@
             <!-- Description -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/card_description"
+                style="@style/App.GlassCard"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                app:cardCornerRadius="16dp"
-                app:cardElevation="0dp"
-                app:cardBackgroundColor="@color/surface"
+                android:layout_marginTop="@dimen/space_md"
                 android:foreground="?attr/selectableItemBackground">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="16dp">
+                    android:orientation="vertical">
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/description_label"
-                        android:textSize="16sp"
-                        android:textColor="@color/on_surface"
-                        android:fontFamily="sans-serif-medium" />
+                        android:textAppearance="@style/TextAppearance.App.Title" />
 
                     <TextView
                         android:id="@+id/tv_description"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
-                        android:textSize="14sp"
-                        android:textColor="@color/on_surface_secondary"
-                        android:lineSpacingExtra="4dp" />
+                        android:layout_marginTop="@dimen/space_sm"
+                        android:textAppearance="@style/TextAppearance.App.Body" />
 
                 </LinearLayout>
 
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- Treatment/Prevention tabs card -->
+            <!-- Treatment / Prevention tabs card -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/card_treatment_prevention"
+                style="@style/App.GlassCard"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                app:cardCornerRadius="16dp"
-                app:cardElevation="0dp"
-                app:cardBackgroundColor="@color/surface">
+                android:layout_marginTop="@dimen/space_md"
+                app:contentPadding="0dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -337,27 +351,27 @@
                         android:id="@+id/tabs_treatment_prevention"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:background="@android:color/transparent"
                         app:tabMode="fixed"
                         app:tabGravity="fill"
                         app:tabIndicatorColor="@color/primary"
+                        app:tabIndicatorHeight="3dp"
                         app:tabSelectedTextColor="@color/primary"
                         app:tabTextColor="@color/on_surface_secondary" />
 
-                    <!-- Treatment steps -->
                     <LinearLayout
                         android:id="@+id/treatment_steps_layout"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:padding="16dp" />
+                        android:padding="@dimen/space_lg" />
 
-                    <!-- Prevention steps -->
                     <LinearLayout
                         android:id="@+id/prevention_steps_layout"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
-                        android:padding="16dp"
+                        android:padding="@dimen/space_lg"
                         android:visibility="gone" />
 
                 </LinearLayout>
@@ -367,42 +381,37 @@
             <!-- Top-3 alternative diagnoses — explainable AI -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/card_alternatives"
+                style="@style/App.GlassCard"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
+                android:layout_marginTop="@dimen/space_md"
                 android:visibility="gone"
-                app:cardCornerRadius="16dp"
-                app:cardElevation="0dp"
-                app:cardBackgroundColor="@color/surface"
                 android:foreground="?attr/selectableItemBackground">
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="16dp">
+                    android:orientation="vertical">
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/why_this_diagnosis"
-                        android:textSize="16sp"
-                        android:textColor="@color/on_surface"
-                        android:fontFamily="sans-serif-medium" />
+                        android:textAppearance="@style/TextAppearance.App.Title" />
 
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
+                        android:layout_marginTop="@dimen/space_xs"
                         android:text="@string/alternatives_subtitle"
-                        android:textSize="12sp"
+                        android:textSize="@dimen/text_body_sm"
                         android:textColor="@color/on_surface_secondary" />
 
                     <LinearLayout
                         android:id="@+id/alternatives_layout"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="12dp"
+                        android:layout_marginTop="@dimen/space_md"
                         android:orientation="vertical" />
 
                 </LinearLayout>
@@ -414,9 +423,9 @@
                 android:id="@+id/card_pipeline_warning"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
+                android:layout_marginTop="@dimen/space_md"
                 android:visibility="gone"
-                app:cardCornerRadius="16dp"
+                app:cardCornerRadius="@dimen/radius_lg"
                 app:cardElevation="0dp"
                 app:cardBackgroundColor="@color/warning_amber_bg">
 
@@ -425,7 +434,7 @@
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
                     android:gravity="top"
-                    android:padding="14dp">
+                    android:padding="@dimen/space_lg">
 
                     <ImageView
                         android:layout_width="22dp"
@@ -439,14 +448,14 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:layout_marginStart="10dp"
+                        android:layout_marginStart="@dimen/space_md"
                         android:orientation="vertical">
 
                         <TextView
                             android:id="@+id/tv_pipeline_warning_title"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:textSize="14sp"
+                            android:textSize="@dimen/text_body"
                             android:fontFamily="sans-serif-medium"
                             android:textColor="@color/warning_amber" />
 
@@ -454,8 +463,8 @@
                             android:id="@+id/tv_pipeline_warning_body"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
-                            android:textSize="13sp"
+                            android:layout_marginTop="@dimen/space_xs"
+                            android:textSize="@dimen/text_body_sm"
                             android:textColor="@color/warning_amber"
                             android:lineSpacingExtra="2dp" />
 
@@ -470,9 +479,9 @@
                 android:id="@+id/card_low_confidence"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
+                android:layout_marginTop="@dimen/space_md"
                 android:visibility="gone"
-                app:cardCornerRadius="16dp"
+                app:cardCornerRadius="@dimen/radius_lg"
                 app:cardElevation="0dp"
                 app:cardBackgroundColor="@color/warning_amber_bg">
 
@@ -480,7 +489,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="14dp">
+                    android:padding="@dimen/space_lg">
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -499,9 +508,9 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:layout_marginStart="10dp"
+                            android:layout_marginStart="@dimen/space_md"
                             android:text="@string/low_confidence_warning"
-                            android:textSize="13sp"
+                            android:textSize="@dimen/text_body_sm"
                             android:textColor="@color/warning_amber" />
 
                     </LinearLayout>
@@ -512,7 +521,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_gravity="end"
-                        android:layout_marginTop="6dp"
+                        android:layout_marginTop="@dimen/space_xs"
                         android:text="@string/retry_analysis"
                         android:textColor="@color/warning_amber"
                         app:icon="@drawable/ic_scan"
@@ -526,49 +535,38 @@
 
     </androidx.core.widget.NestedScrollView>
 
-    <!--
-        Bottom action bar. Three buttons max so each text label has
-        room to breathe — utility actions (read aloud, delete) live in
-        the toolbar overflow menu, and the "retry same image" hint
-        lives inside the low-confidence warning card where it's
-        actually contextual.
-    -->
+    <!-- Bottom action bar — frosted leaf-glass over the page. -->
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/bottom_action_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
+        android:background="@drawable/bg_glass_card_strong"
         app:cardCornerRadius="0dp"
-        app:cardElevation="8dp"
-        app:cardBackgroundColor="@color/surface">
+        app:cardElevation="@dimen/glass_elevation"
+        app:cardBackgroundColor="@android:color/transparent">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center"
-            android:paddingVertical="8dp"
-            android:paddingHorizontal="16dp">
+            android:paddingVertical="@dimen/space_sm"
+            android:paddingHorizontal="@dimen/space_lg">
 
-            <!--
-                Primary CTA keeps an inline icon so "В сад" / "Add to
-                garden" still reads as a glance-cue. Secondary button
-                drops the icon to save horizontal room for its longer
-                "Новый скан" / "New Scan" label without truncating.
-            -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_add_to_garden"
                 android:layout_width="0dp"
                 android:layout_height="48dp"
                 android:layout_weight="1.7"
-                android:layout_marginEnd="8dp"
+                android:layout_marginEnd="@dimen/space_sm"
                 android:text="@string/add_to_garden"
                 android:maxLines="1"
                 android:ellipsize="end"
                 app:icon="@drawable/ic_garden"
                 app:iconGravity="textStart"
-                app:iconPadding="6dp"
-                app:cornerRadius="16dp"
+                app:iconPadding="@dimen/space_xs"
+                app:cornerRadius="@dimen/radius_md"
                 app:backgroundTint="@color/primary" />
 
             <com.google.android.material.button.MaterialButton
@@ -577,12 +575,12 @@
                 android:layout_width="0dp"
                 android:layout_height="48dp"
                 android:layout_weight="1.0"
-                android:layout_marginEnd="8dp"
+                android:layout_marginEnd="@dimen/space_sm"
                 android:text="@string/new_scan"
                 android:maxLines="1"
                 android:ellipsize="end"
                 android:textAllCaps="false"
-                app:cornerRadius="16dp" />
+                app:cornerRadius="@dimen/radius_md" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_share"
@@ -594,7 +592,7 @@
                 app:iconGravity="textStart"
                 app:iconPadding="0dp"
                 app:iconTint="@color/primary"
-                app:cornerRadius="16dp" />
+                app:cornerRadius="@dimen/radius_md" />
 
         </LinearLayout>
 

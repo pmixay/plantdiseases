@@ -1,12 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Recent-scans strip on the camera screen. Compact glass card. -->
 <com.google.android.material.card.MaterialCardView
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="wrap_content"
     android:layout_height="72dp"
-    android:layout_marginEnd="8dp"
-    app:cardCornerRadius="16dp"
-    app:cardElevation="1dp"
+    android:layout_marginEnd="@dimen/space_sm"
+    app:cardCornerRadius="@dimen/radius_md"
+    app:cardElevation="@dimen/glass_elevation_soft"
     app:cardBackgroundColor="@color/surface">
 
     <LinearLayout
@@ -14,7 +15,7 @@
         android:layout_height="match_parent"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:paddingEnd="12dp">
+        android:paddingEnd="@dimen/space_md">
 
         <ImageView
             android:id="@+id/iv_thumbnail"
@@ -28,8 +29,9 @@
             android:id="@+id/tv_disease_name"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginStart="10dp"
-            android:textSize="13sp"
+            android:layout_marginStart="@dimen/space_md"
+            android:textSize="@dimen/text_body_sm"
+            android:textColor="@color/on_surface"
             android:fontFamily="sans-serif-medium"
             android:maxWidth="100dp"
             android:maxLines="2"

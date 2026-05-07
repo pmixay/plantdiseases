@@ -106,21 +106,55 @@ data class ScanHistoryItem(
     val timestamp: Long
 )
 
-/** AI Doctor chat request */
+/**
+ * /api/chat request body. The server expects:
+ *
+ *  - session_id  : stable client-side id, e.g. "plant_${plantId}".
+ *                  Per-session caps (turns, tokens) are tracked
+ *                  server-side off this key.
+ *  - message     : the user's question (≤ 2000 chars).
+ *  - locale      : "en" | "ru" — the server uses this to bias the
+ *                  system prompt towards the right language.
+ *  - diagnosis   : optional dict shaped like an /api/analyze response
+ *                  (or any subset). Used by the server to ground the
+ *                  reply in the latest classifier output. Capped to
+ *                  8 KB on the wire.
+ */
 data class ChatRequest(
     @SerializedName("session_id") val sessionId: String,
     @SerializedName("message") val message: String,
-    @SerializedName("context") val context: ChatContext? = null,
+    @SerializedName("locale") val locale: String = "en",
+    @SerializedName("diagnosis") val diagnosis: Map<String, Any?>? = null,
 )
 
-data class ChatContext(
-    @SerializedName("disease") val disease: String?,
-    @SerializedName("plant_name") val plantName: String,
-)
-
+/**
+ * /api/chat response. The server always returns 200 OK; failure /
+ * unavailability is signalled via `available=false` plus a human-
+ * readable `reason`. The UI should surface `fallback` (when present)
+ * verbatim instead of inventing its own copy.
+ */
 data class ChatResponse(
-    @SerializedName("reply") val reply: String,
-    @SerializedName("suggested_questions") val suggestedQuestions: List<String>? = null,
+    @SerializedName("available") val available: Boolean = false,
+    @SerializedName("reply") val reply: String = "",
+    @SerializedName("reason") val reason: String? = null,
+    @SerializedName("fallback") val fallback: String? = null,
+    @SerializedName("model") val model: String? = null,
+    @SerializedName("provider") val provider: String? = null,
+    @SerializedName("usage") val usage: ChatUsage? = null,
+    @SerializedName("session") val session: ChatSession? = null,
+)
+
+data class ChatUsage(
+    @SerializedName("input_tokens") val inputTokens: Int? = null,
+    @SerializedName("output_tokens") val outputTokens: Int? = null,
+)
+
+data class ChatSession(
+    @SerializedName("session_id") val sessionId: String,
+    @SerializedName("turns_used") val turnsUsed: Int = 0,
+    @SerializedName("turns_remaining") val turnsRemaining: Int = 0,
+    @SerializedName("tokens_used") val tokensUsed: Int = 0,
+    @SerializedName("tokens_remaining") val tokensRemaining: Int = 0,
 )
 
 /** PlantNet species candidate from /api/identify. */
@@ -146,6 +180,10 @@ data class IdentifyResponse(
     @SerializedName("source") val source: String? = null,
     @SerializedName("organ") val organ: String? = null,
     @SerializedName("remaining_requests") val remainingRequests: Int? = null,
+    /** True when the server served this response from its in-memory
+     *  PlantNet cache (saves a quota hit). Currently not surfaced in
+     *  the UI — kept on the wire for future "served from cache"
+     *  indicator next to species suggestions. */
     @SerializedName("cached") val cached: Boolean? = null,
 )
 
@@ -195,4 +233,29 @@ data class HealthResponse(
     @SerializedName("num_classes") val numClasses: Int,
     @SerializedName("uptime_seconds") val uptimeSeconds: Double? = null,
     @SerializedName("total_requests") val totalRequests: Int? = null
+)
+
+/**
+ * /api/progression request — current and (optionally) previous scan
+ * payload. Both fields are loosely typed maps because the endpoint is
+ * a pure function over the analyse-shaped dicts the client already
+ * has cached.
+ */
+data class ProgressionRequest(
+    @SerializedName("current") val current: Map<String, Any?>,
+    @SerializedName("previous") val previous: Map<String, Any?>? = null,
+)
+
+/**
+ * /api/progression response. `trend` ∈ {improving, stable, worsening,
+ * baseline}. `baseline` means there was no previous scan to compare
+ * against.
+ */
+data class ProgressionResponse(
+    @SerializedName("trend") val trend: String,
+    @SerializedName("delta_confidence") val deltaConfidence: Float = 0f,
+    @SerializedName("delta_severity") val deltaSeverity: Int = 0,
+    @SerializedName("class_changed") val classChanged: Boolean = false,
+    @SerializedName("previous_class") val previousClass: String? = null,
+    @SerializedName("current_class") val currentClass: String? = null,
 )

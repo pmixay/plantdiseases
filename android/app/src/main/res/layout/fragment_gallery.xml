@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Gallery screen — staggered grid of past scans, with shimmer
+     placeholder during initial load and a Lottie empty state. -->
 <LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -7,15 +9,14 @@
     android:orientation="vertical"
     android:background="@color/background">
 
-    <!-- Filter chips -->
     <com.google.android.material.chip.ChipGroup
         android:id="@+id/chip_group_filter"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:padding="12dp"
+        android:padding="@dimen/space_md"
         app:singleSelection="true"
         app:selectionRequired="true"
-        app:chipSpacingHorizontal="8dp">
+        app:chipSpacingHorizontal="@dimen/space_sm">
 
         <com.google.android.material.chip.Chip
             android:id="@+id/chip_all"
@@ -61,16 +62,15 @@
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:clipToPadding="false"
-                android:padding="8dp" />
+                android:padding="@dimen/space_sm" />
 
         </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
 
-        <!-- Shimmer skeleton loading -->
         <com.facebook.shimmer.ShimmerFrameLayout
             android:id="@+id/shimmer_layout"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:padding="8dp"
+            android:padding="@dimen/space_sm"
             android:visibility="gone"
             app:shimmer_auto_start="true"
             app:shimmer_base_color="@color/shimmer_base"
@@ -84,29 +84,28 @@
                 android:useDefaultMargins="true">
 
                 <View android:layout_width="0dp" android:layout_height="220dp"
-                    android:layout_columnWeight="1" android:layout_margin="6dp"
-                    android:background="@color/shimmer_base" />
+                    android:layout_columnWeight="1" android:layout_margin="@dimen/space_xs"
+                    android:background="@drawable/bg_glass_card" />
                 <View android:layout_width="0dp" android:layout_height="220dp"
-                    android:layout_columnWeight="1" android:layout_margin="6dp"
-                    android:background="@color/shimmer_base" />
+                    android:layout_columnWeight="1" android:layout_margin="@dimen/space_xs"
+                    android:background="@drawable/bg_glass_card" />
                 <View android:layout_width="0dp" android:layout_height="220dp"
-                    android:layout_columnWeight="1" android:layout_margin="6dp"
-                    android:background="@color/shimmer_base" />
+                    android:layout_columnWeight="1" android:layout_margin="@dimen/space_xs"
+                    android:background="@drawable/bg_glass_card" />
                 <View android:layout_width="0dp" android:layout_height="220dp"
-                    android:layout_columnWeight="1" android:layout_margin="6dp"
-                    android:background="@color/shimmer_base" />
+                    android:layout_columnWeight="1" android:layout_margin="@dimen/space_xs"
+                    android:background="@drawable/bg_glass_card" />
                 <View android:layout_width="0dp" android:layout_height="220dp"
-                    android:layout_columnWeight="1" android:layout_margin="6dp"
-                    android:background="@color/shimmer_base" />
+                    android:layout_columnWeight="1" android:layout_margin="@dimen/space_xs"
+                    android:background="@drawable/bg_glass_card" />
                 <View android:layout_width="0dp" android:layout_height="220dp"
-                    android:layout_columnWeight="1" android:layout_margin="6dp"
-                    android:background="@color/shimmer_base" />
+                    android:layout_columnWeight="1" android:layout_margin="@dimen/space_xs"
+                    android:background="@drawable/bg_glass_card" />
 
             </GridLayout>
 
         </com.facebook.shimmer.ShimmerFrameLayout>
 
-        <!-- Empty state with Lottie -->
         <LinearLayout
             android:id="@+id/empty_state_layout"
             android:layout_width="wrap_content"
@@ -128,34 +127,33 @@
                 android:id="@+id/tv_empty_title"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
+                android:layout_marginTop="@dimen/space_sm"
                 android:text="@string/empty_gallery"
                 android:textColor="@color/on_surface"
-                android:textSize="18sp"
+                android:textSize="@dimen/text_title_sm"
                 android:fontFamily="sans-serif-medium" />
 
             <TextView
                 android:id="@+id/tv_empty_hint"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
+                android:layout_marginTop="@dimen/space_sm"
                 android:text="@string/empty_gallery_hint"
                 android:textColor="@color/on_surface_secondary"
-                android:textSize="14sp" />
+                android:textSize="@dimen/text_body" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_first_scan"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
+                android:layout_marginTop="@dimen/space_lg"
                 android:text="@string/first_scan_cta"
                 app:icon="@drawable/ic_scan"
-                app:cornerRadius="16dp"
+                app:cornerRadius="@dimen/radius_md"
                 app:backgroundTint="@color/primary" />
 
         </LinearLayout>
 
-        <!-- Filter empty state -->
         <LinearLayout
             android:id="@+id/filter_empty_layout"
             android:layout_width="wrap_content"
@@ -163,7 +161,7 @@
             android:layout_gravity="center"
             android:gravity="center"
             android:orientation="vertical"
-            android:paddingHorizontal="32dp"
+            android:paddingHorizontal="@dimen/space_3xl"
             android:visibility="gone">
 
             <ImageView
@@ -171,16 +169,16 @@
                 android:layout_height="80dp"
                 android:src="@drawable/ic_plant_placeholder"
                 android:contentDescription="@string/empty_gallery"
-                app:tint="@color/primary_light" />
+                app:tint="@color/primary_variant" />
 
             <TextView
                 android:id="@+id/tv_filter_empty"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
+                android:layout_marginTop="@dimen/space_lg"
                 android:text="@string/filter_empty_hint"
                 android:textColor="@color/on_surface_secondary"
-                android:textSize="14sp"
+                android:textSize="@dimen/text_body"
                 android:gravity="center" />
 
         </LinearLayout>

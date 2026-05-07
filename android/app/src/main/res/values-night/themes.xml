@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Night theme inherits the DayNight parent, dark colors come from values-night/colors.xml -->
+    <!-- Night theme inherits the DayNight parent; dark colors come from values-night/colors.xml -->
     <style name="Theme.PlantDiseases" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="colorPrimary">@color/primary</item>
         <item name="colorPrimaryDark">@color/primary_dark</item>
@@ -17,7 +17,7 @@
         <!-- Edge-to-edge: transparent status bar -->
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:navigationBarColor">@color/surface</item>
+        <item name="android:navigationBarColor">@color/background</item>
         <!-- windowLightNavigationBar is API 27+; silently ignored on API 26. -->
         <item name="android:windowLightNavigationBar" tools:targetApi="27">false</item>
     </style>

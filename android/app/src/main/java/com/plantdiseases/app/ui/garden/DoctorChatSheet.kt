@@ -29,6 +29,7 @@ import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.ChatMessageEntity
 import com.plantdiseases.app.data.local.PlantEntity
+import com.plantdiseases.app.data.model.ChatRequest
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.launch
@@ -257,14 +258,17 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
         inputField.setText("")
         suggestionsContainer.visibility = View.GONE
 
-        val repo = (requireActivity().application as PlantDiseasesApp).plantRepository
+        val app = requireActivity().application as PlantDiseasesApp
+        val plantRepo = app.plantRepository
+        val scanRepo = app.scanRepository
         val isRu = LocaleHelper.isRussian(requireContext())
         val now = System.currentTimeMillis()
 
         addMessageBubble("user", text, now)
         scrollToBottom()
 
-        // Thinking placeholder
+        // Thinking placeholder — removed once the server replies (or
+        // the request fails).
         val thinkingBubble = buildBubble(
             getString(R.string.doctor_thinking),
             isUser = false,
@@ -275,71 +279,130 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
         scrollToBottom()
 
         lifecycleScope.launch {
-            // Persist user message
-            repo.saveChatMessage(
-                ChatMessageEntity(plantId = plant.id, role = "user", content = text, timestamp = now)
+            // Persist the user message before the network round-trip
+            // so it survives a server timeout / process death.
+            plantRepo.saveChatMessage(
+                ChatMessageEntity(plantId = plant.id, role = "user", content = text, timestamp = now),
             )
 
-            val reply = buildLocalDoctorReply(text, isRu)
+            // Pull the latest scan for this plant (if any) and ship a
+            // compact diagnosis context. The server caps this dict at
+            // 8 KB on the wire — we keep it tiny on purpose.
+            val latestScan = plantRepo.getLatestScanForPlant(plant.id)
+            val diagnosis: Map<String, Any?>? = latestScan?.let {
+                val classKey = scanRepo.topClassKey(it)
+                    ?: it.diseaseName.lowercase().replace(' ', '_')
+                mapOf(
+                    "class_name" to classKey,
+                    "disease_name" to it.diseaseName,
+                    "confidence" to it.confidence.toDouble(),
+                    "severity" to severityHint(it.confidence, it.isHealthy),
+                    "is_healthy" to it.isHealthy,
+                    "warnings" to scanRepo.parseWarnings(it.warnings),
+                    "plant_name" to plant.name,
+                    "species" to (plant.scientificName ?: plant.species),
+                )
+            } ?: mapOf(
+                "plant_name" to plant.name,
+                "species" to (plant.scientificName ?: plant.species),
+            )
 
-            // Remove thinking bubble
+            val request = ChatRequest(
+                sessionId = "plant_${plant.id}",
+                message = text,
+                locale = if (isRu) "ru" else "en",
+                diagnosis = diagnosis,
+            )
+            val result = scanRepo.sendChat(request)
+
+            // Drop the thinking placeholder regardless of outcome.
             thinkingView?.let { messagesLayout.removeView(it) }
             thinkingView = null
 
             val replyTime = System.currentTimeMillis()
-            addMessageBubble("bot", reply, replyTime)
-            scrollToBottom()
+            val replyText = result.fold(
+                onSuccess = { resp ->
+                    when {
+                        resp.available && resp.reply.isNotBlank() -> resp.reply
+                        // Server declined the turn (no API key, budget,
+                        // empty reply, etc.). Surface its `fallback`
+                        // verbatim if present, else a translated reason.
+                        !resp.fallback.isNullOrBlank() -> resp.fallback
+                        else -> formatChatUnavailable(resp.reason, isRu)
+                    }
+                },
+                onFailure = { err -> formatChatNetworkError(err, isRu) },
+            )
 
-            repo.saveChatMessage(
-                ChatMessageEntity(plantId = plant.id, role = "bot", content = reply, timestamp = replyTime)
+            addMessageBubble("bot", replyText, replyTime)
+            scrollToBottom()
+            plantRepo.saveChatMessage(
+                ChatMessageEntity(
+                    plantId = plant.id,
+                    role = "bot",
+                    content = replyText,
+                    timestamp = replyTime,
+                ),
             )
         }
     }
 
-    /**
-     * Local placeholder for the future server-backed assistant.
-     *
-     * To connect the real AI later, replace this method with the existing
-     * Retrofit `/api/chat` request using `sessionId = "plant_${plant.id}"`,
-     * `message = userMessage`, and context fields below. The bottom sheet,
-     * Markdown rendering, follow-up chips, and Room persistence are already
-     * wired around this single reply-producing boundary.
-     */
-    private fun buildLocalDoctorReply(userMessage: String, isRu: Boolean): String {
-        val displayName = plant.name
-        val species = plant.species?.takeIf { it.isNotBlank() }
-        val disease = latestDisease?.takeIf { it.isNotBlank() }
-        val topic = userMessage.take(120)
+    /** Coarse client-side severity bucket for the diagnosis context. */
+    private fun severityHint(confidence: Float, isHealthy: Boolean): String = when {
+        isHealthy -> "low"
+        confidence >= 0.85f -> "high"
+        confidence >= 0.65f -> "medium"
+        else -> "low"
+    }
 
+    /** "Server replied 200 OK with available=false" — translate the reason. */
+    private fun formatChatUnavailable(reason: String?, isRu: Boolean): String {
+        if (isRu) {
+            return when (reason) {
+                "session_turn_cap" ->
+                    "Лимит сообщений в этой сессии исчерпан. Очистите чат, чтобы начать заново."
+                "session_token_cap" ->
+                    "Бюджет токенов сессии исчерпан. Очистите чат, чтобы начать заново."
+                "no_api_key" ->
+                    "AI Plant Doctor временно недоступен (сервер не настроен). Используйте раздел «Лечение» в карточке диагноза."
+                "message_too_long", "empty_message" ->
+                    "Сообщение не отправлено. Сократите запрос и попробуйте снова."
+                "empty_reply", "api_error" ->
+                    "Не удалось получить ответ от ассистента. Попробуйте отправить сообщение ещё раз."
+                else -> "AI Plant Doctor пока недоступен. Попробуйте позже."
+            }
+        }
+        return when (reason) {
+            "session_turn_cap" ->
+                "You hit the per-session message cap. Clear the chat to start over."
+            "session_token_cap" ->
+                "You hit the per-session token budget. Clear the chat to start over."
+            "no_api_key" ->
+                "AI Plant Doctor is offline (server not configured). See the diagnosis Treatment list for now."
+            "message_too_long", "empty_message" ->
+                "The message wasn't sent. Shorten it and try again."
+            "empty_reply", "api_error" ->
+                "The assistant couldn't reply. Try sending the message again."
+            else -> "AI Plant Doctor is unavailable right now. Try again later."
+        }
+    }
+
+    /** Network-level failure — the server never gave us an HTTP response. */
+    private fun formatChatNetworkError(err: Throwable, isRu: Boolean): String {
+        val name = err::class.simpleName ?: ""
         return if (isRu) {
-            buildString {
-                append("**Заглушка Plant Doctor.** Я пока работаю без серверного ИИ, но уже сохраняю диалог для растения **")
-                append(displayName)
-                append("**.\n\n")
-                append("**Контекст:** ")
-                append(species ?: "вид не указан")
-                disease?.let { append(", последний диагноз: ").append(it) }
-                append(".\n\n")
-                append("По вопросу: \"").append(topic).append("\".\n")
-                append("1. Проверьте новые пятна, влажность почвы и освещение.\n")
-                append("2. Сравните состояние с последним сканом в Timeline.\n")
-                append("3. Если симптомы усиливаются, сделайте новый скан и добавьте заметку в журнал.\n\n")
-                append("Позже этот ответ будет заменён серверным `/api/chat`, без переделки UI.")
+            when {
+                "NoNetwork" in name -> "Нет интернет-соединения. Подключитесь к сети и попробуйте снова."
+                "Timeout" in name -> "Сервер не отвечает. Попробуйте отправить сообщение ещё раз."
+                "RateLimit" in name -> "Слишком частые запросы. Подождите несколько секунд и повторите."
+                else -> "Не удалось связаться с сервером. Попробуйте позже."
             }
         } else {
-            buildString {
-                append("**Plant Doctor placeholder.** I am running locally for now, but this chat is already persisted for **")
-                append(displayName)
-                append("**.\n\n")
-                append("**Context:** ")
-                append(species ?: "species not set")
-                disease?.let { append(", latest diagnosis: ").append(it) }
-                append(".\n\n")
-                append("For: \"").append(topic).append("\".\n")
-                append("1. Check new spots, soil moisture, and current light.\n")
-                append("2. Compare changes against the latest scan in Timeline.\n")
-                append("3. If symptoms progress, take a fresh scan and add a journal note.\n\n")
-                append("Later this reply can be replaced by server `/api/chat` without changing the UI.")
+            when {
+                "NoNetwork" in name -> "No internet connection. Reconnect and try again."
+                "Timeout" in name -> "The server didn't respond. Try sending the message again."
+                "RateLimit" in name -> "Too many requests. Wait a few seconds and try again."
+                else -> "Couldn't reach the server. Try again later."
             }
         }
     }

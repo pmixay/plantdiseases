@@ -31,21 +31,39 @@ from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response as StarletteResponse
 
-from ai_services import (
-    chat_metrics_snapshot,
-    chat_reply,
-    compare_progression,
-    generate_care_plan,
-    identify_species,
-)
-from config import get_float, get_int, get_list, get_str
-from diseases_data import DISEASES_DATABASE
-from pipeline import PlantDiseasePipeline
+# Imports work two ways:
+#   1) Inside Docker (`uvicorn main:app` from /app, flat copy) — `from
+#      ai_services import …` resolves directly.
+#   2) From the repo root (`python -m server.main` or `uvicorn
+#      server.main:app`) — same names live under the `server.` package.
+# The try/except below covers both without forcing PYTHONPATH gymnastics.
+try:
+    from .ai_services import (  # type: ignore[import-not-found]
+        chat_metrics_snapshot,
+        chat_reply,
+        compare_progression,
+        generate_care_plan,
+        identify_species,
+    )
+    from .config import get_float, get_int, get_list, get_str
+    from .diseases_data import DISEASES_DATABASE
+    from .pipeline import PlantDiseasePipeline
+except ImportError:
+    from ai_services import (
+        chat_metrics_snapshot,
+        chat_reply,
+        compare_progression,
+        generate_care_plan,
+        identify_species,
+    )
+    from config import get_float, get_int, get_list, get_str
+    from diseases_data import DISEASES_DATABASE
+    from pipeline import PlantDiseasePipeline
 
 try:
     from . import __version__ as APP_VERSION  # type: ignore
 except Exception:
-    APP_VERSION = "2.0"
+    APP_VERSION = "2.1"
 
 # Limit Pillow decompression to prevent zip-bomb DoS
 Image.MAX_IMAGE_PIXELS = 20_000_000  # ~4500×4500
@@ -194,7 +212,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.min_interval = 1.0 / requests_per_second
         self._last_request: dict[str, float] = {}
         self._lock = threading.Lock()
-        self._last_cleanup = time.time()
+        self._last_cleanup = time.monotonic()
 
     def _cleanup_stale(self, now: float) -> None:
         cutoff = now - max(self.min_interval * 2, 60.0)
@@ -214,7 +232,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         client_ip = _client_ip(request)
-        now = time.time()
+        # Use monotonic clock so an NTP step (or daylight-saving jump on
+        # a misconfigured host) cannot lock every client out for
+        # several minutes by making `now - last` go negative.
+        now = time.monotonic()
 
         with self._lock:
             if now - self._last_cleanup > _RATE_LIMIT_CLEANUP_INTERVAL:
@@ -490,18 +511,25 @@ async def analyze_image(image: UploadFile = File(...)):
             detail="Unsupported image format. Allowed: JPEG, PNG, WebP, BMP",
         )
 
-    contents = await image.read()
     try:
-        _validate_image_bytes(contents)
-    except HTTPException:
+        contents = await image.read()
+    except Exception as exc:
         _record_error()
-        raise
+        logger.warning("Failed to read upload stream from %s: %s", image.filename, exc)
+        raise HTTPException(status_code=400, detail="Could not read uploaded file") from exc
 
     try:
+        _validate_image_bytes(contents)
         img = _open_image(contents)
     except HTTPException:
         _record_error()
         raise
+    except Exception as exc:
+        # Guard against any non-HTTPException leaking from PIL — return a
+        # consistent 400 instead of letting the request crash with 500.
+        _record_error()
+        logger.exception("Unexpected error while validating image %s: %s", image.filename, exc)
+        raise HTTPException(status_code=400, detail="Cannot read image file") from exc
 
     img_w, img_h = img.size
     if img_w > MAX_IMAGE_DIMENSION or img_h > MAX_IMAGE_DIMENSION:
@@ -548,14 +576,17 @@ async def analyze_image(image: UploadFile = File(...)):
 
     rounded_probs = {k: round(v, 4) for k, v in all_probs.items()}
 
-    # Compute Shannon-entropy uncertainty in [0, 1]; higher = more uncertain.
-    if rounded_probs:
+    # Shannon-entropy uncertainty in [0, 1]; higher = more uncertain.
+    # Guards: empty dict, single-class (log(1)=0) and degenerate
+    # all-zero distributions all collapse to 0.0 instead of NaN.
+    uncertainty = 0.0
+    if len(rounded_probs) > 1:
         vals = [p for p in rounded_probs.values() if p > 0]
-        entropy = -sum(p * math.log(p) for p in vals)
-        max_entropy = math.log(len(rounded_probs))
-        uncertainty = round(entropy / max_entropy, 4) if max_entropy > 0 else 0.0
-    else:
-        uncertainty = 0.0
+        if vals:
+            entropy = -sum(p * math.log(p) for p in vals)
+            max_entropy = math.log(len(rounded_probs))
+            if max_entropy > 0:
+                uncertainty = round(max(0.0, min(1.0, entropy / max_entropy)), 4)
 
     detection = result["detection"]
 
@@ -664,7 +695,12 @@ async def identify_endpoint(image: UploadFile = File(...), organ: str = "leaf"):
     if not image.content_type or image.content_type not in ALLOWED_CONTENT_TYPES:
         _record_error()
         raise HTTPException(status_code=400, detail="Unsupported image format")
-    contents = await image.read()
+    try:
+        contents = await image.read()
+    except Exception as exc:
+        _record_error()
+        logger.warning("Failed to read upload stream for /api/identify: %s", exc)
+        raise HTTPException(status_code=400, detail="Could not read uploaded file") from exc
     try:
         _validate_image_bytes(contents)
     except HTTPException:

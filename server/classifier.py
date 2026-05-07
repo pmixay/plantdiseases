@@ -1,11 +1,11 @@
 """
 Stage 2 — PlantVision houseplant disease classifier.
 
-Classifies a (preferably cropped) leaf region into one of 11
+Classifies a (preferably cropped) leaf region into one of the
 houseplant-relevant condition classes including the rejection class
 ``not_a_plant``. Class names + input resolution live in
 ``models/classes.json``; if the file is missing the built-in default
-matching the v2.0 taxonomy is used.
+matching the v2.1 taxonomy (7 trainable classes) is used.
 
 Production artefact is a distilled MobileNetV3-Large student
 (EfficientNetV2-S teacher → KD). Loading order:
@@ -33,19 +33,17 @@ logger = logging.getLogger(__name__)
 DEFAULT_IMG_SIZE = 256
 
 # Alphabetical — must match training-time ``sorted(ImageFolder.classes)``.
-# Final 11-class taxonomy (v2.0): coarse-grained groups optimised for
-# indoor real-world photos.
+# v2.1 trainable taxonomy. The four physiological classes from the v2.0
+# design (``edema``, ``leaf_scorch_underwatering``, ``nutrient_deficiency``,
+# ``sunburn_or_scorch``) are deferred until labelled real-world data is
+# added — see server/models/MODEL_CARD.md.
 DEFAULT_CLASS_NAMES = [
     "bacterial_leaf_spot",
-    "edema",
     "gray_mold_botrytis",
     "healthy",
-    "leaf_scorch_underwatering",
     "leaf_spot_fungal",
     "not_a_plant",
-    "nutrient_deficiency",
     "powdery_mildew",
-    "sunburn_or_scorch",
     "viral_disease",
 ]
 
@@ -241,17 +239,28 @@ class DiseaseClassifier:
 
     # ── preprocessing (NumPy) ────────────────────────────────────────
 
-    def _preprocess(self, img: Image.Image) -> np.ndarray:
+    def _to_chw(self, img: Image.Image) -> np.ndarray:
         if img.mode != "RGB":
             img = img.convert("RGB")
         if img.size != (self.img_size, self.img_size):
             img = img.resize((self.img_size, self.img_size), Image.BILINEAR)
         arr = np.asarray(img, dtype=np.float32) / 255.0
         arr = (arr - NORM_MEAN) / NORM_STD
-        return np.ascontiguousarray(arr.transpose(2, 0, 1)[None], dtype=np.float32)
+        return arr.transpose(2, 0, 1)
+
+    def _preprocess(self, img: Image.Image) -> np.ndarray:
+        return np.ascontiguousarray(self._to_chw(img)[None], dtype=np.float32)
 
     def _preprocess_batch(self, imgs: list[Image.Image]) -> np.ndarray:
-        return np.concatenate([self._preprocess(im) for im in imgs], axis=0)
+        # Stack the per-crop CHW arrays into a single contiguous NCHW
+        # tensor — one allocation, no per-crop concat round-trip.
+        n = len(imgs)
+        out = np.empty(
+            (n, 3, self.img_size, self.img_size), dtype=np.float32,
+        )
+        for i, im in enumerate(imgs):
+            out[i] = self._to_chw(im)
+        return out
 
     # ── ONNX inference ───────────────────────────────────────────────
 
@@ -282,13 +291,21 @@ class DiseaseClassifier:
         return [self._format_result_from_logits(logits[i]) for i in range(logits.shape[0])]
 
     def _format_result_from_logits(self, logits: np.ndarray) -> dict:
-        # Stable softmax. The pipeline only needs the scalar `max_logit`
-        # for the OOD gate (Hendrycks 2019) — keeping a per-class logit
-        # dict allocates a second NUM_CLASSES dict on every classify
-        # call without anyone reading it.
-        shifted = logits - logits.max()
-        e = np.exp(shifted)
-        probs = e / e.sum()
+        # Numerically-stable softmax (max-shift) on float64 to avoid
+        # rounding error on near-zero tails. The pipeline only needs the
+        # scalar `max_logit` for the OOD gate (Hendrycks 2019) — keeping
+        # a per-class logit dict allocates a second NUM_CLASSES dict on
+        # every classify call without anyone reading it.
+        logits64 = logits.astype(np.float64, copy=False)
+        max_logit = float(logits64.max())
+        e = np.exp(logits64 - max_logit)
+        denom = e.sum()
+        if denom <= 0 or not np.isfinite(denom):
+            # Degenerate (all -inf or NaN). Fall back to uniform so the
+            # response stays well-formed instead of poisoning downstream.
+            probs = np.full_like(logits64, 1.0 / max(len(logits64), 1))
+        else:
+            probs = e / denom
         top_idx = int(np.argmax(probs))
         top_conf = float(probs[top_idx])
         return {
@@ -298,6 +315,6 @@ class DiseaseClassifier:
                 self.CLASS_NAMES[i]: round(float(probs[i]), 4)
                 for i in range(self.NUM_CLASSES)
             },
-            "max_logit": float(logits.max()),
+            "max_logit": max_logit,
             "low_confidence": top_conf < LOW_CONFIDENCE_THRESHOLD,
         }

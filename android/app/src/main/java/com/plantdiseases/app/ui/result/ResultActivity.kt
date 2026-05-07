@@ -15,6 +15,7 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
+import android.view.ViewGroup
 import android.animation.ValueAnimator
 import android.view.animation.DecelerateInterpolator
 import android.widget.LinearLayout
@@ -205,14 +206,20 @@ class ResultActivity : AppCompatActivity() {
 
     private fun animateSkeleton() {
         skeletonAnimator?.cancel()
+        // Walk the first child of the ShimmerFrameLayout (the inner
+        // LinearLayout that holds the placeholder cards) so we keep the
+        // original "each block fades independently" feel even though
+        // the layout is now wrapped in a shimmer host.
+        val container = binding.skeletonLayout.getChildAt(0) as? ViewGroup
+            ?: binding.skeletonLayout
         val animator = ValueAnimator.ofFloat(0.3f, 0.7f).apply {
             duration = 800
             repeatMode = ValueAnimator.REVERSE
             repeatCount = ValueAnimator.INFINITE
             addUpdateListener { anim ->
                 val alpha = anim.animatedValue as Float
-                for (i in 0 until binding.skeletonLayout.childCount) {
-                    binding.skeletonLayout.getChildAt(i).alpha = alpha
+                for (i in 0 until container.childCount) {
+                    container.getChildAt(i).alpha = alpha
                 }
             }
         }

@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Round liquid-glass icon background (camera flash, scan toggles).
+     Translucent white over the camera preview with a 1-px white rim. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
-    <solid android:color="@color/semi_transparent" />
+    <solid android:color="@color/glass_dark_scrim_strong" />
+    <stroke
+        android:width="@dimen/glass_stroke_width"
+        android:color="@color/glass_stroke_strong" />
 </shape>

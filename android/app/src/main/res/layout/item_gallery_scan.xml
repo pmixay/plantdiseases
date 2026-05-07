@@ -1,15 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Gallery grid card. Frosted-glass surface, photo at the top with a
+     status accent strip, two-line caption underneath. -->
 <com.google.android.material.card.MaterialCardView
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_margin="6dp"
+    android:layout_margin="@dimen/space_xs"
     android:clickable="true"
     android:focusable="true"
     android:foreground="?attr/selectableItemBackground"
-    app:cardCornerRadius="16dp"
-    app:cardElevation="2dp"
+    app:cardCornerRadius="@dimen/radius_lg"
+    app:cardElevation="@dimen/glass_elevation_soft"
     app:cardBackgroundColor="@color/surface">
 
     <LinearLayout
@@ -28,7 +30,6 @@
                 android:scaleType="centerCrop"
                 android:contentDescription="@string/result_title" />
 
-            <!-- Status indicator strip -->
             <View
                 android:id="@+id/status_indicator"
                 android:layout_width="match_parent"
@@ -41,13 +42,14 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="12dp">
+            android:padding="@dimen/space_md">
 
             <TextView
                 android:id="@+id/tv_disease_name"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:textSize="14sp"
+                android:textSize="@dimen/text_body"
+                android:textColor="@color/on_surface"
                 android:fontFamily="sans-serif-medium"
                 android:maxLines="1"
                 android:ellipsize="end" />
@@ -55,7 +57,7 @@
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
+                android:layout_marginTop="@dimen/space_xs"
                 android:orientation="horizontal"
                 android:gravity="center_vertical">
 
@@ -64,14 +66,14 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:textSize="12sp"
+                    android:textSize="@dimen/text_body_sm"
                     android:textColor="@color/on_surface_secondary" />
 
                 <TextView
                     android:id="@+id/tv_date"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:textSize="11sp"
+                    android:textSize="@dimen/text_caption"
                     android:textColor="@color/on_surface_secondary"
                     android:alpha="0.7" />
 

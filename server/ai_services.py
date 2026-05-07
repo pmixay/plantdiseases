@@ -38,7 +38,10 @@ import time
 from collections import OrderedDict
 from typing import Any, Optional
 
-from config import get_float, get_int, get_str
+try:
+    from .config import get_float, get_int, get_str  # type: ignore[import-not-found]
+except ImportError:
+    from config import get_float, get_int, get_str
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +71,13 @@ CHAT_MAX_TOKENS = get_int("CHAT_MAX_TOKENS", 512)
 CHAT_SESSION_TURN_CAP = get_int("CHAT_SESSION_TURN_CAP", 20)
 CHAT_SESSION_TOKEN_CAP = get_int("CHAT_SESSION_TOKEN_CAP", 8000)
 CHAT_SESSION_TTL_SEC = get_int("CHAT_SESSION_TTL_SEC", 3600)
+# Hard cap on retained messages per session — independent of the turn
+# count cap, this protects against very long single-turn messages
+# accumulating unbounded memory before the TTL GC reclaims the session.
+CHAT_SESSION_MAX_MESSAGES = get_int("CHAT_SESSION_MAX_MESSAGES", 60)
+# How many recent messages we forward to the LLM each turn. Keeps the
+# context window predictable independent of total session history.
+CHAT_HISTORY_KEEP_LAST = get_int("CHAT_HISTORY_KEEP_LAST", 12)
 
 
 def _active_chat_model() -> str:
@@ -197,25 +207,25 @@ def identify_species(image_bytes: bytes, *, organ: str = "leaf") -> dict:
 # session don't pay for re-tokenising the system prompt.
 _DOCTOR_SYSTEM_PROMPT = """You are PlantDiseases' friendly AI Plant Doctor, helping
 people care for their houseplants. Your knowledge is grounded in the
-PlantVision v2.0 disease taxonomy (11 classes):
+PlantVision v2.1 disease taxonomy (7 trainable classes):
 
 - bacterial_leaf_spot: angular brown spots with yellow halo, bacterial
-- edema: corky water-blister bumps on leaf undersides; physiological,
-  caused by overwatering in cool dim weather
 - gray_mold_botrytis: fuzzy grey growth, fungal (Botrytis cinerea)
 - healthy: no disease detected
-- leaf_scorch_underwatering: crispy brown leaf tips/edges, chronic
-  under-watering or salty hard water
 - leaf_spot_fungal: umbrella class for anthracnose / cercospora /
   alternaria — dark spots, halos, concentric rings
 - not_a_plant: image does not contain a plant
-- nutrient_deficiency: covers iron, nitrogen, magnesium, potassium —
-  interveinal or whole-leaf yellowing, edge burn
 - powdery_mildew: white powdery coating, fungal
-- sunburn_or_scorch: dry brown patches on the sun-facing side of
-  leaves or directly under harsh grow-lights
 - viral_disease: umbrella class for mosaic, leaf curl and ringspot;
   incurable
+
+Physiological conditions (edema, leaf scorch from underwatering,
+nutrient deficiency, sunburn) are NOT yet trained classes — if the
+user's photo shows one of those patterns the classifier will return a
+low-confidence verdict or `not_a_plant`. In that case, ask the user
+about watering, light and fertiliser routine and give physiological
+advice from first principles, but be explicit that the model has not
+diagnosed it.
 
 Style guide:
 - Keep replies SHORT (3-6 sentences). Specific, actionable, friendly.
@@ -248,6 +258,13 @@ class _ChatSession:
         if len(self.messages) <= keep_last:
             return list(self.messages)
         return self.messages[-keep_last:]
+
+    def append(self, role: str, content: str) -> None:
+        """Append a message and enforce CHAT_SESSION_MAX_MESSAGES."""
+        self.messages.append({"role": role, "content": content})
+        excess = len(self.messages) - CHAT_SESSION_MAX_MESSAGES
+        if excess > 0:
+            del self.messages[:excess]
 
 
 _chat_sessions: dict[str, _ChatSession] = {}
@@ -394,7 +411,7 @@ def chat_reply(
                 "token_cap": CHAT_SESSION_TOKEN_CAP,
             }
         sess.last_active = now
-        history = sess.trim_for_context(keep_last=12)
+        history = sess.trim_for_context(keep_last=CHAT_HISTORY_KEEP_LAST)
 
     # Build the system prompt with prompt caching enabled on the long
     # static disease-taxonomy block. Anthropic SDK 0.30+ supports the
@@ -444,8 +461,8 @@ def chat_reply(
         return {"available": False, "reply": "", "reason": "empty_reply"}
 
     with _chat_lock:
-        sess.messages.append({"role": "user", "content": user_message})
-        sess.messages.append({"role": "assistant", "content": reply_text})
+        sess.append("user", user_message)
+        sess.append("assistant", reply_text)
         sess.tokens_in += tin
         sess.tokens_out += tout
         sess.turn_count += 1

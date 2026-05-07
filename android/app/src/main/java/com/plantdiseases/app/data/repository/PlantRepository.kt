@@ -83,6 +83,11 @@ class PlantRepository(
         scanDao.getScansForPlant(plantId)
     }
 
+    /** Most-recent scan for a plant, or null if there have been none yet. */
+    suspend fun getLatestScanForPlant(plantId: Long): ScanEntity? = withContext(Dispatchers.IO) {
+        scanDao.getScansForPlant(plantId).firstOrNull()
+    }
+
     suspend fun getJournalEntries(plantId: Long): List<PlantJournalEntity> =
         withContext(Dispatchers.IO) {
             journalDao.getEntriesForPlant(plantId)
