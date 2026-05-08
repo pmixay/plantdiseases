@@ -38,7 +38,6 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from io import BytesIO
 from pathlib import Path
-from typing import Iterable
 
 import requests
 from PIL import Image as PILImage
