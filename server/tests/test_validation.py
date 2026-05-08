@@ -27,6 +27,72 @@ def test_bogus_magic_bytes_rejected(client):
     assert r.status_code == 400
 
 
+def test_riff_non_webp_rejected(client):
+    """A bare RIFF container (e.g. WAV, AVI) used to slip past the
+    magic-byte check because `RIFF` was in IMAGE_MAGIC. Now WebP gets
+    its own explicit `RIFF<size>WEBP` validator and bare-RIFF is
+    refused — Pillow would later fail the decode anyway, but we want
+    the rejection at the magic-byte stage."""
+    # WAV header: 'RIFF' + 4-byte size + 'WAVE'.
+    wav = b"RIFF" + (1024).to_bytes(4, "little") + b"WAVE" + b"\x00" * 64
+    r = _post_image(client, wav, "fake.webp", "image/webp")
+    assert r.status_code == 400
+    assert "unrecognised" in r.json()["detail"].lower()
+
+
+def test_webp_passes_magic_check(client):
+    """Real WebP — `RIFF<size>WEBP` — should pass the magic check (the
+    decode might still fail downstream because TestClient doesn't run
+    Pillow's decoder reliably for synthetic WebP, but the magic stage
+    must accept it)."""
+    webp = b"RIFF" + (1024).to_bytes(4, "little") + b"WEBP" + b"VP8 " + b"\x00" * 64
+    r = _post_image(client, webp, "leaf.webp", "image/webp")
+    # We're testing the magic stage. Pillow may or may not accept the
+    # synthetic stream — both 200 (decoded) and 400 ("Cannot read image
+    # file") are acceptable as long as it's NOT the magic-byte
+    # "Unrecognised image format" message.
+    body = r.json().get("detail", "").lower() if r.status_code == 400 else ""
+    assert "unrecognised" not in body, (
+        "WebP magic bytes were rejected by the magic stage — "
+        "regression of audit fix S1"
+    )
+
+
+def test_safe_filename_strips_control_characters():
+    """Unit-test the helper directly so we don't depend on pytest's
+    log-capture interacting with FastAPI's lifespan."""
+    import main as server_main
+
+    # \r\n\t\v\f\x00 must all collapse to spaces.
+    assert server_main._safe_filename("evil\nFAKE LINE: bad\r\n") == "evil FAKE LINE: bad  "
+    # None / empty are tagged.
+    assert server_main._safe_filename(None) == "<no-filename>"
+    assert server_main._safe_filename("") == "<no-filename>"
+    # Long filenames are truncated.
+    assert len(server_main._safe_filename("x" * 500)) == 80
+
+
+def test_filename_with_newline_doesnt_appear_verbatim_in_log_lines(client, png_bytes,
+                                                                   caplog):
+    """End-to-end: a newline-bearing filename must not survive into the
+    plantdiseases logger output (otherwise log injection)."""
+    import logging
+
+    caplog.set_level(logging.INFO, logger="plantdiseases")
+    r = _post_image(
+        client, png_bytes,
+        "evil\nFAKE INJECTED LINE\r\nstill bad",
+        "image/png",
+    )
+    assert r.status_code == 200
+    rendered = "\n".join(rec.getMessage() for rec in caplog.records)
+    # No literal newline + injected text in the rendered log output.
+    assert "evil\nFAKE INJECTED LINE" not in rendered, (
+        "User-controlled filename leaked newline into a log line — "
+        "regression of the log-injection guard"
+    )
+
+
 def test_unsupported_content_type_rejected(client, png_bytes):
     r = _post_image(client, png_bytes, "doc.pdf", "application/pdf")
     assert r.status_code == 400

@@ -127,6 +127,81 @@ def test_chat_metrics_snapshot_initially_empty():
     assert snap["rejected"] == 0
 
 
+def test_openrouter_call_retries_transient_5xx(monkeypatch):
+    """`_call_openrouter` must retry on 503 / 502 / 504 / 429 / 408 and
+    on connection / timeout errors, but NOT on auth / bad-request 4xx.
+    The retry logic is what keeps a flaky upstream from killing a chat
+    turn (and burning the user's session budget on the failure)."""
+    import requests
+
+    import ai_services as ai
+
+    # Force the API-key check to pass so we exercise the retry path.
+    monkeypatch.setattr(ai, "OPENROUTER_API_KEY", "test-key")
+    # Don't actually sleep between retries — speed up the test.
+    monkeypatch.setattr(ai, "_sleep_for_retry", lambda *a, **kw: None)
+
+    class _Resp:
+        def __init__(self, status, body=None):
+            self.status_code = status
+            self.headers = {}
+            self._body = body or {}
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise requests.HTTPError(f"{self.status_code}", response=self)
+        def json(self):
+            return self._body
+
+    # First two calls: 503; third call succeeds.
+    calls = {"n": 0}
+    def _fake_post(url, headers=None, json=None, timeout=None):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            return _Resp(503)
+        return _Resp(200, {
+            "choices": [{"message": {"content": "ok"}}],
+            "usage": {"prompt_tokens": 5, "completion_tokens": 2},
+        })
+
+    monkeypatch.setattr(requests, "post", _fake_post)
+    text, tin, tout = ai._call_openrouter("system", [{"role": "user", "content": "hi"}])
+    assert text == "ok"
+    assert (tin, tout) == (5, 2)
+    assert calls["n"] == 3
+
+
+def test_openrouter_call_does_not_retry_4xx(monkeypatch):
+    """Auth (401) / bad-request (400) errors fail fast — retrying
+    those just wastes the user's turn budget."""
+    import requests
+
+    import ai_services as ai
+
+    monkeypatch.setattr(ai, "OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setattr(ai, "_sleep_for_retry", lambda *a, **kw: None)
+
+    class _Resp:
+        def __init__(self, status):
+            self.status_code = status
+            self.headers = {}
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise requests.HTTPError(str(self.status_code), response=self)
+        def json(self):
+            return {}
+
+    calls = {"n": 0}
+    def _fake_post(url, headers=None, json=None, timeout=None):
+        calls["n"] += 1
+        return _Resp(401)
+
+    monkeypatch.setattr(requests, "post", _fake_post)
+    with pytest.raises(requests.HTTPError):
+        ai._call_openrouter("system", [{"role": "user", "content": "hi"}])
+    # Single attempt — no retries on 4xx.
+    assert calls["n"] == 1
+
+
 def test_chat_session_caps_message_history_growth():
     """The per-session message buffer must not grow without bound even
     if the turn-count cap is generous: ``CHAT_SESSION_MAX_MESSAGES``

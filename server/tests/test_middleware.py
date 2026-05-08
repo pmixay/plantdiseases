@@ -44,3 +44,52 @@ def test_analyze_rate_limit_returns_429_with_retry_after(rate_limited_client, pn
     assert r2.status_code == 429, r2.text
     assert "Retry-After" in r2.headers
     assert int(r2.headers["Retry-After"]) >= 1
+
+
+def test_gzip_middleware_compresses_large_responses(client):
+    """`/api/classes` returns a few KB of bilingual JSON. GZip should
+    kick in for clients that advertise Accept-Encoding: gzip."""
+    r = client.get("/api/classes", headers={"Accept-Encoding": "gzip"})
+    assert r.status_code == 200
+    # TestClient transparently decompresses, but the response headers
+    # still carry Content-Encoding: gzip when the middleware was active.
+    assert r.headers.get("content-encoding") == "gzip", (
+        "GZip middleware did not compress a >1 KB response — regression "
+        "of the bandwidth optimisation"
+    )
+
+
+def test_cors_allow_headers_is_not_wildcard(client):
+    """CORS preflight must NOT allow arbitrary custom headers — wildcard
+    `*` would let a malicious origin probe headers we don't accept."""
+    r = client.options(
+        "/api/health",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "Content-Type",
+        },
+    )
+    allowed = r.headers.get("access-control-allow-headers", "")
+    assert allowed and "*" not in allowed, (
+        f"CORS allow_headers is wildcard: {allowed!r}"
+    )
+
+
+def test_oversized_body_rejected_without_full_read(client):
+    """`_read_upload` should fail at MAX_FILE_SIZE+1 bytes regardless
+    of what the client claims via Content-Length. The total bytes
+    actually consumed is bounded so a slowloris-style upload can't
+    exhaust RAM."""
+    import main as server_main
+
+    cap = server_main.MAX_FILE_SIZE
+    # 2 MB over the cap (oversized but not absurd) — the helper should
+    # reject without parsing image bytes.
+    oversized = b"\xff\xd8\xff\xe0" + b"\x00" * (cap + 2 * 1024 * 1024)
+    r = client.post(
+        "/api/analyze",
+        files={"image": ("huge.jpg", oversized, "image/jpeg")},
+    )
+    assert r.status_code == 400
+    assert "too large" in r.json()["detail"].lower()

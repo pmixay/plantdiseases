@@ -255,13 +255,25 @@ _chat_lock = threading.Lock()
 _chat_totals = {"requests": 0, "rejected": 0, "tokens_in": 0, "tokens_out": 0}
 
 
+_OPENROUTER_TRANSIENT_STATUSES = frozenset({408, 425, 429, 500, 502, 503, 504})
+_OPENROUTER_MAX_RETRIES = 3
+_OPENROUTER_BASE_DELAY = 1.0  # seconds
+
+
 def _call_openrouter(
     system_text: str, history: list[dict],
     *, max_tokens: int | None = None,
 ) -> tuple[str, int, int]:
-    """Run an OpenRouter chat completion. ``history`` is an
-    OpenAI-shaped list of {"role": "user"|"assistant", "content": str}
-    messages. Returns (text, in_tokens, out_tokens)."""
+    """Run an OpenRouter chat completion with bounded retry.
+
+    Retries up to ``_OPENROUTER_MAX_RETRIES`` times with exponential
+    backoff (1 s / 2 s / 4 s) on:
+      * HTTP 408 / 425 / 429 / 5xx — transient upstream failures.
+      * ``requests.ConnectionError`` / ``Timeout`` — network blips.
+    Honours the ``Retry-After`` header on 429 if it parses as seconds.
+    4xx other than 408/425/429 (auth, bad request) fail immediately —
+    retrying those just wastes the user's turn budget.
+    """
     import requests  # noqa: WPS433
 
     messages: list[dict] = []
@@ -281,20 +293,58 @@ def _call_openrouter(
         "HTTP-Referer": "https://github.com/pmixay/plantdiseases",
         "X-Title": "PlantDiseases",
     }
-    r = requests.post(
-        f"{OPENROUTER_BASE_URL}/chat/completions",
-        headers=headers, json=payload, timeout=20.0,
-    )
-    r.raise_for_status()
-    data = r.json()
-    choices = data.get("choices") or []
-    text = ""
-    if choices:
-        text = ((choices[0].get("message") or {}).get("content") or "").strip()
-    usage = data.get("usage") or {}
-    tin = int(usage.get("prompt_tokens") or 0)
-    tout = int(usage.get("completion_tokens") or 0)
-    return text, tin, tout
+
+    last_exc: Exception | None = None
+    for attempt in range(_OPENROUTER_MAX_RETRIES):
+        try:
+            r = requests.post(
+                f"{OPENROUTER_BASE_URL}/chat/completions",
+                headers=headers, json=payload, timeout=20.0,
+            )
+        except (requests.ConnectionError, requests.Timeout) as exc:
+            last_exc = exc
+            if attempt + 1 == _OPENROUTER_MAX_RETRIES:
+                raise
+            _sleep_for_retry(attempt, retry_after=None)
+            continue
+
+        if r.status_code in _OPENROUTER_TRANSIENT_STATUSES:
+            if attempt + 1 == _OPENROUTER_MAX_RETRIES:
+                r.raise_for_status()  # last-ditch — caller handles
+            _sleep_for_retry(attempt, retry_after=r.headers.get("Retry-After"))
+            continue
+        if r.status_code >= 400:
+            r.raise_for_status()  # 4xx (not in transient set) — fail fast
+
+        data = r.json()
+        choices = data.get("choices") or []
+        text = ""
+        if choices:
+            text = ((choices[0].get("message") or {}).get("content") or "").strip()
+        usage = data.get("usage") or {}
+        tin = int(usage.get("prompt_tokens") or 0)
+        tout = int(usage.get("completion_tokens") or 0)
+        return text, tin, tout
+
+    # Loop only exits on transient failure with retries exhausted.
+    if last_exc is not None:
+        raise last_exc
+    raise RuntimeError("OpenRouter retries exhausted without a successful response")
+
+
+def _sleep_for_retry(attempt: int, retry_after: str | None) -> None:
+    """Sleep before the next OpenRouter retry. Honours a numeric
+    ``Retry-After`` header when present, otherwise falls back to
+    exponential backoff capped at 8 s."""
+    delay = _OPENROUTER_BASE_DELAY * (2 ** attempt)
+    if retry_after:
+        try:
+            server_wait = float(retry_after)
+            if server_wait > 0:
+                delay = max(delay, min(server_wait, 8.0))
+        except ValueError:
+            pass
+    time.sleep(min(delay, 8.0))
 
 
 def _gc_chat_sessions(now: float) -> None:

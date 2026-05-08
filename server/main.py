@@ -25,6 +25,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel, Field
@@ -105,27 +106,61 @@ MAX_FILE_SIZE = get_int("MAX_FILE_SIZE", 10 * 1024 * 1024)  # 10 MB
 MAX_IMAGE_DIMENSION = get_int("MAX_IMAGE_DIMENSION", 4096)
 INFERENCE_TIMEOUT = get_float("INFERENCE_TIMEOUT", 30.0)
 ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp", "image/bmp"}
+# Bare RIFF is intentionally NOT in this tuple: RIFF can be WAV / AVI /
+# ANI as well as WebP, and any of those would have passed a generic
+# `head.startswith(b"RIFF")` magic-byte check. WebP has its own
+# explicit `RIFF<size>WEBP` validator below.
 IMAGE_MAGIC = (
     b"\xff\xd8\xff",            # JPEG
     b"\x89PNG\r\n\x1a\n",       # PNG
-    b"RIFF",                    # WebP (RIFF....WEBP)
     b"BM",                      # BMP
 )
+
+
+def _is_webp(head: bytes, contents: bytes) -> bool:
+    """Strict WebP detection: ``RIFF`` at offset 0 AND ``WEBP`` at offset 8."""
+    return (
+        head.startswith(b"RIFF")
+        and len(contents) >= 12
+        and contents[8:12] == b"WEBP"
+    )
+
+
+_FILENAME_LOG_SAFE = str.maketrans({c: " " for c in "\r\n\t\v\f\x00"})
+
+
+def _safe_filename(name: str | None, *, max_len: int = 80) -> str:
+    """Strip control chars + truncate user-controlled filenames before
+    logging — defends against log injection ("upload\\nFAKE LOG LINE").
+    """
+    if not name:
+        return "<no-filename>"
+    cleaned = str(name).translate(_FILENAME_LOG_SAFE)[:max_len]
+    return cleaned or "<empty-filename>"
+
 
 RATE_LIMIT_RPS = get_float("RATE_LIMIT_RPS", 1.0)
 TRUSTED_PROXIES = set(get_list("TRUSTED_PROXIES", []))
 
 INFER_WORKERS = get_int("INFER_WORKERS", 2)
 _inference_executor: ThreadPoolExecutor | None = None
+_executor_lock = threading.Lock()
 
 
 def _get_inference_executor() -> ThreadPoolExecutor:
     """Lazily (re)create the inference executor so test harnesses that cycle
-    the FastAPI lifespan can reuse it after a previous shutdown."""
+    the FastAPI lifespan can reuse it after a previous shutdown.
+
+    The lock prevents two concurrent cold-start requests from both
+    constructing executors and leaking one. In normal operation the
+    lifespan handler creates the executor eagerly so this path only
+    runs in tests.
+    """
     global _inference_executor
-    if _inference_executor is None or getattr(_inference_executor, "_shutdown", False):
-        _inference_executor = ThreadPoolExecutor(max_workers=INFER_WORKERS)
-    return _inference_executor
+    with _executor_lock:
+        if _inference_executor is None or getattr(_inference_executor, "_shutdown", False):
+            _inference_executor = ThreadPoolExecutor(max_workers=INFER_WORKERS)
+        return _inference_executor
 
 # ── Thread-safe server metrics ──────────────────────────────────────
 SERVER_START_TIME: float = 0.0
@@ -312,9 +347,14 @@ async def lifespan(app: FastAPI):
     )
     yield
     logger.info("Server shutting down")
-    if _inference_executor is not None:
-        _inference_executor.shutdown(wait=False)
-        _inference_executor = None
+    with _executor_lock:
+        if _inference_executor is not None:
+            # `wait=True` lets in-flight inferences drain. The bound is
+            # INFERENCE_TIMEOUT (default 30 s) — anything beyond that is
+            # already a stuck request. cancel_futures=True drops queued
+            # work that hasn't started yet.
+            _inference_executor.shutdown(wait=True, cancel_futures=True)
+            _inference_executor = None
 
 
 app = FastAPI(
@@ -335,13 +375,20 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
     allow_methods=["GET", "POST"],
-    allow_headers=["*"],
+    # Tightened — the Android client only sends Content-Type. Avoid
+    # the wildcard so a XS-Search via a custom header isn't trivially
+    # mountable from a malicious origin we forgot to exclude.
+    allow_headers=["Content-Type", "Accept"],
 )
 
 # Middleware order: outermost runs first.
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RateLimitMiddleware, requests_per_second=RATE_LIMIT_RPS)
+# Treatment / prevention lists round-trip 5–10 KB of bilingual JSON.
+# Halving that on the wire matters more for slow mobile uplinks than
+# the ~10 µs CPU cost on the server side.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 
 def _validate_image_bytes(contents: bytes) -> None:
@@ -354,13 +401,39 @@ def _validate_image_bytes(contents: bytes) -> None:
             detail=f"File too large. Maximum size: {MAX_FILE_SIZE // (1024*1024)} MB",
         )
     head = contents[:16]
-    if not any(head.startswith(sig) for sig in IMAGE_MAGIC):
-        # Extra check for WebP (RIFF....WEBP)
-        if not (head.startswith(b"RIFF") and len(contents) >= 12 and contents[8:12] == b"WEBP"):
-            raise HTTPException(
-                status_code=400,
-                detail="Unrecognised image format. Allowed: JPEG, PNG, WebP, BMP",
-            )
+    if any(head.startswith(sig) for sig in IMAGE_MAGIC):
+        return
+    if _is_webp(head, contents):
+        return
+    raise HTTPException(
+        status_code=400,
+        detail="Unrecognised image format. Allowed: JPEG, PNG, WebP, BMP",
+    )
+
+
+async def _read_upload(image: UploadFile) -> bytes:
+    """Read the upload body with a hard cap.
+
+    1. If the client sent ``Content-Length`` and it exceeds ``MAX_FILE_SIZE``,
+       reject with 400 BEFORE consuming any payload.
+    2. Otherwise stream ``MAX_FILE_SIZE + 1`` bytes; if the trailing byte
+       arrived, the body is over the limit and we fail loudly. This bounds
+       the per-request RAM footprint regardless of a missing or lying
+       Content-Length header.
+    """
+    declared = getattr(image, "size", None)
+    if isinstance(declared, int) and declared > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File too large. Maximum size: {MAX_FILE_SIZE // (1024*1024)} MB",
+        )
+    contents = await image.read(MAX_FILE_SIZE + 1)
+    if len(contents) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File too large. Maximum size: {MAX_FILE_SIZE // (1024*1024)} MB",
+        )
+    return contents
 
 
 def _open_image(contents: bytes) -> Image.Image:
@@ -511,11 +584,15 @@ async def analyze_image(image: UploadFile = File(...)):
             detail="Unsupported image format. Allowed: JPEG, PNG, WebP, BMP",
         )
 
+    fname = _safe_filename(image.filename)
     try:
-        contents = await image.read()
+        contents = await _read_upload(image)
+    except HTTPException:
+        _record_error()
+        raise
     except Exception as exc:
         _record_error()
-        logger.warning("Failed to read upload stream from %s: %s", image.filename, exc)
+        logger.warning("Failed to read upload stream from %s: %s", fname, exc)
         raise HTTPException(status_code=400, detail="Could not read uploaded file") from exc
 
     try:
@@ -528,13 +605,13 @@ async def analyze_image(image: UploadFile = File(...)):
         # Guard against any non-HTTPException leaking from PIL — return a
         # consistent 400 instead of letting the request crash with 500.
         _record_error()
-        logger.exception("Unexpected error while validating image %s: %s", image.filename, exc)
+        logger.exception("Unexpected error while validating image %s: %s", fname, exc)
         raise HTTPException(status_code=400, detail="Cannot read image file") from exc
 
     img_w, img_h = img.size
     if img_w > MAX_IMAGE_DIMENSION or img_h > MAX_IMAGE_DIMENSION:
         _record_error()
-        logger.warning("Rejected oversized image: %dx%d from %s", img_w, img_h, image.filename)
+        logger.warning("Rejected oversized image: %dx%d from %s", img_w, img_h, fname)
         raise HTTPException(
             status_code=400,
             detail=f"Image resolution too large ({img_w}x{img_h}). "
@@ -549,7 +626,7 @@ async def analyze_image(image: UploadFile = File(...)):
         )
     except asyncio.TimeoutError as exc:
         _record_error()
-        logger.error("Inference timed out after %.0fs for %s", INFERENCE_TIMEOUT, image.filename)
+        logger.error("Inference timed out after %.0fs for %s", INFERENCE_TIMEOUT, fname)
         raise HTTPException(
             status_code=504,
             detail=f"Analysis timed out after {int(INFERENCE_TIMEOUT)} seconds",
@@ -571,7 +648,7 @@ async def analyze_image(image: UploadFile = File(...)):
 
     logger.info(
         "Analysis complete: class=%s confidence=%.3f time=%.2fs file=%s warnings=%s",
-        class_name, confidence, elapsed, image.filename, warnings,
+        class_name, confidence, elapsed, fname, warnings,
     )
 
     rounded_probs = {k: round(v, 4) for k, v in all_probs.items()}
@@ -697,7 +774,10 @@ async def identify_endpoint(image: UploadFile = File(...), organ: str = "leaf"):
         _record_error()
         raise HTTPException(status_code=400, detail="Unsupported image format")
     try:
-        contents = await image.read()
+        contents = await _read_upload(image)
+    except HTTPException:
+        _record_error()
+        raise
     except Exception as exc:
         _record_error()
         logger.warning("Failed to read upload stream for /api/identify: %s", exc)
