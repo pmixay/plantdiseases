@@ -12,12 +12,20 @@ Class taxonomy and architecture are frozen — see `MODEL_CARD.md` and
       end-to-end (A100-40 ~60 min, T4 BATCH=64 ~3×). Ship gate: disease
       macro-F1 ≥ 0.70 on `val_realworld`, no class with recall=0,
       healthy-bias < 1.5; artefacts land in `server/models/`.
-- [ ] **Held-out houseplant smoke set (20–30 photos).** Brand-new
-      indoor leaf photos nobody trained on. Run the INT8 ONNX session
-      against it after the ship gate passes. The delta between
-      `val_realworld` macro-F1 (≈0.75 expected, agricultural) and this
-      smoke score (≈0.45 expected, real domain) is the honest
-      accuracy. Refuse public release if smoke F1 < 0.45.
+- [ ] **Held-out houseplant smoke set (~500 photos, all 7 classes).**
+      `python server/tools/collect_smoke_set.py --target 500` pulls
+      from Openverse (Wikimedia + Flickr CC) and iNat into
+      `data_v2/smoke/<class>/` with per-image licence sidecars (the
+      directory is gitignored — it's evaluation-only). Initial run
+      from the cloud sandbox landed **312/500** before Cloudflare WAF
+      blocked further Openverse calls; `viral_disease` is the gap and
+      needs the script run from a regular network. Manifest at
+      `server/tools/smoke_set_manifest.json` records counts +
+      licences. Run the INT8 ONNX session against this set after the
+      v2.1 ship gate passes — the delta between `val_realworld`
+      macro-F1 (≈0.75 expected, agricultural) and the smoke score
+      (≈0.45 expected, real domain) is the honest accuracy. Refuse
+      public release if smoke F1 < 0.45.
 - [ ] **Houseplant data augment.** ≥ 200 labelled real indoor photos
       per class from iNat (filtered), r/houseplants, internal donations,
       Roboflow Universe houseplant projects. Reweight

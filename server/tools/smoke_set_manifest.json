@@ -1,0 +1,85 @@
+{
+  "classes": {
+    "bacterial_leaf_spot": {
+      "count": 20,
+      "licenses": {
+        "cc0": 20
+      },
+      "sources": {
+        "openverse": 20
+      }
+    },
+    "gray_mold_botrytis": {
+      "count": 43,
+      "licenses": {
+        "cc-by": 10,
+        "cc-by-nc": 24,
+        "cc-by-nc-nd": 1,
+        "cc-by-sa": 2,
+        "unknown": 6
+      },
+      "sources": {
+        "inat": 43
+      }
+    },
+    "healthy": {
+      "count": 91,
+      "licenses": {
+        "cc-by": 4,
+        "cc-by-nc": 54,
+        "cc-by-nc-nd": 8,
+        "cc-by-nc-sa": 1,
+        "cc-by-sa": 5,
+        "cc0": 1,
+        "unknown": 18
+      },
+      "sources": {
+        "inat": 91
+      }
+    },
+    "leaf_spot_fungal": {
+      "count": 67,
+      "licenses": {
+        "cc-by": 8,
+        "cc-by-nc": 31,
+        "cc-by-nc-sa": 2,
+        "cc-by-sa": 4,
+        "cc0": 4,
+        "unknown": 18
+      },
+      "sources": {
+        "inat": 67
+      }
+    },
+    "not_a_plant": {
+      "count": 32,
+      "licenses": {
+        "by": 28,
+        "by-sa": 2,
+        "cc0": 2
+      },
+      "sources": {
+        "openverse": 32
+      }
+    },
+    "powdery_mildew": {
+      "count": 59,
+      "licenses": {
+        "cc-by": 25,
+        "cc-by-nc": 25,
+        "cc0": 3,
+        "unknown": 6
+      },
+      "sources": {
+        "inat": 59
+      }
+    },
+    "viral_disease": {
+      "count": 0,
+      "licenses": {},
+      "sources": {}
+    }
+  },
+  "generated_by": "server/tools/collect_smoke_set.py",
+  "total": 312
+}

@@ -19,6 +19,10 @@ server/**/__pycache__/
 server/.pytest_cache/
 .ruff_cache/
 
+# Generated training data and the held-out smoke set
+data_v2/
+server/data_v2/
+
 # Server config (contains secrets — copy from server/config.example.json)
 server/config.json
 
