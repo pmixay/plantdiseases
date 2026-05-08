@@ -1,187 +1,203 @@
 # PlantDiseases — Roadmap
 
-Состояние: PlantVision 2.1, 7 классов, модель ещё не обучена.
-Класс-таксономия и архитектура зафиксированы — см. `MODEL_CARD.md`
-и `server/train_notebook.ipynb`.
+State: PlantVision 2.1, 7 classes, weights not trained yet.
+Class taxonomy and architecture are frozen — see `MODEL_CARD.md`
+and `server/train_notebook.ipynb`.
 
 ## Server / ML
 
-### Блокеры релиза
+### Release blockers
 
-- [ ] **Обучить веса v2.1.** Прогон `server/train_notebook.ipynb`
-      end-to-end (A100-40 ~60 мин или T4 BATCH=64 ~3×).
-      **Чек:** ship-gate проходит — disease macro-F1 ≥ 0.70 на
-      `val_realworld`, ни одного класса с recall=0, healthy-bias < 1.5;
-      артефакты `classifier_int8.onnx`, `classifier.onnx`,
+- [ ] **Train v2.1 weights.** Run `server/train_notebook.ipynb`
+      end-to-end (A100-40 ~60 min, or T4 BATCH=64 ~3×).
+      **Check:** ship gate passes — disease macro-F1 ≥ 0.70 on
+      `val_realworld`, no class with recall=0, healthy-bias < 1.5;
+      artefacts `classifier_int8.onnx`, `classifier.onnx`,
       `classifier.pth`, `classes.json`, `temperature.json`,
-      `conformal.json`, `model_card.json` лежат в `server/models/`.
+      `conformal.json`, `model_card.json` land in `server/models/`.
 
-- [ ] **Дофич датасета комнатными растениями.** PlantVillage в трейне
-      содержит томаты/картошку/яблоки — целевой домен (фикус, монстера,
-      антуриум, драцена) не покрыт. Добавить ≥200 размеченных
-      real-world фото на каждый из 7 классов: iNaturalist (filtered),
-      r/houseplants, Roboflow Universe, ручная разметка.
-      **Чек:** macro-F1 на val_realworld растёт минимум на +0.05
-      против baseline без новой выборки.
+- [ ] **Houseplant data augment.** PlantVillage in train contains
+      tomatoes / potatoes / apples — the actual target domain
+      (Ficus, Monstera, Anthurium, Dracaena) is uncovered. Add
+      ≥ 200 labelled real-world photos per class from iNaturalist
+      (filtered), r/houseplants, Roboflow Universe, internal
+      donations.
+      **Check:** macro-F1 on val_realworld rises by at least +0.05
+      vs. the no-augment baseline.
 
-- [ ] **Accuracy smoke-тест в CI.** Создать `server/tests/test_accuracy_smoke.py`
-      с golden-набором 30+ эталонных фото и порогом macro-F1 ≥ 0.65.
-      **Чек:** PR с регрессией точности фейлится автоматически.
+- [ ] **Accuracy smoke test in CI.** Add
+      `server/tests/test_accuracy_smoke.py` with a 30+ image golden
+      set and a macro-F1 ≥ 0.65 floor.
+      **Check:** PRs that regress accuracy fail automatically.
 
-- [ ] **Boot-тест против реальных артефактов.** После обучения —
+- [ ] **Boot test against real artefacts.** After training,
       `pytest server/tests/`.
-      **Чек:** все тесты зелёные, `/api/version` = `2.1`,
-      `/api/classes` возвращает 7 классов.
+      **Check:** all tests green; `/api/version` returns `2.1`;
+      `/api/classes` returns 7 classes.
 
-### Конкурентный паритет
+### Competitive parity
 
 - [ ] **`POST /api/feedback`.** Body: `scan_id`, `correct: bool`,
-      `corrected_class?`, free-text. Append-only SQLite ledger
-      `server/feedback.db`. Rate-limit 1/s per IP.
-      **Чек:** Android thumbs-press долетает и пишется в БД.
+      `corrected_class?`, free-text. Append-only SQLite ledger at
+      `server/feedback.db`. Rate-limited to 1/s per IP.
+      **Check:** Android thumbs-press round-trips and persists.
 
-- [ ] **Toxicity-to-pets.** Добавить поле `toxic_to_pets: bool` +
-      `species_list` в `server/diseases_data.py` и в ответ
-      `/api/analyze`.
-      **Чек:** ответ содержит флаг для всех 7 классов.
+- [ ] **Toxicity-to-pets.** Add `toxic_to_pets: bool` +
+      `species_list` field to `server/diseases_data.py` and to the
+      `/api/analyze` response.
+      **Check:** the response carries the flag for all 7 classes.
 
-- [ ] **Историческое расширение `/api/progression`.** Принимать
-      `history: list[dict]`, возвращать 5-точечный sparkline severity.
-      Backwards-compatible с парным сравнением.
-      **Чек:** 3 unit-теста в `tests/test_endpoints.py`.
+- [ ] **Historical `/api/progression`.** Accept `history:
+      list[dict]`, return a 5-point severity sparkline.
+      Backwards-compatible with the pairwise current+previous
+      shape.
+      **Check:** 3 unit tests in `tests/test_endpoints.py`.
 
-### Эксплуатация
+### Operations
 
-- [ ] **`make ship-bundle` target.** ZIP всех артефактов из
-      `server/models/` + `MANIFEST.json` с SHA-256.
-      **Чек:** скрипт деплоя умеет распаковать и проверить хэши.
+- [ ] **`make ship-bundle` target.** ZIP the contents of
+      `server/models/` plus a `MANIFEST.json` of SHA-256s.
+      **Check:** the deploy script unpacks and verifies hashes.
 
 - [ ] **Rollback path.** `models/current` ↔ `models/previous`
-      symlink-indirection; fallback на previous при битом current.
-      **Чек:** удаление файла из `current/` поднимает `previous/`
-      с warning-логом.
+      symlink-style indirection; fall back to `previous` when
+      `current` is broken.
+      **Check:** removing one file from `current/` boots
+      `previous/` cleanly with a warning log entry.
 
-- [ ] **Negative-sample аудит `not_a_plant`.** Из прод/staging логов
-      собрать low-MaxLogit true-positives (тёмные листья, суккуленты),
-      разметить как доп. `not_a_plant` для v2.2.
+- [ ] **`not_a_plant` negative-sample audit.** From prod / staging
+      logs, collect low-MaxLogit true-positives (dark leaves,
+      glossy succulents) and label them as additional
+      `not_a_plant` training images for v2.2.
 
-- [ ] **MODEL_CARD post-train refresh.** Скопировать реальные
-      `train_counts`, `val_realworld_counts`, INT8 drift, best KD epoch,
-      `T_value`, `q_hat` из `model_card.json` в `MODEL_CARD.md`.
-      **Чек:** per-class counts совпадают byte-for-byte.
+- [ ] **MODEL_CARD post-train refresh.** Copy the real
+      `train_counts`, `val_realworld_counts`, INT8 drift, best KD
+      epoch, `T_value`, `q_hat` from `model_card.json` into
+      `MODEL_CARD.md`.
+      **Check:** per-class counts match byte-for-byte.
 
 ### v2.2 prep
 
-- [ ] **Cold-start данных для 4 deferred классов.**
-      `data_v2_pending/` с ≥100 indoor фото на класс
-      (`edema`, `leaf_scorch_underwatering`, `nutrient_deficiency`,
-      `sunburn_or_scorch`).
-      **Чек:** 400 net images с sidecar JSON; loader smoke-test
-      их подхватывает.
+- [ ] **Cold-start data for the 4 deferred classes.**
+      `data_v2_pending/` with ≥ 100 indoor photos per class
+      (`edema`, `leaf_scorch_underwatering`,
+      `nutrient_deficiency`, `sunburn_or_scorch`).
+      **Check:** 400 net images with sidecar JSONs; loader
+      smoke test threads them through.
 
 ## Android
 
-### Блокеры релиза
+### Release blockers
 
-- [ ] **HTTPS-only release variant.** Снять `cleartextTrafficPermitted="true"`
-      из `app/src/main/res/xml/network_security_config.xml` для release.
-      Заменить дефолт `API_BASE_URL` в `app/build.gradle.kts:26`
-      на HTTPS прод-URL. Debug-вариант оставить с HTTP для LAN.
-      Развести через `manifestPlaceholders`.
-      **Чек:** release APK отказывается слать cleartext на любой
-      non-debug хост; debug на LAN продолжает работать.
+- [ ] **HTTPS-only release variant.** Drop
+      `cleartextTrafficPermitted="true"` from
+      `app/src/main/res/xml/network_security_config.xml` for the
+      release variant. Replace the default `API_BASE_URL` in
+      `app/build.gradle.kts:26` with the HTTPS prod URL. The
+      debug variant keeps HTTP for LAN testing. Wire via
+      `manifestPlaceholders`.
+      **Check:** the release APK refuses cleartext to any
+      non-debug host; debug LAN testing still works.
 
-- [ ] **Включить lint в CI.** `app/build.gradle.kts:70` —
+- [ ] **Enable lint in CI.** `app/build.gradle.kts:70` —
       `abortOnError = true`.
-      **Чек:** PR с новыми lint-ошибками фейлится.
+      **Check:** PRs that introduce lint errors fail.
 
-- [ ] **Минимальные unit-тесты.** Создать `app/src/test/`. Покрыть:
-      `ApiService` retry-логику, парсинг `AnalyzeResponse`,
-      `ScanRepository` транзакции.
-      **Чек:** в CI запускается `./gradlew test`, ≥10 тестов.
+- [ ] **Minimal unit tests.** Create `app/src/test/`. Cover:
+      `ApiService` retry logic, `AnalyzeResponse` parsing,
+      `ScanRepository` transactions.
+      **Check:** `./gradlew test` runs in CI with ≥ 10 tests.
 
-- [ ] **Перебилд после Models.kt + DoctorChatSheet рерайта.**
-      Старые call-sites на `ChatContext`, `suggestedQuestions` сломаны.
-      **Чек:** debug build устанавливается на устройство;
-      AI Doctor sheet шлёт в `/api/chat` и получает реальный ответ.
+- [ ] **Rebuild after Models.kt + DoctorChatSheet rewrite.**
+      Old call-sites referencing `ChatContext`,
+      `suggestedQuestions` are broken.
+      **Check:** debug build installs on a device; AI Doctor
+      sheet POSTs to `/api/chat` and gets a real reply.
 
-### Конкурентный паритет
+### Competitive parity
 
-- [ ] **Photo-coach onboarding.** Один раз при первом открытии
-      камеры — 3 слайда «как сфоткать лист правильно» (расстояние,
-      освещение, фон).
-      **Чек:** retry-rate из-за blur падает (логировать в метрику).
+- [ ] **Photo-coach onboarding.** First-time camera open shows 3
+      slides explaining how to frame a leaf well (distance,
+      lighting, background).
+      **Check:** blur-rejected retry rate drops (log a metric).
 
-- [ ] **Result-screen feedback prompt.** При `low_confidence=true`
-      или непустых warnings — chip «Did this match?» 👍/👎.
-      Persist локально в Room `feedback`. Когда `/api/feedback`
-      готов — replace на POST с очередью на ретрай.
-      **Чек:** thumbs-press пишет строку в Room; после Server.feedback
-      — отправляет на сервер.
+- [ ] **Result-screen feedback prompt.** When `low_confidence=true`
+      or any warning is non-empty, show a "Did this match?"
+      thumbs-up / thumbs-down chip. Persist locally in a Room
+      `feedback` table for now. Once `/api/feedback` lands,
+      replace with a POST + offline retry queue.
+      **Check:** thumbs press writes a row in Room; once the
+      server endpoint is live it sends through.
 
-- [ ] **AI Doctor session budget UI.** Прогресс-чип «3 / 12 messages
-      left» при remaining ≤ 20% от cap. Источник —
+- [ ] **AI Doctor session budget UI.** Progress chip "3 / 12
+      messages left" when remaining ≤ 20 % of cap. Source —
       `ChatResponse.session.turns_used / turns_remaining`.
-      **Чек:** чип появляется до удара лимита.
+      **Check:** the chip appears before the cap fires.
 
-- [ ] **`available=false` actionable copy.** Свериться по
-      `server/ai_services.py` после live-обучения, добавить EN/RU
-      строки для всех `reason` веток (`session_turn_cap`,
+- [ ] **`available=false` actionable copy.** After live training
+      cross-check with `server/ai_services.py` and add EN/RU
+      strings for every `reason` branch (`session_turn_cap`,
       `session_token_cap`, `no_api_key`, `message_too_long`,
       `empty_message`, `empty_reply`, `api_error`).
 
-- [ ] **`/api/progression` в PlantDetailActivity.** Для растений с
-      ≥2 сканами показать chip `improving / stable / worsening /
-      baseline` над таймлайном. Helper — `scanToProgressionPayload(scan)`.
-      Тап по chip — half-sheet с before/after фото и `delta_severity`.
-      **Чек:** chip меняется при свежем скане, перевернувшем тренд.
+- [ ] **`/api/progression` in PlantDetailActivity.** For plants
+      with ≥ 2 scans, show an `improving / stable / worsening /
+      baseline` chip above the timeline. Helper —
+      `scanToProgressionPayload(scan)`. Tapping the chip opens a
+      half-sheet with before / after photos and `delta_severity`.
+      **Check:** the chip flips when a fresh scan changes the
+      trend.
 
-- [ ] **Toxicity warning UI.** Бейдж «toxic to pets» рядом с species
-      suggestion и в Result после ответа сервера.
+- [ ] **Toxicity warning UI.** "Toxic to pets" badge next to
+      species suggestions and on the Result screen once the
+      server response carries the flag.
 
-- [ ] **`IdentifyResponse.cached` UI.** Маленький pill «served from
-      cache» рядом с species suggestions. Поле уже на проводе,
-      нужен только UI-хук.
+- [ ] **`IdentifyResponse.cached` UI.** Small "served from cache"
+      pill next to species suggestions. The field already
+      travels on the wire — only the UI hook is missing.
 
-### Архитектурный долг
+### Architectural debt
 
-- [ ] **Split `ResultActivity.kt` (1189 строк).** Извлечь
-      `ResultHeaderView`, `ResultTreatmentView`, `ResultCarePlanView`,
-      `ResultDoctorView`. Activity — тонкий координатор.
-      **Чек:** каждый новый файл ≤ 350 строк.
+- [ ] **Split `ResultActivity.kt` (1189 lines).** Extract
+      `ResultHeaderView`, `ResultTreatmentView`,
+      `ResultCarePlanView`, `ResultDoctorView`. Keep the activity
+      as a thin coordinator.
+      **Check:** every new file is ≤ 350 lines.
 
-- [ ] **Coroutine `delay` вместо `Thread.sleep`.**
+- [ ] **Coroutine `delay` instead of `Thread.sleep`.**
       `app/src/main/java/com/plantdiseases/app/data/remote/ApiService.kt:110`.
-      **Чек:** ретрай не блокирует поток.
+      **Check:** retries don't block the network thread.
 
-- [ ] **`ResolutionSelector` вместо `setTargetResolution`.**
+- [ ] **`ResolutionSelector` instead of `setTargetResolution`.**
       `app/src/main/java/com/plantdiseases/app/ui/camera/CameraFragment.kt:269`.
-      Снять `@Suppress("DEPRECATION")`.
+      Drop `@Suppress("DEPRECATION")`.
 
-- [ ] **Cold-start UX toast.** При 503 + retry — один toast
-      «Server is warming up…» на сессию.
-      **Чек:** toast виден ровно один раз даже при 5+ ретраях.
+- [ ] **Cold-start UX toast.** On 503 + retry — show a single
+      "Server is warming up..." toast per session.
+      **Check:** the toast shows exactly once even after 5+
+      retries.
 
-### Релиз
+### Release
 
-- [ ] **Подписанный release APK через CI на tag.** Workflow на
-      `v*.*.*` push: `./gradlew assembleRelease` + sign из secrets,
-      upload в release assets.
-      **Чек:** tag → CI зелёный → APK скачиваемый.
+- [ ] **Signed release APK from CI on tag.** Workflow on `v*.*.*`
+      push: `./gradlew assembleRelease` + sign with the keystore
+      from secrets, upload to release assets.
+      **Check:** tag → CI green → APK downloadable.
 
 ## Out of scope
 
-- Pruning, distillation поверх KD, Compose-rewrite, Hilt.
-- Pests-таксономия, outdoor crops.
+- Pruning, distillation on top of KD, Compose rewrite, Hilt.
+- Pest taxonomy, outdoor crops.
 - Marketplace, social feed, expert consultations.
-- Per-session chat lock (только если метрики покажут lock-wait > 5 ms).
+- Per-session chat lock map (only when metrics show lock-wait
+  latency > 5 ms under load).
 
 ## Eval contract
 
-| Slice | Роль | Pass criterion |
+| Slice | Role | Pass criterion |
 |---|---|---|
-| `val_realworld` | **ship-gate** | macro-F1 ≥ 0.70; recall>0 для всех; healthy-bias < 1.5 |
+| `val_realworld` | **ship gate** | macro-F1 ≥ 0.70; recall > 0 for every class; healthy-bias < 1.5; recall[healthy] ≥ 0.70 |
 | `val_indomain` | early stopping | best EMA checkpoint |
 | `val_studio` | transfer monitor | tracked, never blocking |
-| `temperature_cal` | INT8 + temperature | held out |
-| `conformal_cal` | RAPS | held out; coverage ≈ 1−α |
+| `temperature_cal` | INT8 calibration + temperature scaling | held out |
+| `conformal_cal` | RAPS (fit-half + audit-half) | held out; out-of-sample coverage ≈ 1−α |

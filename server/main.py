@@ -591,7 +591,8 @@ async def analyze_image(image: UploadFile = File(...)):
     detection = result["detection"]
 
     # Annotate top_k with the bilingual display name so the client can
-    # render "Листовая плесень · 6%" without a second lookup table.
+    # render "Leaf mould - 6%" (or its RU variant) without a second
+    # lookup table.
     top_k_localised = []
     for entry in top_k:
         cls = entry.get("class", "")
