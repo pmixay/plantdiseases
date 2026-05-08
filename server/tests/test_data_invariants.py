@@ -217,6 +217,41 @@ def test_int8_select_by_deployed_metric():
     ), "audit fix #9 — winner selection sort missing"
 
 
+def test_make_group_split_skips_empty_class_subdirs():
+    """audit follow-up: temp_cal / conformal_cal restrict
+    allowed_sources to {plantdoc, inat}, so `not_a_plant` (COCO-only)
+    has zero groups for those splits. The splitter must NOT create
+    an empty class subdirectory — torchvision.ImageFolder rejects
+    empty class dirs with FileNotFoundError on construction.
+    """
+    src = _notebook_source()
+    # Find the make_group_split body (it's the function with the
+    # ratio + seed + allowed_sources signature).
+    m = re.search(
+        r"def make_group_split\(.*?\n(?:.*?\n){10,80}",
+        src, re.DOTALL,
+    )
+    assert m, "make_group_split body not found"
+    body = m.group(0)
+    # The split must guard before calling .mkdir on dest_root/cls.
+    assert "if k <= 0:" in body, (
+        "make_group_split is creating empty class subdirs — will trip "
+        "ImageFolder on temp_cal/conformal_cal (audit follow-up)"
+    )
+
+
+def test_make_eval_loader_uses_allow_empty_when_supported():
+    """audit follow-up: belt-and-braces against empty class subdirs.
+    `make_eval_loader` should pass `allow_empty=True` to ImageFolder
+    when the installed torchvision supports it (≥ 0.18)."""
+    src = _notebook_source()
+    assert "_IMAGEFOLDER_ALLOW_EMPTY" in src
+    assert re.search(
+        r"if_kwargs\s*=\s*\{'allow_empty':\s*True\}",
+        src,
+    ), "make_eval_loader is not threading allow_empty into ImageFolder"
+
+
 def test_ood_floor_is_calibrated_not_hardcoded():
     """audit fix #2: classes.json max_logit_floor must be computed from
     the MaxLogit distribution on plants vs NAP, not hardcoded to 4.0."""
