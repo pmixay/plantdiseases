@@ -107,6 +107,42 @@ and `server/train_notebook.ipynb`.
       by genus/species name and would still let stray observations
       through on tag-only matches. Add a hard `id ≠ Phytophthora
       cinnamomi taxon_id` filter when v2.2 retrains.
+- [x] **PlantDoc image-level fallback.**
+      `train_notebook.ipynb` §2 used to assume `agyaatcoder/PlantDoc`
+      always ships object-level annotations under `row['objects']`.
+      An HF revision flip (or every bbox failing the XYWH sanity
+      check) silently dropped PlantDoc to zero rows, and the
+      `THRESH_TRAIN=30` guard only fired three downloads later. Now
+      falls back to `row['label']` and writes a whole-image crop with
+      `label_confidence=0.75`.
+- [x] **Bbox XYXY-vs-XYWH sanity check.** `_clip_bbox_xywh` now
+      rejects bboxes whose w/h both exceed the image dimensions
+      (the XYXY-as-XYWH telltale) instead of producing whole-image
+      crops mislabelled as bbox crops.
+
+### Stage 1 (YOLO leaf detector) caveats
+
+- [ ] **Stage 1 training data is external.** `train_notebook.ipynb` §3
+      only trains a YOLO if a `data.yaml` is already present under
+      `data_v2/`. The README claim of "300–800 hand-labelled indoor
+      leaf bboxes + Roboflow Universe houseplant slices" is met by a
+      separate dataset preparation step, not by the notebook itself.
+      Document that prep step (or wire it in) before the v2.1 train
+      run, otherwise §3 silently skips and the deploy bundle ships
+      with the previous detector weights.
+- [ ] **Recall-bias vs hand-coverage vs OOD.** `MIN_CONFIDENCE=0.15`
+      in `server/detector.py:36` is biased high-recall on purpose
+      (so wide-frame indoor shots don't drop the only leaf bbox).
+      The cost is more false-positive bboxes routed into Stage 2;
+      the OOD gate in `pipeline.py` (`detector_conf < 0.40` AND
+      `max_logit < 4.0` → re-route to NAP) cleans those up. Once
+      v2.1 weights ship, sweep this floor against `val_realworld`
+      to confirm the recall vs FP balance still holds.
+- [ ] **No detector validation slice.** §3 trains YOLO end-to-end
+      with the user's `data.yaml`, but the notebook never reports
+      the detector's own AP@0.5 on a held-out indoor slice. After
+      the first v2.1 train, add a Stage-1 mAP report alongside the
+      Stage-2 ship gate.
 
 ## Android
 

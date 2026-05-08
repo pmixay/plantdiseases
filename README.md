@@ -50,14 +50,19 @@ What changed vs v1.x and v2.0:
 - **Calibration:** temperature scaling **plus** inductive conformal
   prediction (RAPS, Angelopoulos 2021), both fitted on the deployed
   INT8 ONNX session (not the FP32 torch model). Two dedicated
-  calibration splits: `temperature_cal` (~5 %) for INT8 + temperature,
-  `conformal_cal` (~10 %) for RAPS. Both restricted to the deployment
-  distribution (PlantDoc + iNaturalist), so RAPS exchangeability holds
-  at deploy.
+  calibration splits: `temperature_cal` (~5 %) is the **INT8
+  static-quantisation calibration reader and** the temperature-scaling
+  fit set; `conformal_cal` (~10 %) is reserved for RAPS, split 50/50
+  fit/audit so the reported empirical coverage is honest
+  out-of-sample. Both restricted to the deployment distribution
+  (PlantDoc + iNat), so RAPS exchangeability holds at deploy.
 - **Quantisation:** **static INT8 (QDQ)** with a 500-photo
-  `conformal_cal` calibration reader; export step re-evaluates on
-  `val_realworld` and refuses to ship if disease F1 drops by > 0.05
-  vs FP32 (warning at > 0.02).
+  `temperature_cal` calibration reader (the design originally pointed
+  at `conformal_cal`, but reusing the conformal split for INT8
+  activation shaping would weaken its exchangeability — `temperature_cal`
+  is also restricted to plantdoc + inat, same exchangeability story);
+  the export step re-evaluates on `val_realworld` and refuses to ship
+  if disease F1 drops by > 0.05 vs FP32 (warning at > 0.02).
 - **Eval protocol — three independent val slices:** `val_indomain`
   (early stopping), `val_realworld` (primary ship gate; target
   macro-F1 ≥ 0.70, no class with recall=0, healthy-bias < 1.5),

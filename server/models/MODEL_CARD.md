@@ -68,10 +68,17 @@ with the deployment distribution and would inflate coverage.
 * Calibration: temperature scaling on `temperature_cal` NLL **plus**
   inductive RAPS conformal prediction on `conformal_cal`. Both fitted
   on **INT8 ONNX logits** so the calibration matches the deployed
-  model, not the FP32 torch one.
+  model, not the FP32 torch one. `conformal_cal` is split 50/50 inside
+  the notebook so the reported `empirical_coverage` is honest
+  out-of-sample.
 * Quantisation: **static INT8 (QDQ), 500-image calibration reader on
-  `conformal_cal`**. Export step re-evaluates on `val_realworld` and
-  raises if disease F1 drops by > 0.05 vs FP32 (warning only at > 0.02).
+  `temperature_cal`**. The original design called for `conformal_cal`,
+  but the activation ranges the quantiser shapes from the calibration
+  reader leak into RAPS exchangeability — `temperature_cal` is also
+  restricted to plantdoc + inat (same exchangeability story) and
+  isolates RAPS to its own split. Export step re-evaluates on
+  `val_realworld` and raises if disease F1 drops by > 0.05 vs FP32
+  (warning only at > 0.02).
 
 ## OOD detection
 
@@ -128,3 +135,13 @@ Colab T4 is roughly 2-3× slower; reduce `BATCH=64`.
   COCO val2017 negatives. The wider OE-pool described in `README.md`
   (OpenImages V7 indoor scenes + iNat Animalia + recycled user
   uploads) is a v2.2 task — see `ROADMAP.md`.
+* **NAP is excluded from `temperature_cal` and `conformal_cal`.** Both
+  splits are restricted to `{plantdoc, inat}` to keep the calibration
+  in the deployment distribution. COCO never enters either split, so
+  the temperature scalar is fitted without NAP logits and RAPS coverage
+  is reported on plant inputs only. NAP rejection lives upstream — the
+  Stage 1 detector confidence floor combined with the Stage 2 MaxLogit
+  OOD gate (`server/pipeline.py`). The notebook embeds this caveat in
+  `temperature.json` and `conformal.json` as `fit_scope` /
+  `coverage_scope`; clients consume it via the `prediction_set` field
+  on `/api/analyze`.
