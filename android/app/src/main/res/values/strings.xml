@@ -330,6 +330,9 @@
     <string name="care_plan_light_direct">Direct sun</string>
     <string name="care_plan_use_for_reminders">Use as reminder defaults</string>
     <string name="care_plan_reminders_applied">Care-plan defaults loaded</string>
+    <string name="care_plan_awaiting_scan">Scan a leaf first to get a tailored plan. Without a diagnosis we can\'t recommend specific treatment intervals.</string>
+    <string name="care_plan_scan_now">Scan now</string>
+    <string name="care_plan_awaiting_scan_toast">Open the Scan tab to take a photo of this plant.</string>
 
     <!-- Species suggestion (PlantNet) -->
     <string name="species_suggest_title">Identify from photo</string>

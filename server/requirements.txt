@@ -8,7 +8,8 @@ torch>=2.2.0
 torchvision>=0.17.0
 ultralytics>=8.2.0
 onnxruntime>=1.17.0
-# v5.0: smart APIs. Both are optional at runtime — the corresponding
-# endpoints return graceful "available: false" when no API key is set.
-anthropic>=0.40.0
+# Smart APIs (PlantNet identify, OpenRouter Plant Doctor, care plan
+# polish) are optional at runtime — the corresponding endpoints return
+# a graceful ``available: false`` when no API key is configured. Only
+# ``requests`` is required since OpenRouter speaks plain HTTPS JSON.
 requests>=2.32.0

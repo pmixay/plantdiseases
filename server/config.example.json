@@ -15,12 +15,9 @@
     "infer_workers": 2
   },
   "ai": {
-    "ai_provider": "openrouter",
     "openrouter_api_key": "",
     "openrouter_model": "openai/gpt-oss-120b",
     "openrouter_base_url": "https://openrouter.ai/api/v1",
-    "anthropic_api_key": "",
-    "anthropic_model": "claude-haiku-4-5",
     "chat_max_tokens": 512,
     "chat_session_turn_cap": 20,
     "chat_session_token_cap": 8000,

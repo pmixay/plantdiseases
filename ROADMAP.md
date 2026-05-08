@@ -85,6 +85,29 @@ and `server/train_notebook.ipynb`.
       **Check:** 400 net images with sidecar JSONs; loader
       smoke test threads them through.
 
+### Notebook caveats found during the v2.1 audit
+
+- [ ] **PlantDoc dilutes the houseplant domain.**
+      `train_notebook.ipynb` §2 pulls `agyaatcoder/PlantDoc`, which
+      is dominated by *outdoor agricultural* crops (tomato, potato,
+      apple). It still helps coverage on `leaf_spot_fungal` /
+      `bacterial_leaf_spot` / `powdery_mildew`, but inflates val
+      scores relative to true houseplant performance. Consider
+      reweighting `(source="plantdoc")` rows to 0.5 in the sampler
+      or building a `houseplant_only` ablation slice.
+- [ ] **OE-pool is COCO-only today.** Documentation talks about a
+      blend of OpenImages V7 indoor scenes + iNat Animalia + recycled
+      user uploads, but only COCO val2017 is downloaded in the
+      notebook. Either drop the broader claim from
+      `train_notebook.ipynb` §2 / `MODEL_CARD.md`, or wire up the
+      filtered OpenImages slice the docs promise.
+- [ ] **Phytophthora cinnamomi filter is name-only.** The README
+      calls out dropping *Phytophthora cinnamomi* from iNat (root
+      pathogen, not a leaf disease). The notebook only rejects taxa
+      by genus/species name and would still let stray observations
+      through on tag-only matches. Add a hard `id ≠ Phytophthora
+      cinnamomi taxon_id` filter when v2.2 retrains.
+
 ## Android
 
 ### Release blockers
@@ -113,6 +136,18 @@ and `server/train_notebook.ipynb`.
       `suggestedQuestions` are broken.
       **Check:** debug build installs on a device; AI Doctor
       sheet POSTs to `/api/chat` and gets a real reply.
+
+- [x] **POST_NOTIFICATIONS runtime prompt (Android 13+).** Wired
+      into `MainActivity.maybeRequestNotificationPermission()`.
+      Without it, `PlantReminderWorker` would silently skip
+      `notify()` (line 31-36) and reminders would never appear on
+      Tiramisu+ devices.
+
+- [x] **Care plan no longer materialises without a scan.**
+      `PlantDetailActivity.buildCarePlanSlot()` now shows an
+      "awaiting scan" placeholder for plants with no scans, instead
+      of asking the server for a generic `disease=unknown` plan that
+      reads like personalised advice when it isn't.
 
 ### Competitive parity
 
@@ -164,10 +199,6 @@ and `server/train_notebook.ipynb`.
       as a thin coordinator.
       **Check:** every new file is ≤ 350 lines.
 
-- [ ] **Coroutine `delay` instead of `Thread.sleep`.**
-      `app/src/main/java/com/plantdiseases/app/data/remote/ApiService.kt:110`.
-      **Check:** retries don't block the network thread.
-
 - [ ] **`ResolutionSelector` instead of `setTargetResolution`.**
       `app/src/main/java/com/plantdiseases/app/ui/camera/CameraFragment.kt:269`.
       Drop `@Suppress("DEPRECATION")`.
@@ -177,12 +208,45 @@ and `server/train_notebook.ipynb`.
       **Check:** the toast shows exactly once even after 5+
       retries.
 
+> Note on `Thread.sleep` in
+> `ApiService.kt:110` — that lives inside an OkHttp `Interceptor`,
+> which already runs on a dedicated dispatcher thread (not a
+> coroutine). `Thread.sleep` is the documented OkHttp idiom there;
+> `delay` would require a `runBlocking { … }` wrapper that doesn't
+> buy us anything. Marking the previous TODO as resolved.
+
 ### Release
 
 - [ ] **Signed release APK from CI on tag.** Workflow on `v*.*.*`
       push: `./gradlew assembleRelease` + sign with the keystore
       from secrets, upload to release assets.
       **Check:** tag → CI green → APK downloadable.
+
+## Competitor-parity backlog
+
+Surveyed against PlantIn, PictureThis, Greg, PlantNet and NatureID.
+Things we **already** ship: scanner with framing coach, gallery
+history, garden / "my plants", journal & watering log, light meter,
+PlantNet identify, AI Doctor, disease heat-map overlay, top-3 with
+uncertainty, EN+RU localisation. Net-new ideas worth scoring:
+
+- [ ] **Toxicity-to-pets / kids badge.** Per-species `toxic_to_pets`
+      flag served from `/api/care-plan` and rendered as a chip on
+      the Result + Garden screens. (Already promised in §Server →
+      Competitive parity.)
+- [ ] **Photo-coach onboarding.** Already listed under §Android →
+      Competitive parity. PictureThis's three-slide framing tutorial
+      is the bar.
+- [ ] **Weather-aware reminders.** Skip a watering reminder when the
+      device locale + IP suggest a humid day. Add a `weather_hint`
+      field to the reminder worker; opt-in.
+- [ ] **Growth journal sparkline.** Already have per-plant scans, just
+      need a CartesianChart of severity vs time on `PlantDetailActivity`.
+- [ ] **Voice-driven care log.** Speech-to-text "watered today" log
+      from the Garden tab; uses on-device `RecognizerIntent`.
+- [ ] **Premium / subscription tier.** Out of MVP scope but worth
+      planning behind a `BuildConfig.IS_PREMIUM` flag if monetisation
+      ever lands.
 
 ## Out of scope
 
@@ -191,6 +255,8 @@ and `server/train_notebook.ipynb`.
 - Marketplace, social feed, expert consultations.
 - Per-session chat lock map (only when metrics show lock-wait
   latency > 5 ms under load).
+- IoT soil-moisture pairing — interesting but a hardware partnership,
+  not a code change.
 
 ## Eval contract
 

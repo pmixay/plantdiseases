@@ -117,3 +117,14 @@ Colab T4 is roughly 2-3× slower; reduce `BATCH=64`.
 * `leaf_spot_fungal` is an umbrella class. Treatment is genuinely the
   same for the three fungi underneath, but downstream reports should
   not claim sub-class accuracy.
+* **Dataset domain mix.** PlantDoc contributes outdoor / agricultural
+  leaves (tomato, potato, apple, etc.). It supplements the rare
+  classes but the eval ratio leans agricultural — real-world recall
+  on the actual target domain (Ficus, Monstera, Anthurium, Dracaena,
+  Sansevieria, Calathea) lives or dies on the iNat houseplant
+  supplement and the labelled real-world batch noted in
+  `ROADMAP.md`.
+* **`not_a_plant` is COCO-only today.** The notebook downloads only
+  COCO val2017 negatives. The wider OE-pool described in `README.md`
+  (OpenImages V7 indoor scenes + iNat Animalia + recycled user
+  uploads) is a v2.2 task — see `ROADMAP.md`.

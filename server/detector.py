@@ -123,7 +123,9 @@ class LeafDetector:
         confs = r.boxes.conf.cpu().numpy()
 
         detections: list[dict] = []
-        for (x1, y1, x2, y2), conf in zip(boxes_xyxy, confs, strict=False):
+        # strict=True: a length mismatch between bboxes and confidences would
+        # be an upstream YOLO bug, not something to silently mask.
+        for (x1, y1, x2, y2), conf in zip(boxes_xyxy, confs, strict=True):
             detections.append({
                 "x": int(max(0, round(x1))),
                 "y": int(max(0, round(y1))),

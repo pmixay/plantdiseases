@@ -1,6 +1,6 @@
 """Smoke tests for the smart APIs.
 
-External services (PlantNet, Anthropic) are intentionally NOT mocked
+External services (PlantNet, OpenRouter) are intentionally NOT mocked
 into pretending to be present — the test fixtures don't set the API
 keys, so the public surface returns ``available: false`` deterministically
 and we assert on that "graceful no-op" contract."""
@@ -10,7 +10,7 @@ import pytest
 
 # Make sure env-driven config doesn't accidentally enable the live API
 # during unit tests (CI machines may have leaked secrets).
-os.environ.pop("ANTHROPIC_API_KEY", None)
+os.environ.pop("OPENROUTER_API_KEY", None)
 os.environ.pop("PLANTNET_API_KEY", None)
 
 

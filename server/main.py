@@ -719,10 +719,9 @@ async def identify_endpoint(image: UploadFile = File(...), organ: str = "leaf"):
 
 @app.post("/api/chat")
 async def chat_endpoint(payload: ChatRequest, request: Request):
-    """AI Plant Doctor — Claude Haiku 4.5 with prompt caching.
+    """AI Plant Doctor — OpenRouter chat completion (default model
+    ``openai/gpt-oss-120b``).
 
-    The system prompt is long and stable so the SDK caches it for a
-    5-minute TTL on Anthropic's side, dropping the per-turn cost.
     Per-session turn + token caps prevent budget overrun. Per-IP rate
     limiting from the global middleware still applies.
     """
@@ -758,9 +757,10 @@ async def chat_endpoint(payload: ChatRequest, request: Request):
 async def care_plan_endpoint(payload: CarePlanRequest):
     """Build a watering / fertilising / humidity schedule for a plant.
 
-    Always returns a usable rules-based plan; when an API key is set
-    the response also includes a Markdown ``summary_md`` polished by
-    Claude. Disease must be one of the known classifier classes.
+    Always returns a usable rules-based plan; when an OpenRouter key
+    is configured the response also includes a Markdown ``summary_md``
+    polished by the LLM. Disease must be one of the known classifier
+    classes (``unknown`` is normalised to a generic monitoring plan).
     """
     if pipeline is None:
         raise HTTPException(status_code=503, detail="Server starting up, try again shortly")

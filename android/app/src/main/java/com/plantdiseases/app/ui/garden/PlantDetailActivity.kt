@@ -355,6 +355,14 @@ class PlantDetailActivity : AppCompatActivity() {
      * Care Plan slot. The card itself takes care of loading / error / filled
      * states; we just construct it, place it under the action row, and kick
      * off the network call.
+     *
+     * When the plant has no scans yet we deliberately skip the network call
+     * and surface an "awaiting scan" placeholder. The server would happily
+     * return a generic ``disease=unknown`` plan, but a "Monitor weekly"
+     * card without any diagnosis context is misleading — it implies the
+     * advice is tailored when it isn't. The CTA bounces the user to the
+     * Scan tab so they can produce a real verdict before we recommend
+     * anything specific.
      */
     private fun buildCarePlanSlot(plant: PlantEntity, scans: List<ScanEntity>): View {
         val card = CarePlanCardView(this).apply {
@@ -367,10 +375,22 @@ class PlantDetailActivity : AppCompatActivity() {
         val speciesHint = plant.scientificName?.takeIf { it.isNotBlank() }
             ?: plant.commonName?.takeIf { it.isNotBlank() }
             ?: plant.species?.takeIf { it.isNotBlank() }
-        card.showLoading(speciesHint)
 
         val latestScan = scans.maxByOrNull { it.timestamp }
-        val classKey = latestScan?.let { resolveClassKey(it) } ?: "unknown"
+        if (latestScan == null) {
+            card.showAwaitingScan(speciesHint) {
+                Toast.makeText(
+                    this,
+                    R.string.care_plan_awaiting_scan_toast,
+                    Toast.LENGTH_SHORT,
+                ).show()
+                finish()
+            }
+            return card
+        }
+
+        card.showLoading(speciesHint)
+        val classKey = resolveClassKey(latestScan)
         val isRu = LocaleHelper.isRussian(this)
 
         lifecycleScope.launch {

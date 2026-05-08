@@ -36,10 +36,9 @@ as the legacy environment variable.
 | `infer_workers` | `2` | ThreadPoolExecutor workers for model inference. |
 | `log_dir` | `logs` | Rotating file logs (5 MB × 5 backups). |
 | `host` / `port` | `0.0.0.0` / `8000` | Uvicorn bind. |
-| `ai_provider` | `openrouter` | AI Plant Doctor backend (`openrouter` or `anthropic`). |
-| `openrouter_api_key` | *(empty)* | OpenRouter key. Without it the chat returns an offline fallback. |
-| `openrouter_model` | `openai/gpt-oss-120b` | Pinned chat model when `ai_provider=openrouter`. |
-| `anthropic_api_key` / `anthropic_model` | *(empty)* / `claude-haiku-4-5` | Used when `ai_provider=anthropic`. |
+| `openrouter_api_key` | *(empty)* | OpenRouter key. Without it the chat and care-plan polish return an offline fallback. |
+| `openrouter_model` | `openai/gpt-oss-120b` | Pinned chat model. Pick anything OpenRouter exposes (e.g. `openai/gpt-4o-mini`, `meta-llama/llama-3.1-8b-instruct`). |
+| `openrouter_base_url` | `https://openrouter.ai/api/v1` | Override only for OpenRouter-compatible self-hosted gateways. |
 | `plantnet_api_key` | *(empty)* | PlantNet identify key (optional). |
 
 ---
