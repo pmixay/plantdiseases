@@ -145,3 +145,40 @@ Colab T4 is roughly 2-3× slower; reduce `BATCH=64`.
   `temperature.json` and `conformal.json` as `fit_scope` /
   `coverage_scope`; clients consume it via the `prediction_set` field
   on `/api/analyze`.
+
+## Datasets and citations (audited)
+
+The notebook (`server/train_notebook.ipynb` §2) pulls all data at run
+time from public sources. All URLs/handles below were validated; sizes
+are approximate.
+
+| Source | Handle / URL | Role | Size |
+|---|---|---|---|
+| iNaturalist Observations API | <https://api.inaturalist.org/v1/observations> with `quality_grade=research`, `term_id=36` (Leaves), `term_value_id=38` (Green Leaves) for `healthy`; `taxon_id` of *Botrytis cinerea* / *Botrytis* (genus) for `gray_mold_botrytis` | Houseplant supplement (Ficus / Monstera / Epipremnum / Calathea / Spathiphyllum / Dracaena / Sansevieria / Philodendron) | ~180 photos × 8 taxa × 1 photo each = ~1.4 k healthy; ~160 × 2 taxa = ~300 botrytis |
+| COCO val2017 | <http://images.cocodataset.org/zips/val2017.zip> + `annotations_trainval2017.zip` | `not_a_plant` negatives, plant-like categories filtered out | ~1 GB; capped at 1 500 images |
+| PlantDoc (HF mirror) | <https://huggingface.co/datasets/agyaatcoder/PlantDoc> — 2 340 train + 236 test, XYWH bbox format, CC-BY-4.0 | `bacterial_leaf_spot`, `leaf_spot_fungal`, `powdery_mildew`, `viral_disease` supplement | ~992 MB |
+| PlantVillage (HF mirror, primary) | <https://huggingface.co/datasets/BrandonFors/Plant-Diseases-PlantVillage-Dataset> — 43 500 train + 10 800 test, 38 classes, CC0-1.0 | `val_studio` only (transfer / background-bias monitor); a hash-fraction also goes to train | ~852 MB |
+| PlantVillage (HF mirror, fallback) | <https://huggingface.co/datasets/mohanty/PlantVillage> with config name `color` (the repo ships color/grayscale/segmented configs and `load_dataset` now refuses to pick one) | Same role as primary — kept as a fallback when BrandonFors mirror is unreachable | ~2.2 GB total across configs |
+| Roboflow Universe (Stage 1) | User-supplied `data.yaml` under `data_v2/`. The notebook does not download it — provide indoor leaf bboxes from <https://universe.roboflow.com> houseplant projects + hand-labelled user uploads. PlantDoc is excluded from detector training because its agricultural close-ups bias localisation toward field shots. | YOLOv8n single-class `plant_leaf` detector | 300–800 indoor crops |
+
+> Notes from the audit: iNat term `id=36` is the **Leaves** controlled-term
+> group (legacy umbrella name was "Plant Phenology"; iNat split it into
+> sub-groups). The fungus `Botrytis` observations don't carry the Leaves
+> annotation, so the notebook intentionally drops `leaf_only` for that
+> class. The HF `mohanty/PlantVillage` repo has multiple configs;
+> `train_notebook.ipynb` now passes `'color'` explicitly so the fallback
+> path actually loads.
+
+## Model & training-method citations (audited)
+
+| Component | Reference | Used as |
+|---|---|---|
+| EfficientNetV2-S teacher | Tan & Le, ICML 2021, "EfficientNetV2: Smaller Models and Faster Training" — <https://arxiv.org/abs/2104.00298>; weights via timm `tf_efficientnetv2_s.in21k_ft_in1k` (ImageNet-21k → ImageNet-1k) | Stage-2 KD teacher |
+| MobileNetV3-Large student | Howard et al., ICCV 2019, "Searching for MobileNetV3" — <https://arxiv.org/abs/1905.02244>; `torchvision.models.mobilenet_v3_large` (ImageNet-1k V2 weights) | Stage-2 KD student (5.5 M params, ~10–15 ms on CPU INT8) |
+| Knowledge distillation | Hinton et al., NeurIPS 2014, "Distilling the Knowledge in a Neural Network" — <https://arxiv.org/abs/1503.02531> | KD loss with α=0.5, τ=4.0 |
+| Logit Adjustment loss | Menon et al., ICLR 2021, "Long-tail learning via logit adjustment" — <https://arxiv.org/abs/2007.07314> | Stage-2 cross-entropy with τ=0.7, label_smoothing=0.05 |
+| MaxLogit OOD score | Hendrycks et al., 2019/2022, "Scaling Out-of-Distribution Detection for Real-World Settings" — <https://arxiv.org/abs/1911.11132> | OOD gate (raw `max(logits)` not max softmax probability) |
+| Temperature scaling | Guo et al., ICML 2017, "On Calibration of Modern Neural Networks" — <https://arxiv.org/abs/1706.04599> | LBFGS T fit on INT8 logits, NLL |
+| RAPS conformal | Angelopoulos et al., ICLR 2021, "Uncertainty Sets for Image Classifiers using Conformal Prediction" — <https://arxiv.org/abs/2009.14193> | `prediction_set` with α=0.10, λ=0.01, k_reg=1; 50/50 fit/audit split |
+| DINOv2 diagnostic probe | Oquab et al., 2024, "DINOv2: Learning Robust Visual Features without Supervision" — <https://arxiv.org/abs/2304.07193>; checkpoint via `torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14')` | Frozen-backbone linear probe — sanity check that the labelled data is learnable before spending GPU time on the teacher |
+| Static INT8 (QDQ) | ONNX Runtime quantization — <https://onnxruntime.ai/docs/performance/model-optimizations/quantization.html> | 500-image calibration reader on `temperature_cal`; `QUInt8` activations + `QInt8` weights, per-channel weight quant |
