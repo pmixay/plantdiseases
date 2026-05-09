@@ -143,7 +143,14 @@ class DiseaseClassifier:
         import onnxruntime as ort
 
         opts = ort.SessionOptions()
-        opts.intra_op_num_threads = 2
+        # 1 intra-op thread per session — the FastAPI side runs
+        # `INFER_WORKERS` (default 2) parallel inferences in its
+        # ThreadPoolExecutor, and ORT spawning 2 internal threads
+        # *per* concurrent request would oversubscribe a 2-vCPU host
+        # (4 OS threads, two of them context-switching constantly).
+        # Single-thread-per-session keeps total OS threads ≈ vCPU and
+        # lets the executor's parallelism deliver the throughput.
+        opts.intra_op_num_threads = 1
         opts.inter_op_num_threads = 1
         opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
 
@@ -291,19 +298,20 @@ class DiseaseClassifier:
         return [self._format_result_from_logits(logits[i]) for i in range(logits.shape[0])]
 
     def _format_result_from_logits(self, logits: np.ndarray) -> dict:
-        # Numerically-stable softmax (max-shift) on float64 to avoid
-        # rounding error on near-zero tails. The pipeline only needs the
-        # scalar `max_logit` for the OOD gate (Hendrycks 2019) — keeping
-        # a per-class logit dict allocates a second NUM_CLASSES dict on
-        # every classify call without anyone reading it.
-        logits64 = logits.astype(np.float64, copy=False)
-        max_logit = float(logits64.max())
-        e = np.exp(logits64 - max_logit)
-        denom = e.sum()
+        # Numerically-stable softmax (max-shift) in float32. The
+        # max-shift caps `exp` arguments at 0 so float32 doesn't
+        # overflow; the smallest meaningful tail (`exp(-30)`) is well
+        # within float32 range (~9.4e-14). float64 was a precaution
+        # that doubled the dict-construction allocation per call for
+        # no measurable accuracy delta on the 7-class head.
+        logits32 = logits.astype(np.float32, copy=False)
+        max_logit = float(logits32.max())
+        e = np.exp(logits32 - max_logit)
+        denom = float(e.sum())
         if denom <= 0 or not np.isfinite(denom):
             # Degenerate (all -inf or NaN). Fall back to uniform so the
             # response stays well-formed instead of poisoning downstream.
-            probs = np.full_like(logits64, 1.0 / max(len(logits64), 1))
+            probs = np.full_like(logits32, 1.0 / max(len(logits32), 1))
         else:
             probs = e / denom
         top_idx = int(np.argmax(probs))

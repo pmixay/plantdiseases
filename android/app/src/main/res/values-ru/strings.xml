@@ -334,6 +334,9 @@
     <string name="care_plan_light_direct">Прямые лучи</string>
     <string name="care_plan_use_for_reminders">Подставить в напоминания</string>
     <string name="care_plan_reminders_applied">План ухода применён</string>
+    <string name="care_plan_awaiting_scan">Сначала отсканируйте лист — без диагноза мы не можем подобрать конкретные интервалы лечения.</string>
+    <string name="care_plan_scan_now">Сканировать</string>
+    <string name="care_plan_awaiting_scan_toast">Откройте вкладку «Скан», чтобы сфотографировать растение.</string>
 
     <!-- Species suggestion (PlantNet) -->
     <string name="species_suggest_title">Определить по фото</string>

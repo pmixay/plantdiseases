@@ -1,10 +1,15 @@
 package com.plantdiseases.app
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.view.animation.OvershootInterpolator
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -20,6 +25,15 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
 
+    // Notification runtime permission (Android 13+). The result itself is
+    // ignored — POST_NOTIFICATIONS is non-essential, the rest of the app
+    // still works without it. We just don't want plant reminders to fail
+    // silently in PlantReminderWorker because the permission was never
+    // even requested.
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* no-op; reminders gracefully skip notify() when denied */ }
+
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
     }
@@ -34,6 +48,8 @@ class MainActivity : AppCompatActivity() {
             finish()
             return
         }
+
+        maybeRequestNotificationPermission()
 
         // Edge-to-edge display
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -55,6 +71,10 @@ class MainActivity : AppCompatActivity() {
             // Side insets also prevent toolbar action icons from being clipped by a
             // display cutout / rounded corner on edge-to-edge devices.
             binding.appBar.updatePadding(top = bars.top)
+            // System-bar / cutout insets are physical (left/right are
+            // unaffected by layoutDirection), so plain updatePadding is
+            // the right call here — setPaddingRelative would actually
+            // mirror the cutout away from the notch in RTL.
             binding.toolbar.updatePadding(left = bars.left, right = bars.right)
             binding.bottomNavigation.updatePadding(
                 bottom = bars.bottom,
@@ -105,6 +125,20 @@ class MainActivity : AppCompatActivity() {
                 bounceScanIcon()
             }
         }
+    }
+
+    /**
+     * Ask for POST_NOTIFICATIONS once on Android 13+. Without this prompt,
+     * PlantReminderWorker silently no-ops every time it fires
+     * (PlantReminderWorker.kt:31-36) and users see no watering reminders.
+     */
+    private fun maybeRequestNotificationPermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        val granted = ContextCompat.checkSelfPermission(
+            this, Manifest.permission.POST_NOTIFICATIONS,
+        ) == PackageManager.PERMISSION_GRANTED
+        if (granted) return
+        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
     // Bounce animation on Scan tab icon

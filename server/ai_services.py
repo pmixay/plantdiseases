@@ -8,15 +8,14 @@ Houses the supporting endpoints layered on top of the disease classifier:
   with a server-side LRU cache keyed on a SHA-256 of the image so we
   don't burn quota re-identifying the same photo within a deploy.
 
-* **Anthropic AI Plant Doctor** — ``chat_reply()`` runs a Claude Haiku
-  4.5 conversation with prompt caching on the (long, stable) system
-  context describing the disease taxonomy and care advice. Per-session
+* **AI Plant Doctor** — ``chat_reply()`` runs an OpenRouter chat
+  completion (default model: ``openai/gpt-oss-120b``). Per-session
   conversation buffer + per-session budget cap (token + message) so a
   rogue client can't drain the API budget.
 
 * **Care plan** — ``generate_care_plan()`` deterministic rules-based
-  plan, optionally polished by Claude when an API key is configured.
-  Always returns a usable plan even with no key set.
+  plan, optionally polished by the OpenRouter LLM when an API key is
+  configured. Always returns a usable plan even with no key set.
 
 * **Progression analyser** — ``compare_progression()`` pure function
   comparing the current scan to a prior scan dict. Used by
@@ -24,7 +23,7 @@ Houses the supporting endpoints layered on top of the disease classifier:
   worse / improving / stable" trend.
 
 All external calls are bounded by environment-driven budgets and
-fail gracefully — losing PlantNet or Anthropic must never break the
+fail gracefully — losing PlantNet or OpenRouter must never break the
 core ``/api/analyze`` flow.
 """
 
@@ -55,16 +54,11 @@ PLANTNET_PROJECT = get_str("PLANTNET_PROJECT", "all")
 PLANTNET_TIMEOUT = get_float("PLANTNET_TIMEOUT", 8.0)
 PLANTNET_CACHE_SIZE = get_int("PLANTNET_CACHE_SIZE", 256)
 
-# Pluggable chat provider. Supported: "openrouter" (default), "anthropic".
-AI_PROVIDER = get_str("AI_PROVIDER", "openrouter").strip().lower()
-
-# OpenRouter (default; routes to openai/gpt-oss-120b unless overridden)
+# OpenRouter chat backend (single provider so one key gates many models).
 OPENROUTER_API_KEY = get_str("OPENROUTER_API_KEY", "").strip()
 OPENROUTER_MODEL = get_str("OPENROUTER_MODEL", "openai/gpt-oss-120b").strip()
 OPENROUTER_BASE_URL = get_str("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
 
-ANTHROPIC_API_KEY = get_str("ANTHROPIC_API_KEY", "").strip()
-ANTHROPIC_MODEL = get_str("ANTHROPIC_MODEL", "claude-haiku-4-5")
 # Hard caps so a runaway client can't blow the budget. Tune via config
 # in production.
 CHAT_MAX_TOKENS = get_int("CHAT_MAX_TOKENS", 512)
@@ -80,20 +74,8 @@ CHAT_SESSION_MAX_MESSAGES = get_int("CHAT_SESSION_MAX_MESSAGES", 60)
 CHAT_HISTORY_KEEP_LAST = get_int("CHAT_HISTORY_KEEP_LAST", 12)
 
 
-def _active_chat_model() -> str:
-    if AI_PROVIDER == "openrouter":
-        return OPENROUTER_MODEL
-    return ANTHROPIC_MODEL
-
-
 def _chat_api_key_present() -> bool:
-    if AI_PROVIDER == "openrouter":
-        return bool(OPENROUTER_API_KEY)
-    return bool(ANTHROPIC_API_KEY)
-
-# Single source of truth for the disease taxonomy used in the LLM
-# system prompt. Imported inside the chat function to avoid a circular
-# import on module load.
+    return bool(OPENROUTER_API_KEY)
 
 
 # ── Generic LRU helper ──────────────────────────────────────────────
@@ -199,12 +181,12 @@ def identify_species(image_bytes: bytes, *, organ: str = "leaf") -> dict:
     return response
 
 
-# ── Claude / AI Plant Doctor ────────────────────────────────────────
+# ── AI Plant Doctor (OpenRouter) ────────────────────────────────────
 
 
-# Minimal long-form context for the LLM. Stable prefix → benefits from
-# Anthropic prompt caching (5-min TTL), so repeat turns within a
-# session don't pay for re-tokenising the system prompt.
+# Minimal long-form context for the LLM. Stable prefix — the OpenRouter
+# default model (openai/gpt-oss-120b) doesn't need explicit cache_control
+# headers to amortise it.
 _DOCTOR_SYSTEM_PROMPT = """You are PlantDiseases' friendly AI Plant Doctor, helping
 people care for their houseplants. Your knowledge is grounded in the
 PlantVision v2.1 disease taxonomy (7 trainable classes):
@@ -273,50 +255,31 @@ _chat_lock = threading.Lock()
 _chat_totals = {"requests": 0, "rejected": 0, "tokens_in": 0, "tokens_out": 0}
 
 
-def _call_anthropic(
-    system_blocks: list[dict], user_blocks: list[dict],
-    *, max_tokens: int | None = None,
-) -> tuple[str, int, int]:
-    """Run an Anthropic Claude completion. Returns (text, in_tokens, out_tokens)."""
-    import anthropic  # noqa: WPS433
-
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=20.0)
-    msg = client.messages.create(
-        model=ANTHROPIC_MODEL,
-        max_tokens=max_tokens or CHAT_MAX_TOKENS,
-        system=system_blocks,
-        messages=user_blocks,
-    )
-    text = "".join(
-        getattr(b, "text", "") for b in (msg.content or [])
-        if getattr(b, "type", "") == "text"
-    ).strip()
-    usage = getattr(msg, "usage", None)
-    tin = int(getattr(usage, "input_tokens", 0) or 0) if usage else 0
-    tout = int(getattr(usage, "output_tokens", 0) or 0) if usage else 0
-    return text, tin, tout
+_OPENROUTER_TRANSIENT_STATUSES = frozenset({408, 425, 429, 500, 502, 503, 504})
+_OPENROUTER_MAX_RETRIES = 3
+_OPENROUTER_BASE_DELAY = 1.0  # seconds
 
 
 def _call_openrouter(
-    system_blocks: list[dict], user_blocks: list[dict],
+    system_text: str, history: list[dict],
     *, max_tokens: int | None = None,
 ) -> tuple[str, int, int]:
-    """Run an OpenRouter chat completion. Translates Anthropic-shaped
-    system_blocks (list of {"type":"text","text":...}) into a single
-    OpenAI-style system message, then issues a standard chat.completions
-    POST. Returns (text, in_tokens, out_tokens)."""
-    import requests  # noqa: WPS433
+    """Run an OpenRouter chat completion with bounded retry.
 
-    system_text = "\n\n".join(
-        b.get("text", "") for b in system_blocks if b.get("type", "text") == "text"
-    ).strip()
+    Retries up to ``_OPENROUTER_MAX_RETRIES`` times with exponential
+    backoff (1 s / 2 s / 4 s) on:
+      * HTTP 408 / 425 / 429 / 5xx — transient upstream failures.
+      * ``requests.ConnectionError`` / ``Timeout`` — network blips.
+    Honours the ``Retry-After`` header on 429 if it parses as seconds.
+    4xx other than 408/425/429 (auth, bad request) fail immediately —
+    retrying those just wastes the user's turn budget.
+    """
+    import requests  # noqa: WPS433
 
     messages: list[dict] = []
     if system_text:
         messages.append({"role": "system", "content": system_text})
-    for m in user_blocks:
-        # user_blocks already use OpenAI-compatible role/content shape.
-        messages.append({"role": m["role"], "content": m["content"]})
+    messages.extend(history)
 
     payload = {
         "model": OPENROUTER_MODEL,
@@ -330,20 +293,58 @@ def _call_openrouter(
         "HTTP-Referer": "https://github.com/pmixay/plantdiseases",
         "X-Title": "PlantDiseases",
     }
-    r = requests.post(
-        f"{OPENROUTER_BASE_URL}/chat/completions",
-        headers=headers, json=payload, timeout=20.0,
-    )
-    r.raise_for_status()
-    data = r.json()
-    choices = data.get("choices") or []
-    text = ""
-    if choices:
-        text = ((choices[0].get("message") or {}).get("content") or "").strip()
-    usage = data.get("usage") or {}
-    tin = int(usage.get("prompt_tokens") or 0)
-    tout = int(usage.get("completion_tokens") or 0)
-    return text, tin, tout
+
+    last_exc: Exception | None = None
+    for attempt in range(_OPENROUTER_MAX_RETRIES):
+        try:
+            r = requests.post(
+                f"{OPENROUTER_BASE_URL}/chat/completions",
+                headers=headers, json=payload, timeout=20.0,
+            )
+        except (requests.ConnectionError, requests.Timeout) as exc:
+            last_exc = exc
+            if attempt + 1 == _OPENROUTER_MAX_RETRIES:
+                raise
+            _sleep_for_retry(attempt, retry_after=None)
+            continue
+
+        if r.status_code in _OPENROUTER_TRANSIENT_STATUSES:
+            if attempt + 1 == _OPENROUTER_MAX_RETRIES:
+                r.raise_for_status()  # last-ditch — caller handles
+            _sleep_for_retry(attempt, retry_after=r.headers.get("Retry-After"))
+            continue
+        if r.status_code >= 400:
+            r.raise_for_status()  # 4xx (not in transient set) — fail fast
+
+        data = r.json()
+        choices = data.get("choices") or []
+        text = ""
+        if choices:
+            text = ((choices[0].get("message") or {}).get("content") or "").strip()
+        usage = data.get("usage") or {}
+        tin = int(usage.get("prompt_tokens") or 0)
+        tout = int(usage.get("completion_tokens") or 0)
+        return text, tin, tout
+
+    # Loop only exits on transient failure with retries exhausted.
+    if last_exc is not None:
+        raise last_exc
+    raise RuntimeError("OpenRouter retries exhausted without a successful response")
+
+
+def _sleep_for_retry(attempt: int, retry_after: str | None) -> None:
+    """Sleep before the next OpenRouter retry. Honours a numeric
+    ``Retry-After`` header when present, otherwise falls back to
+    exponential backoff capped at 8 s."""
+    delay = _OPENROUTER_BASE_DELAY * (2 ** attempt)
+    if retry_after:
+        try:
+            server_wait = float(retry_after)
+            if server_wait > 0:
+                delay = max(delay, min(server_wait, 8.0))
+        except ValueError:
+            pass
+    time.sleep(min(delay, 8.0))
 
 
 def _gc_chat_sessions(now: float) -> None:
@@ -353,6 +354,26 @@ def _gc_chat_sessions(now: float) -> None:
     ]
     for sid in stale:
         del _chat_sessions[sid]
+
+
+def _build_system_text(locale: str, diagnosis_context: Optional[dict]) -> str:
+    """Compose the system prompt: doctor instructions + locale hint +
+    optional structured diagnosis context. Plain string so OpenRouter
+    receives one clean system message."""
+    locale_hint = (
+        "Reply in Russian." if locale.lower().startswith("ru")
+        else "Reply in English."
+    )
+    parts = [_DOCTOR_SYSTEM_PROMPT, locale_hint]
+    if diagnosis_context:
+        compact = {
+            "class": diagnosis_context.get("class_name") or diagnosis_context.get("disease_name"),
+            "confidence": diagnosis_context.get("confidence"),
+            "severity": diagnosis_context.get("severity"),
+            "warnings": diagnosis_context.get("warnings") or [],
+        }
+        parts.append("Latest classifier output:\n" + json.dumps(compact, ensure_ascii=False))
+    return "\n\n".join(parts)
 
 
 def chat_reply(
@@ -413,51 +434,20 @@ def chat_reply(
         sess.last_active = now
         history = sess.trim_for_context(keep_last=CHAT_HISTORY_KEEP_LAST)
 
-    # Build the system prompt with prompt caching enabled on the long
-    # static disease-taxonomy block. Anthropic SDK 0.30+ supports the
-    # ``cache_control`` field on system blocks.
-    locale_hint = (
-        "Reply in Russian." if locale.lower().startswith("ru")
-        else "Reply in English."
-    )
-    system_blocks = [
-        {
-            "type": "text",
-            "text": _DOCTOR_SYSTEM_PROMPT,
-            "cache_control": {"type": "ephemeral"},
-        },
-        {"type": "text", "text": locale_hint},
-    ]
-    if diagnosis_context:
-        # Compact JSON so the LLM sees structured signal, not a wall
-        # of bilingual text.
-        compact = {
-            "class": diagnosis_context.get("class_name") or diagnosis_context.get("disease_name"),
-            "confidence": diagnosis_context.get("confidence"),
-            "severity": diagnosis_context.get("severity"),
-            "warnings": diagnosis_context.get("warnings") or [],
-        }
-        system_blocks.append({
-            "type": "text",
-            "text": "Latest classifier output:\n" + json.dumps(compact, ensure_ascii=False),
-        })
-
+    system_text = _build_system_text(locale, diagnosis_context)
     user_blocks = list(history) + [{"role": "user", "content": user_message}]
 
     try:
-        if AI_PROVIDER == "openrouter":
-            reply_text, tin, tout = _call_openrouter(system_blocks, user_blocks)
-        else:
-            reply_text, tin, tout = _call_anthropic(system_blocks, user_blocks)
+        reply_text, tin, tout = _call_openrouter(system_text, user_blocks)
     except Exception as e:  # noqa: BLE001
-        logger.warning("Chat provider %s failed: %s", AI_PROVIDER, e)
+        logger.warning("OpenRouter chat failed: %s", e)
         return {"available": False, "reply": "", "reason": "api_error"}
 
     if not reply_text:
         # Empty completion (provider stutter, content filter, etc.).
         # Don't burn the user's turn or token budget on it — the client
         # will resurface the prompt and retry.
-        logger.warning("Chat provider %s returned empty reply", AI_PROVIDER)
+        logger.warning("OpenRouter returned empty reply")
         return {"available": False, "reply": "", "reason": "empty_reply"}
 
     with _chat_lock:
@@ -481,8 +471,8 @@ def chat_reply(
     return {
         "available": True,
         "reply": reply_text,
-        "model": _active_chat_model(),
-        "provider": AI_PROVIDER,
+        "model": OPENROUTER_MODEL,
+        "provider": "openrouter",
         "usage": {"input_tokens": tin, "output_tokens": tout},
         "session": {
             "session_id": session_id,
@@ -550,13 +540,9 @@ def _polish_plan_with_llm(plan: dict, locale: str) -> dict:
         "points. Keep dosages and intervals exactly as given. "
         + locale_hint
     )
-    system_blocks = [{"type": "text", "text": system}]
     user_blocks = [{"role": "user", "content": json.dumps(plan, ensure_ascii=False)}]
     try:
-        if AI_PROVIDER == "openrouter":
-            polish, _, _ = _call_openrouter(system_blocks, user_blocks, max_tokens=300)
-        else:
-            polish, _, _ = _call_anthropic(system_blocks, user_blocks, max_tokens=300)
+        polish, _, _ = _call_openrouter(system, user_blocks, max_tokens=300)
         if polish:
             plan = {**plan, "summary_md": polish}
     except Exception as e:  # noqa: BLE001

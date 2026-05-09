@@ -256,7 +256,32 @@ class CarePlanCardView @JvmOverloads constructor(
         noteContainer.visibility = View.GONE
         followUpView.visibility = View.GONE
         applyToRemindersBtn.visibility = View.GONE
+        // Reset error-state text in case a previous showAwaitingScan() call
+        // overrode it on this same instance.
+        errorBody.text = context.getString(R.string.care_plan_unavailable)
+        retryButton.text = context.getString(R.string.care_plan_retry)
         errorView.visibility = View.VISIBLE
+    }
+
+    /**
+     * Empty / awaiting-scan state. Shown on plant-detail screens for plants
+     * that haven't been scanned yet — the server can produce a "monitor
+     * weekly" generic plan for ``disease=unknown`` but the UX is honest
+     * here: without a diagnosis we can't tell the user anything actionable
+     * about how to treat the plant. The retry button doubles as a "scan
+     * now" CTA via the supplied callback.
+     */
+    fun showAwaitingScan(speciesHint: String?, onScanNow: () -> Unit) {
+        subtitleView.text = speciesSubtitle(speciesHint)
+        loadingView.visibility = View.GONE
+        pillsRow.visibility = View.GONE
+        noteContainer.visibility = View.GONE
+        followUpView.visibility = View.GONE
+        applyToRemindersBtn.visibility = View.GONE
+        errorView.visibility = View.VISIBLE
+        errorBody.text = context.getString(R.string.care_plan_awaiting_scan)
+        retryButton.text = context.getString(R.string.care_plan_scan_now)
+        onRetryClick = onScanNow
     }
 
     fun bind(

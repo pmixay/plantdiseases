@@ -15,9 +15,16 @@ server/data/
 server/models/*.h5
 server/models/*.pth
 server/logs/
+# Top-level logs/ is created when main.py is imported from the repo
+# root (LOG_DIR defaults to a relative path).
+/logs/
 server/**/__pycache__/
 server/.pytest_cache/
 .ruff_cache/
+
+# Generated training data and the held-out smoke set
+data_v2/
+server/data_v2/
 
 # Server config (contains secrets — copy from server/config.example.json)
 server/config.json
@@ -25,3 +32,6 @@ server/config.json
 # OS
 .DS_Store
 Thumbs.db
+
+# Claude Code local settings (per-machine, not committed)
+.claude/

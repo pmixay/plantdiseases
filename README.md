@@ -36,8 +36,8 @@ What changed vs v1.x and v2.0:
 - **Stage 2 backbone:** EfficientNetV2-S
   (`tf_efficientnetv2_s.in21k_ft_in1k`) teacher distilled into
   MobileNetV3-Large (5.5 M) student. Distillation uses an **EMA
-  copy** of the student (decay=0.999) and the EMA weights are what
-  ship.
+  copy** of the student (decay=0.999) with **α=0.5, τ=4.0** and the
+  EMA weights are what ship.
 - **Loss:** Logit Adjustment (Menon ICLR 2021), τ=0.7,
   label_smoothing=0.05. **Loss-side balancing only** —
   `WeightedRandomSampler` is **off** by default; stacking sampler +
@@ -50,14 +50,19 @@ What changed vs v1.x and v2.0:
 - **Calibration:** temperature scaling **plus** inductive conformal
   prediction (RAPS, Angelopoulos 2021), both fitted on the deployed
   INT8 ONNX session (not the FP32 torch model). Two dedicated
-  calibration splits: `temperature_cal` (~5 %) for INT8 + temperature,
-  `conformal_cal` (~10 %) for RAPS. Both restricted to the deployment
-  distribution (PlantDoc + iNaturalist), so RAPS exchangeability holds
-  at deploy.
+  calibration splits: `temperature_cal` (~5 %) is the **INT8
+  static-quantisation calibration reader and** the temperature-scaling
+  fit set; `conformal_cal` (~10 %) is reserved for RAPS, split 50/50
+  fit/audit so the reported empirical coverage is honest
+  out-of-sample. Both restricted to the deployment distribution
+  (PlantDoc + iNat), so RAPS exchangeability holds at deploy.
 - **Quantisation:** **static INT8 (QDQ)** with a 500-photo
-  `conformal_cal` calibration reader; export step re-evaluates on
-  `val_realworld` and refuses to ship if disease F1 drops by > 0.05
-  vs FP32 (warning at > 0.02).
+  `temperature_cal` calibration reader (the design originally pointed
+  at `conformal_cal`, but reusing the conformal split for INT8
+  activation shaping would weaken its exchangeability — `temperature_cal`
+  is also restricted to plantdoc + inat, same exchangeability story);
+  the export step re-evaluates on `val_realworld` and refuses to ship
+  if disease F1 drops by > 0.05 vs FP32 (warning at > 0.02).
 - **Eval protocol — three independent val slices:** `val_indomain`
   (early stopping), `val_realworld` (primary ship gate; target
   macro-F1 ≥ 0.70, no class with recall=0, healthy-bias < 1.5),
@@ -142,7 +147,8 @@ operates on raw logits and is robust to both.
 ImageNet-1k checkpoint that still quantises cleanly to INT8 (better
 than any ViT we tested). MobileNetV3-Large (5.5 M) is the smallest
 ConvNet that holds onto the teacher's accuracy after distillation
-(α=0.35, τ=3.5) and runs in ~10-15 ms on a CPU VPS.
+(α=0.5, τ=4.0; matches `train_notebook.ipynb` §5 and `MODEL_CARD.md`)
+and runs in ~10-15 ms on a CPU VPS.
 
 ---
 
@@ -157,23 +163,27 @@ Stage 1 (YOLOv8n) is **single-class**:
 The "is this leaf diseased?" decision belongs entirely to Stage 2.
 
 Stage 2 (MobileNetV3-Large student @ 256 px, KD ← EfficientNetV2-S
-teacher) classifies the primary leaf crop into one of 11
-houseplant-focused classes (alphabetical, matching
-`sorted(ImageFolder.classes)` at training time):
+teacher) classifies the primary leaf crop into one of **7 trainable
+classes** (alphabetical, matching `sorted(ImageFolder.classes)` at
+training time and `server/models/classes.json`):
 
 | # | Class | EN name | RU name |
 |---|-------|---------|---------|
-| 0  | `bacterial_leaf_spot`        | Bacterial Leaf Spot         | Бактериальная пятнистость       |
-| 1  | `edema`                      | Edema (Oedema)              | Эдема (отёчность листьев)        |
-| 2  | `gray_mold_botrytis`         | Gray Mold (Botrytis)        | Серая гниль (ботритис)          |
-| 3  | `healthy`                    | Healthy Plant               | Здоровое растение               |
-| 4  | `leaf_scorch_underwatering`  | Leaf Scorch (Under-watering) | Краевой ожог (недолив)         |
-| 5  | `leaf_spot_fungal`           | Fungal Leaf Spot            | Грибковая пятнистость            |
-| 6  | `not_a_plant`                | Not a Plant                 | Не растение                     |
-| 7  | `nutrient_deficiency`        | Nutrient Deficiency         | Дефицит питания                  |
-| 8  | `powdery_mildew`             | Powdery Mildew              | Мучнистая роса                  |
-| 9  | `sunburn_or_scorch`          | Sunburn / Light Scorch      | Солнечный ожог                   |
-| 10 | `viral_disease`              | Viral Disease               | Вирусное заболевание             |
+| 0 | `bacterial_leaf_spot`        | Bacterial Leaf Spot          | Бактериальная пятнистость |
+| 1 | `gray_mold_botrytis`         | Gray Mold (Botrytis)         | Серая гниль (ботритис)    |
+| 2 | `healthy`                    | Healthy Plant                | Здоровое растение         |
+| 3 | `leaf_spot_fungal`           | Fungal Leaf Spot             | Грибковая пятнистость     |
+| 4 | `not_a_plant`                | Not a Plant                  | Не растение               |
+| 5 | `powdery_mildew`             | Powdery Mildew               | Мучнистая роса            |
+| 6 | `viral_disease`              | Viral Disease                | Вирусное заболевание      |
+
+**Deferred to v2.2 (not in the trained head):** `edema`,
+`leaf_scorch_underwatering`, `nutrient_deficiency`, `sunburn_or_scorch`.
+Public sources have very few clean indoor examples; including them
+with proxy labels collapsed recall on the 7 classes we already have
+data for. Bilingual descriptions for these are kept in
+`diseases_data.py` so re-enabling them later is a config flip in
+`train_notebook.ipynb` §1, not a re-architecture.
 
 Canonical list: [`server/models/classes.json`](server/models/classes.json).
 Bilingual descriptions, treatments and prevention tips live in
@@ -254,12 +264,14 @@ Training runs end-to-end on **1× A100-40** in roughly **1 hour** via
    the bottleneck is labels / semantics; if probe ≈ student, scheduler
    tweaks pay off.
 4. **Stage 2 teacher (~35 min)** — `tf_efficientnetv2_s.in21k_ft_in1k`,
-   AdamW + cosine + 1-epoch warmup, 256 px batch=128 bf16-mixed,
-   head-only 3 epochs (lr=3e-3) → unfreeze last 2 stages 12–15 epochs
-   (head lr=5e-4 / backbone lr=5e-5), Logit Adjustment loss (τ=1.0),
-   indoor-targeted augs, MixUp 0.10 / CutMix 0.10–0.20.
+   AdamW + cosine + 1-epoch warmup, 256 px batch=96 bf16-mixed,
+   head-only 3 epochs (lr=3e-3) → unfreeze last 2 stages 15 epochs
+   (head lr=5e-4 / backbone lr=5e-5), Logit Adjustment loss (τ=0.7,
+   matches `MODEL_CARD.md`), indoor-targeted augs (no MixUp/CutMix —
+   they were dropped after they collapsed `gray_mold_botrytis` recall).
 5. **Knowledge distillation into MobileNetV3-Large student (10–15 min)**
-   — α·CE + (1−α)·τ²·KL, α=0.35, τ=3.5, ~12 epochs.
+   — α·KL·τ² + (1−α)·CE, α=0.5, τ=4.0, ~10 epochs (matches the actual
+   notebook constants in §5).
 6. **Calibration & export (5 min)** — temperature scaling on
    `indoor_real_world_v1` val NLL → `temperature.json`. ONNX FP32
    export → dynamic INT8 on MatMul. MaxLogit OOD floor sweep on
@@ -298,7 +310,7 @@ pipeline prefers `classifier_int8.onnx` over `classifier.onnx` over
 | `GET` | `/api/metrics/prometheus` | Prometheus exposition format |
 | `POST` | `/api/analyze` | Upload image → get diagnosis |
 | `POST` | `/api/identify` | PlantNet species identification (graceful when unconfigured) |
-| `POST` | `/api/chat` | AI Plant Doctor (Anthropic; graceful when unconfigured) |
+| `POST` | `/api/chat` | AI Plant Doctor (OpenRouter, default model `openai/gpt-oss-120b`; graceful when unconfigured) |
 | `POST` | `/api/care-plan` | Watering / fertilising / humidity schedule |
 | `POST` | `/api/progression` | Compare two scans → trend verdict |
 
