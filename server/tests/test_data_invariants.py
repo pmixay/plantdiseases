@@ -148,14 +148,23 @@ def test_pre_split_dedup_runs_before_splitters():
 
 
 def test_phash_cross_check_present():
-    """audit fix #1: pHash leakage audit between TRAIN and held-out splits."""
+    """audit fix #1: pHash leakage check between TRAIN and held-out splits.
+
+    The check evolved from a hard-fail audit (``assert_…``) to a
+    self-resolving step (``resolve_…``) that drops the held-out side of
+    each colliding pair — PlantDoc / PlantVillage publish near-duplicate
+    photos across their train/test boundary, and raising on every run
+    blocked legitimate training. Either name satisfies the contract.
+    """
     src = _notebook_source()
-    assert "assert_no_phash_split_leakage" in src, "audit fix #1 — pHash audit missing"
+    assert re.search(
+        r"\b(?:assert_no|resolve)_phash_split_leakage\b", src
+    ), "audit fix #1 — pHash leakage check missing"
     # And it must be invoked at the end of §3.
     assert re.search(
-        r"assert_no_phash_split_leakage\(TRAIN_ROOT\s*,\s*SPLIT_ROOTS",
+        r"(?:assert_no|resolve)_phash_split_leakage\(TRAIN_ROOT\s*,\s*SPLIT_ROOTS",
         src,
-    ), "audit fix #1 — pHash audit defined but not called"
+    ), "audit fix #1 — pHash leakage check defined but not called"
 
 
 def test_head_phase_uses_flat_lr_with_early_stop():
