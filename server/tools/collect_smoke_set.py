@@ -1,30 +1,46 @@
 """
-Held-out houseplant smoke set collector.
+Held-out houseplant smoke / val_realworld collector.
 
-Pulls a small, real-world houseplant dataset (~500 photos total across the
-seven trainable classes) into ``data_v2/smoke/<class>/`` so the v2.1 model
-can be evaluated on photos that nobody trained on.
+Pulls a small, real-world houseplant dataset (~500 photos total across
+the seven trainable classes) into either:
 
-This script does NOT scrape Google or Bing image search by default. Both
-explicitly prohibit automated scraping in their ToS, and the photos
-returned are individually copyrighted by their owners — "educational
-open-source use" is not a blanket exemption. Default sources are
-Openverse (the Wikimedia Foundation's CC-licensed media aggregator —
-Flickr CC0 / CC-BY, Wikimedia Commons, Smithsonian, etc. — every hit
-carries explicit license metadata) and iNaturalist's
+* ``data_v2/smoke/<class>/`` — the original smoke set (default), used
+  for ad-hoc evaluation outside the notebook's split contract; or
+* ``data_v2/classification/val/realworld/<class>/`` — the **ship gate**
+  used by the notebook's §6 evaluation. Selected with
+  ``--into val_realworld``; strict leakage gate is forced on so the
+  fetched photos cannot pollute the training-vs-eval boundary.
+
+This script does NOT scrape Google or Bing image search by default.
+Both explicitly prohibit automated scraping in their ToS, and the
+photos returned are individually copyrighted by their owners —
+"educational open-source use" is not a blanket exemption. Default
+sources are Openverse (the Wikimedia Foundation's CC-licensed media
+aggregator — Flickr CC0 / CC-BY, Wikimedia Commons, Smithsonian, etc.
+— every hit carries explicit license metadata) and iNaturalist's
 ``quality_grade=research`` observations (mostly CC-BY-NC, fine for a
-private smoke set we don't redistribute).
+held-out evaluation set we don't redistribute).
 
 If you specifically want to scrape Google / Bing locally with full
-awareness of the trade-offs, pass ``--use-search-engine google`` (requires
-``pip install icrawler``). The disclaimer at the top of that code path
-spells out the caveats.
+awareness of the trade-offs, pass ``--use-search-engine google``
+(requires ``pip install icrawler``). The disclaimer at the top of that
+code path spells out the caveats. Even there, when ``--into=val_realworld``
+the strict leakage gate still drops anything that overlaps TRAIN_ROOT
+by SHA or pHash — search-engine results are mostly the same PlantDoc /
+PlantVillage photos that already live in TRAIN_ROOT, so most of them
+will fail the gate (which is exactly what we want).
 
 Usage:
-    pip install requests Pillow
+    pip install requests Pillow imagehash
+    # Top up the smoke set (legacy default).
     python server/tools/collect_smoke_set.py --target 500
+    # Top up val_realworld with strict leakage gate (recommended).
+    python server/tools/collect_smoke_set.py --into val_realworld --target 500
+    # Single class only.
     python server/tools/collect_smoke_set.py --classes powdery_mildew --target 70
-    python server/tools/collect_smoke_set.py --use-search-engine google --target 500
+    # Optional: top up via image-search scraping (gate still applies).
+    python server/tools/collect_smoke_set.py --into val_realworld \\
+        --use-search-engine google --target 500
 """
 
 from __future__ import annotations
@@ -36,17 +52,44 @@ import logging
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
 from io import BytesIO
 from pathlib import Path
 
 import requests
 from PIL import Image as PILImage
 
+# pHash is optional — required only when the strict leakage gate is on
+# (forced when --into=val_realworld, see argparse below).
+try:
+    import imagehash  # type: ignore
+except ImportError:  # pragma: no cover - import-time soft dep
+    imagehash = None
+
 logger = logging.getLogger("smoke_set")
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
-# Output layout matches the notebook's ImageFolder conventions.
-ROOT = Path(__file__).resolve().parents[2] / "data_v2" / "smoke"
+# Output layouts match the notebook's ImageFolder conventions.
+SMOKE_ROOT = Path(__file__).resolve().parents[2] / "data_v2" / "smoke"
+DATA_ROOT = Path(__file__).resolve().parents[2] / "data_v2" / "classification"
+TRAIN_ROOT = DATA_ROOT / "train"
+VAL_REALWORLD_ROOT = DATA_ROOT / "val" / "realworld"
+# Sister held-out splits — we de-duplicate against these so a smoke
+# top-up can't accidentally seed the same photo into two held-out
+# slices and inflate cross-slice agreement metrics.
+SISTER_HELDOUT_ROOTS = (
+    DATA_ROOT / "val" / "indomain",
+    DATA_ROOT / "val" / "plantvillage_studio",
+    DATA_ROOT / "val" / "temperature_cal",
+    DATA_ROOT / "val" / "conformal_cal",
+)
+# Same threshold the §3 audit uses — keeps both sides of the contract
+# numerically consistent.
+PHASH_THRESHOLD = 6
+# `ROOT` kept as an alias so anyone still importing it (older docs /
+# scripts) gets the legacy behaviour — smoke set output. New code paths
+# resolve the destination via _dest_root() instead.
+ROOT = SMOKE_ROOT
 
 CLASSES = (
     "bacterial_leaf_spot",
@@ -247,6 +290,106 @@ def _existing_hashes(class_dir: Path) -> set[str]:
     return seen
 
 
+# ── Leakage gate (val_realworld mode) ───────────────────────────────────
+
+
+_IMG_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+
+
+def _walk_images(root: Path):
+    if not root.exists():
+        return
+    for p in root.rglob("*"):
+        if p.is_file() and p.suffix.lower() in _IMG_EXTS:
+            yield p
+
+
+def _index_sha(roots) -> set[str]:
+    out: set[str] = set()
+    for root in roots:
+        for p in _walk_images(root):
+            try:
+                out.add(hashlib.sha256(p.read_bytes()).hexdigest())
+            except OSError:
+                pass
+    return out
+
+
+def _index_phash(roots):
+    out = []
+    if imagehash is None:
+        return out
+    for root in roots:
+        for p in _walk_images(root):
+            try:
+                out.append(imagehash.phash(PILImage.open(p).convert("RGB")))
+            except Exception:
+                continue
+    return out
+
+
+@dataclass
+class LeakageGate:
+    """SHA + pHash gate against TRAIN_ROOT and sister held-out splits.
+
+    Designed for the ``--into val_realworld`` path. The notebook's §3
+    runs the same audit after splits are populated, but we reject leaks
+    before saving so val_realworld never even briefly contains a
+    duplicate of a training image.
+
+    Counters are exposed as attributes so the caller can summarise.
+    """
+    train_sha: set[str]
+    sister_sha: set[str]
+    train_phash: list = field(default_factory=list)
+    threshold: int = PHASH_THRESHOLD
+    n_sha_train: int = 0
+    n_sha_sister: int = 0
+    n_phash_train: int = 0
+
+    @classmethod
+    def build(cls, train_root: Path, sister_roots, *,
+              use_phash: bool, threshold: int = PHASH_THRESHOLD) -> "LeakageGate":
+        train_sha = _index_sha([train_root])
+        sister_sha = _index_sha(sister_roots)
+        train_phash = _index_phash([train_root]) if use_phash else []
+        logger.info(
+            "leakage gate: train SHA=%d  sister SHA=%d  train pHash=%d (threshold=%d)",
+            len(train_sha), len(sister_sha), len(train_phash), threshold,
+        )
+        return cls(train_sha=train_sha, sister_sha=sister_sha,
+                   train_phash=train_phash, threshold=threshold)
+
+    def reject_reason(self, content: bytes) -> str | None:
+        """Return a short reason string if `content` would leak, else None."""
+        sha = hashlib.sha256(content).hexdigest()
+        if sha in self.train_sha:
+            self.n_sha_train += 1
+            return "sha:train"
+        if sha in self.sister_sha:
+            self.n_sha_sister += 1
+            return "sha:sister-heldout"
+        if self.train_phash and imagehash is not None:
+            try:
+                ph = imagehash.phash(PILImage.open(BytesIO(content)).convert("RGB"))
+            except Exception:
+                return None
+            for tph in self.train_phash:
+                if ph - tph <= self.threshold:
+                    self.n_phash_train += 1
+                    return f"phash:train(d={int(ph - tph)})"
+        return None
+
+    def summary(self) -> dict:
+        return {
+            "dropped_sha_train": self.n_sha_train,
+            "dropped_sha_sister_heldout": self.n_sha_sister,
+            "dropped_phash_train": self.n_phash_train,
+            "phash_threshold": self.threshold,
+            "phash_enabled": bool(self.train_phash),
+        }
+
+
 # ── Openverse (CC-licensed aggregator: Flickr CC0/CC-BY, Wikimedia, etc.) ──
 
 
@@ -278,7 +421,8 @@ def _openverse_search(query: str, limit: int) -> list[dict]:
     return out[:limit]
 
 
-def collect_openverse(klass: str, want: int, dest: Path, seen: set[str]) -> int:
+def collect_openverse(klass: str, want: int, dest: Path, seen: set[str],
+                      gate: LeakageGate | None = None) -> int:
     queries = OPENVERSE_QUERIES.get(klass) or []
     if not queries:
         return 0
@@ -290,7 +434,7 @@ def collect_openverse(klass: str, want: int, dest: Path, seen: set[str]) -> int:
         candidates.extend(_openverse_search(q, per_query))
     n = 0
     with ThreadPoolExecutor(max_workers=6) as pool:
-        futs = [pool.submit(_download_one_openverse, c, klass, dest, seen)
+        futs = [pool.submit(_download_one_openverse, c, klass, dest, seen, gate)
                 for c in candidates if c.get("url")]
         for f in as_completed(futs):
             if f.result():
@@ -302,7 +446,8 @@ def collect_openverse(klass: str, want: int, dest: Path, seen: set[str]) -> int:
 
 
 def _download_one_openverse(c: dict, klass: str, dest: Path,
-                            seen: set[str]) -> bool:
+                            seen: set[str],
+                            gate: LeakageGate | None = None) -> bool:
     # Try the original CDN URL first; fall back to Openverse's own
     # cached thumbnail. This matters for hosts behind a firewall (or in
     # this sandbox) where direct upload.wikimedia.org egress is blocked.
@@ -318,6 +463,11 @@ def _download_one_openverse(c: dict, klass: str, dest: Path,
     h = hashlib.sha256(content).hexdigest()
     if h in seen:
         return False
+    if gate is not None:
+        reason = gate.reject_reason(content)
+        if reason is not None:
+            logger.debug("[openverse/%s] dropped (%s)", klass, reason)
+            return False
     ident = c.get("id") or hashlib.sha1(c["url"].encode()).hexdigest()[:10]
     out = dest / f"ov_{ident}.jpg"
     if _save_image(content, out):
@@ -365,7 +515,8 @@ def _inat_observations(taxon_id: int, max_n: int, leaf_only: bool) -> list[dict]
     return rows[:max_n]
 
 
-def collect_inat(klass: str, want: int, dest: Path, seen: set[str]) -> int:
+def collect_inat(klass: str, want: int, dest: Path, seen: set[str],
+                 gate: LeakageGate | None = None) -> int:
     taxa = INAT_TAXA.get(klass) or []
     if not taxa:
         return 0
@@ -385,7 +536,7 @@ def collect_inat(klass: str, want: int, dest: Path, seen: set[str]) -> int:
         obs = _inat_observations(tid, per_taxon, leaf_only=leaf_only)
         items = [(o, p) for o in obs for p in (o.get("photos") or [])[:1]]
         with ThreadPoolExecutor(max_workers=6) as pool:
-            futs = [pool.submit(_download_one_inat, o, p, klass, dest, seen)
+            futs = [pool.submit(_download_one_inat, o, p, klass, dest, seen, gate)
                     for o, p in items]
             for f in as_completed(futs):
                 if f.result():
@@ -397,7 +548,8 @@ def collect_inat(klass: str, want: int, dest: Path, seen: set[str]) -> int:
 
 
 def _download_one_inat(obs: dict, photo: dict, klass: str, dest: Path,
-                       seen: set[str]) -> bool:
+                       seen: set[str],
+                       gate: LeakageGate | None = None) -> bool:
     raw_url = (photo.get("url") or "")
     if not raw_url.startswith("http"):
         return False
@@ -408,6 +560,11 @@ def _download_one_inat(obs: dict, photo: dict, klass: str, dest: Path,
     h = hashlib.sha256(r.content).hexdigest()
     if h in seen:
         return False
+    if gate is not None:
+        reason = gate.reject_reason(r.content)
+        if reason is not None:
+            logger.debug("[inat/%s] dropped (%s)", klass, reason)
+            return False
     out = dest / f"inat_{obs['id']}_{photo['id']}.jpg"
     if _save_image(r.content, out):
         seen.add(h)
@@ -423,15 +580,23 @@ def _download_one_inat(obs: dict, photo: dict, klass: str, dest: Path,
 
 
 def collect_search_engine(klass: str, want: int, dest: Path, seen: set[str],
-                          engine: str) -> int:
+                          engine: str,
+                          gate: LeakageGate | None = None) -> int:
     """OPTIONAL: scrape Google / Bing image search via the icrawler library.
 
     DISCLAIMER. Both Google and Bing prohibit automated image-search
     scraping in their ToS. The downloaded images are individually
-    copyrighted by their owners — for a private (non-redistributed) smoke
-    set this is generally tolerated under research / fair-use norms in
-    most jurisdictions, but the legal picture is contested. Do not
-    redistribute the resulting dataset.
+    copyrighted by their owners — for a private (non-redistributed)
+    held-out evaluation set this is generally tolerated under research /
+    fair-use norms in most jurisdictions, but the legal picture is
+    contested. Do not redistribute the resulting dataset.
+
+    When a leakage gate is supplied, every saved-by-icrawler file is
+    re-checked against TRAIN_ROOT (SHA + pHash) before being kept.
+    Files that fail the gate are deleted on the spot — search-engine
+    results for plant-disease queries return mostly the same PlantDoc /
+    PlantVillage photos that already populate TRAIN_ROOT, and silently
+    keeping them would inflate val_realworld scores.
     """
     try:
         if engine == "google":
@@ -458,12 +623,19 @@ def collect_search_engine(klass: str, want: int, dest: Path, seen: set[str],
         if p.with_suffix(".json").exists():
             continue
         try:
-            h = hashlib.sha256(p.read_bytes()).hexdigest()
+            content = p.read_bytes()
         except OSError:
             continue
+        h = hashlib.sha256(content).hexdigest()
         if h in seen:
             p.unlink(missing_ok=True)
             continue
+        if gate is not None:
+            reason = gate.reject_reason(content)
+            if reason is not None:
+                logger.debug("[%s/%s] dropped (%s)", engine, klass, reason)
+                p.unlink(missing_ok=True)
+                continue
         seen.add(h)
         _sidecar(p, source=f"image_search_{engine}", klass=klass,
                  attribution="unknown (web search)", license_str="unknown",
@@ -478,8 +650,18 @@ def collect_search_engine(klass: str, want: int, dest: Path, seen: set[str],
 # ── Main ────────────────────────────────────────────────────────────────
 
 
-def collect_class(klass: str, target: int, use_search_engine: str | None) -> int:
-    dest = ROOT / klass
+def _dest_root(into: str) -> Path:
+    if into == "smoke":
+        return SMOKE_ROOT
+    if into == "val_realworld":
+        return VAL_REALWORLD_ROOT
+    raise ValueError(f"unknown --into target: {into}")
+
+
+def collect_class(klass: str, target: int, use_search_engine: str | None,
+                  *, dest_root: Path = SMOKE_ROOT,
+                  gate: LeakageGate | None = None) -> int:
+    dest = dest_root / klass
     dest.mkdir(parents=True, exist_ok=True)
     seen = _existing_hashes(dest)
     have = len(seen)
@@ -487,11 +669,12 @@ def collect_class(klass: str, target: int, use_search_engine: str | None) -> int
         logger.info("[%s] already has %d images, target %d — skip", klass, have, target)
         return have
     want = target - have
-    want -= collect_openverse(klass, want, dest, seen)
+    want -= collect_openverse(klass, want, dest, seen, gate=gate)
     if want > 0:
-        want -= collect_inat(klass, want, dest, seen)
+        want -= collect_inat(klass, want, dest, seen, gate=gate)
     if want > 0 and use_search_engine:
-        collect_search_engine(klass, want, dest, seen, engine=use_search_engine)
+        collect_search_engine(klass, want, dest, seen,
+                              engine=use_search_engine, gate=gate)
     final = len([p for p in dest.iterdir() if p.suffix.lower() in
                  {".jpg", ".jpeg", ".png", ".webp"}])
     logger.info("[%s] done: %d images on disk", klass, final)
@@ -505,10 +688,32 @@ def main():
                     "class using DEFAULT_TARGETS as the prior).")
     ap.add_argument("--classes", nargs="+", default=list(CLASSES),
                     help="Subset of classes to collect.")
+    ap.add_argument("--into", choices=("smoke", "val_realworld"),
+                    default="smoke",
+                    help="Destination layout. 'smoke' writes to "
+                    "data_v2/smoke/<class>/ (legacy default). "
+                    "'val_realworld' writes directly to the notebook's "
+                    "ship-gate split (data_v2/classification/val/realworld/"
+                    "<class>/) and forces the strict leakage gate on.")
+    ap.add_argument("--no-leakage-gate", action="store_true",
+                    help="Disable the SHA+pHash gate against TRAIN_ROOT and "
+                    "the sister held-out splits. Implied for --into=smoke "
+                    "(opt in by also passing --leakage-gate).")
+    ap.add_argument("--leakage-gate", action="store_true",
+                    help="Force the leakage gate ON even when --into=smoke "
+                    "(useful when the smoke set is later promoted into a "
+                    "held-out evaluation slice).")
+    ap.add_argument("--phash-threshold", type=int, default=PHASH_THRESHOLD,
+                    help="Hamming distance below which a pHash hit counts "
+                    "as a near-duplicate of TRAIN_ROOT (default %(default)d, "
+                    "matches the notebook's §3 audit).")
     ap.add_argument("--use-search-engine", choices=("google", "bing"), default=None,
-                    help="Optional: top up the smoke set by scraping the "
+                    help="Optional: top up the destination by scraping the "
                     "named image search engine. Requires `pip install icrawler`. "
-                    "Read the disclaimer in collect_search_engine() first.")
+                    "Read the disclaimer in collect_search_engine() first. "
+                    "When --into=val_realworld the leakage gate still applies, "
+                    "so most search-engine results that overlap TRAIN_ROOT "
+                    "(PlantDoc / PlantVillage) get dropped before being kept.")
     args = ap.parse_args()
 
     chosen = [c for c in args.classes if c in CLASSES]
@@ -516,24 +721,62 @@ def main():
     if bad:
         ap.error(f"unknown class(es): {bad}")
 
+    dest_root = _dest_root(args.into)
+    gate_on = (
+        not args.no_leakage_gate
+        and (args.into == "val_realworld" or args.leakage_gate)
+    )
+    gate: LeakageGate | None = None
+    if gate_on:
+        if imagehash is None:
+            ap.error(
+                "--into=val_realworld (or --leakage-gate) requires the "
+                "`imagehash` package for the pHash gate. "
+                "Run `pip install imagehash` and retry, or pass "
+                "--no-leakage-gate to skip the cross-split audit (not "
+                "recommended for held-out splits)."
+            )
+        if not TRAIN_ROOT.exists():
+            ap.error(
+                f"TRAIN_ROOT not found at {TRAIN_ROOT}. Build it first via "
+                "the notebook's §2, then re-run this collector."
+            )
+        gate = LeakageGate.build(
+            TRAIN_ROOT, SISTER_HELDOUT_ROOTS,
+            use_phash=True, threshold=args.phash_threshold,
+        )
+
     # Re-balance DEFAULT_TARGETS to hit args.target across `chosen`.
     weight_total = sum(DEFAULT_TARGETS[c] for c in chosen)
     per_class = {
         c: max(5, round(DEFAULT_TARGETS[c] * args.target / weight_total))
         for c in chosen
     }
+    logger.info("Destination: %s", dest_root)
+    logger.info("Leakage gate: %s", "ON" if gate_on else "off")
     logger.info("Per-class targets: %s", per_class)
 
-    ROOT.mkdir(parents=True, exist_ok=True)
+    dest_root.mkdir(parents=True, exist_ok=True)
     summary = {}
     for c in chosen:
-        summary[c] = collect_class(c, per_class[c], args.use_search_engine)
-    print("\nSmoke set summary:")
+        summary[c] = collect_class(c, per_class[c], args.use_search_engine,
+                                   dest_root=dest_root, gate=gate)
+    label = "val_realworld" if args.into == "val_realworld" else "Smoke set"
+    print(f"\n{label} summary:")
     total = 0
     for c in chosen:
         print(f"  {c:25s} {summary[c]:4d}")
         total += summary[c]
     print(f"  {'TOTAL':25s} {total:4d}")
+    if gate is not None:
+        s = gate.summary()
+        print(
+            f"\nleakage gate dropped: "
+            f"sha-train={s['dropped_sha_train']}  "
+            f"sha-sister={s['dropped_sha_sister_heldout']}  "
+            f"phash-train={s['dropped_phash_train']}  "
+            f"(threshold={s['phash_threshold']})"
+        )
 
 
 if __name__ == "__main__":
