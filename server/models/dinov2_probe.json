@@ -1,0 +1,34 @@
+[
+  {
+    "epoch": 1,
+    "val_realworld_top1": 0.791907514450867
+  },
+  {
+    "epoch": 2,
+    "val_realworld_top1": 0.8497109826589595
+  },
+  {
+    "epoch": 3,
+    "val_realworld_top1": 0.8477842003853564
+  },
+  {
+    "epoch": 4,
+    "val_realworld_top1": 0.8439306358381503
+  },
+  {
+    "epoch": 5,
+    "val_realworld_top1": 0.8574181117533719
+  },
+  {
+    "epoch": 6,
+    "val_realworld_top1": 0.8554913294797688
+  },
+  {
+    "epoch": 7,
+    "val_realworld_top1": 0.8516377649325626
+  },
+  {
+    "epoch": 8,
+    "val_realworld_top1": 0.8583815028901735
+  }
+]

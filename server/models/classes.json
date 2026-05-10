@@ -1,5 +1,4 @@
 {
-  "_comment": "PlantVision 2.1 — placeholder. The notebook (server/train_notebook.ipynb) overwrites this file in §6 with the real values after training. Disease macro-F1 on val_realworld is the primary metric.",
   "model_version": "2.1",
   "class_names": [
     "bacterial_leaf_spot",
@@ -17,11 +16,11 @@
     "img_size": 256,
     "batch_size": 96,
     "loss": "logit_adjustment_ce",
-    "logit_adjustment_tau": 0.7,
+    "logit_adjustment_tau": 0.5,
     "label_smoothing": 0.05,
     "use_weighted_sampler": false,
     "optimizer": "AdamW",
-    "weight_decay": 1e-4,
+    "weight_decay": 0.0001,
     "lr_schedule": "cosine + warmup",
     "precision": "bf16-mixed",
     "primary_metric": "val_realworld_disease_macro_f1",
@@ -34,12 +33,24 @@
     "loss": "alpha*KD + (1-alpha)*CE_LA",
     "alpha": 0.5,
     "tau": 4.0,
-    "ema_decay": 0.999,
+    "ema_decay": 0.9946666666666667,
     "epochs": 10
   },
   "ood": {
     "score": "max_logit",
-    "max_logit_floor": 4.0,
-    "_score_note": "MaxLogit (Hendrycks 2019). Robust under temperature scaling and label smoothing where MSP fails."
+    "max_logit_floor": 1.6244090795516968,
+    "_score_note": "MaxLogit (Hendrycks 2019) \u2014 robust under temperature scaling and label smoothing where MSP fails.",
+    "_calibration": {
+      "target_plant_fpr": 0.05,
+      "plant_n": 283,
+      "plant_p05": 1.6244090795516968,
+      "plant_p50": 4.343640327453613,
+      "plant_p95": 6.033127927780151,
+      "nap_n": 225,
+      "nap_p05": 3.2214927196502687,
+      "nap_p50": 4.6157612800598145,
+      "nap_p95": 5.513560581207274,
+      "separation_p50": -0.27212095260620117
+    }
   }
 }

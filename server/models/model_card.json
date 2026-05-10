@@ -1,0 +1,137 @@
+{
+  "version": "2.1",
+  "trained_at": "2026-05-10T21:03:17+00:00",
+  "classes": [
+    "bacterial_leaf_spot",
+    "gray_mold_botrytis",
+    "healthy",
+    "leaf_spot_fungal",
+    "not_a_plant",
+    "powdery_mildew",
+    "viral_disease"
+  ],
+  "img_size": 256,
+  "temperature": 1.0790576934814453,
+  "conformal": {
+    "method": "raps",
+    "alpha": 0.1,
+    "q_hat": 0.9919968247413635,
+    "lambda_reg": 0.01,
+    "k_reg": 1,
+    "calibration_n": 128,
+    "empirical_coverage": 1.0,
+    "empirical_coverage_kind": "out_of_sample",
+    "mean_set_size": 3.4375,
+    "audit_n": 128,
+    "in_sample_coverage": 0.9921875,
+    "in_sample_mean_set_size": 3.4453125,
+    "coverage_scope": "plant inputs (plantdoc+inat); not_a_plant routes through Stage 1 detector + MaxLogit OOD gate, not RAPS",
+    "cal_sources": [
+      "plantdoc",
+      "inat"
+    ]
+  },
+  "train_counts": {
+    "bacterial_leaf_spot": 1059,
+    "gray_mold_botrytis": 227,
+    "healthy": 1244,
+    "leaf_spot_fungal": 1221,
+    "not_a_plant": 1148,
+    "powdery_mildew": 1059,
+    "viral_disease": 1243
+  },
+  "val_realworld_counts": {
+    "bacterial_leaf_spot": 60,
+    "gray_mold_botrytis": 22,
+    "healthy": 353,
+    "leaf_spot_fungal": 197,
+    "not_a_plant": 225,
+    "powdery_mildew": 37,
+    "viral_disease": 144
+  },
+  "val_indomain_counts": {
+    "bacterial_leaf_spot": 25,
+    "gray_mold_botrytis": 12,
+    "healthy": 133,
+    "leaf_spot_fungal": 39,
+    "not_a_plant": 127,
+    "powdery_mildew": 22,
+    "viral_disease": 52
+  },
+  "temperature_cal_counts": {
+    "bacterial_leaf_spot": 3,
+    "gray_mold_botrytis": 5,
+    "healthy": 54,
+    "leaf_spot_fungal": 22,
+    "not_a_plant": 0,
+    "powdery_mildew": 5,
+    "viral_disease": 15
+  },
+  "conformal_cal_counts": {
+    "bacterial_leaf_spot": 19,
+    "gray_mold_botrytis": 11,
+    "healthy": 144,
+    "leaf_spot_fungal": 38,
+    "not_a_plant": 0,
+    "powdery_mildew": 25,
+    "viral_disease": 19
+  },
+  "val_studio_counts": {
+    "bacterial_leaf_spot": 299,
+    "gray_mold_botrytis": 0,
+    "healthy": 291,
+    "leaf_spot_fungal": 298,
+    "not_a_plant": 0,
+    "powdery_mildew": 298,
+    "viral_disease": 297
+  },
+  "hyperparams": {
+    "teacher": "tf_efficientnetv2_s.in21k_ft_in1k",
+    "student": "mobilenet_v3_large",
+    "kd_alpha": 0.5,
+    "kd_tau": 4.0,
+    "la_tau": 0.5,
+    "label_smoothing": 0.05,
+    "use_weighted_sampler": false,
+    "batch": 96,
+    "img_size": 256,
+    "ema_decay": 0.9946666666666667
+  },
+  "int8": {
+    "drift": 0.3945011462423889,
+    "f1_fp32": 0.7051996431477824,
+    "f1_int8": 0.3106984969053935,
+    "warn_drift": 0.02,
+    "fail_drift": 0.05,
+    "quant_mode": "dynamic_weight_only",
+    "activation_type": "QUInt8",
+    "weight_type": "QInt8",
+    "per_channel": true,
+    "format": "QDQ",
+    "calibration_split": "temperature_cal",
+    "calibration_n": 500,
+    "static_extra_options": {
+      "OpTypesToExcludeOutputQuantization": [
+        "HardSigmoid",
+        "HardSwish",
+        "Mul"
+      ],
+      "ActivationSymmetric": false,
+      "WeightSymmetric": true
+    },
+    "shipped": false,
+    "shipped_artifact": "classifier.onnx (renamed)"
+  },
+  "kd": {
+    "best_indomain_disease_f1": 0.8088212772890191,
+    "best_epoch": 9
+  },
+  "reporting_backend": "onnxruntime_int8_cpu",
+  "reproducibility": {
+    "seed": 0,
+    "torch": "2.10.0+cu128",
+    "onnxruntime": "1.26.0",
+    "cudnn_deterministic": false,
+    "cudnn_benchmark": true
+  }
+}
