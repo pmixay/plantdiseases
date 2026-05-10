@@ -151,7 +151,12 @@ def test_load_conformal_config_round_trip(tmp_path):
     assert abs(cfg.coverage_target - 0.9) < 1e-6
 
 
-def test_load_conformal_config_returns_none_when_missing(tmp_path):
+def test_load_conformal_config_returns_none_when_missing(tmp_path, monkeypatch):
+    # The loader has cwd-relative fallbacks (`server/models/conformal.json`,
+    # `models/conformal.json`) so the bare assertion below would silently
+    # pick up the real repo artefact once it exists. Run inside tmp_path so
+    # those fallbacks resolve to absent paths too.
+    monkeypatch.chdir(tmp_path)
     assert load_conformal_config(tmp_path) is None
     assert load_conformal_config(None) is None
 

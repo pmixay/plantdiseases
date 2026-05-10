@@ -36,9 +36,10 @@ What changed vs v1.x and v2.0:
 - **Stage 2 backbone:** EfficientNetV2-S
   (`tf_efficientnetv2_s.in21k_ft_in1k`) teacher distilled into
   MobileNetV3-Large (5.5 M) student. Distillation uses an **EMA
-  copy** of the student (decay=0.999) with **α=0.5, τ=4.0** and the
+  copy** of the student (adaptive decay sized from total KD steps —
+  0.9947 in the v2.1 run, formula in §5) with **α=0.5, τ=4.0** and the
   EMA weights are what ship.
-- **Loss:** Logit Adjustment (Menon ICLR 2021), τ=0.7,
+- **Loss:** Logit Adjustment (Menon ICLR 2021), τ=0.5,
   label_smoothing=0.05. **Loss-side balancing only** —
   `WeightedRandomSampler` is **off** by default; stacking sampler +
   LA over-corrects rare classes (Liu et al. 2024).
@@ -93,7 +94,7 @@ Full training recipe lives in
 │  • NotAPlant verdict │         │   │ Stage 2: Classifier      │   │
 │    as separate state │         │   │ MobileNetV3-L (KD ←      │   │
 │                      │         │   │ EfficientNetV2-S) @ 256  │   │
-│                      │         │   │ 11 houseplant classes    │   │
+│                      │         │   │ 7 trainable classes      │   │
 │                      │         │   │ incl. not_a_plant        │   │
 │                      │         │   │ + MaxLogit OOD gate      │   │
 │                      │         │   └──────────────────────────┘   │
@@ -266,7 +267,7 @@ Training runs end-to-end on **1× A100-40** in roughly **1 hour** via
 4. **Stage 2 teacher (~35 min)** — `tf_efficientnetv2_s.in21k_ft_in1k`,
    AdamW + cosine + 1-epoch warmup, 256 px batch=96 bf16-mixed,
    head-only 3 epochs (lr=3e-3) → unfreeze last 2 stages 15 epochs
-   (head lr=5e-4 / backbone lr=5e-5), Logit Adjustment loss (τ=0.7,
+   (head lr=5e-4 / backbone lr=5e-5), Logit Adjustment loss (τ=0.5,
    matches `MODEL_CARD.md`), indoor-targeted augs (no MixUp/CutMix —
    they were dropped after they collapsed `gray_mold_botrytis` recall).
 5. **Knowledge distillation into MobileNetV3-Large student (10–15 min)**

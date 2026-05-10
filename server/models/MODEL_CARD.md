@@ -12,8 +12,10 @@ toward field shots.
 distillation. Teacher checkpoint is `tf_efficientnetv2_s.in21k_ft_in1k`
 fine-tuned on our 7-class taxonomy with logit-adjustment cross-entropy.
 Student is `torchvision.mobilenet_v3_large` (5.5 M params). KD uses
-`α=0.5, τ=4.0`, and an EMA copy of the student (decay=0.999) is what
-we evaluate, save and export.
+`α=0.5, τ=4.0`, and an EMA copy of the student (adaptive decay sized
+from total KD steps — `1 − 1/max(KD_steps/4, 100)`; the v2.1 run
+landed on 0.9947 over 728 KD steps) is what we evaluate, save and
+export.
 
 ## Classes (7 trainable, v2.1)
 
@@ -56,15 +58,20 @@ with the deployment distribution and would inflate coverage.
 * Phase A (head-only, 3 epochs, lr=3e-3) → Phase B (last 2 backbone
   stages, 15 epochs, head lr=5e-4, backbone lr=5e-5; early-stop on
   `val_indomain` disease macro-F1)
-* **Loss**: Logit Adjustment cross-entropy (Menon ICLR 2021), τ=0.7,
+* **Loss**: Logit Adjustment cross-entropy (Menon ICLR 2021), τ=0.5,
   label_smoothing=0.05. Loss-side balancing only —
   `WeightedRandomSampler` is **off** by default to avoid double
-  rebalancing of rare classes.
+  rebalancing of rare classes. (τ was lowered from 0.7 once per-class
+  capping flattened the post-cap distribution; the old value was
+  over-correcting for an imbalance the data no longer had.)
 * Augs: indoor-targeted — WB shift, glare, defocus / motion blur,
   JPEG re-compression, mild ColorJitter (brightness/contrast/sat
   only), RandomErasing. **No** strong hue rotation / Solarize —
   colour is a disease signal.
-* Distillation (`α=0.5, τ=4.0`, 10 epochs, EMA student decay=0.999).
+* Distillation (`α=0.5, τ=4.0`, 10 epochs, EMA student with adaptive
+  decay = `1 − 1/max(KD_steps/4, 100)` — 0.9947 for the v2.1 run's
+  728 KD steps; previously a fixed 0.999 left ~half the random-init
+  weights in the EMA at typical run lengths).
 * Calibration: temperature scaling on `temperature_cal` NLL **plus**
   inductive RAPS conformal prediction on `conformal_cal`. Both fitted
   on **INT8 ONNX logits** so the calibration matches the deployed
@@ -78,7 +85,15 @@ with the deployment distribution and would inflate coverage.
   restricted to plantdoc + inat (same exchangeability story) and
   isolates RAPS to its own split. Export step re-evaluates on
   `val_realworld` and raises if disease F1 drops by > 0.05 vs FP32
-  (warning only at > 0.02).
+  (warning only at > 0.02). **v2.1 outcome:** the static and dynamic
+  quant paths both exceeded the fail threshold on MobileNetV3-Large
+  under Torch 2.10 / onnxruntime 1.26 (HardSwish + Mul shape inference
+  issues), so the shipped `classifier_int8.onnx` is the FP32 ONNX
+  renamed. `model_card.json` records the rejected quant attempt's
+  drift with `int8.shipped=false` and
+  `int8.shipped_artifact="classifier.onnx (renamed)"`. The temperature
+  and conformal fits were performed on the FP32 session that actually
+  ships, so the calibration numbers remain valid.
 
 ## OOD detection
 
@@ -124,6 +139,19 @@ Colab T4 is roughly 2-3× slower; reduce `BATCH=64`.
 * `leaf_spot_fungal` is an umbrella class. Treatment is genuinely the
   same for the three fungi underneath, but downstream reports should
   not claim sub-class accuracy.
+* **`bacterial_leaf_spot` ↔ `leaf_spot_fungal` confusion** is the
+  dominant error pattern on `val_realworld`. In the v2.1 run, 25 of
+  60 true bacterial photos were predicted as fungal and 38 of 197
+  true fungal as bacterial. This pulls bacterial recall down to 0.52
+  while the rest of the taxonomy sits at 0.68 – 1.00. The pair shares
+  first-line treatment advice in the Android client, so the practical
+  impact is bounded — but per-class recall reporting must call this
+  out as a known limitation.
+* **INT8 did not ship in v2.1.** Static QDQ and dynamic-quant fallback
+  both exceeded the 0.05 drift gate on MobileNetV3-Large under Torch
+  2.10. `classifier_int8.onnx` is the FP32 ONNX renamed; deployed CPU
+  latency is roughly 2× the projected INT8 envelope. `model_card.json`
+  carries `int8.shipped=false` for transparency.
 * **Dataset domain mix.** PlantDoc contributes outdoor / agricultural
   leaves (tomato, potato, apple, etc.). It supplements the rare
   classes but the eval ratio leans agricultural — real-world recall
@@ -176,7 +204,7 @@ are approximate.
 | EfficientNetV2-S teacher | Tan & Le, ICML 2021, "EfficientNetV2: Smaller Models and Faster Training" — <https://arxiv.org/abs/2104.00298>; weights via timm `tf_efficientnetv2_s.in21k_ft_in1k` (ImageNet-21k → ImageNet-1k) | Stage-2 KD teacher |
 | MobileNetV3-Large student | Howard et al., ICCV 2019, "Searching for MobileNetV3" — <https://arxiv.org/abs/1905.02244>; `torchvision.models.mobilenet_v3_large` (ImageNet-1k V2 weights) | Stage-2 KD student (5.5 M params, ~10–15 ms on CPU INT8) |
 | Knowledge distillation | Hinton et al., NeurIPS 2014, "Distilling the Knowledge in a Neural Network" — <https://arxiv.org/abs/1503.02531> | KD loss with α=0.5, τ=4.0 |
-| Logit Adjustment loss | Menon et al., ICLR 2021, "Long-tail learning via logit adjustment" — <https://arxiv.org/abs/2007.07314> | Stage-2 cross-entropy with τ=0.7, label_smoothing=0.05 |
+| Logit Adjustment loss | Menon et al., ICLR 2021, "Long-tail learning via logit adjustment" — <https://arxiv.org/abs/2007.07314> | Stage-2 cross-entropy with τ=0.5, label_smoothing=0.05 |
 | MaxLogit OOD score | Hendrycks et al., 2019/2022, "Scaling Out-of-Distribution Detection for Real-World Settings" — <https://arxiv.org/abs/1911.11132> | OOD gate (raw `max(logits)` not max softmax probability) |
 | Temperature scaling | Guo et al., ICML 2017, "On Calibration of Modern Neural Networks" — <https://arxiv.org/abs/1706.04599> | LBFGS T fit on INT8 logits, NLL |
 | RAPS conformal | Angelopoulos et al., ICLR 2021, "Uncertainty Sets for Image Classifiers using Conformal Prediction" — <https://arxiv.org/abs/2009.14193> | `prediction_set` with α=0.10, λ=0.01, k_reg=1; 50/50 fit/audit split |
