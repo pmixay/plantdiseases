@@ -1,0 +1,19 @@
+{
+  "method": "raps",
+  "alpha": 0.1,
+  "q_hat": 0.9919968247413635,
+  "lambda_reg": 0.01,
+  "k_reg": 1,
+  "calibration_n": 128,
+  "empirical_coverage": 1.0,
+  "empirical_coverage_kind": "out_of_sample",
+  "mean_set_size": 3.4375,
+  "audit_n": 128,
+  "in_sample_coverage": 0.9921875,
+  "in_sample_mean_set_size": 3.4453125,
+  "coverage_scope": "plant inputs (plantdoc+inat); not_a_plant routes through Stage 1 detector + MaxLogit OOD gate, not RAPS",
+  "cal_sources": [
+    "plantdoc",
+    "inat"
+  ]
+}

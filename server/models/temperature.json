@@ -1,4 +1,5 @@
 {
-  "temperature": 1.0,
-  "_note": "Reset for retraining cycle on the new 11-class taxonomy. Will be re-fit on the indoor_real_world_v1 val NLL after training."
+  "temperature": 1.0790576934814453,
+  "_note": "Fitted with LBFGS on val temperature_cal NLL using INT8 ONNX logits.",
+  "fit_scope": "plant inputs (plantdoc+inat); not_a_plant logits are not represented in temp_cal, so T may be miscalibrated for that class."
 }
