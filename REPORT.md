@@ -1,17 +1,17 @@
 # PlantDiseases — Project Report (PlantVision 2.1)
 
-> **Status of metrics in this report.** Training of the v2.1 weights has
-> not finished at the time of writing. Every numeric result tagged
-> *projected* below is a plausible value chosen to match the
-> repository's ship-gate criteria (`val_realworld` disease macro-F1 ≥
-> 0.70, no class with recall = 0, healthy-bias < 1.5, recall[healthy] ≥
-> 0.70) and to match published benchmarks for comparable PlantDoc-
-> anchored models (Frontiers 2025, Springer 2025). After the training
-> run completes, swap the table in §5 with the actual contents of
-> `server/models/model_card.json` — the schema matches one-to-one. All
-> non-numeric content (architecture, datasets, validation protocol,
-> deployment characteristics) reflects the actual code in the repo on
-> commit `4f62943`.
+> **Status of metrics in this report.** The v2.1 weights were trained
+> on 2026-05-10 and the numbers in §5 below have been swapped in from
+> `server/models/{model_card,training_metrics,conformal,temperature}.json`.
+> The ship-gate is clear (`val_realworld` disease macro-F1 = 0.7052 ≥
+> 0.70, no class with recall = 0, healthy-bias = 0.96 < 1.5,
+> recall[healthy] = 0.91 ≥ 0.70). One caveat carried over from §5.3.4:
+> the static INT8 (QDQ) export failed on MobileNetV3 under Torch 2.10
+> and the dynamic-quant fallback drifted too far, so the shipped
+> `classifier_int8.onnx` is the FP32 ONNX renamed — see §5.3.4 for the
+> root cause and recovery plan. Non-numeric content (architecture,
+> datasets, validation protocol, deployment characteristics) still
+> reflects the actual code in the repo.
 
 ---
 
@@ -259,8 +259,8 @@ because PlantDoc dilutes the train set with agricultural close-ups
 | §1 Setup | Reproducibility seeds, schema | `SEED=0`, `cudnn.benchmark=True`, `cudnn.deterministic=False` (honest about the trade-off) |
 | §2 Data acquisition | Group-aware splits | iNat houseplant supplement, COCO val2017 NAP, PlantDoc bbox crops, PlantVillage with hash-based studio split |
 | §3 Dedup + Stage 1 + DINOv2 probe | SHA + pHash dedup, leakage audit, YOLOv8n train (60 epochs, batch 32, imgsz 640, mosaic 0.1), DINOv2-S linear probe diagnostic | Probe < 0.30 → label / data audit before spending GPU on the teacher |
-| §4 Teacher fine-tune | EfficientNetV2-S (`tf_efficientnetv2_s.in21k_ft_in1k`), AdamW + cosine + 1-epoch warmup, 256 px, batch 96, bf16-mixed | Phase A head-only 3 epochs lr=3e-3 → Phase B unfreeze last 2 stages 15 epochs (head 5e-4 / backbone 5e-5), Logit Adjustment loss (τ=0.7), label_smoothing=0.05 |
-| §5 Knowledge distillation | MobileNetV3-Large student | α·KL·τ² + (1−α)·CE_LA, **α=0.5, τ=4.0**, EMA decay=0.999, ~10 epochs |
+| §4 Teacher fine-tune | EfficientNetV2-S (`tf_efficientnetv2_s.in21k_ft_in1k`), AdamW + cosine + 1-epoch warmup, 256 px, batch 96, bf16-mixed | Phase A head-only 3 epochs lr=3e-3 → Phase B unfreeze last 2 stages 15 epochs (head 5e-4 / backbone 5e-5), Logit Adjustment loss (τ=0.5), label_smoothing=0.05 |
+| §5 Knowledge distillation | MobileNetV3-Large student | α·KL·τ² + (1−α)·CE_LA, **α=0.5, τ=4.0**, EMA adaptive decay = `1 − 1/max(KD_steps/4, 100)` (= 0.9947 for this run's 728 KD steps), ~10 epochs |
 | §6 Production export | ONNX FP32 → static INT8 (QDQ) → temperature scaling → RAPS conformal | INT8 calibration on `temperature_cal` (500 images), temperature on the same NLL via LBFGS, RAPS on `conformal_cal` 50/50 fit/audit |
 
 Citations of every method are listed in `server/models/MODEL_CARD.md`
@@ -282,54 +282,99 @@ MaxLogit ([Hendrycks 2019](https://arxiv.org/abs/1911.11132)).
 | `conformal_cal` | RAPS quantile (50 / 50 fit / audit) | held out; out-of-sample empirical coverage ≈ 1 − α |
 | **houseplant smoke** | honest field metric | run after ship gate; refuse public release if F1 < 0.45 |
 
-### 5.3 Projected post-training metrics
+### 5.3 Post-training metrics
 
-> The numbers below are projections matching the ship-gate criteria
-> and published PlantDoc-anchored benchmarks (Frontiers / Springer
-> 2025: 0.75–0.78 macro-F1 SOTA on PlantDoc test). They will be
-> replaced verbatim by `server/models/model_card.json` once the run
-> completes.
+> The numbers below are the actual values from
+> `server/models/model_card.json`, `training_metrics.json`,
+> `conformal.json`, `temperature.json` (training run dated
+> 2026-05-10T21:03:17Z). The KD selection metric (`best_indomain_disease_f1`
+> = 0.8088 at epoch 9) and the final eval matched.
 
 #### 5.3.1 Aggregate
 
 | Metric | `val_indomain` | `val_realworld` | `val_studio` |
 |---|---|---|---|
-| disease macro-F1 | 0.82 | **0.74** | 0.91 |
-| healthy-bias | 1.05 | 1.18 | 0.87 |
-| zero-recall classes | 0 | 0 | 0 |
-| n examples | 540 | 1 020 | 1 110 |
+| disease macro-F1 | 0.8088 | **0.7052** | 0.7820 |
+| healthy-bias | 0.86 | 0.96 | 0.97 |
+| zero-recall classes | 0 | 0 | 2 (`gray_mold_botrytis`, `not_a_plant` — both have 0 samples in `val_studio` by design) |
+| n examples | 410 | 1 038 | 1 483 |
+
+Ship-gate result: **PASS** on `val_realworld` (macro-F1 0.7052 ≥ 0.70,
+no class with recall = 0, healthy-bias 0.96 < 1.5).
 
 #### 5.3.2 Per-class recall on `val_realworld`
 
 | class | recall | comment |
 |---|---|---|
-| bacterial_leaf_spot | 0.65 | hardest class — symptoms close to fungal leaf spot |
-| gray_mold_botrytis | 0.58 | rare in the train set; iNat label confidence pinned at 0.55 in sidecar |
-| healthy | 0.79 | well above the 0.70 floor, low FP risk |
-| leaf_spot_fungal | 0.81 | umbrella class with the most data |
-| not_a_plant | 0.94 | OOD route on COCO is clean |
-| powdery_mildew | 0.72 | white-coating signal is unambiguous |
-| viral_disease | 0.61 | confounded with leaf_spot at low resolutions |
+| bacterial_leaf_spot | **0.517** | lowest recall — confused with `leaf_spot_fungal` (25 / 60 true bacterial photos predicted as fungal). See §9. |
+| gray_mold_botrytis | 0.818 | the Openverse top-up + lowered green-content gate cleared the supply bottleneck; held above the no-zero-recall guard |
+| healthy | 0.907 | well above the 0.70 floor; PV healthy cap kept studio-background bias in check |
+| leaf_spot_fungal | **0.680** | other side of the bacterial confusion (38 / 197 true fungal photos predicted as bacterial). See §9. |
+| not_a_plant | 0.969 | COCO negatives + MaxLogit OOD gate hold |
+| powdery_mildew | 1.000 | the white-coating signal is unambiguous on every val_realworld sample |
+| viral_disease | 0.826 | 15 → leaf_spot_fungal and 9 → bacterial_leaf_spot account for most errors |
 
 #### 5.3.3 Calibration and conformal
 
 | Metric | Value |
 |---|---|
-| Temperature `T` (LBFGS on INT8 logits, NLL on `temperature_cal`) | 1.21 |
+| Temperature `T` (LBFGS on INT8 logits, NLL on `temperature_cal`) | 1.079 |
 | RAPS `α` | 0.10 |
-| RAPS `q_hat` | 0.413 |
+| RAPS `q_hat` | 0.992 |
 | RAPS `λ_reg`, `k_reg` | 0.01, 1 |
-| In-sample empirical coverage (fit half of `conformal_cal`) | 0.91 |
-| **Out-of-sample empirical coverage** (audit half — the honest one) | **0.88** |
-| Mean prediction-set size (out-of-sample) | 1.6 classes |
+| Calibration set size (fit half of `conformal_cal`) | 128 |
+| In-sample empirical coverage (fit half) | 0.992 |
+| **Out-of-sample empirical coverage** (audit half — the honest one) | **1.000** |
+| Mean prediction-set size (out-of-sample) | **3.44** classes |
+
+The out-of-sample coverage came in at 1.000 vs the target 0.90; q_hat
+landed at the conservative end of the distribution because the
+calibration set is small (128 samples, restricted to `{plantdoc, inat}`).
+Mean set size 3.44 is correspondingly larger than the projected 1.6
+— RAPS is honest about the under-confidence, but downstream consumers
+will see larger prediction sets than originally modelled.
 
 #### 5.3.4 Quantisation drift
 
-| Metric | FP32 | INT8 (QDQ, 500-image calibration on `temperature_cal`) |
-|---|---|---|
-| `val_realworld` disease macro-F1 | 0.758 | **0.740** |
-| Drift | — | **−0.018** |
-| Threshold | warn ≥ 0.02, fail ≥ 0.05 | within tolerance |
+The static INT8 (QDQ) export path failed under Torch 2.10 + onnxruntime
+1.26 on MobileNetV3-Large. The notebook walks down the documented
+fallback chain:
+
+1. **Static INT8 (QDQ), 500-image `temperature_cal` calibration reader.**
+   Torch 2.10's Dynamo path emits symbolic shape relationships that
+   `onnxruntime.quantization.shape_inference` cannot resolve, so the
+   notebook forces `dynamo=False` and the legacy TorchScript exporter.
+   Even with `OpTypesToExcludeOutputQuantization=[HardSigmoid, HardSwish,
+   Mul]`, asymmetric activations and symmetric weights, the resulting
+   QDQ model drifted past the fail threshold.
+2. **Dynamic-quant fallback** (`quantize_dynamic`, weight-only `QInt8`).
+   Quant succeeded but post-quant `val_realworld` disease macro-F1
+   collapsed to 0.3107 (drift = −0.39), also far past the 0.05 fail
+   threshold.
+3. **FP32-renamed fallback (shipped).** With both static and dynamic
+   paths over the drift gate, the notebook copies the FP32 ONNX as
+   `classifier_int8.onnx` and records the rejected dynamic-quant
+   attempt's drift on the model card with `int8.shipped=false` and
+   `int8.shipped_artifact="classifier.onnx (renamed)"`.
+
+| Metric | FP32 | Dynamic-INT8 (weight-only, rejected) | Shipped (`classifier_int8.onnx`) |
+|---|---|---|---|
+| `val_realworld` disease macro-F1 | **0.7052** | 0.3107 | **0.7052** (FP32 renamed) |
+| Drift vs FP32 | — | −0.3945 | 0.000 |
+| Threshold | warn ≥ 0.02, fail ≥ 0.05 | fail | within tolerance (by definition) |
+
+Operational consequence: the deployed CPU inference path uses the
+unquantised MobileNetV3-Large student (about 5.5 M params, ~22 MB
+ONNX). Latency on a 2-core VPS is ~2× the projected INT8 numbers in
+§6.2; throughput drops accordingly. The temperature and conformal
+fits in §5.3.3 were performed on this FP32 session, so the calibration
+numbers remain valid for what ships.
+
+Recovery plan (tracked in `ROADMAP.md`): pin onnxruntime to a version
+whose QDQ shape-inference handles MobileNetV3's HardSwish + Mul stack,
+or move the export path to `onnx.shape_inference` + manual per-op
+quant-skip tagging, or switch the student to an EfficientNet-Lite
+backbone whose op set quantises cleanly today.
 
 #### 5.3.5 Stage 1 detector
 
@@ -496,6 +541,20 @@ not hidden:
 - **`leaf_spot_fungal` is an umbrella.** Treatment is genuinely the
   same for the three fungi underneath, but downstream reports must
   not claim sub-class accuracy.
+- **`bacterial_leaf_spot` ↔ `leaf_spot_fungal` confusion.** The dominant
+  error pattern on `val_realworld` in the v2.1 run: 25 of 60 true
+  bacterial photos were predicted as fungal, and 38 of 197 true fungal
+  photos as bacterial. At 256 px the visual cue separating the two
+  (yellow halos / water-soaked lesions vs concentric necrotic rings)
+  is often below the resolution / focus of the input. The pair still
+  shares first-line treatment advice on the Android client, so the
+  practical impact is bounded — but the per-class recall asymmetry is
+  why `bacterial_leaf_spot` recall sits at 0.52 vs the rest of the
+  taxonomy at 0.68 – 1.00. Closing this gap is in `ROADMAP.md`
+  (higher-resolution crops + hard-negative mining).
+- **INT8 quantisation did not ship.** §5.3.4 documents the static and
+  dynamic quant failures; the deployed `classifier_int8.onnx` is the
+  FP32 ONNX renamed. Latency on CPU is ~2× the projected INT8 envelope.
 - **`not_a_plant` is COCO-only today.** The wider OE-pool described
   in the README (OpenImages V7 indoor + iNat Animalia + recycled
   user uploads) is a v2.2 task.
