@@ -64,11 +64,12 @@ android {
     }
 
     lint {
-        // Don't fail the build on lint warnings, but DO run lint on
-        // release builds — we want to catch regressions before APKs
-        // ship.
-        abortOnError = false
+        // Fail the release build on lint errors so we catch regressions
+        // in CI rather than on-device. Warnings are still non-fatal —
+        // `warningsAsErrors = false` preserves that.
+        abortOnError = true
         checkReleaseBuilds = true
+        warningsAsErrors = false
     }
 
     compileOptions {

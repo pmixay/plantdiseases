@@ -63,7 +63,17 @@ with the deployment distribution and would inflate coverage.
   `WeightedRandomSampler` is **off** by default to avoid double
   rebalancing of rare classes. (τ was lowered from 0.7 once per-class
   capping flattened the post-cap distribution; the old value was
-  over-correcting for an imbalance the data no longer had.)
+  over-correcting for an imbalance the data no longer had. After
+  enabling the per-image source sampler below the empirical prior
+  shifts again, so τ should be revalidated with the `TAU_ABLATION`
+  switch in §4.)
+* **Per-image source sampler**: `USE_SOURCE_WEIGHTED_SAMPLER=True`
+  by default. PlantDoc rows are drawn at half the rate of
+  iNaturalist / PlantVillage / COCO / Openverse, pulling the
+  empirical training prior toward the houseplant deployment
+  distribution noted in `ROADMAP.md`. Composes with the loss-side
+  logit adjustment (it is a sample-rate weight, not a class
+  rebalance); never enable in tandem with `USE_WEIGHTED_SAMPLER`.
 * Augs: indoor-targeted — WB shift, glare, defocus / motion blur,
   JPEG re-compression, mild ColorJitter (brightness/contrast/sat
   only), RandomErasing. **No** strong hue rotation / Solarize —
@@ -159,10 +169,11 @@ Colab T4 is roughly 2-3× slower; reduce `BATCH=64`.
   Sansevieria, Calathea) lives or dies on the iNat houseplant
   supplement and the labelled real-world batch noted in
   `ROADMAP.md`.
-* **`not_a_plant` is COCO-only today.** The notebook downloads only
-  COCO val2017 negatives. The wider OE-pool described in `README.md`
-  (OpenImages V7 indoor scenes + iNat Animalia + recycled user
-  uploads) is a v2.2 task — see `ROADMAP.md`.
+* **`not_a_plant` mix.** The notebook downloads COCO val2017 plus
+  research-grade iNat Animalia observations (~400, source tag
+  `inat_animalia`) so the OOD gate sees household clutter beyond the
+  studio-clean COCO frames. OpenImages V7 indoor scenes are still
+  deferred to v2.2 — see `ROADMAP.md`.
 * **NAP is excluded from `temperature_cal` and `conformal_cal`.** Both
   splits are restricted to `{plantdoc, inat}` to keep the calibration
   in the deployment distribution. COCO never enters either split, so

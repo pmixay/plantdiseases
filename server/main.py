@@ -472,6 +472,23 @@ async def version():
     """Server version and model architecture."""
     if pipeline is None:
         raise HTTPException(status_code=503, detail="Pipeline not ready")
+    # Read the int8 ship flag from model_card.json so operators can see at
+    # a glance whether the deployed classifier_int8.onnx is genuine INT8
+    # or the FP32 ONNX renamed (see MODEL_CARD.md, "Known caveats"). We
+    # default conservatively to false if the file is missing or malformed
+    # so that callers can never accidentally believe INT8 shipped.
+    int8_shipped = False
+    int8_artifact: str | None = None
+    try:
+        with open(MODELS_DIR / "model_card.json", "r", encoding="utf-8") as fh:
+            card = json.load(fh)
+        int8_section = card.get("int8") or {}
+        int8_shipped = bool(int8_section.get("shipped", False))
+        artifact = int8_section.get("shipped_artifact")
+        if isinstance(artifact, str):
+            int8_artifact = artifact
+    except (OSError, ValueError):
+        pass
     return {
         "version": APP_VERSION,
         "classifier_name": "plantvision",
@@ -482,6 +499,8 @@ async def version():
         ),
         "stages": 2,
         "focus": "houseplants",
+        "int8_shipped": int8_shipped,
+        "int8_artifact": int8_artifact,
     }
 
 

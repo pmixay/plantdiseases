@@ -7,6 +7,11 @@
 -dontwarn retrofit2.**
 -keep class retrofit2.** { *; }
 
+# Our Retrofit interface — R8 sometimes drops the annotations on
+# user interfaces even when the generic keepclassmembernames rule
+# above matches. Pin it explicitly.
+-keep interface com.plantdiseases.app.data.remote.ApiService { *; }
+
 # OkHttp
 -dontwarn okhttp3.**
 -dontwarn okio.**
@@ -17,6 +22,11 @@
 -keep class com.plantdiseases.app.data.model.** { *; }
 -keep class com.google.gson.reflect.TypeToken { *; }
 -keep class * extends com.google.gson.reflect.TypeToken
+
+# Repository exceptions are returned inside Result<> and matched by
+# class in callers' when-blocks. Keep them so R8 minification doesn't
+# collapse the sealed hierarchy.
+-keep class com.plantdiseases.app.data.repository.** { *; }
 
 # Room
 -keep class * extends androidx.room.RoomDatabase

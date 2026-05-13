@@ -21,7 +21,9 @@
     "chat_max_tokens": 512,
     "chat_session_turn_cap": 20,
     "chat_session_token_cap": 8000,
-    "chat_session_ttl_sec": 3600
+    "chat_session_ttl_sec": 3600,
+    "chat_session_max_messages": 60,
+    "chat_history_keep_last": 12
   },
   "plantnet": {
     "plantnet_api_key": "",

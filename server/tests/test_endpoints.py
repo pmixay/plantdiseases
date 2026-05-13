@@ -74,6 +74,53 @@ def test_metrics_prometheus_format(client):
     assert "plantdiseases_build_info" in text
 
 
+def test_analyze_int8_flag_surfaced(client):
+    """`/api/version` must expose `int8_shipped` so operators can see
+    that the deployed `classifier_int8.onnx` is genuine INT8 (true) or
+    the FP32 ONNX renamed (false). The flag is read from
+    `models/model_card.json` at request time; it is OK for it to be
+    absent (-> false) on a fresh checkout.
+    """
+    r = client.get("/api/version")
+    assert r.status_code == 200
+    body = r.json()
+    assert "int8_shipped" in body
+    assert isinstance(body["int8_shipped"], bool)
+    assert "int8_artifact" in body
+
+
+def test_analyze_inference_timeout_504(client, png_bytes):
+    """A pipeline that takes longer than `INFERENCE_TIMEOUT` must yield
+    a 504 (asyncio.wait_for path). We patch the live `pipeline.analyze`
+    to block past the timeout and temporarily shrink `INFERENCE_TIMEOUT`
+    so the test runs in well under a second.
+    """
+    import time
+
+    import main as server_main
+
+    real_pipeline = server_main.pipeline
+    real_timeout = server_main.INFERENCE_TIMEOUT
+    original_analyze = real_pipeline.analyze
+
+    def _slow_analyze(img):  # runs in the inference threadpool
+        time.sleep(0.5)
+        return original_analyze(img)
+
+    real_pipeline.analyze = _slow_analyze
+    server_main.INFERENCE_TIMEOUT = 0.05
+    try:
+        r = client.post(
+            "/api/analyze",
+            files={"image": ("leaf.png", png_bytes, "image/png")},
+        )
+        assert r.status_code == 504, r.text
+        assert "timed out" in r.json()["detail"].lower()
+    finally:
+        real_pipeline.analyze = original_analyze
+        server_main.INFERENCE_TIMEOUT = real_timeout
+
+
 def test_analyze_response_contract(client, png_bytes):
     r = client.post(
         "/api/analyze",

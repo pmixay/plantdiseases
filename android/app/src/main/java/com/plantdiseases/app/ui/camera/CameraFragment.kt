@@ -22,6 +22,8 @@ import android.view.ViewGroup
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.*
+import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
@@ -259,14 +261,19 @@ class CameraFragment : Fragment() {
 
             // Real-time framing analyzer. STRATEGY_KEEP_ONLY_LATEST drops
             // backpressured frames so we never queue work behind the
-            // preview when the device is under load. setTargetResolution
-            // is deprecated in CameraX 1.3 in favour of ResolutionSelector
-            // but still works and keeps the dependency surface minimal.
+            // preview when the device is under load.
             val executor = analyzerExecutor ?: Executors.newSingleThreadExecutor()
                 .also { analyzerExecutor = it }
-            @Suppress("DEPRECATION")
+            val resolutionSelector = ResolutionSelector.Builder()
+                .setResolutionStrategy(
+                    ResolutionStrategy(
+                        Size(320, 240),
+                        ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER,
+                    )
+                )
+                .build()
             val analysisBuilder = ImageAnalysis.Builder()
-                .setTargetResolution(Size(320, 240))
+                .setResolutionSelector(resolutionSelector)
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
             imageAnalysis = analysisBuilder
                 .build()
