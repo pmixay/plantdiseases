@@ -28,12 +28,16 @@ Class taxonomy and architecture are frozen — see `MODEL_CARD.md` and
       public release if smoke F1 < 0.45.
 - [ ] **Houseplant data augment.** ≥ 200 labelled real indoor photos
       per class from iNat (filtered), r/houseplants, internal donations,
-      Roboflow Universe houseplant projects. Reweight
-      `(source="plantdoc")` rows ≤ 0.5 in the sampler so agricultural
-      close-ups don't dominate.
-- [ ] **Accuracy smoke test in CI.**
-      `server/tests/test_accuracy_smoke.py` with a 30+ image golden set
-      and a macro-F1 ≥ 0.65 floor.
+      Roboflow Universe houseplant projects. PlantDoc reweighting is
+      already wired — `USE_SOURCE_WEIGHTED_SAMPLER=True` with
+      `SOURCE_WEIGHTS['plantdoc']=0.5` in
+      `train_notebook.ipynb` §4. The remaining lever is the data
+      collection itself.
+- [x] **Accuracy smoke test in CI.**
+      `server/tests/test_accuracy_smoke.py` writes per-class metrics
+      to `server/models/smoke_metrics.json` and asserts macro-F1 ≥
+      0.65. Skipped gracefully when model artefacts or
+      `data_v2/smoke/` are absent (typical CI on a fresh clone).
 - [ ] **Boot test against real artefacts.** `pytest server/tests/`
       green; `/api/version` returns `2.1`; `/api/classes` returns 7.
 
@@ -67,9 +71,11 @@ Class taxonomy and architecture are frozen — see `MODEL_CARD.md` and
       is agricultural; ship-gate on `val_realworld` overestimates real
       accuracy by 25–40 pp (cross-domain literature: Frontiers /
       Springer 2025).
-- [ ] **OE-pool is COCO-only.** README claims OpenImages V7 + iNat
-      Animalia + recycled user uploads but only COCO val2017 is
-      downloaded. Either drop the broader claim or wire OpenImages.
+- [ ] **OE-pool: iNat Animalia wired, OpenImages still pending.** §2
+      now calls `fetch_inat_animalia_for_nap(target_n=400)` after the
+      COCO download so the OOD gate sees household clutter beyond
+      studio-clean COCO frames. OpenImages V7 indoor scenes remain
+      the v2.2 task (CSV index ~2 GB).
 - [ ] **Phytophthora cinnamomi filter is name-only.** Hard-filter the
       iNat taxon_id, not just genus/species name (root pathogen, not a
       leaf disease).
@@ -104,8 +110,8 @@ Class taxonomy and architecture are frozen — see `MODEL_CARD.md` and
       `network_security_config.xml` for release. Replace `API_BASE_URL`
       default in `app/build.gradle.kts:26` with the HTTPS prod URL;
       debug keeps HTTP for LAN. Wire via `manifestPlaceholders`.
-- [ ] **Enable lint in CI.** `app/build.gradle.kts:70` —
-      `abortOnError = true`.
+- [x] **Enable lint in CI.** `app/build.gradle.kts` —
+      `abortOnError = true`. Done.
 - [ ] **Minimal unit tests.** `app/src/test/`. Cover: `ApiService`
       retry logic, `AnalyzeResponse` parsing, `ScanRepository`
       transactions. ≥ 10 tests via `./gradlew test`.
@@ -148,8 +154,8 @@ Class taxonomy and architecture are frozen — see `MODEL_CARD.md` and
 - [ ] **Split `ResultActivity.kt` (1189 lines).** Extract
       `ResultHeaderView`, `ResultTreatmentView`, `ResultCarePlanView`,
       `ResultDoctorView`. Activity ≤ 350 lines.
-- [ ] **`ResolutionSelector` instead of `setTargetResolution`.**
-      `CameraFragment.kt:269`. Drop `@Suppress("DEPRECATION")`.
+- [x] **`ResolutionSelector` instead of `setTargetResolution`.**
+      `CameraFragment.kt`. Migrated; `@Suppress("DEPRECATION")` dropped.
 - [ ] **Cold-start UX toast.** On 503 + retry — single "Server is
       warming up..." toast per session, even after 5+ retries.
 
