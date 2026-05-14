@@ -23,7 +23,7 @@ android {
         // override this at build time:
         //   ./gradlew :app:assembleDebug -PAPI_BASE_URL=https://api.example.com/
         val configuredApiBaseUrl = providers.gradleProperty("API_BASE_URL")
-            .orElse("http://pdiseases.pichotin.ru/")
+            .orElse("http://pdis.arbuz.lol/")
             .get()
             .let { if (it.endsWith("/")) it else "$it/" }
             .replace("\\", "\\\\")
