@@ -1276,11 +1276,22 @@ def generate_care_plan(
     placement = _localise("placement", light_key, light_profile["placement"], locale)
     acclimation = _localise("acclimation", light_key, light_profile["acclimation"], locale)
     soil_mix = _localise("soil_mix", light_key, base["soil_mix"], locale)
-    fert_npk = _localise(
-        "fertiliser_npk", disease,
-        protocol.get("fertiliser_npk", base["fertiliser_npk"]),
-        locale,
-    )
+    # ``fertiliser_npk`` is unusual: the canonical English value can
+    # come from either the disease protocol (e.g. nutrient_deficiency
+    # overrides it) OR the light-tier base table. ``_localise`` keys
+    # by a single string, so a plain call against `disease` misses
+    # the base-tier RU strings for diseases that don't override the
+    # field (powdery_mildew, healthy, etc.). Walk both tables in the
+    # same order the English fallback does.
+    fert_npk_en = protocol.get("fertiliser_npk", base["fertiliser_npk"])
+    if _is_russian(locale):
+        fert_npk = (
+            _DISEASE_PROTOCOL_RU.get(disease, {}).get("fertiliser_npk")
+            or _BASE_CARE_TEXT_RU.get(light_key, {}).get("fertiliser_npk")
+            or fert_npk_en
+        )
+    else:
+        fert_npk = fert_npk_en
     key_action = _localise(
         "key_action", disease,
         protocol.get("key_action", "Monitor weekly."),

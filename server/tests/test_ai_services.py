@@ -277,3 +277,36 @@ def test_chat_session_caps_message_history_growth():
     assert len(sess.messages) == ai.CHAT_SESSION_MAX_MESSAGES
     # The oldest messages should be the ones evicted (FIFO).
     assert sess.messages[0]["content"] == f"msg {25}"
+
+
+def test_care_plan_ru_localises_fertiliser_npk_from_light_tier():
+    """For diseases that don't override fertiliser_npk (powdery_mildew,
+    healthy, sunburn, ...) the English string falls through to the
+    light-tier base. The RU plan must follow the same fall-through —
+    a Russian call must NOT leak the English "balanced 3-1-2 at full
+    strength" sentinel.
+    """
+    import ai_services as ai
+
+    for d in ("powdery_mildew", "healthy", "sunburn_or_scorch"):
+        plan = ai.generate_care_plan(
+            disease=d, light="bright_indirect", locale="ru",
+        )
+        fert = plan["fertiliser_npk"]
+        assert isinstance(fert, str) and fert.strip()
+        assert "balanced" not in fert.lower(), (
+            f"{d}: fertiliser_npk leaked English fallback: {fert!r}"
+        )
+
+
+def test_care_plan_ru_localises_fertiliser_npk_from_disease_override():
+    """nutrient_deficiency overrides fertiliser_npk on the disease
+    side. The Russian plan must surface that override's RU copy, not
+    the base-tier RU string nor the English original.
+    """
+    import ai_services as ai
+
+    plan = ai.generate_care_plan(
+        disease="nutrient_deficiency", light="bright_indirect", locale="ru",
+    )
+    assert "хелат" in plan["fertiliser_npk"].lower()
