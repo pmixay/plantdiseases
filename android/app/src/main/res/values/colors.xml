@@ -86,6 +86,7 @@
     <color name="shimmer_base">#E2EBE3</color>
     <color name="shimmer_highlight">#F5FAF5</color>
     <color name="camera_scrim">#33000000</color>
+    <color name="camera_control_scrim">#66000000</color>
 
     <!-- ─── AI Doctor chat bubbles ───────────────────────────────
          Liquid-glass styling: bot bubble is frosted white, user bubble

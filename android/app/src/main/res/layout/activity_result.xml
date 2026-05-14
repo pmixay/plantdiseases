@@ -496,10 +496,10 @@
             </com.google.android.material.card.MaterialCardView>
 
             <!-- "Similar scans near you" — server-side community corpus.
-                 The card stays hidden when no region is resolved or
-                 there's nothing nearby; otherwise it renders a
-                 horizontal carousel of recent diagnoses from the same
-                 region. Each row's thumbnail loads via
+                 Renders a header, a "top diseases" chip row built from
+                 the regional summary, an empty-state hint, and a
+                 horizontal carousel of the most recent diagnoses in
+                 the same region. Each thumbnail loads via
                  /api/community/thumb/<filename> from ServerConfig
                  .baseUrl. -->
             <com.google.android.material.card.MaterialCardView
@@ -526,7 +526,7 @@
                             android:layout_height="22dp"
                             android:src="@drawable/ic_garden"
                             android:contentDescription="@null"
-                            app:tint="@color/primary" />
+                            app:tint="?attr/colorPrimary" />
 
                         <TextView
                             android:layout_width="0dp"
@@ -544,14 +544,42 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_xs"
                         android:textSize="@dimen/text_body_sm"
-                        android:textColor="@color/on_surface_secondary" />
+                        android:textColor="?attr/colorOnSurfaceVariant" />
+
+                    <!-- Top diseases in the region — empty when summary
+                         arrives with no entries (rare for non-empty
+                         corpora). -->
+                    <com.google.android.material.chip.ChipGroup
+                        android:id="@+id/chip_group_top_diseases"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_md"
+                        app:singleLine="false"
+                        app:chipSpacingHorizontal="@dimen/space_xs"
+                        app:chipSpacingVertical="@dimen/space_xs"
+                        android:visibility="gone" />
+
+                    <!-- Empty state shown when the region has no recent
+                         scans yet. Keeps the card on screen so the user
+                         understands the feature exists. -->
+                    <TextView
+                        android:id="@+id/tv_similar_empty"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_md"
+                        android:gravity="center"
+                        android:padding="@dimen/space_lg"
+                        android:textAppearance="@style/TextAppearance.App.Body"
+                        android:textColor="?attr/colorOnSurfaceVariant"
+                        android:visibility="gone" />
 
                     <androidx.recyclerview.widget.RecyclerView
                         android:id="@+id/rv_similar_scans"
                         android:layout_width="match_parent"
-                        android:layout_height="128dp"
+                        android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_md"
-                        android:clipToPadding="false" />
+                        android:clipToPadding="false"
+                        android:paddingEnd="@dimen/space_md" />
 
                 </LinearLayout>
 

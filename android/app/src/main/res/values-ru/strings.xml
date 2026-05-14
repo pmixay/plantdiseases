@@ -156,8 +156,10 @@
 
     <string name="similar_scans_title">Похожие сканы рядом</string>
     <string name="similar_scans_subtitle">%1$d сканов рядом с %2$s</string>
+    <string name="similar_scans_subtitle_region">Недавние диагнозы рядом с %1$s</string>
     <string name="similar_scans_subtitle_no_region">Включите приблизительное местоположение, чтобы видеть сканы рядом.</string>
     <string name="similar_scans_empty">Похожих сканов пока нет — ваш будет первым.</string>
+    <string name="similar_scans_chip_format">%1$s · %2$d</string>
 
     <string name="community_consent_title">Делиться сканами с сообществом?</string>
     <string name="community_consent_body">PlantDiseases может загрузить миниатюру скана и диагноз, чтобы помочь другим в вашем регионе. Передаётся только регион (город и страна) — точная геолокация остаётся на устройстве. В любой момент можно выключить в профиле.</string>
@@ -215,11 +217,6 @@
     <string name="grid_overlay">Сетка</string>
     <string name="zoom_indicator">%sx</string>
 
-    <!-- Real-time leaf framing (PlantVision auto-capture) -->
-    <string name="frame_hint_red">Наведите на лист растения</string>
-    <string name="frame_hint_amber">Поместите лист в кадр</string>
-    <string name="frame_hint_green">Держите ровно…</string>
-    <string name="frame_hint_capturing">Готово</string>
     <!-- My Garden -->
     <string name="tab_garden">Сад</string>
     <string name="garden_title">Мой сад</string>
@@ -328,10 +325,6 @@
     <string name="light_species_tropical">Тропические</string>
     <string name="light_species_fern">Папоротник</string>
     <string name="light_species_vegetable">Овощи / Зелень</string>
-    <!-- TTS -->
-    <string name="speak_read_aloud">Озвучить</string>
-    <string name="speak_stop">Стоп</string>
-    <string name="speak_unavailable">Озвучивание недоступно для этого языка.</string>
 
     <!-- Care Plan -->
     <string name="care_plan_title">План ухода</string>

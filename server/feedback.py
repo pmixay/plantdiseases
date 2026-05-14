@@ -12,11 +12,6 @@ connection per call. A module-level RLock serialises writes so two
 concurrent requests can't race on the (cheap) cursor / commit cycle.
 The classifier inference loop dominates wall time, so the lock is
 never the bottleneck.
-
-Schema is forward-compatible: ``init_db()`` adds any missing columns
-from ``_EXTRA_COLUMNS`` on startup so older DB files keep working when
-the server is upgraded. We never drop columns — orphaned data stays
-in place for the retraining loop to ignore.
 """
 
 from __future__ import annotations
@@ -45,18 +40,35 @@ FEEDBACK_DB_PATH = Path(get_str("FEEDBACK_DB_PATH", str(_DEFAULT_DB_PATH)))
 # break correlation across deployments.
 _IP_HASH_PEPPER = get_str("FEEDBACK_IP_PEPPER", "plantvision-static-pepper-v1")
 
-_CORE_SCHEMA = """
+_SCHEMA = """
 CREATE TABLE IF NOT EXISTS feedback (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    scan_id         TEXT    NOT NULL,
-    correct         INTEGER NOT NULL,
-    corrected_class TEXT,
-    note            TEXT,
-    client_ip       TEXT,
-    created_at      INTEGER NOT NULL
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    scan_id               TEXT    NOT NULL,
+    correct               INTEGER NOT NULL,
+    corrected_class       TEXT,
+    note                  TEXT,
+    client_ip             TEXT,
+    created_at            INTEGER NOT NULL,
+    predicted_class       TEXT,
+    predicted_confidence  REAL,
+    top3_json             TEXT,
+    model_version         TEXT,
+    app_version           TEXT,
+    locale                TEXT,
+    platform              TEXT,
+    user_pseudo_id        TEXT,
+    region_count          INTEGER,
+    primary_region_index  INTEGER,
+    feedback_latency_ms   INTEGER,
+    reason                TEXT,
+    image_hash            TEXT,
+    client_ip_hash        TEXT
 );
-CREATE INDEX IF NOT EXISTS ix_feedback_scan_id  ON feedback(scan_id);
-CREATE INDEX IF NOT EXISTS ix_feedback_created  ON feedback(created_at);
+CREATE INDEX IF NOT EXISTS ix_feedback_scan_id        ON feedback(scan_id);
+CREATE INDEX IF NOT EXISTS ix_feedback_created        ON feedback(created_at);
+CREATE INDEX IF NOT EXISTS ix_feedback_user_pseudo    ON feedback(user_pseudo_id);
+CREATE INDEX IF NOT EXISTS ix_feedback_model_version  ON feedback(model_version);
+CREATE INDEX IF NOT EXISTS ix_feedback_predicted_class ON feedback(predicted_class);
 
 -- Short-lived issuance log. /api/analyze inserts a row here per
 -- response; /api/feedback consults it before accepting a payload so
@@ -68,48 +80,11 @@ CREATE TABLE IF NOT EXISTS issued_scan_ids (
     created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_issued_created ON issued_scan_ids(created_at);
-
--- Tiny key/value table for one-shot maintenance sentinels. Lets
--- ``init_db`` run a forward-only migration (e.g. clearing pre-gate
--- rows) exactly once per DB without an out-of-band step.
-CREATE TABLE IF NOT EXISTS schema_meta (
-    key   TEXT PRIMARY KEY,
-    value TEXT
-);
 """
-
-# Columns added in later schema revisions. Listed (name, DDL fragment)
-# so init_db can ALTER TABLE on an existing DB without losing rows.
-_EXTRA_COLUMNS: tuple[tuple[str, str], ...] = (
-    ("predicted_class",       "TEXT"),
-    ("predicted_confidence",  "REAL"),
-    ("top3_json",             "TEXT"),
-    ("model_version",         "TEXT"),
-    ("app_version",           "TEXT"),
-    ("locale",                "TEXT"),
-    ("platform",              "TEXT"),
-    ("user_pseudo_id",        "TEXT"),
-    ("region_count",          "INTEGER"),
-    ("primary_region_index",  "INTEGER"),
-    ("feedback_latency_ms",   "INTEGER"),
-    ("reason",                "TEXT"),
-    ("image_hash",            "TEXT"),
-    ("client_ip_hash",        "TEXT"),
-)
-
-_EXTRA_INDICES: tuple[str, ...] = (
-    "CREATE INDEX IF NOT EXISTS ix_feedback_user_pseudo ON feedback(user_pseudo_id);",
-    "CREATE INDEX IF NOT EXISTS ix_feedback_model_version ON feedback(model_version);",
-    "CREATE INDEX IF NOT EXISTS ix_feedback_predicted_class ON feedback(predicted_class);",
-)
 
 _write_lock = threading.RLock()
 _init_lock = threading.Lock()
 _initialised = False
-
-# Marker stored in ``schema_meta`` once the one-shot legacy cleanup
-# has run. Bumping the suffix re-arms the migration.
-_LEGACY_CLEANUP_SENTINEL = "legacy_cleanup_v1"
 
 
 def _connect() -> sqlite3.Connection:
@@ -129,45 +104,15 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
-def _existing_columns(conn: sqlite3.Connection) -> set[str]:
-    rows = conn.execute("PRAGMA table_info(feedback)").fetchall()
-    return {row[1] for row in rows}
-
-
 def init_db() -> None:
-    """Create the schema if it doesn't already exist. Idempotent.
-
-    Also runs a forward-only migration step: any column in
-    ``_EXTRA_COLUMNS`` that's missing from an existing DB is added
-    with ``ALTER TABLE``. SQLite ``ADD COLUMN`` is O(1) on append-only
-    tables, so this stays cheap even with millions of rows.
-    """
+    """Create the schema if it doesn't already exist. Idempotent."""
     global _initialised
     with _init_lock:
         if _initialised:
             return
         FEEDBACK_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
         with _connect() as conn:
-            conn.executescript(_CORE_SCHEMA)
-            present = _existing_columns(conn)
-            for name, ddl in _EXTRA_COLUMNS:
-                if name not in present:
-                    conn.execute(f"ALTER TABLE feedback ADD COLUMN {name} {ddl}")
-            for index_sql in _EXTRA_INDICES:
-                conn.execute(index_sql)
-            # One-shot maintenance: drop rows that predate the
-            # hashed-IP + issued-scan-id-gate migration. The
-            # sentinel guarantees this runs exactly once per DB.
-            sentinel = conn.execute(
-                "SELECT 1 FROM schema_meta WHERE key = ?",
-                (_LEGACY_CLEANUP_SENTINEL,),
-            ).fetchone()
-            if not sentinel:
-                deleted = _cleanup_legacy_rows_locked(conn)
-                conn.execute(
-                    "INSERT OR IGNORE INTO schema_meta (key, value) VALUES (?, ?)",
-                    (_LEGACY_CLEANUP_SENTINEL, str(deleted)),
-                )
+            conn.executescript(_SCHEMA)
         _initialised = True
         logger.info("Feedback DB ready at %s", FEEDBACK_DB_PATH)
 
@@ -353,57 +298,6 @@ def prune_older_than(days: int) -> int:
     return int(deleted or 0)
 
 
-def _cleanup_legacy_rows_locked(conn: sqlite3.Connection) -> int:
-    """Run the cleanup DELETE on an already-open, already-locked
-    connection. Factored out so ``init_db`` can call it inside the
-    same transaction that writes the sentinel.
-
-    Two predicates, OR'd:
-
-      * ``client_ip IS NOT NULL`` — every post-migration row writes
-        only ``client_ip_hash``, leaving ``client_ip`` NULL. A
-        non-null value identifies pre-hash legacy rows.
-      * ``scan_id NOT IN issued_scan_ids`` — every legitimately-
-        issued scan_id is recorded by ``record_issued_scan_id``,
-        so the absence flags an unminted (test or hostile) row.
-    """
-    cur = conn.execute(
-        "DELETE FROM feedback "
-        " WHERE client_ip IS NOT NULL "
-        "    OR scan_id NOT IN (SELECT scan_id FROM issued_scan_ids)"
-    )
-    deleted = int(cur.rowcount or 0)
-    if deleted:
-        logger.info("cleanup_legacy_rows deleted %d row(s)", deleted)
-    return deleted
-
-
-def cleanup_legacy_rows() -> int:
-    """One-shot maintenance: drop feedback rows that predate the
-    hashed-IP + min_length=8 + issued-scan-id-gate migration, plus
-    any row whose scan_id was never minted by /api/analyze.
-
-    Idempotent — once the bad rows are gone, every surviving row
-    has ``client_ip IS NULL`` and a minted scan_id, so re-running
-    is a no-op.
-
-    Auto-invoked once per DB by ``init_db`` (guarded by the
-    ``legacy_cleanup_v1`` sentinel in ``schema_meta``). Also
-    exposed via ``python -m server.feedback --cleanup-legacy`` for
-    manual re-runs on a DB copy.
-    """
-    init_db()
-    with _write_lock, _connect() as conn:
-        conn.execute("BEGIN")
-        try:
-            deleted = _cleanup_legacy_rows_locked(conn)
-            conn.execute("COMMIT")
-        except Exception:
-            conn.execute("ROLLBACK")
-            raise
-    return deleted
-
-
 def daily_write_count_for_ip_hash(ip_hash: str | None) -> int:
     """Number of feedback rows the given IP hash has produced in the
     last 24 hours. Used by the per-IP daily quota guard in
@@ -517,26 +411,3 @@ def feedback_counts() -> dict:
         "top_corrections": top_corrections,
         "reasons": reasons,
     }
-
-
-if __name__ == "__main__":
-    # Tiny CLI so operators can re-run the cleanup on a DB copy
-    # (e.g. after restoring a backup) without spinning up the
-    # server. Invoke with ``python -m server.feedback --cleanup-legacy``.
-    import argparse
-    import sys
-
-    logging.basicConfig(level=logging.INFO)
-    parser = argparse.ArgumentParser(description="Feedback DB maintenance")
-    parser.add_argument(
-        "--cleanup-legacy",
-        action="store_true",
-        help="Drop pre-gate rows (raw client_ip set, or unminted scan_id).",
-    )
-    args = parser.parse_args()
-    if args.cleanup_legacy:
-        n = cleanup_legacy_rows()
-        print(f"cleanup_legacy_rows: deleted {n} row(s)")
-    else:
-        parser.print_help()
-        sys.exit(1)

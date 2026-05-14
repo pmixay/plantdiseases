@@ -11,7 +11,6 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.Uri
 import android.os.Bundle
-import android.util.Size
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
@@ -21,13 +20,10 @@ import android.view.ViewGroup
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.*
-import androidx.camera.core.resolutionselector.ResolutionSelector
-import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.databinding.FragmentCameraBinding
@@ -36,8 +32,6 @@ import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
 import kotlinx.coroutines.launch
 import java.util.Locale
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
 
 class CameraFragment : Fragment() {
 
@@ -45,18 +39,11 @@ class CameraFragment : Fragment() {
     private val binding get() = _binding!!
 
     private var imageCapture: ImageCapture? = null
-    private var imageAnalysis: ImageAnalysis? = null
     private var cameraProvider: ProcessCameraProvider? = null
     private var camera: Camera? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private lateinit var scaleGestureDetector: ScaleGestureDetector
-    private var analyzerExecutor: ExecutorService? = null
 
-    // Live framing hint state. The analyzer still publishes a
-    // GREEN/AMBER/RED quality signal so the user gets real-time
-    // "you're too close / too dark / hold steady" feedback, but the
-    // shutter is now explicitly user-triggered — no more auto-fire.
-    private var lastQuality: LeafFrameAnalyzer.Quality? = null
     private var captureInFlight = false
 
     private val PREFS_NAME = "plantdiseases_prefs"
@@ -97,7 +84,6 @@ class CameraFragment : Fragment() {
         loadRecentScans()
         registerNetworkCallback()
         restoreGridOverlay()
-        applyFrameQuality(LeafFrameAnalyzer.Quality.RED)
     }
 
     private fun setupUI() {
@@ -109,7 +95,6 @@ class CameraFragment : Fragment() {
         binding.btnGrantPermission.setOnClickListener {
             permissionLauncher.launch(Manifest.permission.CAMERA)
         }
-        binding.tvScanHint.text = getString(R.string.frame_hint_red)
 
         binding.cameraPreview.setOnTouchListener { _, event ->
             scaleGestureDetector.onTouchEvent(event)
@@ -252,37 +237,13 @@ class CameraFragment : Fragment() {
                 .setTargetRotation(rotation)
                 .build()
 
-            // Real-time framing analyzer. STRATEGY_KEEP_ONLY_LATEST drops
-            // backpressured frames so we never queue work behind the
-            // preview when the device is under load.
-            val executor = analyzerExecutor ?: Executors.newSingleThreadExecutor()
-                .also { analyzerExecutor = it }
-            val resolutionSelector = ResolutionSelector.Builder()
-                .setResolutionStrategy(
-                    ResolutionStrategy(
-                        Size(320, 240),
-                        ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER,
-                    )
-                )
-                .build()
-            val analysisBuilder = ImageAnalysis.Builder()
-                .setResolutionSelector(resolutionSelector)
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-            imageAnalysis = analysisBuilder
-                .build()
-                .apply {
-                    setAnalyzer(executor, LeafFrameAnalyzer { signal ->
-                        view?.post { onFrameSignal(signal) }
-                    })
-                }
-
             val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
 
             try {
                 cameraProvider?.unbindAll()
                 camera = cameraProvider?.bindToLifecycle(
                     viewLifecycleOwner, cameraSelector,
-                    preview, imageCapture, imageAnalysis,
+                    preview, imageCapture,
                 )
 
                 binding.btnFlash.visibility =
@@ -292,15 +253,6 @@ class CameraFragment : Fragment() {
                 Toast.makeText(requireContext(), getString(R.string.camera_error), Toast.LENGTH_SHORT).show()
             }
         }, ContextCompat.getMainExecutor(requireContext()))
-    }
-
-    private fun onFrameSignal(signal: LeafFrameAnalyzer.FrameSignal) {
-        if (_binding == null) return
-        // The analyzer still drives the framing HUD — it tells the
-        // user when they're holding the phone too far, too close, or
-        // in dim light. The shutter itself stays under the user's
-        // finger so two-species shots and accidental fires are gone.
-        applyFrameQuality(signal.quality)
     }
 
     /** Explicit shutter click. Shows the pre-scan tips sheet the
@@ -322,17 +274,6 @@ class CameraFragment : Fragment() {
      *  straight to capture. */
     private fun continueCaptureFlow() {
         takePhoto()
-    }
-
-    private fun applyFrameQuality(quality: LeafFrameAnalyzer.Quality) {
-        if (lastQuality == quality) return
-        lastQuality = quality
-        val hintRes = when (quality) {
-            LeafFrameAnalyzer.Quality.GREEN -> R.string.frame_hint_green
-            LeafFrameAnalyzer.Quality.AMBER -> R.string.frame_hint_amber
-            LeafFrameAnalyzer.Quality.RED -> R.string.frame_hint_red
-        }
-        binding.tvScanHint.setText(hintRes)
     }
 
     private fun takePhoto() {
@@ -494,9 +435,6 @@ class CameraFragment : Fragment() {
             cm.unregisterNetworkCallback(it)
         }
         networkCallback = null
-        analyzerExecutor?.shutdown()
-        analyzerExecutor = null
-        imageAnalysis = null
         _binding = null
     }
 

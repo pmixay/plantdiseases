@@ -7,7 +7,6 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.net.Uri
 import android.os.Bundle
-import android.speech.tts.TextToSpeech
 import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
@@ -49,7 +48,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
-import java.util.Locale
 
 class ResultActivity : AppCompatActivity() {
 
@@ -59,8 +57,6 @@ class ResultActivity : AppCompatActivity() {
     private lateinit var scaleGestureDetector: ScaleGestureDetector
     private var skeletonAnimator: ValueAnimator? = null
 
-    private var tts: TextToSpeech? = null
-    private var ttsReady = false
     private var carePlanCard: CarePlanCardView? = null
 
     override fun attachBaseContext(newBase: Context) {
@@ -82,43 +78,22 @@ class ResultActivity : AppCompatActivity() {
         setupToolbarMenu()
         setupPinchToZoom()
         setupStickyHeader()
-        initTts()
         loadResult(scanId)
     }
 
-    private var toolbarSpeakItem: android.view.MenuItem? = null
     private var pendingScanForToolbar: ScanEntity? = null
 
     private fun setupToolbarMenu() {
         binding.toolbar.inflateMenu(R.menu.result_toolbar_menu)
-        toolbarSpeakItem = binding.toolbar.menu.findItem(R.id.action_speak)
         binding.toolbar.setOnMenuItemClickListener { item ->
             val scan = pendingScanForToolbar ?: return@setOnMenuItemClickListener false
             when (item.itemId) {
-                R.id.action_speak -> {
-                    onSpeakAction(scan)
-                    true
-                }
                 R.id.action_delete -> {
                     onDeleteAction(scan)
                     true
                 }
                 else -> false
             }
-        }
-    }
-
-    private fun onSpeakAction(scan: ScanEntity) {
-        if (!ttsReady) {
-            Toast.makeText(this, R.string.speak_unavailable, Toast.LENGTH_SHORT).show()
-            return
-        }
-        Haptics.tick(this)
-        if (tts?.isSpeaking == true) {
-            tts?.stop()
-            updateSpeakIcon(speaking = false)
-        } else if (speakResult(scan, LocaleHelper.isRussian(this))) {
-            updateSpeakIcon(speaking = true)
         }
     }
 
@@ -136,13 +111,6 @@ class ResultActivity : AppCompatActivity() {
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
-    }
-
-    private fun updateSpeakIcon(speaking: Boolean) {
-        toolbarSpeakItem?.let { item ->
-            item.setIcon(if (speaking) R.drawable.ic_close else R.drawable.ic_speak)
-            item.title = getString(if (speaking) R.string.speak_stop else R.string.speak_read_aloud)
-        }
     }
 
     private fun setupPinchToZoom() {
@@ -599,8 +567,13 @@ class ResultActivity : AppCompatActivity() {
     ) {
         val card = binding.cardSimilarScans
         val rv = binding.rvSimilarScans
+        val empty = binding.tvSimilarEmpty
+        val chips = binding.chipGroupTopDiseases
         // Default state: hidden until the network call returns.
         card.visibility = View.GONE
+        rv.visibility = View.GONE
+        empty.visibility = View.GONE
+        chips.visibility = View.GONE
 
         val diseaseKey = repository.topClassKey(scan)
             ?: scan.diseaseName.lowercase().replace(' ', '_')
@@ -625,7 +598,7 @@ class ResultActivity : AppCompatActivity() {
                 // knows why the card is empty.
                 card.visibility = View.VISIBLE
                 binding.tvSimilarSubtitle.text = getString(R.string.similar_scans_subtitle_no_region)
-                rv.visibility = View.GONE
+                empty.visibility = View.GONE
                 return@launch
             }
             val result = app.scanRepository.communityNearby(
@@ -636,31 +609,63 @@ class ResultActivity : AppCompatActivity() {
                 limit = 12,
             )
             result.onSuccess { response ->
-                if (response.items.isEmpty() && (response.summary?.last7d ?: 0) == 0) {
-                    // Genuinely empty — render the card with an
-                    // empty hint instead of hiding it, so the user
-                    // sees the region was queried.
-                    card.visibility = View.VISIBLE
-                    binding.tvSimilarSubtitle.text = getString(R.string.similar_scans_empty)
+                card.visibility = View.VISIBLE
+                val label = resolved.displayLabel
+                val total = response.summary?.last7d ?: response.items.size
+
+                if (response.items.isEmpty()) {
+                    // Region was queried but came back empty (or only
+                    // historical rows past the 7-day window). Show a
+                    // clear empty state instead of an empty carousel.
+                    binding.tvSimilarSubtitle.text = getString(
+                        R.string.similar_scans_subtitle_region, label,
+                    )
+                    empty.text = getString(R.string.similar_scans_empty)
+                    empty.visibility = View.VISIBLE
                     rv.visibility = View.GONE
+                    chips.visibility = View.GONE
                     return@onSuccess
                 }
-                card.visibility = View.VISIBLE
-                rv.visibility = View.VISIBLE
-                adapter.submit(response.items)
-                val total = response.summary?.last7d ?: response.items.size
-                // Prefer the locality label when the user has one
-                // ("12 recent scans from London, GB"); otherwise
-                // fall back to the country bucket.
-                val label = resolved.displayLabel
+
                 binding.tvSimilarSubtitle.text = getString(
                     R.string.similar_scans_subtitle, total, label,
                 )
+                rv.visibility = View.VISIBLE
+                adapter.submit(response.items)
+                renderTopDiseaseChips(chips, response.summary?.topDiseases.orEmpty(), isRu)
             }.onFailure {
                 // Stay hidden on error — never surface a broken card.
                 card.visibility = View.GONE
             }
         }
+    }
+
+    /**
+     * Render the regional top-diseases chip row. Each chip shows the
+     * localised disease label and the number of recent scans for it.
+     * Caps at 4 chips so the row stays readable on narrow phones.
+     */
+    private fun renderTopDiseaseChips(
+        chips: com.google.android.material.chip.ChipGroup,
+        top: List<com.plantdiseases.app.data.model.CommunityTopDisease>,
+        isRu: Boolean,
+    ) {
+        chips.removeAllViews()
+        val visible = top.take(4)
+        if (visible.isEmpty()) {
+            chips.visibility = View.GONE
+            return
+        }
+        for (entry in visible) {
+            val label = classKeyDisplayName(entry.disease, isRu) ?: entry.disease
+            val chip = com.google.android.material.chip.Chip(this).apply {
+                text = getString(R.string.similar_scans_chip_format, label, entry.count)
+                isCheckable = false
+                isClickable = false
+            }
+            chips.addView(chip)
+        }
+        chips.visibility = View.VISIBLE
     }
 
     private fun buildAlternativeDiagnoses(scan: ScanEntity, repository: ScanRepository, isRu: Boolean) {
@@ -964,74 +969,9 @@ class ResultActivity : AppCompatActivity() {
         TypedValue.COMPLEX_UNIT_DIP, this, resources.displayMetrics
     )
 
-    // ─── TTS ──────────────────────────────────────────────────────────────────
-
-    private fun initTts() {
-        tts = TextToSpeech(this) { status ->
-            ttsReady = (status == TextToSpeech.SUCCESS)
-            // Hook the progress listener once we know TTS is alive so the
-            // toolbar speak icon can flip back to the play state when
-            // playback ends or errors out.
-            if (ttsReady) {
-                tts?.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
-                    override fun onStart(utteranceId: String?) {}
-                    override fun onDone(utteranceId: String?) {
-                        runOnUiThread { updateSpeakIcon(speaking = false) }
-                    }
-                    @Deprecated("Deprecated in Java")
-                    override fun onError(utteranceId: String?) {
-                        runOnUiThread { updateSpeakIcon(speaking = false) }
-                    }
-                })
-            }
-        }
-    }
-
-    private fun speakResult(scan: ScanEntity, isRu: Boolean): Boolean {
-        val repository = (application as PlantDiseasesApp).scanRepository
-        val diseaseName = if (isRu) scan.diseaseNameRu else scan.diseaseName
-        val description = if (isRu) scan.descriptionRu else scan.description
-        val steps = repository.parseStringList(
-            if (isRu) scan.treatmentRu else scan.treatment
-        ).take(3)
-
-        val text = buildString {
-            append(diseaseName)
-            append(". ")
-            append(description)
-            if (steps.isNotEmpty()) {
-                append(". ")
-                if (isRu) append("Лечение. ") else append("Treatment. ")
-                steps.forEachIndexed { i, step ->
-                    append("${i + 1}. $step. ")
-                }
-            }
-        }
-
-        val locale = if (isRu) Locale("ru") else Locale.ENGLISH
-        val availability = tts?.setLanguage(locale) ?: TextToSpeech.LANG_MISSING_DATA
-        if (availability == TextToSpeech.LANG_MISSING_DATA ||
-            availability == TextToSpeech.LANG_NOT_SUPPORTED
-        ) {
-            Toast.makeText(this, R.string.speak_unavailable, Toast.LENGTH_SHORT).show()
-            updateSpeakIcon(speaking = false)
-            return false
-        }
-        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "result")
-        return true
-    }
-
-    override fun onPause() {
-        super.onPause()
-        tts?.stop()
-        updateSpeakIcon(speaking = false)
-    }
-
     override fun onDestroy() {
         skeletonAnimator?.cancel()
         skeletonAnimator = null
-        tts?.shutdown()
-        tts = null
         super.onDestroy()
     }
 
@@ -1275,16 +1215,15 @@ class ResultActivity : AppCompatActivity() {
         val latencyMs = (System.currentTimeMillis() - scan.timestamp).coerceAtLeast(0L)
 
         // ``client_scan_id`` is the random UUID we mint at insert time.
-        // For legacy v9 rows backfilled by the migration it's also a
-        // UUID. We never send the local autoincrement primary key.
+        // We never send the local autoincrement primary key.
         val scanId = scan.clientScanId.takeIf { it.isNotBlank() }
             ?: java.util.UUID.randomUUID().toString()
 
         // SHA-256 of the original on-disk image so the corrections
         // corpus can be joined back to image bytes during retraining
         // without uploading the image itself. Runs off the UI thread;
-        // returns null when the file is gone (e.g. legacy scan whose
-        // file was cleared) — the server treats the field as optional.
+        // returns null when the file is gone — the server treats the
+        // field as optional.
         val imageHashHex = withContext(Dispatchers.IO) {
             ImageUtils.sha256Hex(java.io.File(scan.imagePath))
         }

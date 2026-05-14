@@ -261,7 +261,7 @@ interface PlantJournalDao {
         PlantReminderEntity::class,
         ChatMessageEntity::class,
     ],
-    version = 12,
+    version = 1,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -282,10 +282,6 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "plantdiseases_db"
                 )
-                    // App is still pre-1.0 production-wise — every
-                    // pre-shipped schema was a dev build. Destructive
-                    // fallback keeps Database.kt readable and removes
-                    // the per-version migration boilerplate.
                     .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance

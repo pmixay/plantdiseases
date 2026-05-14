@@ -158,8 +158,10 @@
     <!-- Similar scans (community corpus) -->
     <string name="similar_scans_title">Similar scans near you</string>
     <string name="similar_scans_subtitle">%1$d recent scans near %2$s</string>
+    <string name="similar_scans_subtitle_region">Recent diagnoses near %1$s</string>
     <string name="similar_scans_subtitle_no_region">Enable approximate location to see scans near you.</string>
     <string name="similar_scans_empty">No nearby scans yet — your scan will be the first.</string>
+    <string name="similar_scans_chip_format">%1$s · %2$d</string>
 
     <!-- Community consent + Profile toggle -->
     <string name="community_consent_title">Share scans with the community?</string>
@@ -222,11 +224,6 @@
     <string name="grid_overlay">Grid Overlay</string>
     <string name="zoom_indicator">%sx</string>
 
-    <!-- Real-time leaf framing (PlantVision auto-capture) -->
-    <string name="frame_hint_red">Point at a plant leaf</string>
-    <string name="frame_hint_amber">Bring the leaf into the frame</string>
-    <string name="frame_hint_green">Hold steady…</string>
-    <string name="frame_hint_capturing">Captured</string>
     <!-- My Garden -->
     <string name="tab_garden">Garden</string>
     <string name="garden_title">My Garden</string>
@@ -331,10 +328,6 @@
     <string name="light_species_tropical">Tropical</string>
     <string name="light_species_fern">Fern</string>
     <string name="light_species_vegetable">Vegetable</string>
-    <!-- TTS -->
-    <string name="speak_read_aloud">Read aloud</string>
-    <string name="speak_stop">Stop</string>
-    <string name="speak_unavailable">Voice-over is not available for this language.</string>
 
     <!-- Care Plan -->
     <string name="care_plan_title">Care Plan</string>

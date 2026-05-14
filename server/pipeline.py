@@ -747,8 +747,13 @@ def _maybe_apply_healthy_fallback(
     """Downgrade weak disease verdicts to ``healthy``.
 
     Returns the rewritten state on downgrade, or ``None`` to keep the
-    original verdict. Mutates the caller's ``mean_probs`` only when
-    downgrading.
+    original verdict. The returned ``mean_probs`` is updated so the
+    surfaced distribution agrees with the verdict — ``healthy`` is
+    always the new top class and the returned ``top1_conf`` is the
+    actual post-shift P(healthy). We deliberately do not fabricate
+    confidence from ``1 - top1_conf``: the old behaviour produced
+    e.g. "Healthy 75%" when the model's real healthy probability was
+    22%, which contradicted the top-k panel the client renders.
     """
     if top1_class in _NON_DISEASE or "healthy" not in mean_probs:
         return None
@@ -764,25 +769,21 @@ def _maybe_apply_healthy_fallback(
         if margin < HEALTHY_FALLBACK_MARGIN
         else f"threshold={top1_conf:.3f}<{DISEASE_MIN_CONFIDENCE}"
     )
-    inverted_conf = min(max(healthy_p, 1.0 - top1_conf), 0.95)
-    logger.info(
-        "Healthy fallback (%s)  was=%s/%.3f  → healthy/%.3f",
-        reason, top1_class, top1_conf, inverted_conf,
-    )
 
-    target_healthy = max(inverted_conf, healthy_p)
-    delta = min(top1_conf - inverted_conf, mean_probs[top1_class])
-    if delta > 0:
-        mean_probs[top1_class] -= delta
-        mean_probs["healthy"] = mean_probs.get("healthy", 0.0) + delta
-
+    # Transfer the rejected disease's mass to ``healthy`` and
+    # renormalise so the displayed top-k matches the verdict.
+    rejected_mass = float(mean_probs[top1_class])
+    mean_probs[top1_class] = 0.0
+    mean_probs["healthy"] = healthy_p + rejected_mass
     total = sum(mean_probs.values())
     if total > 0:
         mean_probs = {n: p / total for n, p in mean_probs.items()}
 
     new_conf = float(mean_probs["healthy"])
-    if new_conf < target_healthy:
-        new_conf = target_healthy
+    logger.info(
+        "Healthy fallback (%s)  was=%s/%.3f  → healthy/%.3f",
+        reason, top1_class, top1_conf, new_conf,
+    )
 
     return {
         "mean_probs": mean_probs,
@@ -873,10 +874,18 @@ def _apply_postprocessing_rules(
     # while a real disease class has any meaningful mass, "healthy" is
     # almost certainly wrong. Reroute the verdict so the UI surfaces
     # the more likely call.
+    #
+    # Skip when ``_suspected_disease`` is set: that means
+    # ``_maybe_apply_healthy_fallback`` already moved us from a weak
+    # disease verdict TO healthy on this same scan, and rerouting back
+    # to a different disease would just ping-pong — we'd surface a
+    # third class on every call. Trust the upstream fallback and let
+    # the ``disease_uncertain`` warning carry the nuance.
     if (
         top1_name == "healthy"
         and "healthy" in class_names
         and top1_prob < HEALTHY_REROUTE_FLOOR
+        and not classification.get("_suspected_disease")
     ):
         worst_disease = max(
             ((n, p) for n, p in probs.items() if n not in _NON_DISEASE),

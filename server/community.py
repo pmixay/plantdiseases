@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS community_scans (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     scan_id         TEXT    NOT NULL,
     user_pseudo_id  TEXT    NOT NULL,
+    country         TEXT,
     region          TEXT    NOT NULL,
     disease         TEXT    NOT NULL,
     confidence      REAL,
@@ -68,25 +69,12 @@ CREATE TABLE IF NOT EXISTS community_scans (
     client_ip_hash  TEXT,
     created_at      INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS ix_community_region   ON community_scans(region, created_at);
-CREATE INDEX IF NOT EXISTS ix_community_user     ON community_scans(user_pseudo_id);
-CREATE INDEX IF NOT EXISTS ix_community_created  ON community_scans(created_at);
+CREATE INDEX IF NOT EXISTS ix_community_region          ON community_scans(region, created_at);
+CREATE INDEX IF NOT EXISTS ix_community_user            ON community_scans(user_pseudo_id);
+CREATE INDEX IF NOT EXISTS ix_community_created         ON community_scans(created_at);
+CREATE INDEX IF NOT EXISTS ix_community_country         ON community_scans(country, created_at);
+CREATE INDEX IF NOT EXISTS ix_community_country_region  ON community_scans(country, region, created_at);
 """
-
-# Forward-only schema migration: every column listed here is added
-# with ``ALTER TABLE … ADD COLUMN`` on init_db if the DB was created
-# under an older schema. Avoids the per-version migration table we
-# don't otherwise need. Mirrors the same trick feedback.py uses.
-_EXTRA_COLUMNS: tuple[tuple[str, str], ...] = (
-    # Top-level bucket. Stored separately from ``region`` so we can
-    # group by country and break down by city without parsing a
-    # composite "City, Country" string at every query.
-    ("country", "TEXT"),
-)
-_EXTRA_INDICES: tuple[str, ...] = (
-    "CREATE INDEX IF NOT EXISTS ix_community_country ON community_scans(country, created_at);",
-    "CREATE INDEX IF NOT EXISTS ix_community_country_region ON community_scans(country, region, created_at);",
-)
 
 _write_lock = threading.RLock()
 _init_lock = threading.Lock()
@@ -104,22 +92,8 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
-def _existing_columns(conn: sqlite3.Connection) -> set[str]:
-    rows = conn.execute("PRAGMA table_info(community_scans)").fetchall()
-    return {row[1] for row in rows}
-
-
 def init_db() -> None:
-    """Create the schema + thumb dir if missing. Idempotent.
-
-    Runs a forward-only migration step too: any column from
-    ``_EXTRA_COLUMNS`` that's missing on an existing DB is added
-    via ALTER TABLE. The ``country`` column is also backfilled from
-    the legacy ``region`` value for rows that pre-date the
-    hierarchy split — older clients wrote the country into
-    ``region`` directly (after the previous "group-by-country"
-    pass), so copying the value across keeps history searchable.
-    """
+    """Create the schema + thumb dir if missing. Idempotent."""
     global _initialised
     with _init_lock:
         if _initialised:
@@ -128,25 +102,6 @@ def init_db() -> None:
         COMMUNITY_THUMB_DIR.mkdir(parents=True, exist_ok=True)
         with _connect() as conn:
             conn.executescript(_SCHEMA)
-            present = _existing_columns(conn)
-            added_country = False
-            for name, ddl in _EXTRA_COLUMNS:
-                if name not in present:
-                    conn.execute(
-                        f"ALTER TABLE community_scans ADD COLUMN {name} {ddl}"
-                    )
-                    if name == "country":
-                        added_country = True
-            for index_sql in _EXTRA_INDICES:
-                conn.execute(index_sql)
-            if added_country:
-                # Pre-hierarchy rows stored the country in ``region``.
-                # Copy it across so a country-scoped query still
-                # finds them.
-                conn.execute(
-                    "UPDATE community_scans SET country = region "
-                    "WHERE country IS NULL OR country = ''"
-                )
         _initialised = True
         logger.info("Community DB ready at %s", COMMUNITY_DB_PATH)
 

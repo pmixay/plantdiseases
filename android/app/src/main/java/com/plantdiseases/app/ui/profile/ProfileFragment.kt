@@ -169,15 +169,28 @@ class ProfileFragment : Fragment() {
             else -> binding.chipThemeSystem.isChecked = true
         }
 
-        binding.chipThemeLight.setOnClickListener {
-            ThemeHelper.saveTheme(requireContext(), ThemeHelper.THEME_LIGHT)
-        }
-        binding.chipThemeDark.setOnClickListener {
-            ThemeHelper.saveTheme(requireContext(), ThemeHelper.THEME_DARK)
-        }
-        binding.chipThemeSystem.setOnClickListener {
-            ThemeHelper.saveTheme(requireContext(), ThemeHelper.THEME_SYSTEM)
-        }
+        binding.chipThemeLight.setOnClickListener { applyTheme(ThemeHelper.THEME_LIGHT) }
+        binding.chipThemeDark.setOnClickListener { applyTheme(ThemeHelper.THEME_DARK) }
+        binding.chipThemeSystem.setOnClickListener { applyTheme(ThemeHelper.THEME_SYSTEM) }
+    }
+
+    private fun applyTheme(mode: Int) {
+        if (ThemeHelper.getSavedTheme(requireContext()) == mode) return
+        ThemeHelper.saveTheme(requireContext(), mode)
+        // AppCompatDelegate.setDefaultNightMode (called from
+        // ThemeHelper.saveTheme) flips the night-mode flag but won't
+        // re-apply styled attributes on the running activity, so
+        // surfaces, text colors and the status bar stay stuck on the
+        // previous theme until something triggers recreate(). We
+        // recreate here with the same brief fade we use for language
+        // switching so the transition reads as "smooth" instead of
+        // "the button did nothing".
+        val activity = requireActivity()
+        activity.window.decorView.animate()
+            .alpha(0f)
+            .setDuration(160)
+            .withEndAction { activity.recreate() }
+            .start()
     }
 
     private fun setupHowToSteps() {
