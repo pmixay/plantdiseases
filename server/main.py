@@ -657,9 +657,11 @@ async def _species_identify_best_effort(image_bytes: bytes, *, timeout: float) -
         raw = await asyncio.wait_for(
             loop.run_in_executor(
                 _get_inference_executor(),
-                identify_species,
-                image_bytes,
-                "leaf",
+                # identify_species's ``organ`` is keyword-only —
+                # ``run_in_executor`` only takes positional args, so
+                # we wrap in a lambda. Passing positionally raises
+                # TypeError at call time and surfaces as a 500.
+                lambda: identify_species(image_bytes, organ="leaf"),
             ),
             timeout=timeout,
         )
@@ -1245,7 +1247,8 @@ async def identify_endpoint(image: UploadFile = File(...), organ: str = "leaf"):
         organ = "leaf"
     loop = asyncio.get_running_loop()
     result = await loop.run_in_executor(
-        _get_inference_executor(), identify_species, contents, organ,
+        _get_inference_executor(),
+        lambda: identify_species(contents, organ=organ),
     )
     return JSONResponse(content={**result, "organ": organ})
 
