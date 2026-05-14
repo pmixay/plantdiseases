@@ -232,8 +232,17 @@ class ResultActivity : AppCompatActivity() {
         val isRu = LocaleHelper.isRussian(this)
         val isNotAPlant = repository.isNotAPlantScan(scan)
         val isHealthyVerdict = repository.isHealthyVerdict(scan)
+        // The status badge (healthy / disease / NAP) is derived from
+        // topClassKey but the display name historically came from the
+        // server's stored diseaseName field. Those can disagree — e.g.
+        // server returns "Healthy Plant" but the per-class probs peak on
+        // leaf_spot_fungal — and the user sees "DISEASE DETECTED — Healthy
+        // Plant". Trust the class key for the visible diagnosis too.
+        val topKey = repository.topClassKey(scan)
         val diseaseName = when {
             isNotAPlant -> getString(R.string.not_a_plant_diagnosis_name)
+            topKey != null -> classKeyDisplayName(topKey, isRu)
+                ?: (if (isRu) scan.diseaseNameRu else scan.diseaseName)
             isRu -> scan.diseaseNameRu
             else -> scan.diseaseName
         }
@@ -273,7 +282,13 @@ class ResultActivity : AppCompatActivity() {
             // Sticky header data
             tvStickyName.text = diseaseName
 
-            val confidencePercent = (scan.confidence * 100).toInt()
+            // Prefer the per-class probability that matches the displayed
+            // top-class key so confidence and disease name agree. Falls
+            // back to scan.confidence for rows without `all_probs`.
+            val confidenceFloat = if (topKey != null) {
+                repository.parseAllProbs(scan.allProbs)[topKey] ?: scan.confidence
+            } else scan.confidence
+            val confidencePercent = (confidenceFloat * 100).toInt()
             // For NAP we don't expose a confidence bar — the "verdict" itself
             // is "we can't classify this". Showing 100% confidence next to
             // a "not a plant" reads as the model being certain about the
@@ -753,21 +768,6 @@ class ResultActivity : AppCompatActivity() {
         binding.cardAlternatives.visibility = View.VISIBLE
         binding.alternativesLayout.removeAllViews()
 
-        val diseaseNames = mapOf(
-            // PlantVision v2.0 — 11 classes
-            "healthy" to (if (isRu) "Здоровое растение" else "Healthy Plant"),
-            "powdery_mildew" to (if (isRu) "Мучнистая роса" else "Powdery Mildew"),
-            "gray_mold_botrytis" to (if (isRu) "Серая гниль (ботритис)" else "Gray Mold (Botrytis)"),
-            "leaf_spot_fungal" to (if (isRu) "Грибковая пятнистость" else "Fungal Leaf Spot"),
-            "bacterial_leaf_spot" to (if (isRu) "Бактериальная пятнистость" else "Bacterial Leaf Spot"),
-            "viral_disease" to (if (isRu) "Вирусное заболевание" else "Viral Disease"),
-            "edema" to (if (isRu) "Эдема (отёчность)" else "Edema (Oedema)"),
-            "sunburn_or_scorch" to (if (isRu) "Солнечный ожог" else "Sunburn / Light Scorch"),
-            "leaf_scorch_underwatering" to (if (isRu) "Краевой ожог (недолив)" else "Leaf Scorch (Under-watering)"),
-            "nutrient_deficiency" to (if (isRu) "Дефицит питания" else "Nutrient Deficiency"),
-            "not_a_plant" to (if (isRu) "Не растение" else "Not a Plant"),
-        )
-
         top3.forEachIndexed { index, entry ->
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
@@ -780,7 +780,7 @@ class ResultActivity : AppCompatActivity() {
             }
 
             val percent = (entry.value * 100).toInt()
-            val displayName = diseaseNames[entry.key] ?: entry.key
+            val displayName = classKeyDisplayName(entry.key, isRu) ?: entry.key
             val isMain = index == 0
 
             val nameRow = LinearLayout(this).apply {
@@ -1245,6 +1245,17 @@ class ResultActivity : AppCompatActivity() {
     private fun buildFeedbackCard(scan: ScanEntity) {
         val card = binding.cardFeedback
         card.visibility = View.VISIBLE
+
+        // Already-submitted feedback persists across re-opens of the same
+        // scan — show the confirmation state and skip the buttons so the
+        // user can't double-submit.
+        if (isFeedbackAlreadySubmitted(scan.id)) {
+            binding.feedbackChoiceRow.visibility = View.GONE
+            binding.tvFeedbackStatus.visibility = View.VISIBLE
+            binding.tvFeedbackStatus.setText(R.string.feedback_sent)
+            return
+        }
+
         binding.tvFeedbackStatus.visibility = View.GONE
         binding.feedbackChoiceRow.visibility = View.VISIBLE
         binding.btnFeedbackYes.isEnabled = true
@@ -1327,6 +1338,7 @@ class ResultActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val result = app.scanRepository.submitFeedback(request)
             result.onSuccess {
+                markFeedbackSubmitted(scan.id)
                 binding.feedbackChoiceRow.visibility = View.GONE
                 binding.tvFeedbackStatus.visibility = View.VISIBLE
                 binding.tvFeedbackStatus.setText(R.string.feedback_sent)
@@ -1343,8 +1355,36 @@ class ResultActivity : AppCompatActivity() {
         }
     }
 
+    private fun classKeyDisplayName(key: String, isRu: Boolean): String? = when (key) {
+        // PlantVision v2.0 — 11 classes
+        "healthy" -> if (isRu) "Здоровое растение" else "Healthy Plant"
+        "powdery_mildew" -> if (isRu) "Мучнистая роса" else "Powdery Mildew"
+        "gray_mold_botrytis" -> if (isRu) "Серая гниль (ботритис)" else "Gray Mold (Botrytis)"
+        "leaf_spot_fungal" -> if (isRu) "Грибковая пятнистость" else "Fungal Leaf Spot"
+        "bacterial_leaf_spot" -> if (isRu) "Бактериальная пятнистость" else "Bacterial Leaf Spot"
+        "viral_disease" -> if (isRu) "Вирусное заболевание" else "Viral Disease"
+        "edema" -> if (isRu) "Эдема (отёчность)" else "Edema (Oedema)"
+        "sunburn_or_scorch" -> if (isRu) "Солнечный ожог" else "Sunburn / Light Scorch"
+        "leaf_scorch_underwatering" -> if (isRu) "Краевой ожог (недолив)" else "Leaf Scorch (Under-watering)"
+        "nutrient_deficiency" -> if (isRu) "Дефицит питания" else "Nutrient Deficiency"
+        "not_a_plant" -> if (isRu) "Не растение" else "Not a Plant"
+        else -> null
+    }
+
     companion object {
         const val EXTRA_SCAN_ID = "extra_scan_id"
         private const val TAG = "ResultActivity"
+        private const val FEEDBACK_PREFS = "plantdiseases_feedback_prefs"
+        private const val FEEDBACK_KEY_PREFIX = "scan_"
+    }
+
+    private fun isFeedbackAlreadySubmitted(scanId: Long): Boolean =
+        getSharedPreferences(FEEDBACK_PREFS, MODE_PRIVATE)
+            .getBoolean("$FEEDBACK_KEY_PREFIX$scanId", false)
+
+    private fun markFeedbackSubmitted(scanId: Long) {
+        getSharedPreferences(FEEDBACK_PREFS, MODE_PRIVATE).edit()
+            .putBoolean("$FEEDBACK_KEY_PREFIX$scanId", true)
+            .apply()
     }
 }

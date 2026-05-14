@@ -352,8 +352,8 @@
     <!-- Diagnosis feedback (/api/feedback) -->
     <string name="feedback_title">Was this diagnosis correct?</string>
     <string name="feedback_subtitle">Your answer trains the next model release.</string>
-    <string name="feedback_yes">Yes, looks right</string>
-    <string name="feedback_no">No, it\'s wrong</string>
+    <string name="feedback_yes">Correct</string>
+    <string name="feedback_no">Wrong</string>
     <string name="feedback_correction_title">What is it actually?</string>
     <string name="feedback_correction_hint">Disease name (optional)</string>
     <string name="feedback_note_hint">Anything else you want to tell us? (optional)</string>

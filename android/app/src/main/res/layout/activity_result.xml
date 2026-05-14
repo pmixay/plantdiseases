@@ -570,14 +570,23 @@
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btn_feedback_yes"
-                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            style="@style/Widget.Material3.Button.TonalButton"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
                             android:layout_marginEnd="@dimen/space_sm"
+                            android:minHeight="48dp"
+                            android:singleLine="true"
+                            android:ellipsize="end"
+                            android:paddingHorizontal="@dimen/space_md"
                             android:text="@string/feedback_yes"
+                            android:textColor="@color/on_primary"
+                            app:backgroundTint="@color/primary"
                             app:icon="@drawable/ic_healthy"
                             app:iconGravity="textStart"
+                            app:iconSize="18dp"
+                            app:iconTint="@color/on_primary"
+                            app:cornerRadius="@dimen/radius_md"
                             android:textAllCaps="false" />
 
                         <com.google.android.material.button.MaterialButton
@@ -586,9 +595,17 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
+                            android:minHeight="48dp"
+                            android:singleLine="true"
+                            android:ellipsize="end"
+                            android:paddingHorizontal="@dimen/space_md"
                             android:text="@string/feedback_no"
+                            android:textColor="@color/on_surface"
                             app:icon="@drawable/ic_warning"
                             app:iconGravity="textStart"
+                            app:iconSize="18dp"
+                            app:iconTint="@color/on_surface_secondary"
+                            app:cornerRadius="@dimen/radius_md"
                             android:textAllCaps="false" />
 
                     </LinearLayout>

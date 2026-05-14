@@ -1,21 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Liquid-glass card surface (light-mode default; values-night provides
-    the dark variant). The trick: a translucent "glass_white" base that
-    lets a tiny bit of the page background bleed through, plus a hairline
-    inner-glow stroke that mimics the rim highlight on a sheet of frosted
-    glass. The companion BlurUtils.applyGlassBackdrop() lifts the actual
-    Gaussian blur on API 31+; on API 26-30 the surface degrades to a
-    slightly more opaque tint (still pleasant, no visible regression).
+    Light-mode card surface. The translucent inner-stroke "glass" look
+    didn't read well against the pale-green page background (left a
+    halo-like frame around every card), so light mode now renders a
+    flat opaque white surface. The frosted-glass variant lives under
+    res/drawable-night/ for dark mode.
 -->
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item>
-        <shape android:shape="rectangle">
-            <solid android:color="@color/glass_white" />
-            <corners android:radius="@dimen/radius_lg" />
-            <stroke
-                android:width="@dimen/glass_stroke_width"
-                android:color="@color/glass_stroke" />
-        </shape>
-    </item>
-</layer-list>
+<shape
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/surface" />
+    <corners android:radius="@dimen/radius_lg" />
+</shape>

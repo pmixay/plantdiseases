@@ -356,8 +356,8 @@
     <!-- Diagnosis feedback -->
     <string name="feedback_title">Диагноз верный?</string>
     <string name="feedback_subtitle">Ваш ответ поможет улучшить модель.</string>
-    <string name="feedback_yes">Да, всё верно</string>
-    <string name="feedback_no">Нет, неверно</string>
+    <string name="feedback_yes">Верно</string>
+    <string name="feedback_no">Неверно</string>
     <string name="feedback_correction_title">Что это на самом деле?</string>
     <string name="feedback_correction_hint">Название болезни (необязательно)</string>
     <string name="feedback_note_hint">Что ещё хотите сказать? (необязательно)</string>
