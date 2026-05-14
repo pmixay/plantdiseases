@@ -344,3 +344,49 @@ def test_care_plan_ru_unknown_disease_falls_back_to_healthy_strings():
         disease="unknown", light="bright_indirect", locale="en",
     )
     assert "monitor" in plan_en["key_action"].lower()
+
+
+def test_humidity_habit_resists_common_substring_traps():
+    """Whole-word matching only. "Asparagus fern" is Liliaceae —
+    must NOT trip the fern bucket. "Aloeswood Saraca" is agarwood —
+    must NOT trip the succulent bucket. Real Aloe vera / Boston
+    fern must still classify correctly.
+    """
+    import ai_services as ai
+
+    # False-positive guards (the reported bugs).
+    assert ai._humidity_habit("Asparagus fern") is None
+    assert ai._humidity_habit("Asparagus aethiopicus") is None
+    assert ai._humidity_habit("Aloeswood Saraca") is None
+    assert ai._humidity_habit("Saraca asoca") is None
+    # True positives still classify.
+    assert ai._humidity_habit("Aloe vera") == "succulent"
+    assert ai._humidity_habit("Cactus") == "succulent"
+    assert ai._humidity_habit("Nephrolepis exaltata") == "fern_tropical"
+    assert ai._humidity_habit("Boston Fern") is None  # common name only
+    assert ai._humidity_habit("Calathea orbifolia") == "fern_tropical"
+    # Unknown / empty inputs.
+    assert ai._humidity_habit("") is None
+    assert ai._humidity_habit(None) is None
+    assert ai._humidity_habit("Ficus elastica") is None
+
+
+def test_care_plan_humidity_band_not_perturbed_by_false_positives():
+    """Verify the bug fix end-to-end: the humidity band on a plan
+    for "Asparagus fern" must match the base light-tier band — not
+    the fern bucket's 60-80 % range that the old substring match
+    used to push it into.
+    """
+    import ai_services as ai
+
+    base_plan = ai.generate_care_plan(
+        disease="healthy", light="bright_indirect",
+    )
+    asparagus_plan = ai.generate_care_plan(
+        disease="healthy", species="Asparagus fern", light="bright_indirect",
+    )
+    aloeswood_plan = ai.generate_care_plan(
+        disease="healthy", species="Aloeswood Saraca", light="bright_indirect",
+    )
+    assert asparagus_plan["humidity_band"] == base_plan["humidity_band"]
+    assert aloeswood_plan["humidity_band"] == base_plan["humidity_band"]

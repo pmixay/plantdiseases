@@ -33,6 +33,7 @@ import datetime as _dt
 import hashlib
 import json
 import logging
+import re
 import threading
 import time
 from collections import OrderedDict
@@ -1189,6 +1190,58 @@ def _polish_plan_with_llm(plan: dict, locale: str) -> dict:
     return plan
 
 
+# ── Humidity-habit classifier (species → desert / tropical) ─────────
+#
+# Curated whole-word token sets. We list the *genus* of the plants we
+# want to match plus a handful of unambiguous common-name keywords.
+# Generic common names that often appear inside non-matching binomials
+# ("fern" → "Asparagus fern", "aloe" → "Aloeswood Saraca") are
+# deliberately absent: the genus-level cue carries the same signal
+# without the false positives.
+
+_SUCCULENT_TOKENS: frozenset[str] = frozenset({
+    # Common names that are uniquely succulent.
+    "cactus", "cacti", "succulent",
+    # Canonical succulent / xeric genera.
+    "aloe", "agave", "crassula", "echeveria", "haworthia", "kalanchoe",
+    "sansevieria", "sedum", "sempervivum", "lithops", "graptopetalum",
+    "pachyphytum", "yucca", "opuntia", "ferocactus", "mammillaria",
+    "euphorbia",
+})
+
+_FERN_TROPICAL_TOKENS: frozenset[str] = frozenset({
+    # True-fern genera. We do NOT include the bare word "fern" — many
+    # common names ("Asparagus fern" = Asparagus aethiopicus,
+    # Liliaceae) carry the word without belonging to Polypodiopsida.
+    "nephrolepis", "polystichum", "adiantum", "pteris", "asplenium",
+    "platycerium", "davallia", "blechnum", "cyrtomium",
+    # High-humidity tropical-foliage genera ("jungle plant" group).
+    "calathea", "maranta", "alocasia", "anthurium", "philodendron",
+    "monstera", "ctenanthe", "stromanthe", "fittonia", "syngonium",
+    "spathiphyllum",
+})
+
+
+def _humidity_habit(species: str | None) -> str | None:
+    """Classify a species string as ``"succulent"``, ``"fern_tropical"``,
+    or ``None`` (no recognised habit).
+
+    Word-boundary tokenisation only — substring matching trips on
+    "Asparagus fern" / "Aloeswood Saraca" and similar false friends.
+    Both binomials ("Begonia rex") and common names ("Cactus") are
+    handled the same way: we split on non-word characters, lowercase
+    each token, and intersect against the curated sets above.
+    """
+    if not species:
+        return None
+    tokens = {t for t in re.split(r"\W+", species.lower()) if t}
+    if tokens & _SUCCULENT_TOKENS:
+        return "succulent"
+    if tokens & _FERN_TROPICAL_TOKENS:
+        return "fern_tropical"
+    return None
+
+
 def generate_care_plan(
     *,
     disease: str,
@@ -1266,16 +1319,23 @@ def generate_care_plan(
             {"day": follow_up_days, "check": cp["rescan_compare"]},
         ]
 
-    # Species-aware micro-tuning. When the auto-detected species hints
-    # at a tropical / desert / fern habit, nudge the humidity band so
-    # the plan reflects more than just the disease + light tier. The
-    # heuristic is keyword-based because we don't (yet) ship a full
-    # species → habit table; broad coverage is what matters here.
-    species_lower = (species or "").lower()
-    if any(k in species_lower for k in ("cactus", "succulent", "sansevieria", "haworthia", "echeveria", "aloe")):
+    # Species-aware micro-tuning. When the auto-detected species
+    # is a genus we recognise as desert / tropical / fern habit, we
+    # nudge the humidity band so the plan reflects more than just
+    # the disease + light tier. Matching is whole-word against the
+    # genus token (first space-separated word from the species
+    # string) — never a substring — to avoid the false positives the
+    # naive `in` check produced. "Asparagus fern" used to match the
+    # fern bucket on the substring "fern"; "Aloeswood Saraca" used
+    # to match the succulent bucket on "aloe". Neither does now,
+    # because we only check the genus / canonical common-name
+    # tokens. Generic common-name fallbacks ("cactus", "succulent")
+    # are accepted whole-word too — they don't appear inside any
+    # known binomial we'd want NOT to match.
+    if _humidity_habit(species) == "succulent":
         humidity_band = {"min": max(20, humidity_band["min"] - 15),
                          "max": max(35, humidity_band["max"] - 20)}
-    elif any(k in species_lower for k in ("fern", "calathea", "maranta", "alocasia", "anthurium", "nephrolepis")):
+    elif _humidity_habit(species) == "fern_tropical":
         humidity_band = {"min": max(humidity_band["min"], 60),
                          "max": max(humidity_band["max"], 80)}
     humidity_target_str = f"{humidity_band['min']}-{humidity_band['max']}%"
