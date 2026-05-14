@@ -490,9 +490,8 @@
                             android:orientation="vertical"
                             android:gravity="center_horizontal"
                             android:paddingHorizontal="@dimen/space_xs"
-                            android:clickable="true"
-                            android:focusable="true"
-                            android:background="?android:attr/selectableItemBackground">
+                            android:clickable="false"
+                            android:focusable="false">
 
                             <FrameLayout
                                 android:layout_width="44dp"
@@ -539,9 +538,8 @@
                             android:orientation="vertical"
                             android:gravity="center_horizontal"
                             android:paddingHorizontal="@dimen/space_xs"
-                            android:clickable="true"
-                            android:focusable="true"
-                            android:background="?android:attr/selectableItemBackground">
+                            android:clickable="false"
+                            android:focusable="false">
 
                             <FrameLayout
                                 android:layout_width="44dp"
@@ -588,9 +586,8 @@
                             android:orientation="vertical"
                             android:gravity="center_horizontal"
                             android:paddingHorizontal="@dimen/space_xs"
-                            android:clickable="true"
-                            android:focusable="true"
-                            android:background="?android:attr/selectableItemBackground">
+                            android:clickable="false"
+                            android:focusable="false">
 
                             <FrameLayout
                                 android:layout_width="44dp"

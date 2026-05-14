@@ -317,26 +317,10 @@ class CameraFragment : Fragment() {
         continueCaptureFlow()
     }
 
-    /** Second stage of the shutter flow: confirm the community-share
-     *  consent (if the user hasn't seen it yet) then take the photo. */
+    /** Second stage of the shutter flow. Community uploads are
+     *  default-on and the toggle lives in Profile, so we skip
+     *  straight to capture. */
     private fun continueCaptureFlow() {
-        val ctx = requireContext()
-        if (!com.plantdiseases.app.util.CommunityPrefs.hasAcknowledged(ctx)) {
-            MaterialAlertDialogBuilder(ctx)
-                .setTitle(R.string.community_consent_title)
-                .setMessage(R.string.community_consent_body)
-                .setNegativeButton(R.string.community_consent_decline) { _, _ ->
-                    com.plantdiseases.app.util.CommunityPrefs.setAcknowledged(ctx, enabled = false)
-                    takePhoto()
-                }
-                .setPositiveButton(R.string.community_consent_accept) { _, _ ->
-                    com.plantdiseases.app.util.CommunityPrefs.setAcknowledged(ctx, enabled = true)
-                    takePhoto()
-                }
-                .setCancelable(false)
-                .show()
-            return
-        }
         takePhoto()
     }
 

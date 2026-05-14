@@ -390,16 +390,16 @@ class ScanRepository(
     }
 
     /**
-     * "Healthy" verdict for the result UI. Uses the persisted top-class
-     * key (locale-independent) so the status badge can never contradict
-     * the diagnosis text. Falls back to the server's `is_healthy` flag
-     * for legacy rows that pre-date `all_probs` persistence.
+     * "Healthy" verdict for the result UI. Trusts the server's final
+     * ``is_healthy`` flag — that's already what the server's
+     * post-processing rules (weak-healthy reroute, healthy-fallback,
+     * OOD gate) settled on, so using it here keeps the badge / image
+     * highlight / share copy consistent with the description and
+     * stored disease name. Falling back to the top-class key here
+     * caused a visible mismatch where a server-rerouted "Fungal Leaf
+     * Spot" verdict showed as "Healthy Plant" in the UI.
      */
-    fun isHealthyVerdict(scan: ScanEntity): Boolean = when (topClassKey(scan)) {
-        "healthy" -> true
-        null -> scan.isHealthy
-        else -> false
-    }
+    fun isHealthyVerdict(scan: ScanEntity): Boolean = scan.isHealthy
 
     /**
      * Stats reflect the user's plant-care reality, not the raw row count.

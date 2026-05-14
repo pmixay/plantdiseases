@@ -83,13 +83,13 @@ class ProfileFragment : Fragment() {
 
     private fun setupCommunityControls() {
         val ctx = requireContext()
-        // The switch reflects the *effective* opt-in: if the user
-        // hasn't acknowledged the consent sheet yet, uploadsEnabled
-        // returns false even though the underlying pref would default
-        // to true. Toggling here implicitly acknowledges.
+        // Community uploads default to ON; the switch only ever
+        // turns them off. The first time a brand-new install reads
+        // CommunityPrefs.uploadsEnabled(...) the underlying pref is
+        // missing and the default branch returns true, so the toggle
+        // renders checked even before any scan.
         binding.switchCommunity.isChecked = CommunityPrefs.uploadsEnabled(ctx)
         binding.switchCommunity.setOnCheckedChangeListener { _, isChecked ->
-            CommunityPrefs.setAcknowledged(ctx, isChecked)
             CommunityPrefs.setUploadsEnabled(ctx, isChecked)
         }
         binding.btnDeleteCommunity.setOnClickListener {
@@ -118,15 +118,46 @@ class ProfileFragment : Fragment() {
     }
 
     private fun switchLanguage() {
-        // Persist the new language for our own attachBaseContext, then
-        // hand the change to AppCompat. With MainActivity declaring
-        // configChanges="locale|layoutDirection" in the manifest, the
-        // system calls onConfigurationChanged instead of recreating
-        // the activity — no flicker, no scroll-loss. AppCompat's
-        // backport handles the same flow on pre-Android-13 from
-        // AppCompat 1.6 onwards.
+        // Two-step:
+        //   1) Persist the new language for our own attachBaseContext
+        //      hook — that's what every activity reads on (re)create.
+        //   2) Hand the change to AppCompatDelegate so platform APIs
+        //      like LocaleManager (API 33+) and the AppCompat
+        //      backport (API <33) recreate the activity themselves.
+        //
+        // We deliberately do NOT include locale in MainActivity's
+        // configChanges. Doing so would make onConfigurationChanged
+        // fire while the activity's base context still pointed at
+        // the previous locale — the UI then half-updated and the
+        // toggle "did nothing". Letting the activity recreate keeps
+        // attachBaseContext as the single source of truth for which
+        // locale the resources resolve against.
         val newLang = LocaleHelper.toggleLanguage(requireContext())
-        AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(newLang))
+        AppCompatDelegate.setApplicationLocales(
+            LocaleListCompat.forLanguageTags(newLang),
+        )
+        // Smooth the transition: quick fade-out on the current
+        // window, then recreate(). Activity.recreate itself does not
+        // animate; without this the screen blinks. The new activity
+        // starts opaque (theme default) so the visual is "fade to
+        // dark → cut to new language", which is what users read as
+        // "smooth".
+        val activity = requireActivity()
+        val decor = activity.window.decorView
+        decor.animate()
+            .alpha(0f)
+            .setDuration(160)
+            .withEndAction {
+                // Belt-and-braces: on some OEM builds
+                // setApplicationLocales does not trigger the
+                // recreate before the next frame, which shows up
+                // as "tapping the toggle did nothing". An explicit
+                // recreate() here is idempotent — if AppCompat
+                // already scheduled one we just race with it on
+                // the same activity.
+                activity.recreate()
+            }
+            .start()
     }
 
     private fun setupThemeChips() {
@@ -150,17 +181,12 @@ class ProfileFragment : Fragment() {
     }
 
     private fun setupHowToSteps() {
-        // Each step column already inflates its own icon + title +
-        // body strings; we only need to wire the click → nav route.
-        binding.stepScan.setOnClickListener {
-            findNavController().navigate(R.id.cameraFragment)
-        }
-        binding.stepDiagnose.setOnClickListener {
-            findNavController().navigate(R.id.galleryFragment)
-        }
-        binding.stepCare.setOnClickListener {
-            findNavController().navigate(R.id.gardenFragment)
-        }
+        // The three step columns are read-only — they were tappable
+        // shortcuts in v1, but users reported that intercepted
+        // bottom-nav swipes and made it hard to switch tabs after
+        // scrolling the profile screen. We now leave them as plain
+        // informational cards; the bottom nav is the canonical way
+        // to switch tabs.
     }
 
     private fun loadStats() {

@@ -789,6 +789,253 @@ _DISEASE_PROTOCOL: dict[str, dict] = {
 }
 
 
+# Russian counterparts for every translatable string in
+# ``_DISEASE_PROTOCOL`` / ``_LIGHT_TIER_PROFILE`` / ``_BASE_CARE``.
+# Only the strings change — numeric ranges, isolation flags and
+# follow-up cadences are reused as-is from the canonical English
+# tables above. Pulled into a separate dict so the English copy
+# stays the single source of truth for the rule logic.
+
+_DISEASE_PROTOCOL_RU: dict[str, dict] = {
+    "powdery_mildew": {
+        "key_action": "Снизьте влажность, улучшите проветривание и протрите листья содовым раствором.",
+        "treatment": [
+            "Перенесите растение в более светлое и сухое место с движением воздуха.",
+            "Раз в неделю протирайте поражённые листья раствором молока и воды 1:9.",
+            "Если распространяется — применяйте калия бикарбонат или серу по инструкции.",
+            "Сильно поражённые листья выбрасывайте в пакете — не в компост.",
+        ],
+        "sanitation": ["Дезинфицируйте секатор изопропиловым 70%-м спиртом между срезами."],
+        "red_flags": [
+            "Белый налёт возвращается в течение 7 дней после обработки.",
+            "Болезнь перешла на соседнее растение, несмотря на изоляцию.",
+        ],
+    },
+    "gray_mold_botrytis": {
+        "key_action": "Снизьте влажность, убирайте опавшие листья и применяйте препараты меди или биофунгицид.",
+        "treatment": [
+            "Удалите все опавшие и подгнившие листья и выбросьте в пакете.",
+            "Срежьте видимо поражённые ткани до здоровой зелёной, стерилизуя лезвие между срезами.",
+            "Каждые 7 дней в течение 3 недель опрыскивайте меди октаноатом или Bacillus subtilis.",
+            "Включайте вентилятор рядом 4–6 часов в день, чтобы листья оставались сухими.",
+        ],
+        "sanitation": [
+            "Промойте поддон и горшок раствором отбеливателя 1:9.",
+            "Присыпьте субстрат слоем свежего сухого грунта, чтобы заглубить споры.",
+        ],
+        "red_flags": [
+            "Новый серый налёт появляется на стеблях или точках роста.",
+            "Листья продолжают опадать даже при более сухих условиях.",
+        ],
+    },
+    "leaf_spot_fungal": {
+        "key_action": "Нижний полив, удалите поражённые листья и применяйте препарат меди раз в неделю.",
+        "treatment": [
+            "Срежьте все листья с пятнистостью более 25% и выбросьте в пакете.",
+            "Раз в неделю в течение 3 недель применяйте хлороталонил или гидроксид меди по инструкции.",
+            "Держите листву сухой — никакого опрыскивания и полива по листьям.",
+            "Включайте вентилятор в самое влажное время дня.",
+        ],
+        "sanitation": ["Стерилизуйте секатор между срезами; не используйте заражённый грунт повторно."],
+        "red_flags": [
+            "Через 14 дней пятна разрастаются или появляются новые.",
+            "У пятен появляется жёлтый ореол и быстрое пожелтение листьев.",
+        ],
+    },
+    "bacterial_leaf_spot": {
+        "key_action": "Никакого опрыскивания; нижний полив; изоляция; рассмотрите бактерицид с медью.",
+        "treatment": [
+            "Немедленно прекратите полив сверху и опрыскивание.",
+            "Срежьте поражения до здоровой ткани и выбросьте в пакете.",
+            "Каждые 7–10 дней в течение 4 недель опрыскивайте бактерицидом с фиксированной медью по инструкции.",
+            "Держите растение в светлой, проветриваемой полутени до появления чистого нового прироста.",
+        ],
+        "sanitation": [
+            "Стерилизуйте инструменты изопропиловым 70%-м спиртом между срезами.",
+            "Мойте руки между этим растением и другими.",
+        ],
+        "red_flags": [
+            "Очаги мокнут или плохо пахнут — бактериальная мягкая гниль.",
+            "Стебель темнеет у уровня почвы.",
+        ],
+    },
+    "viral_disease": {
+        "key_action": "Изолируйте растение. Стерилизуйте инструменты. Химического лечения нет.",
+        "treatment": [
+            "Перенесите растение в карантин не ближе 2 м от других.",
+            "Перед работой с другими растениями стерилизуйте секатор 70%-м изопропиловым спиртом.",
+            "30 дней наблюдайте за соседями; при появлении симптомов — утилизируйте.",
+            "Если симптомы охватили более 50% листвы — утилизируйте растение целиком.",
+        ],
+        "sanitation": [
+            "Мойте руки с мылом после контакта с заражённым растением.",
+            "Не используйте черенки и не передавайте грунт.",
+        ],
+        "red_flags": [
+            "Угнетённый рост или мозаичные узоры на новых листьях.",
+            "Симптомы появились у соседнего растения в течение 30 дней.",
+        ],
+    },
+    "edema": {
+        "key_action": "Сократите частоту полива, добавьте света и движения воздуха.",
+        "treatment": [
+            "Пропустите следующий полив и дайте верхним 3 см почвы полностью просохнуть.",
+            "Перенесите в более светлое место для усиления транспирации.",
+            "Усильте движение воздуха вентилятором или открытым окном.",
+            "Не подкармливайте до появления чистого нового прироста.",
+        ],
+        "red_flags": [
+            "Пузыри продолжают появляться на новом приросте.",
+            "Появилось пожелтение или размягчение стебля.",
+        ],
+    },
+    "sunburn_or_scorch": {
+        "key_action": "Уберите с прямого полуденного солнца. Только яркий рассеянный свет.",
+        "treatment": [
+            "Перенесите растение на 1–2 м от прямого южного/западного солнца.",
+            "Обрежьте листья с ожогом более 50% до черешка.",
+            "Возобновите лёгкую подкормку, когда появится новый прирост.",
+        ],
+        "red_flags": [
+            "Ожог продолжает распространяться даже в тени — проверьте корни на гниль.",
+        ],
+    },
+    "leaf_scorch_underwatering": {
+        "key_action": "Глубокий полив снизу; промывка от солей; повышение влажности.",
+        "treatment": [
+            "На 20 минут поставьте горшок в тазик с тёплой водой для замачивания корневого кома.",
+            "Промойте верхний слой почвы количеством воды равным двойному объёму горшка, чтобы вымыть соли.",
+            "На 7 дней перенесите в чуть более тенистое место для восстановления.",
+            "Повысьте локальную влажность поддоном с галькой или увлажнителем до 50–60%.",
+        ],
+        "red_flags": [
+            "Сухие края продолжают появляться на новых листьях.",
+            "Почва отстаёт от стенок горшка — корневая система пострадала.",
+        ],
+    },
+    "nutrient_deficiency": {
+        "key_action": "Подкормка половинной дозой балансированного NPK; хелаты Fe + Mg при межжилковом хлорозе.",
+        "fertiliser_npk": "сбалансированный 3-1-2 в половинной дозе + хелат железа при межжилковом хлорозе",
+        "treatment": [
+            "При следующем поливе внесите сбалансированный NPK 3-1-2 в половинной дозе.",
+            "При межжилковом хлорозе (жёлтый лист, зелёные жилки): добавьте хелат железа + соль Эпсома по инструкции.",
+            "Если первыми желтеют старые листья — дефицит азота; на 2 цикла перейдите на азотную подкормку.",
+            "Через 14 дней повторите оценку; новые листья должны выходить ровно зелёными.",
+        ],
+        "red_flags": [
+            "Пожелтение продолжается даже при подкормке — проверьте корни и pH.",
+        ],
+    },
+    "healthy": {
+        "key_action": "Поддерживайте текущий режим, наблюдайте раз в неделю.",
+        "treatment": [
+            "Сохраняйте текущий режим полива и подкормки.",
+            "Раз в месяц протирайте листья влажной тряпкой от пыли.",
+            "Раз в неделю поворачивайте горшок на четверть для равномерного роста.",
+        ],
+        "red_flags": [
+            "Новые листья выходят мельче или бледнее обычного.",
+            "Любые пятна, липкость, паутинка или сухие края.",
+        ],
+    },
+    "not_a_plant": {
+        "key_action": "Попробуйте сделать более чёткое фото одного листа.",
+        "treatment": [
+            "Подойдите ближе, чтобы один лист занимал большую часть кадра.",
+            "Дождитесь автофокуса и снимите при ровном освещении.",
+        ],
+    },
+}
+
+# Russian copy for the light-tier text fields. Lux bands, humidity
+# bands and temperature ranges keep the English table's numbers.
+_LIGHT_TIER_PROFILE_RU: dict[str, dict] = {
+    "low_light": {
+        "placement": "северное окно или 2–3 м от яркого окна",
+        "acclimation": "Переносит тень неограниченно долго; не выносите резко на прямое солнце.",
+    },
+    "medium_light": {
+        "placement": "восточное окно или 1–2 м от южного/западного окна",
+        "acclimation": "Раз в неделю поворачивайте горшок на четверть для равномерного роста.",
+    },
+    "bright_indirect": {
+        "placement": "1 м от южного/западного окна с лёгкой занавеской",
+        "acclimation": "Привыкание 7–10 дней при переходе между уровнями освещения.",
+    },
+    "direct_sun": {
+        "placement": "южное или западное окно без занавески или на улице после акклиматизации",
+        "acclimation": "Приучайте к солнцу медленно (+1 ч в день), чтобы избежать ожогов.",
+    },
+}
+
+# Russian copy for the small handful of base-care strings that live
+# in plain English in ``_BASE_CARE``.
+_BASE_CARE_TEXT_RU: dict[str, dict] = {
+    "low_light": {
+        "soil_mix": "1 часть торфяной смеси + 1 часть перлита для дренажа",
+        "fertiliser_npk": "сбалансированный 3-1-2 в половинной дозе",
+        "watering_method": "soak_and_drain",
+    },
+    "medium_light": {
+        "soil_mix": "2 части торфа или кокоса + 1 часть перлита + 1 часть коры",
+        "fertiliser_npk": "сбалансированный 3-1-2 в половинной дозе",
+        "watering_method": "soak_and_drain",
+    },
+    "bright_indirect": {
+        "soil_mix": "2 части торфа или кокоса + 1 часть перлита + 1 часть коры",
+        "fertiliser_npk": "сбалансированный 3-1-2 в полной дозе",
+        "watering_method": "soak_and_drain",
+    },
+    "direct_sun": {
+        "soil_mix": "быстродренируемая смесь для кактусов/суккулентов или 1:1 с крошкой",
+        "fertiliser_npk": "пониженный N 2-3-3 для закалки",
+        "watering_method": "soak_and_drain",
+    },
+}
+
+# Checkpoint and season-note text per locale.
+_CHECKPOINT_TEXT = {
+    "en": {
+        "spot_check_short": "Spot-check for new spores / spots / wilting.",
+        "spot_check": "Spot-check for new symptoms.",
+        "underside": "Inspect the underside of the leaves.",
+        "rescan": "Repeat scan; expect signs of recovery.",
+        "rescan_compare": "Repeat scan and compare progression.",
+        "monthly_check": "Quick visual check; wipe dust.",
+        "season_note": "Dormant season: reduce watering and pause feeding to prevent rot.",
+    },
+    "ru": {
+        "spot_check_short": "Осмотрите листья: новые споры, пятна или увядание?",
+        "spot_check": "Осмотрите на наличие новых симптомов.",
+        "underside": "Проверьте нижнюю сторону листьев.",
+        "rescan": "Повторите скан; ждите признаков улучшения.",
+        "rescan_compare": "Повторите скан и сравните прогрессию.",
+        "monthly_check": "Быстрый осмотр и удаление пыли.",
+        "season_note": "Период покоя: уменьшите полив и пропустите подкормку, чтобы избежать гнили.",
+    },
+}
+
+
+def _is_russian(locale: str | None) -> bool:
+    return bool(locale and locale.lower().startswith("ru"))
+
+
+def _localise(field: str, key: str, default, locale: str):
+    """Return the Russian copy for (``key``, ``field``) when locale is
+    Russian and the override exists; otherwise the English default.
+
+    Used uniformly for disease-protocol overrides, light-tier text,
+    and base-care strings so callers don't need to know which table
+    holds which key.
+    """
+    if not _is_russian(locale):
+        return default
+    for table in (_DISEASE_PROTOCOL_RU, _LIGHT_TIER_PROFILE_RU, _BASE_CARE_TEXT_RU):
+        if key in table and field in table[key]:
+            return table[key][field]
+    return default
+
+
 def _current_growing_season(today: _dt.date | None = None) -> str:
     """Return ``"growing"`` or ``"dormant"`` for the supplied date.
 
@@ -801,7 +1048,7 @@ def _current_growing_season(today: _dt.date | None = None) -> str:
     return "growing" if 3 <= today.month <= 10 else "dormant"
 
 
-def _apply_season(plan: dict, season: str) -> dict:
+def _apply_season(plan: dict, season: str, locale: str = "en") -> dict:
     """Dampen feeding + watering in dormant months.
 
     In dormant months we stretch watering by ~40% (or skip if the
@@ -821,9 +1068,39 @@ def _apply_season(plan: dict, season: str) -> dict:
         # Cut fertiliser frequency in half during dormant months. A
         # value of 0 below means "skip fertilising entirely".
         plan["fertilise_weeks"] = max(fw * 2, 8)
-    plan.setdefault("season_note",
-        "Dormant season: reduce watering and pause feeding to prevent rot.")
+    lang = "ru" if _is_russian(locale) else "en"
+    plan.setdefault(
+        "season_note", _CHECKPOINT_TEXT[lang]["season_note"],
+    )
     return plan
+
+
+_SUMMARY_COPY = {
+    "en": {
+        "water_as_needed": "Water only when the top 3 cm of soil is dry.",
+        "water_every": "Water every **{n} days**; let the top 2 cm dry between waterings.",
+        "water_fallback": "Water per the species' preference.",
+        "feed_every": "Feed every **{n} weeks** with {npk}.",
+        "feed_skip": "Skip fertilising for now — the plant is recovering.",
+        "humidity": "Keep humidity in the {min}–{max}% range.",
+        "temp": "Daytime **{day0}–{day1}°C**, night **{night0}–{night1}°C**.",
+        "isolate": "**Isolate this plant** until the protocol completes.",
+        "treatment_heading": "**Treatment**",
+        "balanced_npk": "a balanced NPK",
+    },
+    "ru": {
+        "water_as_needed": "Поливайте только когда верхние 3 см почвы просохли.",
+        "water_every": "Полив раз в **{n} дн.**; верхние 2 см должны подсохнуть между поливами.",
+        "water_fallback": "Полив по предпочтениям вида.",
+        "feed_every": "Подкормка раз в **{n} нед.** препаратом {npk}.",
+        "feed_skip": "Пропустите подкормку — растению нужно восстановление.",
+        "humidity": "Поддерживайте влажность {min}–{max}%.",
+        "temp": "Днём **{day0}–{day1}°C**, ночью **{night0}–{night1}°C**.",
+        "isolate": "**Изолируйте растение** до окончания протокола.",
+        "treatment_heading": "**Лечение**",
+        "balanced_npk": "балансированным NPK",
+    },
+}
 
 
 def _build_markdown_summary(plan: dict, locale: str) -> str:
@@ -833,28 +1110,34 @@ def _build_markdown_summary(plan: dict, locale: str) -> str:
     the client always gets a renderable plan, never a barebones JSON.
     The LLM polish, if it runs, replaces this string.
     """
+    lang = "ru" if _is_russian(locale) else "en"
+    copy = _SUMMARY_COPY[lang]
+
     wd = plan.get("watering_days")
     if wd == "as_needed":
-        watering = "Water only when the top 3 cm of soil is dry."
+        watering = copy["water_as_needed"]
     elif isinstance(wd, int):
-        watering = f"Water every **{wd} days**; let the top 2 cm dry between waterings."
+        watering = copy["water_every"].format(n=wd)
     else:
-        watering = "Water per the species' preference."
+        watering = copy["water_fallback"]
     fw = plan.get("fertilise_weeks")
     if isinstance(fw, int) and fw > 0:
-        feed = f"Feed every **{fw} weeks** with {plan.get('fertiliser_npk', 'a balanced NPK')}."
+        npk = plan.get("fertiliser_npk") or copy["balanced_npk"]
+        feed = copy["feed_every"].format(n=fw, npk=npk)
     else:
-        feed = "Skip fertilising for now — the plant is recovering."
+        feed = copy["feed_skip"]
     band = plan.get("humidity_band") or {}
     humidity = (
-        f"Keep humidity in the {band.get('min', 40)}–{band.get('max', 60)}% range."
+        copy["humidity"].format(min=band.get("min", 40), max=band.get("max", 60))
         if band else ""
     )
     temp = plan.get("temperature_c") or {}
     if temp:
         day = temp.get("day") or [18, 26]
         night = temp.get("night") or [15, 22]
-        temp_line = f"Daytime **{day[0]}–{day[1]}°C**, night **{night[0]}–{night[1]}°C**."
+        temp_line = copy["temp"].format(
+            day0=day[0], day1=day[1], night0=night[0], night1=night[1],
+        )
     else:
         temp_line = ""
     season_note = plan.get("season_note", "")
@@ -868,10 +1151,10 @@ def _build_markdown_summary(plan: dict, locale: str) -> str:
         f"- {temp_line}" if temp_line else "",
     ]
     if plan.get("isolation"):
-        bullets.append("- **Isolate this plant** until the protocol completes.")
+        bullets.append(f"- {copy['isolate']}")
     md = "\n".join(b for b in bullets if b)
     if treatment_lines:
-        md += "\n\n**Treatment**\n" + treatment_lines
+        md += f"\n\n{copy['treatment_heading']}\n{treatment_lines}"
     if season_note:
         md += f"\n\n_{season_note}_"
     return md
@@ -938,6 +1221,7 @@ def generate_care_plan(
     light_profile = _LIGHT_TIER_PROFILE[light_key]
     base = _BASE_CARE[light_key]
     protocol = _DISEASE_PROTOCOL.get(disease, _DISEASE_PROTOCOL["healthy"])
+    lang = "ru" if _is_russian(locale) else "en"
 
     humidity_band = protocol.get("humidity_band") or base["humidity_band"]
     humidity_target_str = f"{humidity_band['min']}-{humidity_band['max']}%"
@@ -956,23 +1240,61 @@ def generate_care_plan(
     # relative to the follow-up window so a plant on a 7-day cycle gets
     # day-3 + day-7 nudges and a healthy plant on a 30-day cycle gets
     # day-7 + day-30. Always at least two checkpoints.
+    cp = _CHECKPOINT_TEXT[lang]
     checkpoints: list[dict] = []
     if follow_up_days <= 7:
         checkpoints = [
-            {"day": 3, "check": "Spot-check for new spores / spots / wilting."},
-            {"day": follow_up_days, "check": "Repeat scan; expect signs of recovery."},
+            {"day": 3, "check": cp["spot_check_short"]},
+            {"day": follow_up_days, "check": cp["rescan"]},
         ]
     elif follow_up_days <= 14:
         checkpoints = [
-            {"day": 3, "check": "Inspect the underside of the leaves."},
-            {"day": 7, "check": "Spot-check for new symptoms."},
-            {"day": follow_up_days, "check": "Repeat scan and compare progression."},
+            {"day": 3, "check": cp["underside"]},
+            {"day": 7, "check": cp["spot_check"]},
+            {"day": follow_up_days, "check": cp["rescan_compare"]},
         ]
     else:
         checkpoints = [
-            {"day": 7, "check": "Quick visual check; wipe dust."},
-            {"day": follow_up_days, "check": "Repeat scan and compare progression."},
+            {"day": 7, "check": cp["monthly_check"]},
+            {"day": follow_up_days, "check": cp["rescan_compare"]},
         ]
+
+    # Species-aware micro-tuning. When the auto-detected species hints
+    # at a tropical / desert / fern habit, nudge the humidity band so
+    # the plan reflects more than just the disease + light tier. The
+    # heuristic is keyword-based because we don't (yet) ship a full
+    # species → habit table; broad coverage is what matters here.
+    species_lower = (species or "").lower()
+    if any(k in species_lower for k in ("cactus", "succulent", "sansevieria", "haworthia", "echeveria", "aloe")):
+        humidity_band = {"min": max(20, humidity_band["min"] - 15),
+                         "max": max(35, humidity_band["max"] - 20)}
+    elif any(k in species_lower for k in ("fern", "calathea", "maranta", "alocasia", "anthurium", "nephrolepis")):
+        humidity_band = {"min": max(humidity_band["min"], 60),
+                         "max": max(humidity_band["max"], 80)}
+    humidity_target_str = f"{humidity_band['min']}-{humidity_band['max']}%"
+
+    placement = _localise("placement", light_key, light_profile["placement"], locale)
+    acclimation = _localise("acclimation", light_key, light_profile["acclimation"], locale)
+    soil_mix = _localise("soil_mix", light_key, base["soil_mix"], locale)
+    fert_npk = _localise(
+        "fertiliser_npk", disease,
+        protocol.get("fertiliser_npk", base["fertiliser_npk"]),
+        locale,
+    )
+    key_action = _localise(
+        "key_action", disease,
+        protocol.get("key_action", "Monitor weekly."),
+        locale,
+    )
+    treatment = _localise(
+        "treatment", disease, list(protocol.get("treatment") or []), locale,
+    )
+    sanitation = _localise(
+        "sanitation", disease, list(protocol.get("sanitation") or []), locale,
+    )
+    red_flags = _localise(
+        "red_flags", disease, list(protocol.get("red_flags") or []), locale,
+    )
 
     plan: dict = {
         # ── v1 contract (unchanged) ────────────────────────────────
@@ -982,26 +1304,26 @@ def generate_care_plan(
         "watering_days": merged_watering,
         "fertilise_weeks": merged_fw,
         "humidity_target": humidity_target_str,
-        "key_action": protocol.get("key_action", "Monitor weekly."),
+        "key_action": key_action,
         "follow_up_days": follow_up_days,
         # ── v2 extensions (additive) ───────────────────────────────
         "light_lux_target": light_profile["lux_target"],
-        "placement": light_profile["placement"],
-        "acclimation": light_profile["acclimation"],
+        "placement": placement,
+        "acclimation": acclimation,
         "watering_method": merged_method,
-        "soil_mix": base["soil_mix"],
-        "fertiliser_npk": protocol.get("fertiliser_npk", base["fertiliser_npk"]),
+        "soil_mix": soil_mix,
+        "fertiliser_npk": fert_npk,
         "humidity_band": humidity_band,
         "temperature_c": base["temperature_c"],
-        "treatment": list(protocol.get("treatment") or []),
-        "sanitation": list(protocol.get("sanitation") or []),
+        "treatment": list(treatment),
+        "sanitation": list(sanitation),
         "isolation": isolation,
-        "red_flags": list(protocol.get("red_flags") or []),
+        "red_flags": list(red_flags),
         "checkpoints": checkpoints,
     }
 
     season_key = season if season in ("growing", "dormant") else _current_growing_season(today)
-    plan = _apply_season(plan, season_key)
+    plan = _apply_season(plan, season_key, locale=locale)
     plan["summary_md"] = _build_markdown_summary(plan, locale=locale)
     return _polish_plan_with_llm(plan, locale=locale)
 

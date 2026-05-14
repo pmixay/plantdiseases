@@ -230,18 +230,17 @@ class ResultActivity : AppCompatActivity() {
     private fun displayResult(scan: ScanEntity, repository: ScanRepository) {
         val isRu = LocaleHelper.isRussian(this)
         val isNotAPlant = repository.isNotAPlantScan(scan)
-        val isHealthyVerdict = repository.isHealthyVerdict(scan)
-        // The status badge (healthy / disease / NAP) is derived from
-        // topClassKey but the display name historically came from the
-        // server's stored diseaseName field. Those can disagree — e.g.
-        // server returns "Healthy Plant" but the per-class probs peak on
-        // leaf_spot_fungal — and the user sees "DISEASE DETECTED — Healthy
-        // Plant". Trust the class key for the visible diagnosis too.
-        val topKey = repository.topClassKey(scan)
+        // Trust the server's final verdict end-to-end. The previous
+        // version overrode `diseaseName` / `confidence` with the
+        // top-class key from `all_probs`, which fought the server's
+        // own weak-healthy reroute: when the server downgraded a
+        // 47%-healthy / 41%-fungal scan to "Fungal Leaf Spot", the
+        // override flipped the visible verdict back to "Healthy
+        // Plant" while the description and stored `diseaseName`
+        // still said fungal — the cause of the screenshot bug.
+        val isHealthyVerdict = scan.isHealthy
         val diseaseName = when {
             isNotAPlant -> getString(R.string.not_a_plant_diagnosis_name)
-            topKey != null -> classKeyDisplayName(topKey, isRu)
-                ?: (if (isRu) scan.diseaseNameRu else scan.diseaseName)
             isRu -> scan.diseaseNameRu
             else -> scan.diseaseName
         }
@@ -281,13 +280,7 @@ class ResultActivity : AppCompatActivity() {
             // Sticky header data
             tvStickyName.text = diseaseName
 
-            // Prefer the per-class probability that matches the displayed
-            // top-class key so confidence and disease name agree. Falls
-            // back to scan.confidence for rows without `all_probs`.
-            val confidenceFloat = if (topKey != null) {
-                repository.parseAllProbs(scan.allProbs)[topKey] ?: scan.confidence
-            } else scan.confidence
-            val confidencePercent = (confidenceFloat * 100).toInt()
+            val confidencePercent = (scan.confidence * 100).toInt()
             // For NAP we don't expose a confidence bar — the "verdict" itself
             // is "we can't classify this". Showing 100% confidence next to
             // a "not a plant" reads as the model being certain about the
@@ -609,16 +602,8 @@ class ResultActivity : AppCompatActivity() {
         // Default state: hidden until the network call returns.
         card.visibility = View.GONE
 
-        val region = com.plantdiseases.app.util.RegionResolver.cachedRegion(this)
         val diseaseKey = repository.topClassKey(scan)
             ?: scan.diseaseName.lowercase().replace(' ', '_')
-        if (region.isNullOrBlank()) {
-            // Surface a hint so users know how to opt in, but keep the
-            // card hidden unless we have something to show. (Future
-            // iteration could put a "tap to enable location" CTA here.)
-            return
-        }
-
         val app = application as PlantDiseasesApp
         val pseudoId = com.plantdiseases.app.util.TelemetryIds.userPseudoId(this)
         val adapter = SimilarScansAdapter { key -> classKeyDisplayName(key, isRu) ?: key }
@@ -628,6 +613,21 @@ class ResultActivity : AppCompatActivity() {
         )
 
         lifecycleScope.launch {
+            // First-scan-after-permission may not have a cached region
+            // yet because the MainActivity warmer races with this code.
+            // Resolve actively (background-threaded inside the helper)
+            // so the card lights up on the same scan instead of the
+            // next one.
+            val region = com.plantdiseases.app.util.RegionResolver.cachedRegion(this@ResultActivity)
+                ?: com.plantdiseases.app.util.RegionResolver.resolveRegion(this@ResultActivity)
+            if (region.isNullOrBlank()) {
+                // No region yet. Render a soft hint so the user knows
+                // why the card is empty and what to do.
+                card.visibility = View.VISIBLE
+                binding.tvSimilarSubtitle.text = getString(R.string.similar_scans_subtitle_no_region)
+                rv.visibility = View.GONE
+                return@launch
+            }
             val result = app.scanRepository.communityNearby(
                 region = region,
                 disease = diseaseKey,
@@ -1138,15 +1138,15 @@ class ResultActivity : AppCompatActivity() {
                 body.setText(R.string.toxicity_safe_body)
             }
             else -> {
-                // Unknown source — never falsely reassure.
-                card.visibility = View.VISIBLE
-                card.setCardBackgroundColor(getColor(R.color.warning_amber_bg))
-                title.setTextColor(getColor(R.color.warning_amber))
-                icon.setColorFilter(getColor(R.color.warning_amber))
-                icon.setImageResource(R.drawable.ic_warning)
-                title.setText(R.string.toxicity_unknown_title)
-                body.setTextColor(getColor(R.color.warning_amber))
-                body.setText(R.string.toxicity_unknown_body)
+                // Unknown source: the server couldn't pin a species
+                // (PlantNet wasn't configured / no candidates / the
+                // species isn't in our toxicity DB). Showing a big
+                // amber "pet safety unconfirmed" card on every scan
+                // by default reads as a warning the user can't act
+                // on — the previous behaviour. Hide the card and let
+                // the user pick a species via the create-plant flow
+                // to trigger a real lookup on the next request.
+                card.visibility = View.GONE
             }
         }
     }
