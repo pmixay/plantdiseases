@@ -478,8 +478,6 @@ class ResultActivity : AppCompatActivity() {
         }
     }
 
-    }
-
     private fun setupTreatmentPreventionTabs(scan: ScanEntity, repository: ScanRepository, isRu: Boolean) {
         val treatment = repository.parseStringList(
             if (isRu) scan.treatmentRu else scan.treatment
