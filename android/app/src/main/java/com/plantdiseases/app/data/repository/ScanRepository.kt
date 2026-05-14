@@ -22,6 +22,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.asRequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.File
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
@@ -521,9 +522,10 @@ class ScanRepository(
     ): Result<com.plantdiseases.app.data.model.CommunityScanUploadResponse> =
         withContext(Dispatchers.IO) {
             try {
+                val plainText = "text/plain".toMediaTypeOrNull()
                 fun text(value: String?): okhttp3.RequestBody? = value
                     ?.takeIf { it.isNotBlank() }
-                    ?.let { okhttp3.RequestBody.create("text/plain".toMediaTypeOrNull(), it) }
+                    ?.toRequestBody(plainText)
                 val image = thumbnail?.takeIf { it.exists() }?.let { f ->
                     val rb = f.asRequestBody("image/jpeg".toMediaTypeOrNull())
                     MultipartBody.Part.createFormData("image", f.name, rb)

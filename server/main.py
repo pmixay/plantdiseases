@@ -47,19 +47,36 @@ try:
         generate_care_plan,
         identify_species,
     )
-    from .config import get_float, get_int, get_list, get_str
-    from .diseases_data import DISEASES_DATABASE, lookup_pet_toxicity
+    from .community import (
+        COMMUNITY_THUMB_DIR,
+    )
     from .community import (
         delete_for_user as community_delete_for_user,
+    )
+    from .community import (
+        init_db as init_community_db,
+    )
+    from .community import (
         nearby_scans as community_nearby_scans,
+    )
+    from .community import (
         record_scan as community_record_scan,
+    )
+    from .community import (
         region_summary as community_region_summary,
+    )
+    from .community import (
         stats_snapshot as community_stats_snapshot,
     )
-    from .community import COMMUNITY_THUMB_DIR
-    from .community import init_db as init_community_db
-    from .feedback import feedback_counts, record_feedback
-    from .feedback import init_db as init_feedback_db
+    from .config import get_float, get_int, get_list, get_str
+    from .diseases_data import DISEASES_DATABASE, lookup_pet_toxicity
+    from .feedback import (
+        feedback_counts,
+        record_feedback,
+    )
+    from .feedback import (
+        init_db as init_feedback_db,
+    )
     from .pipeline import PlantDiseasePipeline
 except ImportError:
     from ai_services import (
@@ -71,18 +88,35 @@ except ImportError:
         identify_species,
     )
     from community import (
+        COMMUNITY_THUMB_DIR,
+    )
+    from community import (
         delete_for_user as community_delete_for_user,
+    )
+    from community import (
+        init_db as init_community_db,
+    )
+    from community import (
         nearby_scans as community_nearby_scans,
+    )
+    from community import (
         record_scan as community_record_scan,
+    )
+    from community import (
         region_summary as community_region_summary,
+    )
+    from community import (
         stats_snapshot as community_stats_snapshot,
     )
-    from community import COMMUNITY_THUMB_DIR
-    from community import init_db as init_community_db
     from config import get_float, get_int, get_list, get_str
     from diseases_data import DISEASES_DATABASE, lookup_pet_toxicity
-    from feedback import feedback_counts, record_feedback
-    from feedback import init_db as init_feedback_db
+    from feedback import (
+        feedback_counts,
+        record_feedback,
+    )
+    from feedback import (
+        init_db as init_feedback_db,
+    )
     from pipeline import PlantDiseasePipeline
 
 try:
