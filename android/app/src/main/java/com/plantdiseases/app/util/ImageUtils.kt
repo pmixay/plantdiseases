@@ -8,8 +8,10 @@ import android.net.Uri
 import android.util.Log
 import androidx.exifinterface.media.ExifInterface
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
+import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -164,6 +166,35 @@ object ImageUtils {
             days == 1 -> context.getString(com.plantdiseases.app.R.string.date_yesterday)
             days in 2..30 -> context.getString(com.plantdiseases.app.R.string.date_days_ago, days)
             else -> formatTimestamp(timestamp)
+        }
+    }
+
+    /**
+     * SHA-256 of [file]'s bytes, lowercase hex. Returns null when the
+     * file is missing or unreadable — callers (feedback submission)
+     * treat the hash as optional and must not block on it.
+     *
+     * Streams 8 KiB buffers so large images don't materialise in
+     * memory. Must be called off the UI thread.
+     */
+    fun sha256Hex(file: File): String? {
+        return try {
+            val digest = MessageDigest.getInstance("SHA-256")
+            FileInputStream(file).use { input ->
+                val buffer = ByteArray(8 * 1024)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read <= 0) break
+                    digest.update(buffer, 0, read)
+                }
+            }
+            digest.digest().joinToString("") { "%02x".format(it) }
+        } catch (e: IOException) {
+            Log.w(TAG, "sha256Hex failed for ${file.path}", e)
+            null
+        } catch (e: SecurityException) {
+            Log.w(TAG, "sha256Hex: permission denied for ${file.path}", e)
+            null
         }
     }
 

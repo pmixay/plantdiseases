@@ -292,14 +292,10 @@ def test_analyze_response_carries_issued_scan_id(client, png_bytes):
     assert fb.is_scan_id_issued(scan_id)
 
 
-def test_feedback_enforce_mode_rejects_unissued_scan_id(client, png_bytes, monkeypatch):
-    """With ENFORCE_ISSUED_SCAN_IDS flipped on, a feedback POST whose
-    scan_id wasn't seen on /api/analyze must 422 instead of being
-    quietly persisted. Default flow stays "log only" (covered by the
-    rest of the feedback test suite)."""
-    import main as server_main
-
-    monkeypatch.setattr(server_main, "ENFORCE_ISSUED_SCAN_IDS", True)
+def test_feedback_rejects_unissued_scan_id(client, png_bytes):
+    """A feedback POST whose scan_id wasn't seen on /api/analyze must
+    422 instead of being quietly persisted — that's the gate that
+    keeps test/poison rows out of the retraining corpus."""
     r = client.post(
         "/api/feedback",
         json={"scan_id": "neverissuedXYZ", "correct": True},

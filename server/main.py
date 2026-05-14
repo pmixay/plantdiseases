@@ -250,16 +250,6 @@ FEEDBACK_RETENTION_DAYS = get_int("FEEDBACK_RETENTION_DAYS", 180)
 COMMUNITY_RETENTION_DAYS = get_int("COMMUNITY_RETENTION_DAYS", 90)
 PRUNE_INTERVAL_SECONDS = get_int("PRUNE_INTERVAL_SECONDS", 24 * 60 * 60)
 
-# Feedback ↔ analyze scan-id binding. When ENFORCE_ISSUED_SCAN_IDS is
-# truthy (set as "1"/"true" in env), /api/feedback rejects any
-# scan_id that wasn't recorded by a recent /api/analyze response.
-# Defaults to "log only" so older clients (whose scan_ids were
-# minted before this gate existed) keep working until the install
-# base catches up; operators flip to enforce mode once telemetry
-# shows < ~1% of feedback uses unknown scan_ids.
-ENFORCE_ISSUED_SCAN_IDS = (
-    get_str("ENFORCE_ISSUED_SCAN_IDS", "false").strip().lower() in {"1", "true", "yes", "on"}
-)
 # Server-issued scan_ids stay valid for this long. Long enough that
 # a user can scan today and leave feedback in a week; short enough
 # that a leaked id can't be reused indefinitely.
@@ -1648,29 +1638,23 @@ async def feedback_endpoint(payload: FeedbackRequest, request: Request):
             detail="Daily feedback quota reached. Try again tomorrow.",
         )
 
-    # Bind the feedback to a scan_id we actually issued. The check
-    # runs in "warn-only" mode by default (older clients minted
-    # their own UUIDs and won't be in the table); flip
-    # ENFORCE_ISSUED_SCAN_IDS=true once the new client is the
-    # dominant install base to switch this gate to hard reject.
+    # Bind the feedback to a scan_id we actually issued. Unknown
+    # scan_ids are rejected — that's how we keep arbitrary clients
+    # from poisoning the corrections corpus the retraining loop
+    # consumes.
     scan_id_clean = payload.scan_id.strip()
     issued = await asyncio.get_running_loop().run_in_executor(
         _get_inference_executor(),
         lambda: is_scan_id_issued(scan_id_clean, ttl_days=ISSUED_SCAN_ID_TTL_DAYS),
     )
     if not issued:
-        if ENFORCE_ISSUED_SCAN_IDS:
-            logger.warning(
-                "Rejected feedback on unissued scan_id=%s ip_hash=%s",
-                scan_id_clean[:16], ip_hash,
-            )
-            raise HTTPException(
-                status_code=422,
-                detail="Unknown scan_id — please re-scan before sending feedback.",
-            )
-        # Soft mode: log so operators can watch the unknown-id rate.
-        logger.info(
-            "Feedback on unissued scan_id=%s (soft mode)", scan_id_clean[:16],
+        logger.warning(
+            "Rejected feedback on unissued scan_id=%s ip_hash=%s",
+            scan_id_clean[:16], ip_hash,
+        )
+        raise HTTPException(
+            status_code=422,
+            detail="Unknown scan_id — please re-scan before sending feedback.",
         )
 
     # Pydantic v2 has already normalised these — corrected_class is

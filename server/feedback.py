@@ -68,6 +68,14 @@ CREATE TABLE IF NOT EXISTS issued_scan_ids (
     created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_issued_created ON issued_scan_ids(created_at);
+
+-- Tiny key/value table for one-shot maintenance sentinels. Lets
+-- ``init_db`` run a forward-only migration (e.g. clearing pre-gate
+-- rows) exactly once per DB without an out-of-band step.
+CREATE TABLE IF NOT EXISTS schema_meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT
+);
 """
 
 # Columns added in later schema revisions. Listed (name, DDL fragment)
@@ -98,6 +106,10 @@ _EXTRA_INDICES: tuple[str, ...] = (
 _write_lock = threading.RLock()
 _init_lock = threading.Lock()
 _initialised = False
+
+# Marker stored in ``schema_meta`` once the one-shot legacy cleanup
+# has run. Bumping the suffix re-arms the migration.
+_LEGACY_CLEANUP_SENTINEL = "legacy_cleanup_v1"
 
 
 def _connect() -> sqlite3.Connection:
@@ -143,6 +155,19 @@ def init_db() -> None:
                     conn.execute(f"ALTER TABLE feedback ADD COLUMN {name} {ddl}")
             for index_sql in _EXTRA_INDICES:
                 conn.execute(index_sql)
+            # One-shot maintenance: drop rows that predate the
+            # hashed-IP + issued-scan-id-gate migration. The
+            # sentinel guarantees this runs exactly once per DB.
+            sentinel = conn.execute(
+                "SELECT 1 FROM schema_meta WHERE key = ?",
+                (_LEGACY_CLEANUP_SENTINEL,),
+            ).fetchone()
+            if not sentinel:
+                deleted = _cleanup_legacy_rows_locked(conn)
+                conn.execute(
+                    "INSERT OR IGNORE INTO schema_meta (key, value) VALUES (?, ?)",
+                    (_LEGACY_CLEANUP_SENTINEL, str(deleted)),
+                )
         _initialised = True
         logger.info("Feedback DB ready at %s", FEEDBACK_DB_PATH)
 
@@ -328,6 +353,57 @@ def prune_older_than(days: int) -> int:
     return int(deleted or 0)
 
 
+def _cleanup_legacy_rows_locked(conn: sqlite3.Connection) -> int:
+    """Run the cleanup DELETE on an already-open, already-locked
+    connection. Factored out so ``init_db`` can call it inside the
+    same transaction that writes the sentinel.
+
+    Two predicates, OR'd:
+
+      * ``client_ip IS NOT NULL`` — every post-migration row writes
+        only ``client_ip_hash``, leaving ``client_ip`` NULL. A
+        non-null value identifies pre-hash legacy rows.
+      * ``scan_id NOT IN issued_scan_ids`` — every legitimately-
+        issued scan_id is recorded by ``record_issued_scan_id``,
+        so the absence flags an unminted (test or hostile) row.
+    """
+    cur = conn.execute(
+        "DELETE FROM feedback "
+        " WHERE client_ip IS NOT NULL "
+        "    OR scan_id NOT IN (SELECT scan_id FROM issued_scan_ids)"
+    )
+    deleted = int(cur.rowcount or 0)
+    if deleted:
+        logger.info("cleanup_legacy_rows deleted %d row(s)", deleted)
+    return deleted
+
+
+def cleanup_legacy_rows() -> int:
+    """One-shot maintenance: drop feedback rows that predate the
+    hashed-IP + min_length=8 + issued-scan-id-gate migration, plus
+    any row whose scan_id was never minted by /api/analyze.
+
+    Idempotent — once the bad rows are gone, every surviving row
+    has ``client_ip IS NULL`` and a minted scan_id, so re-running
+    is a no-op.
+
+    Auto-invoked once per DB by ``init_db`` (guarded by the
+    ``legacy_cleanup_v1`` sentinel in ``schema_meta``). Also
+    exposed via ``python -m server.feedback --cleanup-legacy`` for
+    manual re-runs on a DB copy.
+    """
+    init_db()
+    with _write_lock, _connect() as conn:
+        conn.execute("BEGIN")
+        try:
+            deleted = _cleanup_legacy_rows_locked(conn)
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+    return deleted
+
+
 def daily_write_count_for_ip_hash(ip_hash: str | None) -> int:
     """Number of feedback rows the given IP hash has produced in the
     last 24 hours. Used by the per-IP daily quota guard in
@@ -441,3 +517,26 @@ def feedback_counts() -> dict:
         "top_corrections": top_corrections,
         "reasons": reasons,
     }
+
+
+if __name__ == "__main__":
+    # Tiny CLI so operators can re-run the cleanup on a DB copy
+    # (e.g. after restoring a backup) without spinning up the
+    # server. Invoke with ``python -m server.feedback --cleanup-legacy``.
+    import argparse
+    import sys
+
+    logging.basicConfig(level=logging.INFO)
+    parser = argparse.ArgumentParser(description="Feedback DB maintenance")
+    parser.add_argument(
+        "--cleanup-legacy",
+        action="store_true",
+        help="Drop pre-gate rows (raw client_ip set, or unminted scan_id).",
+    )
+    args = parser.parse_args()
+    if args.cleanup_legacy:
+        n = cleanup_legacy_rows()
+        print(f"cleanup_legacy_rows: deleted {n} row(s)")
+    else:
+        parser.print_help()
+        sys.exit(1)

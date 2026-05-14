@@ -1217,14 +1217,14 @@ class ResultActivity : AppCompatActivity() {
         binding.btnFeedbackYes.isEnabled = false
         binding.btnFeedbackNo.isEnabled = false
         val app = application as PlantDiseasesApp
-        val request = buildFeedbackRequest(
-            scan = scan,
-            correct = correct,
-            correctedClass = correctedClass,
-            reason = reason,
-            note = note,
-        )
         lifecycleScope.launch {
+            val request = buildFeedbackRequest(
+                scan = scan,
+                correct = correct,
+                correctedClass = correctedClass,
+                reason = reason,
+                note = note,
+            )
             val result = app.scanRepository.submitFeedback(request)
             result.onSuccess {
                 markFeedbackSubmitted(scan.id)
@@ -1250,7 +1250,7 @@ class ResultActivity : AppCompatActivity() {
      * when a field is unknown we send null rather than fabricating a
      * value, so server-side metrics don't get polluted by defaults.
      */
-    private fun buildFeedbackRequest(
+    private suspend fun buildFeedbackRequest(
         scan: ScanEntity,
         correct: Boolean,
         correctedClass: String?,
@@ -1280,6 +1280,15 @@ class ResultActivity : AppCompatActivity() {
         val scanId = scan.clientScanId.takeIf { it.isNotBlank() }
             ?: java.util.UUID.randomUUID().toString()
 
+        // SHA-256 of the original on-disk image so the corrections
+        // corpus can be joined back to image bytes during retraining
+        // without uploading the image itself. Runs off the UI thread;
+        // returns null when the file is gone (e.g. legacy scan whose
+        // file was cleared) — the server treats the field as optional.
+        val imageHashHex = withContext(Dispatchers.IO) {
+            ImageUtils.sha256Hex(java.io.File(scan.imagePath))
+        }
+
         return FeedbackRequest(
             scanId = scanId,
             correct = correct,
@@ -1297,10 +1306,7 @@ class ResultActivity : AppCompatActivity() {
             regionCount = regionCount,
             primaryRegionIndex = scan.primaryRegionIndex,
             feedbackLatencyMs = latencyMs,
-            // We don't ship the image hash today — adding it requires
-            // re-reading the original file off disk on the UI thread,
-            // and the server treats it as optional.
-            imageHash = null,
+            imageHash = imageHashHex,
         )
     }
 
