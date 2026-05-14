@@ -789,6 +789,10 @@ class CarePlanRequest(BaseModel):
     species: str | None = Field(default=None, max_length=128)
     light: str = Field(default="bright_indirect", max_length=32)
     locale: str = Field(default="en", max_length=8)
+    # Optional season override; ``None`` auto-detects from today's date
+    # (northern-hemisphere default). Accepted values: ``"growing"``
+    # or ``"dormant"``.
+    season: str | None = Field(default=None, max_length=16)
 
 
 class ProgressionRequest(BaseModel):
@@ -1098,6 +1102,7 @@ async def care_plan_endpoint(payload: CarePlanRequest):
             species=payload.species,
             light=payload.light,
             locale=payload.locale,
+            season=payload.season,
         ),
     )
     toxicity = lookup_pet_toxicity(payload.species) if payload.species else {

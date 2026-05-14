@@ -202,6 +202,8 @@ data class CarePlanRequest(
     @SerializedName("species") val species: String? = null,
     @SerializedName("light") val light: String = "bright_indirect",
     @SerializedName("locale") val locale: String = "en",
+    /** Optional season override — `null` lets the server pick from today's date. */
+    @SerializedName("season") val season: String? = null,
 )
 
 /**
@@ -223,6 +225,25 @@ data class CarePlanResponse(
     @SerializedName("toxic_to_pets") val toxicToPets: Boolean = false,
     @SerializedName("toxic_species_list") val toxicSpeciesList: List<String> = emptyList(),
     @SerializedName("toxicity_source") val toxicitySource: String = "unknown",
+    /** v2 additive fields — older clients ignore them; new clients
+     *  render a richer card with light bands, treatment checklist,
+     *  checkpoints and red flags. All are optional so the v1 contract
+     *  stays intact for clients on older server versions. */
+    @SerializedName("light_lux_target") val lightLuxTarget: LuxBand? = null,
+    @SerializedName("placement") val placement: String? = null,
+    @SerializedName("acclimation") val acclimation: String? = null,
+    @SerializedName("watering_method") val wateringMethod: String? = null,
+    @SerializedName("soil_mix") val soilMix: String? = null,
+    @SerializedName("fertiliser_npk") val fertiliserNpk: String? = null,
+    @SerializedName("humidity_band") val humidityBand: HumidityBand? = null,
+    @SerializedName("temperature_c") val temperatureC: TemperatureBand? = null,
+    @SerializedName("treatment") val treatment: List<String>? = null,
+    @SerializedName("sanitation") val sanitation: List<String>? = null,
+    @SerializedName("isolation") val isolation: Boolean = false,
+    @SerializedName("red_flags") val redFlags: List<String>? = null,
+    @SerializedName("checkpoints") val checkpoints: List<CarePlanCheckpoint>? = null,
+    @SerializedName("season") val season: String? = null,
+    @SerializedName("season_note") val seasonNote: String? = null,
 ) {
     val wateringDaysInt: Int?
         get() = when (val v = wateringDaysRaw) {
@@ -237,6 +258,26 @@ data class CarePlanResponse(
     val hasSpecies: Boolean
         get() = species.isNotBlank() && !species.equals("unknown", ignoreCase = true)
 }
+
+data class LuxBand(
+    @SerializedName("min") val min: Int = 0,
+    @SerializedName("max") val max: Int = 0,
+)
+
+data class HumidityBand(
+    @SerializedName("min") val min: Int = 0,
+    @SerializedName("max") val max: Int = 0,
+)
+
+data class TemperatureBand(
+    @SerializedName("day") val day: List<Int>? = null,
+    @SerializedName("night") val night: List<Int>? = null,
+)
+
+data class CarePlanCheckpoint(
+    @SerializedName("day") val day: Int = 0,
+    @SerializedName("check") val check: String = "",
+)
 
 /** Server health check response */
 data class HealthResponse(

@@ -61,14 +61,28 @@ def test_care_plan_offline_has_all_fields():
     plan = ai.generate_care_plan(
         disease="powdery_mildew", species="Begonia", light="bright_indirect",
     )
+    # v1 contract — preserved.
     for key in (
         "species", "disease", "light_tier",
         "watering_days", "fertilise_weeks", "humidity_target",
         "key_action", "follow_up_days",
     ):
-        assert key in plan, f"missing care-plan key: {key}"
-    # No LLM key configured ⇒ no summary_md polish.
-    assert "summary_md" not in plan
+        assert key in plan, f"missing v1 care-plan key: {key}"
+    # v2 additive fields — present even without an LLM key.
+    for key in (
+        "light_lux_target", "placement", "acclimation",
+        "watering_method", "soil_mix", "fertiliser_npk",
+        "humidity_band", "temperature_c",
+        "treatment", "sanitation", "isolation", "red_flags",
+        "checkpoints", "season", "summary_md",
+    ):
+        assert key in plan, f"missing v2 care-plan key: {key}"
+    # The deterministic Markdown summary must be non-empty so clients
+    # never render a blank card. The LLM polish, when configured,
+    # replaces the string in place.
+    assert isinstance(plan["summary_md"], str) and plan["summary_md"].strip()
+    assert plan["treatment"], "treatment checklist must be non-empty for a disease"
+    assert plan["isolation"] is True  # powdery mildew quarantines
 
 
 def test_care_plan_unknown_disease_falls_through():
@@ -79,6 +93,54 @@ def test_care_plan_unknown_disease_falls_through():
     plan = ai.generate_care_plan(disease="unknown_disease_x", light="low_light")
     assert "watering_days" in plan
     assert plan["disease"] == "unknown_disease_x"
+    assert plan["isolation"] is False  # default protocol = "healthy"-ish
+
+
+def test_care_plan_season_modifier_stretches_dormant_watering():
+    """Dormant months stretch the watering interval and pause feeding."""
+    import datetime as dt
+
+    import ai_services as ai
+
+    growing = ai.generate_care_plan(
+        disease="healthy", light="bright_indirect", today=dt.date(2025, 6, 15),
+    )
+    dormant = ai.generate_care_plan(
+        disease="healthy", light="bright_indirect", today=dt.date(2025, 1, 15),
+    )
+    assert growing["season"] == "growing"
+    assert dormant["season"] == "dormant"
+    # Dormant interval is at least 7 days and longer than the growing
+    # interval.
+    assert isinstance(dormant["watering_days"], int)
+    assert dormant["watering_days"] >= growing["watering_days"]
+    # Dormant fertilising is half-cadence or more (always longer interval).
+    assert dormant["fertilise_weeks"] >= growing["fertilise_weeks"]
+
+
+def test_care_plan_disease_protocol_carries_treatment_and_red_flags():
+    """Disease classes must surface a non-empty treatment + red-flags list."""
+    import ai_services as ai
+
+    for d in (
+        "powdery_mildew",
+        "gray_mold_botrytis",
+        "leaf_spot_fungal",
+        "bacterial_leaf_spot",
+        "viral_disease",
+    ):
+        plan = ai.generate_care_plan(disease=d, light="bright_indirect")
+        assert plan["treatment"], f"empty treatment list for {d}"
+        assert plan["red_flags"], f"empty red_flags list for {d}"
+        assert plan["isolation"] is True, f"{d} should isolate"
+
+
+def test_care_plan_unknown_light_falls_back():
+    """An invalid light tier must be normalised to ``bright_indirect``."""
+    import ai_services as ai
+
+    plan = ai.generate_care_plan(disease="healthy", light="ultraviolet")
+    assert plan["light_tier"] == "bright_indirect"
 
 
 def test_progression_baseline_when_no_previous():

@@ -8,7 +8,6 @@ import android.graphics.Canvas
 import android.net.Uri
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
-import android.text.InputType
 import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
@@ -26,8 +25,6 @@ import androidx.core.content.FileProvider
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.tabs.TabLayout
-import com.google.android.material.textfield.TextInputEditText
-import com.google.android.material.textfield.TextInputLayout
 import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.resource.bitmap.CenterCrop
@@ -37,7 +34,6 @@ import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.FeedbackRequest
-import com.plantdiseases.app.data.model.SpeciesCandidate
 import com.plantdiseases.app.data.model.TopProb
 import com.plantdiseases.app.util.TelemetryIds
 import com.plantdiseases.app.BuildConfig
@@ -454,120 +450,18 @@ class ResultActivity : AppCompatActivity() {
     }
 
     private fun showCreatePlantForScanDialog(scan: ScanEntity) {
-        val container = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, 8.dpToPx(), 0, 0)
-        }
-        val name = resultInputField(getString(R.string.plant_name), scan.diseaseName)
-        val species = resultInputField(getString(R.string.plant_species), null)
-
-        // PlantNet species suggestion strip
-        var pickedScientific: String? = null
-        var pickedCommon: String? = null
-        val suggestionStatus = TextView(this).apply {
-            text = getString(R.string.species_suggest_hint)
-            textSize = 12f
-            setTextColor(getColor(R.color.on_surface_secondary))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 4.dpToPx(); bottomMargin = 8.dpToPx() }
-        }
-        val suggestBtn = com.google.android.material.button.MaterialButton(
-            this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle,
-        ).apply {
-            text = getString(R.string.species_suggest_button)
-            setIconResource(R.drawable.ic_scan)
-            iconTint = android.content.res.ColorStateList.valueOf(getColor(R.color.primary))
-            setTextColor(getColor(R.color.primary))
-            strokeColor = android.content.res.ColorStateList.valueOf(getColor(R.color.primary))
-            cornerRadius = 14.dpToPx()
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { bottomMargin = 12.dpToPx() }
-        }
-        val candidateChips = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            visibility = View.GONE
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { bottomMargin = 8.dpToPx() }
-        }
-
-        suggestBtn.setOnClickListener {
-            val app = application as PlantDiseasesApp
-            val imageFile = File(scan.imagePath)
-            if (!imageFile.exists()) {
-                suggestionStatus.text = getString(R.string.species_suggest_unavailable_body)
-                return@setOnClickListener
-            }
-            suggestBtn.isEnabled = false
-            suggestionStatus.text = getString(R.string.species_suggest_loading)
-            candidateChips.removeAllViews()
-            candidateChips.visibility = View.GONE
-            lifecycleScope.launch {
-                val res = app.scanRepository.identifySpecies(imageFile)
-                suggestBtn.isEnabled = true
-                res.onSuccess { id ->
-                    if (!id.available || id.results.isEmpty()) {
-                        suggestionStatus.text = if (id.results.isEmpty() && id.available)
-                            getString(R.string.species_suggest_no_results)
-                        else
-                            getString(R.string.species_suggest_unavailable_body)
-                        return@onSuccess
-                    }
-                    suggestionStatus.text = getString(R.string.species_suggest_title)
-                    id.results.take(3).forEach { candidate ->
-                        candidateChips.addView(speciesChip(candidate) { picked ->
-                            pickedScientific = picked.scientificName
-                            pickedCommon = picked.displayCommonName
-                            val display = picked.displayCommonName
-                                ?: picked.scientificName
-                                ?: getString(R.string.species_suggest_unknown_name)
-                            species.second.setText(display)
-                            // Auto-fill plant name with the friendly common
-                            // name if the user hasn't typed anything yet.
-                            if (name.second.text.isNullOrBlank() ||
-                                name.second.text?.toString() == scan.diseaseName) {
-                                name.second.setText(display)
-                            }
-                        })
-                    }
-                    candidateChips.visibility = View.VISIBLE
-                }.onFailure {
-                    suggestionStatus.text = getString(R.string.species_suggest_unavailable_body)
-                }
-            }
-        }
-
-        container.addView(name.first)
-        container.addView(species.first)
-        container.addView(suggestionStatus)
-        container.addView(candidateChips)
-        container.addView(suggestBtn)
-
-        val dialog = MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.create_new_plant)
-            .setView(container)
-            .setNegativeButton(R.string.cancel, null)
-            .setPositiveButton(R.string.save, null)
-            .show()
-
-        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-            val plantName = name.second.text?.toString()?.trim().orEmpty()
-            if (plantName.isEmpty()) {
-                name.first.error = getString(R.string.plant_name_required)
-                return@setOnClickListener
-            }
+        CreatePlantSheet.show(
+            supportFragmentManager,
+            scan,
+            initialName = scan.diseaseName,
+        ) { plantName, species, scientific, common ->
             val app = application as PlantDiseasesApp
             lifecycleScope.launch {
                 val plantId = app.plantRepository.savePlant(
                     name = plantName,
-                    species = species.second.text?.toString(),
-                    scientificName = pickedScientific,
-                    commonName = pickedCommon,
+                    species = species,
+                    scientificName = scientific,
+                    commonName = common,
                 )
                 app.plantRepository.assignScanToPlant(scan.id, plantId)
                 binding.btnAddToGarden.text = getString(R.string.added_to_garden)
@@ -576,96 +470,10 @@ class ResultActivity : AppCompatActivity() {
                     getString(R.string.scan_added_to_garden),
                     Toast.LENGTH_SHORT,
                 ).show()
-                dialog.dismiss()
             }
         }
     }
 
-    /** Single tap-to-pick chip in the species-suggestion list. */
-    private fun speciesChip(
-        candidate: SpeciesCandidate,
-        onPick: (SpeciesCandidate) -> Unit,
-    ): View {
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            background = getDrawable(R.drawable.bg_species_chip)
-            setPadding(12.dpToPx(), 10.dpToPx(), 12.dpToPx(), 10.dpToPx())
-            isClickable = true
-            isFocusable = true
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { bottomMargin = 6.dpToPx() }
-            setOnClickListener { onPick(candidate) }
-        }
-        val text = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
-            )
-        }
-        text.addView(TextView(this).apply {
-            // Qualify with `this.text` — the enclosing scope binds `text`
-            // to the outer LinearLayout val and would otherwise win.
-            this.text = candidate.displayCommonName
-                ?: candidate.scientificName
-                ?: getString(R.string.species_suggest_unknown_name)
-            textSize = 14f
-            setTextColor(getColor(R.color.on_surface))
-            typeface = android.graphics.Typeface.create("sans-serif-medium",
-                android.graphics.Typeface.NORMAL)
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-        })
-        candidate.scientificName?.let { sci ->
-            if (sci != (candidate.displayCommonName ?: "")) {
-                text.addView(TextView(this).apply {
-                    this.text = sci
-                    textSize = 12f
-                    setTextColor(getColor(R.color.on_surface_secondary))
-                    setTypeface(typeface, android.graphics.Typeface.ITALIC)
-                    maxLines = 1
-                    ellipsize = android.text.TextUtils.TruncateAt.END
-                })
-            }
-        }
-        row.addView(text)
-        row.addView(TextView(this).apply {
-            this.text = getString(
-                R.string.species_suggest_match,
-                (candidate.score * 100).toInt().coerceIn(0, 100)
-            )
-            textSize = 12f
-            setTextColor(getColor(R.color.primary))
-            typeface = android.graphics.Typeface.create("sans-serif-medium",
-                android.graphics.Typeface.NORMAL)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { marginStart = 10.dpToPx() }
-        })
-        return row
-    }
-
-    private fun resultInputField(
-        hint: String,
-        value: String?,
-    ): Pair<TextInputLayout, TextInputEditText> {
-        val input = TextInputEditText(this).apply {
-            setText(value.orEmpty())
-            inputType = InputType.TYPE_CLASS_TEXT
-            setSingleLine(true)
-        }
-        val layout = TextInputLayout(this).apply {
-            this.hint = hint
-            addView(input)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { bottomMargin = 10.dpToPx() }
-        }
-        return layout to input
     }
 
     private fun setupTreatmentPreventionTabs(scan: ScanEntity, repository: ScanRepository, isRu: Boolean) {
@@ -731,10 +539,13 @@ class ResultActivity : AppCompatActivity() {
             return
         }
 
-        // A detector/classifier mismatch is the more actionable flag —
-        // it means the model disagreed with itself — so prefer it over
-        // the softer "uncertain_healthy".
+        // Priority order: blur (re-shoot is the only fix) > detector
+        // mismatch (model disagreed with itself) > uncertain_healthy
+        // (soft hedge).
         val (titleRes, bodyRes) = when {
+            "blurry_image" in warnings ->
+                R.string.warning_blurry_image_title to
+                    R.string.warning_blurry_image
             "detector_classifier_mismatch" in warnings ->
                 R.string.warning_detector_mismatch_title to
                     R.string.warning_detector_mismatch

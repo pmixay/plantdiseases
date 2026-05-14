@@ -97,10 +97,6 @@ def get_float(key: str, default: float) -> float:
     return float(get(key, default, cast=float))
 
 
-def get_bool(key: str, default: bool = False) -> bool:
-    return bool(get(key, default, cast=bool))
-
-
 def get_list(key: str, default: list[str] | None = None, sep: str = ",") -> list[str]:
     """Parse a list. JSON arrays are returned as-is; strings are split on ``sep``."""
     raw = _FILE_DATA.get(key.upper(), None)
@@ -111,11 +107,3 @@ def get_list(key: str, default: list[str] | None = None, sep: str = ",") -> list
     if isinstance(raw, list):
         return [str(x).strip() for x in raw if str(x).strip()]
     return [s.strip() for s in str(raw).split(sep) if s.strip()]
-
-
-def config_path() -> Path:
-    return _CONFIG_PATH
-
-
-def loaded_from_file() -> bool:
-    return bool(_FILE_DATA)

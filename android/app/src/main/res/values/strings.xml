@@ -137,10 +137,6 @@
     <string name="server_offline">Offline</string>
     <string name="server_checking">Checking…</string>
     <string name="save">Save</string>
-    <string name="diagnostics_title">Server Diagnostics</string>
-    <string name="diagnostics_subtitle">Live status of the analysis backend</string>
-    <string name="diagnostics_version">Server version</string>
-    <string name="diagnostics_classes">Disease classes</string>
     <string name="diagnostics_refresh">Refresh</string>
     <string name="diagnostics_value_dash">—</string>
 
@@ -154,17 +150,6 @@
     <string name="why_this_diagnosis">Why This Diagnosis?</string>
     <string name="alternatives_subtitle">Model confidence across top candidates</string>
     <!-- About model -->
-    <string name="about_model">About the Model</string>
-    <string name="model_architecture">Architecture</string>
-    <string name="model_params">Parameters</string>
-    <string name="model_classes">Classes</string>
-    <string name="model_pipeline">Pipeline</string>
-    <string name="model_arch_value">YOLOv8n + EfficientNet-B0</string>
-    <string name="model_params_value">~8M total</string>
-    <string name="model_classes_value">7 diseases + healthy + not-a-plant</string>
-    <string name="model_pipeline_value">Two-stage: locate → classify</string>
-    <string name="model_description">Stage 1 (YOLOv8n) locates every leaf in the photo. Stage 2 (EfficientNet-B0 @ 240 px) classifies the cropped leaf region into one of 7 houseplant diseases or healthy, and rejects frames without a plant via a dedicated not-a-plant class plus an MSP/OOD gate.</string>
-
     <!-- Rate limit -->
     <string name="server_busy">Server Busy</string>
     <string name="server_busy_detail">Too many requests. Please wait a moment and try again.</string>
@@ -181,6 +166,8 @@
     <string name="warning_uncertain_healthy">The model is not confident that the plant is healthy. Please check the alternative diagnoses below — they may apply.</string>
     <string name="warning_detector_mismatch_title">Detector sees damage</string>
     <string name="warning_detector_mismatch">The detector spotted leaf damage, but the classifier decided the plant is healthy. Try re-scanning from a closer, better-lit angle.</string>
+    <string name="warning_blurry_image_title">Photo is too blurry</string>
+    <string name="warning_blurry_image">We couldn\'t read the leaf clearly enough to trust a diagnosis. Hold the phone steady, wait for autofocus to lock, and try again.</string>
 
     <!-- How to use (onboarding from profile) -->
     <string name="how_to_use">How to Use</string>

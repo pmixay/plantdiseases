@@ -137,10 +137,6 @@
     <string name="server_offline">Недоступен</string>
     <string name="server_checking">Проверка…</string>
     <string name="save">Сохранить</string>
-    <string name="diagnostics_title">Диагностика сервера</string>
-    <string name="diagnostics_subtitle">Текущее состояние бэкенда анализа</string>
-    <string name="diagnostics_version">Версия сервера</string>
-    <string name="diagnostics_classes">Классов болезней</string>
     <string name="diagnostics_refresh">Обновить</string>
     <string name="diagnostics_value_dash">—</string>
 
@@ -154,17 +150,6 @@
     <string name="why_this_diagnosis">Почему этот диагноз?</string>
     <string name="alternatives_subtitle">Уверенность модели по основным кандидатам</string>
     <!-- About model -->
-    <string name="about_model">О модели</string>
-    <string name="model_architecture">Архитектура</string>
-    <string name="model_params">Параметры</string>
-    <string name="model_classes">Классы</string>
-    <string name="model_pipeline">Пайплайн</string>
-    <string name="model_arch_value">YOLOv8n + EfficientNet-B0</string>
-    <string name="model_params_value">~8M всего</string>
-    <string name="model_classes_value">7 болезней + здоровое + не-растение</string>
-    <string name="model_pipeline_value">Двухэтапный: локализация → классификация</string>
-    <string name="model_description">Этап 1 (YOLOv8n) находит листья в кадре. Этап 2 (EfficientNet-B0 @ 240 px) классифицирует вырезанную область листа в одну из 7 болезней комнатных растений или \"здоровое\", и отбрасывает кадры без растения через отдельный класс not-a-plant и MSP/OOD-фильтр.</string>
-
     <!-- Rate limit -->
     <string name="server_busy">Сервер занят</string>
     <string name="server_busy_detail">Слишком много запросов. Подождите немного и повторите.</string>
@@ -181,6 +166,8 @@
     <string name="warning_uncertain_healthy">Модель не уверена, что растение здорово. Проверьте альтернативные диагнозы ниже — один из них может подойти.</string>
     <string name="warning_detector_mismatch_title">Детектор видит повреждения</string>
     <string name="warning_detector_mismatch">Детектор нашёл признаки повреждения, но классификатор определил растение как здоровое. Рекомендуем повторить скан с ближнего ракурса при хорошем освещении.</string>
+    <string name="warning_blurry_image_title">Снимок размытый</string>
+    <string name="warning_blurry_image">Не удалось разглядеть лист, чтобы поставить диагноз. Держите камеру неподвижно, дождитесь автофокуса и попробуйте снова.</string>
 
     <!-- How to use (onboarding from profile) -->
     <string name="how_to_use">Как пользоваться</string>

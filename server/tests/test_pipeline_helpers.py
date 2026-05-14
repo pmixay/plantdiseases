@@ -302,3 +302,28 @@ def test_healthy_fallback_helper_skips_strong_disease_verdict():
     assert _maybe_apply_healthy_fallback(
         strong_probs, "powdery_mildew", strong_probs["powdery_mildew"],
     ) is None
+
+
+def test_blur_gate_rejects_uniform_image():
+    """Solid-colour PNGs have ~zero edge variance — must trip the gate."""
+    from PIL import Image
+
+    from pipeline import BLUR_LAPLACIAN_FLOOR, _variance_of_laplacian, is_image_too_blurry
+
+    flat = Image.new("RGB", (640, 480), color=(120, 160, 80))
+    score = _variance_of_laplacian(flat)
+    assert score < 1.0
+    assert is_image_too_blurry(flat) is True
+    assert score < BLUR_LAPLACIAN_FLOOR
+
+
+def test_blur_gate_accepts_textured_image():
+    """High-frequency noise produces a wide Laplacian spread → passes."""
+    import numpy as np
+    from PIL import Image
+
+    from pipeline import BLUR_LAPLACIAN_FLOOR, _variance_of_laplacian
+
+    rng = np.random.default_rng(seed=42)
+    noisy = Image.fromarray(rng.integers(0, 255, (480, 640, 3), dtype=np.uint8))
+    assert _variance_of_laplacian(noisy) > BLUR_LAPLACIAN_FLOOR * 10
