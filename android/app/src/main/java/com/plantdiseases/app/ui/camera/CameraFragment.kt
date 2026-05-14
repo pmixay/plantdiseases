@@ -356,7 +356,10 @@ class CameraFragment : Fragment() {
         val cam = camera ?: return
         val torchOn = cam.cameraInfo.torchState.value == TorchState.ON
         cam.cameraControl.enableTorch(!torchOn)
-        binding.btnFlash.setImageResource(
+        // ``btn_flash`` is a MaterialButton (IconButton style) post-
+        // redesign — set the icon via setIconResource, not the
+        // ImageView-only setImageResource.
+        binding.btnFlash.setIconResource(
             if (!torchOn) R.drawable.ic_flash_on else R.drawable.ic_flash_off
         )
     }
