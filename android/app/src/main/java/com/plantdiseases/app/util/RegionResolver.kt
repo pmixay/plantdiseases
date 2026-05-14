@@ -116,18 +116,16 @@ object RegionResolver {
 
     private fun formatRegion(address: Address?): String? {
         address ?: return null
-        // City / locality first, then country code. Falls back to the
-        // admin area (state / region) if no locality is reported.
-        val city = address.locality
-            ?: address.subAdminArea
-            ?: address.adminArea
-        val country = address.countryCode ?: address.countryName
-        return when {
-            city.isNullOrBlank() && country.isNullOrBlank() -> null
-            city.isNullOrBlank() -> country?.trim()
-            country.isNullOrBlank() -> city.trim()
-            else -> "${city.trim()}, ${country.trim()}"
-        }?.take(80)
+        // Country-only granularity in v2 — the server groups the
+        // community corpus by country to keep buckets dense (cities
+        // produced too many one-row groups, especially near borders).
+        // Prefer the ISO country code; fall back to the full country
+        // name when Geocoder didn't fill the code field.
+        val code = address.countryCode?.trim()
+        if (!code.isNullOrBlank()) return code.take(80)
+        val name = address.countryName?.trim()
+        if (!name.isNullOrBlank()) return name.take(80)
+        return null
     }
 
     private fun prefs(context: Context) = context.applicationContext

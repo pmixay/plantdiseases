@@ -155,7 +155,7 @@
     <string name="species_card_unavailable">Определение вида не настроено на этом сервере.</string>
 
     <string name="similar_scans_title">Похожие сканы рядом</string>
-    <string name="similar_scans_subtitle">%1$d сканов в регионе %2$s</string>
+    <string name="similar_scans_subtitle">%1$d сканов в стране %2$s</string>
     <string name="similar_scans_subtitle_no_region">Включите приблизительное местоположение, чтобы видеть сканы рядом.</string>
     <string name="similar_scans_empty">Похожих сканов пока нет — ваш будет первым.</string>
 

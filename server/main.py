@@ -1149,11 +1149,35 @@ class CarePlanRequest(BaseModel):
 # ── Community scan corpus ───────────────────────────────────────────
 
 
-# Same alphabet as scan_id / user_pseudo_id elsewhere — keeps the
-# corpus immune to control-byte or whitespace injection.
+# Country-only alphabet. We dropped the city granularity in v2 — the
+# corpus now groups by country, both because the city signal was
+# noisy near borders and because "City, Country" produced way too
+# many one-row buckets. ``_normalise_region`` below also rewrites
+# legacy "City, Country" inputs (older clients in the wild) into
+# their country tail so the bucketing stays consistent across the
+# rollout window.
 _REGION_ALLOWED = set(
-    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ,.'-/&()"
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .'-"
 )
+
+
+def _normalise_region(raw: str | None) -> str:
+    """Strip + uppercase the country tail of a region string.
+
+    Accepts both the new country-only format and the legacy
+    ``"City, Country"`` shape some older clients still send.
+    Returns ``""`` for unusable input so callers can 422 it.
+    """
+    if not raw:
+        return ""
+    # Legacy "City, Country" — keep only the country tail. We split
+    # on the *last* comma so "Saint-John's, AG" still gives "AG".
+    if "," in raw:
+        raw = raw.rsplit(",", 1)[-1]
+    cleaned = raw.strip()[:80]
+    if not cleaned or any(ch not in _REGION_ALLOWED for ch in cleaned):
+        return ""
+    return cleaned
 
 
 class CommunityScanRequest(BaseModel):
@@ -1181,14 +1205,12 @@ class CommunityScanRequest(BaseModel):
     @field_validator("region")
     @classmethod
     def _safe_region(cls, v: str) -> str:
-        cleaned = v.strip()
+        cleaned = _normalise_region(v)
         if not cleaned:
-            raise ValueError("region must not be blank")
-        if any(ch not in _REGION_ALLOWED for ch in cleaned):
             raise ValueError(
-                "region must be alphanumeric, spaces, punctuation only"
+                "region must be a country name or code (no city / commas / control chars)"
             )
-        return cleaned[:80]
+        return cleaned
 
     @field_validator("disease")
     @classmethod
@@ -1808,13 +1830,17 @@ async def community_scan_nearby(
         logger.info("Community nearby validation failed: %s", exc)
         raise HTTPException(status_code=422, detail="Invalid nearby query") from exc
 
+    # Normalise the query parameter the same way the upload validator
+    # does so a legacy "City, Country" caller still hits the right
+    # country bucket on read.
+    normalised = _normalise_region(region)
     rows = community_nearby_scans(
-        region=region.strip()[:80],
+        region=normalised,
         disease=(disease or None),
         limit=max(1, min(int(limit), 50)),
         exclude_user_pseudo_id=user_pseudo_id,
     )
-    summary = community_region_summary(region.strip()[:80])
+    summary = community_region_summary(normalised)
     return JSONResponse(content={"items": rows, "summary": summary})
 
 

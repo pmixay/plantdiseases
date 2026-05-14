@@ -277,3 +277,42 @@ def test_metrics_surfaces_community_block(client, isolated_community):
     assert "community" in m
     assert m["community"]["total"] >= 1
     assert m["community"]["regions"] >= 1
+
+
+def test_region_groups_by_country_only(client, isolated_community):
+    """The corpus now groups by country only — multiple cities in the
+    same country must land in the same bucket. Both legacy
+    ``"City, Country"`` writes and modern ``"Country"`` writes
+    normalise to the country tail server-side.
+    """
+    db_path, _ = isolated_community
+    for region, scan_id in (
+        ("London, GB",   "scangbcity001"),
+        ("Manchester, GB", "scangbcity002"),
+        ("GB",           "scangbcity003"),
+    ):
+        r = client.post(
+            "/api/community/scan",
+            data=_form(
+                scan_id=scan_id,
+                user_pseudo_id="pseudo-gb-bucket",
+                region=region,
+                disease="healthy",
+            ),
+        )
+        assert r.status_code == 200, r.text
+    # Persisted region column should be the country tail for every row.
+    with sqlite3.connect(str(db_path)) as conn:
+        regions = {
+            row[0]
+            for row in conn.execute("SELECT region FROM community_scans").fetchall()
+        }
+    assert regions == {"GB"}, f"region column not collapsed to country: {regions}"
+
+    # Read path: query with EITHER the new country form OR the legacy
+    # city form lands on the same bucket.
+    for query in ("GB", "Manchester, GB"):
+        r = client.get("/api/community/nearby", params={"region": query})
+        body = r.json()
+        assert {item["region"] for item in body["items"]} == {"GB"}, query
+        assert body["summary"]["total"] == 3
