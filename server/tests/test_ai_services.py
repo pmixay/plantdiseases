@@ -310,3 +310,37 @@ def test_care_plan_ru_localises_fertiliser_npk_from_disease_override():
         disease="nutrient_deficiency", light="bright_indirect", locale="ru",
     )
     assert "хелат" in plan["fertiliser_npk"].lower()
+
+
+def test_care_plan_ru_unknown_disease_falls_back_to_healthy_strings():
+    """Unknown disease keys (e.g. the ``"unknown"`` value the endpoint
+    normalises to) must surface RUSSIAN text in RU mode. The English
+    code path falls back to the "healthy" protocol; the RU lookup
+    must follow the same fallback rather than re-emitting the
+    English defaults.
+    """
+    import ai_services as ai
+
+    plan = ai.generate_care_plan(
+        disease="unknown", light="bright_indirect", locale="ru",
+    )
+    for field in ("key_action",):
+        value = plan[field]
+        assert isinstance(value, str) and value.strip()
+        # The English healthy strings contain "current routine" /
+        # "monitor weekly" — easy markers that the RU fallback failed.
+        assert "current routine" not in value.lower(), (
+            f"{field}: RU plan leaked English fallback: {value!r}"
+        )
+        assert "monitor weekly" not in value.lower(), (
+            f"{field}: RU plan leaked English fallback: {value!r}"
+        )
+    for step in plan["treatment"]:
+        assert "continue the current" not in step.lower(), (
+            f"treatment step leaked English fallback: {step!r}"
+        )
+    # And conversely the English path is unaffected.
+    plan_en = ai.generate_care_plan(
+        disease="unknown", light="bright_indirect", locale="en",
+    )
+    assert "monitor" in plan_en["key_action"].lower()

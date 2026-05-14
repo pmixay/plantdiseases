@@ -1220,7 +1220,14 @@ def generate_care_plan(
     light_key = light if light in _VALID_LIGHT_TIERS else "bright_indirect"
     light_profile = _LIGHT_TIER_PROFILE[light_key]
     base = _BASE_CARE[light_key]
-    protocol = _DISEASE_PROTOCOL.get(disease, _DISEASE_PROTOCOL["healthy"])
+    # Resolve the disease to its canonical protocol key once so the
+    # English and Russian look-ups stay in lock-step. The endpoint
+    # normalises unknown classes to ``"unknown"`` upstream, which
+    # isn't in either protocol table; the EN code falls back to the
+    # ``"healthy"`` protocol and the RU lookup must follow the same
+    # fallback or it leaks English text on every unknown-class plan.
+    protocol_key = disease if disease in _DISEASE_PROTOCOL else "healthy"
+    protocol = _DISEASE_PROTOCOL[protocol_key]
     lang = "ru" if _is_russian(locale) else "en"
 
     humidity_band = protocol.get("humidity_band") or base["humidity_band"]
@@ -1286,25 +1293,25 @@ def generate_care_plan(
     fert_npk_en = protocol.get("fertiliser_npk", base["fertiliser_npk"])
     if _is_russian(locale):
         fert_npk = (
-            _DISEASE_PROTOCOL_RU.get(disease, {}).get("fertiliser_npk")
+            _DISEASE_PROTOCOL_RU.get(protocol_key, {}).get("fertiliser_npk")
             or _BASE_CARE_TEXT_RU.get(light_key, {}).get("fertiliser_npk")
             or fert_npk_en
         )
     else:
         fert_npk = fert_npk_en
     key_action = _localise(
-        "key_action", disease,
+        "key_action", protocol_key,
         protocol.get("key_action", "Monitor weekly."),
         locale,
     )
     treatment = _localise(
-        "treatment", disease, list(protocol.get("treatment") or []), locale,
+        "treatment", protocol_key, list(protocol.get("treatment") or []), locale,
     )
     sanitation = _localise(
-        "sanitation", disease, list(protocol.get("sanitation") or []), locale,
+        "sanitation", protocol_key, list(protocol.get("sanitation") or []), locale,
     )
     red_flags = _localise(
-        "red_flags", disease, list(protocol.get("red_flags") or []), locale,
+        "red_flags", protocol_key, list(protocol.get("red_flags") or []), locale,
     )
 
     plan: dict = {
