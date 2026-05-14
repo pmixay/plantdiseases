@@ -49,7 +49,8 @@ try:
     )
     from .config import get_float, get_int, get_list, get_str
     from .diseases_data import DISEASES_DATABASE, lookup_pet_toxicity
-    from .feedback import feedback_counts, init_db as init_feedback_db, record_feedback
+    from .feedback import feedback_counts, record_feedback
+    from .feedback import init_db as init_feedback_db
     from .pipeline import PlantDiseasePipeline
 except ImportError:
     from ai_services import (
@@ -62,7 +63,8 @@ except ImportError:
     )
     from config import get_float, get_int, get_list, get_str
     from diseases_data import DISEASES_DATABASE, lookup_pet_toxicity
-    from feedback import feedback_counts, init_db as init_feedback_db, record_feedback
+    from feedback import feedback_counts, record_feedback
+    from feedback import init_db as init_feedback_db
     from pipeline import PlantDiseasePipeline
 
 try:
