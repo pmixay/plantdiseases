@@ -347,6 +347,24 @@ def _row_to_dict(row: tuple) -> dict:
     }
 
 
+def daily_write_count_for_ip_hash(ip_hash: str | None) -> int:
+    """Community uploads the given IP hash has produced in the last
+    24 hours. The /api/community/scan endpoint uses this to enforce
+    a per-IP daily quota so one bad actor can't flood the corpus.
+    """
+    if not ip_hash:
+        return 0
+    init_db()
+    cutoff = int(time.time()) - 86_400
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM community_scans "
+            "WHERE client_ip_hash = ? AND created_at >= ?",
+            (ip_hash, cutoff),
+        ).fetchone()
+    return int(row[0]) if row else 0
+
+
 def stats_snapshot() -> dict:
     """Aggregate counters for the /api/metrics surface."""
     init_db()
@@ -377,6 +395,7 @@ def stats_snapshot() -> dict:
 __all__ = [
     "COMMUNITY_DB_PATH",
     "COMMUNITY_THUMB_DIR",
+    "daily_write_count_for_ip_hash",
     "delete_for_user",
     "init_db",
     "nearby_scans",

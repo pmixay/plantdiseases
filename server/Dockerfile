@@ -52,11 +52,14 @@ COPY *.py ./
 COPY tools ./tools
 
 # Logs + models live on bind mounts; create dirs for the volume targets.
-RUN mkdir -p /app/logs /app/models && \
+# /app/data is the SQLite + thumbnail bind-mount target — declared here
+# so the container can run unmounted (dev mode) without crashing on a
+# missing path.
+RUN mkdir -p /app/logs /app/models /app/data && \
     adduser --disabled-password --gecos "" --uid 10001 plantd && \
     chown -R plantd:plantd /app
 
-VOLUME ["/app/models"]
+VOLUME ["/app/models", "/app/data"]
 
 USER plantd
 

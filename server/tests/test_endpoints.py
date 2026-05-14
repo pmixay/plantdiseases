@@ -274,3 +274,35 @@ def test_identify_endpoint_passes_organ_as_keyword(client, png_bytes, monkeypatc
     assert captured["organ"] == "flower"
     assert captured["bytes_len"] == len(png_bytes)
     assert r.json()["organ"] == "flower"
+
+
+def test_analyze_response_carries_issued_scan_id(client, png_bytes):
+    """/api/analyze must mint a scan_id, persist it in the issued
+    log, and surface it in the response. The feedback gate later
+    consults that table to bind feedback rows to real scans."""
+    import feedback as fb
+
+    r = client.post(
+        "/api/analyze",
+        files={"image": ("leaf.png", png_bytes, "image/png")},
+    )
+    assert r.status_code == 200, r.text
+    scan_id = r.json().get("scan_id")
+    assert isinstance(scan_id, str) and len(scan_id) >= 16
+    assert fb.is_scan_id_issued(scan_id)
+
+
+def test_feedback_enforce_mode_rejects_unissued_scan_id(client, png_bytes, monkeypatch):
+    """With ENFORCE_ISSUED_SCAN_IDS flipped on, a feedback POST whose
+    scan_id wasn't seen on /api/analyze must 422 instead of being
+    quietly persisted. Default flow stays "log only" (covered by the
+    rest of the feedback test suite)."""
+    import main as server_main
+
+    monkeypatch.setattr(server_main, "ENFORCE_ISSUED_SCAN_IDS", True)
+    r = client.post(
+        "/api/feedback",
+        json={"scan_id": "neverissuedXYZ", "correct": True},
+    )
+    assert r.status_code == 422, r.text
+    assert "scan_id" in r.json()["detail"].lower()

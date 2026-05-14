@@ -51,6 +51,9 @@ try:
         COMMUNITY_THUMB_DIR,
     )
     from .community import (
+        daily_write_count_for_ip_hash as community_daily_writes,
+    )
+    from .community import (
         delete_for_user as community_delete_for_user,
     )
     from .community import (
@@ -58,6 +61,9 @@ try:
     )
     from .community import (
         nearby_scans as community_nearby_scans,
+    )
+    from .community import (
+        prune_older_than as community_prune_older_than,
     )
     from .community import (
         record_scan as community_record_scan,
@@ -71,11 +77,20 @@ try:
     from .config import get_float, get_int, get_list, get_str
     from .diseases_data import DISEASES_DATABASE, lookup_pet_toxicity
     from .feedback import (
+        daily_write_count_for_ip_hash as feedback_daily_writes,
+    )
+    from .feedback import (
         feedback_counts,
+        hash_client_ip,
+        is_scan_id_issued,
         record_feedback,
+        record_issued_scan_id,
     )
     from .feedback import (
         init_db as init_feedback_db,
+    )
+    from .feedback import (
+        prune_older_than as feedback_prune_older_than,
     )
     from .pipeline import PlantDiseasePipeline
 except ImportError:
@@ -91,6 +106,9 @@ except ImportError:
         COMMUNITY_THUMB_DIR,
     )
     from community import (
+        daily_write_count_for_ip_hash as community_daily_writes,
+    )
+    from community import (
         delete_for_user as community_delete_for_user,
     )
     from community import (
@@ -98,6 +116,9 @@ except ImportError:
     )
     from community import (
         nearby_scans as community_nearby_scans,
+    )
+    from community import (
+        prune_older_than as community_prune_older_than,
     )
     from community import (
         record_scan as community_record_scan,
@@ -111,11 +132,20 @@ except ImportError:
     from config import get_float, get_int, get_list, get_str
     from diseases_data import DISEASES_DATABASE, lookup_pet_toxicity
     from feedback import (
+        daily_write_count_for_ip_hash as feedback_daily_writes,
+    )
+    from feedback import (
         feedback_counts,
+        hash_client_ip,
+        is_scan_id_issued,
         record_feedback,
+        record_issued_scan_id,
     )
     from feedback import (
         init_db as init_feedback_db,
+    )
+    from feedback import (
+        prune_older_than as feedback_prune_older_than,
     )
     from pipeline import PlantDiseasePipeline
 
@@ -198,7 +228,42 @@ def _safe_filename(name: str | None, *, max_len: int = 80) -> str:
 
 
 RATE_LIMIT_RPS = get_float("RATE_LIMIT_RPS", 1.0)
+# Burst capacity on top of the steady-state rate. A burst of 5 lets
+# the client pop off 5 requests back-to-back (e.g. nav + analyze +
+# care-plan + identify + feedback fan-out) before the token bucket
+# stops refilling — without that the analyze flow used to slam into
+# the limiter on every cold open. Default chosen to absorb a single
+# scan + its post-result side calls.
+RATE_LIMIT_BURST = get_float("RATE_LIMIT_BURST", 5.0)
 TRUSTED_PROXIES = set(get_list("TRUSTED_PROXIES", []))
+
+# Daily per-IP write quotas. Stops one bad actor from filling the
+# feedback / community SQLite files with spam (which would also
+# poison the metrics surface). Reads from the same hashed-IP column
+# the rate-limit middleware can't see, so it survives across server
+# restarts unlike the in-memory rate bucket.
+FEEDBACK_DAILY_QUOTA = get_int("FEEDBACK_DAILY_QUOTA", 200)
+COMMUNITY_DAILY_QUOTA = get_int("COMMUNITY_DAILY_QUOTA", 50)
+# Retention windows (days). Daily background task in the FastAPI
+# lifespan drops rows past this age.
+FEEDBACK_RETENTION_DAYS = get_int("FEEDBACK_RETENTION_DAYS", 180)
+COMMUNITY_RETENTION_DAYS = get_int("COMMUNITY_RETENTION_DAYS", 90)
+PRUNE_INTERVAL_SECONDS = get_int("PRUNE_INTERVAL_SECONDS", 24 * 60 * 60)
+
+# Feedback ↔ analyze scan-id binding. When ENFORCE_ISSUED_SCAN_IDS is
+# truthy (set as "1"/"true" in env), /api/feedback rejects any
+# scan_id that wasn't recorded by a recent /api/analyze response.
+# Defaults to "log only" so older clients (whose scan_ids were
+# minted before this gate existed) keep working until the install
+# base catches up; operators flip to enforce mode once telemetry
+# shows < ~1% of feedback uses unknown scan_ids.
+ENFORCE_ISSUED_SCAN_IDS = (
+    get_str("ENFORCE_ISSUED_SCAN_IDS", "false").strip().lower() in {"1", "true", "yes", "on"}
+)
+# Server-issued scan_ids stay valid for this long. Long enough that
+# a user can scan today and leave feedback in a week; short enough
+# that a leaked id can't be reused indefinitely.
+ISSUED_SCAN_ID_TTL_DAYS = get_int("ISSUED_SCAN_ID_TTL_DAYS", 30)
 
 INFER_WORKERS = get_int("INFER_WORKERS", 2)
 _inference_executor: ThreadPoolExecutor | None = None
@@ -270,6 +335,21 @@ pipeline: PlantDiseasePipeline | None = None
 _RATE_LIMIT_CLEANUP_INTERVAL = 300
 
 
+def _issue_scan_id() -> str:
+    """Mint a fresh URL-safe scan_id, persist it in the issued log,
+    and return it for the /analyze response. Run inside the request
+    handler so callers don't need to think about the DB hop.
+    """
+    import uuid
+
+    scan_id = uuid.uuid4().hex
+    try:
+        record_issued_scan_id(scan_id)
+    except Exception as exc:  # noqa: BLE001 — never fail analyse on the log write
+        logger.warning("Failed to persist issued scan_id: %s", exc)
+    return scan_id
+
+
 def _client_ip(request: Request) -> str:
     """Return the real client IP, honouring X-Forwarded-For only for trusted proxies."""
     peer = request.client.host if request.client else "unknown"
@@ -298,20 +378,66 @@ def _client_ip(request: Request) -> str:
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
-    """Per-IP token-free rate limiter with periodic cleanup."""
+    """Per-IP token-bucket rate limiter with burst capacity.
 
-    def __init__(self, app, requests_per_second: float = 1.0):
+    Each client IP gets a private bucket of capacity ``burst``, which
+    refills at ``rate`` tokens per second. A request takes one
+    token; an empty bucket returns 429 with a ``Retry-After`` header
+    that reflects the wait until *one* token has refilled (not the
+    full bucket — clients don't need to wait for the burst window
+    again, just for the next allowed call).
+
+    The previous implementation enforced a strict minimum interval
+    of ``1/rps`` between requests, which meant two requests inside
+    500 ms (typical analyse + care-plan fan-out) bounced one of
+    them with 429 even on low rates. The bucket model absorbs that
+    burst without raising the long-term rate.
+    """
+
+    def __init__(
+        self,
+        app,
+        requests_per_second: float = 1.0,
+        burst: float = 5.0,
+    ):
         super().__init__(app)
-        self.min_interval = 1.0 / requests_per_second
-        self._last_request: dict[str, float] = {}
+        self.rate = max(requests_per_second, 0.0)
+        self.capacity = max(burst, 1.0)
+        # tokens, last_refill_monotonic
+        self._buckets: dict[str, tuple[float, float]] = {}
         self._lock = threading.Lock()
         self._last_cleanup = time.monotonic()
+        self._warned_about_xff = False
+
+    # ── backwards-compat shim used by tests that tune the limiter ────
+    @property
+    def min_interval(self) -> float:
+        return 1.0 / self.rate if self.rate > 0 else 0.0
+
+    @min_interval.setter
+    def min_interval(self, value: float) -> None:
+        # Tests poke ``mw.min_interval = 0.0`` to disable the limiter
+        # for an entire fixture; preserve that contract by rebuilding
+        # the rate from the value they hand us.
+        self.rate = (1.0 / value) if value > 0 else float("inf")
+
+    @property
+    def _last_request(self) -> dict[str, tuple[float, float]]:
+        """Legacy alias used by the rate-limited test fixture to
+        ``.clear()`` the bucket between cases."""
+        return self._buckets
 
     def _cleanup_stale(self, now: float) -> None:
-        cutoff = now - max(self.min_interval * 2, 60.0)
-        stale = [ip for ip, ts in self._last_request.items() if ts < cutoff]
+        # A bucket whose tokens never dropped below capacity in the
+        # last 60 s is effectively inactive — drop it. Holding every
+        # client-IP indefinitely would be a memory leak under a
+        # short-lived public deploy.
+        if self.rate <= 0:
+            return
+        cutoff = now - max(self.capacity / self.rate, 60.0)
+        stale = [ip for ip, (_t, last) in self._buckets.items() if last < cutoff]
         for ip in stale:
-            del self._last_request[ip]
+            del self._buckets[ip]
 
     async def dispatch(self, request: Request, call_next):
         # Health, metadata and metrics endpoints are always free
@@ -324,10 +450,25 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         ):
             return await call_next(request)
 
+        # Soft warning the operator missed configuring TRUSTED_PROXIES
+        # while deploying behind a reverse proxy. Without it every
+        # client behind the proxy shares a single bucket because we
+        # see only the proxy's IP as the "client IP".
+        if (
+            not self._warned_about_xff
+            and not TRUSTED_PROXIES
+            and request.headers.get("x-forwarded-for")
+        ):
+            self._warned_about_xff = True
+            logger.warning(
+                "Received X-Forwarded-For but TRUSTED_PROXIES is empty — "
+                "every client behind the proxy shares one rate-limit bucket. "
+                "Set TRUSTED_PROXIES to the proxy CIDR to honour XFF."
+            )
+
         client_ip = _client_ip(request)
-        # Use monotonic clock so an NTP step (or daylight-saving jump on
-        # a misconfigured host) cannot lock every client out for
-        # several minutes by making `now - last` go negative.
+        # Monotonic clock so an NTP step / DST jump cannot lock every
+        # client out by making elapsed time go negative.
         now = time.monotonic()
 
         with self._lock:
@@ -335,16 +476,25 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 self._cleanup_stale(now)
                 self._last_cleanup = now
 
-            last = self._last_request.get(client_ip, 0.0)
-            if now - last < self.min_interval:
-                logger.warning("Rate limited IP=%s", client_ip)
-                retry_after = max(1, int(math.ceil(self.min_interval - (now - last))))
+            tokens, last = self._buckets.get(client_ip, (self.capacity, now))
+            elapsed = max(0.0, now - last)
+            tokens = min(self.capacity, tokens + elapsed * self.rate)
+            if tokens < 1.0:
+                logger.warning("Rate limited IP=%s tokens=%.2f", client_ip, tokens)
+                # Wait time until one more token is available.
+                deficit = 1.0 - tokens
+                retry_after = max(1, int(math.ceil(deficit / self.rate))) if self.rate > 0 else 60
+                # Persist the refilled-but-still-empty bucket so a
+                # rapid retry doesn't grant a fresh token from a stale
+                # snapshot.
+                self._buckets[client_ip] = (tokens, now)
                 return JSONResponse(
                     status_code=429,
                     headers={"Retry-After": str(retry_after)},
                     content={"detail": "Too many requests. Please wait before trying again."},
                 )
-            self._last_request[client_ip] = now
+            tokens -= 1.0
+            self._buckets[client_ip] = (tokens, now)
 
         return await call_next(request)
 
@@ -405,16 +555,55 @@ async def lifespan(app: FastAPI):
         pipeline.classifier.backend,
         pipeline.classifier.NUM_CLASSES,
     )
-    yield
-    logger.info("Server shutting down")
-    with _executor_lock:
-        if _inference_executor is not None:
-            # `wait=True` lets in-flight inferences drain. The bound is
-            # INFERENCE_TIMEOUT (default 30 s) — anything beyond that is
-            # already a stuck request. cancel_futures=True drops queued
-            # work that hasn't started yet.
-            _inference_executor.shutdown(wait=True, cancel_futures=True)
-            _inference_executor = None
+    # Daily prune task. Runs in the event loop because the work is
+    # I/O-bound (a single DELETE per table); no thread pool needed.
+    # Cancelled cleanly on shutdown so the lifespan exit doesn't
+    # leak the task.
+    prune_task = asyncio.create_task(_prune_loop())
+    try:
+        yield
+    finally:
+        logger.info("Server shutting down")
+        prune_task.cancel()
+        try:
+            await prune_task
+        except (asyncio.CancelledError, Exception):  # noqa: BLE001
+            pass
+        with _executor_lock:
+            if _inference_executor is not None:
+                # `wait=True` lets in-flight inferences drain. The bound is
+                # INFERENCE_TIMEOUT (default 30 s) — anything beyond that is
+                # already a stuck request. cancel_futures=True drops queued
+                # work that hasn't started yet.
+                _inference_executor.shutdown(wait=True, cancel_futures=True)
+                _inference_executor = None
+
+
+async def _prune_loop() -> None:
+    """Background scheduler: prune feedback + community rows past
+    retention every ``PRUNE_INTERVAL_SECONDS``. First pass runs
+    immediately so a restart catches up on stale rows.
+    """
+    while True:
+        try:
+            removed_fb = await asyncio.get_running_loop().run_in_executor(
+                None, feedback_prune_older_than, FEEDBACK_RETENTION_DAYS,
+            )
+            removed_cm = await asyncio.get_running_loop().run_in_executor(
+                None, community_prune_older_than, COMMUNITY_RETENTION_DAYS,
+            )
+            if removed_fb or removed_cm:
+                logger.info(
+                    "Prune pass: feedback=%d community=%d", removed_fb, removed_cm,
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Prune pass failed (will retry tomorrow): %s", exc)
+        try:
+            await asyncio.sleep(PRUNE_INTERVAL_SECONDS)
+        except asyncio.CancelledError:
+            raise
 
 
 app = FastAPI(
@@ -444,7 +633,11 @@ app.add_middleware(
 # Middleware order: outermost runs first.
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
-app.add_middleware(RateLimitMiddleware, requests_per_second=RATE_LIMIT_RPS)
+app.add_middleware(
+    RateLimitMiddleware,
+    requests_per_second=RATE_LIMIT_RPS,
+    burst=RATE_LIMIT_BURST,
+)
 # Treatment / prevention lists round-trip 5–10 KB of bilingual JSON.
 # Halving that on the wire matters more for slow mobile uplinks than
 # the ~10 µs CPU cost on the server side.
@@ -850,8 +1043,17 @@ async def analyze_image(image: UploadFile = File(...), species: str | None = Non
     # isn't yet available — clients must treat it as optional.
     prediction_set = result.get("prediction_set")
     if prediction_set is not None:
+        # ``advisory`` is True until the conformal calibration set
+        # carries ≥ 50 samples per class. Today's per-class counts
+        # (bacterial_leaf_spot=3, gray_mold_botrytis=5,
+        # powdery_mildew=5, not_a_plant=0 — see
+        # ``server/models/model_card.json``) are too sparse for the
+        # stated 90 % coverage to be statistically meaningful. The
+        # client-facing flag tells the UI to render the set as
+        # "alternative candidates" rather than "guaranteed coverage".
         prediction_set = {
             **prediction_set,
+            "advisory": True,
             "items": [
                 {
                     "class": cls,
@@ -914,6 +1116,12 @@ async def analyze_image(image: UploadFile = File(...), species: str | None = Non
         "species": species_payload,
         "elapsed_ms": result["elapsed_ms"],
         "server_version": APP_VERSION,
+        # Server-minted scan_id for this response. Clients should
+        # send this same string back on /api/feedback so the gate
+        # in main.py can confirm the feedback ties to a real scan
+        # we ran. Stored in the issued_scan_ids table; expires after
+        # ISSUED_SCAN_ID_TTL_DAYS.
+        "scan_id": _issue_scan_id(),
     })
 
 
@@ -1374,6 +1582,49 @@ async def feedback_endpoint(payload: FeedbackRequest, request: Request):
     deployment, which is enough for abuse-rate detection.
     """
     client_ip = _client_ip(request)
+    # Per-IP daily write quota. The rate limiter is in-memory and
+    # resets on restart; this gate reads the same peppered IP-hash
+    # column we persist on each row, so it survives across deploys.
+    ip_hash = hash_client_ip(client_ip)
+    today_writes = await asyncio.get_running_loop().run_in_executor(
+        _get_inference_executor(),
+        lambda: feedback_daily_writes(ip_hash),
+    )
+    if today_writes >= FEEDBACK_DAILY_QUOTA:
+        logger.warning(
+            "Feedback daily quota hit ip_hash=%s writes=%d cap=%d",
+            ip_hash, today_writes, FEEDBACK_DAILY_QUOTA,
+        )
+        raise HTTPException(
+            status_code=429,
+            detail="Daily feedback quota reached. Try again tomorrow.",
+        )
+
+    # Bind the feedback to a scan_id we actually issued. The check
+    # runs in "warn-only" mode by default (older clients minted
+    # their own UUIDs and won't be in the table); flip
+    # ENFORCE_ISSUED_SCAN_IDS=true once the new client is the
+    # dominant install base to switch this gate to hard reject.
+    scan_id_clean = payload.scan_id.strip()
+    issued = await asyncio.get_running_loop().run_in_executor(
+        _get_inference_executor(),
+        lambda: is_scan_id_issued(scan_id_clean, ttl_days=ISSUED_SCAN_ID_TTL_DAYS),
+    )
+    if not issued:
+        if ENFORCE_ISSUED_SCAN_IDS:
+            logger.warning(
+                "Rejected feedback on unissued scan_id=%s ip_hash=%s",
+                scan_id_clean[:16], ip_hash,
+            )
+            raise HTTPException(
+                status_code=422,
+                detail="Unknown scan_id — please re-scan before sending feedback.",
+            )
+        # Soft mode: log so operators can watch the unknown-id rate.
+        logger.info(
+            "Feedback on unissued scan_id=%s (soft mode)", scan_id_clean[:16],
+        )
+
     # Pydantic v2 has already normalised these — corrected_class is
     # constrained to the known class set, reason to the known reason
     # set, scan_id / user_pseudo_id to the URL-safe alphabet, etc.
@@ -1471,7 +1722,13 @@ async def community_scan_upload(
             locale=locale,
         )
     except Exception as exc:  # noqa: BLE001 — pydantic raises a ValidationError subclass
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        # Log the raw Pydantic message internally; expose a terse,
+        # non-leaky 422 body to the client. Verbatim Pydantic strings
+        # carry stack traces, field paths and the raw input, which
+        # is both noisy in error logs and a soft information leak
+        # for a public endpoint.
+        logger.info("Community scan validation failed: %s", exc)
+        raise HTTPException(status_code=422, detail="Invalid scan upload") from exc
 
     image_bytes: bytes | None = None
     if image is not None:
@@ -1489,6 +1746,20 @@ async def community_scan_upload(
             image_bytes = None
 
     client_ip = _client_ip(request)
+    ip_hash = hash_client_ip(client_ip)
+    today_writes = await asyncio.get_running_loop().run_in_executor(
+        _get_inference_executor(),
+        lambda: community_daily_writes(ip_hash),
+    )
+    if today_writes >= COMMUNITY_DAILY_QUOTA:
+        logger.warning(
+            "Community daily quota hit ip_hash=%s writes=%d cap=%d",
+            ip_hash, today_writes, COMMUNITY_DAILY_QUOTA,
+        )
+        raise HTTPException(
+            status_code=429,
+            detail="Daily community-upload quota reached.",
+        )
     try:
         row_id = await asyncio.get_running_loop().run_in_executor(
             _get_inference_executor(),
@@ -1534,7 +1805,8 @@ async def community_scan_nearby(
             "disease": disease or "healthy",
         })
     except Exception as exc:  # noqa: BLE001 — re-export as 422
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        logger.info("Community nearby validation failed: %s", exc)
+        raise HTTPException(status_code=422, detail="Invalid nearby query") from exc
 
     rows = community_nearby_scans(
         region=region.strip()[:80],

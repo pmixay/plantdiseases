@@ -57,6 +57,17 @@ CREATE TABLE IF NOT EXISTS feedback (
 );
 CREATE INDEX IF NOT EXISTS ix_feedback_scan_id  ON feedback(scan_id);
 CREATE INDEX IF NOT EXISTS ix_feedback_created  ON feedback(created_at);
+
+-- Short-lived issuance log. /api/analyze inserts a row here per
+-- response; /api/feedback consults it before accepting a payload so
+-- attackers can't poison the corrections corpus with arbitrary
+-- scan_ids. Rows older than the retention window are pruned by the
+-- daily background task.
+CREATE TABLE IF NOT EXISTS issued_scan_ids (
+    scan_id    TEXT PRIMARY KEY,
+    created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_issued_created ON issued_scan_ids(created_at);
 """
 
 # Columns added in later schema revisions. Listed (name, DDL fragment)
@@ -250,6 +261,89 @@ def record_feedback(
             ),
         )
         return int(cur.lastrowid or 0)
+
+
+def record_issued_scan_id(scan_id: str) -> None:
+    """Mark a scan_id as legitimately issued by /api/analyze.
+
+    Idempotent: a duplicate insert is silently ignored so a retried
+    analyse call can't fail on the dup-key. The companion
+    ``is_scan_id_issued`` check is what the feedback endpoint uses.
+    """
+    if not scan_id:
+        return
+    init_db()
+    now = int(time.time())
+    with _write_lock, _connect() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO issued_scan_ids (scan_id, created_at) "
+            "VALUES (?, ?)",
+            (scan_id, now),
+        )
+
+
+def is_scan_id_issued(scan_id: str, *, ttl_days: int = 30) -> bool:
+    """True when ``scan_id`` was issued by /api/analyze in the last
+    ``ttl_days`` days. Returns False for empty strings, unknown ids,
+    and ids older than the TTL.
+
+    The TTL guard means a one-off leak of a scan_id can't be used
+    to spray feedback for months — it expires.
+    """
+    if not scan_id:
+        return False
+    init_db()
+    cutoff = int(time.time()) - ttl_days * 86_400
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM issued_scan_ids WHERE scan_id = ? AND created_at >= ?",
+            (scan_id, cutoff),
+        ).fetchone()
+    return bool(row)
+
+
+def prune_older_than(days: int) -> int:
+    """Drop feedback rows older than ``days`` days. Returns the
+    number of rows pruned. Intended to run from the in-process
+    daily scheduler; never invoked from the request path. The
+    append-only contract still holds for everything inside the
+    retention window — we just keep the table from growing
+    unbounded under spam.
+    """
+    init_db()
+    if days <= 0:
+        return 0
+    cutoff = int(time.time()) - days * 86_400
+    with _write_lock, _connect() as conn:
+        deleted = conn.execute(
+            "DELETE FROM feedback WHERE created_at < ?", (cutoff,),
+        ).rowcount
+        # Drop issued-scan-id rows past the same window. Their TTL is
+        # the issuance-log TTL — keeping them indefinitely would
+        # both grow the file unbounded and let a leaked scan_id be
+        # reused months later.
+        conn.execute(
+            "DELETE FROM issued_scan_ids WHERE created_at < ?", (cutoff,),
+        )
+    return int(deleted or 0)
+
+
+def daily_write_count_for_ip_hash(ip_hash: str | None) -> int:
+    """Number of feedback rows the given IP hash has produced in the
+    last 24 hours. Used by the per-IP daily quota guard in
+    ``main.py`` so one client can't flood the corrections table.
+    """
+    if not ip_hash:
+        return 0
+    init_db()
+    cutoff = int(time.time()) - 86_400
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM feedback "
+            "WHERE client_ip_hash = ? AND created_at >= ?",
+            (ip_hash, cutoff),
+        ).fetchone()
+    return int(row[0]) if row else 0
 
 
 def feedback_counts() -> dict:
