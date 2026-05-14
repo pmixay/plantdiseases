@@ -28,7 +28,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from PIL import Image, UnidentifiedImageError
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response as StarletteResponse
 
@@ -801,20 +801,202 @@ class ProgressionRequest(BaseModel):
     history: list[dict] | None = None
 
 
+# Class keys the strict-mode `corrected_class` validator accepts.
+# Includes both the active trainable classes (from classes.json) and
+# the deferred physiological classes — clients should be allowed to
+# point us at conditions the next model release will cover.
+_FEEDBACK_ALLOWED_CORRECTIONS: frozenset[str] = frozenset({
+    "bacterial_leaf_spot",
+    "gray_mold_botrytis",
+    "healthy",
+    "leaf_spot_fungal",
+    "not_a_plant",
+    "powdery_mildew",
+    "viral_disease",
+    # Deferred (post-v2.1) physiological classes — accepted as
+    # feedback signals so the retraining loop can prioritise labelling.
+    "edema",
+    "leaf_scorch_underwatering",
+    "nutrient_deficiency",
+    "sunburn_or_scorch",
+    # Catch-all the client can send when none of the above match.
+    "other",
+})
+
+_FEEDBACK_ALLOWED_REASONS: frozenset[str] = frozenset({
+    "wrong_class",
+    "low_quality_image",
+    "occluded",
+    "multiple_plants",
+    "ambiguous_symptoms",
+    "other",
+})
+
+_FEEDBACK_ALLOWED_PLATFORMS: frozenset[str] = frozenset({
+    "android",
+    "ios",
+    "web",
+    "test",
+    "unknown",
+})
+
+# scan_id is a client-generated opaque token. Constrain it to a
+# URL-safe alphabet of reasonable length so a runaway client can't
+# stuff control bytes or megabyte blobs through the column. We don't
+# enforce a strict UUID shape because legacy clients still mint
+# numeric ids and we want them to keep working through the
+# transition window.
+_SCAN_ID_ALLOWED = set(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
+)
+
+
 class FeedbackRequest(BaseModel):
     """Single user-feedback signal on a scan.
 
-    ``scan_id`` is a client-generated stable id (we don't issue scan
-    ids server-side — the classifier is stateless). ``correct`` is the
-    boolean thumbs verdict. ``corrected_class`` and ``note`` are
-    optional and bounded so a runaway client can't push a 10 MB blob
-    through the append-only store.
+    The classifier is stateless, so the *scan* lives only on the
+    client. ``scan_id`` is therefore client-generated and just has to
+    be stable across the lifetime of one scan: we de-dupe by
+    (user_pseudo_id, scan_id) downstream.
+
+    Required: ``scan_id``, ``correct``.
+    Optional: every other field — kept nullable so clients can roll
+    out the richer payload progressively. Length bounds protect the
+    append-only SQLite file from runaway clients.
     """
 
-    scan_id: str = Field(..., min_length=1, max_length=128)
+    scan_id: str = Field(..., min_length=8, max_length=64)
     correct: bool
     corrected_class: str | None = Field(default=None, max_length=64)
     note: str | None = Field(default=None, max_length=2000)
+    reason: str | None = Field(default=None, max_length=32)
+    # Diagnosis context — what the model said when the user gave
+    # feedback. Used to compute per-class accuracy without joining
+    # against scan history (we don't have that history server-side).
+    predicted_class: str | None = Field(default=None, max_length=64)
+    predicted_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    top3: list[dict] | None = Field(default=None, max_length=3)
+    # Client context — used for cohort analysis and abuse detection.
+    model_version: str | None = Field(default=None, max_length=32)
+    app_version: str | None = Field(default=None, max_length=32)
+    locale: str | None = Field(default=None, max_length=8)
+    platform: str | None = Field(default=None, max_length=16)
+    # Opaque per-install id (UUIDv4 from the client). Lets us correlate
+    # multiple feedback signals from one user *without* knowing who
+    # they are.
+    user_pseudo_id: str | None = Field(default=None, min_length=8, max_length=64)
+    # Detector context — useful for separating crop-quality issues
+    # from genuine classifier errors.
+    region_count: int | None = Field(default=None, ge=0, le=64)
+    primary_region_index: int | None = Field(default=None, ge=-1, le=63)
+    # Wall-clock milliseconds between original scan and this feedback
+    # tap. Capped at 30 days so a malicious client can't pretend the
+    # signal is from the distant future / past.
+    feedback_latency_ms: int | None = Field(default=None, ge=0, le=30 * 24 * 3600 * 1000)
+    # Optional SHA-256 of the original image (hex) — lets us join
+    # against any future image-side analytics without the image bytes
+    # leaving the device.
+    image_hash: str | None = Field(default=None, min_length=32, max_length=128)
+
+    @field_validator("scan_id", "user_pseudo_id")
+    @classmethod
+    def _safe_token(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        if any(ch not in _SCAN_ID_ALLOWED for ch in v):
+            raise ValueError("invalid characters in id; expected [A-Za-z0-9_-]")
+        return v
+
+    @field_validator("corrected_class")
+    @classmethod
+    def _known_class(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        cleaned = v.strip().lower()
+        if not cleaned:
+            return None
+        if cleaned not in _FEEDBACK_ALLOWED_CORRECTIONS:
+            raise ValueError(
+                f"corrected_class must be one of "
+                f"{sorted(_FEEDBACK_ALLOWED_CORRECTIONS)}; got {v!r}"
+            )
+        return cleaned
+
+    @field_validator("predicted_class")
+    @classmethod
+    def _normalise_predicted(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        cleaned = v.strip().lower()
+        return cleaned or None
+
+    @field_validator("reason")
+    @classmethod
+    def _known_reason(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        cleaned = v.strip().lower()
+        if not cleaned:
+            return None
+        if cleaned not in _FEEDBACK_ALLOWED_REASONS:
+            raise ValueError(
+                f"reason must be one of {sorted(_FEEDBACK_ALLOWED_REASONS)}; got {v!r}"
+            )
+        return cleaned
+
+    @field_validator("platform")
+    @classmethod
+    def _known_platform(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        cleaned = v.strip().lower()
+        if not cleaned:
+            return None
+        if cleaned not in _FEEDBACK_ALLOWED_PLATFORMS:
+            # Unknown platform tags get folded to "unknown" rather
+            # than rejected — we'd rather collect the signal than
+            # bounce a client with a typo in BuildConfig.
+            return "unknown"
+        return cleaned
+
+    @field_validator("locale")
+    @classmethod
+    def _normalise_locale(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        cleaned = v.strip().lower()[:8]
+        return cleaned or None
+
+    @field_validator("image_hash")
+    @classmethod
+    def _hex_only(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        cleaned = v.strip().lower()
+        if not cleaned:
+            return None
+        if any(ch not in "0123456789abcdef" for ch in cleaned):
+            raise ValueError("image_hash must be lowercase hex")
+        return cleaned
+
+    @field_validator("top3")
+    @classmethod
+    def _shape_top3(cls, v: list[dict] | None) -> list[dict] | None:
+        if not v:
+            return None
+        cleaned: list[dict] = []
+        for entry in v[:3]:
+            if not isinstance(entry, dict):
+                continue
+            cls_key = str(entry.get("class", "")).strip().lower()[:64]
+            try:
+                prob = float(entry.get("prob", 0.0))
+            except (TypeError, ValueError):
+                continue
+            if not cls_key:
+                continue
+            cleaned.append({"class": cls_key, "prob": max(0.0, min(1.0, prob))})
+        return cleaned or None
 
 
 @app.post("/api/identify")
@@ -963,21 +1145,28 @@ async def progression_endpoint(payload: ProgressionRequest):
 
 @app.post("/api/feedback")
 async def feedback_endpoint(payload: FeedbackRequest, request: Request):
-    """Capture a thumbs-up / thumbs-down on a diagnosis.
+    """Capture a thumbs-up / thumbs-down on a diagnosis, with full
+    diagnostic + client context.
 
     Append-only — there is no update / delete path. The 1 req/s per-IP
     rate limit from the global middleware applies; the endpoint
     additionally caps ``note`` length via the pydantic model so a
     malicious client can't bloat the SQLite file with megabytes of
     text.
+
+    The raw client IP is hashed (peppered SHA-256) before persistence
+    so we never store PII at rest. The hash is stable across a single
+    deployment, which is enough for abuse-rate detection.
     """
     client_ip = _client_ip(request)
-    # Light validation: ``corrected_class`` should look like a model
-    # class key when present. We don't hard-reject unknown keys because
-    # the client might suggest a class that's deferred to a later
-    # release — the retraining tool decides what to do with it.
-    corrected = (payload.corrected_class or "").strip() or None
+    # Pydantic v2 has already normalised these — corrected_class is
+    # constrained to the known class set, reason to the known reason
+    # set, scan_id / user_pseudo_id to the URL-safe alphabet, etc.
     note = (payload.note or "").strip() or None
+    top3_pairs = (
+        [(entry["class"], entry["prob"]) for entry in payload.top3]
+        if payload.top3 else None
+    )
 
     try:
         row_id = await asyncio.get_running_loop().run_in_executor(
@@ -985,18 +1174,39 @@ async def feedback_endpoint(payload: FeedbackRequest, request: Request):
             lambda: record_feedback(
                 scan_id=payload.scan_id.strip(),
                 correct=payload.correct,
-                corrected_class=corrected,
+                corrected_class=payload.corrected_class,
                 note=note,
                 client_ip=client_ip,
+                predicted_class=payload.predicted_class,
+                predicted_confidence=payload.predicted_confidence,
+                top3=top3_pairs,
+                model_version=payload.model_version,
+                app_version=payload.app_version,
+                locale=payload.locale,
+                platform=payload.platform,
+                user_pseudo_id=payload.user_pseudo_id,
+                region_count=payload.region_count,
+                primary_region_index=payload.primary_region_index,
+                feedback_latency_ms=payload.feedback_latency_ms,
+                reason=payload.reason,
+                image_hash=payload.image_hash,
             ),
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("Failed to record feedback: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to record feedback") from exc
 
+    # Truncate scan_id in the access log so attacker-supplied bytes
+    # can't blow up log lines, even though the pydantic validator
+    # already capped it at 64 chars.
     logger.info(
-        "Feedback recorded id=%d scan=%s correct=%s corrected=%s",
-        row_id, payload.scan_id, payload.correct, corrected,
+        "Feedback recorded id=%d scan=%s correct=%s predicted=%s corrected=%s reason=%s",
+        row_id,
+        payload.scan_id[:16],
+        payload.correct,
+        payload.predicted_class,
+        payload.corrected_class,
+        payload.reason,
     )
     return JSONResponse(content={"ok": True, "id": row_id})
 

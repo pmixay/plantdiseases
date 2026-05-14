@@ -38,6 +38,9 @@ import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.FeedbackRequest
 import com.plantdiseases.app.data.model.SpeciesCandidate
+import com.plantdiseases.app.data.model.TopProb
+import com.plantdiseases.app.util.TelemetryIds
+import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.ui.analysis.AnalysisActivity
@@ -1267,72 +1270,45 @@ class ResultActivity : AppCompatActivity() {
         }
         binding.btnFeedbackNo.setOnClickListener {
             Haptics.tick(this)
-            showCorrectionDialog(scan)
+            showCorrectionSheet(scan)
         }
     }
 
-    private fun showCorrectionDialog(scan: ScanEntity) {
-        val container = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, 8.dpToPx(), 0, 0)
-        }
-        val correctionInput = TextInputEditText(this).apply {
-            inputType = InputType.TYPE_CLASS_TEXT
-            setSingleLine(true)
-        }
-        val correctionLayout = TextInputLayout(this).apply {
-            hint = getString(R.string.feedback_correction_hint)
-            addView(correctionInput)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { bottomMargin = 10.dpToPx() }
-        }
-        val noteInput = TextInputEditText(this).apply {
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
-            minLines = 2
-            maxLines = 5
-        }
-        val noteLayout = TextInputLayout(this).apply {
-            hint = getString(R.string.feedback_note_hint)
-            addView(noteInput)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
+    private fun showCorrectionSheet(scan: ScanEntity) {
+        val isRu = LocaleHelper.isRussian(this)
+        val repository = (application as PlantDiseasesApp).scanRepository
+        val predictedKey = repository.topClassKey(scan)
+        val predictedDisplay = predictedKey?.let { classKeyDisplayName(it, isRu) }
+            ?: (if (isRu) scan.diseaseNameRu else scan.diseaseName)
+        FeedbackCorrectionSheet.show(
+            supportFragmentManager,
+            predictedDisplayName = predictedDisplay,
+        ) { correctedClass, reason, note ->
+            submitFeedback(
+                scan,
+                correct = false,
+                correctedClass = correctedClass,
+                reason = reason,
+                note = note,
             )
         }
-        container.addView(correctionLayout)
-        container.addView(noteLayout)
-
-        MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.feedback_correction_title)
-            .setView(container)
-            .setNegativeButton(R.string.cancel, null)
-            .setPositiveButton(R.string.feedback_send) { _, _ ->
-                submitFeedback(
-                    scan,
-                    correct = false,
-                    correctedClass = correctionInput.text?.toString()?.trim().orEmpty()
-                        .ifBlank { null },
-                    note = noteInput.text?.toString()?.trim().orEmpty().ifBlank { null },
-                )
-            }
-            .show()
     }
 
     private fun submitFeedback(
         scan: ScanEntity,
         correct: Boolean,
         correctedClass: String? = null,
+        reason: String? = null,
         note: String? = null,
     ) {
         binding.btnFeedbackYes.isEnabled = false
         binding.btnFeedbackNo.isEnabled = false
         val app = application as PlantDiseasesApp
-        val request = FeedbackRequest(
-            scanId = scan.id.toString(),
+        val request = buildFeedbackRequest(
+            scan = scan,
             correct = correct,
             correctedClass = correctedClass,
+            reason = reason,
             note = note,
         )
         lifecycleScope.launch {
@@ -1353,6 +1329,66 @@ class ResultActivity : AppCompatActivity() {
                 Toast.makeText(this@ResultActivity, msgRes, Toast.LENGTH_SHORT).show()
             }
         }
+    }
+
+    /**
+     * Assemble the full feedback payload from a [ScanEntity] + the
+     * user's three correction signals. All metadata is best-effort:
+     * when a field is unknown we send null rather than fabricating a
+     * value, so server-side metrics don't get polluted by defaults.
+     */
+    private fun buildFeedbackRequest(
+        scan: ScanEntity,
+        correct: Boolean,
+        correctedClass: String?,
+        reason: String?,
+        note: String?,
+    ): FeedbackRequest {
+        val repository = (application as PlantDiseasesApp).scanRepository
+        val predictedKey = repository.topClassKey(scan)
+        val allProbs = repository.parseAllProbs(scan.allProbs)
+        val predictedConfidence = predictedKey
+            ?.let { allProbs[it] }
+            ?: scan.confidence
+        val top3 = allProbs.entries
+            .asSequence()
+            .sortedByDescending { it.value }
+            .take(3)
+            .map { TopProb(classKey = it.key, prob = it.value) }
+            .toList()
+            .takeIf { it.isNotEmpty() }
+        val regionCount = repository.parseRegions(scan.regions).size
+        val isRu = LocaleHelper.isRussian(this)
+        val latencyMs = (System.currentTimeMillis() - scan.timestamp).coerceAtLeast(0L)
+
+        // ``client_scan_id`` is the random UUID we mint at insert time.
+        // For legacy v9 rows backfilled by the migration it's also a
+        // UUID. We never send the local autoincrement primary key.
+        val scanId = scan.clientScanId.takeIf { it.isNotBlank() }
+            ?: java.util.UUID.randomUUID().toString()
+
+        return FeedbackRequest(
+            scanId = scanId,
+            correct = correct,
+            correctedClass = correctedClass,
+            reason = reason,
+            note = note,
+            predictedClass = predictedKey,
+            predictedConfidence = predictedConfidence,
+            top3 = top3,
+            modelVersion = SERVER_MODEL_VERSION,
+            appVersion = BuildConfig.VERSION_NAME,
+            locale = if (isRu) "ru" else "en",
+            platform = "android",
+            userPseudoId = TelemetryIds.userPseudoId(this),
+            regionCount = regionCount,
+            primaryRegionIndex = scan.primaryRegionIndex,
+            feedbackLatencyMs = latencyMs,
+            // We don't ship the image hash today — adding it requires
+            // re-reading the original file off disk on the UI thread,
+            // and the server treats it as optional.
+            imageHash = null,
+        )
     }
 
     private fun classKeyDisplayName(key: String, isRu: Boolean): String? = when (key) {
@@ -1376,6 +1412,10 @@ class ResultActivity : AppCompatActivity() {
         private const val TAG = "ResultActivity"
         private const val FEEDBACK_PREFS = "plantdiseases_feedback_prefs"
         private const val FEEDBACK_KEY_PREFIX = "scan_"
+        // Pinned to the classifier release in server/models/classes.json.
+        // When the server exposes model_version in /api/analyze we'll
+        // start trusting that value per-scan instead.
+        private const val SERVER_MODEL_VERSION = "2.1"
     }
 
     private fun isFeedbackAlreadySubmitted(scanId: Long): Boolean =

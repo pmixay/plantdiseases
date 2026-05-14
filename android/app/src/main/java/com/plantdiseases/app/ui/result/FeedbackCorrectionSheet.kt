@@ -1,0 +1,149 @@
+package com.plantdiseases.app.ui.result
+
+import android.os.Bundle
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import androidx.fragment.app.FragmentManager
+import com.google.android.material.bottomsheet.BottomSheetDialogFragment
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.chip.Chip
+import com.google.android.material.chip.ChipGroup
+import com.google.android.material.textfield.TextInputEditText
+import com.plantdiseases.app.R
+
+/**
+ * Structured correction sheet shown when the user taps "Wrong" on a
+ * diagnosis. Collects three signals:
+ *
+ *   1. ``corrected_class`` — one of the server's known class keys,
+ *      picked from a single-selection chip group. Maps 1:1 to the
+ *      server's ``_FEEDBACK_ALLOWED_CORRECTIONS`` set; if the user
+ *      can't find their answer they pick *Something else*, which
+ *      lets them describe it in the free-text note instead.
+ *   2. ``reason`` — one of the server's known reason keys, picked
+ *      from a separate chip group.
+ *   3. ``note`` — free-text up to 2000 chars (the server caps it
+ *      identically). The TextInputLayout shows a live char counter.
+ *
+ * The sheet posts the result via the [Listener] callback; the host
+ * activity does the actual /api/feedback request so this fragment
+ * stays state-light and survives configuration changes cleanly.
+ */
+class FeedbackCorrectionSheet : BottomSheetDialogFragment() {
+
+    private var predictedDisplayName: String? = null
+    private var listener: Listener? = null
+
+    /** Callback fired when the user taps **Send**. */
+    fun interface Listener {
+        fun onSubmit(correctedClass: String?, reason: String?, note: String?)
+    }
+
+    override fun onCreateView(
+        inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
+    ): View = inflater.inflate(R.layout.sheet_feedback_correction, container, false)
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        val ctx = requireContext()
+
+        val classGroup = view.findViewById<ChipGroup>(R.id.chip_group_class)
+        val reasonGroup = view.findViewById<ChipGroup>(R.id.chip_group_reason)
+        val noteInput = view.findViewById<TextInputEditText>(R.id.et_note)
+        val sendBtn = view.findViewById<MaterialButton>(R.id.btn_send)
+        val cancelBtn = view.findViewById<MaterialButton>(R.id.btn_cancel)
+        val predictedView = view.findViewById<android.widget.TextView>(R.id.tv_predicted_name)
+        val predictedCard = view.findViewById<View>(R.id.card_predicted)
+
+        predictedDisplayName?.let { predictedView.text = it }
+            ?: run { predictedCard.visibility = View.GONE }
+
+        // Populate class chips from a fixed catalog so the keys we
+        // send always match the server's known class set exactly.
+        CLASS_CATALOG.forEach { (key, labelRes) ->
+            classGroup.addView(
+                Chip(ctx).apply {
+                    id = View.generateViewId()
+                    text = getString(labelRes)
+                    isCheckable = true
+                    isCheckedIconVisible = true
+                    tag = key
+                }
+            )
+        }
+
+        REASON_CATALOG.forEach { (key, labelRes) ->
+            reasonGroup.addView(
+                Chip(ctx).apply {
+                    id = View.generateViewId()
+                    text = getString(labelRes)
+                    isCheckable = true
+                    isCheckedIconVisible = true
+                    tag = key
+                }
+            )
+        }
+
+        cancelBtn.setOnClickListener { dismiss() }
+        sendBtn.setOnClickListener {
+            val correctedClass = classGroup.checkedChipId
+                .takeIf { it != View.NO_ID }
+                ?.let { classGroup.findViewById<Chip>(it).tag as? String }
+                ?.takeIf { it != KEY_OTHER }
+            val reason = reasonGroup.checkedChipId
+                .takeIf { it != View.NO_ID }
+                ?.let { reasonGroup.findViewById<Chip>(it).tag as? String }
+            val note = noteInput.text?.toString()?.trim().orEmpty().ifBlank { null }
+            listener?.onSubmit(correctedClass, reason, note)
+            dismiss()
+        }
+    }
+
+    companion object {
+        private const val TAG = "feedback-correction-sheet"
+        private const val KEY_OTHER = "other"
+
+        /**
+         * Class chip catalog. Keys must match the server's
+         * ``_FEEDBACK_ALLOWED_CORRECTIONS`` set; if the server drops a
+         * class, drop it from here too.
+         */
+        private val CLASS_CATALOG: List<Pair<String, Int>> = listOf(
+            "healthy" to R.string.feedback_class_healthy,
+            "powdery_mildew" to R.string.feedback_class_powdery_mildew,
+            "gray_mold_botrytis" to R.string.feedback_class_gray_mold_botrytis,
+            "leaf_spot_fungal" to R.string.feedback_class_leaf_spot_fungal,
+            "bacterial_leaf_spot" to R.string.feedback_class_bacterial_leaf_spot,
+            "viral_disease" to R.string.feedback_class_viral_disease,
+            "not_a_plant" to R.string.feedback_class_not_a_plant,
+            "edema" to R.string.feedback_class_edema,
+            "sunburn_or_scorch" to R.string.feedback_class_sunburn_or_scorch,
+            "leaf_scorch_underwatering" to R.string.feedback_class_leaf_scorch_underwatering,
+            "nutrient_deficiency" to R.string.feedback_class_nutrient_deficiency,
+            KEY_OTHER to R.string.feedback_class_other,
+        )
+
+        /** Reason chip catalog; keys must match the server enum. */
+        private val REASON_CATALOG: List<Pair<String, Int>> = listOf(
+            "wrong_class" to R.string.feedback_reason_wrong_class,
+            "low_quality_image" to R.string.feedback_reason_low_quality_image,
+            "occluded" to R.string.feedback_reason_occluded,
+            "multiple_plants" to R.string.feedback_reason_multiple_plants,
+            "ambiguous_symptoms" to R.string.feedback_reason_ambiguous_symptoms,
+            "other" to R.string.feedback_reason_other,
+        )
+
+        fun show(
+            fm: FragmentManager,
+            predictedDisplayName: String?,
+            listener: Listener,
+        ): FeedbackCorrectionSheet {
+            val sheet = FeedbackCorrectionSheet()
+            sheet.predictedDisplayName = predictedDisplayName
+            sheet.listener = listener
+            sheet.show(fm, TAG)
+            return sheet
+        }
+    }
+}

@@ -362,6 +362,39 @@
     <string name="feedback_rate_limited">Slow down — try again in a moment.</string>
     <string name="feedback_failed">Could not send feedback. Try again later.</string>
 
+    <!-- Feedback correction bottom-sheet. Class chips map 1:1 to the
+         server's known class keys; reason chips map to the
+         _FEEDBACK_ALLOWED_REASONS set on the server. -->
+    <string name="feedback_sheet_title">Help us learn</string>
+    <string name="feedback_sheet_subtitle">Your correction trains the next model release. We only store the diagnosis context, never the photo.</string>
+    <string name="feedback_sheet_we_thought">We diagnosed</string>
+    <string name="feedback_sheet_actual_label">What is it actually?</string>
+    <string name="feedback_sheet_reason_label">Why was it wrong?</string>
+    <string name="feedback_sheet_note_hint">Anything else? (optional)</string>
+    <string name="feedback_class_pick_prompt">Tap one diagnosis</string>
+
+    <!-- Class chips — match server class keys 1:1. -->
+    <string name="feedback_class_healthy">Healthy</string>
+    <string name="feedback_class_powdery_mildew">Powdery Mildew</string>
+    <string name="feedback_class_gray_mold_botrytis">Gray Mold</string>
+    <string name="feedback_class_leaf_spot_fungal">Fungal Leaf Spot</string>
+    <string name="feedback_class_bacterial_leaf_spot">Bacterial Leaf Spot</string>
+    <string name="feedback_class_viral_disease">Viral Disease</string>
+    <string name="feedback_class_not_a_plant">Not a Plant</string>
+    <string name="feedback_class_edema">Edema</string>
+    <string name="feedback_class_sunburn_or_scorch">Sunburn</string>
+    <string name="feedback_class_leaf_scorch_underwatering">Underwatered</string>
+    <string name="feedback_class_nutrient_deficiency">Nutrient Deficiency</string>
+    <string name="feedback_class_other">Something else</string>
+
+    <!-- Reason chips — match server reason keys 1:1. -->
+    <string name="feedback_reason_wrong_class">Wrong diagnosis</string>
+    <string name="feedback_reason_low_quality_image">Photo too blurry</string>
+    <string name="feedback_reason_occluded">Leaf covered</string>
+    <string name="feedback_reason_multiple_plants">Multiple plants</string>
+    <string name="feedback_reason_ambiguous_symptoms">Symptoms unclear</string>
+    <string name="feedback_reason_other">Other</string>
+
     <!-- Pet-toxicity surface -->
     <string name="toxicity_toxic_title">Toxic to pets</string>
     <string name="toxicity_safe_title">Pet-safe</string>

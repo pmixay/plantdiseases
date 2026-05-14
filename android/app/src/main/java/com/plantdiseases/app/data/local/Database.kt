@@ -65,6 +65,12 @@ data class PlantJournalEntity(
 )
 data class ScanEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    // Opaque, randomly-generated client id sent to the server for any
+    // per-scan signal (feedback, future progression-pinning, etc.).
+    // Decoupled from the autoincrement primary key so the server can
+    // never correlate ids across users by counting. Populated at
+    // insertion in ScanRepository.saveScan().
+    @ColumnInfo(name = "client_scan_id", defaultValue = "''") val clientScanId: String = "",
     @ColumnInfo(name = "image_path") val imagePath: String,
     @ColumnInfo(name = "disease_name") val diseaseName: String,
     @ColumnInfo(name = "disease_name_ru") val diseaseNameRu: String,
@@ -248,7 +254,7 @@ interface PlantJournalDao {
         PlantReminderEntity::class,
         ChatMessageEntity::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -262,6 +268,36 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
+        /**
+         * v9 → v10: adds `client_scan_id` to `scans`. Existing rows
+         * get a deterministic per-row UUID derived from `id` so they
+         * keep working with the new feedback contract without losing
+         * scan history. We use UPDATE here (rather than the SQLite
+         * `uuid()` extension, which isn't on Android) by writing a
+         * Room helper that walks each row.
+         */
+        private val MIGRATION_9_10 = object : androidx.room.migration.Migration(9, 10) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE scans ADD COLUMN client_scan_id TEXT NOT NULL DEFAULT ''")
+                // Backfill: every legacy row gets its own random UUID.
+                // Snapshot the id set first so we never iterate a
+                // cursor while UPDATE-ing the same table underneath.
+                val ids = mutableListOf<Long>()
+                db.query("SELECT id FROM scans WHERE client_scan_id = ''").use { cursor ->
+                    while (cursor.moveToNext()) {
+                        ids.add(cursor.getLong(0))
+                    }
+                }
+                for (rowId in ids) {
+                    val uuid = java.util.UUID.randomUUID().toString()
+                    db.execSQL(
+                        "UPDATE scans SET client_scan_id = ? WHERE id = ?",
+                        arrayOf<Any>(uuid, rowId),
+                    )
+                }
+            }
+        }
+
         fun getInstance(context: android.content.Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -269,8 +305,11 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "plantdiseases_db"
                 )
-                    // No legacy migrations: pre-1.1 schemas were never
-                    // shipped to production.
+                    .addMigrations(MIGRATION_9_10)
+                    // Older pre-1.1 schemas (v1..v8) were never shipped
+                    // to production. Keep destructive fallback for those
+                    // so dev installs from those versions don't crash;
+                    // v9 → v10 has a real migration above.
                     .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance

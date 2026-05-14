@@ -296,6 +296,7 @@ class ScanRepository(
                 ?.takeIf { it.isNotEmpty() }
                 ?.let { gson.toJson(it) }
             val entity = ScanEntity(
+                clientScanId = java.util.UUID.randomUUID().toString(),
                 imagePath = imagePath,
                 diseaseName = result.diseaseName,
                 diseaseNameRu = result.diseaseNameRu,

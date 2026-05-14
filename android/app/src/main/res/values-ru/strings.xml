@@ -358,6 +358,35 @@
     <string name="feedback_subtitle">Ваш ответ поможет улучшить модель.</string>
     <string name="feedback_yes">Верно</string>
     <string name="feedback_no">Неверно</string>
+
+    <!-- Bottom-sheet correction flow -->
+    <string name="feedback_sheet_title">Помогите нам учиться</string>
+    <string name="feedback_sheet_subtitle">Ваши правки тренируют следующую модель. Мы сохраняем только контекст диагноза — фото не передаётся.</string>
+    <string name="feedback_sheet_we_thought">Мы определили</string>
+    <string name="feedback_sheet_actual_label">Что это на самом деле?</string>
+    <string name="feedback_sheet_reason_label">Почему диагноз неверный?</string>
+    <string name="feedback_sheet_note_hint">Что ещё хотите сказать? (необязательно)</string>
+    <string name="feedback_class_pick_prompt">Выберите один диагноз</string>
+
+    <string name="feedback_class_healthy">Здоровое</string>
+    <string name="feedback_class_powdery_mildew">Мучнистая роса</string>
+    <string name="feedback_class_gray_mold_botrytis">Серая гниль</string>
+    <string name="feedback_class_leaf_spot_fungal">Грибковая пятнистость</string>
+    <string name="feedback_class_bacterial_leaf_spot">Бактериальная пятнистость</string>
+    <string name="feedback_class_viral_disease">Вирусное заболевание</string>
+    <string name="feedback_class_not_a_plant">Не растение</string>
+    <string name="feedback_class_edema">Эдема</string>
+    <string name="feedback_class_sunburn_or_scorch">Солнечный ожог</string>
+    <string name="feedback_class_leaf_scorch_underwatering">Недолив</string>
+    <string name="feedback_class_nutrient_deficiency">Дефицит питания</string>
+    <string name="feedback_class_other">Что-то другое</string>
+
+    <string name="feedback_reason_wrong_class">Неверный диагноз</string>
+    <string name="feedback_reason_low_quality_image">Фото размытое</string>
+    <string name="feedback_reason_occluded">Лист закрыт</string>
+    <string name="feedback_reason_multiple_plants">Несколько растений</string>
+    <string name="feedback_reason_ambiguous_symptoms">Симптомы неясны</string>
+    <string name="feedback_reason_other">Другое</string>
     <string name="feedback_correction_title">Что это на самом деле?</string>
     <string name="feedback_correction_hint">Название болезни (необязательно)</string>
     <string name="feedback_note_hint">Что ещё хотите сказать? (необязательно)</string>
