@@ -113,7 +113,8 @@ data class CommunityScansResponse(
 
 data class CommunityScanItem(
     @SerializedName("scan_id") val scanId: String,
-    @SerializedName("region") val region: String,
+    @SerializedName("country") val country: String = "",
+    @SerializedName("region") val region: String = "",
     @SerializedName("disease") val disease: String,
     @SerializedName("confidence") val confidence: Float? = null,
     @SerializedName("species") val species: String? = null,
@@ -124,14 +125,21 @@ data class CommunityScanItem(
 )
 
 data class CommunityRegionSummary(
-    @SerializedName("region") val region: String,
+    @SerializedName("country") val country: String = "",
+    @SerializedName("region") val region: String? = null,
     @SerializedName("total") val total: Int = 0,
     @SerializedName("last_7d") val last7d: Int = 0,
     @SerializedName("top_diseases") val topDiseases: List<CommunityTopDisease> = emptyList(),
+    @SerializedName("top_regions") val topRegions: List<CommunityTopRegion> = emptyList(),
 )
 
 data class CommunityTopDisease(
     @SerializedName("disease") val disease: String,
+    @SerializedName("count") val count: Int = 0,
+)
+
+data class CommunityTopRegion(
+    @SerializedName("region") val region: String,
     @SerializedName("count") val count: Int = 0,
 )
 

@@ -157,7 +157,7 @@
 
     <!-- Similar scans (community corpus) -->
     <string name="similar_scans_title">Similar scans near you</string>
-    <string name="similar_scans_subtitle">%1$d recent scans from %2$s</string>
+    <string name="similar_scans_subtitle">%1$d recent scans near %2$s</string>
     <string name="similar_scans_subtitle_no_region">Enable approximate location to see scans near you.</string>
     <string name="similar_scans_empty">No nearby scans yet — your scan will be the first.</string>
 

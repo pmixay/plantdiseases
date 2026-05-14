@@ -1149,31 +1149,44 @@ class CarePlanRequest(BaseModel):
 # ── Community scan corpus ───────────────────────────────────────────
 
 
-# Country-only alphabet. We dropped the city granularity in v2 — the
-# corpus now groups by country, both because the city signal was
-# noisy near borders and because "City, Country" produced way too
-# many one-row buckets. ``_normalise_region`` below also rewrites
-# legacy "City, Country" inputs (older clients in the wild) into
-# their country tail so the bucketing stays consistent across the
-# rollout window.
+# Region-string alphabet (country name / code + city / admin area).
+# Apostrophe + period + hyphen + space cover the bulk of locality
+# names ("Saint-John's", "Plymouth, U.K." trims to "Plymouth"). Commas
+# are deliberately excluded — we keep country and locality as separate
+# fields so callers never need to embed a comma anywhere.
 _REGION_ALLOWED = set(
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .'-"
 )
 
 
-def _normalise_region(raw: str | None) -> str:
-    """Strip + uppercase the country tail of a region string.
+def _normalise_country(raw: str | None) -> str:
+    """Sanitise the top-level country bucket.
 
-    Accepts both the new country-only format and the legacy
-    ``"City, Country"`` shape some older clients still send.
-    Returns ``""`` for unusable input so callers can 422 it.
+    Accepts the new explicit country form ("GB", "Germany") and the
+    legacy "City, Country" composite that older clients still send —
+    in the latter case we keep the segment after the last comma. The
+    result is trimmed, charset-checked and capped at 80 chars; an
+    empty string means "rejected".
     """
     if not raw:
         return ""
-    # Legacy "City, Country" — keep only the country tail. We split
-    # on the *last* comma so "Saint-John's, AG" still gives "AG".
     if "," in raw:
         raw = raw.rsplit(",", 1)[-1]
+    cleaned = raw.strip()[:80]
+    if not cleaned or any(ch not in _REGION_ALLOWED for ch in cleaned):
+        return ""
+    return cleaned
+
+
+def _normalise_locality(raw: str | None) -> str:
+    """Sanitise the sub-country city / admin-area string.
+
+    Returns the cleaned value or "" when the caller didn't send a
+    locality (country-only writes are legal — the corpus simply
+    skips the second hierarchy level).
+    """
+    if not raw:
+        return ""
     cleaned = raw.strip()[:80]
     if not cleaned or any(ch not in _REGION_ALLOWED for ch in cleaned):
         return ""
@@ -1184,11 +1197,18 @@ class CommunityScanRequest(BaseModel):
     """Upload metadata for a single community-shared scan. The image
     bytes ride on a separate multipart field on the upload endpoint
     so a thin client never has to base64-encode anything.
+
+    Hierarchy: ``country`` is the canonical top bucket (ISO code or
+    country name); ``region`` is the optional sub-country locality
+    (city, admin area). Older clients that still send the legacy
+    composite as ``region`` get auto-split — the country tail lands
+    in ``country`` and the leading segment in ``region``.
     """
 
     scan_id: str = Field(..., min_length=8, max_length=64)
     user_pseudo_id: str = Field(..., min_length=8, max_length=64)
-    region: str = Field(..., min_length=2, max_length=80)
+    country: str = Field(..., min_length=2, max_length=80)
+    region: str = Field(default="", max_length=80)
     disease: str = Field(..., min_length=1, max_length=64)
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     species: str | None = Field(default=None, max_length=128)
@@ -1202,15 +1222,21 @@ class CommunityScanRequest(BaseModel):
             raise ValueError("invalid characters in id; expected [A-Za-z0-9_-]")
         return v
 
+    @field_validator("country")
+    @classmethod
+    def _safe_country(cls, v: str) -> str:
+        cleaned = _normalise_country(v)
+        if not cleaned:
+            raise ValueError(
+                "country must be a country name or ISO code (no control chars)"
+            )
+        return cleaned
+
     @field_validator("region")
     @classmethod
     def _safe_region(cls, v: str) -> str:
-        cleaned = _normalise_region(v)
-        if not cleaned:
-            raise ValueError(
-                "region must be a country name or code (no city / commas / control chars)"
-            )
-        return cleaned
+        # Empty is legal — country-only writes are supported.
+        return _normalise_locality(v)
 
     @field_validator("disease")
     @classmethod
@@ -1714,7 +1740,8 @@ async def community_scan_upload(
     request: Request,
     scan_id: str = Form(...),
     user_pseudo_id: str = Form(...),
-    region: str = Form(...),
+    country: str | None = Form(None),
+    region: str = Form(""),
     disease: str = Form(...),
     confidence: float | None = Form(None),
     species: str | None = Form(None),
@@ -1724,18 +1751,31 @@ async def community_scan_upload(
 ):
     """Append one community-shared scan to the corpus.
 
-    All fields except ``image`` are required and validated by
-    ``CommunityScanRequest``. The image is optional — when omitted
-    we still store the row, just without a thumbnail.
-
-    The endpoint is intentionally a thin wrapper around
-    ``community.record_scan``; per-IP rate limiting from the global
-    middleware applies.
+    Hierarchy: ``country`` is the canonical top bucket, ``region``
+    is the optional sub-country locality. Older clients still on the
+    legacy "region only" contract may omit ``country`` and pass a
+    composite ``"City, Country"`` string in ``region``; in that
+    case we split on the last comma so the right pieces land in
+    the right columns. The image is optional — when omitted we
+    still store the row, just without a thumbnail.
     """
+    # Legacy fallback: pre-hierarchy clients only sent ``region``.
+    # Pull a country out of the comma tail when ``country`` is
+    # missing; the locality keeps whatever leads the comma.
+    if not country:
+        if "," in region:
+            head, _, tail = region.rpartition(",")
+            country = tail.strip()
+            region = head.strip()
+        else:
+            country = region
+            region = ""
+
     try:
         payload = CommunityScanRequest(
             scan_id=scan_id,
             user_pseudo_id=user_pseudo_id,
+            country=country,
             region=region,
             disease=disease,
             confidence=confidence,
@@ -1744,11 +1784,6 @@ async def community_scan_upload(
             locale=locale,
         )
     except Exception as exc:  # noqa: BLE001 — pydantic raises a ValidationError subclass
-        # Log the raw Pydantic message internally; expose a terse,
-        # non-leaky 422 body to the client. Verbatim Pydantic strings
-        # carry stack traces, field paths and the raw input, which
-        # is both noisy in error logs and a soft information leak
-        # for a public endpoint.
         logger.info("Community scan validation failed: %s", exc)
         raise HTTPException(status_code=422, detail="Invalid scan upload") from exc
 
@@ -1788,6 +1823,7 @@ async def community_scan_upload(
             lambda: community_record_scan(
                 scan_id=payload.scan_id,
                 user_pseudo_id=payload.user_pseudo_id,
+                country=payload.country,
                 region=payload.region,
                 disease=payload.disease,
                 confidence=payload.confidence,
@@ -1807,40 +1843,45 @@ async def community_scan_upload(
 
 @app.get("/api/community/nearby")
 async def community_scan_nearby(
-    region: str,
+    country: str | None = None,
+    region: str | None = None,
     disease: str | None = None,
     limit: int = 20,
     user_pseudo_id: str | None = None,
 ):
-    """List the most recent community-shared scans in ``region``.
+    """List the most recent community-shared scans within ``country``.
 
-    Server prefers same-diagnosis matches, then tops up with other
-    diagnoses in the region until ``limit``. When ``user_pseudo_id``
-    is supplied, the requesting user's own rows are excluded so they
-    don't see themselves in the carousel.
+    ``region`` narrows the result set to a sub-country locality
+    (city / admin area) when supplied. Server prefers same-disease
+    matches, falls back to same-locality, and finally widens to the
+    whole country so a small city still gets a populated carousel.
+
+    Backward-compat: callers that pre-date the hierarchy may pass
+    only ``region`` with a composite "City, Country" string; we
+    split on the last comma and fill ``country`` from the tail.
     """
-    try:
-        CommunityScanRequest.model_validate({
-            "scan_id": "querystub",
-            "user_pseudo_id": user_pseudo_id or "querystub",
-            "region": region,
-            "disease": disease or "healthy",
-        })
-    except Exception as exc:  # noqa: BLE001 — re-export as 422
-        logger.info("Community nearby validation failed: %s", exc)
-        raise HTTPException(status_code=422, detail="Invalid nearby query") from exc
-
-    # Normalise the query parameter the same way the upload validator
-    # does so a legacy "City, Country" caller still hits the right
-    # country bucket on read.
-    normalised = _normalise_region(region)
+    # Legacy fallback for the older Android build.
+    if not country:
+        if region and "," in region:
+            head, _, tail = region.rpartition(",")
+            country = tail.strip()
+            region = head.strip()
+        else:
+            country = region or ""
+            region = None
+    country_norm = _normalise_country(country)
+    region_norm = _normalise_locality(region) if region else ""
+    if not country_norm:
+        logger.info("Community nearby missing valid country: %r", country)
+        raise HTTPException(status_code=422, detail="Invalid nearby query")
     rows = community_nearby_scans(
-        region=normalised,
+        country=country_norm,
+        region=region_norm or None,
         disease=(disease or None),
         limit=max(1, min(int(limit), 50)),
         exclude_user_pseudo_id=user_pseudo_id,
     )
-    summary = community_region_summary(normalised)
+    summary = community_region_summary(country_norm, region_norm or None)
     return JSONResponse(content={"items": rows, "summary": summary})
 
 

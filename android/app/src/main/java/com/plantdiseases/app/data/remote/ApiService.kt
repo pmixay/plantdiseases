@@ -77,7 +77,8 @@ interface ApiService {
     suspend fun communityScanUpload(
         @Part("scan_id") scanId: RequestBody,
         @Part("user_pseudo_id") userPseudoId: RequestBody,
-        @Part("region") region: RequestBody,
+        @Part("country") country: RequestBody,
+        @Part("region") region: RequestBody? = null,
         @Part("disease") disease: RequestBody,
         @Part("confidence") confidence: RequestBody? = null,
         @Part("species") species: RequestBody? = null,
@@ -88,7 +89,8 @@ interface ApiService {
 
     @GET("api/community/nearby")
     suspend fun communityScanNearby(
-        @Query("region") region: String,
+        @Query("country") country: String,
+        @Query("region") region: String? = null,
         @Query("disease") disease: String? = null,
         @Query("limit") limit: Int = 12,
         @Query("user_pseudo_id") userPseudoId: String? = null,

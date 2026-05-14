@@ -44,7 +44,7 @@ class CommunityUploader(
         if (!CommunityPrefs.uploadsEnabled(context)) {
             return@withContext UploadOutcome.OptedOut
         }
-        val region = RegionResolver.resolveRegion(context)
+        val resolved = RegionResolver.resolveRegion(context)
             ?: return@withContext UploadOutcome.NoRegion
         val disease = canonicalDiseaseKey(analysis) ?: scan.diseaseName
         val thumb = makeThumbnail(scan)
@@ -57,7 +57,8 @@ class CommunityUploader(
         val result = scanRepository.uploadCommunityScan(
             scanId = scanId,
             userPseudoId = pseudoId,
-            region = region,
+            country = resolved.country,
+            region = resolved.locality.orEmpty(),
             disease = disease,
             confidence = analysis.confidence,
             species = species,

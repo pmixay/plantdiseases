@@ -30,17 +30,59 @@ import kotlin.coroutines.suspendCoroutine
  * * The resolved region is cached in SharedPreferences so subsequent
  *   scans don't re-trigger a location read.
  */
+/** Resolved region payload. ``country`` is the top-level bucket;
+ *  ``locality`` is the optional sub-country city / admin area. */
+data class ResolvedRegion(val country: String, val locality: String?) {
+    /** Compact display label preferring the locality when present. */
+    val displayLabel: String
+        get() = locality?.takeIf { it.isNotBlank() }
+            ?.let { "$it, $country" } ?: country
+}
+
 object RegionResolver {
 
     private const val PREFS_NAME = "plantdiseases_region"
-    private const val KEY_REGION = "cached_region"
+    private const val KEY_COUNTRY = "cached_country"
+    private const val KEY_LOCALITY = "cached_locality"
     private const val KEY_REGION_TIMESTAMP = "cached_region_ts"
+
+    // Legacy key — earlier builds stored a composite "City, Country"
+    // string here. Read once on resolution so we don't lose an
+    // already-cached region on an upgrade.
+    private const val KEY_LEGACY_REGION = "cached_region"
+
     private const val CACHE_VALID_MS = 24L * 60L * 60L * 1000L  // refresh once a day
 
-    /** Persisted last-known region, or ``null`` if we've never resolved. */
-    fun cachedRegion(context: Context): String? = prefs(context)
-        .getString(KEY_REGION, null)
-        ?.takeIf { it.isNotBlank() }
+    /** Persisted last-known country + locality, or ``null`` if
+     *  we've never resolved. */
+    fun cachedRegion(context: Context): ResolvedRegion? {
+        val p = prefs(context)
+        val country = p.getString(KEY_COUNTRY, null)?.takeIf { it.isNotBlank() }
+        if (country != null) {
+            val locality = p.getString(KEY_LOCALITY, null)?.takeIf { it.isNotBlank() }
+            return ResolvedRegion(country, locality)
+        }
+        // One-time migration off the legacy composite key.
+        val legacy = p.getString(KEY_LEGACY_REGION, null)?.takeIf { it.isNotBlank() }
+        if (legacy != null) {
+            val (city, c) = splitComposite(legacy)
+            if (c.isNotBlank()) {
+                p.edit()
+                    .putString(KEY_COUNTRY, c)
+                    .putString(KEY_LOCALITY, city)
+                    .remove(KEY_LEGACY_REGION)
+                    .apply()
+                return ResolvedRegion(c, city.takeIf { it.isNotBlank() })
+            }
+        }
+        return null
+    }
+
+    private fun splitComposite(value: String): Pair<String, String> {
+        val idx = value.lastIndexOf(',')
+        if (idx < 0) return "" to value.trim()
+        return value.substring(0, idx).trim() to value.substring(idx + 1).trim()
+    }
 
     /** Permission probe — true when we hold ``ACCESS_COARSE_LOCATION``. */
     fun hasCoarsePermission(context: Context): Boolean =
@@ -58,7 +100,7 @@ object RegionResolver {
      * blocks for a few hundred ms.
      */
     @SuppressLint("MissingPermission")
-    suspend fun resolveRegion(context: Context): String? {
+    suspend fun resolveRegion(context: Context): ResolvedRegion? {
         val cached = cachedRegion(context)
         val ts = prefs(context).getLong(KEY_REGION_TIMESTAMP, 0L)
         if (cached != null && (System.currentTimeMillis() - ts) < CACHE_VALID_MS) {
@@ -68,7 +110,8 @@ object RegionResolver {
         val location = lastKnownCoarseLocation(context) ?: return cached
         val region = reverseGeocode(context, location) ?: return cached
         prefs(context).edit()
-            .putString(KEY_REGION, region)
+            .putString(KEY_COUNTRY, region.country)
+            .putString(KEY_LOCALITY, region.locality ?: "")
             .putLong(KEY_REGION_TIMESTAMP, System.currentTimeMillis())
             .apply()
         return region
@@ -93,7 +136,7 @@ object RegionResolver {
         return best
     }
 
-    private suspend fun reverseGeocode(context: Context, location: Location): String? {
+    private suspend fun reverseGeocode(context: Context, location: Location): ResolvedRegion? {
         if (!Geocoder.isPresent()) return null
         val geocoder = Geocoder(context, Locale.getDefault())
         return try {
@@ -114,18 +157,24 @@ object RegionResolver {
         }
     }
 
-    private fun formatRegion(address: Address?): String? {
+    private fun formatRegion(address: Address?): ResolvedRegion? {
         address ?: return null
-        // Country-only granularity in v2 — the server groups the
-        // community corpus by country to keep buckets dense (cities
-        // produced too many one-row groups, especially near borders).
-        // Prefer the ISO country code; fall back to the full country
-        // name when Geocoder didn't fill the code field.
-        val code = address.countryCode?.trim()
-        if (!code.isNullOrBlank()) return code.take(80)
-        val name = address.countryName?.trim()
-        if (!name.isNullOrBlank()) return name.take(80)
-        return null
+        // v3 hierarchy: country is the top bucket, locality is the
+        // sub-country city / admin area. Country comes from the ISO
+        // code when available, falling back to the full name. The
+        // locality prefers the actual city; if Geocoder didn't fill
+        // one we accept the admin area (state / region) — still
+        // useful for dense bucketing inside large countries.
+        val country = address.countryCode?.trim()?.takeIf { it.isNotBlank() }
+            ?: address.countryName?.trim()?.takeIf { it.isNotBlank() }
+            ?: return null
+        val locality = (address.locality
+            ?: address.subAdminArea
+            ?: address.adminArea)
+            ?.trim()
+            ?.take(80)
+            ?.takeIf { it.isNotBlank() }
+        return ResolvedRegion(country.take(80), locality)
     }
 
     private fun prefs(context: Context) = context.applicationContext

@@ -613,32 +613,33 @@ class ResultActivity : AppCompatActivity() {
         )
 
         lifecycleScope.launch {
-            // First-scan-after-permission may not have a cached region
-            // yet because the MainActivity warmer races with this code.
-            // Resolve actively (background-threaded inside the helper)
-            // so the card lights up on the same scan instead of the
-            // next one.
-            val region = com.plantdiseases.app.util.RegionResolver.cachedRegion(this@ResultActivity)
+            // First-scan-after-permission may not have a cached
+            // region yet because the MainActivity warmer races with
+            // this code. Resolve actively (background-threaded
+            // inside the helper) so the card lights up on the same
+            // scan instead of the next one.
+            val resolved = com.plantdiseases.app.util.RegionResolver.cachedRegion(this@ResultActivity)
                 ?: com.plantdiseases.app.util.RegionResolver.resolveRegion(this@ResultActivity)
-            if (region.isNullOrBlank()) {
-                // No region yet. Render a soft hint so the user knows
-                // why the card is empty and what to do.
+            if (resolved == null) {
+                // No region yet. Render a soft hint so the user
+                // knows why the card is empty.
                 card.visibility = View.VISIBLE
                 binding.tvSimilarSubtitle.text = getString(R.string.similar_scans_subtitle_no_region)
                 rv.visibility = View.GONE
                 return@launch
             }
             val result = app.scanRepository.communityNearby(
-                region = region,
+                country = resolved.country,
+                region = resolved.locality,
                 disease = diseaseKey,
                 userPseudoId = pseudoId,
                 limit = 12,
             )
             result.onSuccess { response ->
                 if (response.items.isEmpty() && (response.summary?.last7d ?: 0) == 0) {
-                    // Genuinely empty — render the card with an empty
-                    // hint instead of hiding it, so the user sees the
-                    // region was queried.
+                    // Genuinely empty — render the card with an
+                    // empty hint instead of hiding it, so the user
+                    // sees the region was queried.
                     card.visibility = View.VISIBLE
                     binding.tvSimilarSubtitle.text = getString(R.string.similar_scans_empty)
                     rv.visibility = View.GONE
@@ -648,8 +649,12 @@ class ResultActivity : AppCompatActivity() {
                 rv.visibility = View.VISIBLE
                 adapter.submit(response.items)
                 val total = response.summary?.last7d ?: response.items.size
+                // Prefer the locality label when the user has one
+                // ("12 recent scans from London, GB"); otherwise
+                // fall back to the country bucket.
+                val label = resolved.displayLabel
                 binding.tvSimilarSubtitle.text = getString(
-                    R.string.similar_scans_subtitle, total, region,
+                    R.string.similar_scans_subtitle, total, label,
                 )
             }.onFailure {
                 // Stay hidden on error — never surface a broken card.

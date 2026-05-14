@@ -73,6 +73,21 @@ CREATE INDEX IF NOT EXISTS ix_community_user     ON community_scans(user_pseudo_
 CREATE INDEX IF NOT EXISTS ix_community_created  ON community_scans(created_at);
 """
 
+# Forward-only schema migration: every column listed here is added
+# with ``ALTER TABLE … ADD COLUMN`` on init_db if the DB was created
+# under an older schema. Avoids the per-version migration table we
+# don't otherwise need. Mirrors the same trick feedback.py uses.
+_EXTRA_COLUMNS: tuple[tuple[str, str], ...] = (
+    # Top-level bucket. Stored separately from ``region`` so we can
+    # group by country and break down by city without parsing a
+    # composite "City, Country" string at every query.
+    ("country", "TEXT"),
+)
+_EXTRA_INDICES: tuple[str, ...] = (
+    "CREATE INDEX IF NOT EXISTS ix_community_country ON community_scans(country, created_at);",
+    "CREATE INDEX IF NOT EXISTS ix_community_country_region ON community_scans(country, region, created_at);",
+)
+
 _write_lock = threading.RLock()
 _init_lock = threading.Lock()
 _initialised = False
@@ -89,8 +104,22 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
+def _existing_columns(conn: sqlite3.Connection) -> set[str]:
+    rows = conn.execute("PRAGMA table_info(community_scans)").fetchall()
+    return {row[1] for row in rows}
+
+
 def init_db() -> None:
-    """Create the schema + thumb dir if missing. Idempotent."""
+    """Create the schema + thumb dir if missing. Idempotent.
+
+    Runs a forward-only migration step too: any column from
+    ``_EXTRA_COLUMNS`` that's missing on an existing DB is added
+    via ALTER TABLE. The ``country`` column is also backfilled from
+    the legacy ``region`` value for rows that pre-date the
+    hierarchy split — older clients wrote the country into
+    ``region`` directly (after the previous "group-by-country"
+    pass), so copying the value across keeps history searchable.
+    """
     global _initialised
     with _init_lock:
         if _initialised:
@@ -99,6 +128,25 @@ def init_db() -> None:
         COMMUNITY_THUMB_DIR.mkdir(parents=True, exist_ok=True)
         with _connect() as conn:
             conn.executescript(_SCHEMA)
+            present = _existing_columns(conn)
+            added_country = False
+            for name, ddl in _EXTRA_COLUMNS:
+                if name not in present:
+                    conn.execute(
+                        f"ALTER TABLE community_scans ADD COLUMN {name} {ddl}"
+                    )
+                    if name == "country":
+                        added_country = True
+            for index_sql in _EXTRA_INDICES:
+                conn.execute(index_sql)
+            if added_country:
+                # Pre-hierarchy rows stored the country in ``region``.
+                # Copy it across so a country-scoped query still
+                # finds them.
+                conn.execute(
+                    "UPDATE community_scans SET country = region "
+                    "WHERE country IS NULL OR country = ''"
+                )
         _initialised = True
         logger.info("Community DB ready at %s", COMMUNITY_DB_PATH)
 
@@ -136,7 +184,8 @@ def record_scan(
     *,
     scan_id: str,
     user_pseudo_id: str,
-    region: str,
+    country: str,
+    region: str = "",
     disease: str,
     confidence: float | None = None,
     species: str | None = None,
@@ -147,6 +196,11 @@ def record_scan(
 ) -> int:
     """Append a community-shared scan row. Returns the new row id.
 
+    ``country`` is the canonical top-level bucket (ISO code or name).
+    ``region`` is the optional sub-country locality — typically the
+    city or admin area. Empty region means "country-level only";
+    nearby queries can still target the country bucket alone.
+
     Thumbnails are saved best-effort: if the bytes are missing or
     oversized we just skip the file and leave ``thumb_path`` NULL —
     the row still surfaces in nearby queries, the client just renders
@@ -156,17 +210,21 @@ def record_scan(
     now = int(time.time())
     thumb_path = _save_thumbnail(scan_id, image_bytes) if image_bytes else None
     ip_hash = hash_client_ip(client_ip)
+    # `region` is NOT NULL on the legacy schema, so we store the empty
+    # string for country-only writes rather than NULL.
+    region_value = region or ""
     with _write_lock, _connect() as conn:
         cur = conn.execute(
             "INSERT INTO community_scans ("
-            "  scan_id, user_pseudo_id, region, disease, confidence, "
+            "  scan_id, user_pseudo_id, country, region, disease, confidence, "
             "  species, species_score, thumb_path, locale, "
             "  client_ip_hash, created_at"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 scan_id,
                 user_pseudo_id,
-                region,
+                country,
+                region_value,
                 disease,
                 confidence,
                 species,
@@ -182,94 +240,152 @@ def record_scan(
 
 def nearby_scans(
     *,
-    region: str,
+    country: str,
+    region: str | None = None,
     disease: str | None = None,
     limit: int = 20,
     exclude_user_pseudo_id: str | None = None,
 ) -> list[dict]:
-    """Return the most recent shared scans in ``region``.
+    """Return the most recent shared scans within ``country``.
 
-    When ``disease`` is supplied, prefer rows with the same diagnosis
-    (sorted by most recent), then top up with other diagnoses in the
-    same region until ``limit`` is reached. ``exclude_user_pseudo_id``
-    drops the requesting user's own rows so they don't see themselves
-    in the carousel.
+    ``region`` narrows the result set to a sub-country locality
+    (city / admin area) when supplied. Same disease-first ordering as
+    before: rows that match ``disease`` come first, then we top up
+    with other diagnoses in the same bucket until ``limit``.
+    ``exclude_user_pseudo_id`` drops the requesting user's own rows.
 
-    Each row is a compact dict — ``thumb_path`` is the file under
-    COMMUNITY_THUMB_DIR, exposed via /community/thumb/<filename> by
-    the FastAPI layer.
+    When ``region`` is supplied but produces fewer than ``limit``
+    rows, we widen to the country bucket so a small city still gets
+    a populated carousel. Each row is a compact dict; ``thumb_path``
+    is the filename served by /api/community/thumb/<filename>.
     """
     init_db()
     limit = max(1, min(int(limit), 50))
-    base_sql = (
-        "SELECT scan_id, region, disease, confidence, species, "
-        "species_score, thumb_path, locale, created_at "
-        "FROM community_scans "
-        "WHERE region = ? "
-    )
-    params: list = [region]
+
+    def _query(where_extra: str, params: list, take: int) -> list[dict]:
+        sql = (
+            "SELECT scan_id, country, region, disease, confidence, species, "
+            "species_score, thumb_path, locale, created_at "
+            "FROM community_scans WHERE country = ? "
+            + where_extra
+            + " ORDER BY created_at DESC LIMIT ?"
+        )
+        with _connect() as conn:
+            rows = conn.execute(sql, (*params, take)).fetchall()
+        return [_row_to_dict(r) for r in rows]
+
+    base_params: list = [country]
+    base_extra = ""
     if exclude_user_pseudo_id:
-        base_sql += "AND user_pseudo_id != ? "
-        params.append(exclude_user_pseudo_id)
-    # Disease-matching rows first.
+        base_extra += " AND user_pseudo_id != ?"
+        base_params.append(exclude_user_pseudo_id)
+    region_clean = (region or "").strip()
+    region_extra = base_extra
+    region_params = list(base_params)
+    if region_clean:
+        region_extra += " AND region = ?"
+        region_params.append(region_clean)
+
+    # Disease-matching rows first, narrowed to region when supplied.
     matched: list[dict] = []
     fillers: list[dict] = []
-    with _connect() as conn:
-        if disease:
-            rows = conn.execute(
-                base_sql + "AND disease = ? ORDER BY created_at DESC LIMIT ?",
-                (*params, disease, limit),
-            ).fetchall()
-            matched = [_row_to_dict(r) for r in rows]
-        if len(matched) < limit:
-            remaining = limit - len(matched)
-            extra_params = list(params)
-            extra_sql = base_sql + "ORDER BY created_at DESC LIMIT ?"
-            extra_params.append(remaining + len(matched))
-            rows = conn.execute(extra_sql, extra_params).fetchall()
-            seen = {m["scan_id"] for m in matched}
-            for r in rows:
-                d = _row_to_dict(r)
+    if disease:
+        matched = _query(
+            region_extra + " AND disease = ?",
+            region_params + [disease],
+            limit,
+        )
+    if len(matched) < limit:
+        seen = {m["scan_id"] for m in matched}
+        # Stage 1: same locality, any disease.
+        if region_clean:
+            for d in _query(region_extra, region_params, limit + len(matched)):
                 if d["scan_id"] in seen:
                     continue
                 fillers.append(d)
+                seen.add(d["scan_id"])
+                if len(matched) + len(fillers) >= limit:
+                    break
+        # Stage 2: widen to the whole country if we still need more.
+        if len(matched) + len(fillers) < limit:
+            for d in _query(base_extra, base_params, limit + len(matched) + len(fillers)):
+                if d["scan_id"] in seen:
+                    continue
+                fillers.append(d)
+                seen.add(d["scan_id"])
                 if len(matched) + len(fillers) >= limit:
                     break
     return matched + fillers
 
 
-def region_summary(region: str) -> dict:
-    """Aggregate the corpus for one region — totals + top-3 diseases.
+def region_summary(country: str, region: str | None = None) -> dict:
+    """Aggregate the corpus for one country (or country+region).
 
-    Used by the Android "your region" card to render a quick
-    "5 scans nearby this week; mostly Powdery Mildew" snippet.
+    Used by the Android "near you" card to render a quick "5 scans
+    nearby this week; mostly Powdery Mildew" snippet. When
+    ``region`` is supplied we narrow to that locality; otherwise we
+    summarise the whole country and surface the top 3 cities in a
+    ``top_regions`` block so the client can switch the grouping
+    granularity from the same response.
     """
     init_db()
     now = int(time.time())
     week_ago = now - 7 * 86_400
+    region_clean = (region or "").strip()
     with _connect() as conn:
-        total = conn.execute(
-            "SELECT COUNT(*) FROM community_scans WHERE region = ?", (region,)
-        ).fetchone()[0]
-        last_week = conn.execute(
-            "SELECT COUNT(*) FROM community_scans "
-            "WHERE region = ? AND created_at >= ?",
-            (region, week_ago),
-        ).fetchone()[0]
-        rows = conn.execute(
-            "SELECT disease, COUNT(*) AS n FROM community_scans "
-            "WHERE region = ? AND created_at >= ? "
-            "GROUP BY disease ORDER BY n DESC LIMIT 3",
-            (region, week_ago),
-        ).fetchall()
+        if region_clean:
+            total = conn.execute(
+                "SELECT COUNT(*) FROM community_scans "
+                "WHERE country = ? AND region = ?",
+                (country, region_clean),
+            ).fetchone()[0]
+            last_week = conn.execute(
+                "SELECT COUNT(*) FROM community_scans "
+                "WHERE country = ? AND region = ? AND created_at >= ?",
+                (country, region_clean, week_ago),
+            ).fetchone()[0]
+            disease_rows = conn.execute(
+                "SELECT disease, COUNT(*) AS n FROM community_scans "
+                "WHERE country = ? AND region = ? AND created_at >= ? "
+                "GROUP BY disease ORDER BY n DESC LIMIT 3",
+                (country, region_clean, week_ago),
+            ).fetchall()
+            top_region_rows: list[tuple] = []
+        else:
+            total = conn.execute(
+                "SELECT COUNT(*) FROM community_scans WHERE country = ?",
+                (country,),
+            ).fetchone()[0]
+            last_week = conn.execute(
+                "SELECT COUNT(*) FROM community_scans "
+                "WHERE country = ? AND created_at >= ?",
+                (country, week_ago),
+            ).fetchone()[0]
+            disease_rows = conn.execute(
+                "SELECT disease, COUNT(*) AS n FROM community_scans "
+                "WHERE country = ? AND created_at >= ? "
+                "GROUP BY disease ORDER BY n DESC LIMIT 3",
+                (country, week_ago),
+            ).fetchall()
+            top_region_rows = conn.execute(
+                "SELECT region, COUNT(*) AS n FROM community_scans "
+                "WHERE country = ? AND region != '' AND created_at >= ? "
+                "GROUP BY region ORDER BY n DESC LIMIT 3",
+                (country, week_ago),
+            ).fetchall()
     top_diseases = [
-        {"disease": str(r[0]), "count": int(r[1])} for r in rows
+        {"disease": str(r[0]), "count": int(r[1])} for r in disease_rows
+    ]
+    top_regions = [
+        {"region": str(r[0]), "count": int(r[1])} for r in top_region_rows
     ]
     return {
-        "region": region,
+        "country": country,
+        "region": region_clean or None,
         "total": int(total),
         "last_7d": int(last_week),
         "top_diseases": top_diseases,
+        "top_regions": top_regions,
     }
 
 
@@ -334,16 +450,20 @@ def prune_older_than(days: int) -> int:
 
 
 def _row_to_dict(row: tuple) -> dict:
+    # Tuple shape comes from the SELECT in ``nearby_scans``:
+    # scan_id, country, region, disease, confidence, species,
+    # species_score, thumb_path, locale, created_at.
     return {
         "scan_id": row[0],
-        "region": row[1],
-        "disease": row[2],
-        "confidence": float(row[3]) if row[3] is not None else None,
-        "species": row[4],
-        "species_score": float(row[5]) if row[5] is not None else None,
-        "thumb_path": row[6],
-        "locale": row[7],
-        "created_at": int(row[8]),
+        "country": row[1] or "",
+        "region": row[2] or "",
+        "disease": row[3],
+        "confidence": float(row[4]) if row[4] is not None else None,
+        "species": row[5],
+        "species_score": float(row[6]) if row[6] is not None else None,
+        "thumb_path": row[7],
+        "locale": row[8],
+        "created_at": int(row[9]),
     }
 
 

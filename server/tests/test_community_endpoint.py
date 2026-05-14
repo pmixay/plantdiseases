@@ -279,40 +279,71 @@ def test_metrics_surfaces_community_block(client, isolated_community):
     assert m["community"]["regions"] >= 1
 
 
-def test_region_groups_by_country_only(client, isolated_community):
-    """The corpus now groups by country only — multiple cities in the
-    same country must land in the same bucket. Both legacy
-    ``"City, Country"`` writes and modern ``"Country"`` writes
-    normalise to the country tail server-side.
+def test_country_groups_with_region_breakdown(client, isolated_community):
+    """The corpus stores country + region separately. A country-only
+    nearby query returns every locality; a country+region query
+    narrows to one city. Legacy "City, Country" composite writes
+    auto-split via the backward-compat fallback so older clients
+    still land in the right column.
     """
     db_path, _ = isolated_community
-    for region, scan_id in (
-        ("London, GB",   "scangbcity001"),
-        ("Manchester, GB", "scangbcity002"),
-        ("GB",           "scangbcity003"),
-    ):
+    writes = (
+        # New hierarchy: explicit country + region.
+        dict(scan_id="scangb-london-1", country="GB", region="London"),
+        dict(scan_id="scangb-london-2", country="GB", region="London"),
+        dict(scan_id="scangb-mancunian1", country="GB", region="Manchester"),
+        # Legacy: composite "City, Country" sent as region with no
+        # explicit country. The endpoint splits on the last comma.
+        dict(scan_id="scangb-legacy001", region="Bristol, GB"),
+    )
+    for w in writes:
         r = client.post(
             "/api/community/scan",
             data=_form(
-                scan_id=scan_id,
-                user_pseudo_id="pseudo-gb-bucket",
-                region=region,
+                scan_id=w["scan_id"],
+                user_pseudo_id="pseudo-gb-mixed",
+                country=w.get("country"),
+                region=w.get("region"),
                 disease="healthy",
             ),
         )
         assert r.status_code == 200, r.text
-    # Persisted region column should be the country tail for every row.
-    with sqlite3.connect(str(db_path)) as conn:
-        regions = {
-            row[0]
-            for row in conn.execute("SELECT region FROM community_scans").fetchall()
-        }
-    assert regions == {"GB"}, f"region column not collapsed to country: {regions}"
 
-    # Read path: query with EITHER the new country form OR the legacy
-    # city form lands on the same bucket.
-    for query in ("GB", "Manchester, GB"):
-        r = client.get("/api/community/nearby", params={"region": query})
-        body = r.json()
-        assert {item["region"] for item in body["items"]} == {"GB"}, query
-        assert body["summary"]["total"] == 3
+    # Persisted country column must always be "GB"; region carries
+    # the locality.
+    with sqlite3.connect(str(db_path)) as conn:
+        rows = conn.execute(
+            "SELECT country, region FROM community_scans ORDER BY id"
+        ).fetchall()
+    assert {row[0] for row in rows} == {"GB"}
+    assert {row[1] for row in rows} == {"London", "Manchester", "Bristol"}
+
+    # Country-only nearby returns everything.
+    r_country = client.get(
+        "/api/community/nearby", params={"country": "GB"},
+    ).json()
+    assert r_country["summary"]["total"] == 4
+    assert r_country["summary"]["country"] == "GB"
+    assert r_country["summary"]["region"] is None
+    # Top regions surfaced for the breakdown view.
+    top_region_names = {r["region"] for r in r_country["summary"]["top_regions"]}
+    assert top_region_names >= {"London", "Manchester", "Bristol"}
+
+    # Country + region narrows to the matching locality. We still
+    # populate the carousel by widening to the country when the
+    # locality alone has < limit rows — Bristol has 1 row, so the
+    # response includes other GB localities as fillers.
+    r_london = client.get(
+        "/api/community/nearby", params={"country": "GB", "region": "London"},
+    ).json()
+    assert r_london["summary"]["total"] == 2
+    assert r_london["summary"]["region"] == "London"
+    london_first = [it for it in r_london["items"] if it["region"] == "London"]
+    assert len(london_first) == 2
+
+    # Legacy "City, Country" composite on the read path also lands.
+    r_legacy = client.get(
+        "/api/community/nearby", params={"region": "Bristol, GB"},
+    ).json()
+    assert r_legacy["summary"]["country"] == "GB"
+    assert r_legacy["summary"]["region"] == "Bristol"

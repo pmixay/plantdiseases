@@ -512,7 +512,8 @@ class ScanRepository(
     suspend fun uploadCommunityScan(
         scanId: String,
         userPseudoId: String,
-        region: String,
+        country: String,
+        region: String = "",
         disease: String,
         confidence: Float? = null,
         species: String? = null,
@@ -533,7 +534,8 @@ class ScanRepository(
                 val response = apiService.communityScanUpload(
                     scanId = text(scanId)!!,
                     userPseudoId = text(userPseudoId)!!,
-                    region = text(region)!!,
+                    country = text(country)!!,
+                    region = text(region),
                     disease = text(disease)!!,
                     confidence = text(confidence?.toString()),
                     species = text(species),
@@ -551,9 +553,11 @@ class ScanRepository(
             }
         }
 
-    /** Fetch the most recent community scans in a region. */
+    /** Fetch the most recent community scans in a country (optionally
+     *  narrowed to one sub-country region). */
     suspend fun communityNearby(
-        region: String,
+        country: String,
+        region: String? = null,
         disease: String?,
         userPseudoId: String?,
         limit: Int = 12,
@@ -561,7 +565,8 @@ class ScanRepository(
         withContext(Dispatchers.IO) {
             try {
                 val response = apiService.communityScanNearby(
-                    region = region,
+                    country = country,
+                    region = region?.takeIf { it.isNotBlank() },
                     disease = disease?.takeIf { it.isNotBlank() },
                     userPseudoId = userPseudoId?.takeIf { it.isNotBlank() },
                     limit = limit,
