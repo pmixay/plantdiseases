@@ -348,4 +348,35 @@
     <string name="species_suggest_unknown_name">Unnamed candidate</string>
     <string name="species_scientific_label">Scientific name</string>
     <string name="species_common_label">Common name</string>
+
+    <!-- Diagnosis feedback (/api/feedback) -->
+    <string name="feedback_title">Was this diagnosis correct?</string>
+    <string name="feedback_subtitle">Your answer trains the next model release.</string>
+    <string name="feedback_yes">Yes, looks right</string>
+    <string name="feedback_no">No, it\'s wrong</string>
+    <string name="feedback_correction_title">What is it actually?</string>
+    <string name="feedback_correction_hint">Disease name (optional)</string>
+    <string name="feedback_note_hint">Anything else you want to tell us? (optional)</string>
+    <string name="feedback_send">Send feedback</string>
+    <string name="feedback_sent">Thanks — your feedback was saved.</string>
+    <string name="feedback_rate_limited">Slow down — try again in a moment.</string>
+    <string name="feedback_failed">Could not send feedback. Try again later.</string>
+
+    <!-- Pet-toxicity surface -->
+    <string name="toxicity_toxic_title">Toxic to pets</string>
+    <string name="toxicity_safe_title">Pet-safe</string>
+    <string name="toxicity_unknown_title">Pet safety unconfirmed</string>
+    <string name="toxicity_toxic_body">This species is reported toxic to %1$s. Keep out of reach and contact a vet on ingestion.</string>
+    <string name="toxicity_safe_body">No toxicity reports for cats or dogs against this species.</string>
+    <string name="toxicity_unknown_body">We could not confirm pet safety for this plant. Identify the species and re-check before letting pets near it.</string>
+
+    <!-- Historical progression sparkline -->
+    <string name="progression_title">Disease progression</string>
+    <string name="progression_trend_improving">Improving</string>
+    <string name="progression_trend_stable">Stable</string>
+    <string name="progression_trend_worsening">Worsening</string>
+    <string name="progression_trend_baseline">No history yet</string>
+    <string name="progression_history_meta">%1$d scans · latest %2$s</string>
+    <string name="progression_loading">Building progression sparkline…</string>
+    <string name="progression_failed">Could not load progression data.</string>
 </resources>

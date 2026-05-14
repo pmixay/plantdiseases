@@ -6,6 +6,8 @@ import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.CarePlanResponse
 import com.plantdiseases.app.data.model.ChatRequest
 import com.plantdiseases.app.data.model.ChatResponse
+import com.plantdiseases.app.data.model.FeedbackRequest
+import com.plantdiseases.app.data.model.FeedbackResponse
 import com.plantdiseases.app.data.model.HealthResponse
 import com.plantdiseases.app.data.model.IdentifyResponse
 import com.plantdiseases.app.data.model.ProgressionRequest
@@ -32,7 +34,8 @@ interface ApiService {
     @Multipart
     @POST("api/analyze")
     suspend fun analyzeImage(
-        @Part image: MultipartBody.Part
+        @Part image: MultipartBody.Part,
+        @Query("species") species: String? = null,
     ): retrofit2.Response<AnalysisResponse>
 
     @GET("api/health")
@@ -53,6 +56,9 @@ interface ApiService {
 
     @POST("api/progression")
     suspend fun progression(@Body request: ProgressionRequest): retrofit2.Response<ProgressionResponse>
+
+    @POST("api/feedback")
+    suspend fun feedback(@Body request: FeedbackRequest): retrofit2.Response<FeedbackResponse>
 }
 
 /**

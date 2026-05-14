@@ -28,14 +28,21 @@ Class taxonomy and architecture are frozen — see `MODEL_CARD.md` and
 
 ### Competitive parity
 
-- [ ] **`POST /api/feedback`.** Body: `scan_id`, `correct: bool`,
+- [x] **`POST /api/feedback`.** Body: `scan_id`, `correct: bool`,
       `corrected_class?`, free-text. Append-only SQLite at
-      `server/feedback.db`. Rate-limited 1/s per IP.
-- [ ] **Toxicity-to-pets.** `toxic_to_pets: bool` + `species_list`
-      on `diseases_data.py`, `/api/analyze`, `/api/care-plan`.
-- [ ] **Historical `/api/progression`.** Accept `history: list[dict]`,
-      return a 5-point severity sparkline; back-compatible with the
-      pairwise `current+previous` shape.
+      `server/feedback.db`. Rate-limited 1/s per IP (inherits the
+      global limiter). Counts surface on `/api/metrics`. Android
+      surfaces a thumbs / correction sheet on the result screen.
+- [x] **Toxicity-to-pets.** `toxic_to_pets: bool` + `species_list`
+      on `diseases_data.py`, `/api/analyze`, `/api/care-plan`. The
+      server resolves against an ASPCA-derived table when the caller
+      passes a `species` hint; ``source="unknown"`` otherwise so the
+      Android UI never falsely reassures.
+- [x] **Historical `/api/progression`.** Accepts `history: list[dict]`
+      and returns a 5-point severity sparkline plus a slope-based
+      trend; back-compatible with the pairwise `current+previous`
+      shape. Android `PlantDetailActivity` renders the sparkline +
+      trend chip above the timeline.
 
 ### Operations
 
@@ -101,9 +108,9 @@ Class taxonomy and architecture are frozen — see `MODEL_CARD.md` and
 - [ ] **Photo-coach onboarding.** First-time camera open: 3 slides
       on framing (distance, lighting, background). Track blur-rejected
       retry rate.
-- [ ] **Result-screen feedback prompt.** Thumbs chip on
-      `low_confidence=true` or any non-empty warning. Persist
-      locally; flush to `/api/feedback` once it lands.
+- [x] **Result-screen feedback prompt.** Thumbs / correction sheet
+      on every diagnosed plant verdict (NAP excluded). POSTs to
+      `/api/feedback`; surfaces 429 / network failures distinctly.
 - [ ] **AI Doctor session budget UI.** Progress chip
       "3 / 12 messages left" when remaining ≤ 20 % of cap. Source —
       `ChatResponse.session.turns_used / turns_remaining`.
@@ -111,12 +118,14 @@ Class taxonomy and architecture are frozen — see `MODEL_CARD.md` and
       `reason` branch (`session_turn_cap`, `session_token_cap`,
       `no_api_key`, `message_too_long`, `empty_message`,
       `empty_reply`, `api_error`).
-- [ ] **`/api/progression` in PlantDetailActivity.** ≥ 2 scans →
-      `improving / stable / worsening / baseline` chip above the
-      timeline. Tap → before / after sheet with `delta_severity`.
-- [ ] **Toxicity warning UI.** "Toxic to pets" badge on species
-      suggestions + Result screen once the server response carries
-      the flag.
+- [x] **`/api/progression` in PlantDetailActivity.** ≥ 2 scans →
+      sparkline + `improving / stable / worsening / baseline` chip
+      above the timeline. POSTs the full history (capped to last 12
+      scans).
+- [x] **Toxicity warning UI.** Tri-state badge on the Result screen:
+      red "Toxic to pets" with species list, green "Pet-safe", or
+      amber "Pet safety unconfirmed" (when server returns
+      ``source="unknown"``).
 - [ ] **`IdentifyResponse.cached` UI.** "Served from cache" pill on
       species suggestions. Field is already on the wire; only the UI
       hook is missing.

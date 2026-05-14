@@ -352,4 +352,35 @@
     <string name="species_suggest_unknown_name">Без названия</string>
     <string name="species_scientific_label">Научное название</string>
     <string name="species_common_label">Бытовое название</string>
+
+    <!-- Diagnosis feedback -->
+    <string name="feedback_title">Диагноз верный?</string>
+    <string name="feedback_subtitle">Ваш ответ поможет улучшить модель.</string>
+    <string name="feedback_yes">Да, всё верно</string>
+    <string name="feedback_no">Нет, неверно</string>
+    <string name="feedback_correction_title">Что это на самом деле?</string>
+    <string name="feedback_correction_hint">Название болезни (необязательно)</string>
+    <string name="feedback_note_hint">Что ещё хотите сказать? (необязательно)</string>
+    <string name="feedback_send">Отправить</string>
+    <string name="feedback_sent">Спасибо — ваш отзыв сохранён.</string>
+    <string name="feedback_rate_limited">Слишком часто — попробуйте через секунду.</string>
+    <string name="feedback_failed">Не удалось отправить отзыв. Попробуйте позже.</string>
+
+    <!-- Pet-toxicity surface -->
+    <string name="toxicity_toxic_title">Токсично для питомцев</string>
+    <string name="toxicity_safe_title">Безопасно для питомцев</string>
+    <string name="toxicity_unknown_title">Безопасность не подтверждена</string>
+    <string name="toxicity_toxic_body">Это растение токсично для: %1$s. Уберите подальше от животных, при отравлении — к ветеринару.</string>
+    <string name="toxicity_safe_body">Данных о токсичности для кошек и собак нет.</string>
+    <string name="toxicity_unknown_body">Безопасность для питомцев не подтверждена. Определите вид и перепроверьте, прежде чем подпускать животных.</string>
+
+    <!-- Historical progression sparkline -->
+    <string name="progression_title">Динамика заболевания</string>
+    <string name="progression_trend_improving">Улучшается</string>
+    <string name="progression_trend_stable">Стабильно</string>
+    <string name="progression_trend_worsening">Ухудшается</string>
+    <string name="progression_trend_baseline">Истории ещё нет</string>
+    <string name="progression_history_meta">%1$d сканов · последний %2$s</string>
+    <string name="progression_loading">Строим график динамики…</string>
+    <string name="progression_failed">Не удалось загрузить данные динамики.</string>
 </resources>

@@ -65,6 +65,15 @@ data class AnalysisResponse(
     @SerializedName("top_k") val topK: List<TopKEntry>? = null,
     @SerializedName("warnings") val warnings: List<String>? = null,
     @SerializedName("prediction_set") val predictionSet: PredictionSet? = null,
+    /**
+     * Toxic-to-pets surface. `toxicitySource` is `"db"` when the
+     * server matched the species against its ASPCA-derived table,
+     * `"unknown"` when we couldn't confirm — UI must NOT falsely
+     * reassure on unknown.
+     */
+    @SerializedName("toxic_to_pets") val toxicToPets: Boolean = false,
+    @SerializedName("toxic_species_list") val toxicSpeciesList: List<String> = emptyList(),
+    @SerializedName("toxicity_source") val toxicitySource: String = "unknown",
     @SerializedName("elapsed_ms") val elapsedMs: Float? = null
 )
 
@@ -211,6 +220,9 @@ data class CarePlanResponse(
     @SerializedName("key_action") val keyAction: String = "",
     @SerializedName("follow_up_days") val followUpDays: Int = 14,
     @SerializedName("summary_md") val summaryMd: String? = null,
+    @SerializedName("toxic_to_pets") val toxicToPets: Boolean = false,
+    @SerializedName("toxic_species_list") val toxicSpeciesList: List<String> = emptyList(),
+    @SerializedName("toxicity_source") val toxicitySource: String = "unknown",
 ) {
     val wateringDaysInt: Int?
         get() = when (val v = wateringDaysRaw) {
@@ -242,14 +254,22 @@ data class HealthResponse(
  * has cached.
  */
 data class ProgressionRequest(
-    @SerializedName("current") val current: Map<String, Any?>,
+    @SerializedName("current") val current: Map<String, Any?>? = null,
     @SerializedName("previous") val previous: Map<String, Any?>? = null,
+    /**
+     * Historical time-ordered scan list (oldest first). When present
+     * the server returns the 5-point severity sparkline. Either
+     * `history` or `current` must be supplied.
+     */
+    @SerializedName("history") val history: List<Map<String, Any?>>? = null,
 )
 
 /**
  * /api/progression response. `trend` ∈ {improving, stable, worsening,
  * baseline}. `baseline` means there was no previous scan to compare
- * against.
+ * against. `sparkline` is only populated when the request supplied
+ * `history` — older pairwise calls leave it null for the v2.0
+ * back-compat shape.
  */
 data class ProgressionResponse(
     @SerializedName("trend") val trend: String,
@@ -258,4 +278,29 @@ data class ProgressionResponse(
     @SerializedName("class_changed") val classChanged: Boolean = false,
     @SerializedName("previous_class") val previousClass: String? = null,
     @SerializedName("current_class") val currentClass: String? = null,
+    @SerializedName("sparkline") val sparkline: List<Float>? = null,
+    @SerializedName("history_length") val historyLength: Int? = null,
+    @SerializedName("points") val points: List<Float>? = null,
+)
+
+/**
+ * /api/feedback request body. The server appends every row — there is
+ * no update / delete path. `scanId` is a stable client-generated id
+ * (typically the local DB row id, stringified).
+ *
+ *  - `correct`         : thumbs-up / thumbs-down on the diagnosis.
+ *  - `correctedClass`  : optional — the user-supplied "real" class.
+ *  - `note`            : optional free-text (≤ 2000 chars).
+ */
+data class FeedbackRequest(
+    @SerializedName("scan_id") val scanId: String,
+    @SerializedName("correct") val correct: Boolean,
+    @SerializedName("corrected_class") val correctedClass: String? = null,
+    @SerializedName("note") val note: String? = null,
+)
+
+/** /api/feedback response. `id` is the new row id in the server's append-only DB. */
+data class FeedbackResponse(
+    @SerializedName("ok") val ok: Boolean = false,
+    @SerializedName("id") val id: Long = 0,
 )

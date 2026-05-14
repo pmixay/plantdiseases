@@ -474,6 +474,138 @@
 
             </com.google.android.material.card.MaterialCardView>
 
+            <!-- Pet-toxicity card. Server populates `toxic_to_pets`,
+                 `toxic_species_list` and `toxicity_source`. UI surfaces:
+                   • "Toxic to cats / dogs / horses" pill when source=db.
+                   • "Pet safety unconfirmed" hint when source=unknown so
+                     we never falsely reassure on an un-identified plant. -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/card_toxicity"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md"
+                android:visibility="gone"
+                app:cardCornerRadius="@dimen/radius_lg"
+                app:cardElevation="0dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:padding="@dimen/space_lg">
+
+                    <ImageView
+                        android:id="@+id/iv_toxicity_icon"
+                        android:layout_width="32dp"
+                        android:layout_height="32dp"
+                        android:src="@drawable/ic_warning"
+                        android:contentDescription="@null"
+                        android:importantForAccessibility="no" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/space_md"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:id="@+id/tv_toxicity_title"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:textSize="@dimen/text_body"
+                            android:fontFamily="sans-serif-medium" />
+
+                        <TextView
+                            android:id="@+id/tv_toxicity_body"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/space_xs"
+                            android:textSize="@dimen/text_body_sm"
+                            android:textColor="@color/on_surface_secondary"
+                            android:lineSpacingExtra="2dp" />
+
+                    </LinearLayout>
+
+                </LinearLayout>
+
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Diagnosis feedback (thumbs up / thumbs down + corrected
+                 class + free text). POSTed to /api/feedback. -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/card_feedback"
+                style="@style/App.GlassCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/feedback_title"
+                        android:textAppearance="@style/TextAppearance.App.Title" />
+
+                    <TextView
+                        android:id="@+id/tv_feedback_subtitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_xs"
+                        android:text="@string/feedback_subtitle"
+                        android:textSize="@dimen/text_body_sm"
+                        android:textColor="@color/on_surface_secondary" />
+
+                    <LinearLayout
+                        android:id="@+id/feedback_choice_row"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_md"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_feedback_yes"
+                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginEnd="@dimen/space_sm"
+                            android:text="@string/feedback_yes"
+                            app:icon="@drawable/ic_healthy"
+                            app:iconGravity="textStart"
+                            android:textAllCaps="false" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_feedback_no"
+                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/feedback_no"
+                            app:icon="@drawable/ic_warning"
+                            app:iconGravity="textStart"
+                            android:textAllCaps="false" />
+
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/tv_feedback_status"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_sm"
+                        android:visibility="gone"
+                        android:textSize="@dimen/text_body_sm"
+                        android:textColor="@color/primary" />
+
+                </LinearLayout>
+
+            </com.google.android.material.card.MaterialCardView>
+
             <!-- Low confidence warning -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/card_low_confidence"

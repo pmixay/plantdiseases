@@ -36,7 +36,9 @@ import com.plantdiseases.app.data.local.PlantEntity
 import com.plantdiseases.app.data.local.PlantJournalEntity
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.CarePlanRequest
+import com.plantdiseases.app.data.model.ProgressionRequest
 import com.plantdiseases.app.data.repository.PlantRepository
+import com.plantdiseases.app.util.ImageUtils.formatRelativeDate
 import com.plantdiseases.app.ui.common.CarePlanCardView
 import com.plantdiseases.app.ui.result.ResultActivity
 import com.plantdiseases.app.util.Haptics
@@ -182,6 +184,7 @@ class PlantDetailActivity : AppCompatActivity() {
         toolbarTitle.text = plant.name
         content.addView(buildHeader(plant, scans, journal))
         content.addView(buildActionRow())
+        content.addView(buildProgressionCard(scans))
         content.addView(buildCarePlanSlot(plant, scans))
         content.addView(buildDoctorEntry(plant, scans))
         content.addView(buildTabs())
@@ -893,6 +896,132 @@ class PlantDetailActivity : AppCompatActivity() {
         this.toFloat(),
         resources.displayMetrics,
     ).toInt()
+
+    /**
+     * Disease-progression card. Builds a history list from the plant's
+     * scan entities (oldest first, capped to the most recent 12 to keep
+     * the request body bounded) and asks `/api/progression` for the
+     * 5-point severity sparkline.
+     *
+     * On a plant with zero or one scan we render a "no history yet"
+     * placeholder without hitting the network — the endpoint would
+     * return ``trend="baseline"`` anyway.
+     */
+    private fun buildProgressionCard(scans: List<ScanEntity>): View {
+        val card = MaterialCardView(this).apply {
+            radius = 22.dp().toFloat()
+            cardElevation = 0f
+            strokeWidth = 1.dp()
+            strokeColor = getColor(R.color.card_stroke)
+            setCardBackgroundColor(getColor(R.color.surface))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = 12.dp() }
+        }
+        val body = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(16.dp(), 14.dp(), 16.dp(), 14.dp())
+        }
+        val title = TextView(this).apply {
+            text = getString(R.string.progression_title)
+            textSize = 15f
+            setTextColor(getColor(R.color.on_surface))
+            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+        }
+        val trendChip = TextView(this).apply {
+            textSize = 12f
+            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+            setPadding(10.dp(), 4.dp(), 10.dp(), 4.dp())
+            background = getDrawable(R.drawable.bg_plant_stat_pill)
+        }
+        val titleRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(title, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            addView(trendChip)
+        }
+        body.addView(titleRow)
+
+        val sparkline = SparklineView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                64.dp(),
+            ).apply { topMargin = 10.dp() }
+        }
+        body.addView(sparkline)
+
+        val meta = TextView(this).apply {
+            textSize = 12f
+            setTextColor(getColor(R.color.on_surface_secondary))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = 8.dp() }
+        }
+        body.addView(meta)
+        card.addView(body)
+
+        if (scans.size < 2) {
+            // Single-scan plants get a baseline placeholder; no network call.
+            trendChip.text = getString(R.string.progression_trend_baseline)
+            trendChip.setTextColor(getColor(R.color.on_surface_secondary))
+            sparkline.setData(emptyList(), "baseline")
+            meta.text = if (scans.isEmpty()) ""
+                else getString(
+                    R.string.progression_history_meta,
+                    scans.size,
+                    formatRelativeDate(this, scans[0].timestamp),
+                )
+            return card
+        }
+
+        // Loading state.
+        trendChip.text = getString(R.string.progression_loading)
+        trendChip.setTextColor(getColor(R.color.on_surface_secondary))
+        meta.text = ""
+
+        val app = application as PlantDiseasesApp
+        // Server expects oldest-first; cap to the 12 newest to keep
+        // payloads bounded (Pydantic on the server doesn't, but the
+        // device's network stack still has to upload them).
+        val ordered = scans.sortedBy { it.timestamp }.takeLast(12)
+        val historyPayload = ordered.map { app.scanRepository.scanToProgressionPayload(it) }
+        val newest = ordered.last()
+        lifecycleScope.launch {
+            val res = app.scanRepository.fetchProgression(
+                ProgressionRequest(history = historyPayload),
+            )
+            res.onSuccess { resp ->
+                val trendLabel = when (resp.trend) {
+                    "improving" -> getString(R.string.progression_trend_improving)
+                    "worsening" -> getString(R.string.progression_trend_worsening)
+                    "stable" -> getString(R.string.progression_trend_stable)
+                    else -> getString(R.string.progression_trend_baseline)
+                }
+                val trendColor = when (resp.trend) {
+                    "improving" -> getColor(R.color.healthy_green)
+                    "worsening" -> getColor(R.color.disease_red)
+                    "stable" -> getColor(R.color.neutral_blue)
+                    else -> getColor(R.color.on_surface_secondary)
+                }
+                trendChip.text = trendLabel
+                trendChip.setTextColor(trendColor)
+                sparkline.setData(resp.sparkline ?: emptyList(), resp.trend)
+                meta.text = getString(
+                    R.string.progression_history_meta,
+                    resp.historyLength ?: ordered.size,
+                    formatRelativeDate(this@PlantDetailActivity, newest.timestamp),
+                )
+            }.onFailure {
+                trendChip.text = getString(R.string.progression_trend_baseline)
+                trendChip.setTextColor(getColor(R.color.on_surface_secondary))
+                meta.text = getString(R.string.progression_failed)
+                sparkline.setData(emptyList(), "baseline")
+            }
+        }
+        return card
+    }
 
     companion object {
         const val EXTRA_PLANT_ID = "extra_plant_id"

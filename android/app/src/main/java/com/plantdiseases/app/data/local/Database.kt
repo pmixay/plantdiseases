@@ -91,6 +91,12 @@ data class ScanEntity(
     // Optional foreign key into `plants`. Null until the user assigns the
     // scan to a plant from the result screen ("Add to garden" flow).
     @ColumnInfo(name = "plant_id") val plantId: Long? = null,
+    // Pet-toxicity surface from /api/analyze. `toxicitySource` is "db"
+    // when the server matched the species, "unknown" otherwise. UI
+    // must NOT falsely reassure on "unknown".
+    @ColumnInfo(name = "toxic_to_pets") val toxicToPets: Boolean = false,
+    @ColumnInfo(name = "toxic_species_list") val toxicSpeciesList: String? = null, // JSON array
+    @ColumnInfo(name = "toxicity_source") val toxicitySource: String = "unknown",
 )
 
 // ─── Plant Reminder Entity ──────────────────────────────────────────────────
@@ -242,7 +248,7 @@ interface PlantJournalDao {
         PlantReminderEntity::class,
         ChatMessageEntity::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
