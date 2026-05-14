@@ -69,15 +69,28 @@ def test_taxonomy_is_v21_disease_only():
 
 
 def test_healthy_gate_attaches_warning_without_rerouting():
-    """The healthy gate is soft: a low margin attaches the
-    ``uncertain_healthy`` warning but DOES NOT swap the class."""
+    """Between the reroute floor (0.50) and the strong-healthy
+    threshold (0.75), the gate must only attach the
+    ``uncertain_healthy`` warning. The class stays ``healthy`` because
+    the harder reroute rule below only fires under 0.50.
+    """
     from pipeline import HEALTHY_MARGIN, _apply_postprocessing_rules
 
-    probs = _uniform_probs()
-    probs["healthy"] = 0.55
-    probs["leaf_spot_fungal"] = 0.55 - (HEALTHY_MARGIN / 2)
+    # Build a distribution where healthy stays above the 0.50 reroute
+    # floor after normalisation, but its margin over the next class is
+    # under HEALTHY_MARGIN so the soft gate still fires.
+    # We can't just scale both top-1 and top-2 by HEALTHY_MARGIN — the
+    # numerator/denominator cancel after normalisation, so the
+    # post-norm fraction stays at 0.50 exactly. Picking absolute
+    # raw values directly so post-norm healthy lands ~0.51 with a
+    # ~0.07 margin (under HEALTHY_MARGIN but above the reroute floor).
+    probs = {n: 0.01 for n in EXPECTED_CLASSES}
+    probs["healthy"] = 0.60
+    probs["leaf_spot_fungal"] = 0.52
     s = sum(probs.values())
     probs = {k: v / s for k, v in probs.items()}
+    assert probs["healthy"] > 0.50  # sanity: stays above the reroute floor
+    assert probs["healthy"] - probs["leaf_spot_fungal"] < HEALTHY_MARGIN
 
     classification = {
         "class_name": "healthy",
@@ -89,6 +102,65 @@ def test_healthy_gate_attaches_warning_without_rerouting():
 
     assert out["class_name"] == "healthy", "gate must NOT reroute the class"
     assert "uncertain_healthy" in out["warnings"]
+    assert "weak_healthy_rerouted" not in out["warnings"]
+
+
+def test_weak_healthy_below_reroute_floor_swaps_to_top_disease():
+    """When healthy is below 0.50 and a disease alternative crosses
+    ``HEALTHY_DISEASE_FLOOR``, the verdict must swap to that disease.
+    Matches the screenshot bug: 0.29 healthy / 0.24 leaf_spot_fungal /
+    0.21 gray_mold_botrytis should not be reported as a healthy plant.
+    """
+    from pipeline import _apply_postprocessing_rules
+
+    probs = {n: 0.0 for n in EXPECTED_CLASSES}
+    probs["healthy"] = 0.29
+    probs["leaf_spot_fungal"] = 0.24
+    probs["gray_mold_botrytis"] = 0.21
+    # Spread the remaining mass over the other classes so the dict
+    # still sums to 1.0.
+    leftover = 1.0 - (0.29 + 0.24 + 0.21)
+    other_classes = [n for n in probs if n not in ("healthy", "leaf_spot_fungal", "gray_mold_botrytis")]
+    for n in other_classes:
+        probs[n] = leftover / len(other_classes)
+    classification = {
+        "class_name": "healthy",
+        "confidence": probs["healthy"],
+        "all_probs": probs,
+        "low_confidence": False,
+    }
+    out = _apply_postprocessing_rules(classification, list(probs.keys()))
+
+    assert out["class_name"] == "leaf_spot_fungal", (
+        "weak-healthy reroute must surface the strongest disease alternative"
+    )
+    assert "weak_healthy_rerouted" in out["warnings"]
+
+
+def test_weak_healthy_keeps_class_when_no_disease_alternative():
+    """If healthy is weak but every disease class is also tiny, we
+    leave the verdict alone — there's nothing better to swap to. The
+    soft ``uncertain_healthy`` / ``low_confidence`` warnings still
+    fire so the UI can demote the confidence in the card.
+    """
+    from pipeline import _apply_postprocessing_rules
+
+    probs = {n: 0.01 for n in EXPECTED_CLASSES}
+    probs["healthy"] = 0.40   # below the 0.50 reroute floor
+    probs["not_a_plant"] = 0.55
+    s = sum(probs.values())
+    probs = {k: v / s for k, v in probs.items()}
+    classification = {
+        "class_name": "healthy",
+        "confidence": probs["healthy"],
+        "all_probs": probs,
+        "low_confidence": False,
+    }
+    out = _apply_postprocessing_rules(classification, list(probs.keys()))
+
+    # No disease class hits HEALTHY_DISEASE_FLOOR — keep healthy verdict.
+    assert out["class_name"] == "healthy"
+    assert "weak_healthy_rerouted" not in out["warnings"]
 
 
 def test_healthy_gate_silent_on_high_confidence():

@@ -31,7 +31,8 @@
             android:name=".MainActivity"
             android:exported="true"
             android:theme="@style/Theme.PlantDiseases.Splash"
-            android:windowSoftInputMode="adjustResize">
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="locale|layoutDirection|uiMode|fontScale">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

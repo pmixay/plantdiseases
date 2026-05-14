@@ -2,7 +2,6 @@ package com.plantdiseases.app.ui.profile
 
 import android.content.Intent
 import android.graphics.drawable.GradientDrawable
-import android.os.Build
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -20,7 +19,6 @@ import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.databinding.FragmentProfileBinding
 import com.plantdiseases.app.ui.camera.LightMeterActivity
-import com.plantdiseases.app.ui.onboarding.OnboardingActivity
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.ThemeHelper
 import kotlinx.coroutines.launch
@@ -53,10 +51,9 @@ class ProfileFragment : Fragment() {
                 .show()
         }
 
-        // How to Use — re-open onboarding
-        binding.cardHowToUse.setOnClickListener {
-            startActivity(Intent(requireContext(), OnboardingActivity::class.java))
-        }
+        // Inline "how to use" mini-guide — three step columns, each
+        // tappable as a soft shortcut into the relevant tab.
+        setupHowToSteps()
 
         // Light Meter
         binding.cardLightMeter.setOnClickListener {
@@ -82,12 +79,15 @@ class ProfileFragment : Fragment() {
     }
 
     private fun switchLanguage() {
+        // Persist the new language for our own attachBaseContext, then
+        // hand the change to AppCompat. With MainActivity declaring
+        // configChanges="locale|layoutDirection" in the manifest, the
+        // system calls onConfigurationChanged instead of recreating
+        // the activity — no flicker, no scroll-loss. AppCompat's
+        // backport handles the same flow on pre-Android-13 from
+        // AppCompat 1.6 onwards.
         val newLang = LocaleHelper.toggleLanguage(requireContext())
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(newLang))
-        } else {
-            requireActivity().recreate()
-        }
+        AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(newLang))
     }
 
     private fun setupThemeChips() {
@@ -107,6 +107,20 @@ class ProfileFragment : Fragment() {
         }
         binding.chipThemeSystem.setOnClickListener {
             ThemeHelper.saveTheme(requireContext(), ThemeHelper.THEME_SYSTEM)
+        }
+    }
+
+    private fun setupHowToSteps() {
+        // Each step column already inflates its own icon + title +
+        // body strings; we only need to wire the click → nav route.
+        binding.stepScan.setOnClickListener {
+            findNavController().navigate(R.id.cameraFragment)
+        }
+        binding.stepDiagnose.setOnClickListener {
+            findNavController().navigate(R.id.galleryFragment)
+        }
+        binding.stepCare.setOnClickListener {
+            findNavController().navigate(R.id.gardenFragment)
         }
     }
 

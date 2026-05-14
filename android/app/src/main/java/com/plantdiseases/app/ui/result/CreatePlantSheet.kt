@@ -87,7 +87,7 @@ class CreatePlantSheet : BottomSheetDialogFragment() {
                         statusText.text = if (id.available)
                             getString(R.string.species_suggest_no_results)
                         else
-                            getString(R.string.species_suggest_unavailable_body)
+                            getString(plantNetFailureMessage(id.source))
                         return@onSuccess
                     }
                     statusText.text = getString(R.string.species_suggest_title)
@@ -128,6 +128,19 @@ class CreatePlantSheet : BottomSheetDialogFragment() {
             )
             dismiss()
         }
+    }
+
+    /**
+     * Map the server's PlantNet ``source`` enum into a localized
+     * failure message so the user sees a specific reason instead of
+     * the generic "quota or upstream issue". Falls back to the
+     * generic copy when the source is unknown.
+     */
+    private fun plantNetFailureMessage(source: String?): Int = when (source) {
+        "no_api_key"     -> R.string.species_suggest_unavailable_no_key
+        "auth_failed"    -> R.string.species_suggest_unavailable_auth_failed
+        "rate_limited"   -> R.string.species_suggest_unavailable_rate_limited
+        else             -> R.string.species_suggest_unavailable_body
     }
 
     private fun buildCandidateRow(

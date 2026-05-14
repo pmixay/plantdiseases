@@ -73,6 +73,15 @@ HEALTHY_MARGIN = 0.10
 # ``uncertain_healthy`` warning + the suspected disease in top_k.
 HEALTHY_DISEASE_FLOOR = 0.18
 
+# Hard reroute — when top-1 = healthy but the confidence is below this
+# floor (typical example: 0.29 healthy / 0.24 leaf_spot_fungal / 0.21
+# gray_mold), the model is essentially guessing. We swap the verdict to
+# the strongest disease class so the UI doesn't reassure the user about
+# an obviously-unhealthy plant. Companion rule: if there's no disease
+# alternative meeting ``HEALTHY_DISEASE_FLOOR`` we keep ``healthy`` but
+# attach the ``low_confidence`` warning so the UI demotes the verdict.
+HEALTHY_REROUTE_FLOOR = 0.50
+
 # Disease-side gate. If averaged top-1 is a disease but its softmax
 # mass is below this threshold, we downgrade to healthy.
 DISEASE_MIN_CONFIDENCE = 0.65
@@ -835,11 +844,18 @@ def _apply_postprocessing_rules(
     classification: dict,
     class_names: list[str],
 ) -> dict:
-    """Soft postprocessing: warnings only, no class re-routing.
+    """Soft postprocessing + weak-healthy reroute.
 
-    Three checks:
-      * ``uncertain_healthy`` — top-1 is healthy but confidence/margin
-        below thresholds. Surfaces alternatives, no class swap.
+    Checks, in order:
+      * **weak-healthy reroute** — top-1 = healthy but confidence is
+        below ``HEALTHY_REROUTE_FLOOR`` AND a disease class meets
+        ``HEALTHY_DISEASE_FLOOR``. We swap the verdict to the
+        strongest disease so the UI doesn't say "Healthy" on what is
+        plainly a sick plant. Attaches a ``weak_healthy_rerouted``
+        warning so the client can render the demotion explicitly.
+      * ``uncertain_healthy`` — top-1 is healthy, no disease above the
+        reroute threshold, but confidence/margin still below the soft
+        thresholds. Surfaces alternatives, no class swap.
       * ``disease_uncertain`` — the healthy-fallback fired in
         ``_pick_primary``: top-1 was a disease but margin/threshold was
         weak so the class was downgraded to healthy.
@@ -847,14 +863,54 @@ def _apply_postprocessing_rules(
     """
     probs = classification["all_probs"]
     ordered = sorted(probs.items(), key=lambda item: item[1], reverse=True)
-    top_k = [
-        {"class": name, "confidence": round(float(conf), 4)}
-        for name, conf in ordered[:TOP_K_ALTERNATIVES]
-    ]
     warnings: list[str] = []
 
     top1_name, top1_prob = ordered[0]
     top2_prob = ordered[1][1] if len(ordered) > 1 else 0.0
+
+    # ── Weak-healthy reroute ────────────────────────────────────────
+    # When the model labels something as healthy with sub-50% confidence
+    # while a real disease class has any meaningful mass, "healthy" is
+    # almost certainly wrong. Reroute the verdict so the UI surfaces
+    # the more likely call.
+    if (
+        top1_name == "healthy"
+        and "healthy" in class_names
+        and top1_prob < HEALTHY_REROUTE_FLOOR
+    ):
+        worst_disease = max(
+            ((n, p) for n, p in probs.items() if n not in _NON_DISEASE),
+            key=lambda kv: kv[1],
+            default=(None, 0.0),
+        )
+        if (
+            worst_disease[0] is not None
+            and worst_disease[1] >= HEALTHY_DISEASE_FLOOR
+        ):
+            logger.info(
+                "Weak-healthy reroute  was=healthy/%.3f  → %s/%.3f",
+                top1_prob, worst_disease[0], worst_disease[1],
+            )
+            classification = {
+                **classification,
+                "class_name": worst_disease[0],
+                "confidence": float(worst_disease[1]),
+            }
+            warnings.append("weak_healthy_rerouted")
+            # Re-sort the probability list around the new top-1 so the
+            # rest of this function (top_k construction, healthy-gate
+            # warning) sees the corrected verdict.
+            ordered = sorted(probs.items(), key=lambda item: item[1], reverse=True)
+            ordered = sorted(
+                ordered, key=lambda kv: (kv[0] != worst_disease[0], -kv[1]),
+            )
+            top1_name, top1_prob = ordered[0]
+            top2_prob = ordered[1][1] if len(ordered) > 1 else 0.0
+
+    top_k = [
+        {"class": name, "confidence": round(float(conf), 4)}
+        for name, conf in ordered[:TOP_K_ALTERNATIVES]
+    ]
 
     if top1_name == "healthy" and "healthy" in class_names:
         margin = top1_prob - top2_prob

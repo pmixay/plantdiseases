@@ -170,7 +170,14 @@
     <string name="warning_blurry_image">We couldn\'t read the leaf clearly enough to trust a diagnosis. Hold the phone steady, wait for autofocus to lock, and try again.</string>
 
     <!-- How to use (onboarding from profile) -->
-    <string name="how_to_use">How to Use</string>
+    <string name="how_to_use_title">How to Use</string>
+    <!-- Three-step inline mini-guide on the profile screen. The
+         titles map 1:1 to the onboarding flow so re-opening that flow
+         feels familiar; the bodies are tight enough to fit in the
+         narrow step columns without wrapping past two lines. -->
+    <string name="how_to_use_step_scan">Frame a single leaf — auto-capture fires when the frame turns green.</string>
+    <string name="how_to_use_step_diagnose">PlantVision shows the top-3 disease candidates with confidence.</string>
+    <string name="how_to_use_step_care">Tap a result for treatment + a tailored watering plan.</string>
 
     <!-- Empty states -->
     <string name="first_scan_cta">Take First Scan</string>
@@ -327,7 +334,13 @@
     <string name="species_suggest_button">Suggest species</string>
     <string name="species_suggest_loading">Asking PlantNet…</string>
     <string name="species_suggest_unavailable_title">PlantNet unavailable</string>
-    <string name="species_suggest_unavailable_body">Quota or upstream issue. Add the species manually for now.</string>
+    <!-- Per-source PlantNet failure messages. See ai_services.py
+         `identify_species` for the source enum (`no_api_key`,
+         `auth_failed`, `rate_limited`, `error`). -->
+    <string name="species_suggest_unavailable_body">Couldn\'t reach the species service. Add the species manually for now.</string>
+    <string name="species_suggest_unavailable_no_key">Species identification isn\'t configured on this server yet. Add the species manually.</string>
+    <string name="species_suggest_unavailable_rate_limited">PlantNet\'s daily quota is exhausted. Try again later, or add the species manually.</string>
+    <string name="species_suggest_unavailable_auth_failed">The PlantNet API key on the server is invalid. Add the species manually.</string>
     <string name="species_suggest_pick">Use this species</string>
     <string name="species_suggest_keep_manual">Keep manual entry</string>
     <string name="species_suggest_match">%d%% match</string>

@@ -457,39 +457,179 @@
                     android:layout_marginHorizontal="@dimen/space_lg"
                     android:background="@color/divider" />
 
+                <!-- Inline "how to use" mini-guide: replaces the old
+                     full-screen onboarding re-open button with a quick
+                     three-step strip so the user can refresh memory
+                     without leaving the profile screen. Each column is
+                     a tappable shortcut into the relevant tab. -->
                 <LinearLayout
-                    android:id="@+id/card_how_to_use"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:padding="@dimen/space_lg"
-                    android:gravity="center_vertical"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:foreground="?android:attr/selectableItemBackground">
-
-                    <ImageView
-                        android:layout_width="22dp"
-                        android:layout_height="22dp"
-                        android:src="@drawable/ic_guide"
-                        android:contentDescription="@string/how_to_use"
-                        app:tint="@color/primary" />
+                    android:orientation="vertical"
+                    android:paddingHorizontal="@dimen/space_lg"
+                    android:paddingVertical="@dimen/space_md">
 
                     <TextView
-                        android:layout_width="0dp"
+                        android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginStart="@dimen/space_md"
-                        android:text="@string/how_to_use"
-                        android:textSize="@dimen/text_title_sm"
-                        android:textColor="@color/on_surface" />
+                        android:text="@string/how_to_use_title"
+                        android:textAppearance="@style/TextAppearance.App.Title" />
 
-                    <ImageView
-                        android:layout_width="20dp"
-                        android:layout_height="20dp"
-                        android:src="@drawable/ic_chevron_right"
-                        android:importantForAccessibility="no"
-                        app:tint="@color/on_surface_secondary" />
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_sm"
+                        android:orientation="horizontal"
+                        android:gravity="top">
+
+                        <LinearLayout
+                            android:id="@+id/step_scan"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical"
+                            android:gravity="center_horizontal"
+                            android:paddingHorizontal="@dimen/space_xs"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:background="?android:attr/selectableItemBackground">
+
+                            <FrameLayout
+                                android:layout_width="44dp"
+                                android:layout_height="44dp"
+                                android:background="@drawable/bg_icon_circle">
+
+                                <ImageView
+                                    android:layout_width="22dp"
+                                    android:layout_height="22dp"
+                                    android:layout_gravity="center"
+                                    android:contentDescription="@null"
+                                    android:src="@drawable/ic_scan"
+                                    app:tint="@color/primary" />
+
+                            </FrameLayout>
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/space_xs"
+                                android:gravity="center"
+                                android:text="@string/tab_scan"
+                                android:textSize="@dimen/text_body_sm"
+                                android:textColor="@color/on_surface"
+                                android:fontFamily="sans-serif-medium" />
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:gravity="center"
+                                android:text="@string/how_to_use_step_scan"
+                                android:textSize="@dimen/text_caption"
+                                android:textColor="@color/on_surface_secondary"
+                                android:lineSpacingExtra="1dp" />
+
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:id="@+id/step_diagnose"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical"
+                            android:gravity="center_horizontal"
+                            android:paddingHorizontal="@dimen/space_xs"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:background="?android:attr/selectableItemBackground">
+
+                            <FrameLayout
+                                android:layout_width="44dp"
+                                android:layout_height="44dp"
+                                android:background="@drawable/bg_icon_circle">
+
+                                <ImageView
+                                    android:layout_width="22dp"
+                                    android:layout_height="22dp"
+                                    android:layout_gravity="center"
+                                    android:contentDescription="@null"
+                                    android:src="@drawable/ic_disease"
+                                    app:tint="@color/primary" />
+
+                            </FrameLayout>
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/space_xs"
+                                android:gravity="center"
+                                android:text="@string/onboarding_diagnose_title"
+                                android:textSize="@dimen/text_body_sm"
+                                android:textColor="@color/on_surface"
+                                android:fontFamily="sans-serif-medium" />
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:gravity="center"
+                                android:text="@string/how_to_use_step_diagnose"
+                                android:textSize="@dimen/text_caption"
+                                android:textColor="@color/on_surface_secondary"
+                                android:lineSpacingExtra="1dp" />
+
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:id="@+id/step_care"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical"
+                            android:gravity="center_horizontal"
+                            android:paddingHorizontal="@dimen/space_xs"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:background="?android:attr/selectableItemBackground">
+
+                            <FrameLayout
+                                android:layout_width="44dp"
+                                android:layout_height="44dp"
+                                android:background="@drawable/bg_icon_circle">
+
+                                <ImageView
+                                    android:layout_width="22dp"
+                                    android:layout_height="22dp"
+                                    android:layout_gravity="center"
+                                    android:contentDescription="@null"
+                                    android:src="@drawable/ic_care"
+                                    app:tint="@color/primary" />
+
+                            </FrameLayout>
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/space_xs"
+                                android:gravity="center"
+                                android:text="@string/onboarding_care_title"
+                                android:textSize="@dimen/text_body_sm"
+                                android:textColor="@color/on_surface"
+                                android:fontFamily="sans-serif-medium" />
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:gravity="center"
+                                android:text="@string/how_to_use_step_care"
+                                android:textSize="@dimen/text_caption"
+                                android:textColor="@color/on_surface_secondary"
+                                android:lineSpacingExtra="1dp" />
+
+                        </LinearLayout>
+
+                    </LinearLayout>
 
                 </LinearLayout>
 

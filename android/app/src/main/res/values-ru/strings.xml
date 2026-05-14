@@ -170,7 +170,10 @@
     <string name="warning_blurry_image">Не удалось разглядеть лист, чтобы поставить диагноз. Держите камеру неподвижно, дождитесь автофокуса и попробуйте снова.</string>
 
     <!-- How to use (onboarding from profile) -->
-    <string name="how_to_use">Как пользоваться</string>
+    <string name="how_to_use_title">Как пользоваться</string>
+    <string name="how_to_use_step_scan">Поднесите камеру к листу — автоснимок сработает на зелёной рамке.</string>
+    <string name="how_to_use_step_diagnose">PlantVision покажет топ-3 диагнозов с уверенностью модели.</string>
+    <string name="how_to_use_step_care">Откройте результат — лечение и план полива уже внутри.</string>
 
     <!-- Empty states -->
     <string name="first_scan_cta">Сделать первый скан</string>
@@ -331,7 +334,10 @@
     <string name="species_suggest_button">Подобрать вид</string>
     <string name="species_suggest_loading">Спрашиваем PlantNet…</string>
     <string name="species_suggest_unavailable_title">PlantNet недоступен</string>
-    <string name="species_suggest_unavailable_body">Квота закончилась или сервис недоступен. Введите вид вручную.</string>
+    <string name="species_suggest_unavailable_body">Не удалось связаться с сервисом определения вида. Введите вид вручную.</string>
+    <string name="species_suggest_unavailable_no_key">Определение вида ещё не настроено на сервере. Введите вид вручную.</string>
+    <string name="species_suggest_unavailable_rate_limited">Дневная квота PlantNet исчерпана. Попробуйте позже или введите вид вручную.</string>
+    <string name="species_suggest_unavailable_auth_failed">Ключ PlantNet на сервере недействителен. Введите вид вручную.</string>
     <string name="species_suggest_pick">Выбрать этот вид</string>
     <string name="species_suggest_keep_manual">Оставить ввод вручную</string>
     <string name="species_suggest_match">совпадение %d%%</string>

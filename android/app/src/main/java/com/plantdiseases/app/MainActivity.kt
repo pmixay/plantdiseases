@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.view.animation.OvershootInterpolator
@@ -167,6 +168,42 @@ class MainActivity : AppCompatActivity() {
 
     private fun clearGalleryBadge() {
         binding.bottomNavigation.removeBadge(R.id.galleryFragment)
+    }
+
+    /**
+     * Handle locale (and dark-mode) changes in place instead of letting
+     * the system tear down the activity. The AndroidManifest declares
+     * ``configChanges="locale|layoutDirection|uiMode|fontScale"`` so
+     * the OS calls this hook directly; we re-bind every visible label
+     * by re-attaching the active Nav fragment, which inflates against
+     * the freshly-localised resources without the white-flash you get
+     * from ``Activity.recreate()``.
+     */
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // Update toolbar title for the currently-visible destination.
+        val navHostFragment = supportFragmentManager
+            .findFragmentById(R.id.nav_host_fragment) as? NavHostFragment ?: return
+        val current = navHostFragment.navController.currentDestination
+        when (current?.id) {
+            R.id.cameraFragment -> supportActionBar?.title = getString(R.string.tab_scan)
+            R.id.galleryFragment -> supportActionBar?.title = getString(R.string.tab_gallery)
+            R.id.gardenFragment -> supportActionBar?.title = getString(R.string.tab_garden)
+            R.id.guideFragment -> supportActionBar?.title = getString(R.string.tab_guide)
+            R.id.profileFragment -> supportActionBar?.title = getString(R.string.tab_profile)
+        }
+        // Re-bind the visible fragment so its layout inflates against
+        // the new locale's resources. detach+attach preserves the
+        // fragment instance state (scroll position, view models) and
+        // animates a soft fade instead of a hard flicker.
+        val active = navHostFragment.childFragmentManager.primaryNavigationFragment
+        if (active != null) {
+            navHostFragment.childFragmentManager.beginTransaction()
+                .setReorderingAllowed(true)
+                .detach(active)
+                .attach(active)
+                .commitNowAllowingStateLoss()
+        }
     }
 
     override fun onResume() {
