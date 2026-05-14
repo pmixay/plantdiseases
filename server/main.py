@@ -23,7 +23,7 @@ from contextlib import asynccontextmanager
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
@@ -49,6 +49,15 @@ try:
     )
     from .config import get_float, get_int, get_list, get_str
     from .diseases_data import DISEASES_DATABASE, lookup_pet_toxicity
+    from .community import (
+        delete_for_user as community_delete_for_user,
+        nearby_scans as community_nearby_scans,
+        record_scan as community_record_scan,
+        region_summary as community_region_summary,
+        stats_snapshot as community_stats_snapshot,
+    )
+    from .community import COMMUNITY_THUMB_DIR
+    from .community import init_db as init_community_db
     from .feedback import feedback_counts, record_feedback
     from .feedback import init_db as init_feedback_db
     from .pipeline import PlantDiseasePipeline
@@ -61,6 +70,15 @@ except ImportError:
         generate_care_plan,
         identify_species,
     )
+    from community import (
+        delete_for_user as community_delete_for_user,
+        nearby_scans as community_nearby_scans,
+        record_scan as community_record_scan,
+        region_summary as community_region_summary,
+        stats_snapshot as community_stats_snapshot,
+    )
+    from community import COMMUNITY_THUMB_DIR
+    from community import init_db as init_community_db
     from config import get_float, get_int, get_list, get_str
     from diseases_data import DISEASES_DATABASE, lookup_pet_toxicity
     from feedback import feedback_counts, record_feedback
@@ -343,6 +361,7 @@ async def lifespan(app: FastAPI):
     SERVER_START_TIME = time.time()
     _inference_executor = _get_inference_executor()
     init_feedback_db()
+    init_community_db()
     pipeline = PlantDiseasePipeline(
         detector_path=DETECTOR_PATH,
         classifier_path=CLASSIFIER_PATH,
@@ -538,6 +557,7 @@ async def metrics():
         **snap,
         "ai_doctor": chat_metrics_snapshot(),
         "feedback": feedback_counts(),
+        "community": community_stats_snapshot(),
     }
 
 
@@ -587,6 +607,65 @@ async def metrics_prometheus():
         content=body,
         media_type="text/plain; version=0.0.4; charset=utf-8",
     )
+
+
+async def _species_identify_best_effort(image_bytes: bytes, *, timeout: float) -> dict | None:
+    """Run PlantNet identify in the inference executor with a tight
+    timeout. Returns the compact species block ({class, score,
+    scientific, common, source}) for the response, or ``None`` if the
+    call failed, timed out, or PlantNet isn't configured.
+
+    Never raises — every failure mode is logged at INFO and folded
+    into ``None`` so the analyze response stays whole.
+    """
+    loop = asyncio.get_running_loop()
+    try:
+        raw = await asyncio.wait_for(
+            loop.run_in_executor(
+                _get_inference_executor(),
+                identify_species,
+                image_bytes,
+                "leaf",
+            ),
+            timeout=timeout,
+        )
+    except (asyncio.TimeoutError, asyncio.CancelledError):
+        logger.info("Species identify skipped (timeout / cancelled)")
+        return None
+    except Exception as exc:  # noqa: BLE001
+        logger.info("Species identify failed: %s", exc)
+        return None
+    if not raw or not raw.get("available"):
+        return {
+            "available": False,
+            "source": raw.get("source", "unavailable") if raw else "unavailable",
+            "best": None,
+            "candidates": [],
+        }
+    candidates = raw.get("results") or []
+    if not candidates:
+        return {
+            "available": True,
+            "source": raw.get("source", "plantnet"),
+            "best": None,
+            "candidates": [],
+        }
+    def _shape(entry: dict) -> dict:
+        # PlantNet returns a `common_names` list; we surface only the
+        # first one for compactness. The full list stays available via
+        # the dedicated /api/identify endpoint when needed.
+        common_names = entry.get("common_names") or []
+        return {
+            "scientific_name": entry.get("scientific_name"),
+            "common_name": (common_names[0] if common_names else None),
+            "score": round(float(entry.get("score", 0.0)), 4),
+        }
+    return {
+        "available": True,
+        "source": raw.get("source", "plantnet"),
+        "best": _shape(candidates[0]),
+        "candidates": [_shape(c) for c in candidates[:3]],
+    }
 
 
 @app.post("/api/analyze")
@@ -646,12 +725,23 @@ async def analyze_image(image: UploadFile = File(...), species: str | None = Non
         )
 
     loop = asyncio.get_running_loop()
+    # Fire the PlantNet species identify in parallel with the disease
+    # pipeline. PlantNet is best-effort: if the call fails / times out
+    # / the API key isn't configured, we still return a complete
+    # diagnosis — the species field just lands as ``None``. The 6s cap
+    # is much tighter than INFERENCE_TIMEOUT (30s) because PlantNet is
+    # an external HTTP hop and a slow upstream shouldn't hold the
+    # whole analyze response hostage.
+    species_task = asyncio.create_task(
+        _species_identify_best_effort(contents, timeout=6.0)
+    )
     try:
         result = await asyncio.wait_for(
             loop.run_in_executor(_get_inference_executor(), pipeline.analyze, img),
             timeout=INFERENCE_TIMEOUT,
         )
     except asyncio.TimeoutError as exc:
+        species_task.cancel()
         _record_error()
         logger.error("Inference timed out after %.0fs for %s", INFERENCE_TIMEOUT, fname)
         raise HTTPException(
@@ -659,6 +749,7 @@ async def analyze_image(image: UploadFile = File(...), species: str | None = Non
             detail=f"Analysis timed out after {int(INFERENCE_TIMEOUT)} seconds",
         ) from exc
     except Exception as exc:
+        species_task.cancel()
         _record_error()
         logger.exception("Inference crashed: %s", exc)
         raise HTTPException(status_code=500, detail="Internal inference error") from exc
@@ -739,12 +830,27 @@ async def analyze_image(image: UploadFile = File(...), species: str | None = Non
             ],
         }
 
-    # Pet-toxicity surface — only resolves when the caller passes a
-    # `species` hint (PlantNet scientific name or user-typed common
-    # name). Without one we can't honestly say a plant is or isn't
-    # toxic, so we return ``source="unknown"`` and the client renders
-    # an "unconfirmed" copy rather than falsely reassuring.
-    toxicity = lookup_pet_toxicity(species) if species else {
+    # Resolve the species fan-out. We started it in parallel with the
+    # disease pipeline so this normally returns immediately. If the
+    # caller already supplied a ``species`` query param (e.g. user
+    # picked one earlier), it overrides the auto-detected scientific
+    # name when looking up pet toxicity, but we keep the auto-detected
+    # block in the response either way so the client can show the
+    # match confidence.
+    species_payload: dict | None = None
+    try:
+        species_payload = await species_task
+    except Exception:  # noqa: BLE001 — defensive; helper already swallows
+        species_payload = None
+
+    # Pet-toxicity surface — resolves from the explicit ``species``
+    # query param when supplied, otherwise falls back to the auto-
+    # detected best match. Without either we return
+    # ``source="unknown"`` and the client renders an "unconfirmed"
+    # copy rather than falsely reassuring.
+    auto_best = (species_payload or {}).get("best") or {}
+    toxicity_species = species or auto_best.get("scientific_name")
+    toxicity = lookup_pet_toxicity(toxicity_species) if toxicity_species else {
         "toxic_to_pets": False, "species_list": [], "source": "unknown",
     }
 
@@ -769,6 +875,7 @@ async def analyze_image(image: UploadFile = File(...), species: str | None = Non
         "toxic_to_pets": toxicity["toxic_to_pets"],
         "toxic_species_list": toxicity["species_list"],
         "toxicity_source": toxicity["source"],
+        "species": species_payload,
         "elapsed_ms": result["elapsed_ms"],
         "server_version": APP_VERSION,
     })
@@ -793,6 +900,72 @@ class CarePlanRequest(BaseModel):
     # (northern-hemisphere default). Accepted values: ``"growing"``
     # or ``"dormant"``.
     season: str | None = Field(default=None, max_length=16)
+
+
+# ── Community scan corpus ───────────────────────────────────────────
+
+
+# Same alphabet as scan_id / user_pseudo_id elsewhere — keeps the
+# corpus immune to control-byte or whitespace injection.
+_REGION_ALLOWED = set(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ,.'-/&()"
+)
+
+
+class CommunityScanRequest(BaseModel):
+    """Upload metadata for a single community-shared scan. The image
+    bytes ride on a separate multipart field on the upload endpoint
+    so a thin client never has to base64-encode anything.
+    """
+
+    scan_id: str = Field(..., min_length=8, max_length=64)
+    user_pseudo_id: str = Field(..., min_length=8, max_length=64)
+    region: str = Field(..., min_length=2, max_length=80)
+    disease: str = Field(..., min_length=1, max_length=64)
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    species: str | None = Field(default=None, max_length=128)
+    species_score: float | None = Field(default=None, ge=0.0, le=1.0)
+    locale: str | None = Field(default=None, max_length=8)
+
+    @field_validator("scan_id", "user_pseudo_id")
+    @classmethod
+    def _safe_token(cls, v: str) -> str:
+        if any(ch not in _SCAN_ID_ALLOWED for ch in v):
+            raise ValueError("invalid characters in id; expected [A-Za-z0-9_-]")
+        return v
+
+    @field_validator("region")
+    @classmethod
+    def _safe_region(cls, v: str) -> str:
+        cleaned = v.strip()
+        if not cleaned:
+            raise ValueError("region must not be blank")
+        if any(ch not in _REGION_ALLOWED for ch in cleaned):
+            raise ValueError(
+                "region must be alphanumeric, spaces, punctuation only"
+            )
+        return cleaned[:80]
+
+    @field_validator("disease")
+    @classmethod
+    def _known_disease(cls, v: str) -> str:
+        cleaned = v.strip().lower()
+        # ``not_a_plant`` and the deferred physiological classes are
+        # legal community-share values too — they're still useful
+        # signals for the retraining loop.
+        if cleaned not in _FEEDBACK_ALLOWED_CORRECTIONS:
+            raise ValueError(
+                f"disease must be one of {sorted(_FEEDBACK_ALLOWED_CORRECTIONS)}"
+            )
+        return cleaned
+
+    @field_validator("locale")
+    @classmethod
+    def _normalise_locale(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        cleaned = v.strip().lower()[:8]
+        return cleaned or None
 
 
 class ProgressionRequest(BaseModel):
@@ -1214,6 +1387,161 @@ async def feedback_endpoint(payload: FeedbackRequest, request: Request):
         payload.reason,
     )
     return JSONResponse(content={"ok": True, "id": row_id})
+
+
+# ── Community scan corpus ───────────────────────────────────────────
+
+
+# Same magic-byte set the analyze endpoint accepts. We rely on
+# Content-Type for the multipart form parse, then re-validate the
+# bytes; an attacker can lie about Content-Type but the magic bytes
+# don't lie.
+_COMMUNITY_ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp"}
+
+
+@app.post("/api/community/scan")
+async def community_scan_upload(
+    request: Request,
+    scan_id: str = Form(...),
+    user_pseudo_id: str = Form(...),
+    region: str = Form(...),
+    disease: str = Form(...),
+    confidence: float | None = Form(None),
+    species: str | None = Form(None),
+    species_score: float | None = Form(None),
+    locale: str | None = Form(None),
+    image: UploadFile | None = File(None),
+):
+    """Append one community-shared scan to the corpus.
+
+    All fields except ``image`` are required and validated by
+    ``CommunityScanRequest``. The image is optional — when omitted
+    we still store the row, just without a thumbnail.
+
+    The endpoint is intentionally a thin wrapper around
+    ``community.record_scan``; per-IP rate limiting from the global
+    middleware applies.
+    """
+    try:
+        payload = CommunityScanRequest(
+            scan_id=scan_id,
+            user_pseudo_id=user_pseudo_id,
+            region=region,
+            disease=disease,
+            confidence=confidence,
+            species=species,
+            species_score=species_score,
+            locale=locale,
+        )
+    except Exception as exc:  # noqa: BLE001 — pydantic raises a ValidationError subclass
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    image_bytes: bytes | None = None
+    if image is not None:
+        if image.content_type and image.content_type not in _COMMUNITY_ALLOWED_TYPES:
+            raise HTTPException(
+                status_code=400,
+                detail="Community thumbnail must be JPEG / PNG / WebP",
+            )
+        try:
+            image_bytes = await _read_upload(image)
+        except HTTPException:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.info("Community thumb read failed: %s", exc)
+            image_bytes = None
+
+    client_ip = _client_ip(request)
+    try:
+        row_id = await asyncio.get_running_loop().run_in_executor(
+            _get_inference_executor(),
+            lambda: community_record_scan(
+                scan_id=payload.scan_id,
+                user_pseudo_id=payload.user_pseudo_id,
+                region=payload.region,
+                disease=payload.disease,
+                confidence=payload.confidence,
+                species=payload.species,
+                species_score=payload.species_score,
+                image_bytes=image_bytes,
+                locale=payload.locale,
+                client_ip=client_ip,
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Community scan write failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to record scan") from exc
+
+    return JSONResponse(content={"ok": True, "id": row_id})
+
+
+@app.get("/api/community/nearby")
+async def community_scan_nearby(
+    region: str,
+    disease: str | None = None,
+    limit: int = 20,
+    user_pseudo_id: str | None = None,
+):
+    """List the most recent community-shared scans in ``region``.
+
+    Server prefers same-diagnosis matches, then tops up with other
+    diagnoses in the region until ``limit``. When ``user_pseudo_id``
+    is supplied, the requesting user's own rows are excluded so they
+    don't see themselves in the carousel.
+    """
+    try:
+        CommunityScanRequest.model_validate({
+            "scan_id": "querystub",
+            "user_pseudo_id": user_pseudo_id or "querystub",
+            "region": region,
+            "disease": disease or "healthy",
+        })
+    except Exception as exc:  # noqa: BLE001 — re-export as 422
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    rows = community_nearby_scans(
+        region=region.strip()[:80],
+        disease=(disease or None),
+        limit=max(1, min(int(limit), 50)),
+        exclude_user_pseudo_id=user_pseudo_id,
+    )
+    summary = community_region_summary(region.strip()[:80])
+    return JSONResponse(content={"items": rows, "summary": summary})
+
+
+@app.get("/api/community/thumb/{filename}")
+async def community_scan_thumb(filename: str):
+    """Serve a community thumbnail by filename.
+
+    The corpus only ever stores filenames that ``community._save_thumbnail``
+    minted, but we still hard-guard against path traversal: any
+    filename containing ``/`` or ``..`` is refused outright. Missing
+    files return 404 instead of 500.
+    """
+    if "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="Invalid thumbnail name")
+    path = COMMUNITY_THUMB_DIR / filename
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Thumbnail not found")
+    return StarletteResponse(
+        content=path.read_bytes(),
+        media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
+@app.delete("/api/community/user/{user_pseudo_id}")
+async def community_scan_delete_user(user_pseudo_id: str):
+    """Erase all rows + thumbnails attributed to one install. Used by
+    the Android "delete my contributions" affordance.
+    """
+    if not user_pseudo_id or any(ch not in _SCAN_ID_ALLOWED for ch in user_pseudo_id):
+        raise HTTPException(status_code=422, detail="Invalid user id")
+    deleted = await asyncio.get_running_loop().run_in_executor(
+        _get_inference_executor(),
+        lambda: community_delete_for_user(user_pseudo_id),
+    )
+    return JSONResponse(content={"ok": True, "deleted": deleted})
 
 
 if __name__ == "__main__":

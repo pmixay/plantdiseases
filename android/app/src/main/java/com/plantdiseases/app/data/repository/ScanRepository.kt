@@ -295,8 +295,12 @@ class ScanRepository(
             val warningsJson = result.warnings
                 ?.takeIf { it.isNotEmpty() }
                 ?.let { gson.toJson(it) }
+            val best = result.species?.best
             val entity = ScanEntity(
                 clientScanId = java.util.UUID.randomUUID().toString(),
+                speciesScientific = best?.scientificName,
+                speciesCommon = best?.commonName,
+                speciesScore = best?.score?.takeIf { it > 0f },
                 imagePath = imagePath,
                 diseaseName = result.diseaseName,
                 diseaseNameRu = result.diseaseNameRu,
@@ -492,4 +496,93 @@ class ScanRepository(
             emptyList()
         }
     }
+
+    // ─── Community (similar scans in your region) ────────────────────
+
+    /**
+     * Upload one community-shared scan. Best-effort: any failure
+     * (network, server, validation) is logged but never thrown — a
+     * failed upload must not block the user's normal scan flow.
+     *
+     * The caller decides whether to send a thumbnail; see
+     * [CommunityRepository.uploadIfEnabled] which handles the
+     * opt-out pref + thumbnail downscale before reaching this hop.
+     */
+    suspend fun uploadCommunityScan(
+        scanId: String,
+        userPseudoId: String,
+        region: String,
+        disease: String,
+        confidence: Float? = null,
+        species: String? = null,
+        speciesScore: Float? = null,
+        locale: String? = null,
+        thumbnail: File? = null,
+    ): Result<com.plantdiseases.app.data.model.CommunityScanUploadResponse> =
+        withContext(Dispatchers.IO) {
+            try {
+                fun text(value: String?): okhttp3.RequestBody? = value
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { okhttp3.RequestBody.create("text/plain".toMediaTypeOrNull(), it) }
+                val image = thumbnail?.takeIf { it.exists() }?.let { f ->
+                    val rb = f.asRequestBody("image/jpeg".toMediaTypeOrNull())
+                    MultipartBody.Part.createFormData("image", f.name, rb)
+                }
+                val response = apiService.communityScanUpload(
+                    scanId = text(scanId)!!,
+                    userPseudoId = text(userPseudoId)!!,
+                    region = text(region)!!,
+                    disease = text(disease)!!,
+                    confidence = text(confidence?.toString()),
+                    species = text(species),
+                    speciesScore = text(speciesScore?.toString()),
+                    locale = text(locale),
+                    image = image,
+                )
+                if (response.isSuccessful && response.body() != null) {
+                    Result.success(response.body()!!)
+                } else {
+                    Result.failure(Exception("Community upload failed: ${response.code()}"))
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+    /** Fetch the most recent community scans in a region. */
+    suspend fun communityNearby(
+        region: String,
+        disease: String?,
+        userPseudoId: String?,
+        limit: Int = 12,
+    ): Result<com.plantdiseases.app.data.model.CommunityScansResponse> =
+        withContext(Dispatchers.IO) {
+            try {
+                val response = apiService.communityScanNearby(
+                    region = region,
+                    disease = disease?.takeIf { it.isNotBlank() },
+                    userPseudoId = userPseudoId?.takeIf { it.isNotBlank() },
+                    limit = limit,
+                )
+                if (response.isSuccessful && response.body() != null) {
+                    Result.success(response.body()!!)
+                } else {
+                    Result.failure(Exception("Community nearby failed: ${response.code()}"))
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+    /** Erase every community-shared row for this install. */
+    suspend fun deleteCommunityContributions(userPseudoId: String): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            try {
+                val response = apiService.communityScanDeleteUser(userPseudoId)
+                if (response.isSuccessful) Result.success(Unit)
+                else Result.failure(Exception("Community delete failed: ${response.code()}"))
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
 }

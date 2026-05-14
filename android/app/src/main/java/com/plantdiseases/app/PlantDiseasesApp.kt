@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.os.Build
 import com.plantdiseases.app.data.local.AppDatabase
 import com.plantdiseases.app.data.remote.PlantApiClient
+import com.plantdiseases.app.data.repository.CommunityUploader
 import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.util.LocaleHelper
@@ -26,6 +27,9 @@ class PlantDiseasesApp : Application() {
             database.plantReminderDao(),
             database.chatMessageDao(),
         )
+    }
+    val communityUploader: CommunityUploader by lazy {
+        CommunityUploader(this, scanRepository)
     }
 
     override fun onCreate() {

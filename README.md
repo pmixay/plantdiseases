@@ -183,7 +183,6 @@ plantdiseases/
 │   ├── train_notebook.ipynb End-to-end training recipe
 │   └── models/             Trained weights + classes.json + MODEL_CARD.md
 ├── DEPLOYMENT.md           Production deployment guide
-├── ROADMAP.md              Per-week, per-engineer task list
 └── README.md               You are here
 ```
 
@@ -199,8 +198,6 @@ plantdiseases/
   known limitations.
 - [`server/train_notebook.ipynb`](server/train_notebook.ipynb) — full
   v2.1 training recipe, data hygiene, KD setup, calibration export.
-- [`ROADMAP.md`](ROADMAP.md) — per-week task list across server,
-  client and data work.
 
 ---
 

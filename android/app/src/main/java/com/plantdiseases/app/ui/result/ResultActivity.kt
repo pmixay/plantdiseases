@@ -344,6 +344,8 @@ class ResultActivity : AppCompatActivity() {
                 tvDescription.text = getString(R.string.not_a_plant_result_body)
                 cardTreatmentPrevention.visibility = View.GONE
                 cardAlternatives.visibility = View.GONE
+                cardSpecies.visibility = View.GONE
+                cardSimilarScans.visibility = View.GONE
                 cardPipelineWarning.visibility = View.GONE
                 cardLowConfidence.visibility = View.GONE
                 // Share / add-to-garden don't make sense for a NAP verdict —
@@ -357,6 +359,8 @@ class ResultActivity : AppCompatActivity() {
                 btnAddToGarden.visibility = View.VISIBLE
                 buildPipelineWarnings(scan, repository)
                 buildAlternativeDiagnoses(scan, repository, isRu)
+                buildSpeciesCard(scan)
+                buildSimilarScansCard(scan, repository, isRu)
                 setupTreatmentPreventionTabs(scan, repository, isRu)
                 buildCarePlanCard(scan, repository, isRu)
             }
@@ -561,6 +565,99 @@ class ResultActivity : AppCompatActivity() {
         binding.cardPipelineWarning.visibility = View.VISIBLE
         binding.tvPipelineWarningTitle.setText(titleRes)
         binding.tvPipelineWarningBody.setText(bodyRes)
+    }
+
+    private fun buildSpeciesCard(scan: ScanEntity) {
+        // Render the stored species fields (populated at save time
+        // from the server's PlantNet fan-out). The card stays hidden
+        // when we have neither a scientific nor a common name —
+        // that's the case when PlantNet wasn't configured or every
+        // candidate scored zero.
+        val sci = scan.speciesScientific?.takeIf { it.isNotBlank() }
+        val common = scan.speciesCommon?.takeIf { it.isNotBlank() }
+        if (sci == null && common == null) {
+            binding.cardSpecies.visibility = View.GONE
+            return
+        }
+        binding.cardSpecies.visibility = View.VISIBLE
+        binding.tvSpeciesBest.text = common ?: sci.orEmpty()
+        binding.tvSpeciesScientific.text = sci.orEmpty()
+        binding.tvSpeciesScientific.visibility =
+            if (sci.isNullOrBlank() || sci == common) View.GONE else View.VISIBLE
+        val score = scan.speciesScore
+        if (score != null && score > 0f) {
+            binding.tvSpeciesScore.visibility = View.VISIBLE
+            binding.tvSpeciesScore.text = getString(
+                R.string.species_card_score,
+                (score * 100).toInt().coerceIn(0, 100),
+            )
+        } else {
+            binding.tvSpeciesScore.visibility = View.GONE
+        }
+        // Alternates intentionally left empty — we only persist the
+        // best match on the ScanEntity. The full candidates list is
+        // available on the live AnalysisResponse and could be wired
+        // later if we add multi-pick UX.
+        binding.speciesAltsLayout.removeAllViews()
+    }
+
+    private fun buildSimilarScansCard(
+        scan: ScanEntity,
+        repository: ScanRepository,
+        isRu: Boolean,
+    ) {
+        val card = binding.cardSimilarScans
+        val rv = binding.rvSimilarScans
+        // Default state: hidden until the network call returns.
+        card.visibility = View.GONE
+
+        val region = com.plantdiseases.app.util.RegionResolver.cachedRegion(this)
+        val diseaseKey = repository.topClassKey(scan)
+            ?: scan.diseaseName.lowercase().replace(' ', '_')
+        if (region.isNullOrBlank()) {
+            // Surface a hint so users know how to opt in, but keep the
+            // card hidden unless we have something to show. (Future
+            // iteration could put a "tap to enable location" CTA here.)
+            return
+        }
+
+        val app = application as PlantDiseasesApp
+        val pseudoId = com.plantdiseases.app.util.TelemetryIds.userPseudoId(this)
+        val adapter = SimilarScansAdapter { key -> classKeyDisplayName(key, isRu) ?: key }
+        rv.adapter = adapter
+        rv.layoutManager = androidx.recyclerview.widget.LinearLayoutManager(
+            this, androidx.recyclerview.widget.LinearLayoutManager.HORIZONTAL, false,
+        )
+
+        lifecycleScope.launch {
+            val result = app.scanRepository.communityNearby(
+                region = region,
+                disease = diseaseKey,
+                userPseudoId = pseudoId,
+                limit = 12,
+            )
+            result.onSuccess { response ->
+                if (response.items.isEmpty() && (response.summary?.last7d ?: 0) == 0) {
+                    // Genuinely empty — render the card with an empty
+                    // hint instead of hiding it, so the user sees the
+                    // region was queried.
+                    card.visibility = View.VISIBLE
+                    binding.tvSimilarSubtitle.text = getString(R.string.similar_scans_empty)
+                    rv.visibility = View.GONE
+                    return@onSuccess
+                }
+                card.visibility = View.VISIBLE
+                rv.visibility = View.VISIBLE
+                adapter.submit(response.items)
+                val total = response.summary?.last7d ?: response.items.size
+                binding.tvSimilarSubtitle.text = getString(
+                    R.string.similar_scans_subtitle, total, region,
+                )
+            }.onFailure {
+                // Stay hidden on error — never surface a broken card.
+                card.visibility = View.GONE
+            }
+        }
     }
 
     private fun buildAlternativeDiagnoses(scan: ScanEntity, repository: ScanRepository, isRu: Boolean) {
@@ -835,6 +932,8 @@ class ResultActivity : AppCompatActivity() {
             binding.cardDescription,
             binding.cardTreatmentPrevention,
             binding.cardAlternatives,
+            binding.cardSpecies,
+            binding.cardSimilarScans,
             binding.cardToxicity,
             binding.cardFeedback,
             binding.cardPipelineWarning,

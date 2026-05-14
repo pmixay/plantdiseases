@@ -149,6 +149,40 @@
     <!-- Top-3 alternatives -->
     <string name="why_this_diagnosis">Why This Diagnosis?</string>
     <string name="alternatives_subtitle">Model confidence across top candidates</string>
+
+    <!-- Auto-detected species card -->
+    <string name="species_card_title">Detected species</string>
+    <string name="species_card_score">PlantNet match: %1$d%%</string>
+    <string name="species_card_unavailable">Species ID isn\'t configured on this server.</string>
+
+    <!-- Similar scans (community corpus) -->
+    <string name="similar_scans_title">Similar scans near you</string>
+    <string name="similar_scans_subtitle">%1$d recent scans in %2$s</string>
+    <string name="similar_scans_subtitle_no_region">Enable approximate location to see scans near you.</string>
+    <string name="similar_scans_empty">No nearby scans yet — your scan will be the first.</string>
+
+    <!-- Community consent + Profile toggle -->
+    <string name="community_consent_title">Share scans with the community?</string>
+    <string name="community_consent_body">PlantDiseases can upload a small thumbnail of each scan, plus the diagnosis, to help others diagnose plants in your region. Only the region (city + country) is shared — never your exact location. You can turn this off any time in Profile.</string>
+    <string name="community_consent_accept">Share my scans</string>
+    <string name="community_consent_decline">Keep my scans private</string>
+    <string name="community_toggle_title">Share scans with the community</string>
+    <string name="community_toggle_subtitle">Region + diagnosis + 512px thumbnail. Off keeps everything on-device.</string>
+    <string name="community_delete_title">Delete my contributions</string>
+    <string name="community_delete_body">This removes every scan you\'ve shared so far from the community corpus. Continue?</string>
+    <string name="community_delete_done">Your community contributions were removed.</string>
+    <string name="community_delete_failed">Couldn\'t reach the server. Try again later.</string>
+
+    <!-- Pre-scan tips sheet (replaces auto-capture). -->
+    <string name="scan_tips_title">Before you scan</string>
+    <string name="scan_tips_subtitle">Three quick framing rules — they fix almost every "weird diagnosis".</string>
+    <string name="scan_tips_continue">Got it — let\'s scan</string>
+    <string name="scan_tip_distance_title">Get the distance right</string>
+    <string name="scan_tip_distance_body">Too close: only a tiny patch is in frame. Too far: the leaf is a thumbnail. Aim so one leaf fills most of the frame.</string>
+    <string name="scan_tip_focus_title">Hold steady, wait for focus</string>
+    <string name="scan_tip_focus_body">Tap the leaf to lock autofocus. Avoid back-lit shots — the leaf should not be a dark silhouette against a bright window.</string>
+    <string name="scan_tip_single_title">One species per frame</string>
+    <string name="scan_tip_single_body">Mixing two plants in one photo confuses both the classifier and the species detector. Crop or step back to isolate a single plant.</string>
     <!-- About model -->
     <!-- Rate limit -->
     <string name="server_busy">Server Busy</string>

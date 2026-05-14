@@ -418,6 +418,146 @@
 
             </com.google.android.material.card.MaterialCardView>
 
+            <!-- Auto-detected species (server-side PlantNet fan-out).
+                 Hidden when the analyze response carries no species
+                 block. The card surfaces the best match + up to 2
+                 alternates so the user can pick a different species
+                 if PlantNet's top guess is off. -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/card_species"
+                style="@style/App.GlassCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <ImageView
+                            android:layout_width="22dp"
+                            android:layout_height="22dp"
+                            android:src="@drawable/ic_scan"
+                            android:contentDescription="@null"
+                            app:tint="@color/primary" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="@dimen/space_sm"
+                            android:text="@string/species_card_title"
+                            android:textAppearance="@style/TextAppearance.App.Title" />
+
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/tv_species_best"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_sm"
+                        android:textSize="@dimen/text_title_sm"
+                        android:textColor="@color/on_surface"
+                        android:fontFamily="sans-serif-medium" />
+
+                    <TextView
+                        android:id="@+id/tv_species_scientific"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:textSize="@dimen/text_body_sm"
+                        android:textColor="@color/on_surface_secondary"
+                        android:textStyle="italic" />
+
+                    <TextView
+                        android:id="@+id/tv_species_score"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_xs"
+                        android:textSize="@dimen/text_body_sm"
+                        android:textColor="@color/primary" />
+
+                    <LinearLayout
+                        android:id="@+id/species_alts_layout"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_sm"
+                        android:orientation="vertical" />
+
+                </LinearLayout>
+
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- "Similar scans near you" — server-side community corpus.
+                 The card stays hidden when no region is resolved or
+                 there's nothing nearby; otherwise it renders a
+                 horizontal carousel of recent diagnoses from the same
+                 region. Each row's thumbnail loads via
+                 /api/community/thumb/<filename> from ServerConfig
+                 .baseUrl. -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/card_similar_scans"
+                style="@style/App.GlassCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <ImageView
+                            android:layout_width="22dp"
+                            android:layout_height="22dp"
+                            android:src="@drawable/ic_garden"
+                            android:contentDescription="@null"
+                            app:tint="@color/primary" />
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginStart="@dimen/space_sm"
+                            android:text="@string/similar_scans_title"
+                            android:textAppearance="@style/TextAppearance.App.Title" />
+
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/tv_similar_subtitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_xs"
+                        android:textSize="@dimen/text_body_sm"
+                        android:textColor="@color/on_surface_secondary" />
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/rv_similar_scans"
+                        android:layout_width="match_parent"
+                        android:layout_height="128dp"
+                        android:layout_marginTop="@dimen/space_md"
+                        android:clipToPadding="false"
+                        android:orientation="horizontal" />
+
+                </LinearLayout>
+
+            </com.google.android.material.card.MaterialCardView>
+
             <!-- Pipeline warnings (uncertain healthy / detector mismatch) -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/card_pipeline_warning"

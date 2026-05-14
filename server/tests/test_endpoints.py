@@ -168,3 +168,82 @@ def test_analyze_response_contract(client, png_bytes):
         "is_diseased", "detector_confidence", "regions", "primary_region",
     }
     assert isinstance(body["detection"]["regions"], list)
+
+
+# ── Species fan-out ─────────────────────────────────────────────────
+
+
+def test_analyze_response_includes_species_block(client, png_bytes, monkeypatch):
+    """Analyze always returns a ``species`` field, even when PlantNet
+    is not configured. The block surfaces ``available: false`` so the
+    client can render a "species unknown" hint instead of a 404 hop."""
+    import main as server_main
+
+    # Replace identify_species with a deterministic offline fake so we
+    # don't hit the network from CI. The fake mirrors the no_api_key
+    # branch of the real function.
+    monkeypatch.setattr(
+        server_main, "identify_species",
+        lambda *_args, **_kw: {
+            "available": False, "results": [], "source": "no_api_key",
+        },
+    )
+    r = client.post(
+        "/api/analyze",
+        files={"image": ("leaf.png", png_bytes, "image/png")},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert "species" in body, "analyze must always surface a species block"
+    species = body["species"]
+    assert species["available"] is False
+    assert species["source"] == "no_api_key"
+    assert species["best"] is None
+
+
+def test_analyze_species_block_includes_best_match(client, png_bytes, monkeypatch):
+    """When PlantNet returns candidates, the analyze response copies
+    the top match into ``species.best`` and the next two into
+    ``species.candidates``."""
+    import main as server_main
+
+    monkeypatch.setattr(
+        server_main, "identify_species",
+        lambda *_args, **_kw: {
+            "available": True, "source": "plantnet",
+            "results": [
+                {"scientific_name": "Begonia rex", "common_names": ["Painted-Leaf Begonia"], "score": 0.82},
+                {"scientific_name": "Begonia maculata", "common_names": ["Polka Dot Begonia"], "score": 0.10},
+                {"scientific_name": "Pilea peperomioides", "common_names": ["Chinese Money"], "score": 0.04},
+            ],
+        },
+    )
+    r = client.post(
+        "/api/analyze",
+        files={"image": ("leaf.png", png_bytes, "image/png")},
+    )
+    body = r.json()
+    species = body["species"]
+    assert species["available"] is True
+    assert species["best"]["scientific_name"] == "Begonia rex"
+    assert species["best"]["common_name"] == "Painted-Leaf Begonia"
+    assert len(species["candidates"]) == 3
+
+
+def test_analyze_species_block_survives_plantnet_failure(client, png_bytes, monkeypatch):
+    """If identify_species raises, the analyze response still
+    completes — ``species`` lands as ``None`` rather than 500-ing the
+    whole request.
+    """
+    import main as server_main
+
+    def explode(*_a, **_kw):
+        raise RuntimeError("upstream is on fire")
+
+    monkeypatch.setattr(server_main, "identify_species", explode)
+    r = client.post(
+        "/api/analyze",
+        files={"image": ("leaf.png", png_bytes, "image/png")},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["species"] is None

@@ -103,6 +103,13 @@ data class ScanEntity(
     @ColumnInfo(name = "toxic_to_pets") val toxicToPets: Boolean = false,
     @ColumnInfo(name = "toxic_species_list") val toxicSpeciesList: String? = null, // JSON array
     @ColumnInfo(name = "toxicity_source") val toxicitySource: String = "unknown",
+    // Server-side PlantNet fan-out result. Null when PlantNet wasn't
+    // configured or returned no candidates. Persisted at insertion
+    // time so the result screen can render the species card without a
+    // second network round-trip.
+    @ColumnInfo(name = "species_scientific") val speciesScientific: String? = null,
+    @ColumnInfo(name = "species_common") val speciesCommon: String? = null,
+    @ColumnInfo(name = "species_score") val speciesScore: Float? = null,
 )
 
 // ─── Plant Reminder Entity ──────────────────────────────────────────────────
@@ -254,7 +261,7 @@ interface PlantJournalDao {
         PlantReminderEntity::class,
         ChatMessageEntity::class,
     ],
-    version = 11,
+    version = 12,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {

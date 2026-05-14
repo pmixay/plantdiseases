@@ -129,6 +129,19 @@ class AnalysisActivity : AppCompatActivity() {
                     getSharedPreferences("plantdiseases_prefs", MODE_PRIVATE)
                         .edit().putBoolean("new_scan_result", true).apply()
 
+                    // Fire-and-forget community upload. The uploader
+                    // checks the user's opt-in, resolves a region,
+                    // generates a 512px JPEG and POSTs in the
+                    // background — every step is best-effort so the
+                    // result screen is never blocked.
+                    val savedScan = app.scanRepository.getScanById(scanId)
+                    if (savedScan != null) {
+                        @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
+                        kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                            runCatching { app.communityUploader.uploadIfEnabled(savedScan, response) }
+                        }
+                    }
+
                     val intent = Intent(this@AnalysisActivity, ResultActivity::class.java).apply {
                         putExtra(ResultActivity.EXTRA_SCAN_ID, scanId)
                     }

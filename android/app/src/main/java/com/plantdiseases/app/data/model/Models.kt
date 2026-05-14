@@ -74,7 +74,71 @@ data class AnalysisResponse(
     @SerializedName("toxic_to_pets") val toxicToPets: Boolean = false,
     @SerializedName("toxic_species_list") val toxicSpeciesList: List<String> = emptyList(),
     @SerializedName("toxicity_source") val toxicitySource: String = "unknown",
+    /** Auto-detected species block from the server-side PlantNet
+     *  fan-out. ``null`` when the upstream failed; ``available=false``
+     *  when PlantNet isn't configured on this server. */
+    @SerializedName("species") val species: SpeciesBlock? = null,
     @SerializedName("elapsed_ms") val elapsedMs: Float? = null
+)
+
+/** Species block carried inside AnalysisResponse. */
+data class SpeciesBlock(
+    @SerializedName("available") val available: Boolean = false,
+    @SerializedName("source") val source: String? = null,
+    @SerializedName("best") val best: SpeciesMatch? = null,
+    @SerializedName("candidates") val candidates: List<SpeciesMatch> = emptyList(),
+)
+
+data class SpeciesMatch(
+    @SerializedName("scientific_name") val scientificName: String? = null,
+    @SerializedName("common_name") val commonName: String? = null,
+    @SerializedName("score") val score: Float = 0f,
+) {
+    /** Human-readable label preferring the common name. */
+    val displayName: String?
+        get() = commonName?.takeIf { it.isNotBlank() }
+            ?: scientificName?.takeIf { it.isNotBlank() }
+}
+
+/**
+ * /api/community/nearby response. Each item describes a scan that
+ * another user in the same region (or the requesting user, on their
+ * own past scans) chose to share. ``thumbPath`` is the filename to
+ * pass to /api/community/thumb/<filename> — never a full URL.
+ */
+data class CommunityScansResponse(
+    @SerializedName("items") val items: List<CommunityScanItem> = emptyList(),
+    @SerializedName("summary") val summary: CommunityRegionSummary? = null,
+)
+
+data class CommunityScanItem(
+    @SerializedName("scan_id") val scanId: String,
+    @SerializedName("region") val region: String,
+    @SerializedName("disease") val disease: String,
+    @SerializedName("confidence") val confidence: Float? = null,
+    @SerializedName("species") val species: String? = null,
+    @SerializedName("species_score") val speciesScore: Float? = null,
+    @SerializedName("thumb_path") val thumbPath: String? = null,
+    @SerializedName("locale") val locale: String? = null,
+    @SerializedName("created_at") val createdAt: Long = 0L,
+)
+
+data class CommunityRegionSummary(
+    @SerializedName("region") val region: String,
+    @SerializedName("total") val total: Int = 0,
+    @SerializedName("last_7d") val last7d: Int = 0,
+    @SerializedName("top_diseases") val topDiseases: List<CommunityTopDisease> = emptyList(),
+)
+
+data class CommunityTopDisease(
+    @SerializedName("disease") val disease: String,
+    @SerializedName("count") val count: Int = 0,
+)
+
+/** /api/community/scan response shape. */
+data class CommunityScanUploadResponse(
+    @SerializedName("ok") val ok: Boolean = false,
+    @SerializedName("id") val id: Long = 0,
 )
 
 /** Guide article about plant care */

@@ -19,7 +19,9 @@ import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.databinding.FragmentProfileBinding
 import com.plantdiseases.app.ui.camera.LightMeterActivity
+import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.TelemetryIds
 import com.plantdiseases.app.util.ThemeHelper
 import kotlinx.coroutines.launch
 
@@ -74,8 +76,45 @@ class ProfileFragment : Fragment() {
         }
 
         setupThemeChips()
+        setupCommunityControls()
         loadStats()
         checkServerHealth()
+    }
+
+    private fun setupCommunityControls() {
+        val ctx = requireContext()
+        // The switch reflects the *effective* opt-in: if the user
+        // hasn't acknowledged the consent sheet yet, uploadsEnabled
+        // returns false even though the underlying pref would default
+        // to true. Toggling here implicitly acknowledges.
+        binding.switchCommunity.isChecked = CommunityPrefs.uploadsEnabled(ctx)
+        binding.switchCommunity.setOnCheckedChangeListener { _, isChecked ->
+            CommunityPrefs.setAcknowledged(ctx, isChecked)
+            CommunityPrefs.setUploadsEnabled(ctx, isChecked)
+        }
+        binding.btnDeleteCommunity.setOnClickListener {
+            MaterialAlertDialogBuilder(ctx)
+                .setTitle(R.string.community_delete_title)
+                .setMessage(R.string.community_delete_body)
+                .setNegativeButton(R.string.cancel, null)
+                .setPositiveButton(R.string.delete) { _, _ ->
+                    deleteCommunityContributions()
+                }
+                .show()
+        }
+    }
+
+    private fun deleteCommunityContributions() {
+        val app = requireActivity().application as PlantDiseasesApp
+        val pseudoId = TelemetryIds.userPseudoId(requireContext())
+        lifecycleScope.launch {
+            val result = app.scanRepository.deleteCommunityContributions(pseudoId)
+            val msg = if (result.isSuccess)
+                R.string.community_delete_done
+            else
+                R.string.community_delete_failed
+            Toast.makeText(requireContext(), msg, Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun switchLanguage() {

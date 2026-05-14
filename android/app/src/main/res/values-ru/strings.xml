@@ -149,6 +149,37 @@
     <!-- Top-3 alternatives -->
     <string name="why_this_diagnosis">Почему этот диагноз?</string>
     <string name="alternatives_subtitle">Уверенность модели по основным кандидатам</string>
+
+    <string name="species_card_title">Определённый вид</string>
+    <string name="species_card_score">PlantNet — %1$d%%</string>
+    <string name="species_card_unavailable">Определение вида не настроено на этом сервере.</string>
+
+    <string name="similar_scans_title">Похожие сканы рядом</string>
+    <string name="similar_scans_subtitle">%1$d сканов в регионе %2$s</string>
+    <string name="similar_scans_subtitle_no_region">Включите приблизительное местоположение, чтобы видеть сканы рядом.</string>
+    <string name="similar_scans_empty">Похожих сканов пока нет — ваш будет первым.</string>
+
+    <string name="community_consent_title">Делиться сканами с сообществом?</string>
+    <string name="community_consent_body">PlantDiseases может загрузить миниатюру скана и диагноз, чтобы помочь другим в вашем регионе. Передаётся только регион (город и страна) — точная геолокация остаётся на устройстве. В любой момент можно выключить в профиле.</string>
+    <string name="community_consent_accept">Делиться сканами</string>
+    <string name="community_consent_decline">Не делиться</string>
+    <string name="community_toggle_title">Делиться сканами с сообществом</string>
+    <string name="community_toggle_subtitle">Регион + диагноз + миниатюра 512px. Можно выключить — всё останется на устройстве.</string>
+    <string name="community_delete_title">Удалить мои данные из сообщества</string>
+    <string name="community_delete_body">Все сообщения сканов будут удалены из общего корпуса. Продолжить?</string>
+    <string name="community_delete_done">Ваши данные удалены из сообщества.</string>
+    <string name="community_delete_failed">Не удалось связаться с сервером. Попробуйте позже.</string>
+
+    <!-- Pre-scan tips sheet -->
+    <string name="scan_tips_title">Перед сканированием</string>
+    <string name="scan_tips_subtitle">Три простых правила — они снимают почти все «странные» диагнозы.</string>
+    <string name="scan_tips_continue">Понятно — сканируем</string>
+    <string name="scan_tip_distance_title">Подберите расстояние</string>
+    <string name="scan_tip_distance_body">Слишком близко — в кадр попадает только пятно. Слишком далеко — лист размером с ноготь. Один лист должен занимать большую часть кадра.</string>
+    <string name="scan_tip_focus_title">Держите камеру неподвижно</string>
+    <string name="scan_tip_focus_body">Коснитесь листа, чтобы зафиксировать автофокус. Избегайте контрового света — лист не должен быть силуэтом на ярком фоне.</string>
+    <string name="scan_tip_single_title">Один вид в кадре</string>
+    <string name="scan_tip_single_body">Два растения в одном кадре сбивают и классификатор, и определение вида. Подойдите ближе или сместите ракурс, чтобы оставить одно растение.</string>
     <!-- About model -->
     <!-- Rate limit -->
     <string name="server_busy">Сервер занят</string>
