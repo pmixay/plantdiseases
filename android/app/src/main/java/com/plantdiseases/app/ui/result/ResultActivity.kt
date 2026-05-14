@@ -376,9 +376,8 @@ class ResultActivity : AppCompatActivity() {
             // Animate cards from bottom
             animateCardsIn()
 
-            // Toolbar overflow menu owns the read-aloud / delete actions.
+            // Toolbar overflow menu owns the delete action.
             pendingScanForToolbar = scan
-            updateSpeakIcon(speaking = false)
         }
     }
 
