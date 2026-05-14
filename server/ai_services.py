@@ -643,3 +643,137 @@ def compare_progression(*, current: dict, previous: Optional[dict]) -> dict:
         "previous_class": prv_cls,
         "current_class": cur_cls,
     }
+
+
+# ── Historical progression (5-point sparkline) ──────────────────────
+
+
+_SPARKLINE_POINTS = 5
+
+
+def _severity_score(entry: dict) -> float:
+    """Map an analyse-shaped dict into a 0..1 severity score.
+
+    Combines the categorical severity (low/medium/high) with the model
+    confidence so two "high" verdicts at 0.6 and 0.95 don't render as
+    identical sparkline points. Healthy / NAP collapse to 0.
+    """
+    cls = entry.get("class_name") or entry.get("disease_name")
+    if cls in ("healthy", "not_a_plant", None, ""):
+        return 0.0
+    sev = _SEVERITY_ORDER.get(entry.get("severity", "low"), 0)
+    conf = float(entry.get("confidence") or 0.0)
+    # 0 → 0.10, 1 → 0.40, 2 → 0.70 + (0..0.30) from confidence.
+    base = 0.10 + 0.30 * sev
+    return round(min(1.0, base + 0.30 * max(0.0, min(1.0, conf))), 4)
+
+
+def _resample_to_points(values: list[float], points: int) -> list[float]:
+    """Resample ``values`` to exactly ``points`` samples via piecewise
+    linear interpolation. ``values`` is assumed to be time-ordered
+    (oldest → newest). Single-element inputs broadcast.
+
+    Pure stdlib; no numpy dependency."""
+    n = len(values)
+    if n == 0 or points <= 0:
+        return []
+    if n == 1:
+        return [round(values[0], 4)] * points
+    if points == 1:
+        return [round(values[-1], 4)]
+    out: list[float] = []
+    last_idx = n - 1
+    for i in range(points):
+        # Position on the source axis in [0, n-1].
+        t = i * last_idx / (points - 1)
+        lo = int(t)
+        hi = min(lo + 1, last_idx)
+        frac = t - lo
+        out.append(round(values[lo] * (1.0 - frac) + values[hi] * frac, 4))
+    return out
+
+
+def _linear_trend_slope(values: list[float]) -> float:
+    """Least-squares slope of ``values`` against their indices. Used to
+    pick worsening / improving / stable when we have ≥ 3 points."""
+    n = len(values)
+    if n < 2:
+        return 0.0
+    mean_x = (n - 1) / 2.0
+    mean_y = sum(values) / n
+    num = 0.0
+    den = 0.0
+    for i, y in enumerate(values):
+        dx = i - mean_x
+        num += dx * (y - mean_y)
+        den += dx * dx
+    if den <= 0:
+        return 0.0
+    return num / den
+
+
+def compare_progression_history(history: list[dict]) -> dict:
+    """Build a 5-point severity sparkline from a time-ordered scan history.
+
+    ``history`` is a list of analyse-shaped dicts, oldest first. Returns:
+
+      - ``sparkline``         : list[float], length 5, severity ∈ [0, 1]
+      - ``trend``             : "improving" / "stable" / "worsening" / "baseline"
+      - ``history_length``    : int, raw input length
+      - ``current_class``     : class of the newest scan (or null)
+      - ``previous_class``    : class of the second-newest scan (or null)
+      - ``delta_confidence``  : float, newest.conf − previous.conf
+      - ``delta_severity``    : int, newest.sev − previous.sev
+      - ``class_changed``     : bool
+      - ``points``            : the per-scan severity scores before resampling
+
+    On an empty history the response is ``trend="baseline"`` with a
+    zero-padded sparkline, so the client can render an "awaiting data"
+    state without special-casing.
+    """
+    if not isinstance(history, list):
+        history = []
+    cleaned = [h for h in history if isinstance(h, dict)]
+    points_raw = [_severity_score(h) for h in cleaned]
+    sparkline = _resample_to_points(points_raw, _SPARKLINE_POINTS) \
+        if points_raw else [0.0] * _SPARKLINE_POINTS
+
+    if not cleaned:
+        return {
+            "sparkline": sparkline,
+            "trend": "baseline",
+            "history_length": 0,
+            "current_class": None,
+            "previous_class": None,
+            "delta_confidence": 0.0,
+            "delta_severity": 0,
+            "class_changed": False,
+            "points": [],
+        }
+
+    current = cleaned[-1]
+    previous = cleaned[-2] if len(cleaned) >= 2 else None
+    pair = compare_progression(current=current, previous=previous)
+    # Re-evaluate the trend using the linear slope across the full
+    # history when we have ≥ 3 points — the pairwise verdict above
+    # is just the newest-vs-previous diff, which can flap.
+    if len(points_raw) >= 3:
+        slope = _linear_trend_slope(points_raw)
+        if abs(slope) < 0.02:
+            pair["trend"] = "stable"
+        elif slope > 0:
+            pair["trend"] = "worsening"
+        else:
+            pair["trend"] = "improving"
+
+    return {
+        "sparkline": sparkline,
+        "trend": pair["trend"],
+        "history_length": len(cleaned),
+        "current_class": pair["current_class"],
+        "previous_class": pair["previous_class"],
+        "delta_confidence": pair["delta_confidence"],
+        "delta_severity": pair["delta_severity"],
+        "class_changed": pair["class_changed"],
+        "points": [round(p, 4) for p in points_raw],
+    }

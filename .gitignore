@@ -15,6 +15,10 @@ server/data/
 server/models/*.h5
 server/models/*.pth
 server/logs/
+server/feedback.db
+server/feedback.db-journal
+server/feedback.db-wal
+server/feedback.db-shm
 # Top-level logs/ is created when main.py is imported from the repo
 # root (LOG_DIR defaults to a relative path).
 /logs/

@@ -8,6 +8,8 @@ import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.CarePlanResponse
 import com.plantdiseases.app.data.model.ChatRequest
 import com.plantdiseases.app.data.model.ChatResponse
+import com.plantdiseases.app.data.model.FeedbackRequest
+import com.plantdiseases.app.data.model.FeedbackResponse
 import com.plantdiseases.app.data.model.HealthResponse
 import com.plantdiseases.app.data.model.IdentifyResponse
 import com.plantdiseases.app.data.model.ProgressionRequest
@@ -33,13 +35,18 @@ class ScanRepository(
 
     private val gson = Gson()
 
-    /** Send image to server for analysis */
-    suspend fun analyzeImage(imageFile: File): Result<AnalysisResponse> =
+    /**
+     * Send image to server for analysis. `speciesHint` is optional —
+     * when provided, the server's pet-toxicity surface can resolve
+     * against its ASPCA-derived table; without it the response carries
+     * `toxicity_source = "unknown"`.
+     */
+    suspend fun analyzeImage(imageFile: File, speciesHint: String? = null): Result<AnalysisResponse> =
         withContext(Dispatchers.IO) {
             try {
                 val requestBody = imageFile.asRequestBody("image/jpeg".toMediaTypeOrNull())
                 val part = MultipartBody.Part.createFormData("image", imageFile.name, requestBody)
-                val response = apiService.analyzeImage(part)
+                val response = apiService.analyzeImage(part, speciesHint?.takeIf { it.isNotBlank() })
                 if (response.isSuccessful && response.body() != null) {
                     Result.success(response.body()!!)
                 } else if (response.code() == 429) {
@@ -167,6 +174,40 @@ class ScanRepository(
      * should be the analyse-shaped dicts the client already has
      * (typically built via `scanToProgressionPayload(scan)`).
      */
+    /**
+     * Submit a thumbs-up / thumbs-down on a diagnosis.
+     *
+     * The server's `/api/feedback` endpoint is append-only and
+     * rate-limited per IP — if the client posts faster than 1/sec the
+     * request lands as a 429 and we surface a RateLimitException so
+     * the UI can show a brief "try again in a moment" toast.
+     */
+    suspend fun submitFeedback(request: FeedbackRequest): Result<FeedbackResponse> =
+        withContext(Dispatchers.IO) {
+            try {
+                val response = apiService.feedback(request)
+                if (response.isSuccessful && response.body() != null) {
+                    Result.success(response.body()!!)
+                } else if (response.code() == 429) {
+                    Result.failure(RateLimitException())
+                } else if (response.code() == 503) {
+                    Result.failure(ServerStartingException())
+                } else if (response.code() == 422) {
+                    Result.failure(Exception("Invalid feedback payload"))
+                } else {
+                    Result.failure(Exception("Server error: ${response.code()}"))
+                }
+            } catch (e: SocketTimeoutException) {
+                Result.failure(ServerTimeoutException())
+            } catch (e: UnknownHostException) {
+                Result.failure(NoNetworkException())
+            } catch (e: java.net.ConnectException) {
+                Result.failure(ServerTimeoutException())
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
     suspend fun fetchProgression(request: ProgressionRequest): Result<ProgressionResponse> =
         withContext(Dispatchers.IO) {
             try {
@@ -269,7 +310,12 @@ class ScanRepository(
                 regions = if (regions.isEmpty()) null else gson.toJson(regions),
                 primaryRegionIndex = primaryIndex,
                 allProbs = result.allProbs?.let { gson.toJson(it) },
-                warnings = warningsJson
+                warnings = warningsJson,
+                toxicToPets = result.toxicToPets,
+                toxicSpeciesList = result.toxicSpeciesList
+                    .takeIf { it.isNotEmpty() }
+                    ?.let { gson.toJson(it) },
+                toxicitySource = result.toxicitySource,
             )
             scanDao.insert(entity)
         }
@@ -423,6 +469,16 @@ class ScanRepository(
             gson.fromJson(json, type)
         } catch (e: Exception) {
             emptyMap()
+        }
+    }
+
+    /** Parse the JSON-encoded toxic-species list (cats/dogs/horses/...). */
+    fun parseToxicSpeciesList(json: String?): List<String> {
+        if (json.isNullOrEmpty()) return emptyList()
+        return try {
+            gson.fromJson(json, Array<String>::class.java).toList()
+        } catch (e: Exception) {
+            emptyList()
         }
     }
 

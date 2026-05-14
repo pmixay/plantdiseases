@@ -36,6 +36,7 @@ import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.CarePlanRequest
+import com.plantdiseases.app.data.model.FeedbackRequest
 import com.plantdiseases.app.data.model.SpeciesCandidate
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
@@ -344,6 +345,17 @@ class ResultActivity : AppCompatActivity() {
                 buildAlternativeDiagnoses(scan, repository, isRu)
                 setupTreatmentPreventionTabs(scan, repository, isRu)
                 buildCarePlanCard(scan, repository, isRu)
+            }
+
+            // Toxicity card + feedback card render for every plant verdict
+            // (including healthy) — they're not disease-only — but stay
+            // hidden on NAP since neither makes sense without a plant.
+            if (isNotAPlant) {
+                cardToxicity.visibility = View.GONE
+                cardFeedback.visibility = View.GONE
+            } else {
+                buildToxicityCard(scan, repository)
+                buildFeedbackCard(scan)
             }
 
             // Date
@@ -1009,6 +1021,8 @@ class ResultActivity : AppCompatActivity() {
             binding.cardDescription,
             binding.cardTreatmentPrevention,
             binding.cardAlternatives,
+            binding.cardToxicity,
+            binding.cardFeedback,
             binding.cardPipelineWarning,
             binding.cardLowConfidence
         ).filter { it.visibility == View.VISIBLE }
@@ -1178,6 +1192,154 @@ class ResultActivity : AppCompatActivity() {
                 getString(R.string.care_plan_reminders_applied),
                 Toast.LENGTH_SHORT,
             ).show()
+        }
+    }
+
+    // ─── Pet toxicity card ────────────────────────────────────────────────
+
+    private fun buildToxicityCard(scan: ScanEntity, repository: ScanRepository) {
+        val card = binding.cardToxicity
+        val title = binding.tvToxicityTitle
+        val body = binding.tvToxicityBody
+        val icon = binding.ivToxicityIcon
+
+        val speciesList = repository.parseToxicSpeciesList(scan.toxicSpeciesList)
+        when (scan.toxicitySource) {
+            "db" -> if (scan.toxicToPets) {
+                card.visibility = View.VISIBLE
+                card.setCardBackgroundColor(getColor(R.color.disease_red_bg))
+                title.setTextColor(getColor(R.color.disease_red))
+                icon.setColorFilter(getColor(R.color.disease_red))
+                title.setText(R.string.toxicity_toxic_title)
+                body.setTextColor(getColor(R.color.disease_red))
+                body.text = getString(
+                    R.string.toxicity_toxic_body,
+                    speciesList.joinToString(", "),
+                )
+            } else {
+                card.visibility = View.VISIBLE
+                card.setCardBackgroundColor(getColor(R.color.healthy_green_bg))
+                title.setTextColor(getColor(R.color.healthy_green))
+                icon.setColorFilter(getColor(R.color.healthy_green))
+                icon.setImageResource(R.drawable.ic_healthy)
+                title.setText(R.string.toxicity_safe_title)
+                body.setTextColor(getColor(R.color.healthy_green))
+                body.setText(R.string.toxicity_safe_body)
+            }
+            else -> {
+                // Unknown source — never falsely reassure.
+                card.visibility = View.VISIBLE
+                card.setCardBackgroundColor(getColor(R.color.warning_amber_bg))
+                title.setTextColor(getColor(R.color.warning_amber))
+                icon.setColorFilter(getColor(R.color.warning_amber))
+                icon.setImageResource(R.drawable.ic_warning)
+                title.setText(R.string.toxicity_unknown_title)
+                body.setTextColor(getColor(R.color.warning_amber))
+                body.setText(R.string.toxicity_unknown_body)
+            }
+        }
+    }
+
+    // ─── Diagnosis feedback ──────────────────────────────────────────────
+
+    private fun buildFeedbackCard(scan: ScanEntity) {
+        val card = binding.cardFeedback
+        card.visibility = View.VISIBLE
+        binding.tvFeedbackStatus.visibility = View.GONE
+        binding.feedbackChoiceRow.visibility = View.VISIBLE
+        binding.btnFeedbackYes.isEnabled = true
+        binding.btnFeedbackNo.isEnabled = true
+
+        binding.btnFeedbackYes.setOnClickListener {
+            Haptics.tick(this)
+            submitFeedback(scan, correct = true)
+        }
+        binding.btnFeedbackNo.setOnClickListener {
+            Haptics.tick(this)
+            showCorrectionDialog(scan)
+        }
+    }
+
+    private fun showCorrectionDialog(scan: ScanEntity) {
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 8.dpToPx(), 0, 0)
+        }
+        val correctionInput = TextInputEditText(this).apply {
+            inputType = InputType.TYPE_CLASS_TEXT
+            setSingleLine(true)
+        }
+        val correctionLayout = TextInputLayout(this).apply {
+            hint = getString(R.string.feedback_correction_hint)
+            addView(correctionInput)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { bottomMargin = 10.dpToPx() }
+        }
+        val noteInput = TextInputEditText(this).apply {
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            minLines = 2
+            maxLines = 5
+        }
+        val noteLayout = TextInputLayout(this).apply {
+            hint = getString(R.string.feedback_note_hint)
+            addView(noteInput)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+        }
+        container.addView(correctionLayout)
+        container.addView(noteLayout)
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.feedback_correction_title)
+            .setView(container)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.feedback_send) { _, _ ->
+                submitFeedback(
+                    scan,
+                    correct = false,
+                    correctedClass = correctionInput.text?.toString()?.trim().orEmpty()
+                        .ifBlank { null },
+                    note = noteInput.text?.toString()?.trim().orEmpty().ifBlank { null },
+                )
+            }
+            .show()
+    }
+
+    private fun submitFeedback(
+        scan: ScanEntity,
+        correct: Boolean,
+        correctedClass: String? = null,
+        note: String? = null,
+    ) {
+        binding.btnFeedbackYes.isEnabled = false
+        binding.btnFeedbackNo.isEnabled = false
+        val app = application as PlantDiseasesApp
+        val request = FeedbackRequest(
+            scanId = scan.id.toString(),
+            correct = correct,
+            correctedClass = correctedClass,
+            note = note,
+        )
+        lifecycleScope.launch {
+            val result = app.scanRepository.submitFeedback(request)
+            result.onSuccess {
+                binding.feedbackChoiceRow.visibility = View.GONE
+                binding.tvFeedbackStatus.visibility = View.VISIBLE
+                binding.tvFeedbackStatus.setText(R.string.feedback_sent)
+                Haptics.success(this@ResultActivity)
+            }.onFailure { error ->
+                binding.btnFeedbackYes.isEnabled = true
+                binding.btnFeedbackNo.isEnabled = true
+                val msgRes = when (error) {
+                    is ScanRepository.RateLimitException -> R.string.feedback_rate_limited
+                    else -> R.string.feedback_failed
+                }
+                Toast.makeText(this@ResultActivity, msgRes, Toast.LENGTH_SHORT).show()
+            }
         }
     }
 

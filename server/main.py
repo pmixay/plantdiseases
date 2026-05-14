@@ -43,22 +43,26 @@ try:
         chat_metrics_snapshot,
         chat_reply,
         compare_progression,
+        compare_progression_history,
         generate_care_plan,
         identify_species,
     )
     from .config import get_float, get_int, get_list, get_str
-    from .diseases_data import DISEASES_DATABASE
+    from .diseases_data import DISEASES_DATABASE, lookup_pet_toxicity
+    from .feedback import feedback_counts, init_db as init_feedback_db, record_feedback
     from .pipeline import PlantDiseasePipeline
 except ImportError:
     from ai_services import (
         chat_metrics_snapshot,
         chat_reply,
         compare_progression,
+        compare_progression_history,
         generate_care_plan,
         identify_species,
     )
     from config import get_float, get_int, get_list, get_str
-    from diseases_data import DISEASES_DATABASE
+    from diseases_data import DISEASES_DATABASE, lookup_pet_toxicity
+    from feedback import feedback_counts, init_db as init_feedback_db, record_feedback
     from pipeline import PlantDiseasePipeline
 
 try:
@@ -336,6 +340,7 @@ async def lifespan(app: FastAPI):
     global pipeline, SERVER_START_TIME, _inference_executor
     SERVER_START_TIME = time.time()
     _inference_executor = _get_inference_executor()
+    init_feedback_db()
     pipeline = PlantDiseasePipeline(
         detector_path=DETECTOR_PATH,
         classifier_path=CLASSIFIER_PATH,
@@ -530,6 +535,7 @@ async def metrics():
         "uptime_seconds": round(uptime, 1),
         **snap,
         "ai_doctor": chat_metrics_snapshot(),
+        "feedback": feedback_counts(),
     }
 
 
@@ -582,7 +588,7 @@ async def metrics_prometheus():
 
 
 @app.post("/api/analyze")
-async def analyze_image(image: UploadFile = File(...)):
+async def analyze_image(image: UploadFile = File(...), species: str | None = None):
     """Analyse a plant image for diseases (two-stage pipeline).
 
     Accepts JPEG, PNG, WebP, or BMP images up to 10 MB.
@@ -731,6 +737,15 @@ async def analyze_image(image: UploadFile = File(...)):
             ],
         }
 
+    # Pet-toxicity surface — only resolves when the caller passes a
+    # `species` hint (PlantNet scientific name or user-typed common
+    # name). Without one we can't honestly say a plant is or isn't
+    # toxic, so we return ``source="unknown"`` and the client renders
+    # an "unconfirmed" copy rather than falsely reassuring.
+    toxicity = lookup_pet_toxicity(species) if species else {
+        "toxic_to_pets": False, "species_list": [], "source": "unknown",
+    }
+
     return JSONResponse(content={
         "disease_name": disease_info["name_en"],
         "disease_name_ru": disease_info["name_ru"],
@@ -749,6 +764,9 @@ async def analyze_image(image: UploadFile = File(...)):
         "top_k": top_k_localised,
         "warnings": warnings,
         "prediction_set": prediction_set,
+        "toxic_to_pets": toxicity["toxic_to_pets"],
+        "toxic_species_list": toxicity["species_list"],
+        "toxicity_source": toxicity["source"],
         "elapsed_ms": result["elapsed_ms"],
         "server_version": APP_VERSION,
     })
@@ -772,8 +790,29 @@ class CarePlanRequest(BaseModel):
 
 
 class ProgressionRequest(BaseModel):
-    current: dict
+    # Back-compat pairwise shape: callers can pass just `current` plus
+    # optional `previous`. New callers should populate `history` with a
+    # time-ordered list (oldest first) — when present it takes priority
+    # over the pairwise fields.
+    current: dict | None = None
     previous: dict | None = None
+    history: list[dict] | None = None
+
+
+class FeedbackRequest(BaseModel):
+    """Single user-feedback signal on a scan.
+
+    ``scan_id`` is a client-generated stable id (we don't issue scan
+    ids server-side — the classifier is stateless). ``correct`` is the
+    boolean thumbs verdict. ``corrected_class`` and ``note`` are
+    optional and bounded so a runaway client can't push a 10 MB blob
+    through the append-only store.
+    """
+
+    scan_id: str = Field(..., min_length=1, max_length=128)
+    correct: bool
+    corrected_class: str | None = Field(default=None, max_length=64)
+    note: str | None = Field(default=None, max_length=2000)
 
 
 @app.post("/api/identify")
@@ -877,22 +916,87 @@ async def care_plan_endpoint(payload: CarePlanRequest):
             locale=payload.locale,
         ),
     )
+    toxicity = lookup_pet_toxicity(payload.species) if payload.species else {
+        "toxic_to_pets": False, "species_list": [], "source": "unknown",
+    }
+    plan = {
+        **plan,
+        "toxic_to_pets": toxicity["toxic_to_pets"],
+        "toxic_species_list": toxicity["species_list"],
+        "toxicity_source": toxicity["source"],
+    }
     return JSONResponse(content=plan)
 
 
 @app.post("/api/progression")
 async def progression_endpoint(payload: ProgressionRequest):
-    """Compare two scans and return a worsening/improving/stable verdict.
+    """Disease-progression analysis. Accepts two shapes:
 
-    Pure function over the analyse-shaped dicts the client already has,
-    so this endpoint is fast and deterministic. Useful for the Android
-    "Disease progression chart" view.
+      * **Historical**: ``history=[scan1, scan2, ...]`` (oldest first).
+        Returns a 5-point severity sparkline plus a trend slope across
+        the full history. This is the new path for the Android plant-
+        detail screen.
+      * **Pairwise (legacy)**: ``current`` + optional ``previous``.
+        Returns the same trend / delta_* fields the v2.0 client
+        expects. Kept for backward compatibility — older clients still
+        in the wild pre-date the historical endpoint.
+
+    When ``history`` is non-empty it takes precedence and the response
+    additionally carries the sparkline. When only the pairwise fields
+    are supplied the response keeps the v2.0 shape so older clients
+    never see an unexpected key, but new clients can rely on the
+    sparkline + history_length fields.
     """
+    if payload.history is not None:
+        return JSONResponse(content=compare_progression_history(payload.history))
+    # Pairwise back-compat path.
+    if payload.current is None:
+        raise HTTPException(status_code=400, detail="current or history is required")
     return JSONResponse(
         content=compare_progression(
             current=payload.current, previous=payload.previous,
         )
     )
+
+
+@app.post("/api/feedback")
+async def feedback_endpoint(payload: FeedbackRequest, request: Request):
+    """Capture a thumbs-up / thumbs-down on a diagnosis.
+
+    Append-only — there is no update / delete path. The 1 req/s per-IP
+    rate limit from the global middleware applies; the endpoint
+    additionally caps ``note`` length via the pydantic model so a
+    malicious client can't bloat the SQLite file with megabytes of
+    text.
+    """
+    client_ip = _client_ip(request)
+    # Light validation: ``corrected_class`` should look like a model
+    # class key when present. We don't hard-reject unknown keys because
+    # the client might suggest a class that's deferred to a later
+    # release — the retraining tool decides what to do with it.
+    corrected = (payload.corrected_class or "").strip() or None
+    note = (payload.note or "").strip() or None
+
+    try:
+        row_id = await asyncio.get_running_loop().run_in_executor(
+            _get_inference_executor(),
+            lambda: record_feedback(
+                scan_id=payload.scan_id.strip(),
+                correct=payload.correct,
+                corrected_class=corrected,
+                note=note,
+                client_ip=client_ip,
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Failed to record feedback: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to record feedback") from exc
+
+    logger.info(
+        "Feedback recorded id=%d scan=%s correct=%s corrected=%s",
+        row_id, payload.scan_id, payload.correct, corrected,
+    )
+    return JSONResponse(content={"ok": True, "id": row_id})
 
 
 if __name__ == "__main__":

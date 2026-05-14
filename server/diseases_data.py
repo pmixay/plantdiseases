@@ -419,3 +419,121 @@ DISEASES_DATABASE = {
         "is_healthy": False,
     },
 }
+
+
+# ── Toxicity-to-pets database ────────────────────────────────────────
+#
+# Pet toxicity is a property of the plant species, not of the disease,
+# so it lives in its own lookup. Sources cross-reference the ASPCA
+# toxic / non-toxic plant lists; species we couldn't confirm with the
+# ASPCA fall back to ``("unknown", [])``.
+#
+# Keys are lower-cased scientific names (genus + species, no authority)
+# OR an English common name normalised the same way — so the lookup
+# can succeed off either the PlantNet ``scientific_name`` or a user-
+# typed name.
+#
+# ``species_list`` is the list of animal species for which the plant is
+# toxic. Empty list means safe; non-empty implies ``toxic_to_pets``.
+
+_TOXIC_SPECIES_DEFAULT_LIST = ["cats", "dogs"]
+
+
+def _toxic_entry(species_list: list[str]) -> dict:
+    return {
+        "toxic_to_pets": bool(species_list),
+        "species_list": list(species_list),
+    }
+
+
+PET_TOXICITY_DATABASE: dict[str, dict] = {
+    # Common toxic houseplants — ASPCA "Toxic to Dogs / Cats".
+    "dieffenbachia":          _toxic_entry(["cats", "dogs", "horses"]),
+    "dieffenbachia seguine":  _toxic_entry(["cats", "dogs", "horses"]),
+    "philodendron":           _toxic_entry(["cats", "dogs"]),
+    "monstera deliciosa":     _toxic_entry(["cats", "dogs"]),
+    "monstera":               _toxic_entry(["cats", "dogs"]),
+    "epipremnum aureum":      _toxic_entry(["cats", "dogs"]),
+    "pothos":                 _toxic_entry(["cats", "dogs"]),
+    "syngonium podophyllum":  _toxic_entry(["cats", "dogs"]),
+    "syngonium":              _toxic_entry(["cats", "dogs"]),
+    "anthurium":              _toxic_entry(["cats", "dogs"]),
+    "spathiphyllum":          _toxic_entry(["cats", "dogs"]),
+    "peace lily":             _toxic_entry(["cats", "dogs"]),
+    "lily":                   _toxic_entry(["cats"]),
+    "lilium":                 _toxic_entry(["cats"]),
+    "sago palm":              _toxic_entry(["cats", "dogs", "horses"]),
+    "cycas revoluta":         _toxic_entry(["cats", "dogs", "horses"]),
+    "oleander":               _toxic_entry(["cats", "dogs", "horses"]),
+    "nerium oleander":        _toxic_entry(["cats", "dogs", "horses"]),
+    "aloe":                   _toxic_entry(["cats", "dogs"]),
+    "aloe vera":              _toxic_entry(["cats", "dogs"]),
+    "zamioculcas zamiifolia": _toxic_entry(["cats", "dogs"]),
+    "zz plant":               _toxic_entry(["cats", "dogs"]),
+    "ficus benjamina":        _toxic_entry(["cats", "dogs"]),
+    "ficus":                  _toxic_entry(["cats", "dogs"]),
+    "schefflera":             _toxic_entry(["cats", "dogs"]),
+    "dracaena":               _toxic_entry(["cats", "dogs"]),
+    "sansevieria":            _toxic_entry(["cats", "dogs"]),
+    "snake plant":            _toxic_entry(["cats", "dogs"]),
+    "dracaena trifasciata":   _toxic_entry(["cats", "dogs"]),
+    "kalanchoe":              _toxic_entry(["cats", "dogs"]),
+    "english ivy":            _toxic_entry(["cats", "dogs"]),
+    "hedera helix":           _toxic_entry(["cats", "dogs"]),
+
+    # Common non-toxic houseplants.
+    "calathea":               _toxic_entry([]),
+    "calathea ornata":        _toxic_entry([]),
+    "maranta":                _toxic_entry([]),
+    "maranta leuconeura":     _toxic_entry([]),
+    "peperomia":              _toxic_entry([]),
+    "peperomia obtusifolia":  _toxic_entry([]),
+    "pilea peperomioides":    _toxic_entry([]),
+    "pilea":                  _toxic_entry([]),
+    "boston fern":            _toxic_entry([]),
+    "nephrolepis exaltata":   _toxic_entry([]),
+    "fittonia":               _toxic_entry([]),
+    "fittonia albivenis":     _toxic_entry([]),
+    "haworthia":              _toxic_entry([]),
+    "echeveria":              _toxic_entry([]),
+    "african violet":         _toxic_entry([]),
+    "saintpaulia":            _toxic_entry([]),
+    "spider plant":           _toxic_entry([]),
+    "chlorophytum comosum":   _toxic_entry([]),
+    "phalaenopsis":           _toxic_entry([]),
+    "orchid":                 _toxic_entry([]),
+    "areca palm":             _toxic_entry([]),
+    "dypsis lutescens":       _toxic_entry([]),
+}
+
+
+def _normalise_species(value: str | None) -> str:
+    if not value:
+        return ""
+    return " ".join(value.strip().lower().split())
+
+
+def lookup_pet_toxicity(species: str | None) -> dict:
+    """Look up toxicity for a species string (scientific or common).
+
+    Returns ``{"toxic_to_pets": bool, "species_list": [...], "source": str}``.
+    ``source`` is ``"db"`` when the species was matched, ``"unknown"``
+    otherwise — callers can render a "not confirmed" copy instead of
+    falsely reassuring the user that an unknown plant is safe.
+
+    Matching strategy:
+      1. Exact normalised match.
+      2. Genus-level fallback ("ficus elastica" → "ficus") to catch
+         species PlantNet returns that aren't in the DB but whose
+         genus is uniformly toxic / non-toxic.
+    """
+    key = _normalise_species(species)
+    if not key:
+        return {"toxic_to_pets": False, "species_list": [], "source": "unknown"}
+    entry = PET_TOXICITY_DATABASE.get(key)
+    if entry is None:
+        genus = key.split(" ", 1)[0]
+        entry = PET_TOXICITY_DATABASE.get(genus)
+    if entry is None:
+        return {"toxic_to_pets": False, "species_list": [], "source": "unknown"}
+    return {**entry, "source": "db", "matched": key}
