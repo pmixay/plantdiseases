@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Dark-mode overrides for the glass-card elevation tokens. Light
+    mode flattens these to 0dp (see values/dimens.xml) because the
+    drop-shadow read as a halo on the pale-green background; dark
+    mode keeps the frosted-glass depth.
+-->
+<resources>
+    <dimen name="glass_elevation">6dp</dimen>
+    <dimen name="glass_elevation_soft">2dp</dimen>
+</resources>

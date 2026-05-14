@@ -158,7 +158,12 @@ def client():
 
 @pytest.fixture
 def rate_limited_client():
-    """Variant of ``client`` that keeps a 1 req/s rate limit active."""
+    """Variant of ``client`` that keeps a 1 req/s rate limit active.
+
+    Capacity is pinned to 1.0 so the token-bucket reduces to the
+    strict "min_interval between requests" behaviour the rate-limit
+    test asserts. Production keeps the larger default burst.
+    """
     from fastapi.testclient import TestClient
 
     import main as server_main
@@ -167,6 +172,7 @@ def rate_limited_client():
         mw = _find_rate_limit_middleware(server_main.app)
         if mw is not None:
             mw.min_interval = 1.0
+            mw.capacity = 1.0
             with mw._lock:
                 mw._last_request.clear()
         yield c

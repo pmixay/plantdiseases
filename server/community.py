@@ -1,0 +1,526 @@
+"""
+Community scan corpus for "similar scans near you".
+
+Append-only SQLite at ``server/community.db``. Each row captures one
+*shared* scan: the disease verdict, the auto-detected species, the
+user's coarse-region string (city or admin region — never raw GPS),
+the user's per-install pseudo-id, and an optional thumbnail path. The
+store is intentionally write-mostly + retention-bounded — there is no
+update path, only an explicit prune by age.
+
+Threading model: mirrors ``feedback.py``. One short-lived SQLite
+connection per call; a module-level RLock serialises writes so
+concurrent uploads don't race on the cursor.
+
+Privacy posture
+---------------
+* No raw lat/lon ever lands here. The Android client reverse-geocodes
+  the device's *coarse* location to a `City, Country` string and that
+  string is what we store.
+* `client_ip_hash` mirrors the feedback store: peppered SHA-256, 64
+  bits, used for abuse-rate windows only.
+* Thumbnails are 512px JPEGs uploaded by the client. The user can opt
+  out from the Android app; uploads default to ON after the consent
+  acknowledgement on first scan.
+* `delete_for_user(user_pseudo_id)` lets us honour deletion requests
+  without joining against any other table.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import logging
+import sqlite3
+import threading
+import time
+from pathlib import Path
+
+try:
+    from .config import get_str  # type: ignore[import-not-found]
+    from .feedback import hash_client_ip
+except ImportError:
+    from config import get_str
+    from feedback import hash_client_ip
+
+logger = logging.getLogger(__name__)
+
+_DEFAULT_DB_PATH = Path(__file__).resolve().parent / "community.db"
+COMMUNITY_DB_PATH = Path(get_str("COMMUNITY_DB_PATH", str(_DEFAULT_DB_PATH)))
+
+_DEFAULT_THUMB_DIR = Path(__file__).resolve().parent / "community_thumbs"
+COMMUNITY_THUMB_DIR = Path(get_str("COMMUNITY_THUMB_DIR", str(_DEFAULT_THUMB_DIR)))
+
+# Cap thumbnails on disk so a runaway client can't fill the volume.
+COMMUNITY_MAX_THUMB_BYTES = 350 * 1024  # 350 KB — generous for a 512px JPEG
+
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS community_scans (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    scan_id         TEXT    NOT NULL,
+    user_pseudo_id  TEXT    NOT NULL,
+    region          TEXT    NOT NULL,
+    disease         TEXT    NOT NULL,
+    confidence      REAL,
+    species         TEXT,
+    species_score   REAL,
+    thumb_path      TEXT,
+    locale          TEXT,
+    client_ip_hash  TEXT,
+    created_at      INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_community_region   ON community_scans(region, created_at);
+CREATE INDEX IF NOT EXISTS ix_community_user     ON community_scans(user_pseudo_id);
+CREATE INDEX IF NOT EXISTS ix_community_created  ON community_scans(created_at);
+"""
+
+# Forward-only schema migration: every column listed here is added
+# with ``ALTER TABLE … ADD COLUMN`` on init_db if the DB was created
+# under an older schema. Avoids the per-version migration table we
+# don't otherwise need. Mirrors the same trick feedback.py uses.
+_EXTRA_COLUMNS: tuple[tuple[str, str], ...] = (
+    # Top-level bucket. Stored separately from ``region`` so we can
+    # group by country and break down by city without parsing a
+    # composite "City, Country" string at every query.
+    ("country", "TEXT"),
+)
+_EXTRA_INDICES: tuple[str, ...] = (
+    "CREATE INDEX IF NOT EXISTS ix_community_country ON community_scans(country, created_at);",
+    "CREATE INDEX IF NOT EXISTS ix_community_country_region ON community_scans(country, region, created_at);",
+)
+
+_write_lock = threading.RLock()
+_init_lock = threading.Lock()
+_initialised = False
+
+
+def _connect() -> sqlite3.Connection:
+    conn = sqlite3.connect(
+        str(COMMUNITY_DB_PATH),
+        check_same_thread=False,
+        isolation_level=None,
+    )
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    return conn
+
+
+def _existing_columns(conn: sqlite3.Connection) -> set[str]:
+    rows = conn.execute("PRAGMA table_info(community_scans)").fetchall()
+    return {row[1] for row in rows}
+
+
+def init_db() -> None:
+    """Create the schema + thumb dir if missing. Idempotent.
+
+    Runs a forward-only migration step too: any column from
+    ``_EXTRA_COLUMNS`` that's missing on an existing DB is added
+    via ALTER TABLE. The ``country`` column is also backfilled from
+    the legacy ``region`` value for rows that pre-date the
+    hierarchy split — older clients wrote the country into
+    ``region`` directly (after the previous "group-by-country"
+    pass), so copying the value across keeps history searchable.
+    """
+    global _initialised
+    with _init_lock:
+        if _initialised:
+            return
+        COMMUNITY_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        COMMUNITY_THUMB_DIR.mkdir(parents=True, exist_ok=True)
+        with _connect() as conn:
+            conn.executescript(_SCHEMA)
+            present = _existing_columns(conn)
+            added_country = False
+            for name, ddl in _EXTRA_COLUMNS:
+                if name not in present:
+                    conn.execute(
+                        f"ALTER TABLE community_scans ADD COLUMN {name} {ddl}"
+                    )
+                    if name == "country":
+                        added_country = True
+            for index_sql in _EXTRA_INDICES:
+                conn.execute(index_sql)
+            if added_country:
+                # Pre-hierarchy rows stored the country in ``region``.
+                # Copy it across so a country-scoped query still
+                # finds them.
+                conn.execute(
+                    "UPDATE community_scans SET country = region "
+                    "WHERE country IS NULL OR country = ''"
+                )
+        _initialised = True
+        logger.info("Community DB ready at %s", COMMUNITY_DB_PATH)
+
+
+def _save_thumbnail(scan_id: str, image_bytes: bytes) -> str | None:
+    """Persist a 512px JPEG thumbnail under COMMUNITY_THUMB_DIR.
+
+    Returns the relative file path (suitable for storage in the
+    ``thumb_path`` column) or ``None`` when the bytes are missing /
+    oversized. Image decoding is the caller's job — we only validate
+    the byte ceiling and write the bytes straight through.
+    """
+    if not image_bytes:
+        return None
+    if len(image_bytes) > COMMUNITY_MAX_THUMB_BYTES:
+        logger.info(
+            "Community thumb rejected (oversized: %d bytes)", len(image_bytes)
+        )
+        return None
+    # Hash-prefix the filename so two scans with the same scan_id (a
+    # mis-behaved client) can't collide. Truncate to 24 hex chars —
+    # plenty of collision resistance for a per-pseudo-id namespace.
+    digest = hashlib.sha256(image_bytes).hexdigest()[:24]
+    filename = f"{scan_id}_{digest}.jpg"
+    target = COMMUNITY_THUMB_DIR / filename
+    try:
+        target.write_bytes(image_bytes)
+    except OSError as exc:
+        logger.warning("Failed to write community thumb %s: %s", target, exc)
+        return None
+    return filename
+
+
+def record_scan(
+    *,
+    scan_id: str,
+    user_pseudo_id: str,
+    country: str,
+    region: str = "",
+    disease: str,
+    confidence: float | None = None,
+    species: str | None = None,
+    species_score: float | None = None,
+    image_bytes: bytes | None = None,
+    locale: str | None = None,
+    client_ip: str | None = None,
+) -> int:
+    """Append a community-shared scan row. Returns the new row id.
+
+    ``country`` is the canonical top-level bucket (ISO code or name).
+    ``region`` is the optional sub-country locality — typically the
+    city or admin area. Empty region means "country-level only";
+    nearby queries can still target the country bucket alone.
+
+    Thumbnails are saved best-effort: if the bytes are missing or
+    oversized we just skip the file and leave ``thumb_path`` NULL —
+    the row still surfaces in nearby queries, the client just renders
+    a fallback icon.
+    """
+    init_db()
+    now = int(time.time())
+    thumb_path = _save_thumbnail(scan_id, image_bytes) if image_bytes else None
+    ip_hash = hash_client_ip(client_ip)
+    # `region` is NOT NULL on the legacy schema, so we store the empty
+    # string for country-only writes rather than NULL.
+    region_value = region or ""
+    with _write_lock, _connect() as conn:
+        cur = conn.execute(
+            "INSERT INTO community_scans ("
+            "  scan_id, user_pseudo_id, country, region, disease, confidence, "
+            "  species, species_score, thumb_path, locale, "
+            "  client_ip_hash, created_at"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                scan_id,
+                user_pseudo_id,
+                country,
+                region_value,
+                disease,
+                confidence,
+                species,
+                species_score,
+                thumb_path,
+                locale,
+                ip_hash,
+                now,
+            ),
+        )
+        return int(cur.lastrowid or 0)
+
+
+def nearby_scans(
+    *,
+    country: str,
+    region: str | None = None,
+    disease: str | None = None,
+    limit: int = 20,
+    exclude_user_pseudo_id: str | None = None,
+) -> list[dict]:
+    """Return the most recent shared scans within ``country``.
+
+    ``region`` narrows the result set to a sub-country locality
+    (city / admin area) when supplied. Same disease-first ordering as
+    before: rows that match ``disease`` come first, then we top up
+    with other diagnoses in the same bucket until ``limit``.
+    ``exclude_user_pseudo_id`` drops the requesting user's own rows.
+
+    When ``region`` is supplied but produces fewer than ``limit``
+    rows, we widen to the country bucket so a small city still gets
+    a populated carousel. Each row is a compact dict; ``thumb_path``
+    is the filename served by /api/community/thumb/<filename>.
+    """
+    init_db()
+    limit = max(1, min(int(limit), 50))
+
+    def _query(where_extra: str, params: list, take: int) -> list[dict]:
+        sql = (
+            "SELECT scan_id, country, region, disease, confidence, species, "
+            "species_score, thumb_path, locale, created_at "
+            "FROM community_scans WHERE country = ? "
+            + where_extra
+            + " ORDER BY created_at DESC LIMIT ?"
+        )
+        with _connect() as conn:
+            rows = conn.execute(sql, (*params, take)).fetchall()
+        return [_row_to_dict(r) for r in rows]
+
+    base_params: list = [country]
+    base_extra = ""
+    if exclude_user_pseudo_id:
+        base_extra += " AND user_pseudo_id != ?"
+        base_params.append(exclude_user_pseudo_id)
+    region_clean = (region or "").strip()
+    region_extra = base_extra
+    region_params = list(base_params)
+    if region_clean:
+        region_extra += " AND region = ?"
+        region_params.append(region_clean)
+
+    # Disease-matching rows first, narrowed to region when supplied.
+    matched: list[dict] = []
+    fillers: list[dict] = []
+    if disease:
+        matched = _query(
+            region_extra + " AND disease = ?",
+            region_params + [disease],
+            limit,
+        )
+    if len(matched) < limit:
+        seen = {m["scan_id"] for m in matched}
+        # Stage 1: same locality, any disease.
+        if region_clean:
+            for d in _query(region_extra, region_params, limit + len(matched)):
+                if d["scan_id"] in seen:
+                    continue
+                fillers.append(d)
+                seen.add(d["scan_id"])
+                if len(matched) + len(fillers) >= limit:
+                    break
+        # Stage 2: widen to the whole country if we still need more.
+        if len(matched) + len(fillers) < limit:
+            for d in _query(base_extra, base_params, limit + len(matched) + len(fillers)):
+                if d["scan_id"] in seen:
+                    continue
+                fillers.append(d)
+                seen.add(d["scan_id"])
+                if len(matched) + len(fillers) >= limit:
+                    break
+    return matched + fillers
+
+
+def region_summary(country: str, region: str | None = None) -> dict:
+    """Aggregate the corpus for one country (or country+region).
+
+    Used by the Android "near you" card to render a quick "5 scans
+    nearby this week; mostly Powdery Mildew" snippet. When
+    ``region`` is supplied we narrow to that locality; otherwise we
+    summarise the whole country and surface the top 3 cities in a
+    ``top_regions`` block so the client can switch the grouping
+    granularity from the same response.
+    """
+    init_db()
+    now = int(time.time())
+    week_ago = now - 7 * 86_400
+    region_clean = (region or "").strip()
+    with _connect() as conn:
+        if region_clean:
+            total = conn.execute(
+                "SELECT COUNT(*) FROM community_scans "
+                "WHERE country = ? AND region = ?",
+                (country, region_clean),
+            ).fetchone()[0]
+            last_week = conn.execute(
+                "SELECT COUNT(*) FROM community_scans "
+                "WHERE country = ? AND region = ? AND created_at >= ?",
+                (country, region_clean, week_ago),
+            ).fetchone()[0]
+            disease_rows = conn.execute(
+                "SELECT disease, COUNT(*) AS n FROM community_scans "
+                "WHERE country = ? AND region = ? AND created_at >= ? "
+                "GROUP BY disease ORDER BY n DESC LIMIT 3",
+                (country, region_clean, week_ago),
+            ).fetchall()
+            top_region_rows: list[tuple] = []
+        else:
+            total = conn.execute(
+                "SELECT COUNT(*) FROM community_scans WHERE country = ?",
+                (country,),
+            ).fetchone()[0]
+            last_week = conn.execute(
+                "SELECT COUNT(*) FROM community_scans "
+                "WHERE country = ? AND created_at >= ?",
+                (country, week_ago),
+            ).fetchone()[0]
+            disease_rows = conn.execute(
+                "SELECT disease, COUNT(*) AS n FROM community_scans "
+                "WHERE country = ? AND created_at >= ? "
+                "GROUP BY disease ORDER BY n DESC LIMIT 3",
+                (country, week_ago),
+            ).fetchall()
+            top_region_rows = conn.execute(
+                "SELECT region, COUNT(*) AS n FROM community_scans "
+                "WHERE country = ? AND region != '' AND created_at >= ? "
+                "GROUP BY region ORDER BY n DESC LIMIT 3",
+                (country, week_ago),
+            ).fetchall()
+    top_diseases = [
+        {"disease": str(r[0]), "count": int(r[1])} for r in disease_rows
+    ]
+    top_regions = [
+        {"region": str(r[0]), "count": int(r[1])} for r in top_region_rows
+    ]
+    return {
+        "country": country,
+        "region": region_clean or None,
+        "total": int(total),
+        "last_7d": int(last_week),
+        "top_diseases": top_diseases,
+        "top_regions": top_regions,
+    }
+
+
+def delete_for_user(user_pseudo_id: str) -> int:
+    """Erase every row + thumbnail attributed to one install. Returns
+    the number of rows deleted. Honours the Android "clear my
+    contributions" affordance.
+    """
+    init_db()
+    if not user_pseudo_id:
+        return 0
+    with _write_lock, _connect() as conn:
+        # Read the thumb paths first so we can delete the on-disk
+        # files; the DB DELETE itself runs in the same transaction.
+        rows = conn.execute(
+            "SELECT thumb_path FROM community_scans WHERE user_pseudo_id = ?",
+            (user_pseudo_id,),
+        ).fetchall()
+        deleted = conn.execute(
+            "DELETE FROM community_scans WHERE user_pseudo_id = ?",
+            (user_pseudo_id,),
+        ).rowcount
+    for row in rows:
+        thumb = row[0]
+        if not thumb:
+            continue
+        path = COMMUNITY_THUMB_DIR / thumb
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+    return int(deleted or 0)
+
+
+def prune_older_than(days: int) -> int:
+    """Delete rows + thumbnails older than ``days`` days. Returns the
+    number of rows pruned. Intended to be invoked from a daily cron;
+    not wired into the request path.
+    """
+    init_db()
+    if days <= 0:
+        return 0
+    cutoff = int(time.time()) - days * 86_400
+    with _write_lock, _connect() as conn:
+        rows = conn.execute(
+            "SELECT thumb_path FROM community_scans WHERE created_at < ?",
+            (cutoff,),
+        ).fetchall()
+        deleted = conn.execute(
+            "DELETE FROM community_scans WHERE created_at < ?",
+            (cutoff,),
+        ).rowcount
+    for row in rows:
+        thumb = row[0]
+        if not thumb:
+            continue
+        try:
+            (COMMUNITY_THUMB_DIR / thumb).unlink(missing_ok=True)
+        except OSError:
+            pass
+    return int(deleted or 0)
+
+
+def _row_to_dict(row: tuple) -> dict:
+    # Tuple shape comes from the SELECT in ``nearby_scans``:
+    # scan_id, country, region, disease, confidence, species,
+    # species_score, thumb_path, locale, created_at.
+    return {
+        "scan_id": row[0],
+        "country": row[1] or "",
+        "region": row[2] or "",
+        "disease": row[3],
+        "confidence": float(row[4]) if row[4] is not None else None,
+        "species": row[5],
+        "species_score": float(row[6]) if row[6] is not None else None,
+        "thumb_path": row[7],
+        "locale": row[8],
+        "created_at": int(row[9]),
+    }
+
+
+def daily_write_count_for_ip_hash(ip_hash: str | None) -> int:
+    """Community uploads the given IP hash has produced in the last
+    24 hours. The /api/community/scan endpoint uses this to enforce
+    a per-IP daily quota so one bad actor can't flood the corpus.
+    """
+    if not ip_hash:
+        return 0
+    init_db()
+    cutoff = int(time.time()) - 86_400
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM community_scans "
+            "WHERE client_ip_hash = ? AND created_at >= ?",
+            (ip_hash, cutoff),
+        ).fetchone()
+    return int(row[0]) if row else 0
+
+
+def stats_snapshot() -> dict:
+    """Aggregate counters for the /api/metrics surface."""
+    init_db()
+    now = int(time.time())
+    day_ago = now - 86_400
+    week_ago = now - 7 * 86_400
+    with _connect() as conn:
+        total = conn.execute("SELECT COUNT(*) FROM community_scans").fetchone()[0]
+        last_24h = conn.execute(
+            "SELECT COUNT(*) FROM community_scans WHERE created_at >= ?",
+            (day_ago,),
+        ).fetchone()[0]
+        last_7d = conn.execute(
+            "SELECT COUNT(*) FROM community_scans WHERE created_at >= ?",
+            (week_ago,),
+        ).fetchone()[0]
+        region_count = conn.execute(
+            "SELECT COUNT(DISTINCT region) FROM community_scans"
+        ).fetchone()[0]
+    return {
+        "total": int(total),
+        "last_24h": int(last_24h),
+        "last_7d": int(last_7d),
+        "regions": int(region_count),
+    }
+
+
+__all__ = [
+    "COMMUNITY_DB_PATH",
+    "COMMUNITY_THUMB_DIR",
+    "daily_write_count_for_ip_hash",
+    "delete_for_user",
+    "init_db",
+    "nearby_scans",
+    "prune_older_than",
+    "record_scan",
+    "region_summary",
+    "stats_snapshot",
+]

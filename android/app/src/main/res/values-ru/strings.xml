@@ -137,10 +137,6 @@
     <string name="server_offline">Недоступен</string>
     <string name="server_checking">Проверка…</string>
     <string name="save">Сохранить</string>
-    <string name="diagnostics_title">Диагностика сервера</string>
-    <string name="diagnostics_subtitle">Текущее состояние бэкенда анализа</string>
-    <string name="diagnostics_version">Версия сервера</string>
-    <string name="diagnostics_classes">Классов болезней</string>
     <string name="diagnostics_refresh">Обновить</string>
     <string name="diagnostics_value_dash">—</string>
 
@@ -153,18 +149,38 @@
     <!-- Top-3 alternatives -->
     <string name="why_this_diagnosis">Почему этот диагноз?</string>
     <string name="alternatives_subtitle">Уверенность модели по основным кандидатам</string>
-    <!-- About model -->
-    <string name="about_model">О модели</string>
-    <string name="model_architecture">Архитектура</string>
-    <string name="model_params">Параметры</string>
-    <string name="model_classes">Классы</string>
-    <string name="model_pipeline">Пайплайн</string>
-    <string name="model_arch_value">YOLOv8n + EfficientNet-B0</string>
-    <string name="model_params_value">~8M всего</string>
-    <string name="model_classes_value">7 болезней + здоровое + не-растение</string>
-    <string name="model_pipeline_value">Двухэтапный: локализация → классификация</string>
-    <string name="model_description">Этап 1 (YOLOv8n) находит листья в кадре. Этап 2 (EfficientNet-B0 @ 240 px) классифицирует вырезанную область листа в одну из 7 болезней комнатных растений или \"здоровое\", и отбрасывает кадры без растения через отдельный класс not-a-plant и MSP/OOD-фильтр.</string>
 
+    <string name="species_card_title">Определённый вид</string>
+    <string name="species_card_score">PlantNet — %1$d%%</string>
+    <string name="species_card_unavailable">Определение вида не настроено на этом сервере.</string>
+
+    <string name="similar_scans_title">Похожие сканы рядом</string>
+    <string name="similar_scans_subtitle">%1$d сканов рядом с %2$s</string>
+    <string name="similar_scans_subtitle_no_region">Включите приблизительное местоположение, чтобы видеть сканы рядом.</string>
+    <string name="similar_scans_empty">Похожих сканов пока нет — ваш будет первым.</string>
+
+    <string name="community_consent_title">Делиться сканами с сообществом?</string>
+    <string name="community_consent_body">PlantDiseases может загрузить миниатюру скана и диагноз, чтобы помочь другим в вашем регионе. Передаётся только регион (город и страна) — точная геолокация остаётся на устройстве. В любой момент можно выключить в профиле.</string>
+    <string name="community_consent_accept">Делиться сканами</string>
+    <string name="community_consent_decline">Не делиться</string>
+    <string name="community_toggle_title">Делиться сканами с сообществом</string>
+    <string name="community_toggle_subtitle">Регион + диагноз + миниатюра 512px. Можно выключить — всё останется на устройстве.</string>
+    <string name="community_delete_title">Удалить мои данные из сообщества</string>
+    <string name="community_delete_body">Все сообщения сканов будут удалены из общего корпуса. Продолжить?</string>
+    <string name="community_delete_done">Ваши данные удалены из сообщества.</string>
+    <string name="community_delete_failed">Не удалось связаться с сервером. Попробуйте позже.</string>
+
+    <!-- Pre-scan tips sheet -->
+    <string name="scan_tips_title">Перед сканированием</string>
+    <string name="scan_tips_subtitle">Три простых правила — они снимают почти все «странные» диагнозы.</string>
+    <string name="scan_tips_continue">Понятно — сканируем</string>
+    <string name="scan_tip_distance_title">Подберите расстояние</string>
+    <string name="scan_tip_distance_body">Слишком близко — в кадр попадает только пятно. Слишком далеко — лист размером с ноготь. Один лист должен занимать большую часть кадра.</string>
+    <string name="scan_tip_focus_title">Держите камеру неподвижно</string>
+    <string name="scan_tip_focus_body">Коснитесь листа, чтобы зафиксировать автофокус. Избегайте контрового света — лист не должен быть силуэтом на ярком фоне.</string>
+    <string name="scan_tip_single_title">Один вид в кадре</string>
+    <string name="scan_tip_single_body">Два растения в одном кадре сбивают и классификатор, и определение вида. Подойдите ближе или сместите ракурс, чтобы оставить одно растение.</string>
+    <!-- About model -->
     <!-- Rate limit -->
     <string name="server_busy">Сервер занят</string>
     <string name="server_busy_detail">Слишком много запросов. Подождите немного и повторите.</string>
@@ -181,9 +197,14 @@
     <string name="warning_uncertain_healthy">Модель не уверена, что растение здорово. Проверьте альтернативные диагнозы ниже — один из них может подойти.</string>
     <string name="warning_detector_mismatch_title">Детектор видит повреждения</string>
     <string name="warning_detector_mismatch">Детектор нашёл признаки повреждения, но классификатор определил растение как здоровое. Рекомендуем повторить скан с ближнего ракурса при хорошем освещении.</string>
+    <string name="warning_blurry_image_title">Снимок размытый</string>
+    <string name="warning_blurry_image">Не удалось разглядеть лист, чтобы поставить диагноз. Держите камеру неподвижно, дождитесь автофокуса и попробуйте снова.</string>
 
     <!-- How to use (onboarding from profile) -->
-    <string name="how_to_use">Как пользоваться</string>
+    <string name="how_to_use_title">Как пользоваться</string>
+    <string name="how_to_use_step_scan">Поднесите камеру к листу — автоснимок сработает на зелёной рамке.</string>
+    <string name="how_to_use_step_diagnose">PlantVision покажет топ-3 диагнозов с уверенностью модели.</string>
+    <string name="how_to_use_step_care">Откройте результат — лечение и план полива уже внутри.</string>
 
     <!-- Empty states -->
     <string name="first_scan_cta">Сделать первый скан</string>
@@ -344,7 +365,10 @@
     <string name="species_suggest_button">Подобрать вид</string>
     <string name="species_suggest_loading">Спрашиваем PlantNet…</string>
     <string name="species_suggest_unavailable_title">PlantNet недоступен</string>
-    <string name="species_suggest_unavailable_body">Квота закончилась или сервис недоступен. Введите вид вручную.</string>
+    <string name="species_suggest_unavailable_body">Не удалось связаться с сервисом определения вида. Введите вид вручную.</string>
+    <string name="species_suggest_unavailable_no_key">Определение вида ещё не настроено на сервере. Введите вид вручную.</string>
+    <string name="species_suggest_unavailable_rate_limited">Дневная квота PlantNet исчерпана. Попробуйте позже или введите вид вручную.</string>
+    <string name="species_suggest_unavailable_auth_failed">Ключ PlantNet на сервере недействителен. Введите вид вручную.</string>
     <string name="species_suggest_pick">Выбрать этот вид</string>
     <string name="species_suggest_keep_manual">Оставить ввод вручную</string>
     <string name="species_suggest_match">совпадение %d%%</string>
@@ -356,8 +380,37 @@
     <!-- Diagnosis feedback -->
     <string name="feedback_title">Диагноз верный?</string>
     <string name="feedback_subtitle">Ваш ответ поможет улучшить модель.</string>
-    <string name="feedback_yes">Да, всё верно</string>
-    <string name="feedback_no">Нет, неверно</string>
+    <string name="feedback_yes">Верно</string>
+    <string name="feedback_no">Неверно</string>
+
+    <!-- Bottom-sheet correction flow -->
+    <string name="feedback_sheet_title">Помогите нам учиться</string>
+    <string name="feedback_sheet_subtitle">Ваши правки тренируют следующую модель. Мы сохраняем только контекст диагноза — фото не передаётся.</string>
+    <string name="feedback_sheet_we_thought">Мы определили</string>
+    <string name="feedback_sheet_actual_label">Что это на самом деле?</string>
+    <string name="feedback_sheet_reason_label">Почему диагноз неверный?</string>
+    <string name="feedback_sheet_note_hint">Что ещё хотите сказать? (необязательно)</string>
+    <string name="feedback_class_pick_prompt">Выберите один диагноз</string>
+
+    <string name="feedback_class_healthy">Здоровое</string>
+    <string name="feedback_class_powdery_mildew">Мучнистая роса</string>
+    <string name="feedback_class_gray_mold_botrytis">Серая гниль</string>
+    <string name="feedback_class_leaf_spot_fungal">Грибковая пятнистость</string>
+    <string name="feedback_class_bacterial_leaf_spot">Бактериальная пятнистость</string>
+    <string name="feedback_class_viral_disease">Вирусное заболевание</string>
+    <string name="feedback_class_not_a_plant">Не растение</string>
+    <string name="feedback_class_edema">Эдема</string>
+    <string name="feedback_class_sunburn_or_scorch">Солнечный ожог</string>
+    <string name="feedback_class_leaf_scorch_underwatering">Недолив</string>
+    <string name="feedback_class_nutrient_deficiency">Дефицит питания</string>
+    <string name="feedback_class_other">Что-то другое</string>
+
+    <string name="feedback_reason_wrong_class">Неверный диагноз</string>
+    <string name="feedback_reason_low_quality_image">Фото размытое</string>
+    <string name="feedback_reason_occluded">Лист закрыт</string>
+    <string name="feedback_reason_multiple_plants">Несколько растений</string>
+    <string name="feedback_reason_ambiguous_symptoms">Симптомы неясны</string>
+    <string name="feedback_reason_other">Другое</string>
     <string name="feedback_correction_title">Что это на самом деле?</string>
     <string name="feedback_correction_hint">Название болезни (необязательно)</string>
     <string name="feedback_note_hint">Что ещё хотите сказать? (необязательно)</string>

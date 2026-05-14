@@ -11,7 +11,6 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.Uri
 import android.os.Bundle
-import android.os.SystemClock
 import android.util.Size
 import android.view.LayoutInflater
 import android.view.MotionEvent
@@ -35,9 +34,7 @@ import com.plantdiseases.app.databinding.FragmentCameraBinding
 import com.plantdiseases.app.ui.analysis.AnalysisActivity
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -55,15 +52,16 @@ class CameraFragment : Fragment() {
     private lateinit var scaleGestureDetector: ScaleGestureDetector
     private var analyzerExecutor: ExecutorService? = null
 
-    // Auto-capture state. We require the frame analyzer to report
-    // GREEN continuously for AUTO_CAPTURE_HOLD_MS *and* a Laplacian
-    // variance above MIN_SHARPNESS before triggering the shutter.
-    private var greenStableSince: Long = 0L
-    private var autoCaptureInFlight = false
+    // Live framing hint state. The analyzer still publishes a
+    // GREEN/AMBER/RED quality signal so the user gets real-time
+    // "you're too close / too dark / hold steady" feedback, but the
+    // shutter is now explicitly user-triggered — no more auto-fire.
     private var lastQuality: LeafFrameAnalyzer.Quality? = null
+    private var captureInFlight = false
 
     private val PREFS_NAME = "plantdiseases_prefs"
     private val KEY_GRID_OVERLAY = "grid_overlay_enabled"
+    private val KEY_TIPS_SEEN = "scan_tips_seen"
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -103,13 +101,8 @@ class CameraFragment : Fragment() {
     }
 
     private fun setupUI() {
-        binding.btnCapture.setOnClickListener { takePhoto(auto = false) }
+        binding.btnCapture.setOnClickListener { onCaptureClicked() }
         binding.btnGallery.setOnClickListener {
-            // Freeze auto-capture while the gallery picker is alive AND
-            // until either the user returns with an image (we navigate
-            // away) or cancels (we re-arm in onResume).
-            autoCaptureInFlight = true
-            greenStableSince = 0L
             galleryLauncher.launch("image/*")
         }
         binding.btnFlash.setOnClickListener { toggleFlash() }
@@ -302,24 +295,33 @@ class CameraFragment : Fragment() {
     }
 
     private fun onFrameSignal(signal: LeafFrameAnalyzer.FrameSignal) {
-        if (_binding == null || autoCaptureInFlight) return
+        if (_binding == null) return
+        // The analyzer still drives the framing HUD — it tells the
+        // user when they're holding the phone too far, too close, or
+        // in dim light. The shutter itself stays under the user's
+        // finger so two-species shots and accidental fires are gone.
         applyFrameQuality(signal.quality)
+    }
 
-        // Auto-capture: green-stable for AUTO_CAPTURE_HOLD_MS AND
-        // sharpness above MIN_SHARPNESS. The Laplacian-variance proxy
-        // is computed on the green channel of the same downsampled
-        // grid the framing logic uses, so it costs nothing extra.
-        val now = SystemClock.elapsedRealtime()
-        if (signal.quality == LeafFrameAnalyzer.Quality.GREEN) {
-            if (greenStableSince == 0L) greenStableSince = now
-            val held = now - greenStableSince
-            if (held >= AUTO_CAPTURE_HOLD_MS && signal.sharpness >= MIN_SHARPNESS) {
-                autoCaptureInFlight = true
-                takePhoto(auto = true)
+    /** Explicit shutter click. Shows the pre-scan tips sheet the
+     *  first time, otherwise falls straight through to capture. */
+    private fun onCaptureClicked() {
+        val prefs = requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        if (!prefs.getBoolean(KEY_TIPS_SEEN, false)) {
+            ScanTipsSheet.show(parentFragmentManager) {
+                prefs.edit().putBoolean(KEY_TIPS_SEEN, true).apply()
+                continueCaptureFlow()
             }
-        } else {
-            greenStableSince = 0L
+            return
         }
+        continueCaptureFlow()
+    }
+
+    /** Second stage of the shutter flow. Community uploads are
+     *  default-on and the toggle lives in Profile, so we skip
+     *  straight to capture. */
+    private fun continueCaptureFlow() {
+        takePhoto()
     }
 
     private fun applyFrameQuality(quality: LeafFrameAnalyzer.Quality) {
@@ -333,12 +335,11 @@ class CameraFragment : Fragment() {
         binding.tvScanHint.setText(hintRes)
     }
 
-    private fun takePhoto(auto: Boolean) {
-        val imageCapture = imageCapture ?: run {
-            autoCaptureInFlight = false
-            return
-        }
+    private fun takePhoto() {
+        if (captureInFlight) return
+        val imageCapture = imageCapture ?: return
 
+        captureInFlight = true
         binding.btnCapture.isEnabled = false
 
         Haptics.medium(requireContext())
@@ -353,20 +354,18 @@ class CameraFragment : Fragment() {
             object : ImageCapture.OnImageSavedCallback {
                 override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                     binding.btnCapture.isEnabled = true
-                    autoCaptureInFlight = false
-                    greenStableSince = 0L
-                    if (auto) {
-                        // Stable-green + sharp: skip the green-content
-                        // dialog because we already validated both.
-                        navigateToAnalysis(photoFile.absolutePath)
-                    } else {
-                        checkPlantAndNavigate(photoFile.absolutePath)
-                    }
+                    captureInFlight = false
+                    // Server-side blur gate now lives on /api/analyze
+                    // (variance-of-Laplacian floor). We no longer
+                    // double-gate on green-content here — false
+                    // positives on textured fabric hurt UX more than
+                    // they help.
+                    navigateToAnalysis(photoFile.absolutePath)
                 }
 
                 override fun onError(exception: ImageCaptureException) {
                     binding.btnCapture.isEnabled = true
-                    autoCaptureInFlight = false
+                    captureInFlight = false
                     Toast.makeText(
                         requireContext(),
                         getString(R.string.capture_error),
@@ -395,46 +394,17 @@ class CameraFragment : Fragment() {
             .start()
     }
 
-    private fun checkPlantAndNavigate(imagePath: String) {
-        binding.btnCapture.isEnabled = false
-        lifecycleScope.launch {
-            val hasGreen = withContext(Dispatchers.Default) {
-                ImageUtils.hasGreenContent(imagePath)
-            }
-            if (_binding == null) return@launch
-            binding.btnCapture.isEnabled = true
-            if (!hasGreen) {
-                MaterialAlertDialogBuilder(requireContext())
-                    .setTitle(R.string.not_a_plant_title)
-                    .setMessage(R.string.not_a_plant_warning)
-                    .setPositiveButton(R.string.continue_anyway) { _, _ ->
-                        navigateToAnalysis(imagePath)
-                    }
-                    .setNegativeButton(R.string.cancel, null)
-                    .show()
-            } else {
-                navigateToAnalysis(imagePath)
-            }
-        }
-    }
-
     private fun handleGalleryImage(uri: Uri) {
         val file = ImageUtils.copyUriToFile(requireContext(), uri)
         if (file != null) {
-            checkPlantAndNavigate(file.absolutePath)
+            navigateToAnalysis(file.absolutePath)
         } else {
             Toast.makeText(requireContext(), getString(R.string.image_load_error), Toast.LENGTH_SHORT).show()
         }
     }
 
     private fun navigateToAnalysis(imagePath: String) {
-        // Freeze auto-capture the moment we know we're leaving —
-        // startActivity() is async and the analyzer keeps producing
-        // frames until AnalysisActivity is RESUMED. Without this a
-        // gallery-selected image could race with a stale auto-capture
-        // shutter call, double-firing the analysis flow.
-        autoCaptureInFlight = true
-        greenStableSince = 0L
+        captureInFlight = true
         val intent = Intent(requireContext(), AnalysisActivity::class.java).apply {
             putExtra(AnalysisActivity.EXTRA_IMAGE_PATH, imagePath)
         }
@@ -484,11 +454,9 @@ class CameraFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         loadRecentScans()
-        // Wipe stale auto-capture state so coming back from another
-        // screen doesn't fire the shutter while the user is still
-        // re-orienting.
-        greenStableSince = 0L
-        autoCaptureInFlight = false
+        // Re-arm the shutter in case we came back from gallery /
+        // analysis without a fresh photo (cancelled, error, etc.).
+        captureInFlight = false
     }
 
     private fun registerNetworkCallback() {
@@ -532,16 +500,4 @@ class CameraFragment : Fragment() {
         _binding = null
     }
 
-    companion object {
-        // Hold time before auto-capture fires. Bumped from 1.5 s to
-        // 2.0 s so the user has to actually compose the shot — a
-        // glance across a green object no longer triggers it.
-        private const val AUTO_CAPTURE_HOLD_MS = 2000L
-        // Sharpness floor on the global green-channel Laplacian
-        // variance. Hand-held indoor shots of plants score 200+,
-        // severely blurred ones below 60. Raised from 120 to 220 so
-        // smooth-textured greens (a wall, a couch fabric) get
-        // rejected even when the analyzer is otherwise convinced.
-        private const val MIN_SHARPNESS = 220.0
-    }
 }

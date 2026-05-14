@@ -41,6 +41,41 @@ as the legacy environment variable.
 | `openrouter_base_url` | `https://openrouter.ai/api/v1` | Override only for OpenRouter-compatible self-hosted gateways. |
 | `plantnet_api_key` | *(empty)* | PlantNet identify key (optional). |
 
+### 1.1 Third-party API keys
+
+Two optional features depend on external services. The server still
+starts and responds with a graceful "unavailable" payload when a key
+is missing, so deployments without these features stay supported.
+
+**PlantNet — species identification.** Used by the Android *Create
+new plant* flow and the gallery's "identify species" button.
+
+1. Sign up at <https://my.plantnet.org/account/doc> (free tier:
+   500 identifications / day).
+2. Generate an API key from the account page.
+3. Drop it into `server/config.json` under `plantnet_api_key`, OR
+   export `PLANTNET_API_KEY=...` in the environment that starts the
+   server.
+4. Restart the server. `/api/identify` should now return
+   `available: true` with a list of candidate species; without the
+   key it returns `{"available": false, "source": "no_api_key"}` and
+   the Android app shows *"Species identification isn't configured
+   on this server yet"* instead of the candidate list.
+
+The PlantNet client is read in `server/ai_services.py:50` and the
+identify call lives in `identify_species()` lower in the same file.
+
+**OpenRouter — AI plant doctor + care-plan polish.** Used by the
+chat sheet and the optional Markdown summary on care plans.
+
+1. Sign up at <https://openrouter.ai> and create an API key.
+2. Drop it into `server/config.json` under `openrouter_api_key`, or
+   export `OPENROUTER_API_KEY=...`. Optionally pin a model with
+   `openrouter_model` (default `openai/gpt-oss-120b`).
+3. Restart the server. The care-plan endpoint still returns a
+   complete, deterministic plan without a key; only the
+   `summary_md` polish step is skipped.
+
 ---
 
 ## 2. Docker Compose (recommended)

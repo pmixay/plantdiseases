@@ -74,7 +74,79 @@ data class AnalysisResponse(
     @SerializedName("toxic_to_pets") val toxicToPets: Boolean = false,
     @SerializedName("toxic_species_list") val toxicSpeciesList: List<String> = emptyList(),
     @SerializedName("toxicity_source") val toxicitySource: String = "unknown",
+    /** Auto-detected species block from the server-side PlantNet
+     *  fan-out. ``null`` when the upstream failed; ``available=false``
+     *  when PlantNet isn't configured on this server. */
+    @SerializedName("species") val species: SpeciesBlock? = null,
     @SerializedName("elapsed_ms") val elapsedMs: Float? = null
+)
+
+/** Species block carried inside AnalysisResponse. */
+data class SpeciesBlock(
+    @SerializedName("available") val available: Boolean = false,
+    @SerializedName("source") val source: String? = null,
+    @SerializedName("best") val best: SpeciesMatch? = null,
+    @SerializedName("candidates") val candidates: List<SpeciesMatch> = emptyList(),
+)
+
+data class SpeciesMatch(
+    @SerializedName("scientific_name") val scientificName: String? = null,
+    @SerializedName("common_name") val commonName: String? = null,
+    @SerializedName("score") val score: Float = 0f,
+) {
+    /** Human-readable label preferring the common name. */
+    val displayName: String?
+        get() = commonName?.takeIf { it.isNotBlank() }
+            ?: scientificName?.takeIf { it.isNotBlank() }
+}
+
+/**
+ * /api/community/nearby response. Each item describes a scan that
+ * another user in the same region (or the requesting user, on their
+ * own past scans) chose to share. ``thumbPath`` is the filename to
+ * pass to /api/community/thumb/<filename> — never a full URL.
+ */
+data class CommunityScansResponse(
+    @SerializedName("items") val items: List<CommunityScanItem> = emptyList(),
+    @SerializedName("summary") val summary: CommunityRegionSummary? = null,
+)
+
+data class CommunityScanItem(
+    @SerializedName("scan_id") val scanId: String,
+    @SerializedName("country") val country: String = "",
+    @SerializedName("region") val region: String = "",
+    @SerializedName("disease") val disease: String,
+    @SerializedName("confidence") val confidence: Float? = null,
+    @SerializedName("species") val species: String? = null,
+    @SerializedName("species_score") val speciesScore: Float? = null,
+    @SerializedName("thumb_path") val thumbPath: String? = null,
+    @SerializedName("locale") val locale: String? = null,
+    @SerializedName("created_at") val createdAt: Long = 0L,
+)
+
+data class CommunityRegionSummary(
+    @SerializedName("country") val country: String = "",
+    @SerializedName("region") val region: String? = null,
+    @SerializedName("total") val total: Int = 0,
+    @SerializedName("last_7d") val last7d: Int = 0,
+    @SerializedName("top_diseases") val topDiseases: List<CommunityTopDisease> = emptyList(),
+    @SerializedName("top_regions") val topRegions: List<CommunityTopRegion> = emptyList(),
+)
+
+data class CommunityTopDisease(
+    @SerializedName("disease") val disease: String,
+    @SerializedName("count") val count: Int = 0,
+)
+
+data class CommunityTopRegion(
+    @SerializedName("region") val region: String,
+    @SerializedName("count") val count: Int = 0,
+)
+
+/** /api/community/scan response shape. */
+data class CommunityScanUploadResponse(
+    @SerializedName("ok") val ok: Boolean = false,
+    @SerializedName("id") val id: Long = 0,
 )
 
 /** Guide article about plant care */
@@ -202,6 +274,8 @@ data class CarePlanRequest(
     @SerializedName("species") val species: String? = null,
     @SerializedName("light") val light: String = "bright_indirect",
     @SerializedName("locale") val locale: String = "en",
+    /** Optional season override — `null` lets the server pick from today's date. */
+    @SerializedName("season") val season: String? = null,
 )
 
 /**
@@ -223,6 +297,25 @@ data class CarePlanResponse(
     @SerializedName("toxic_to_pets") val toxicToPets: Boolean = false,
     @SerializedName("toxic_species_list") val toxicSpeciesList: List<String> = emptyList(),
     @SerializedName("toxicity_source") val toxicitySource: String = "unknown",
+    /** v2 additive fields — older clients ignore them; new clients
+     *  render a richer card with light bands, treatment checklist,
+     *  checkpoints and red flags. All are optional so the v1 contract
+     *  stays intact for clients on older server versions. */
+    @SerializedName("light_lux_target") val lightLuxTarget: LuxBand? = null,
+    @SerializedName("placement") val placement: String? = null,
+    @SerializedName("acclimation") val acclimation: String? = null,
+    @SerializedName("watering_method") val wateringMethod: String? = null,
+    @SerializedName("soil_mix") val soilMix: String? = null,
+    @SerializedName("fertiliser_npk") val fertiliserNpk: String? = null,
+    @SerializedName("humidity_band") val humidityBand: HumidityBand? = null,
+    @SerializedName("temperature_c") val temperatureC: TemperatureBand? = null,
+    @SerializedName("treatment") val treatment: List<String>? = null,
+    @SerializedName("sanitation") val sanitation: List<String>? = null,
+    @SerializedName("isolation") val isolation: Boolean = false,
+    @SerializedName("red_flags") val redFlags: List<String>? = null,
+    @SerializedName("checkpoints") val checkpoints: List<CarePlanCheckpoint>? = null,
+    @SerializedName("season") val season: String? = null,
+    @SerializedName("season_note") val seasonNote: String? = null,
 ) {
     val wateringDaysInt: Int?
         get() = when (val v = wateringDaysRaw) {
@@ -237,6 +330,26 @@ data class CarePlanResponse(
     val hasSpecies: Boolean
         get() = species.isNotBlank() && !species.equals("unknown", ignoreCase = true)
 }
+
+data class LuxBand(
+    @SerializedName("min") val min: Int = 0,
+    @SerializedName("max") val max: Int = 0,
+)
+
+data class HumidityBand(
+    @SerializedName("min") val min: Int = 0,
+    @SerializedName("max") val max: Int = 0,
+)
+
+data class TemperatureBand(
+    @SerializedName("day") val day: List<Int>? = null,
+    @SerializedName("night") val night: List<Int>? = null,
+)
+
+data class CarePlanCheckpoint(
+    @SerializedName("day") val day: Int = 0,
+    @SerializedName("check") val check: String = "",
+)
 
 /** Server health check response */
 data class HealthResponse(
@@ -285,18 +398,65 @@ data class ProgressionResponse(
 
 /**
  * /api/feedback request body. The server appends every row — there is
- * no update / delete path. `scanId` is a stable client-generated id
- * (typically the local DB row id, stringified).
+ * no update / delete path.
  *
- *  - `correct`         : thumbs-up / thumbs-down on the diagnosis.
- *  - `correctedClass`  : optional — the user-supplied "real" class.
- *  - `note`            : optional free-text (≤ 2000 chars).
+ *  - `scanId`              : opaque, random per-scan UUID (the
+ *                            `client_scan_id` column on the local
+ *                            ScanEntity). Never the sequential DB id.
+ *  - `correct`             : thumbs-up / thumbs-down on the diagnosis.
+ *  - `correctedClass`      : optional — the user-supplied "real" class
+ *                            (must be one of the server's known class
+ *                            keys; the server returns 422 otherwise).
+ *  - `reason`              : optional — one of `wrong_class`,
+ *                            `low_quality_image`, `occluded`,
+ *                            `multiple_plants`, `ambiguous_symptoms`,
+ *                            `other`.
+ *  - `note`                : optional free-text (≤ 2000 chars).
+ *  - `predictedClass`      : the model's top-1 class at the time of
+ *                            the diagnosis. Lets the server compute
+ *                            per-class accuracy server-side.
+ *  - `predictedConfidence` : the confidence the model reported for
+ *                            its top-1 class (0..1).
+ *  - `top3`                : the model's top-3 (class, prob) pairs.
+ *  - `modelVersion`        : the classifier version that produced the
+ *                            scan (e.g. `2.1`).
+ *  - `appVersion`          : BuildConfig version name of this app.
+ *  - `locale`              : the user's UI locale (`en` / `ru`).
+ *  - `platform`            : `android` (constant, but explicit so the
+ *                            server can shard by platform in metrics).
+ *  - `userPseudoId`        : per-install opaque UUID. Lets retraining
+ *                            group feedback rows from one user
+ *                            without knowing who they are.
+ *  - `regionCount`         : number of detector regions in the scan.
+ *  - `primaryRegionIndex`  : which region the classifier used (or -1
+ *                            if none).
+ *  - `feedbackLatencyMs`   : wall-clock ms between scan + feedback.
+ *  - `imageHash`           : optional SHA-256 of the original image.
  */
 data class FeedbackRequest(
     @SerializedName("scan_id") val scanId: String,
     @SerializedName("correct") val correct: Boolean,
     @SerializedName("corrected_class") val correctedClass: String? = null,
+    @SerializedName("reason") val reason: String? = null,
     @SerializedName("note") val note: String? = null,
+    @SerializedName("predicted_class") val predictedClass: String? = null,
+    @SerializedName("predicted_confidence") val predictedConfidence: Float? = null,
+    @SerializedName("top3") val top3: List<TopProb>? = null,
+    @SerializedName("model_version") val modelVersion: String? = null,
+    @SerializedName("app_version") val appVersion: String? = null,
+    @SerializedName("locale") val locale: String? = null,
+    @SerializedName("platform") val platform: String? = null,
+    @SerializedName("user_pseudo_id") val userPseudoId: String? = null,
+    @SerializedName("region_count") val regionCount: Int? = null,
+    @SerializedName("primary_region_index") val primaryRegionIndex: Int? = null,
+    @SerializedName("feedback_latency_ms") val feedbackLatencyMs: Long? = null,
+    @SerializedName("image_hash") val imageHash: String? = null,
+)
+
+/** One entry of the model's top-3 prediction set used by the feedback payload. */
+data class TopProb(
+    @SerializedName("class") val classKey: String,
+    @SerializedName("prob") val prob: Float,
 )
 
 /** /api/feedback response. `id` is the new row id in the server's append-only DB. */

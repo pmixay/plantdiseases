@@ -129,6 +129,14 @@ class AnalysisActivity : AppCompatActivity() {
                     getSharedPreferences("plantdiseases_prefs", MODE_PRIVATE)
                         .edit().putBoolean("new_scan_result", true).apply()
 
+                    // Fire-and-forget community upload — runs on the
+                    // application-scoped supervisor so it survives
+                    // this activity finish()ing to the result screen.
+                    val savedScan = app.scanRepository.getScanById(scanId)
+                    if (savedScan != null) {
+                        app.launchCommunityUpload(savedScan, response)
+                    }
+
                     val intent = Intent(this@AnalysisActivity, ResultActivity::class.java).apply {
                         putExtra(ResultActivity.EXTRA_SCAN_ID, scanId)
                     }

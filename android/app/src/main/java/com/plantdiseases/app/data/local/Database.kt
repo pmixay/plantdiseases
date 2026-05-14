@@ -65,6 +65,12 @@ data class PlantJournalEntity(
 )
 data class ScanEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    // Opaque, randomly-generated client id sent to the server for any
+    // per-scan signal (feedback, future progression-pinning, etc.).
+    // Decoupled from the autoincrement primary key so the server can
+    // never correlate ids across users by counting. Populated at
+    // insertion in ScanRepository.saveScan().
+    @ColumnInfo(name = "client_scan_id") val clientScanId: String = "",
     @ColumnInfo(name = "image_path") val imagePath: String,
     @ColumnInfo(name = "disease_name") val diseaseName: String,
     @ColumnInfo(name = "disease_name_ru") val diseaseNameRu: String,
@@ -97,6 +103,13 @@ data class ScanEntity(
     @ColumnInfo(name = "toxic_to_pets") val toxicToPets: Boolean = false,
     @ColumnInfo(name = "toxic_species_list") val toxicSpeciesList: String? = null, // JSON array
     @ColumnInfo(name = "toxicity_source") val toxicitySource: String = "unknown",
+    // Server-side PlantNet fan-out result. Null when PlantNet wasn't
+    // configured or returned no candidates. Persisted at insertion
+    // time so the result screen can render the species card without a
+    // second network round-trip.
+    @ColumnInfo(name = "species_scientific") val speciesScientific: String? = null,
+    @ColumnInfo(name = "species_common") val speciesCommon: String? = null,
+    @ColumnInfo(name = "species_score") val speciesScore: Float? = null,
 )
 
 // ─── Plant Reminder Entity ──────────────────────────────────────────────────
@@ -248,7 +261,7 @@ interface PlantJournalDao {
         PlantReminderEntity::class,
         ChatMessageEntity::class,
     ],
-    version = 9,
+    version = 12,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -269,8 +282,10 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "plantdiseases_db"
                 )
-                    // No legacy migrations: pre-1.1 schemas were never
-                    // shipped to production.
+                    // App is still pre-1.0 production-wise — every
+                    // pre-shipped schema was a dev build. Destructive
+                    // fallback keeps Database.kt readable and removes
+                    // the per-version migration boilerplate.
                     .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance

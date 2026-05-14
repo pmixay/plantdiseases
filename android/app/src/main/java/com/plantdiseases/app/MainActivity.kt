@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.view.animation.OvershootInterpolator
@@ -20,6 +21,7 @@ import androidx.navigation.ui.setupWithNavController
 import com.plantdiseases.app.databinding.ActivityMainBinding
 import com.plantdiseases.app.ui.onboarding.OnboardingActivity
 import com.plantdiseases.app.util.LocaleHelper
+import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
 
@@ -33,6 +35,21 @@ class MainActivity : AppCompatActivity() {
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { /* no-op; reminders gracefully skip notify() when denied */ }
+
+    private val locationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (!granted) return@registerForActivityResult
+        // Warm the region cache off the main thread so the next scan's
+        // result screen can render the "similar scans near you" card
+        // without a permission round-trip.
+        val app = application as PlantDiseasesApp
+        app.appScope.launch {
+            runCatching {
+                com.plantdiseases.app.util.RegionResolver.resolveRegion(this@MainActivity)
+            }
+        }
+    }
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
@@ -50,6 +67,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         maybeRequestNotificationPermission()
+        maybeRequestLocationPermission()
 
         // Edge-to-edge display
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -141,6 +159,29 @@ class MainActivity : AppCompatActivity() {
         notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
+    /**
+     * Ask for ACCESS_COARSE_LOCATION once. The region is used by the
+     * result screen to render "similar scans near you" — without the
+     * permission that card never appears. Approximate-location is
+     * enough for our use case; we never request fine location.
+     */
+    private fun maybeRequestLocationPermission() {
+        val granted = ContextCompat.checkSelfPermission(
+            this, Manifest.permission.ACCESS_COARSE_LOCATION,
+        ) == PackageManager.PERMISSION_GRANTED
+        if (granted) {
+            // Already granted on a previous launch — warm the cache.
+            val app = application as PlantDiseasesApp
+            app.appScope.launch {
+                runCatching {
+                    com.plantdiseases.app.util.RegionResolver.resolveRegion(this@MainActivity)
+                }
+            }
+            return
+        }
+        locationPermissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
+    }
+
     // Bounce animation on Scan tab icon
     private fun bounceScanIcon() {
         val menuView = binding.bottomNavigation.getChildAt(0) as? android.view.ViewGroup ?: return
@@ -167,6 +208,20 @@ class MainActivity : AppCompatActivity() {
 
     private fun clearGalleryBadge() {
         binding.bottomNavigation.removeBadge(R.id.galleryFragment)
+    }
+
+    /**
+     * Dark-mode / font-scale config changes still come through here
+     * (declared in the manifest) so the activity stays alive — the
+     * existing view tree already inherits the new resources. Locale
+     * changes are *not* in ``configChanges`` because routing them
+     * here used to fight the activity's cached base context and
+     * left half the UI in the old language; we now let the system
+     * recreate the activity on a locale switch and pick up the new
+     * locale via ``attachBaseContext`` → ``LocaleHelper.applyLocale``.
+     */
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
     }
 
     override fun onResume() {

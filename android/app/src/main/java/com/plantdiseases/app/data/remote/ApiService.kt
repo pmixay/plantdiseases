@@ -6,6 +6,8 @@ import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.CarePlanResponse
 import com.plantdiseases.app.data.model.ChatRequest
 import com.plantdiseases.app.data.model.ChatResponse
+import com.plantdiseases.app.data.model.CommunityScansResponse
+import com.plantdiseases.app.data.model.CommunityScanUploadResponse
 import com.plantdiseases.app.data.model.FeedbackRequest
 import com.plantdiseases.app.data.model.FeedbackResponse
 import com.plantdiseases.app.data.model.HealthResponse
@@ -20,11 +22,15 @@ import okhttp3.Response
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
+import okhttp3.RequestBody
+import okhttp3.ResponseBody
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.Multipart
 import retrofit2.http.POST
 import retrofit2.http.Part
+import retrofit2.http.Path
 import retrofit2.http.Query
 import java.io.IOException
 import java.util.concurrent.TimeUnit
@@ -59,6 +65,49 @@ interface ApiService {
 
     @POST("api/feedback")
     suspend fun feedback(@Body request: FeedbackRequest): retrofit2.Response<FeedbackResponse>
+
+    /**
+     * Upload one community-shared scan. ``image`` is optional — when
+     * omitted, the server records the row without a thumbnail and the
+     * carousel renders a fallback icon. All other parts are form
+     * fields validated by ``CommunityScanRequest`` on the server.
+     */
+    @Multipart
+    @POST("api/community/scan")
+    suspend fun communityScanUpload(
+        @Part("scan_id") scanId: RequestBody,
+        @Part("user_pseudo_id") userPseudoId: RequestBody,
+        @Part("country") country: RequestBody,
+        @Part("region") region: RequestBody? = null,
+        @Part("disease") disease: RequestBody,
+        @Part("confidence") confidence: RequestBody? = null,
+        @Part("species") species: RequestBody? = null,
+        @Part("species_score") speciesScore: RequestBody? = null,
+        @Part("locale") locale: RequestBody? = null,
+        @Part image: MultipartBody.Part? = null,
+    ): retrofit2.Response<CommunityScanUploadResponse>
+
+    @GET("api/community/nearby")
+    suspend fun communityScanNearby(
+        @Query("country") country: String,
+        @Query("region") region: String? = null,
+        @Query("disease") disease: String? = null,
+        @Query("limit") limit: Int = 12,
+        @Query("user_pseudo_id") userPseudoId: String? = null,
+    ): retrofit2.Response<CommunityScansResponse>
+
+    /** Download a community thumbnail by filename. The full URL is
+     *  built relative to ``ServerConfig.baseUrl`` — the Android client
+     *  never gets an absolute URL from the server. */
+    @GET("api/community/thumb/{filename}")
+    suspend fun communityScanThumb(
+        @Path("filename") filename: String,
+    ): retrofit2.Response<ResponseBody>
+
+    @DELETE("api/community/user/{user_pseudo_id}")
+    suspend fun communityScanDeleteUser(
+        @Path("user_pseudo_id") userPseudoId: String,
+    ): retrofit2.Response<FeedbackResponse>
 }
 
 /**

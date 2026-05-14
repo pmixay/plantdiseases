@@ -88,6 +88,15 @@ with the deployment distribution and would inflate coverage.
   model, not the FP32 torch one. `conformal_cal` is split 50/50 inside
   the notebook so the reported `empirical_coverage` is honest
   out-of-sample.
+* **Prediction set is advisory until per-class N grows.** The
+  current `temperature_cal` slice has very few samples for
+  `bacterial_leaf_spot` (3), `gray_mold_botrytis` (5),
+  `powdery_mildew` (5) and `not_a_plant` (0); the nominal 90 %
+  coverage isn't statistically meaningful at those sample sizes
+  and the resulting sets average ~3.4 classes. `/api/analyze`
+  emits the set with `advisory=true` so clients render it as
+  "alternative candidates" rather than a coverage guarantee.
+  Raise per-class N to ≥ 50 and re-fit before flipping the flag.
 * Quantisation: **static INT8 (QDQ), 500-image calibration reader on
   `temperature_cal`**. The original design called for `conformal_cal`,
   but the activation ranges the quantiser shapes from the calibration

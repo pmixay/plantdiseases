@@ -9,6 +9,11 @@ services:
     volumes:
       - ./models:/app/models:ro
       - ./logs:/app/logs
+      # Persistent data volume — SQLite stores (feedback + community
+      # corpus) and the community thumbnail directory live here.
+      # Without this mount they sit on the container's writable layer
+      # and every restart wipes every user contribution.
+      - ./data:/app/data
     environment:
       # Restrict origins in production (comma separated list of explicit origins).
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
@@ -16,10 +21,23 @@ services:
       - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
       - FORWARDED_ALLOW_IPS=${FORWARDED_ALLOW_IPS:-127.0.0.1}
       - RATE_LIMIT_RPS=${RATE_LIMIT_RPS:-1.0}
+      - RATE_LIMIT_BURST=${RATE_LIMIT_BURST:-5}
+      # Pin DB + thumbnail paths into the mounted volume so a
+      # ``docker compose down && up`` keeps user data.
+      - FEEDBACK_DB_PATH=${FEEDBACK_DB_PATH:-/app/data/feedback.db}
+      - COMMUNITY_DB_PATH=${COMMUNITY_DB_PATH:-/app/data/community.db}
+      - COMMUNITY_THUMB_DIR=${COMMUNITY_THUMB_DIR:-/app/data/community_thumbs}
+      # Retention windows (days). Daily prune task wipes rows older
+      # than these — adjust per your privacy policy.
+      - FEEDBACK_RETENTION_DAYS=${FEEDBACK_RETENTION_DAYS:-180}
+      - COMMUNITY_RETENTION_DAYS=${COMMUNITY_RETENTION_DAYS:-90}
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health', timeout=2).status == 200 else 1)\""]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 15s
+      # First /api/health probe after deploy used to fail on the
+      # cold model load (~18 s observed). 30 s leaves comfortable
+      # head-room without delaying restart-loop detection.
+      start_period: 30s

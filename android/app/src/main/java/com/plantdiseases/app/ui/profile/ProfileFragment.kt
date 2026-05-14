@@ -2,7 +2,6 @@ package com.plantdiseases.app.ui.profile
 
 import android.content.Intent
 import android.graphics.drawable.GradientDrawable
-import android.os.Build
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -20,8 +19,9 @@ import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.databinding.FragmentProfileBinding
 import com.plantdiseases.app.ui.camera.LightMeterActivity
-import com.plantdiseases.app.ui.onboarding.OnboardingActivity
+import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.TelemetryIds
 import com.plantdiseases.app.util.ThemeHelper
 import kotlinx.coroutines.launch
 
@@ -53,10 +53,9 @@ class ProfileFragment : Fragment() {
                 .show()
         }
 
-        // How to Use — re-open onboarding
-        binding.cardHowToUse.setOnClickListener {
-            startActivity(Intent(requireContext(), OnboardingActivity::class.java))
-        }
+        // Inline "how to use" mini-guide — three step columns, each
+        // tappable as a soft shortcut into the relevant tab.
+        setupHowToSteps()
 
         // Light Meter
         binding.cardLightMeter.setOnClickListener {
@@ -77,17 +76,88 @@ class ProfileFragment : Fragment() {
         }
 
         setupThemeChips()
+        setupCommunityControls()
         loadStats()
         checkServerHealth()
     }
 
-    private fun switchLanguage() {
-        val newLang = LocaleHelper.toggleLanguage(requireContext())
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(newLang))
-        } else {
-            requireActivity().recreate()
+    private fun setupCommunityControls() {
+        val ctx = requireContext()
+        // Community uploads default to ON; the switch only ever
+        // turns them off. The first time a brand-new install reads
+        // CommunityPrefs.uploadsEnabled(...) the underlying pref is
+        // missing and the default branch returns true, so the toggle
+        // renders checked even before any scan.
+        binding.switchCommunity.isChecked = CommunityPrefs.uploadsEnabled(ctx)
+        binding.switchCommunity.setOnCheckedChangeListener { _, isChecked ->
+            CommunityPrefs.setUploadsEnabled(ctx, isChecked)
         }
+        binding.btnDeleteCommunity.setOnClickListener {
+            MaterialAlertDialogBuilder(ctx)
+                .setTitle(R.string.community_delete_title)
+                .setMessage(R.string.community_delete_body)
+                .setNegativeButton(R.string.cancel, null)
+                .setPositiveButton(R.string.delete) { _, _ ->
+                    deleteCommunityContributions()
+                }
+                .show()
+        }
+    }
+
+    private fun deleteCommunityContributions() {
+        val app = requireActivity().application as PlantDiseasesApp
+        val pseudoId = TelemetryIds.userPseudoId(requireContext())
+        lifecycleScope.launch {
+            val result = app.scanRepository.deleteCommunityContributions(pseudoId)
+            val msg = if (result.isSuccess)
+                R.string.community_delete_done
+            else
+                R.string.community_delete_failed
+            Toast.makeText(requireContext(), msg, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun switchLanguage() {
+        // Two-step:
+        //   1) Persist the new language for our own attachBaseContext
+        //      hook — that's what every activity reads on (re)create.
+        //   2) Hand the change to AppCompatDelegate so platform APIs
+        //      like LocaleManager (API 33+) and the AppCompat
+        //      backport (API <33) recreate the activity themselves.
+        //
+        // We deliberately do NOT include locale in MainActivity's
+        // configChanges. Doing so would make onConfigurationChanged
+        // fire while the activity's base context still pointed at
+        // the previous locale — the UI then half-updated and the
+        // toggle "did nothing". Letting the activity recreate keeps
+        // attachBaseContext as the single source of truth for which
+        // locale the resources resolve against.
+        val newLang = LocaleHelper.toggleLanguage(requireContext())
+        AppCompatDelegate.setApplicationLocales(
+            LocaleListCompat.forLanguageTags(newLang),
+        )
+        // Smooth the transition: quick fade-out on the current
+        // window, then recreate(). Activity.recreate itself does not
+        // animate; without this the screen blinks. The new activity
+        // starts opaque (theme default) so the visual is "fade to
+        // dark → cut to new language", which is what users read as
+        // "smooth".
+        val activity = requireActivity()
+        val decor = activity.window.decorView
+        decor.animate()
+            .alpha(0f)
+            .setDuration(160)
+            .withEndAction {
+                // Belt-and-braces: on some OEM builds
+                // setApplicationLocales does not trigger the
+                // recreate before the next frame, which shows up
+                // as "tapping the toggle did nothing". An explicit
+                // recreate() here is idempotent — if AppCompat
+                // already scheduled one we just race with it on
+                // the same activity.
+                activity.recreate()
+            }
+            .start()
     }
 
     private fun setupThemeChips() {
@@ -108,6 +178,15 @@ class ProfileFragment : Fragment() {
         binding.chipThemeSystem.setOnClickListener {
             ThemeHelper.saveTheme(requireContext(), ThemeHelper.THEME_SYSTEM)
         }
+    }
+
+    private fun setupHowToSteps() {
+        // The three step columns are read-only — they were tappable
+        // shortcuts in v1, but users reported that intercepted
+        // bottom-nav swipes and made it hard to switch tabs after
+        // scrolling the profile screen. We now leave them as plain
+        // informational cards; the bottom nav is the canonical way
+        // to switch tabs.
     }
 
     private fun loadStats() {

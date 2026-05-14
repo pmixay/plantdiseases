@@ -93,3 +93,14 @@ def test_oversized_body_rejected_without_full_read(client):
     )
     assert r.status_code == 400
     assert "too large" in r.json()["detail"].lower()
+
+
+def test_rate_limit_burst_capacity_absorbs_short_bursts(client):
+    """``client`` keeps the default capacity (5). Five back-to-back
+    POSTs to /api/feedback must all succeed even though the steady-
+    state rate is 1 req/s — that's what the burst bucket is for.
+    """
+    body = {"scan_id": "burst-scan-001", "correct": True}
+    for i in range(5):
+        r = client.post("/api/feedback", json=body)
+        assert r.status_code in (200, 422), f"burst[{i}] got {r.status_code}: {r.text}"

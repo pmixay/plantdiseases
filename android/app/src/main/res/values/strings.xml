@@ -137,10 +137,6 @@
     <string name="server_offline">Offline</string>
     <string name="server_checking">Checking…</string>
     <string name="save">Save</string>
-    <string name="diagnostics_title">Server Diagnostics</string>
-    <string name="diagnostics_subtitle">Live status of the analysis backend</string>
-    <string name="diagnostics_version">Server version</string>
-    <string name="diagnostics_classes">Disease classes</string>
     <string name="diagnostics_refresh">Refresh</string>
     <string name="diagnostics_value_dash">—</string>
 
@@ -153,18 +149,41 @@
     <!-- Top-3 alternatives -->
     <string name="why_this_diagnosis">Why This Diagnosis?</string>
     <string name="alternatives_subtitle">Model confidence across top candidates</string>
-    <!-- About model -->
-    <string name="about_model">About the Model</string>
-    <string name="model_architecture">Architecture</string>
-    <string name="model_params">Parameters</string>
-    <string name="model_classes">Classes</string>
-    <string name="model_pipeline">Pipeline</string>
-    <string name="model_arch_value">YOLOv8n + EfficientNet-B0</string>
-    <string name="model_params_value">~8M total</string>
-    <string name="model_classes_value">7 diseases + healthy + not-a-plant</string>
-    <string name="model_pipeline_value">Two-stage: locate → classify</string>
-    <string name="model_description">Stage 1 (YOLOv8n) locates every leaf in the photo. Stage 2 (EfficientNet-B0 @ 240 px) classifies the cropped leaf region into one of 7 houseplant diseases or healthy, and rejects frames without a plant via a dedicated not-a-plant class plus an MSP/OOD gate.</string>
 
+    <!-- Auto-detected species card -->
+    <string name="species_card_title">Detected species</string>
+    <string name="species_card_score">PlantNet match: %1$d%%</string>
+    <string name="species_card_unavailable">Species ID isn\'t configured on this server.</string>
+
+    <!-- Similar scans (community corpus) -->
+    <string name="similar_scans_title">Similar scans near you</string>
+    <string name="similar_scans_subtitle">%1$d recent scans near %2$s</string>
+    <string name="similar_scans_subtitle_no_region">Enable approximate location to see scans near you.</string>
+    <string name="similar_scans_empty">No nearby scans yet — your scan will be the first.</string>
+
+    <!-- Community consent + Profile toggle -->
+    <string name="community_consent_title">Share scans with the community?</string>
+    <string name="community_consent_body">PlantDiseases can upload a small thumbnail of each scan, plus the diagnosis, to help others diagnose plants in your region. Only the region (city + country) is shared — never your exact location. You can turn this off any time in Profile.</string>
+    <string name="community_consent_accept">Share my scans</string>
+    <string name="community_consent_decline">Keep my scans private</string>
+    <string name="community_toggle_title">Share scans with the community</string>
+    <string name="community_toggle_subtitle">Region + diagnosis + 512px thumbnail. Off keeps everything on-device.</string>
+    <string name="community_delete_title">Delete my contributions</string>
+    <string name="community_delete_body">This removes every scan you\'ve shared so far from the community corpus. Continue?</string>
+    <string name="community_delete_done">Your community contributions were removed.</string>
+    <string name="community_delete_failed">Couldn\'t reach the server. Try again later.</string>
+
+    <!-- Pre-scan tips sheet (replaces auto-capture). -->
+    <string name="scan_tips_title">Before you scan</string>
+    <string name="scan_tips_subtitle">Three quick framing rules — they fix almost every "weird diagnosis".</string>
+    <string name="scan_tips_continue">Got it — let\'s scan</string>
+    <string name="scan_tip_distance_title">Get the distance right</string>
+    <string name="scan_tip_distance_body">Too close: only a tiny patch is in frame. Too far: the leaf is a thumbnail. Aim so one leaf fills most of the frame.</string>
+    <string name="scan_tip_focus_title">Hold steady, wait for focus</string>
+    <string name="scan_tip_focus_body">Tap the leaf to lock autofocus. Avoid back-lit shots — the leaf should not be a dark silhouette against a bright window.</string>
+    <string name="scan_tip_single_title">One species per frame</string>
+    <string name="scan_tip_single_body">Mixing two plants in one photo confuses both the classifier and the species detector. Crop or step back to isolate a single plant.</string>
+    <!-- About model -->
     <!-- Rate limit -->
     <string name="server_busy">Server Busy</string>
     <string name="server_busy_detail">Too many requests. Please wait a moment and try again.</string>
@@ -181,9 +200,18 @@
     <string name="warning_uncertain_healthy">The model is not confident that the plant is healthy. Please check the alternative diagnoses below — they may apply.</string>
     <string name="warning_detector_mismatch_title">Detector sees damage</string>
     <string name="warning_detector_mismatch">The detector spotted leaf damage, but the classifier decided the plant is healthy. Try re-scanning from a closer, better-lit angle.</string>
+    <string name="warning_blurry_image_title">Photo is too blurry</string>
+    <string name="warning_blurry_image">We couldn\'t read the leaf clearly enough to trust a diagnosis. Hold the phone steady, wait for autofocus to lock, and try again.</string>
 
     <!-- How to use (onboarding from profile) -->
-    <string name="how_to_use">How to Use</string>
+    <string name="how_to_use_title">How to Use</string>
+    <!-- Three-step inline mini-guide on the profile screen. The
+         titles map 1:1 to the onboarding flow so re-opening that flow
+         feels familiar; the bodies are tight enough to fit in the
+         narrow step columns without wrapping past two lines. -->
+    <string name="how_to_use_step_scan">Frame a single leaf — auto-capture fires when the frame turns green.</string>
+    <string name="how_to_use_step_diagnose">PlantVision shows the top-3 disease candidates with confidence.</string>
+    <string name="how_to_use_step_care">Tap a result for treatment + a tailored watering plan.</string>
 
     <!-- Empty states -->
     <string name="first_scan_cta">Take First Scan</string>
@@ -340,7 +368,13 @@
     <string name="species_suggest_button">Suggest species</string>
     <string name="species_suggest_loading">Asking PlantNet…</string>
     <string name="species_suggest_unavailable_title">PlantNet unavailable</string>
-    <string name="species_suggest_unavailable_body">Quota or upstream issue. Add the species manually for now.</string>
+    <!-- Per-source PlantNet failure messages. See ai_services.py
+         `identify_species` for the source enum (`no_api_key`,
+         `auth_failed`, `rate_limited`, `error`). -->
+    <string name="species_suggest_unavailable_body">Couldn\'t reach the species service. Add the species manually for now.</string>
+    <string name="species_suggest_unavailable_no_key">Species identification isn\'t configured on this server yet. Add the species manually.</string>
+    <string name="species_suggest_unavailable_rate_limited">PlantNet\'s daily quota is exhausted. Try again later, or add the species manually.</string>
+    <string name="species_suggest_unavailable_auth_failed">The PlantNet API key on the server is invalid. Add the species manually.</string>
     <string name="species_suggest_pick">Use this species</string>
     <string name="species_suggest_keep_manual">Keep manual entry</string>
     <string name="species_suggest_match">%d%% match</string>
@@ -352,8 +386,8 @@
     <!-- Diagnosis feedback (/api/feedback) -->
     <string name="feedback_title">Was this diagnosis correct?</string>
     <string name="feedback_subtitle">Your answer trains the next model release.</string>
-    <string name="feedback_yes">Yes, looks right</string>
-    <string name="feedback_no">No, it\'s wrong</string>
+    <string name="feedback_yes">Correct</string>
+    <string name="feedback_no">Wrong</string>
     <string name="feedback_correction_title">What is it actually?</string>
     <string name="feedback_correction_hint">Disease name (optional)</string>
     <string name="feedback_note_hint">Anything else you want to tell us? (optional)</string>
@@ -361,6 +395,39 @@
     <string name="feedback_sent">Thanks — your feedback was saved.</string>
     <string name="feedback_rate_limited">Slow down — try again in a moment.</string>
     <string name="feedback_failed">Could not send feedback. Try again later.</string>
+
+    <!-- Feedback correction bottom-sheet. Class chips map 1:1 to the
+         server's known class keys; reason chips map to the
+         _FEEDBACK_ALLOWED_REASONS set on the server. -->
+    <string name="feedback_sheet_title">Help us learn</string>
+    <string name="feedback_sheet_subtitle">Your correction trains the next model release. We only store the diagnosis context, never the photo.</string>
+    <string name="feedback_sheet_we_thought">We diagnosed</string>
+    <string name="feedback_sheet_actual_label">What is it actually?</string>
+    <string name="feedback_sheet_reason_label">Why was it wrong?</string>
+    <string name="feedback_sheet_note_hint">Anything else? (optional)</string>
+    <string name="feedback_class_pick_prompt">Tap one diagnosis</string>
+
+    <!-- Class chips — match server class keys 1:1. -->
+    <string name="feedback_class_healthy">Healthy</string>
+    <string name="feedback_class_powdery_mildew">Powdery Mildew</string>
+    <string name="feedback_class_gray_mold_botrytis">Gray Mold</string>
+    <string name="feedback_class_leaf_spot_fungal">Fungal Leaf Spot</string>
+    <string name="feedback_class_bacterial_leaf_spot">Bacterial Leaf Spot</string>
+    <string name="feedback_class_viral_disease">Viral Disease</string>
+    <string name="feedback_class_not_a_plant">Not a Plant</string>
+    <string name="feedback_class_edema">Edema</string>
+    <string name="feedback_class_sunburn_or_scorch">Sunburn</string>
+    <string name="feedback_class_leaf_scorch_underwatering">Underwatered</string>
+    <string name="feedback_class_nutrient_deficiency">Nutrient Deficiency</string>
+    <string name="feedback_class_other">Something else</string>
+
+    <!-- Reason chips — match server reason keys 1:1. -->
+    <string name="feedback_reason_wrong_class">Wrong diagnosis</string>
+    <string name="feedback_reason_low_quality_image">Photo too blurry</string>
+    <string name="feedback_reason_occluded">Leaf covered</string>
+    <string name="feedback_reason_multiple_plants">Multiple plants</string>
+    <string name="feedback_reason_ambiguous_symptoms">Symptoms unclear</string>
+    <string name="feedback_reason_other">Other</string>
 
     <!-- Pet-toxicity surface -->
     <string name="toxicity_toxic_title">Toxic to pets</string>

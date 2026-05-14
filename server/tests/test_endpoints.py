@@ -168,3 +168,141 @@ def test_analyze_response_contract(client, png_bytes):
         "is_diseased", "detector_confidence", "regions", "primary_region",
     }
     assert isinstance(body["detection"]["regions"], list)
+
+
+# ── Species fan-out ─────────────────────────────────────────────────
+
+
+def test_analyze_response_includes_species_block(client, png_bytes, monkeypatch):
+    """Analyze always returns a ``species`` field, even when PlantNet
+    is not configured. The block surfaces ``available: false`` so the
+    client can render a "species unknown" hint instead of a 404 hop."""
+    import main as server_main
+
+    # Replace identify_species with a deterministic offline fake so we
+    # don't hit the network from CI. The fake mirrors the no_api_key
+    # branch of the real function.
+    monkeypatch.setattr(
+        server_main, "identify_species",
+        lambda *_args, **_kw: {
+            "available": False, "results": [], "source": "no_api_key",
+        },
+    )
+    r = client.post(
+        "/api/analyze",
+        files={"image": ("leaf.png", png_bytes, "image/png")},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert "species" in body, "analyze must always surface a species block"
+    species = body["species"]
+    assert species["available"] is False
+    assert species["source"] == "no_api_key"
+    assert species["best"] is None
+
+
+def test_analyze_species_block_includes_best_match(client, png_bytes, monkeypatch):
+    """When PlantNet returns candidates, the analyze response copies
+    the top match into ``species.best`` and the next two into
+    ``species.candidates``."""
+    import main as server_main
+
+    monkeypatch.setattr(
+        server_main, "identify_species",
+        lambda *_args, **_kw: {
+            "available": True, "source": "plantnet",
+            "results": [
+                {"scientific_name": "Begonia rex", "common_names": ["Painted-Leaf Begonia"], "score": 0.82},
+                {"scientific_name": "Begonia maculata", "common_names": ["Polka Dot Begonia"], "score": 0.10},
+                {"scientific_name": "Pilea peperomioides", "common_names": ["Chinese Money"], "score": 0.04},
+            ],
+        },
+    )
+    r = client.post(
+        "/api/analyze",
+        files={"image": ("leaf.png", png_bytes, "image/png")},
+    )
+    body = r.json()
+    species = body["species"]
+    assert species["available"] is True
+    assert species["best"]["scientific_name"] == "Begonia rex"
+    assert species["best"]["common_name"] == "Painted-Leaf Begonia"
+    assert len(species["candidates"]) == 3
+
+
+def test_analyze_species_block_survives_plantnet_failure(client, png_bytes, monkeypatch):
+    """If identify_species raises, the analyze response still
+    completes — ``species`` lands as ``None`` rather than 500-ing the
+    whole request.
+    """
+    import main as server_main
+
+    def explode(*_a, **_kw):
+        raise RuntimeError("upstream is on fire")
+
+    monkeypatch.setattr(server_main, "identify_species", explode)
+    r = client.post(
+        "/api/analyze",
+        files={"image": ("leaf.png", png_bytes, "image/png")},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["species"] is None
+
+
+def test_identify_endpoint_passes_organ_as_keyword(client, png_bytes, monkeypatch):
+    """``identify_species`` declares ``organ`` keyword-only. The
+    endpoint must call it with a keyword arg — otherwise the call
+    landed via ``run_in_executor(..., organ_value)`` raises
+    ``TypeError`` and the route 500s.
+    """
+    import main as server_main
+
+    captured: dict[str, object] = {}
+
+    def fake_identify(image_bytes, *, organ="leaf"):
+        captured["organ"] = organ
+        captured["bytes_len"] = len(image_bytes)
+        return {"available": False, "results": [], "source": "no_api_key"}
+
+    monkeypatch.setattr(server_main, "identify_species", fake_identify)
+    r = client.post(
+        "/api/identify",
+        files={"image": ("leaf.png", png_bytes, "image/png")},
+        params={"organ": "flower"},
+    )
+    assert r.status_code == 200, r.text
+    assert captured["organ"] == "flower"
+    assert captured["bytes_len"] == len(png_bytes)
+    assert r.json()["organ"] == "flower"
+
+
+def test_analyze_response_carries_issued_scan_id(client, png_bytes):
+    """/api/analyze must mint a scan_id, persist it in the issued
+    log, and surface it in the response. The feedback gate later
+    consults that table to bind feedback rows to real scans."""
+    import feedback as fb
+
+    r = client.post(
+        "/api/analyze",
+        files={"image": ("leaf.png", png_bytes, "image/png")},
+    )
+    assert r.status_code == 200, r.text
+    scan_id = r.json().get("scan_id")
+    assert isinstance(scan_id, str) and len(scan_id) >= 16
+    assert fb.is_scan_id_issued(scan_id)
+
+
+def test_feedback_enforce_mode_rejects_unissued_scan_id(client, png_bytes, monkeypatch):
+    """With ENFORCE_ISSUED_SCAN_IDS flipped on, a feedback POST whose
+    scan_id wasn't seen on /api/analyze must 422 instead of being
+    quietly persisted. Default flow stays "log only" (covered by the
+    rest of the feedback test suite)."""
+    import main as server_main
+
+    monkeypatch.setattr(server_main, "ENFORCE_ISSUED_SCAN_IDS", True)
+    r = client.post(
+        "/api/feedback",
+        json={"scan_id": "neverissuedXYZ", "correct": True},
+    )
+    assert r.status_code == 422, r.text
+    assert "scan_id" in r.json()["detail"].lower()

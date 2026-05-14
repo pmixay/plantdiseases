@@ -36,6 +36,7 @@ import com.google.android.material.chip.ChipGroup
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.plantdiseases.app.R
 import com.plantdiseases.app.util.LocaleHelper
+import kotlin.math.ln
 import kotlin.math.pow
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -82,8 +83,22 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
             SpeciesInfo(R.string.light_species_fern, 200, 1000),
             SpeciesInfo(R.string.light_species_vegetable, 5000, 10000),
         )
-        private const val MAX_LUX_DISPLAY = 100_000f
+        // Houseplant-relevant range. Above 30k lux you're outdoors in
+        // direct sun and the species bands stop being useful — capping
+        // the gauge here gives indoor readings (10..2000 lux) most of
+        // the bar instead of huddling against the left edge.
+        private const val MAX_LUX_DISPLAY = 30_000f
+        // Log-scale base for the adaptive gauge. Indoor lighting spans
+        // ~3 orders of magnitude (10..10k); mapping it linearly into a
+        // 0..30k bar wastes 90% of the bar on outdoor brightness no
+        // houseplant ever sees. ln-space gives every order of magnitude
+        // equal real estate so the bar visibly responds to lamp / blind
+        // changes that matter for plant care.
+        private const val PROGRESS_RESOLUTION = 1000
         private const val SMOOTHING_ALPHA = 0.1f
+        // Major ticks (lux) shown under the gauge. Ends pinned to 1 and
+        // MAX_LUX_DISPLAY so the labels line up with the bar extents.
+        private val SCALE_TICKS = intArrayOf(1, 10, 100, 1_000, 10_000, 30_000)
     }
 
     override fun attachBaseContext(newBase: Context) {
@@ -216,9 +231,11 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
         }
         col.addView(tvStatus)
 
-        // Progress bar: linear scale 0..100000 lux
+        // Progress bar: adaptive log scale (see luxToProgress). Indoor
+        // levels (10..2000 lux) sit comfortably in the middle of the
+        // bar instead of hugging the left edge.
         progressLight = LinearProgressIndicator(this).apply {
-            max = 1000
+            max = PROGRESS_RESOLUTION
             progress = 0
             trackCornerRadius = 6.dp()
             trackThickness = 12.dp()
@@ -231,30 +248,60 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
         }
         col.addView(progressLight)
 
-        val scaleRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
+        // Tick row: each tick label is laid out at the same log
+        // position the bar uses, so reading the label off the bar
+        // gives the right lux value.
+        col.addView(buildScaleRow())
+
+        card.addView(col)
+        return card
+    }
+
+    private fun buildScaleRow(): View {
+        val row = FrameLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             ).apply { topMargin = 4.dp() }
         }
-        scaleRow.addView(TextView(this).apply {
-            text = "0"
-            textSize = 10f
-            setTextColor(getColor(R.color.on_surface_secondary))
-        })
-        scaleRow.addView(View(this).apply {
-            layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
-        })
-        scaleRow.addView(TextView(this).apply {
-            text = "100k lux"
-            textSize = 10f
-            setTextColor(getColor(R.color.on_surface_secondary))
-        })
-        col.addView(scaleRow)
+        // We can't know the exact bar width here, so each tick is
+        // positioned by horizontal bias via a LayoutParams trick:
+        // assign each label a weight inside a LinearLayout that mirrors
+        // the bar's log spacing. The first label is left-aligned, the
+        // last right-aligned, and middle labels get translated via
+        // post-layout positioning relative to the bar width.
+        val bar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+            )
+        }
+        SCALE_TICKS.forEachIndexed { idx, lux ->
+            val pos = luxToFraction(lux.toFloat())
+            val prevPos = if (idx == 0) 0f else luxToFraction(SCALE_TICKS[idx - 1].toFloat())
+            // The gap before each label is proportional to log-distance
+            // from the previous tick. Using weights gives us a
+            // resolution-independent placement.
+            val gapWeight = (pos - prevPos).coerceAtLeast(0f)
+            if (gapWeight > 0f) {
+                bar.addView(View(this).apply {
+                    layoutParams = LinearLayout.LayoutParams(0, 1, gapWeight)
+                })
+            }
+            bar.addView(TextView(this).apply {
+                text = formatLuxLabel(lux)
+                textSize = 10f
+                setTextColor(getColor(R.color.on_surface_secondary))
+            })
+        }
+        row.addView(bar)
+        return row
+    }
 
-        card.addView(col)
-        return card
+    private fun formatLuxLabel(lux: Int): String = when {
+        lux >= 1000 -> "${lux / 1000}k"
+        else -> lux.toString()
     }
 
     private fun buildSpeciesSection(): View {
@@ -506,8 +553,27 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
     }
 
     private fun estimateLuxFromLuma(luma: Float): Float {
+        // 8-bit luma is not a calibrated lux signal — the camera applies
+        // its own auto-exposure compensation, so the same scene at very
+        // different brightness levels can yield similar luma values.
+        // We map the normalized luma through a 10^x curve that covers
+        // the 5..30k useful range, then clamp to the displayable cap
+        // so the bar and the number can't disagree.
         val normalized = (luma / 255f).coerceIn(0.02f, 1f)
-        return (10f.pow(normalized * 4.7f) - 1f).coerceIn(5f, 50_000f)
+        return (10f.pow(normalized * 4.5f) - 1f).coerceIn(5f, MAX_LUX_DISPLAY)
+    }
+
+    /**
+     * Log-scaled position in [0, 1] for the given lux reading. ln(1+x)
+     * lets 0 lux map to 0 cleanly without singularities, and gives
+     * each decade of light (10x, 100x, 1000x) roughly equal width on
+     * the bar — which matches how plants perceive light.
+     */
+    private fun luxToFraction(lux: Float): Float {
+        val clamped = lux.coerceIn(0f, MAX_LUX_DISPLAY)
+        val numerator = ln(1f + clamped)
+        val denominator = ln(1f + MAX_LUX_DISPLAY)
+        return (numerator / denominator).coerceIn(0f, 1f)
     }
 
     private fun updateDisplay(lux: Float) {
@@ -522,13 +588,8 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
         tvStatus.text = statusText
         tvStatus.setTextColor(statusColor)
 
-        // Linear progress so the bar position matches the labelled scale
-        // (0 → empty, 100k lux → full). Indoor readings sit toward the
-        // left third, which is the truthful picture of how much usable
-        // light a houseplant gets.
-        val linearProgress = (lux.coerceAtLeast(0f) / MAX_LUX_DISPLAY * 1000)
-            .toInt().coerceIn(0, 1000)
-        progressLight.progress = linearProgress
+        progressLight.progress = (luxToFraction(lux) * PROGRESS_RESOLUTION)
+            .toInt().coerceIn(0, PROGRESS_RESOLUTION)
 
         updateSpeciesDisplay()
         updateTip(lux)

@@ -42,6 +42,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
+import numpy as np
 from PIL import Image
 
 try:
@@ -71,6 +72,15 @@ HEALTHY_MARGIN = 0.10
 # the strongest disease has non-trivial mass we still surface an
 # ``uncertain_healthy`` warning + the suspected disease in top_k.
 HEALTHY_DISEASE_FLOOR = 0.18
+
+# Hard reroute — when top-1 = healthy but the confidence is below this
+# floor (typical example: 0.29 healthy / 0.24 leaf_spot_fungal / 0.21
+# gray_mold), the model is essentially guessing. We swap the verdict to
+# the strongest disease class so the UI doesn't reassure the user about
+# an obviously-unhealthy plant. Companion rule: if there's no disease
+# alternative meeting ``HEALTHY_DISEASE_FLOOR`` we keep ``healthy`` but
+# attach the ``low_confidence`` warning so the UI demotes the verdict.
+HEALTHY_REROUTE_FLOOR = 0.50
 
 # Disease-side gate. If averaged top-1 is a disease but its softmax
 # mass is below this threshold, we downgrade to healthy.
@@ -119,6 +129,23 @@ SEVERITY_MARGIN_LOW = 0.20
 SEVERITY_MARGIN_HIGH = 0.45
 
 TOP_K_ALTERNATIVES = 3
+
+# ── Blur gate ─────────────────────────────────────────────────────────
+# Variance-of-Laplacian score below this number means the photo is too
+# unfocused to trust the classifier head on. Plant-coloured blur passes
+# the YOLO recall floor and the OOD AND-gate (MaxLogit + det_conf both
+# need to be low), so without a hard blur check the pipeline cheerfully
+# returns "healthy" for a soft-focus brown smear. The 50.0 floor was
+# picked from a calibration set of real handheld phone shots: in-focus
+# leaves score 200..1500, an obviously-blurry shot scores 5..30. The
+# gate is permissive on purpose — sharp-but-low-light photos still
+# pass — and outright rejects only the unrecoverable cases.
+BLUR_LAPLACIAN_FLOOR = 50.0
+# The score is computed on a downscaled grayscale copy so we don't pay
+# the cost of a full-resolution convolution per request. 320 px is
+# small enough that the Laplacian costs <2 ms on CPU and large enough
+# that real focus differences stay separable from sensor noise.
+BLUR_DOWNSCALE = 320
 
 
 def _load_temperature(classifier_path: Path | None) -> float:
@@ -170,6 +197,68 @@ def _resolve_max_logit_floor(meta: dict) -> float:
     except (TypeError, ValueError):
         return NAP_MAX_LOGIT_FLOOR_DEFAULT
     return max(0.0, floor)
+
+
+# ── Blur detection ───────────────────────────────────────────────────
+
+# 3x3 Laplacian kernel (4-neighbour discrete approximation of the
+# second spatial derivative). Convolving an image with this kernel and
+# taking the variance of the result is the canonical, training-free
+# focus metric (Pertuz 2013); sharp images produce a wide spread of
+# edge responses, smooth/blurry images produce a tight spread.
+_LAPLACIAN_KERNEL = np.array(
+    [
+        [0, 1, 0],
+        [1, -4, 1],
+        [0, 1, 0],
+    ],
+    dtype=np.float32,
+)
+
+
+def _variance_of_laplacian(img: Image.Image, max_side: int = BLUR_DOWNSCALE) -> float:
+    """Return the variance-of-Laplacian score for ``img``.
+
+    The image is converted to grayscale and downscaled to ``max_side``
+    on the long edge first — the absolute score scales with resolution,
+    so the threshold needs a stable input size to compare against. A
+    plain numpy ``np.gradient``-style 2D convolution would cost ~30 ms
+    on a 3 MP frame; the downscale-then-conv path is ~1.5 ms.
+    """
+    w, h = img.size
+    if w <= 0 or h <= 0:
+        return 0.0
+    scale = max_side / float(max(w, h))
+    if scale < 1.0:
+        new_size = (max(1, int(w * scale)), max(1, int(h * scale)))
+        scaled = img.resize(new_size, Image.BILINEAR)
+    else:
+        scaled = img
+    gray = np.asarray(scaled.convert("L"), dtype=np.float32)
+    if gray.size == 0:
+        return 0.0
+    # 2-D discrete convolution via separable shifts (faster than
+    # scipy.signal.convolve2d for a 3×3 kernel and avoids a SciPy dep).
+    centre = gray * _LAPLACIAN_KERNEL[1, 1]
+    up = np.roll(gray, -1, axis=0) * _LAPLACIAN_KERNEL[0, 1]
+    down = np.roll(gray, 1, axis=0) * _LAPLACIAN_KERNEL[2, 1]
+    left = np.roll(gray, -1, axis=1) * _LAPLACIAN_KERNEL[1, 0]
+    right = np.roll(gray, 1, axis=1) * _LAPLACIAN_KERNEL[1, 2]
+    lap = centre + up + down + left + right
+    # Drop the 1-pixel ring where np.roll wrapped the image around.
+    inner = lap[1:-1, 1:-1]
+    if inner.size == 0:
+        return 0.0
+    return float(inner.var())
+
+
+def is_image_too_blurry(img: Image.Image, floor: float = BLUR_LAPLACIAN_FLOOR) -> bool:
+    """True when the variance-of-Laplacian is below ``floor``.
+
+    Exposed at module level so the FastAPI layer (and tests) can call
+    it without instantiating the full pipeline.
+    """
+    return _variance_of_laplacian(img) < floor
 
 
 def _apply_temperature(probs: dict[str, float], T: float) -> dict[str, float]:
@@ -224,6 +313,20 @@ class PlantDiseasePipeline:
 
     def analyze(self, img: Image.Image) -> dict:
         t0 = time.perf_counter()
+
+        # Blur gate. The classifier was trained on in-focus phone shots
+        # and silently hallucinates a plant verdict on soft-focus brown
+        # smears — neither the YOLO recall floor nor the
+        # detector/MaxLogit OOD AND-gate catches that case. Short-circuit
+        # early so the user gets actionable "retake the photo" feedback
+        # instead of a confident wrong diagnosis.
+        focus_score = _variance_of_laplacian(img)
+        if focus_score < BLUR_LAPLACIAN_FLOOR:
+            logger.info(
+                "Blur gate triggered: var-of-Laplacian=%.1f < %.1f → not_a_plant",
+                focus_score, BLUR_LAPLACIAN_FLOOR,
+            )
+            return self._too_blurry_response(img, focus_score, t0)
 
         stage1 = self.detector.detect(img)
         detections = stage1["detections"]
@@ -285,6 +388,63 @@ class PlantDiseasePipeline:
         )
 
     # ── analysis helpers ─────────────────────────────────────────────
+
+    def _too_blurry_response(
+        self,
+        img: Image.Image,
+        focus_score: float,
+        t0: float,
+    ) -> dict:
+        """Build a synthetic ``not_a_plant`` verdict for unfocused input.
+
+        We don't run the classifier when the blur gate fires — there is
+        no salvageable signal in the crop. The probs dict assigns the
+        full mass to ``not_a_plant`` so downstream metrics, severity
+        scoring and toxicity routing all behave as if the classifier
+        emitted that verdict directly. A ``blurry_image`` warning is
+        added so the client can render a "retake the photo" hint
+        instead of a generic NAP message.
+        """
+        probs = {n: 0.0 for n in self.classifier.CLASS_NAMES}
+        if "not_a_plant" in probs:
+            probs["not_a_plant"] = 1.0
+        else:
+            # Defensive: if the classifier was loaded with a class set
+            # that doesn't include not_a_plant (shouldn't happen in v2.x,
+            # but keep the gate safe), we still surface a low-confidence
+            # warning rather than silently classify a blurry crop.
+            probs[next(iter(probs))] = 1.0
+        final = {
+            "class_name": "not_a_plant" if "not_a_plant" in probs else next(iter(probs)),
+            "confidence": round(float(probs.get("not_a_plant", 0.0)), 4),
+            "all_probs": probs,
+            "top_k": [
+                {"class": k, "confidence": round(float(v), 4)}
+                for k, v in sorted(probs.items(), key=lambda kv: -kv[1])[:TOP_K_ALTERNATIVES]
+            ],
+            "warnings": ["blurry_image"],
+        }
+        severity = compute_severity(
+            class_name=final["class_name"],
+            confidence=float(final["confidence"]),
+            healthy_prob=0.0,
+            primary_box=None,
+            image_size=img.size,
+            is_diseased=False,
+        )
+        response = self._build_response(
+            final=final,
+            severity=severity,
+            is_diseased=False,
+            stage1_confidence=0.0,
+            regions=[],
+            primary_region=None,
+            t0=t0,
+        )
+        # Annotate the response for ops dashboards without breaking the
+        # public contract; clients ignore unknown keys.
+        response["focus_score"] = round(focus_score, 1)
+        return response
 
     def _analyze_no_detection(self, img: Image.Image, t0: float) -> dict:
         cls_full = self.classifier.classify(img)
@@ -684,11 +844,18 @@ def _apply_postprocessing_rules(
     classification: dict,
     class_names: list[str],
 ) -> dict:
-    """Soft postprocessing: warnings only, no class re-routing.
+    """Soft postprocessing + weak-healthy reroute.
 
-    Three checks:
-      * ``uncertain_healthy`` — top-1 is healthy but confidence/margin
-        below thresholds. Surfaces alternatives, no class swap.
+    Checks, in order:
+      * **weak-healthy reroute** — top-1 = healthy but confidence is
+        below ``HEALTHY_REROUTE_FLOOR`` AND a disease class meets
+        ``HEALTHY_DISEASE_FLOOR``. We swap the verdict to the
+        strongest disease so the UI doesn't say "Healthy" on what is
+        plainly a sick plant. Attaches a ``weak_healthy_rerouted``
+        warning so the client can render the demotion explicitly.
+      * ``uncertain_healthy`` — top-1 is healthy, no disease above the
+        reroute threshold, but confidence/margin still below the soft
+        thresholds. Surfaces alternatives, no class swap.
       * ``disease_uncertain`` — the healthy-fallback fired in
         ``_pick_primary``: top-1 was a disease but margin/threshold was
         weak so the class was downgraded to healthy.
@@ -696,14 +863,54 @@ def _apply_postprocessing_rules(
     """
     probs = classification["all_probs"]
     ordered = sorted(probs.items(), key=lambda item: item[1], reverse=True)
-    top_k = [
-        {"class": name, "confidence": round(float(conf), 4)}
-        for name, conf in ordered[:TOP_K_ALTERNATIVES]
-    ]
     warnings: list[str] = []
 
     top1_name, top1_prob = ordered[0]
     top2_prob = ordered[1][1] if len(ordered) > 1 else 0.0
+
+    # ── Weak-healthy reroute ────────────────────────────────────────
+    # When the model labels something as healthy with sub-50% confidence
+    # while a real disease class has any meaningful mass, "healthy" is
+    # almost certainly wrong. Reroute the verdict so the UI surfaces
+    # the more likely call.
+    if (
+        top1_name == "healthy"
+        and "healthy" in class_names
+        and top1_prob < HEALTHY_REROUTE_FLOOR
+    ):
+        worst_disease = max(
+            ((n, p) for n, p in probs.items() if n not in _NON_DISEASE),
+            key=lambda kv: kv[1],
+            default=(None, 0.0),
+        )
+        if (
+            worst_disease[0] is not None
+            and worst_disease[1] >= HEALTHY_DISEASE_FLOOR
+        ):
+            logger.info(
+                "Weak-healthy reroute  was=healthy/%.3f  → %s/%.3f",
+                top1_prob, worst_disease[0], worst_disease[1],
+            )
+            classification = {
+                **classification,
+                "class_name": worst_disease[0],
+                "confidence": float(worst_disease[1]),
+            }
+            warnings.append("weak_healthy_rerouted")
+            # Re-sort the probability list around the new top-1 so the
+            # rest of this function (top_k construction, healthy-gate
+            # warning) sees the corrected verdict.
+            ordered = sorted(probs.items(), key=lambda item: item[1], reverse=True)
+            ordered = sorted(
+                ordered, key=lambda kv: (kv[0] != worst_disease[0], -kv[1]),
+            )
+            top1_name, top1_prob = ordered[0]
+            top2_prob = ordered[1][1] if len(ordered) > 1 else 0.0
+
+    top_k = [
+        {"class": name, "confidence": round(float(conf), 4)}
+        for name, conf in ordered[:TOP_K_ALTERNATIVES]
+    ]
 
     if top1_name == "healthy" and "healthy" in class_names:
         margin = top1_prob - top2_prob

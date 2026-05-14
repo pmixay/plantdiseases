@@ -61,14 +61,28 @@ def test_care_plan_offline_has_all_fields():
     plan = ai.generate_care_plan(
         disease="powdery_mildew", species="Begonia", light="bright_indirect",
     )
+    # v1 contract — preserved.
     for key in (
         "species", "disease", "light_tier",
         "watering_days", "fertilise_weeks", "humidity_target",
         "key_action", "follow_up_days",
     ):
-        assert key in plan, f"missing care-plan key: {key}"
-    # No LLM key configured ⇒ no summary_md polish.
-    assert "summary_md" not in plan
+        assert key in plan, f"missing v1 care-plan key: {key}"
+    # v2 additive fields — present even without an LLM key.
+    for key in (
+        "light_lux_target", "placement", "acclimation",
+        "watering_method", "soil_mix", "fertiliser_npk",
+        "humidity_band", "temperature_c",
+        "treatment", "sanitation", "isolation", "red_flags",
+        "checkpoints", "season", "summary_md",
+    ):
+        assert key in plan, f"missing v2 care-plan key: {key}"
+    # The deterministic Markdown summary must be non-empty so clients
+    # never render a blank card. The LLM polish, when configured,
+    # replaces the string in place.
+    assert isinstance(plan["summary_md"], str) and plan["summary_md"].strip()
+    assert plan["treatment"], "treatment checklist must be non-empty for a disease"
+    assert plan["isolation"] is True  # powdery mildew quarantines
 
 
 def test_care_plan_unknown_disease_falls_through():
@@ -79,6 +93,54 @@ def test_care_plan_unknown_disease_falls_through():
     plan = ai.generate_care_plan(disease="unknown_disease_x", light="low_light")
     assert "watering_days" in plan
     assert plan["disease"] == "unknown_disease_x"
+    assert plan["isolation"] is False  # default protocol = "healthy"-ish
+
+
+def test_care_plan_season_modifier_stretches_dormant_watering():
+    """Dormant months stretch the watering interval and pause feeding."""
+    import datetime as dt
+
+    import ai_services as ai
+
+    growing = ai.generate_care_plan(
+        disease="healthy", light="bright_indirect", today=dt.date(2025, 6, 15),
+    )
+    dormant = ai.generate_care_plan(
+        disease="healthy", light="bright_indirect", today=dt.date(2025, 1, 15),
+    )
+    assert growing["season"] == "growing"
+    assert dormant["season"] == "dormant"
+    # Dormant interval is at least 7 days and longer than the growing
+    # interval.
+    assert isinstance(dormant["watering_days"], int)
+    assert dormant["watering_days"] >= growing["watering_days"]
+    # Dormant fertilising is half-cadence or more (always longer interval).
+    assert dormant["fertilise_weeks"] >= growing["fertilise_weeks"]
+
+
+def test_care_plan_disease_protocol_carries_treatment_and_red_flags():
+    """Disease classes must surface a non-empty treatment + red-flags list."""
+    import ai_services as ai
+
+    for d in (
+        "powdery_mildew",
+        "gray_mold_botrytis",
+        "leaf_spot_fungal",
+        "bacterial_leaf_spot",
+        "viral_disease",
+    ):
+        plan = ai.generate_care_plan(disease=d, light="bright_indirect")
+        assert plan["treatment"], f"empty treatment list for {d}"
+        assert plan["red_flags"], f"empty red_flags list for {d}"
+        assert plan["isolation"] is True, f"{d} should isolate"
+
+
+def test_care_plan_unknown_light_falls_back():
+    """An invalid light tier must be normalised to ``bright_indirect``."""
+    import ai_services as ai
+
+    plan = ai.generate_care_plan(disease="healthy", light="ultraviolet")
+    assert plan["light_tier"] == "bright_indirect"
 
 
 def test_progression_baseline_when_no_previous():
@@ -215,3 +277,116 @@ def test_chat_session_caps_message_history_growth():
     assert len(sess.messages) == ai.CHAT_SESSION_MAX_MESSAGES
     # The oldest messages should be the ones evicted (FIFO).
     assert sess.messages[0]["content"] == f"msg {25}"
+
+
+def test_care_plan_ru_localises_fertiliser_npk_from_light_tier():
+    """For diseases that don't override fertiliser_npk (powdery_mildew,
+    healthy, sunburn, ...) the English string falls through to the
+    light-tier base. The RU plan must follow the same fall-through —
+    a Russian call must NOT leak the English "balanced 3-1-2 at full
+    strength" sentinel.
+    """
+    import ai_services as ai
+
+    for d in ("powdery_mildew", "healthy", "sunburn_or_scorch"):
+        plan = ai.generate_care_plan(
+            disease=d, light="bright_indirect", locale="ru",
+        )
+        fert = plan["fertiliser_npk"]
+        assert isinstance(fert, str) and fert.strip()
+        assert "balanced" not in fert.lower(), (
+            f"{d}: fertiliser_npk leaked English fallback: {fert!r}"
+        )
+
+
+def test_care_plan_ru_localises_fertiliser_npk_from_disease_override():
+    """nutrient_deficiency overrides fertiliser_npk on the disease
+    side. The Russian plan must surface that override's RU copy, not
+    the base-tier RU string nor the English original.
+    """
+    import ai_services as ai
+
+    plan = ai.generate_care_plan(
+        disease="nutrient_deficiency", light="bright_indirect", locale="ru",
+    )
+    assert "хелат" in plan["fertiliser_npk"].lower()
+
+
+def test_care_plan_ru_unknown_disease_falls_back_to_healthy_strings():
+    """Unknown disease keys (e.g. the ``"unknown"`` value the endpoint
+    normalises to) must surface RUSSIAN text in RU mode. The English
+    code path falls back to the "healthy" protocol; the RU lookup
+    must follow the same fallback rather than re-emitting the
+    English defaults.
+    """
+    import ai_services as ai
+
+    plan = ai.generate_care_plan(
+        disease="unknown", light="bright_indirect", locale="ru",
+    )
+    for field in ("key_action",):
+        value = plan[field]
+        assert isinstance(value, str) and value.strip()
+        # The English healthy strings contain "current routine" /
+        # "monitor weekly" — easy markers that the RU fallback failed.
+        assert "current routine" not in value.lower(), (
+            f"{field}: RU plan leaked English fallback: {value!r}"
+        )
+        assert "monitor weekly" not in value.lower(), (
+            f"{field}: RU plan leaked English fallback: {value!r}"
+        )
+    for step in plan["treatment"]:
+        assert "continue the current" not in step.lower(), (
+            f"treatment step leaked English fallback: {step!r}"
+        )
+    # And conversely the English path is unaffected.
+    plan_en = ai.generate_care_plan(
+        disease="unknown", light="bright_indirect", locale="en",
+    )
+    assert "monitor" in plan_en["key_action"].lower()
+
+
+def test_humidity_habit_resists_common_substring_traps():
+    """Whole-word matching only. "Asparagus fern" is Liliaceae —
+    must NOT trip the fern bucket. "Aloeswood Saraca" is agarwood —
+    must NOT trip the succulent bucket. Real Aloe vera / Boston
+    fern must still classify correctly.
+    """
+    import ai_services as ai
+
+    # False-positive guards (the reported bugs).
+    assert ai._humidity_habit("Asparagus fern") is None
+    assert ai._humidity_habit("Asparagus aethiopicus") is None
+    assert ai._humidity_habit("Aloeswood Saraca") is None
+    assert ai._humidity_habit("Saraca asoca") is None
+    # True positives still classify.
+    assert ai._humidity_habit("Aloe vera") == "succulent"
+    assert ai._humidity_habit("Cactus") == "succulent"
+    assert ai._humidity_habit("Nephrolepis exaltata") == "fern_tropical"
+    assert ai._humidity_habit("Boston Fern") is None  # common name only
+    assert ai._humidity_habit("Calathea orbifolia") == "fern_tropical"
+    # Unknown / empty inputs.
+    assert ai._humidity_habit("") is None
+    assert ai._humidity_habit(None) is None
+    assert ai._humidity_habit("Ficus elastica") is None
+
+
+def test_care_plan_humidity_band_not_perturbed_by_false_positives():
+    """Verify the bug fix end-to-end: the humidity band on a plan
+    for "Asparagus fern" must match the base light-tier band — not
+    the fern bucket's 60-80 % range that the old substring match
+    used to push it into.
+    """
+    import ai_services as ai
+
+    base_plan = ai.generate_care_plan(
+        disease="healthy", light="bright_indirect",
+    )
+    asparagus_plan = ai.generate_care_plan(
+        disease="healthy", species="Asparagus fern", light="bright_indirect",
+    )
+    aloeswood_plan = ai.generate_care_plan(
+        disease="healthy", species="Aloeswood Saraca", light="bright_indirect",
+    )
+    assert asparagus_plan["humidity_band"] == base_plan["humidity_band"]
+    assert aloeswood_plan["humidity_band"] == base_plan["humidity_band"]

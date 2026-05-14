@@ -22,6 +22,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.asRequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.File
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
@@ -295,7 +296,12 @@ class ScanRepository(
             val warningsJson = result.warnings
                 ?.takeIf { it.isNotEmpty() }
                 ?.let { gson.toJson(it) }
+            val best = result.species?.best
             val entity = ScanEntity(
+                clientScanId = java.util.UUID.randomUUID().toString(),
+                speciesScientific = best?.scientificName,
+                speciesCommon = best?.commonName,
+                speciesScore = best?.score?.takeIf { it > 0f },
                 imagePath = imagePath,
                 diseaseName = result.diseaseName,
                 diseaseNameRu = result.diseaseNameRu,
@@ -384,16 +390,16 @@ class ScanRepository(
     }
 
     /**
-     * "Healthy" verdict for the result UI. Uses the persisted top-class
-     * key (locale-independent) so the status badge can never contradict
-     * the diagnosis text. Falls back to the server's `is_healthy` flag
-     * for legacy rows that pre-date `all_probs` persistence.
+     * "Healthy" verdict for the result UI. Trusts the server's final
+     * ``is_healthy`` flag — that's already what the server's
+     * post-processing rules (weak-healthy reroute, healthy-fallback,
+     * OOD gate) settled on, so using it here keeps the badge / image
+     * highlight / share copy consistent with the description and
+     * stored disease name. Falling back to the top-class key here
+     * caused a visible mismatch where a server-rerouted "Fungal Leaf
+     * Spot" verdict showed as "Healthy Plant" in the UI.
      */
-    fun isHealthyVerdict(scan: ScanEntity): Boolean = when (topClassKey(scan)) {
-        "healthy" -> true
-        null -> scan.isHealthy
-        else -> false
-    }
+    fun isHealthyVerdict(scan: ScanEntity): Boolean = scan.isHealthy
 
     /**
      * Stats reflect the user's plant-care reality, not the raw row count.
@@ -491,4 +497,99 @@ class ScanRepository(
             emptyList()
         }
     }
+
+    // ─── Community (similar scans in your region) ────────────────────
+
+    /**
+     * Upload one community-shared scan. Best-effort: any failure
+     * (network, server, validation) is logged but never thrown — a
+     * failed upload must not block the user's normal scan flow.
+     *
+     * The caller decides whether to send a thumbnail; see
+     * [CommunityRepository.uploadIfEnabled] which handles the
+     * opt-out pref + thumbnail downscale before reaching this hop.
+     */
+    suspend fun uploadCommunityScan(
+        scanId: String,
+        userPseudoId: String,
+        country: String,
+        region: String = "",
+        disease: String,
+        confidence: Float? = null,
+        species: String? = null,
+        speciesScore: Float? = null,
+        locale: String? = null,
+        thumbnail: File? = null,
+    ): Result<com.plantdiseases.app.data.model.CommunityScanUploadResponse> =
+        withContext(Dispatchers.IO) {
+            try {
+                val plainText = "text/plain".toMediaTypeOrNull()
+                fun text(value: String?): okhttp3.RequestBody? = value
+                    ?.takeIf { it.isNotBlank() }
+                    ?.toRequestBody(plainText)
+                val image = thumbnail?.takeIf { it.exists() }?.let { f ->
+                    val rb = f.asRequestBody("image/jpeg".toMediaTypeOrNull())
+                    MultipartBody.Part.createFormData("image", f.name, rb)
+                }
+                val response = apiService.communityScanUpload(
+                    scanId = text(scanId)!!,
+                    userPseudoId = text(userPseudoId)!!,
+                    country = text(country)!!,
+                    region = text(region),
+                    disease = text(disease)!!,
+                    confidence = text(confidence?.toString()),
+                    species = text(species),
+                    speciesScore = text(speciesScore?.toString()),
+                    locale = text(locale),
+                    image = image,
+                )
+                if (response.isSuccessful && response.body() != null) {
+                    Result.success(response.body()!!)
+                } else {
+                    Result.failure(Exception("Community upload failed: ${response.code()}"))
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+    /** Fetch the most recent community scans in a country (optionally
+     *  narrowed to one sub-country region). */
+    suspend fun communityNearby(
+        country: String,
+        region: String? = null,
+        disease: String?,
+        userPseudoId: String?,
+        limit: Int = 12,
+    ): Result<com.plantdiseases.app.data.model.CommunityScansResponse> =
+        withContext(Dispatchers.IO) {
+            try {
+                val response = apiService.communityScanNearby(
+                    country = country,
+                    region = region?.takeIf { it.isNotBlank() },
+                    disease = disease?.takeIf { it.isNotBlank() },
+                    userPseudoId = userPseudoId?.takeIf { it.isNotBlank() },
+                    limit = limit,
+                )
+                if (response.isSuccessful && response.body() != null) {
+                    Result.success(response.body()!!)
+                } else {
+                    Result.failure(Exception("Community nearby failed: ${response.code()}"))
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+    /** Erase every community-shared row for this install. */
+    suspend fun deleteCommunityContributions(userPseudoId: String): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            try {
+                val response = apiService.communityScanDeleteUser(userPseudoId)
+                if (response.isSuccessful) Result.success(Unit)
+                else Result.failure(Exception("Community delete failed: ${response.code()}"))
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
 }

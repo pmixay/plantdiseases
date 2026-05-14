@@ -23,12 +23,12 @@ from contextlib import asynccontextmanager
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from PIL import Image, UnidentifiedImageError
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response as StarletteResponse
 
@@ -47,10 +47,51 @@ try:
         generate_care_plan,
         identify_species,
     )
+    from .community import (
+        COMMUNITY_THUMB_DIR,
+    )
+    from .community import (
+        daily_write_count_for_ip_hash as community_daily_writes,
+    )
+    from .community import (
+        delete_for_user as community_delete_for_user,
+    )
+    from .community import (
+        init_db as init_community_db,
+    )
+    from .community import (
+        nearby_scans as community_nearby_scans,
+    )
+    from .community import (
+        prune_older_than as community_prune_older_than,
+    )
+    from .community import (
+        record_scan as community_record_scan,
+    )
+    from .community import (
+        region_summary as community_region_summary,
+    )
+    from .community import (
+        stats_snapshot as community_stats_snapshot,
+    )
     from .config import get_float, get_int, get_list, get_str
     from .diseases_data import DISEASES_DATABASE, lookup_pet_toxicity
-    from .feedback import feedback_counts, record_feedback
-    from .feedback import init_db as init_feedback_db
+    from .feedback import (
+        daily_write_count_for_ip_hash as feedback_daily_writes,
+    )
+    from .feedback import (
+        feedback_counts,
+        hash_client_ip,
+        is_scan_id_issued,
+        record_feedback,
+        record_issued_scan_id,
+    )
+    from .feedback import (
+        init_db as init_feedback_db,
+    )
+    from .feedback import (
+        prune_older_than as feedback_prune_older_than,
+    )
     from .pipeline import PlantDiseasePipeline
 except ImportError:
     from ai_services import (
@@ -61,10 +102,51 @@ except ImportError:
         generate_care_plan,
         identify_species,
     )
+    from community import (
+        COMMUNITY_THUMB_DIR,
+    )
+    from community import (
+        daily_write_count_for_ip_hash as community_daily_writes,
+    )
+    from community import (
+        delete_for_user as community_delete_for_user,
+    )
+    from community import (
+        init_db as init_community_db,
+    )
+    from community import (
+        nearby_scans as community_nearby_scans,
+    )
+    from community import (
+        prune_older_than as community_prune_older_than,
+    )
+    from community import (
+        record_scan as community_record_scan,
+    )
+    from community import (
+        region_summary as community_region_summary,
+    )
+    from community import (
+        stats_snapshot as community_stats_snapshot,
+    )
     from config import get_float, get_int, get_list, get_str
     from diseases_data import DISEASES_DATABASE, lookup_pet_toxicity
-    from feedback import feedback_counts, record_feedback
-    from feedback import init_db as init_feedback_db
+    from feedback import (
+        daily_write_count_for_ip_hash as feedback_daily_writes,
+    )
+    from feedback import (
+        feedback_counts,
+        hash_client_ip,
+        is_scan_id_issued,
+        record_feedback,
+        record_issued_scan_id,
+    )
+    from feedback import (
+        init_db as init_feedback_db,
+    )
+    from feedback import (
+        prune_older_than as feedback_prune_older_than,
+    )
     from pipeline import PlantDiseasePipeline
 
 try:
@@ -146,7 +228,42 @@ def _safe_filename(name: str | None, *, max_len: int = 80) -> str:
 
 
 RATE_LIMIT_RPS = get_float("RATE_LIMIT_RPS", 1.0)
+# Burst capacity on top of the steady-state rate. A burst of 5 lets
+# the client pop off 5 requests back-to-back (e.g. nav + analyze +
+# care-plan + identify + feedback fan-out) before the token bucket
+# stops refilling — without that the analyze flow used to slam into
+# the limiter on every cold open. Default chosen to absorb a single
+# scan + its post-result side calls.
+RATE_LIMIT_BURST = get_float("RATE_LIMIT_BURST", 5.0)
 TRUSTED_PROXIES = set(get_list("TRUSTED_PROXIES", []))
+
+# Daily per-IP write quotas. Stops one bad actor from filling the
+# feedback / community SQLite files with spam (which would also
+# poison the metrics surface). Reads from the same hashed-IP column
+# the rate-limit middleware can't see, so it survives across server
+# restarts unlike the in-memory rate bucket.
+FEEDBACK_DAILY_QUOTA = get_int("FEEDBACK_DAILY_QUOTA", 200)
+COMMUNITY_DAILY_QUOTA = get_int("COMMUNITY_DAILY_QUOTA", 50)
+# Retention windows (days). Daily background task in the FastAPI
+# lifespan drops rows past this age.
+FEEDBACK_RETENTION_DAYS = get_int("FEEDBACK_RETENTION_DAYS", 180)
+COMMUNITY_RETENTION_DAYS = get_int("COMMUNITY_RETENTION_DAYS", 90)
+PRUNE_INTERVAL_SECONDS = get_int("PRUNE_INTERVAL_SECONDS", 24 * 60 * 60)
+
+# Feedback ↔ analyze scan-id binding. When ENFORCE_ISSUED_SCAN_IDS is
+# truthy (set as "1"/"true" in env), /api/feedback rejects any
+# scan_id that wasn't recorded by a recent /api/analyze response.
+# Defaults to "log only" so older clients (whose scan_ids were
+# minted before this gate existed) keep working until the install
+# base catches up; operators flip to enforce mode once telemetry
+# shows < ~1% of feedback uses unknown scan_ids.
+ENFORCE_ISSUED_SCAN_IDS = (
+    get_str("ENFORCE_ISSUED_SCAN_IDS", "false").strip().lower() in {"1", "true", "yes", "on"}
+)
+# Server-issued scan_ids stay valid for this long. Long enough that
+# a user can scan today and leave feedback in a week; short enough
+# that a leaked id can't be reused indefinitely.
+ISSUED_SCAN_ID_TTL_DAYS = get_int("ISSUED_SCAN_ID_TTL_DAYS", 30)
 
 INFER_WORKERS = get_int("INFER_WORKERS", 2)
 _inference_executor: ThreadPoolExecutor | None = None
@@ -218,6 +335,21 @@ pipeline: PlantDiseasePipeline | None = None
 _RATE_LIMIT_CLEANUP_INTERVAL = 300
 
 
+def _issue_scan_id() -> str:
+    """Mint a fresh URL-safe scan_id, persist it in the issued log,
+    and return it for the /analyze response. Run inside the request
+    handler so callers don't need to think about the DB hop.
+    """
+    import uuid
+
+    scan_id = uuid.uuid4().hex
+    try:
+        record_issued_scan_id(scan_id)
+    except Exception as exc:  # noqa: BLE001 — never fail analyse on the log write
+        logger.warning("Failed to persist issued scan_id: %s", exc)
+    return scan_id
+
+
 def _client_ip(request: Request) -> str:
     """Return the real client IP, honouring X-Forwarded-For only for trusted proxies."""
     peer = request.client.host if request.client else "unknown"
@@ -246,20 +378,66 @@ def _client_ip(request: Request) -> str:
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
-    """Per-IP token-free rate limiter with periodic cleanup."""
+    """Per-IP token-bucket rate limiter with burst capacity.
 
-    def __init__(self, app, requests_per_second: float = 1.0):
+    Each client IP gets a private bucket of capacity ``burst``, which
+    refills at ``rate`` tokens per second. A request takes one
+    token; an empty bucket returns 429 with a ``Retry-After`` header
+    that reflects the wait until *one* token has refilled (not the
+    full bucket — clients don't need to wait for the burst window
+    again, just for the next allowed call).
+
+    The previous implementation enforced a strict minimum interval
+    of ``1/rps`` between requests, which meant two requests inside
+    500 ms (typical analyse + care-plan fan-out) bounced one of
+    them with 429 even on low rates. The bucket model absorbs that
+    burst without raising the long-term rate.
+    """
+
+    def __init__(
+        self,
+        app,
+        requests_per_second: float = 1.0,
+        burst: float = 5.0,
+    ):
         super().__init__(app)
-        self.min_interval = 1.0 / requests_per_second
-        self._last_request: dict[str, float] = {}
+        self.rate = max(requests_per_second, 0.0)
+        self.capacity = max(burst, 1.0)
+        # tokens, last_refill_monotonic
+        self._buckets: dict[str, tuple[float, float]] = {}
         self._lock = threading.Lock()
         self._last_cleanup = time.monotonic()
+        self._warned_about_xff = False
+
+    # ── backwards-compat shim used by tests that tune the limiter ────
+    @property
+    def min_interval(self) -> float:
+        return 1.0 / self.rate if self.rate > 0 else 0.0
+
+    @min_interval.setter
+    def min_interval(self, value: float) -> None:
+        # Tests poke ``mw.min_interval = 0.0`` to disable the limiter
+        # for an entire fixture; preserve that contract by rebuilding
+        # the rate from the value they hand us.
+        self.rate = (1.0 / value) if value > 0 else float("inf")
+
+    @property
+    def _last_request(self) -> dict[str, tuple[float, float]]:
+        """Legacy alias used by the rate-limited test fixture to
+        ``.clear()`` the bucket between cases."""
+        return self._buckets
 
     def _cleanup_stale(self, now: float) -> None:
-        cutoff = now - max(self.min_interval * 2, 60.0)
-        stale = [ip for ip, ts in self._last_request.items() if ts < cutoff]
+        # A bucket whose tokens never dropped below capacity in the
+        # last 60 s is effectively inactive — drop it. Holding every
+        # client-IP indefinitely would be a memory leak under a
+        # short-lived public deploy.
+        if self.rate <= 0:
+            return
+        cutoff = now - max(self.capacity / self.rate, 60.0)
+        stale = [ip for ip, (_t, last) in self._buckets.items() if last < cutoff]
         for ip in stale:
-            del self._last_request[ip]
+            del self._buckets[ip]
 
     async def dispatch(self, request: Request, call_next):
         # Health, metadata and metrics endpoints are always free
@@ -272,10 +450,25 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         ):
             return await call_next(request)
 
+        # Soft warning the operator missed configuring TRUSTED_PROXIES
+        # while deploying behind a reverse proxy. Without it every
+        # client behind the proxy shares a single bucket because we
+        # see only the proxy's IP as the "client IP".
+        if (
+            not self._warned_about_xff
+            and not TRUSTED_PROXIES
+            and request.headers.get("x-forwarded-for")
+        ):
+            self._warned_about_xff = True
+            logger.warning(
+                "Received X-Forwarded-For but TRUSTED_PROXIES is empty — "
+                "every client behind the proxy shares one rate-limit bucket. "
+                "Set TRUSTED_PROXIES to the proxy CIDR to honour XFF."
+            )
+
         client_ip = _client_ip(request)
-        # Use monotonic clock so an NTP step (or daylight-saving jump on
-        # a misconfigured host) cannot lock every client out for
-        # several minutes by making `now - last` go negative.
+        # Monotonic clock so an NTP step / DST jump cannot lock every
+        # client out by making elapsed time go negative.
         now = time.monotonic()
 
         with self._lock:
@@ -283,16 +476,25 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 self._cleanup_stale(now)
                 self._last_cleanup = now
 
-            last = self._last_request.get(client_ip, 0.0)
-            if now - last < self.min_interval:
-                logger.warning("Rate limited IP=%s", client_ip)
-                retry_after = max(1, int(math.ceil(self.min_interval - (now - last))))
+            tokens, last = self._buckets.get(client_ip, (self.capacity, now))
+            elapsed = max(0.0, now - last)
+            tokens = min(self.capacity, tokens + elapsed * self.rate)
+            if tokens < 1.0:
+                logger.warning("Rate limited IP=%s tokens=%.2f", client_ip, tokens)
+                # Wait time until one more token is available.
+                deficit = 1.0 - tokens
+                retry_after = max(1, int(math.ceil(deficit / self.rate))) if self.rate > 0 else 60
+                # Persist the refilled-but-still-empty bucket so a
+                # rapid retry doesn't grant a fresh token from a stale
+                # snapshot.
+                self._buckets[client_ip] = (tokens, now)
                 return JSONResponse(
                     status_code=429,
                     headers={"Retry-After": str(retry_after)},
                     content={"detail": "Too many requests. Please wait before trying again."},
                 )
-            self._last_request[client_ip] = now
+            tokens -= 1.0
+            self._buckets[client_ip] = (tokens, now)
 
         return await call_next(request)
 
@@ -343,6 +545,7 @@ async def lifespan(app: FastAPI):
     SERVER_START_TIME = time.time()
     _inference_executor = _get_inference_executor()
     init_feedback_db()
+    init_community_db()
     pipeline = PlantDiseasePipeline(
         detector_path=DETECTOR_PATH,
         classifier_path=CLASSIFIER_PATH,
@@ -352,16 +555,55 @@ async def lifespan(app: FastAPI):
         pipeline.classifier.backend,
         pipeline.classifier.NUM_CLASSES,
     )
-    yield
-    logger.info("Server shutting down")
-    with _executor_lock:
-        if _inference_executor is not None:
-            # `wait=True` lets in-flight inferences drain. The bound is
-            # INFERENCE_TIMEOUT (default 30 s) — anything beyond that is
-            # already a stuck request. cancel_futures=True drops queued
-            # work that hasn't started yet.
-            _inference_executor.shutdown(wait=True, cancel_futures=True)
-            _inference_executor = None
+    # Daily prune task. Runs in the event loop because the work is
+    # I/O-bound (a single DELETE per table); no thread pool needed.
+    # Cancelled cleanly on shutdown so the lifespan exit doesn't
+    # leak the task.
+    prune_task = asyncio.create_task(_prune_loop())
+    try:
+        yield
+    finally:
+        logger.info("Server shutting down")
+        prune_task.cancel()
+        try:
+            await prune_task
+        except (asyncio.CancelledError, Exception):  # noqa: BLE001
+            pass
+        with _executor_lock:
+            if _inference_executor is not None:
+                # `wait=True` lets in-flight inferences drain. The bound is
+                # INFERENCE_TIMEOUT (default 30 s) — anything beyond that is
+                # already a stuck request. cancel_futures=True drops queued
+                # work that hasn't started yet.
+                _inference_executor.shutdown(wait=True, cancel_futures=True)
+                _inference_executor = None
+
+
+async def _prune_loop() -> None:
+    """Background scheduler: prune feedback + community rows past
+    retention every ``PRUNE_INTERVAL_SECONDS``. First pass runs
+    immediately so a restart catches up on stale rows.
+    """
+    while True:
+        try:
+            removed_fb = await asyncio.get_running_loop().run_in_executor(
+                None, feedback_prune_older_than, FEEDBACK_RETENTION_DAYS,
+            )
+            removed_cm = await asyncio.get_running_loop().run_in_executor(
+                None, community_prune_older_than, COMMUNITY_RETENTION_DAYS,
+            )
+            if removed_fb or removed_cm:
+                logger.info(
+                    "Prune pass: feedback=%d community=%d", removed_fb, removed_cm,
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Prune pass failed (will retry tomorrow): %s", exc)
+        try:
+            await asyncio.sleep(PRUNE_INTERVAL_SECONDS)
+        except asyncio.CancelledError:
+            raise
 
 
 app = FastAPI(
@@ -391,7 +633,11 @@ app.add_middleware(
 # Middleware order: outermost runs first.
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
-app.add_middleware(RateLimitMiddleware, requests_per_second=RATE_LIMIT_RPS)
+app.add_middleware(
+    RateLimitMiddleware,
+    requests_per_second=RATE_LIMIT_RPS,
+    burst=RATE_LIMIT_BURST,
+)
 # Treatment / prevention lists round-trip 5–10 KB of bilingual JSON.
 # Halving that on the wire matters more for slow mobile uplinks than
 # the ~10 µs CPU cost on the server side.
@@ -538,6 +784,7 @@ async def metrics():
         **snap,
         "ai_doctor": chat_metrics_snapshot(),
         "feedback": feedback_counts(),
+        "community": community_stats_snapshot(),
     }
 
 
@@ -587,6 +834,67 @@ async def metrics_prometheus():
         content=body,
         media_type="text/plain; version=0.0.4; charset=utf-8",
     )
+
+
+async def _species_identify_best_effort(image_bytes: bytes, *, timeout: float) -> dict | None:
+    """Run PlantNet identify in the inference executor with a tight
+    timeout. Returns the compact species block ({class, score,
+    scientific, common, source}) for the response, or ``None`` if the
+    call failed, timed out, or PlantNet isn't configured.
+
+    Never raises — every failure mode is logged at INFO and folded
+    into ``None`` so the analyze response stays whole.
+    """
+    loop = asyncio.get_running_loop()
+    try:
+        raw = await asyncio.wait_for(
+            loop.run_in_executor(
+                _get_inference_executor(),
+                # identify_species's ``organ`` is keyword-only —
+                # ``run_in_executor`` only takes positional args, so
+                # we wrap in a lambda. Passing positionally raises
+                # TypeError at call time and surfaces as a 500.
+                lambda: identify_species(image_bytes, organ="leaf"),
+            ),
+            timeout=timeout,
+        )
+    except (asyncio.TimeoutError, asyncio.CancelledError):
+        logger.info("Species identify skipped (timeout / cancelled)")
+        return None
+    except Exception as exc:  # noqa: BLE001
+        logger.info("Species identify failed: %s", exc)
+        return None
+    if not raw or not raw.get("available"):
+        return {
+            "available": False,
+            "source": raw.get("source", "unavailable") if raw else "unavailable",
+            "best": None,
+            "candidates": [],
+        }
+    candidates = raw.get("results") or []
+    if not candidates:
+        return {
+            "available": True,
+            "source": raw.get("source", "plantnet"),
+            "best": None,
+            "candidates": [],
+        }
+    def _shape(entry: dict) -> dict:
+        # PlantNet returns a `common_names` list; we surface only the
+        # first one for compactness. The full list stays available via
+        # the dedicated /api/identify endpoint when needed.
+        common_names = entry.get("common_names") or []
+        return {
+            "scientific_name": entry.get("scientific_name"),
+            "common_name": (common_names[0] if common_names else None),
+            "score": round(float(entry.get("score", 0.0)), 4),
+        }
+    return {
+        "available": True,
+        "source": raw.get("source", "plantnet"),
+        "best": _shape(candidates[0]),
+        "candidates": [_shape(c) for c in candidates[:3]],
+    }
 
 
 @app.post("/api/analyze")
@@ -646,12 +954,23 @@ async def analyze_image(image: UploadFile = File(...), species: str | None = Non
         )
 
     loop = asyncio.get_running_loop()
+    # Fire the PlantNet species identify in parallel with the disease
+    # pipeline. PlantNet is best-effort: if the call fails / times out
+    # / the API key isn't configured, we still return a complete
+    # diagnosis — the species field just lands as ``None``. The 6s cap
+    # is much tighter than INFERENCE_TIMEOUT (30s) because PlantNet is
+    # an external HTTP hop and a slow upstream shouldn't hold the
+    # whole analyze response hostage.
+    species_task = asyncio.create_task(
+        _species_identify_best_effort(contents, timeout=6.0)
+    )
     try:
         result = await asyncio.wait_for(
             loop.run_in_executor(_get_inference_executor(), pipeline.analyze, img),
             timeout=INFERENCE_TIMEOUT,
         )
     except asyncio.TimeoutError as exc:
+        species_task.cancel()
         _record_error()
         logger.error("Inference timed out after %.0fs for %s", INFERENCE_TIMEOUT, fname)
         raise HTTPException(
@@ -659,6 +978,7 @@ async def analyze_image(image: UploadFile = File(...), species: str | None = Non
             detail=f"Analysis timed out after {int(INFERENCE_TIMEOUT)} seconds",
         ) from exc
     except Exception as exc:
+        species_task.cancel()
         _record_error()
         logger.exception("Inference crashed: %s", exc)
         raise HTTPException(status_code=500, detail="Internal inference error") from exc
@@ -723,8 +1043,17 @@ async def analyze_image(image: UploadFile = File(...), species: str | None = Non
     # isn't yet available — clients must treat it as optional.
     prediction_set = result.get("prediction_set")
     if prediction_set is not None:
+        # ``advisory`` is True until the conformal calibration set
+        # carries ≥ 50 samples per class. Today's per-class counts
+        # (bacterial_leaf_spot=3, gray_mold_botrytis=5,
+        # powdery_mildew=5, not_a_plant=0 — see
+        # ``server/models/model_card.json``) are too sparse for the
+        # stated 90 % coverage to be statistically meaningful. The
+        # client-facing flag tells the UI to render the set as
+        # "alternative candidates" rather than "guaranteed coverage".
         prediction_set = {
             **prediction_set,
+            "advisory": True,
             "items": [
                 {
                     "class": cls,
@@ -739,12 +1068,27 @@ async def analyze_image(image: UploadFile = File(...), species: str | None = Non
             ],
         }
 
-    # Pet-toxicity surface — only resolves when the caller passes a
-    # `species` hint (PlantNet scientific name or user-typed common
-    # name). Without one we can't honestly say a plant is or isn't
-    # toxic, so we return ``source="unknown"`` and the client renders
-    # an "unconfirmed" copy rather than falsely reassuring.
-    toxicity = lookup_pet_toxicity(species) if species else {
+    # Resolve the species fan-out. We started it in parallel with the
+    # disease pipeline so this normally returns immediately. If the
+    # caller already supplied a ``species`` query param (e.g. user
+    # picked one earlier), it overrides the auto-detected scientific
+    # name when looking up pet toxicity, but we keep the auto-detected
+    # block in the response either way so the client can show the
+    # match confidence.
+    species_payload: dict | None = None
+    try:
+        species_payload = await species_task
+    except Exception:  # noqa: BLE001 — defensive; helper already swallows
+        species_payload = None
+
+    # Pet-toxicity surface — resolves from the explicit ``species``
+    # query param when supplied, otherwise falls back to the auto-
+    # detected best match. Without either we return
+    # ``source="unknown"`` and the client renders an "unconfirmed"
+    # copy rather than falsely reassuring.
+    auto_best = (species_payload or {}).get("best") or {}
+    toxicity_species = species or auto_best.get("scientific_name")
+    toxicity = lookup_pet_toxicity(toxicity_species) if toxicity_species else {
         "toxic_to_pets": False, "species_list": [], "source": "unknown",
     }
 
@@ -769,8 +1113,15 @@ async def analyze_image(image: UploadFile = File(...), species: str | None = Non
         "toxic_to_pets": toxicity["toxic_to_pets"],
         "toxic_species_list": toxicity["species_list"],
         "toxicity_source": toxicity["source"],
+        "species": species_payload,
         "elapsed_ms": result["elapsed_ms"],
         "server_version": APP_VERSION,
+        # Server-minted scan_id for this response. Clients should
+        # send this same string back on /api/feedback so the gate
+        # in main.py can confirm the feedback ties to a real scan
+        # we ran. Stored in the issued_scan_ids table; expires after
+        # ISSUED_SCAN_ID_TTL_DAYS.
+        "scan_id": _issue_scan_id(),
     })
 
 
@@ -789,6 +1140,124 @@ class CarePlanRequest(BaseModel):
     species: str | None = Field(default=None, max_length=128)
     light: str = Field(default="bright_indirect", max_length=32)
     locale: str = Field(default="en", max_length=8)
+    # Optional season override; ``None`` auto-detects from today's date
+    # (northern-hemisphere default). Accepted values: ``"growing"``
+    # or ``"dormant"``.
+    season: str | None = Field(default=None, max_length=16)
+
+
+# ── Community scan corpus ───────────────────────────────────────────
+
+
+# Region-string alphabet (country name / code + city / admin area).
+# Apostrophe + period + hyphen + space cover the bulk of locality
+# names ("Saint-John's", "Plymouth, U.K." trims to "Plymouth"). Commas
+# are deliberately excluded — we keep country and locality as separate
+# fields so callers never need to embed a comma anywhere.
+_REGION_ALLOWED = set(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .'-"
+)
+
+
+def _normalise_country(raw: str | None) -> str:
+    """Sanitise the top-level country bucket.
+
+    Accepts the new explicit country form ("GB", "Germany") and the
+    legacy "City, Country" composite that older clients still send —
+    in the latter case we keep the segment after the last comma. The
+    result is trimmed, charset-checked and capped at 80 chars; an
+    empty string means "rejected".
+    """
+    if not raw:
+        return ""
+    if "," in raw:
+        raw = raw.rsplit(",", 1)[-1]
+    cleaned = raw.strip()[:80]
+    if not cleaned or any(ch not in _REGION_ALLOWED for ch in cleaned):
+        return ""
+    return cleaned
+
+
+def _normalise_locality(raw: str | None) -> str:
+    """Sanitise the sub-country city / admin-area string.
+
+    Returns the cleaned value or "" when the caller didn't send a
+    locality (country-only writes are legal — the corpus simply
+    skips the second hierarchy level).
+    """
+    if not raw:
+        return ""
+    cleaned = raw.strip()[:80]
+    if not cleaned or any(ch not in _REGION_ALLOWED for ch in cleaned):
+        return ""
+    return cleaned
+
+
+class CommunityScanRequest(BaseModel):
+    """Upload metadata for a single community-shared scan. The image
+    bytes ride on a separate multipart field on the upload endpoint
+    so a thin client never has to base64-encode anything.
+
+    Hierarchy: ``country`` is the canonical top bucket (ISO code or
+    country name); ``region`` is the optional sub-country locality
+    (city, admin area). Older clients that still send the legacy
+    composite as ``region`` get auto-split — the country tail lands
+    in ``country`` and the leading segment in ``region``.
+    """
+
+    scan_id: str = Field(..., min_length=8, max_length=64)
+    user_pseudo_id: str = Field(..., min_length=8, max_length=64)
+    country: str = Field(..., min_length=2, max_length=80)
+    region: str = Field(default="", max_length=80)
+    disease: str = Field(..., min_length=1, max_length=64)
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    species: str | None = Field(default=None, max_length=128)
+    species_score: float | None = Field(default=None, ge=0.0, le=1.0)
+    locale: str | None = Field(default=None, max_length=8)
+
+    @field_validator("scan_id", "user_pseudo_id")
+    @classmethod
+    def _safe_token(cls, v: str) -> str:
+        if any(ch not in _SCAN_ID_ALLOWED for ch in v):
+            raise ValueError("invalid characters in id; expected [A-Za-z0-9_-]")
+        return v
+
+    @field_validator("country")
+    @classmethod
+    def _safe_country(cls, v: str) -> str:
+        cleaned = _normalise_country(v)
+        if not cleaned:
+            raise ValueError(
+                "country must be a country name or ISO code (no control chars)"
+            )
+        return cleaned
+
+    @field_validator("region")
+    @classmethod
+    def _safe_region(cls, v: str) -> str:
+        # Empty is legal — country-only writes are supported.
+        return _normalise_locality(v)
+
+    @field_validator("disease")
+    @classmethod
+    def _known_disease(cls, v: str) -> str:
+        cleaned = v.strip().lower()
+        # ``not_a_plant`` and the deferred physiological classes are
+        # legal community-share values too — they're still useful
+        # signals for the retraining loop.
+        if cleaned not in _FEEDBACK_ALLOWED_CORRECTIONS:
+            raise ValueError(
+                f"disease must be one of {sorted(_FEEDBACK_ALLOWED_CORRECTIONS)}"
+            )
+        return cleaned
+
+    @field_validator("locale")
+    @classmethod
+    def _normalise_locale(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        cleaned = v.strip().lower()[:8]
+        return cleaned or None
 
 
 class ProgressionRequest(BaseModel):
@@ -801,20 +1270,202 @@ class ProgressionRequest(BaseModel):
     history: list[dict] | None = None
 
 
+# Class keys the strict-mode `corrected_class` validator accepts.
+# Includes both the active trainable classes (from classes.json) and
+# the deferred physiological classes — clients should be allowed to
+# point us at conditions the next model release will cover.
+_FEEDBACK_ALLOWED_CORRECTIONS: frozenset[str] = frozenset({
+    "bacterial_leaf_spot",
+    "gray_mold_botrytis",
+    "healthy",
+    "leaf_spot_fungal",
+    "not_a_plant",
+    "powdery_mildew",
+    "viral_disease",
+    # Deferred (post-v2.1) physiological classes — accepted as
+    # feedback signals so the retraining loop can prioritise labelling.
+    "edema",
+    "leaf_scorch_underwatering",
+    "nutrient_deficiency",
+    "sunburn_or_scorch",
+    # Catch-all the client can send when none of the above match.
+    "other",
+})
+
+_FEEDBACK_ALLOWED_REASONS: frozenset[str] = frozenset({
+    "wrong_class",
+    "low_quality_image",
+    "occluded",
+    "multiple_plants",
+    "ambiguous_symptoms",
+    "other",
+})
+
+_FEEDBACK_ALLOWED_PLATFORMS: frozenset[str] = frozenset({
+    "android",
+    "ios",
+    "web",
+    "test",
+    "unknown",
+})
+
+# scan_id is a client-generated opaque token. Constrain it to a
+# URL-safe alphabet of reasonable length so a runaway client can't
+# stuff control bytes or megabyte blobs through the column. We don't
+# enforce a strict UUID shape because legacy clients still mint
+# numeric ids and we want them to keep working through the
+# transition window.
+_SCAN_ID_ALLOWED = set(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
+)
+
+
 class FeedbackRequest(BaseModel):
     """Single user-feedback signal on a scan.
 
-    ``scan_id`` is a client-generated stable id (we don't issue scan
-    ids server-side — the classifier is stateless). ``correct`` is the
-    boolean thumbs verdict. ``corrected_class`` and ``note`` are
-    optional and bounded so a runaway client can't push a 10 MB blob
-    through the append-only store.
+    The classifier is stateless, so the *scan* lives only on the
+    client. ``scan_id`` is therefore client-generated and just has to
+    be stable across the lifetime of one scan: we de-dupe by
+    (user_pseudo_id, scan_id) downstream.
+
+    Required: ``scan_id``, ``correct``.
+    Optional: every other field — kept nullable so clients can roll
+    out the richer payload progressively. Length bounds protect the
+    append-only SQLite file from runaway clients.
     """
 
-    scan_id: str = Field(..., min_length=1, max_length=128)
+    scan_id: str = Field(..., min_length=8, max_length=64)
     correct: bool
     corrected_class: str | None = Field(default=None, max_length=64)
     note: str | None = Field(default=None, max_length=2000)
+    reason: str | None = Field(default=None, max_length=32)
+    # Diagnosis context — what the model said when the user gave
+    # feedback. Used to compute per-class accuracy without joining
+    # against scan history (we don't have that history server-side).
+    predicted_class: str | None = Field(default=None, max_length=64)
+    predicted_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    top3: list[dict] | None = Field(default=None, max_length=3)
+    # Client context — used for cohort analysis and abuse detection.
+    model_version: str | None = Field(default=None, max_length=32)
+    app_version: str | None = Field(default=None, max_length=32)
+    locale: str | None = Field(default=None, max_length=8)
+    platform: str | None = Field(default=None, max_length=16)
+    # Opaque per-install id (UUIDv4 from the client). Lets us correlate
+    # multiple feedback signals from one user *without* knowing who
+    # they are.
+    user_pseudo_id: str | None = Field(default=None, min_length=8, max_length=64)
+    # Detector context — useful for separating crop-quality issues
+    # from genuine classifier errors.
+    region_count: int | None = Field(default=None, ge=0, le=64)
+    primary_region_index: int | None = Field(default=None, ge=-1, le=63)
+    # Wall-clock milliseconds between original scan and this feedback
+    # tap. Capped at 30 days so a malicious client can't pretend the
+    # signal is from the distant future / past.
+    feedback_latency_ms: int | None = Field(default=None, ge=0, le=30 * 24 * 3600 * 1000)
+    # Optional SHA-256 of the original image (hex) — lets us join
+    # against any future image-side analytics without the image bytes
+    # leaving the device.
+    image_hash: str | None = Field(default=None, min_length=32, max_length=128)
+
+    @field_validator("scan_id", "user_pseudo_id")
+    @classmethod
+    def _safe_token(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        if any(ch not in _SCAN_ID_ALLOWED for ch in v):
+            raise ValueError("invalid characters in id; expected [A-Za-z0-9_-]")
+        return v
+
+    @field_validator("corrected_class")
+    @classmethod
+    def _known_class(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        cleaned = v.strip().lower()
+        if not cleaned:
+            return None
+        if cleaned not in _FEEDBACK_ALLOWED_CORRECTIONS:
+            raise ValueError(
+                f"corrected_class must be one of "
+                f"{sorted(_FEEDBACK_ALLOWED_CORRECTIONS)}; got {v!r}"
+            )
+        return cleaned
+
+    @field_validator("predicted_class")
+    @classmethod
+    def _normalise_predicted(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        cleaned = v.strip().lower()
+        return cleaned or None
+
+    @field_validator("reason")
+    @classmethod
+    def _known_reason(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        cleaned = v.strip().lower()
+        if not cleaned:
+            return None
+        if cleaned not in _FEEDBACK_ALLOWED_REASONS:
+            raise ValueError(
+                f"reason must be one of {sorted(_FEEDBACK_ALLOWED_REASONS)}; got {v!r}"
+            )
+        return cleaned
+
+    @field_validator("platform")
+    @classmethod
+    def _known_platform(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        cleaned = v.strip().lower()
+        if not cleaned:
+            return None
+        if cleaned not in _FEEDBACK_ALLOWED_PLATFORMS:
+            # Unknown platform tags get folded to "unknown" rather
+            # than rejected — we'd rather collect the signal than
+            # bounce a client with a typo in BuildConfig.
+            return "unknown"
+        return cleaned
+
+    @field_validator("locale")
+    @classmethod
+    def _normalise_locale(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        cleaned = v.strip().lower()[:8]
+        return cleaned or None
+
+    @field_validator("image_hash")
+    @classmethod
+    def _hex_only(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        cleaned = v.strip().lower()
+        if not cleaned:
+            return None
+        if any(ch not in "0123456789abcdef" for ch in cleaned):
+            raise ValueError("image_hash must be lowercase hex")
+        return cleaned
+
+    @field_validator("top3")
+    @classmethod
+    def _shape_top3(cls, v: list[dict] | None) -> list[dict] | None:
+        if not v:
+            return None
+        cleaned: list[dict] = []
+        for entry in v[:3]:
+            if not isinstance(entry, dict):
+                continue
+            cls_key = str(entry.get("class", "")).strip().lower()[:64]
+            try:
+                prob = float(entry.get("prob", 0.0))
+            except (TypeError, ValueError):
+                continue
+            if not cls_key:
+                continue
+            cleaned.append({"class": cls_key, "prob": max(0.0, min(1.0, prob))})
+        return cleaned or None
 
 
 @app.post("/api/identify")
@@ -852,7 +1503,8 @@ async def identify_endpoint(image: UploadFile = File(...), organ: str = "leaf"):
         organ = "leaf"
     loop = asyncio.get_running_loop()
     result = await loop.run_in_executor(
-        _get_inference_executor(), identify_species, contents, organ,
+        _get_inference_executor(),
+        lambda: identify_species(contents, organ=organ),
     )
     return JSONResponse(content={**result, "organ": organ})
 
@@ -916,6 +1568,7 @@ async def care_plan_endpoint(payload: CarePlanRequest):
             species=payload.species,
             light=payload.light,
             locale=payload.locale,
+            season=payload.season,
         ),
     )
     toxicity = lookup_pet_toxicity(payload.species) if payload.species else {
@@ -963,21 +1616,71 @@ async def progression_endpoint(payload: ProgressionRequest):
 
 @app.post("/api/feedback")
 async def feedback_endpoint(payload: FeedbackRequest, request: Request):
-    """Capture a thumbs-up / thumbs-down on a diagnosis.
+    """Capture a thumbs-up / thumbs-down on a diagnosis, with full
+    diagnostic + client context.
 
     Append-only — there is no update / delete path. The 1 req/s per-IP
     rate limit from the global middleware applies; the endpoint
     additionally caps ``note`` length via the pydantic model so a
     malicious client can't bloat the SQLite file with megabytes of
     text.
+
+    The raw client IP is hashed (peppered SHA-256) before persistence
+    so we never store PII at rest. The hash is stable across a single
+    deployment, which is enough for abuse-rate detection.
     """
     client_ip = _client_ip(request)
-    # Light validation: ``corrected_class`` should look like a model
-    # class key when present. We don't hard-reject unknown keys because
-    # the client might suggest a class that's deferred to a later
-    # release — the retraining tool decides what to do with it.
-    corrected = (payload.corrected_class or "").strip() or None
+    # Per-IP daily write quota. The rate limiter is in-memory and
+    # resets on restart; this gate reads the same peppered IP-hash
+    # column we persist on each row, so it survives across deploys.
+    ip_hash = hash_client_ip(client_ip)
+    today_writes = await asyncio.get_running_loop().run_in_executor(
+        _get_inference_executor(),
+        lambda: feedback_daily_writes(ip_hash),
+    )
+    if today_writes >= FEEDBACK_DAILY_QUOTA:
+        logger.warning(
+            "Feedback daily quota hit ip_hash=%s writes=%d cap=%d",
+            ip_hash, today_writes, FEEDBACK_DAILY_QUOTA,
+        )
+        raise HTTPException(
+            status_code=429,
+            detail="Daily feedback quota reached. Try again tomorrow.",
+        )
+
+    # Bind the feedback to a scan_id we actually issued. The check
+    # runs in "warn-only" mode by default (older clients minted
+    # their own UUIDs and won't be in the table); flip
+    # ENFORCE_ISSUED_SCAN_IDS=true once the new client is the
+    # dominant install base to switch this gate to hard reject.
+    scan_id_clean = payload.scan_id.strip()
+    issued = await asyncio.get_running_loop().run_in_executor(
+        _get_inference_executor(),
+        lambda: is_scan_id_issued(scan_id_clean, ttl_days=ISSUED_SCAN_ID_TTL_DAYS),
+    )
+    if not issued:
+        if ENFORCE_ISSUED_SCAN_IDS:
+            logger.warning(
+                "Rejected feedback on unissued scan_id=%s ip_hash=%s",
+                scan_id_clean[:16], ip_hash,
+            )
+            raise HTTPException(
+                status_code=422,
+                detail="Unknown scan_id — please re-scan before sending feedback.",
+            )
+        # Soft mode: log so operators can watch the unknown-id rate.
+        logger.info(
+            "Feedback on unissued scan_id=%s (soft mode)", scan_id_clean[:16],
+        )
+
+    # Pydantic v2 has already normalised these — corrected_class is
+    # constrained to the known class set, reason to the known reason
+    # set, scan_id / user_pseudo_id to the URL-safe alphabet, etc.
     note = (payload.note or "").strip() or None
+    top3_pairs = (
+        [(entry["class"], entry["prob"]) for entry in payload.top3]
+        if payload.top3 else None
+    )
 
     try:
         row_id = await asyncio.get_running_loop().run_in_executor(
@@ -985,20 +1688,236 @@ async def feedback_endpoint(payload: FeedbackRequest, request: Request):
             lambda: record_feedback(
                 scan_id=payload.scan_id.strip(),
                 correct=payload.correct,
-                corrected_class=corrected,
+                corrected_class=payload.corrected_class,
                 note=note,
                 client_ip=client_ip,
+                predicted_class=payload.predicted_class,
+                predicted_confidence=payload.predicted_confidence,
+                top3=top3_pairs,
+                model_version=payload.model_version,
+                app_version=payload.app_version,
+                locale=payload.locale,
+                platform=payload.platform,
+                user_pseudo_id=payload.user_pseudo_id,
+                region_count=payload.region_count,
+                primary_region_index=payload.primary_region_index,
+                feedback_latency_ms=payload.feedback_latency_ms,
+                reason=payload.reason,
+                image_hash=payload.image_hash,
             ),
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("Failed to record feedback: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to record feedback") from exc
 
+    # Truncate scan_id in the access log so attacker-supplied bytes
+    # can't blow up log lines, even though the pydantic validator
+    # already capped it at 64 chars.
     logger.info(
-        "Feedback recorded id=%d scan=%s correct=%s corrected=%s",
-        row_id, payload.scan_id, payload.correct, corrected,
+        "Feedback recorded id=%d scan=%s correct=%s predicted=%s corrected=%s reason=%s",
+        row_id,
+        payload.scan_id[:16],
+        payload.correct,
+        payload.predicted_class,
+        payload.corrected_class,
+        payload.reason,
     )
     return JSONResponse(content={"ok": True, "id": row_id})
+
+
+# ── Community scan corpus ───────────────────────────────────────────
+
+
+# Same magic-byte set the analyze endpoint accepts. We rely on
+# Content-Type for the multipart form parse, then re-validate the
+# bytes; an attacker can lie about Content-Type but the magic bytes
+# don't lie.
+_COMMUNITY_ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp"}
+
+
+@app.post("/api/community/scan")
+async def community_scan_upload(
+    request: Request,
+    scan_id: str = Form(...),
+    user_pseudo_id: str = Form(...),
+    country: str | None = Form(None),
+    region: str = Form(""),
+    disease: str = Form(...),
+    confidence: float | None = Form(None),
+    species: str | None = Form(None),
+    species_score: float | None = Form(None),
+    locale: str | None = Form(None),
+    image: UploadFile | None = File(None),
+):
+    """Append one community-shared scan to the corpus.
+
+    Hierarchy: ``country`` is the canonical top bucket, ``region``
+    is the optional sub-country locality. Older clients still on the
+    legacy "region only" contract may omit ``country`` and pass a
+    composite ``"City, Country"`` string in ``region``; in that
+    case we split on the last comma so the right pieces land in
+    the right columns. The image is optional — when omitted we
+    still store the row, just without a thumbnail.
+    """
+    # Legacy fallback: pre-hierarchy clients only sent ``region``.
+    # Pull a country out of the comma tail when ``country`` is
+    # missing; the locality keeps whatever leads the comma.
+    if not country:
+        if "," in region:
+            head, _, tail = region.rpartition(",")
+            country = tail.strip()
+            region = head.strip()
+        else:
+            country = region
+            region = ""
+
+    try:
+        payload = CommunityScanRequest(
+            scan_id=scan_id,
+            user_pseudo_id=user_pseudo_id,
+            country=country,
+            region=region,
+            disease=disease,
+            confidence=confidence,
+            species=species,
+            species_score=species_score,
+            locale=locale,
+        )
+    except Exception as exc:  # noqa: BLE001 — pydantic raises a ValidationError subclass
+        logger.info("Community scan validation failed: %s", exc)
+        raise HTTPException(status_code=422, detail="Invalid scan upload") from exc
+
+    image_bytes: bytes | None = None
+    if image is not None:
+        if image.content_type and image.content_type not in _COMMUNITY_ALLOWED_TYPES:
+            raise HTTPException(
+                status_code=400,
+                detail="Community thumbnail must be JPEG / PNG / WebP",
+            )
+        try:
+            image_bytes = await _read_upload(image)
+        except HTTPException:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.info("Community thumb read failed: %s", exc)
+            image_bytes = None
+
+    client_ip = _client_ip(request)
+    ip_hash = hash_client_ip(client_ip)
+    today_writes = await asyncio.get_running_loop().run_in_executor(
+        _get_inference_executor(),
+        lambda: community_daily_writes(ip_hash),
+    )
+    if today_writes >= COMMUNITY_DAILY_QUOTA:
+        logger.warning(
+            "Community daily quota hit ip_hash=%s writes=%d cap=%d",
+            ip_hash, today_writes, COMMUNITY_DAILY_QUOTA,
+        )
+        raise HTTPException(
+            status_code=429,
+            detail="Daily community-upload quota reached.",
+        )
+    try:
+        row_id = await asyncio.get_running_loop().run_in_executor(
+            _get_inference_executor(),
+            lambda: community_record_scan(
+                scan_id=payload.scan_id,
+                user_pseudo_id=payload.user_pseudo_id,
+                country=payload.country,
+                region=payload.region,
+                disease=payload.disease,
+                confidence=payload.confidence,
+                species=payload.species,
+                species_score=payload.species_score,
+                image_bytes=image_bytes,
+                locale=payload.locale,
+                client_ip=client_ip,
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Community scan write failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to record scan") from exc
+
+    return JSONResponse(content={"ok": True, "id": row_id})
+
+
+@app.get("/api/community/nearby")
+async def community_scan_nearby(
+    country: str | None = None,
+    region: str | None = None,
+    disease: str | None = None,
+    limit: int = 20,
+    user_pseudo_id: str | None = None,
+):
+    """List the most recent community-shared scans within ``country``.
+
+    ``region`` narrows the result set to a sub-country locality
+    (city / admin area) when supplied. Server prefers same-disease
+    matches, falls back to same-locality, and finally widens to the
+    whole country so a small city still gets a populated carousel.
+
+    Backward-compat: callers that pre-date the hierarchy may pass
+    only ``region`` with a composite "City, Country" string; we
+    split on the last comma and fill ``country`` from the tail.
+    """
+    # Legacy fallback for the older Android build.
+    if not country:
+        if region and "," in region:
+            head, _, tail = region.rpartition(",")
+            country = tail.strip()
+            region = head.strip()
+        else:
+            country = region or ""
+            region = None
+    country_norm = _normalise_country(country)
+    region_norm = _normalise_locality(region) if region else ""
+    if not country_norm:
+        logger.info("Community nearby missing valid country: %r", country)
+        raise HTTPException(status_code=422, detail="Invalid nearby query")
+    rows = community_nearby_scans(
+        country=country_norm,
+        region=region_norm or None,
+        disease=(disease or None),
+        limit=max(1, min(int(limit), 50)),
+        exclude_user_pseudo_id=user_pseudo_id,
+    )
+    summary = community_region_summary(country_norm, region_norm or None)
+    return JSONResponse(content={"items": rows, "summary": summary})
+
+
+@app.get("/api/community/thumb/{filename}")
+async def community_scan_thumb(filename: str):
+    """Serve a community thumbnail by filename.
+
+    The corpus only ever stores filenames that ``community._save_thumbnail``
+    minted, but we still hard-guard against path traversal: any
+    filename containing ``/`` or ``..`` is refused outright. Missing
+    files return 404 instead of 500.
+    """
+    if "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="Invalid thumbnail name")
+    path = COMMUNITY_THUMB_DIR / filename
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Thumbnail not found")
+    return StarletteResponse(
+        content=path.read_bytes(),
+        media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
+@app.delete("/api/community/user/{user_pseudo_id}")
+async def community_scan_delete_user(user_pseudo_id: str):
+    """Erase all rows + thumbnails attributed to one install. Used by
+    the Android "delete my contributions" affordance.
+    """
+    if not user_pseudo_id or any(ch not in _SCAN_ID_ALLOWED for ch in user_pseudo_id):
+        raise HTTPException(status_code=422, detail="Invalid user id")
+    deleted = await asyncio.get_running_loop().run_in_executor(
+        _get_inference_executor(),
+        lambda: community_delete_for_user(user_pseudo_id),
+    )
+    return JSONResponse(content={"ok": True, "deleted": deleted})
 
 
 if __name__ == "__main__":

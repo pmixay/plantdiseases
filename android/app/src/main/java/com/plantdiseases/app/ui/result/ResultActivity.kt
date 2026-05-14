@@ -8,7 +8,6 @@ import android.graphics.Canvas
 import android.net.Uri
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
-import android.text.InputType
 import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
@@ -26,8 +25,6 @@ import androidx.core.content.FileProvider
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.tabs.TabLayout
-import com.google.android.material.textfield.TextInputEditText
-import com.google.android.material.textfield.TextInputLayout
 import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.resource.bitmap.CenterCrop
@@ -37,7 +34,9 @@ import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.FeedbackRequest
-import com.plantdiseases.app.data.model.SpeciesCandidate
+import com.plantdiseases.app.data.model.TopProb
+import com.plantdiseases.app.util.TelemetryIds
+import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.ui.analysis.AnalysisActivity
@@ -231,7 +230,15 @@ class ResultActivity : AppCompatActivity() {
     private fun displayResult(scan: ScanEntity, repository: ScanRepository) {
         val isRu = LocaleHelper.isRussian(this)
         val isNotAPlant = repository.isNotAPlantScan(scan)
-        val isHealthyVerdict = repository.isHealthyVerdict(scan)
+        // Trust the server's final verdict end-to-end. The previous
+        // version overrode `diseaseName` / `confidence` with the
+        // top-class key from `all_probs`, which fought the server's
+        // own weak-healthy reroute: when the server downgraded a
+        // 47%-healthy / 41%-fungal scan to "Fungal Leaf Spot", the
+        // override flipped the visible verdict back to "Healthy
+        // Plant" while the description and stored `diseaseName`
+        // still said fungal — the cause of the screenshot bug.
+        val isHealthyVerdict = scan.isHealthy
         val diseaseName = when {
             isNotAPlant -> getString(R.string.not_a_plant_diagnosis_name)
             isRu -> scan.diseaseNameRu
@@ -330,6 +337,8 @@ class ResultActivity : AppCompatActivity() {
                 tvDescription.text = getString(R.string.not_a_plant_result_body)
                 cardTreatmentPrevention.visibility = View.GONE
                 cardAlternatives.visibility = View.GONE
+                cardSpecies.visibility = View.GONE
+                cardSimilarScans.visibility = View.GONE
                 cardPipelineWarning.visibility = View.GONE
                 cardLowConfidence.visibility = View.GONE
                 // Share / add-to-garden don't make sense for a NAP verdict —
@@ -343,6 +352,8 @@ class ResultActivity : AppCompatActivity() {
                 btnAddToGarden.visibility = View.VISIBLE
                 buildPipelineWarnings(scan, repository)
                 buildAlternativeDiagnoses(scan, repository, isRu)
+                buildSpeciesCard(scan)
+                buildSimilarScansCard(scan, repository, isRu)
                 setupTreatmentPreventionTabs(scan, repository, isRu)
                 buildCarePlanCard(scan, repository, isRu)
             }
@@ -436,120 +447,18 @@ class ResultActivity : AppCompatActivity() {
     }
 
     private fun showCreatePlantForScanDialog(scan: ScanEntity) {
-        val container = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, 8.dpToPx(), 0, 0)
-        }
-        val name = resultInputField(getString(R.string.plant_name), scan.diseaseName)
-        val species = resultInputField(getString(R.string.plant_species), null)
-
-        // PlantNet species suggestion strip
-        var pickedScientific: String? = null
-        var pickedCommon: String? = null
-        val suggestionStatus = TextView(this).apply {
-            text = getString(R.string.species_suggest_hint)
-            textSize = 12f
-            setTextColor(getColor(R.color.on_surface_secondary))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 4.dpToPx(); bottomMargin = 8.dpToPx() }
-        }
-        val suggestBtn = com.google.android.material.button.MaterialButton(
-            this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle,
-        ).apply {
-            text = getString(R.string.species_suggest_button)
-            setIconResource(R.drawable.ic_scan)
-            iconTint = android.content.res.ColorStateList.valueOf(getColor(R.color.primary))
-            setTextColor(getColor(R.color.primary))
-            strokeColor = android.content.res.ColorStateList.valueOf(getColor(R.color.primary))
-            cornerRadius = 14.dpToPx()
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { bottomMargin = 12.dpToPx() }
-        }
-        val candidateChips = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            visibility = View.GONE
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { bottomMargin = 8.dpToPx() }
-        }
-
-        suggestBtn.setOnClickListener {
-            val app = application as PlantDiseasesApp
-            val imageFile = File(scan.imagePath)
-            if (!imageFile.exists()) {
-                suggestionStatus.text = getString(R.string.species_suggest_unavailable_body)
-                return@setOnClickListener
-            }
-            suggestBtn.isEnabled = false
-            suggestionStatus.text = getString(R.string.species_suggest_loading)
-            candidateChips.removeAllViews()
-            candidateChips.visibility = View.GONE
-            lifecycleScope.launch {
-                val res = app.scanRepository.identifySpecies(imageFile)
-                suggestBtn.isEnabled = true
-                res.onSuccess { id ->
-                    if (!id.available || id.results.isEmpty()) {
-                        suggestionStatus.text = if (id.results.isEmpty() && id.available)
-                            getString(R.string.species_suggest_no_results)
-                        else
-                            getString(R.string.species_suggest_unavailable_body)
-                        return@onSuccess
-                    }
-                    suggestionStatus.text = getString(R.string.species_suggest_title)
-                    id.results.take(3).forEach { candidate ->
-                        candidateChips.addView(speciesChip(candidate) { picked ->
-                            pickedScientific = picked.scientificName
-                            pickedCommon = picked.displayCommonName
-                            val display = picked.displayCommonName
-                                ?: picked.scientificName
-                                ?: getString(R.string.species_suggest_unknown_name)
-                            species.second.setText(display)
-                            // Auto-fill plant name with the friendly common
-                            // name if the user hasn't typed anything yet.
-                            if (name.second.text.isNullOrBlank() ||
-                                name.second.text?.toString() == scan.diseaseName) {
-                                name.second.setText(display)
-                            }
-                        })
-                    }
-                    candidateChips.visibility = View.VISIBLE
-                }.onFailure {
-                    suggestionStatus.text = getString(R.string.species_suggest_unavailable_body)
-                }
-            }
-        }
-
-        container.addView(name.first)
-        container.addView(species.first)
-        container.addView(suggestionStatus)
-        container.addView(candidateChips)
-        container.addView(suggestBtn)
-
-        val dialog = MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.create_new_plant)
-            .setView(container)
-            .setNegativeButton(R.string.cancel, null)
-            .setPositiveButton(R.string.save, null)
-            .show()
-
-        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-            val plantName = name.second.text?.toString()?.trim().orEmpty()
-            if (plantName.isEmpty()) {
-                name.first.error = getString(R.string.plant_name_required)
-                return@setOnClickListener
-            }
+        CreatePlantSheet.show(
+            supportFragmentManager,
+            scan,
+            initialName = scan.diseaseName,
+        ) { plantName, species, scientific, common ->
             val app = application as PlantDiseasesApp
             lifecycleScope.launch {
                 val plantId = app.plantRepository.savePlant(
                     name = plantName,
-                    species = species.second.text?.toString(),
-                    scientificName = pickedScientific,
-                    commonName = pickedCommon,
+                    species = species,
+                    scientificName = scientific,
+                    commonName = common,
                 )
                 app.plantRepository.assignScanToPlant(scan.id, plantId)
                 binding.btnAddToGarden.text = getString(R.string.added_to_garden)
@@ -558,96 +467,8 @@ class ResultActivity : AppCompatActivity() {
                     getString(R.string.scan_added_to_garden),
                     Toast.LENGTH_SHORT,
                 ).show()
-                dialog.dismiss()
             }
         }
-    }
-
-    /** Single tap-to-pick chip in the species-suggestion list. */
-    private fun speciesChip(
-        candidate: SpeciesCandidate,
-        onPick: (SpeciesCandidate) -> Unit,
-    ): View {
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            background = getDrawable(R.drawable.bg_species_chip)
-            setPadding(12.dpToPx(), 10.dpToPx(), 12.dpToPx(), 10.dpToPx())
-            isClickable = true
-            isFocusable = true
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { bottomMargin = 6.dpToPx() }
-            setOnClickListener { onPick(candidate) }
-        }
-        val text = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
-            )
-        }
-        text.addView(TextView(this).apply {
-            // Qualify with `this.text` — the enclosing scope binds `text`
-            // to the outer LinearLayout val and would otherwise win.
-            this.text = candidate.displayCommonName
-                ?: candidate.scientificName
-                ?: getString(R.string.species_suggest_unknown_name)
-            textSize = 14f
-            setTextColor(getColor(R.color.on_surface))
-            typeface = android.graphics.Typeface.create("sans-serif-medium",
-                android.graphics.Typeface.NORMAL)
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-        })
-        candidate.scientificName?.let { sci ->
-            if (sci != (candidate.displayCommonName ?: "")) {
-                text.addView(TextView(this).apply {
-                    this.text = sci
-                    textSize = 12f
-                    setTextColor(getColor(R.color.on_surface_secondary))
-                    setTypeface(typeface, android.graphics.Typeface.ITALIC)
-                    maxLines = 1
-                    ellipsize = android.text.TextUtils.TruncateAt.END
-                })
-            }
-        }
-        row.addView(text)
-        row.addView(TextView(this).apply {
-            this.text = getString(
-                R.string.species_suggest_match,
-                (candidate.score * 100).toInt().coerceIn(0, 100)
-            )
-            textSize = 12f
-            setTextColor(getColor(R.color.primary))
-            typeface = android.graphics.Typeface.create("sans-serif-medium",
-                android.graphics.Typeface.NORMAL)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { marginStart = 10.dpToPx() }
-        })
-        return row
-    }
-
-    private fun resultInputField(
-        hint: String,
-        value: String?,
-    ): Pair<TextInputLayout, TextInputEditText> {
-        val input = TextInputEditText(this).apply {
-            setText(value.orEmpty())
-            inputType = InputType.TYPE_CLASS_TEXT
-            setSingleLine(true)
-        }
-        val layout = TextInputLayout(this).apply {
-            this.hint = hint
-            addView(input)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { bottomMargin = 10.dpToPx() }
-        }
-        return layout to input
     }
 
     private fun setupTreatmentPreventionTabs(scan: ScanEntity, repository: ScanRepository, isRu: Boolean) {
@@ -713,10 +534,13 @@ class ResultActivity : AppCompatActivity() {
             return
         }
 
-        // A detector/classifier mismatch is the more actionable flag —
-        // it means the model disagreed with itself — so prefer it over
-        // the softer "uncertain_healthy".
+        // Priority order: blur (re-shoot is the only fix) > detector
+        // mismatch (model disagreed with itself) > uncertain_healthy
+        // (soft hedge).
         val (titleRes, bodyRes) = when {
+            "blurry_image" in warnings ->
+                R.string.warning_blurry_image_title to
+                    R.string.warning_blurry_image
             "detector_classifier_mismatch" in warnings ->
                 R.string.warning_detector_mismatch_title to
                     R.string.warning_detector_mismatch
@@ -732,6 +556,111 @@ class ResultActivity : AppCompatActivity() {
         binding.cardPipelineWarning.visibility = View.VISIBLE
         binding.tvPipelineWarningTitle.setText(titleRes)
         binding.tvPipelineWarningBody.setText(bodyRes)
+    }
+
+    private fun buildSpeciesCard(scan: ScanEntity) {
+        // Render the stored species fields (populated at save time
+        // from the server's PlantNet fan-out). The card stays hidden
+        // when we have neither a scientific nor a common name —
+        // that's the case when PlantNet wasn't configured or every
+        // candidate scored zero.
+        val sci = scan.speciesScientific?.takeIf { it.isNotBlank() }
+        val common = scan.speciesCommon?.takeIf { it.isNotBlank() }
+        if (sci == null && common == null) {
+            binding.cardSpecies.visibility = View.GONE
+            return
+        }
+        binding.cardSpecies.visibility = View.VISIBLE
+        binding.tvSpeciesBest.text = common ?: sci.orEmpty()
+        binding.tvSpeciesScientific.text = sci.orEmpty()
+        binding.tvSpeciesScientific.visibility =
+            if (sci.isNullOrBlank() || sci == common) View.GONE else View.VISIBLE
+        val score = scan.speciesScore
+        if (score != null && score > 0f) {
+            binding.tvSpeciesScore.visibility = View.VISIBLE
+            binding.tvSpeciesScore.text = getString(
+                R.string.species_card_score,
+                (score * 100).toInt().coerceIn(0, 100),
+            )
+        } else {
+            binding.tvSpeciesScore.visibility = View.GONE
+        }
+        // Alternates intentionally left empty — we only persist the
+        // best match on the ScanEntity. The full candidates list is
+        // available on the live AnalysisResponse and could be wired
+        // later if we add multi-pick UX.
+        binding.speciesAltsLayout.removeAllViews()
+    }
+
+    private fun buildSimilarScansCard(
+        scan: ScanEntity,
+        repository: ScanRepository,
+        isRu: Boolean,
+    ) {
+        val card = binding.cardSimilarScans
+        val rv = binding.rvSimilarScans
+        // Default state: hidden until the network call returns.
+        card.visibility = View.GONE
+
+        val diseaseKey = repository.topClassKey(scan)
+            ?: scan.diseaseName.lowercase().replace(' ', '_')
+        val app = application as PlantDiseasesApp
+        val pseudoId = com.plantdiseases.app.util.TelemetryIds.userPseudoId(this)
+        val adapter = SimilarScansAdapter { key -> classKeyDisplayName(key, isRu) ?: key }
+        rv.adapter = adapter
+        rv.layoutManager = androidx.recyclerview.widget.LinearLayoutManager(
+            this, androidx.recyclerview.widget.LinearLayoutManager.HORIZONTAL, false,
+        )
+
+        lifecycleScope.launch {
+            // First-scan-after-permission may not have a cached
+            // region yet because the MainActivity warmer races with
+            // this code. Resolve actively (background-threaded
+            // inside the helper) so the card lights up on the same
+            // scan instead of the next one.
+            val resolved = com.plantdiseases.app.util.RegionResolver.cachedRegion(this@ResultActivity)
+                ?: com.plantdiseases.app.util.RegionResolver.resolveRegion(this@ResultActivity)
+            if (resolved == null) {
+                // No region yet. Render a soft hint so the user
+                // knows why the card is empty.
+                card.visibility = View.VISIBLE
+                binding.tvSimilarSubtitle.text = getString(R.string.similar_scans_subtitle_no_region)
+                rv.visibility = View.GONE
+                return@launch
+            }
+            val result = app.scanRepository.communityNearby(
+                country = resolved.country,
+                region = resolved.locality,
+                disease = diseaseKey,
+                userPseudoId = pseudoId,
+                limit = 12,
+            )
+            result.onSuccess { response ->
+                if (response.items.isEmpty() && (response.summary?.last7d ?: 0) == 0) {
+                    // Genuinely empty — render the card with an
+                    // empty hint instead of hiding it, so the user
+                    // sees the region was queried.
+                    card.visibility = View.VISIBLE
+                    binding.tvSimilarSubtitle.text = getString(R.string.similar_scans_empty)
+                    rv.visibility = View.GONE
+                    return@onSuccess
+                }
+                card.visibility = View.VISIBLE
+                rv.visibility = View.VISIBLE
+                adapter.submit(response.items)
+                val total = response.summary?.last7d ?: response.items.size
+                // Prefer the locality label when the user has one
+                // ("12 recent scans from London, GB"); otherwise
+                // fall back to the country bucket.
+                val label = resolved.displayLabel
+                binding.tvSimilarSubtitle.text = getString(
+                    R.string.similar_scans_subtitle, total, label,
+                )
+            }.onFailure {
+                // Stay hidden on error — never surface a broken card.
+                card.visibility = View.GONE
+            }
+        }
     }
 
     private fun buildAlternativeDiagnoses(scan: ScanEntity, repository: ScanRepository, isRu: Boolean) {
@@ -753,21 +682,6 @@ class ResultActivity : AppCompatActivity() {
         binding.cardAlternatives.visibility = View.VISIBLE
         binding.alternativesLayout.removeAllViews()
 
-        val diseaseNames = mapOf(
-            // PlantVision v2.0 — 11 classes
-            "healthy" to (if (isRu) "Здоровое растение" else "Healthy Plant"),
-            "powdery_mildew" to (if (isRu) "Мучнистая роса" else "Powdery Mildew"),
-            "gray_mold_botrytis" to (if (isRu) "Серая гниль (ботритис)" else "Gray Mold (Botrytis)"),
-            "leaf_spot_fungal" to (if (isRu) "Грибковая пятнистость" else "Fungal Leaf Spot"),
-            "bacterial_leaf_spot" to (if (isRu) "Бактериальная пятнистость" else "Bacterial Leaf Spot"),
-            "viral_disease" to (if (isRu) "Вирусное заболевание" else "Viral Disease"),
-            "edema" to (if (isRu) "Эдема (отёчность)" else "Edema (Oedema)"),
-            "sunburn_or_scorch" to (if (isRu) "Солнечный ожог" else "Sunburn / Light Scorch"),
-            "leaf_scorch_underwatering" to (if (isRu) "Краевой ожог (недолив)" else "Leaf Scorch (Under-watering)"),
-            "nutrient_deficiency" to (if (isRu) "Дефицит питания" else "Nutrient Deficiency"),
-            "not_a_plant" to (if (isRu) "Не растение" else "Not a Plant"),
-        )
-
         top3.forEachIndexed { index, entry ->
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
@@ -780,7 +694,7 @@ class ResultActivity : AppCompatActivity() {
             }
 
             val percent = (entry.value * 100).toInt()
-            val displayName = diseaseNames[entry.key] ?: entry.key
+            val displayName = classKeyDisplayName(entry.key, isRu) ?: entry.key
             val isMain = index == 0
 
             val nameRow = LinearLayout(this).apply {
@@ -1021,6 +935,8 @@ class ResultActivity : AppCompatActivity() {
             binding.cardDescription,
             binding.cardTreatmentPrevention,
             binding.cardAlternatives,
+            binding.cardSpecies,
+            binding.cardSimilarScans,
             binding.cardToxicity,
             binding.cardFeedback,
             binding.cardPipelineWarning,
@@ -1227,15 +1143,15 @@ class ResultActivity : AppCompatActivity() {
                 body.setText(R.string.toxicity_safe_body)
             }
             else -> {
-                // Unknown source — never falsely reassure.
-                card.visibility = View.VISIBLE
-                card.setCardBackgroundColor(getColor(R.color.warning_amber_bg))
-                title.setTextColor(getColor(R.color.warning_amber))
-                icon.setColorFilter(getColor(R.color.warning_amber))
-                icon.setImageResource(R.drawable.ic_warning)
-                title.setText(R.string.toxicity_unknown_title)
-                body.setTextColor(getColor(R.color.warning_amber))
-                body.setText(R.string.toxicity_unknown_body)
+                // Unknown source: the server couldn't pin a species
+                // (PlantNet wasn't configured / no candidates / the
+                // species isn't in our toxicity DB). Showing a big
+                // amber "pet safety unconfirmed" card on every scan
+                // by default reads as a warning the user can't act
+                // on — the previous behaviour. Hide the card and let
+                // the user pick a species via the create-plant flow
+                // to trigger a real lookup on the next request.
+                card.visibility = View.GONE
             }
         }
     }
@@ -1245,6 +1161,17 @@ class ResultActivity : AppCompatActivity() {
     private fun buildFeedbackCard(scan: ScanEntity) {
         val card = binding.cardFeedback
         card.visibility = View.VISIBLE
+
+        // Already-submitted feedback persists across re-opens of the same
+        // scan — show the confirmation state and skip the buttons so the
+        // user can't double-submit.
+        if (isFeedbackAlreadySubmitted(scan.id)) {
+            binding.feedbackChoiceRow.visibility = View.GONE
+            binding.tvFeedbackStatus.visibility = View.VISIBLE
+            binding.tvFeedbackStatus.setText(R.string.feedback_sent)
+            return
+        }
+
         binding.tvFeedbackStatus.visibility = View.GONE
         binding.feedbackChoiceRow.visibility = View.VISIBLE
         binding.btnFeedbackYes.isEnabled = true
@@ -1256,77 +1183,51 @@ class ResultActivity : AppCompatActivity() {
         }
         binding.btnFeedbackNo.setOnClickListener {
             Haptics.tick(this)
-            showCorrectionDialog(scan)
+            showCorrectionSheet(scan)
         }
     }
 
-    private fun showCorrectionDialog(scan: ScanEntity) {
-        val container = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, 8.dpToPx(), 0, 0)
-        }
-        val correctionInput = TextInputEditText(this).apply {
-            inputType = InputType.TYPE_CLASS_TEXT
-            setSingleLine(true)
-        }
-        val correctionLayout = TextInputLayout(this).apply {
-            hint = getString(R.string.feedback_correction_hint)
-            addView(correctionInput)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { bottomMargin = 10.dpToPx() }
-        }
-        val noteInput = TextInputEditText(this).apply {
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
-            minLines = 2
-            maxLines = 5
-        }
-        val noteLayout = TextInputLayout(this).apply {
-            hint = getString(R.string.feedback_note_hint)
-            addView(noteInput)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
+    private fun showCorrectionSheet(scan: ScanEntity) {
+        val isRu = LocaleHelper.isRussian(this)
+        val repository = (application as PlantDiseasesApp).scanRepository
+        val predictedKey = repository.topClassKey(scan)
+        val predictedDisplay = predictedKey?.let { classKeyDisplayName(it, isRu) }
+            ?: (if (isRu) scan.diseaseNameRu else scan.diseaseName)
+        FeedbackCorrectionSheet.show(
+            supportFragmentManager,
+            predictedDisplayName = predictedDisplay,
+        ) { correctedClass, reason, note ->
+            submitFeedback(
+                scan,
+                correct = false,
+                correctedClass = correctedClass,
+                reason = reason,
+                note = note,
             )
         }
-        container.addView(correctionLayout)
-        container.addView(noteLayout)
-
-        MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.feedback_correction_title)
-            .setView(container)
-            .setNegativeButton(R.string.cancel, null)
-            .setPositiveButton(R.string.feedback_send) { _, _ ->
-                submitFeedback(
-                    scan,
-                    correct = false,
-                    correctedClass = correctionInput.text?.toString()?.trim().orEmpty()
-                        .ifBlank { null },
-                    note = noteInput.text?.toString()?.trim().orEmpty().ifBlank { null },
-                )
-            }
-            .show()
     }
 
     private fun submitFeedback(
         scan: ScanEntity,
         correct: Boolean,
         correctedClass: String? = null,
+        reason: String? = null,
         note: String? = null,
     ) {
         binding.btnFeedbackYes.isEnabled = false
         binding.btnFeedbackNo.isEnabled = false
         val app = application as PlantDiseasesApp
-        val request = FeedbackRequest(
-            scanId = scan.id.toString(),
+        val request = buildFeedbackRequest(
+            scan = scan,
             correct = correct,
             correctedClass = correctedClass,
+            reason = reason,
             note = note,
         )
         lifecycleScope.launch {
             val result = app.scanRepository.submitFeedback(request)
             result.onSuccess {
+                markFeedbackSubmitted(scan.id)
                 binding.feedbackChoiceRow.visibility = View.GONE
                 binding.tvFeedbackStatus.visibility = View.VISIBLE
                 binding.tvFeedbackStatus.setText(R.string.feedback_sent)
@@ -1343,8 +1244,100 @@ class ResultActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Assemble the full feedback payload from a [ScanEntity] + the
+     * user's three correction signals. All metadata is best-effort:
+     * when a field is unknown we send null rather than fabricating a
+     * value, so server-side metrics don't get polluted by defaults.
+     */
+    private fun buildFeedbackRequest(
+        scan: ScanEntity,
+        correct: Boolean,
+        correctedClass: String?,
+        reason: String?,
+        note: String?,
+    ): FeedbackRequest {
+        val repository = (application as PlantDiseasesApp).scanRepository
+        val predictedKey = repository.topClassKey(scan)
+        val allProbs = repository.parseAllProbs(scan.allProbs)
+        val predictedConfidence = predictedKey
+            ?.let { allProbs[it] }
+            ?: scan.confidence
+        val top3 = allProbs.entries
+            .asSequence()
+            .sortedByDescending { it.value }
+            .take(3)
+            .map { TopProb(classKey = it.key, prob = it.value) }
+            .toList()
+            .takeIf { it.isNotEmpty() }
+        val regionCount = repository.parseRegions(scan.regions).size
+        val isRu = LocaleHelper.isRussian(this)
+        val latencyMs = (System.currentTimeMillis() - scan.timestamp).coerceAtLeast(0L)
+
+        // ``client_scan_id`` is the random UUID we mint at insert time.
+        // For legacy v9 rows backfilled by the migration it's also a
+        // UUID. We never send the local autoincrement primary key.
+        val scanId = scan.clientScanId.takeIf { it.isNotBlank() }
+            ?: java.util.UUID.randomUUID().toString()
+
+        return FeedbackRequest(
+            scanId = scanId,
+            correct = correct,
+            correctedClass = correctedClass,
+            reason = reason,
+            note = note,
+            predictedClass = predictedKey,
+            predictedConfidence = predictedConfidence,
+            top3 = top3,
+            modelVersion = SERVER_MODEL_VERSION,
+            appVersion = BuildConfig.VERSION_NAME,
+            locale = if (isRu) "ru" else "en",
+            platform = "android",
+            userPseudoId = TelemetryIds.userPseudoId(this),
+            regionCount = regionCount,
+            primaryRegionIndex = scan.primaryRegionIndex,
+            feedbackLatencyMs = latencyMs,
+            // We don't ship the image hash today — adding it requires
+            // re-reading the original file off disk on the UI thread,
+            // and the server treats it as optional.
+            imageHash = null,
+        )
+    }
+
+    private fun classKeyDisplayName(key: String, isRu: Boolean): String? = when (key) {
+        // PlantVision v2.0 — 11 classes
+        "healthy" -> if (isRu) "Здоровое растение" else "Healthy Plant"
+        "powdery_mildew" -> if (isRu) "Мучнистая роса" else "Powdery Mildew"
+        "gray_mold_botrytis" -> if (isRu) "Серая гниль (ботритис)" else "Gray Mold (Botrytis)"
+        "leaf_spot_fungal" -> if (isRu) "Грибковая пятнистость" else "Fungal Leaf Spot"
+        "bacterial_leaf_spot" -> if (isRu) "Бактериальная пятнистость" else "Bacterial Leaf Spot"
+        "viral_disease" -> if (isRu) "Вирусное заболевание" else "Viral Disease"
+        "edema" -> if (isRu) "Эдема (отёчность)" else "Edema (Oedema)"
+        "sunburn_or_scorch" -> if (isRu) "Солнечный ожог" else "Sunburn / Light Scorch"
+        "leaf_scorch_underwatering" -> if (isRu) "Краевой ожог (недолив)" else "Leaf Scorch (Under-watering)"
+        "nutrient_deficiency" -> if (isRu) "Дефицит питания" else "Nutrient Deficiency"
+        "not_a_plant" -> if (isRu) "Не растение" else "Not a Plant"
+        else -> null
+    }
+
     companion object {
         const val EXTRA_SCAN_ID = "extra_scan_id"
         private const val TAG = "ResultActivity"
+        private const val FEEDBACK_PREFS = "plantdiseases_feedback_prefs"
+        private const val FEEDBACK_KEY_PREFIX = "scan_"
+        // Pinned to the classifier release in server/models/classes.json.
+        // When the server exposes model_version in /api/analyze we'll
+        // start trusting that value per-scan instead.
+        private const val SERVER_MODEL_VERSION = "2.1"
+    }
+
+    private fun isFeedbackAlreadySubmitted(scanId: Long): Boolean =
+        getSharedPreferences(FEEDBACK_PREFS, MODE_PRIVATE)
+            .getBoolean("$FEEDBACK_KEY_PREFIX$scanId", false)
+
+    private fun markFeedbackSubmitted(scanId: Long) {
+        getSharedPreferences(FEEDBACK_PREFS, MODE_PRIVATE).edit()
+            .putBoolean("$FEEDBACK_KEY_PREFIX$scanId", true)
+            .apply()
     }
 }
