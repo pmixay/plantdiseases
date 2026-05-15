@@ -58,25 +58,22 @@
         <item name="android:color">@color/primary_light</item>
     </style>
 
-    <!-- ─── Liquid-glass card ────────────────────────────────────
-         Reusable wrapper for content surfaces. Inherits MaterialCardView
-         so existing layouts only need: style="@style/App.GlassCard".
-         The translucent background drawable carries the green tint and
-         the inner-stroke; cardElevation gives the card a subtle drop
-         shadow that simulates depth without overpowering the frosted
-         look. -->
+    <!-- ─── Surface card ────────────────────────────────────────
+         Flat Material 3 surface container. No glass overlay, no
+         translucent green tint — just an opaque card on
+         ``surfaceContainerLow`` with a soft corner radius and a
+         small elevation so it lifts off the screen background.
+         Used everywhere a panel/card is needed. -->
     <style name="App.GlassCard" parent="Widget.Material3.CardView.Filled">
-        <item name="cardBackgroundColor">@android:color/transparent</item>
+        <item name="cardBackgroundColor">?attr/colorSurfaceContainerLow</item>
         <item name="cardCornerRadius">@dimen/radius_lg</item>
-        <item name="cardElevation">@dimen/glass_elevation_soft</item>
+        <item name="cardElevation">0dp</item>
         <item name="strokeWidth">0dp</item>
-        <item name="android:background">@drawable/bg_glass_card</item>
         <item name="contentPadding">@dimen/space_lg</item>
     </style>
 
     <style name="App.GlassCard.Strong">
-        <item name="android:background">@drawable/bg_glass_card_strong</item>
-        <item name="cardElevation">@dimen/glass_elevation</item>
+        <item name="cardBackgroundColor">?attr/colorSurfaceContainer</item>
     </style>
 
     <!-- Compact pill chip for status / count badges. -->
@@ -84,7 +81,7 @@
         <item name="android:background">@drawable/bg_glass_pill</item>
         <item name="android:paddingHorizontal">@dimen/space_md</item>
         <item name="android:paddingVertical">@dimen/space_xs</item>
-        <item name="android:textColor">@color/on_surface</item>
+        <item name="android:textColor">?attr/colorOnSurface</item>
         <item name="android:textSize">@dimen/text_caption</item>
         <item name="android:fontFamily">sans-serif-medium</item>
     </style>

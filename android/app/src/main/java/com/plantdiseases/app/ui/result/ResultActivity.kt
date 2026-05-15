@@ -7,7 +7,6 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.net.Uri
 import android.os.Bundle
-import android.speech.tts.TextToSpeech
 import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
@@ -49,7 +48,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
-import java.util.Locale
 
 class ResultActivity : AppCompatActivity() {
 
@@ -59,8 +57,6 @@ class ResultActivity : AppCompatActivity() {
     private lateinit var scaleGestureDetector: ScaleGestureDetector
     private var skeletonAnimator: ValueAnimator? = null
 
-    private var tts: TextToSpeech? = null
-    private var ttsReady = false
     private var carePlanCard: CarePlanCardView? = null
 
     override fun attachBaseContext(newBase: Context) {
@@ -82,43 +78,22 @@ class ResultActivity : AppCompatActivity() {
         setupToolbarMenu()
         setupPinchToZoom()
         setupStickyHeader()
-        initTts()
         loadResult(scanId)
     }
 
-    private var toolbarSpeakItem: android.view.MenuItem? = null
     private var pendingScanForToolbar: ScanEntity? = null
 
     private fun setupToolbarMenu() {
         binding.toolbar.inflateMenu(R.menu.result_toolbar_menu)
-        toolbarSpeakItem = binding.toolbar.menu.findItem(R.id.action_speak)
         binding.toolbar.setOnMenuItemClickListener { item ->
             val scan = pendingScanForToolbar ?: return@setOnMenuItemClickListener false
             when (item.itemId) {
-                R.id.action_speak -> {
-                    onSpeakAction(scan)
-                    true
-                }
                 R.id.action_delete -> {
                     onDeleteAction(scan)
                     true
                 }
                 else -> false
             }
-        }
-    }
-
-    private fun onSpeakAction(scan: ScanEntity) {
-        if (!ttsReady) {
-            Toast.makeText(this, R.string.speak_unavailable, Toast.LENGTH_SHORT).show()
-            return
-        }
-        Haptics.tick(this)
-        if (tts?.isSpeaking == true) {
-            tts?.stop()
-            updateSpeakIcon(speaking = false)
-        } else if (speakResult(scan, LocaleHelper.isRussian(this))) {
-            updateSpeakIcon(speaking = true)
         }
     }
 
@@ -136,13 +111,6 @@ class ResultActivity : AppCompatActivity() {
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
-    }
-
-    private fun updateSpeakIcon(speaking: Boolean) {
-        toolbarSpeakItem?.let { item ->
-            item.setIcon(if (speaking) R.drawable.ic_close else R.drawable.ic_speak)
-            item.title = getString(if (speaking) R.string.speak_stop else R.string.speak_read_aloud)
-        }
     }
 
     private fun setupPinchToZoom() {
@@ -408,9 +376,8 @@ class ResultActivity : AppCompatActivity() {
             // Animate cards from bottom
             animateCardsIn()
 
-            // Toolbar overflow menu owns the read-aloud / delete actions.
+            // Toolbar overflow menu owns the delete action.
             pendingScanForToolbar = scan
-            updateSpeakIcon(speaking = false)
         }
     }
 
@@ -534,10 +501,14 @@ class ResultActivity : AppCompatActivity() {
             return
         }
 
-        // Priority order: blur (re-shoot is the only fix) > detector
-        // mismatch (model disagreed with itself) > uncertain_healthy
+        // Priority order: very_low_confidence (re-shoot is the only
+        // honest path — the verdict in the card is essentially a
+        // guess) > blur > detector mismatch > uncertain_healthy
         // (soft hedge).
         val (titleRes, bodyRes) = when {
+            "very_low_confidence" in warnings ->
+                R.string.warning_very_low_confidence_title to
+                    R.string.warning_very_low_confidence
             "blurry_image" in warnings ->
                 R.string.warning_blurry_image_title to
                     R.string.warning_blurry_image
@@ -599,8 +570,13 @@ class ResultActivity : AppCompatActivity() {
     ) {
         val card = binding.cardSimilarScans
         val rv = binding.rvSimilarScans
+        val empty = binding.tvSimilarEmpty
+        val chips = binding.chipGroupTopDiseases
         // Default state: hidden until the network call returns.
         card.visibility = View.GONE
+        rv.visibility = View.GONE
+        empty.visibility = View.GONE
+        chips.visibility = View.GONE
 
         val diseaseKey = repository.topClassKey(scan)
             ?: scan.diseaseName.lowercase().replace(' ', '_')
@@ -625,42 +601,156 @@ class ResultActivity : AppCompatActivity() {
                 // knows why the card is empty.
                 card.visibility = View.VISIBLE
                 binding.tvSimilarSubtitle.text = getString(R.string.similar_scans_subtitle_no_region)
-                rv.visibility = View.GONE
+                empty.visibility = View.GONE
                 return@launch
             }
+            fetchAndRenderSimilarScans(
+                adapter = adapter,
+                resolved = resolved,
+                pseudoId = pseudoId,
+                initialDisease = diseaseKey,
+                filterDisease = null,
+                isRu = isRu,
+            )
+        }
+    }
+
+    /**
+     * Fetch + render the carousel for one disease filter. ``filterDisease``
+     * being non-null means the user tapped a chip; otherwise we use
+     * ``initialDisease`` (the current scan's diagnosis) so the server
+     * surfaces same-diagnosis rows first. Called both on first render
+     * and on every chip tap.
+     *
+     * The chip row itself is only built on the first call (when
+     * ``filterDisease`` is ``null``) — subsequent chip-tap re-fetches
+     * leave the chip view tree alone so the user's selection state
+     * survives and the row doesn't flicker.
+     */
+    private fun fetchAndRenderSimilarScans(
+        adapter: SimilarScansAdapter,
+        resolved: com.plantdiseases.app.util.ResolvedRegion,
+        pseudoId: String,
+        initialDisease: String,
+        filterDisease: String?,
+        isRu: Boolean,
+    ) {
+        val card = binding.cardSimilarScans
+        val rv = binding.rvSimilarScans
+        val empty = binding.tvSimilarEmpty
+        val chips = binding.chipGroupTopDiseases
+        val app = application as PlantDiseasesApp
+        val effectiveDisease = filterDisease ?: initialDisease
+        lifecycleScope.launch {
             val result = app.scanRepository.communityNearby(
                 country = resolved.country,
                 region = resolved.locality,
-                disease = diseaseKey,
+                disease = effectiveDisease,
                 userPseudoId = pseudoId,
                 limit = 12,
             )
             result.onSuccess { response ->
-                if (response.items.isEmpty() && (response.summary?.last7d ?: 0) == 0) {
-                    // Genuinely empty — render the card with an
-                    // empty hint instead of hiding it, so the user
-                    // sees the region was queried.
-                    card.visibility = View.VISIBLE
-                    binding.tvSimilarSubtitle.text = getString(R.string.similar_scans_empty)
-                    rv.visibility = View.GONE
-                    return@onSuccess
-                }
                 card.visibility = View.VISIBLE
-                rv.visibility = View.VISIBLE
-                adapter.submit(response.items)
-                val total = response.summary?.last7d ?: response.items.size
-                // Prefer the locality label when the user has one
-                // ("12 recent scans from London, GB"); otherwise
-                // fall back to the country bucket.
                 val label = resolved.displayLabel
-                binding.tvSimilarSubtitle.text = getString(
-                    R.string.similar_scans_subtitle, total, label,
-                )
+                // When the user filters by chip, restrict the carousel
+                // strictly — the server may return same-locality
+                // fillers of other diseases when the chip's bucket is
+                // sparse, and those would defeat the purpose of the
+                // filter.
+                val items = if (filterDisease != null) {
+                    response.items.filter { it.disease == filterDisease }
+                } else {
+                    response.items
+                }
+                val total = response.summary?.last7d ?: items.size
+
+                if (items.isEmpty()) {
+                    binding.tvSimilarSubtitle.text = getString(
+                        R.string.similar_scans_subtitle_region, label,
+                    )
+                    empty.text = getString(R.string.similar_scans_empty)
+                    empty.visibility = View.VISIBLE
+                    rv.visibility = View.GONE
+                } else {
+                    binding.tvSimilarSubtitle.text = getString(
+                        R.string.similar_scans_subtitle, total, label,
+                    )
+                    rv.visibility = View.VISIBLE
+                    empty.visibility = View.GONE
+                    adapter.submit(items)
+                }
+                // Build the chip row only once, on the initial fetch.
+                // Chip-tap re-fetches keep the existing chips so the
+                // user's selection persists visually.
+                if (filterDisease == null && chips.childCount == 0) {
+                    renderTopDiseaseChips(
+                        chips = chips,
+                        top = response.summary?.topDiseases.orEmpty(),
+                        isRu = isRu,
+                        onChipToggled = { selectedDisease ->
+                            fetchAndRenderSimilarScans(
+                                adapter = adapter,
+                                resolved = resolved,
+                                pseudoId = pseudoId,
+                                initialDisease = initialDisease,
+                                filterDisease = selectedDisease,
+                                isRu = isRu,
+                            )
+                        },
+                    )
+                }
             }.onFailure {
                 // Stay hidden on error — never surface a broken card.
-                card.visibility = View.GONE
+                if (filterDisease == null) card.visibility = View.GONE
             }
         }
+    }
+
+    /**
+     * Render the regional top-diseases chip row. Each chip shows the
+     * localised disease label and the number of recent scans for it.
+     * Caps at 4 chips so the row stays readable on narrow phones.
+     *
+     * Chips are checkable; tapping one calls ``onChipToggled`` with
+     * the disease key, tapping the same chip again calls it with
+     * ``null`` (the "clear filter" signal). ``not_a_plant`` is
+     * stripped defensively — the server already drops it, but cached
+     * responses from older deployments shouldn't surface a chip
+     * for it.
+     */
+    private fun renderTopDiseaseChips(
+        chips: com.google.android.material.chip.ChipGroup,
+        top: List<com.plantdiseases.app.data.model.CommunityTopDisease>,
+        isRu: Boolean,
+        onChipToggled: (String?) -> Unit,
+    ) {
+        chips.removeAllViews()
+        val visible = top
+            .asSequence()
+            .filter { it.disease != "not_a_plant" }
+            .take(4)
+            .toList()
+        if (visible.size < 2) {
+            // One-chip filter is useless — collapse the row entirely
+            // so the user isn't presented with a no-op control.
+            chips.visibility = View.GONE
+            return
+        }
+        for (entry in visible) {
+            val label = classKeyDisplayName(entry.disease, isRu) ?: entry.disease
+            val chip = com.google.android.material.chip.Chip(this).apply {
+                text = getString(R.string.similar_scans_chip_format, label, entry.count)
+                isCheckable = true
+                isClickable = true
+                tag = entry.disease
+                setOnClickListener {
+                    val newFilter = if (isChecked) entry.disease else null
+                    onChipToggled(newFilter)
+                }
+            }
+            chips.addView(chip)
+        }
+        chips.visibility = View.VISIBLE
     }
 
     private fun buildAlternativeDiagnoses(scan: ScanEntity, repository: ScanRepository, isRu: Boolean) {
@@ -964,74 +1054,9 @@ class ResultActivity : AppCompatActivity() {
         TypedValue.COMPLEX_UNIT_DIP, this, resources.displayMetrics
     )
 
-    // ─── TTS ──────────────────────────────────────────────────────────────────
-
-    private fun initTts() {
-        tts = TextToSpeech(this) { status ->
-            ttsReady = (status == TextToSpeech.SUCCESS)
-            // Hook the progress listener once we know TTS is alive so the
-            // toolbar speak icon can flip back to the play state when
-            // playback ends or errors out.
-            if (ttsReady) {
-                tts?.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
-                    override fun onStart(utteranceId: String?) {}
-                    override fun onDone(utteranceId: String?) {
-                        runOnUiThread { updateSpeakIcon(speaking = false) }
-                    }
-                    @Deprecated("Deprecated in Java")
-                    override fun onError(utteranceId: String?) {
-                        runOnUiThread { updateSpeakIcon(speaking = false) }
-                    }
-                })
-            }
-        }
-    }
-
-    private fun speakResult(scan: ScanEntity, isRu: Boolean): Boolean {
-        val repository = (application as PlantDiseasesApp).scanRepository
-        val diseaseName = if (isRu) scan.diseaseNameRu else scan.diseaseName
-        val description = if (isRu) scan.descriptionRu else scan.description
-        val steps = repository.parseStringList(
-            if (isRu) scan.treatmentRu else scan.treatment
-        ).take(3)
-
-        val text = buildString {
-            append(diseaseName)
-            append(". ")
-            append(description)
-            if (steps.isNotEmpty()) {
-                append(". ")
-                if (isRu) append("Лечение. ") else append("Treatment. ")
-                steps.forEachIndexed { i, step ->
-                    append("${i + 1}. $step. ")
-                }
-            }
-        }
-
-        val locale = if (isRu) Locale("ru") else Locale.ENGLISH
-        val availability = tts?.setLanguage(locale) ?: TextToSpeech.LANG_MISSING_DATA
-        if (availability == TextToSpeech.LANG_MISSING_DATA ||
-            availability == TextToSpeech.LANG_NOT_SUPPORTED
-        ) {
-            Toast.makeText(this, R.string.speak_unavailable, Toast.LENGTH_SHORT).show()
-            updateSpeakIcon(speaking = false)
-            return false
-        }
-        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "result")
-        return true
-    }
-
-    override fun onPause() {
-        super.onPause()
-        tts?.stop()
-        updateSpeakIcon(speaking = false)
-    }
-
     override fun onDestroy() {
         skeletonAnimator?.cancel()
         skeletonAnimator = null
-        tts?.shutdown()
-        tts = null
         super.onDestroy()
     }
 
@@ -1217,14 +1242,14 @@ class ResultActivity : AppCompatActivity() {
         binding.btnFeedbackYes.isEnabled = false
         binding.btnFeedbackNo.isEnabled = false
         val app = application as PlantDiseasesApp
-        val request = buildFeedbackRequest(
-            scan = scan,
-            correct = correct,
-            correctedClass = correctedClass,
-            reason = reason,
-            note = note,
-        )
         lifecycleScope.launch {
+            val request = buildFeedbackRequest(
+                scan = scan,
+                correct = correct,
+                correctedClass = correctedClass,
+                reason = reason,
+                note = note,
+            )
             val result = app.scanRepository.submitFeedback(request)
             result.onSuccess {
                 markFeedbackSubmitted(scan.id)
@@ -1232,6 +1257,21 @@ class ResultActivity : AppCompatActivity() {
                 binding.tvFeedbackStatus.visibility = View.VISIBLE
                 binding.tvFeedbackStatus.setText(R.string.feedback_sent)
                 Haptics.success(this@ResultActivity)
+                // On negative feedback the original image is high-value
+                // for retraining. Best-effort upload: failures are
+                // swallowed (the JSON feedback row has already
+                // landed). Filename on the server is the SHA-256 of
+                // the bytes, matching the ``image_hash`` we already
+                // sent in the JSON payload.
+                if (!correct) {
+                    val scanId = request.scanId
+                    val imageFile = java.io.File(scan.imagePath)
+                    if (imageFile.exists()) {
+                        runCatching {
+                            app.scanRepository.uploadFeedbackImage(scanId, imageFile)
+                        }
+                    }
+                }
             }.onFailure { error ->
                 binding.btnFeedbackYes.isEnabled = true
                 binding.btnFeedbackNo.isEnabled = true
@@ -1250,7 +1290,7 @@ class ResultActivity : AppCompatActivity() {
      * when a field is unknown we send null rather than fabricating a
      * value, so server-side metrics don't get polluted by defaults.
      */
-    private fun buildFeedbackRequest(
+    private suspend fun buildFeedbackRequest(
         scan: ScanEntity,
         correct: Boolean,
         correctedClass: String?,
@@ -1258,7 +1298,17 @@ class ResultActivity : AppCompatActivity() {
         note: String?,
     ): FeedbackRequest {
         val repository = (application as PlantDiseasesApp).scanRepository
-        val predictedKey = repository.topClassKey(scan)
+        // Prefer the server-issued ``displayedClassKey`` — that's the
+        // verdict the user actually saw (post-weak-healthy-reroute).
+        // Falling back to argmax(all_probs) only when the column is
+        // empty (legacy scans saved before this build, or a server
+        // old enough that the field wasn't returned). Without this
+        // we'd echo the pre-reroute argmax back as
+        // ``predicted_class`` and rot the per-class accuracy
+        // metrics on the server side.
+        val displayedKey = scan.displayedClassKey?.takeIf { it.isNotBlank() }
+        val argmaxKey = repository.topClassKey(scan)
+        val predictedKey = displayedKey ?: argmaxKey
         val allProbs = repository.parseAllProbs(scan.allProbs)
         val predictedConfidence = predictedKey
             ?.let { allProbs[it] }
@@ -1275,10 +1325,29 @@ class ResultActivity : AppCompatActivity() {
         val latencyMs = (System.currentTimeMillis() - scan.timestamp).coerceAtLeast(0L)
 
         // ``client_scan_id`` is the random UUID we mint at insert time.
-        // For legacy v9 rows backfilled by the migration it's also a
-        // UUID. We never send the local autoincrement primary key.
+        // We never send the local autoincrement primary key.
         val scanId = scan.clientScanId.takeIf { it.isNotBlank() }
             ?: java.util.UUID.randomUUID().toString()
+
+        // SHA-256 of the original on-disk image so the corrections
+        // corpus can be joined back to image bytes during retraining
+        // without uploading the image itself. Runs off the UI thread;
+        // returns null when the file is gone — the server treats the
+        // field as optional.
+        val imageHashHex = withContext(Dispatchers.IO) {
+            ImageUtils.sha256Hex(java.io.File(scan.imagePath))
+        }
+
+        // Parse the persisted prediction set (JSON array of class
+        // keys, stored at saveScan time) back into a list. Stale
+        // gallery rows from before v2 of the local schema won't have
+        // it; that's fine — the server treats the field as optional.
+        val predictionSet: List<String>? = scan.predictionSet?.let { raw ->
+            runCatching {
+                com.google.gson.Gson()
+                    .fromJson(raw, Array<String>::class.java).toList()
+            }.getOrNull()?.takeIf { it.isNotEmpty() }
+        }
 
         return FeedbackRequest(
             scanId = scanId,
@@ -1297,10 +1366,8 @@ class ResultActivity : AppCompatActivity() {
             regionCount = regionCount,
             primaryRegionIndex = scan.primaryRegionIndex,
             feedbackLatencyMs = latencyMs,
-            // We don't ship the image hash today — adding it requires
-            // re-reading the original file off disk on the UI thread,
-            // and the server treats it as optional.
-            imageHash = null,
+            imageHash = imageHashHex,
+            predictionSet = predictionSet,
         )
     }
 

@@ -86,11 +86,40 @@ class FeedbackCorrectionSheet : BottomSheetDialogFragment() {
         }
 
         cancelBtn.setOnClickListener { dismiss() }
+
+        // Send is disabled until the user gives us at least one of
+        // {corrected class, free-text note}. A reason chip alone
+        // doesn't qualify — ``reason=wrong_class`` with no class +
+        // no note was the most common empty-row shape in the
+        // feedback corpus (rows 3, 4, 18) and carries no retraining
+        // signal. The catalogues are seeded with chips that have
+        // ``isCheckable=true``, so we listen for selection changes
+        // on both groups + every keystroke in the note field.
+        val updateSendState = {
+            val classChecked = classGroup.checkedChipId != View.NO_ID
+            val noteFilled = !noteInput.text?.toString()?.trim().isNullOrBlank()
+            sendBtn.isEnabled = classChecked || noteFilled
+        }
+        sendBtn.isEnabled = false
+        classGroup.setOnCheckedStateChangeListener { _, _ -> updateSendState() }
+        reasonGroup.setOnCheckedStateChangeListener { _, _ -> updateSendState() }
+        noteInput.addTextChangedListener(
+            object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                override fun afterTextChanged(s: android.text.Editable?) = updateSendState()
+            },
+        )
+
         sendBtn.setOnClickListener {
+            // ``KEY_OTHER`` ("other") is a valid out-of-head
+            // correction on the server — keep it, don't drop it.
+            // The previous filter threw away the explicit
+            // "Something else" signal users selected to tell us our
+            // label set is incomplete.
             val correctedClass = classGroup.checkedChipId
                 .takeIf { it != View.NO_ID }
                 ?.let { classGroup.findViewById<Chip>(it).tag as? String }
-                ?.takeIf { it != KEY_OTHER }
             val reason = reasonGroup.checkedChipId
                 .takeIf { it != View.NO_ID }
                 ?.let { reasonGroup.findViewById<Chip>(it).tag as? String }

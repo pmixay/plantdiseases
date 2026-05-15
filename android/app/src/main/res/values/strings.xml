@@ -2,13 +2,25 @@
 <resources>
     <string name="app_name">PlantDiseases</string>
 
+    <!-- Plurals consumed by GardenFragment via getQuantityString —
+         only reachable through ``R.plurals.X``, never via
+         ``R.string.X`` / ``@string/X``, which is why the dead-code
+         sweep on a previous commit mis-flagged them as orphans. -->
+    <plurals name="garden_summary">
+        <item quantity="one">%1$d plant watched with %2$d scans</item>
+        <item quantity="other">%1$d plants watched with %2$d scans</item>
+    </plurals>
+    <plurals name="scan_count">
+        <item quantity="one">%d scan</item>
+        <item quantity="other">%d scans</item>
+    </plurals>
+
     <!-- Tabs -->
     <string name="tab_scan">Scan</string>
     <string name="tab_gallery">Gallery</string>
     <string name="tab_guide">Guide</string>
 
     <!-- Camera -->
-    <string name="scan_hint">Point at the plant leaf to scan</string>
     <string name="take_photo">Take Photo</string>
     <string name="gallery">Gallery</string>
     <string name="flash">Flash</string>
@@ -39,9 +51,7 @@
     <string name="status_disease">Disease Detected</string>
     <string name="status_not_a_plant">Not a Plant</string>
     <string name="not_a_plant_diagnosis_name">Not a plant in frame</string>
-    <string name="not_a_plant_result_title">This doesn\'t look like a plant</string>
     <string name="not_a_plant_result_body">The model couldn\'t find a plant leaf in this photo. Try retaking the picture so the leaf fills most of the frame, with steady hands and good lighting.</string>
-    <string name="not_a_plant_retry_hint">Tip: get closer to a single leaf on a plain background.</string>
     <string name="description_label">Description</string>
     <string name="treatment_label">Treatment</string>
     <string name="prevention_label">Prevention</string>
@@ -66,7 +76,6 @@
 
     <!-- Profile -->
     <string name="tab_profile">Profile</string>
-    <string name="profile_title">Your Statistics</string>
     <string name="total_scans">Total Scans</string>
     <string name="healthy_plants">Healthy</string>
     <string name="diseased_plants">Diseased</string>
@@ -74,7 +83,6 @@
     <string name="most_common_disease">Most Common Issue</string>
     <string name="no_scans_yet">No scans yet</string>
     <string name="start_scanning_hint">Start scanning your plants to see statistics here</string>
-    <string name="app_version">App Version</string>
     <string name="clear_history">Clear All History</string>
     <string name="clear_history_confirm">This will permanently delete all scan history. Are you sure?</string>
     <string name="clear_all">Clear All</string>
@@ -97,8 +105,6 @@
     <string name="heatmap_label">Detection Area</string>
 
     <!-- Camera -->
-    <string name="not_a_plant_warning">This doesn\'t look like a plant. Continue anyway?</string>
-    <string name="not_a_plant_title">Not a Plant?</string>
     <string name="continue_anyway">Continue</string>
 
     <!-- Gallery filters -->
@@ -132,7 +138,6 @@
     <string name="offline_banner">No internet connection</string>
 
     <!-- Server status / diagnostics -->
-    <string name="server_status">Server Status</string>
     <string name="server_online">Online</string>
     <string name="server_offline">Offline</string>
     <string name="server_checking">Checking…</string>
@@ -153,19 +158,15 @@
     <!-- Auto-detected species card -->
     <string name="species_card_title">Detected species</string>
     <string name="species_card_score">PlantNet match: %1$d%%</string>
-    <string name="species_card_unavailable">Species ID isn\'t configured on this server.</string>
-
     <!-- Similar scans (community corpus) -->
     <string name="similar_scans_title">Similar scans near you</string>
     <string name="similar_scans_subtitle">%1$d recent scans near %2$s</string>
+    <string name="similar_scans_subtitle_region">Recent diagnoses near %1$s</string>
     <string name="similar_scans_subtitle_no_region">Enable approximate location to see scans near you.</string>
     <string name="similar_scans_empty">No nearby scans yet — your scan will be the first.</string>
+    <string name="similar_scans_chip_format">%1$s · %2$d</string>
 
     <!-- Community consent + Profile toggle -->
-    <string name="community_consent_title">Share scans with the community?</string>
-    <string name="community_consent_body">PlantDiseases can upload a small thumbnail of each scan, plus the diagnosis, to help others diagnose plants in your region. Only the region (city + country) is shared — never your exact location. You can turn this off any time in Profile.</string>
-    <string name="community_consent_accept">Share my scans</string>
-    <string name="community_consent_decline">Keep my scans private</string>
     <string name="community_toggle_title">Share scans with the community</string>
     <string name="community_toggle_subtitle">Region + diagnosis + 512px thumbnail. Off keeps everything on-device.</string>
     <string name="community_delete_title">Delete my contributions</string>
@@ -196,6 +197,8 @@
     <string name="retry_analysis">Retry Analysis</string>
 
     <!-- Pipeline warnings -->
+    <string name="warning_very_low_confidence_title">Very low confidence</string>
+    <string name="warning_very_low_confidence">The model isn\'t confident in this verdict — please retake the photo with the leaf filling most of the frame, in good even light, and on a plain background.</string>
     <string name="warning_uncertain_healthy_title">Could be disease</string>
     <string name="warning_uncertain_healthy">The model is not confident that the plant is healthy. Please check the alternative diagnoses below — they may apply.</string>
     <string name="warning_detector_mismatch_title">Detector sees damage</string>
@@ -219,26 +222,10 @@
     <string name="guide_search_empty">Nothing found for \"%s\". Try a different word.</string>
 
     <!-- Camera grid overlay -->
-    <string name="grid_overlay">Grid Overlay</string>
-    <string name="zoom_indicator">%sx</string>
-
-    <!-- Real-time leaf framing (PlantVision auto-capture) -->
-    <string name="frame_hint_red">Point at a plant leaf</string>
-    <string name="frame_hint_amber">Bring the leaf into the frame</string>
-    <string name="frame_hint_green">Hold steady…</string>
-    <string name="frame_hint_capturing">Captured</string>
     <!-- My Garden -->
     <string name="tab_garden">Garden</string>
     <string name="garden_title">My Garden</string>
     <string name="garden_subtitle">Track every plant, scan timeline, notes, photos and watering in one calm green place.</string>
-    <plurals name="garden_summary">
-        <item quantity="one">%1$d plant watched with %2$d scans</item>
-        <item quantity="other">%1$d plants watched with %2$d scans</item>
-    </plurals>
-    <plurals name="scan_count">
-        <item quantity="one">%d scan</item>
-        <item quantity="other">%d scans</item>
-    </plurals>
     <string name="add_plant">Add plant</string>
     <string name="edit_plant">Edit plant</string>
     <string name="plant_name">Plant name</string>
@@ -277,7 +264,6 @@
     <string name="create_new_plant">Create new plant</string>
     <string name="scan_added_to_garden">Scan added to garden</string>
     <string name="change_language">Change</string>
-    <string name="language_hint">Switch between English and Russian.</string>
     <string name="delete_plant">Delete plant</string>
     <string name="delete_plant_confirm">Delete this plant? Journal entries will be removed too. Scans will be unlinked.</string>
     <string name="plant_deleted">Plant deleted</string>
@@ -302,19 +288,16 @@
     <string name="reminder_subtitle">Set care schedules for this plant</string>
     <!-- Doctor Chat -->
     <string name="doctor_title">AI Plant Doctor</string>
-    <string name="doctor_subtitle">Local care assistant stub</string>
     <string name="doctor_stub_subtitle">Saved chat, ready for server AI later</string>
     <string name="doctor_hint">Ask about symptoms, care, treatment…</string>
     <string name="doctor_send">Send</string>
     <string name="doctor_thinking">Thinking…</string>
-    <string name="doctor_offline">Server is offline. Check your connection.</string>
     <string name="doctor_q1">Is this disease spreading to other plants?</string>
     <string name="doctor_q2">What caused this? How to prevent recurrence?</string>
     <string name="doctor_q3">What\'s the fastest home treatment?</string>
     <string name="doctor_clear">Clear chat</string>
     <!-- Light Meter -->
     <string name="light_meter">Light Meter</string>
-    <string name="light_meter_hint">Measure room light against plant needs</string>
     <string name="light_plant_type">Plant type</string>
     <string name="light_lux">lux</string>
     <string name="light_too_dark">Too dark</string>
@@ -331,10 +314,6 @@
     <string name="light_species_tropical">Tropical</string>
     <string name="light_species_fern">Fern</string>
     <string name="light_species_vegetable">Vegetable</string>
-    <!-- TTS -->
-    <string name="speak_read_aloud">Read aloud</string>
-    <string name="speak_stop">Stop</string>
-    <string name="speak_unavailable">Voice-over is not available for this language.</string>
 
     <!-- Care Plan -->
     <string name="care_plan_title">Care Plan</string>
@@ -367,7 +346,6 @@
     <string name="species_suggest_hint">Use this scan to ask PlantNet for the most likely species.</string>
     <string name="species_suggest_button">Suggest species</string>
     <string name="species_suggest_loading">Asking PlantNet…</string>
-    <string name="species_suggest_unavailable_title">PlantNet unavailable</string>
     <!-- Per-source PlantNet failure messages. See ai_services.py
          `identify_species` for the source enum (`no_api_key`,
          `auth_failed`, `rate_limited`, `error`). -->
@@ -375,22 +353,14 @@
     <string name="species_suggest_unavailable_no_key">Species identification isn\'t configured on this server yet. Add the species manually.</string>
     <string name="species_suggest_unavailable_rate_limited">PlantNet\'s daily quota is exhausted. Try again later, or add the species manually.</string>
     <string name="species_suggest_unavailable_auth_failed">The PlantNet API key on the server is invalid. Add the species manually.</string>
-    <string name="species_suggest_pick">Use this species</string>
-    <string name="species_suggest_keep_manual">Keep manual entry</string>
     <string name="species_suggest_match">%d%% match</string>
     <string name="species_suggest_no_results">No confident matches found.</string>
     <string name="species_suggest_unknown_name">Unnamed candidate</string>
-    <string name="species_scientific_label">Scientific name</string>
-    <string name="species_common_label">Common name</string>
-
     <!-- Diagnosis feedback (/api/feedback) -->
     <string name="feedback_title">Was this diagnosis correct?</string>
     <string name="feedback_subtitle">Your answer trains the next model release.</string>
     <string name="feedback_yes">Correct</string>
     <string name="feedback_no">Wrong</string>
-    <string name="feedback_correction_title">What is it actually?</string>
-    <string name="feedback_correction_hint">Disease name (optional)</string>
-    <string name="feedback_note_hint">Anything else you want to tell us? (optional)</string>
     <string name="feedback_send">Send feedback</string>
     <string name="feedback_sent">Thanks — your feedback was saved.</string>
     <string name="feedback_rate_limited">Slow down — try again in a moment.</string>
@@ -400,13 +370,11 @@
          server's known class keys; reason chips map to the
          _FEEDBACK_ALLOWED_REASONS set on the server. -->
     <string name="feedback_sheet_title">Help us learn</string>
-    <string name="feedback_sheet_subtitle">Your correction trains the next model release. We only store the diagnosis context, never the photo.</string>
+    <string name="feedback_sheet_subtitle">Your correction trains the next model release. When you mark a diagnosis as wrong, we also upload the photo so we can label it correctly for retraining.</string>
     <string name="feedback_sheet_we_thought">We diagnosed</string>
     <string name="feedback_sheet_actual_label">What is it actually?</string>
     <string name="feedback_sheet_reason_label">Why was it wrong?</string>
     <string name="feedback_sheet_note_hint">Anything else? (optional)</string>
-    <string name="feedback_class_pick_prompt">Tap one diagnosis</string>
-
     <!-- Class chips — match server class keys 1:1. -->
     <string name="feedback_class_healthy">Healthy</string>
     <string name="feedback_class_powdery_mildew">Powdery Mildew</string>
@@ -432,11 +400,8 @@
     <!-- Pet-toxicity surface -->
     <string name="toxicity_toxic_title">Toxic to pets</string>
     <string name="toxicity_safe_title">Pet-safe</string>
-    <string name="toxicity_unknown_title">Pet safety unconfirmed</string>
     <string name="toxicity_toxic_body">This species is reported toxic to %1$s. Keep out of reach and contact a vet on ingestion.</string>
     <string name="toxicity_safe_body">No toxicity reports for cats or dogs against this species.</string>
-    <string name="toxicity_unknown_body">We could not confirm pet safety for this plant. Identify the species and re-check before letting pets near it.</string>
-
     <!-- Historical progression sparkline -->
     <string name="progression_title">Disease progression</string>
     <string name="progression_trend_improving">Improving</string>

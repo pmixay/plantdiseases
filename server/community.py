@@ -28,6 +28,7 @@ Privacy posture
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import logging
 import sqlite3
@@ -58,6 +59,7 @@ CREATE TABLE IF NOT EXISTS community_scans (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     scan_id         TEXT    NOT NULL,
     user_pseudo_id  TEXT    NOT NULL,
+    country         TEXT,
     region          TEXT    NOT NULL,
     disease         TEXT    NOT NULL,
     confidence      REAL,
@@ -68,29 +70,34 @@ CREATE TABLE IF NOT EXISTS community_scans (
     client_ip_hash  TEXT,
     created_at      INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS ix_community_region   ON community_scans(region, created_at);
-CREATE INDEX IF NOT EXISTS ix_community_user     ON community_scans(user_pseudo_id);
-CREATE INDEX IF NOT EXISTS ix_community_created  ON community_scans(created_at);
+CREATE INDEX IF NOT EXISTS ix_community_region          ON community_scans(region, created_at);
+CREATE INDEX IF NOT EXISTS ix_community_user            ON community_scans(user_pseudo_id);
+CREATE INDEX IF NOT EXISTS ix_community_created         ON community_scans(created_at);
+CREATE INDEX IF NOT EXISTS ix_community_country         ON community_scans(country, created_at);
+CREATE INDEX IF NOT EXISTS ix_community_country_region  ON community_scans(country, region, created_at);
 """
-
-# Forward-only schema migration: every column listed here is added
-# with ``ALTER TABLE … ADD COLUMN`` on init_db if the DB was created
-# under an older schema. Avoids the per-version migration table we
-# don't otherwise need. Mirrors the same trick feedback.py uses.
-_EXTRA_COLUMNS: tuple[tuple[str, str], ...] = (
-    # Top-level bucket. Stored separately from ``region`` so we can
-    # group by country and break down by city without parsing a
-    # composite "City, Country" string at every query.
-    ("country", "TEXT"),
-)
-_EXTRA_INDICES: tuple[str, ...] = (
-    "CREATE INDEX IF NOT EXISTS ix_community_country ON community_scans(country, created_at);",
-    "CREATE INDEX IF NOT EXISTS ix_community_country_region ON community_scans(country, region, created_at);",
-)
 
 _write_lock = threading.RLock()
 _init_lock = threading.Lock()
 _initialised = False
+
+# Disease classes that should never surface in the community feed.
+# ``not_a_plant`` rows are uninteresting to other users (and often
+# faces / objects / random photos), so we silently hide them from
+# both the carousel and the summary aggregates. Existing rows stay
+# on disk for retraining; only the read paths filter them out.
+_HIDDEN_COMMUNITY_DISEASES = ("not_a_plant",)
+
+
+def _hidden_clause(table_alias: str = "") -> str:
+    """SQL fragment + placeholders for the hidden-disease filter.
+
+    Returns a string starting with " AND " so callers can append
+    directly to existing WHERE conditions.
+    """
+    prefix = f"{table_alias}." if table_alias else ""
+    placeholders = ", ".join(["?"] * len(_HIDDEN_COMMUNITY_DISEASES))
+    return f" AND {prefix}disease NOT IN ({placeholders})"
 
 
 def _connect() -> sqlite3.Connection:
@@ -104,22 +111,8 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
-def _existing_columns(conn: sqlite3.Connection) -> set[str]:
-    rows = conn.execute("PRAGMA table_info(community_scans)").fetchall()
-    return {row[1] for row in rows}
-
-
 def init_db() -> None:
-    """Create the schema + thumb dir if missing. Idempotent.
-
-    Runs a forward-only migration step too: any column from
-    ``_EXTRA_COLUMNS`` that's missing on an existing DB is added
-    via ALTER TABLE. The ``country`` column is also backfilled from
-    the legacy ``region`` value for rows that pre-date the
-    hierarchy split — older clients wrote the country into
-    ``region`` directly (after the previous "group-by-country"
-    pass), so copying the value across keeps history searchable.
-    """
+    """Create the schema + thumb dir if missing. Idempotent."""
     global _initialised
     with _init_lock:
         if _initialised:
@@ -128,25 +121,6 @@ def init_db() -> None:
         COMMUNITY_THUMB_DIR.mkdir(parents=True, exist_ok=True)
         with _connect() as conn:
             conn.executescript(_SCHEMA)
-            present = _existing_columns(conn)
-            added_country = False
-            for name, ddl in _EXTRA_COLUMNS:
-                if name not in present:
-                    conn.execute(
-                        f"ALTER TABLE community_scans ADD COLUMN {name} {ddl}"
-                    )
-                    if name == "country":
-                        added_country = True
-            for index_sql in _EXTRA_INDICES:
-                conn.execute(index_sql)
-            if added_country:
-                # Pre-hierarchy rows stored the country in ``region``.
-                # Copy it across so a country-scoped query still
-                # finds them.
-                conn.execute(
-                    "UPDATE community_scans SET country = region "
-                    "WHERE country IS NULL OR country = ''"
-                )
         _initialised = True
         logger.info("Community DB ready at %s", COMMUNITY_DB_PATH)
 
@@ -279,6 +253,12 @@ def nearby_scans(
     if exclude_user_pseudo_id:
         base_extra += " AND user_pseudo_id != ?"
         base_params.append(exclude_user_pseudo_id)
+    # Skip rows whose disease shouldn't surface in the community feed
+    # (currently just ``not_a_plant``). The constant lives at module
+    # scope so the same set drives ``region_summary`` aggregates.
+    if _HIDDEN_COMMUNITY_DISEASES:
+        base_extra += _hidden_clause()
+        base_params.extend(_HIDDEN_COMMUNITY_DISEASES)
     region_clean = (region or "").strip()
     region_extra = base_extra
     region_params = list(base_params)
@@ -318,7 +298,12 @@ def nearby_scans(
     return matched + fillers
 
 
-def region_summary(country: str, region: str | None = None) -> dict:
+def region_summary(
+    country: str,
+    region: str | None = None,
+    *,
+    exclude_user_pseudo_id: str | None = None,
+) -> dict:
     """Aggregate the corpus for one country (or country+region).
 
     Used by the Android "near you" card to render a quick "5 scans
@@ -327,51 +312,72 @@ def region_summary(country: str, region: str | None = None) -> dict:
     summarise the whole country and surface the top 3 cities in a
     ``top_regions`` block so the client can switch the grouping
     granularity from the same response.
+
+    ``exclude_user_pseudo_id`` drops the requesting user's own rows
+    from every count, mirroring the carousel's behaviour. Without
+    this the chips and ``last_7d`` would include the scan the user
+    just uploaded and surface a phantom disease in the summary.
     """
     init_db()
     now = int(time.time())
     week_ago = now - 7 * 86_400
     region_clean = (region or "").strip()
+    exclude_clause = ""
+    exclude_params: tuple = ()
+    if exclude_user_pseudo_id:
+        exclude_clause = " AND user_pseudo_id != ?"
+        exclude_params = (exclude_user_pseudo_id,)
+    # Hide rows whose disease shouldn't surface in the community
+    # feed (currently just ``not_a_plant``). Filtering here keeps
+    # ``total`` / ``last_7d`` / ``top_diseases`` consistent with the
+    # carousel rows returned by ``nearby_scans``.
+    if _HIDDEN_COMMUNITY_DISEASES:
+        exclude_clause += _hidden_clause()
+        exclude_params = (*exclude_params, *_HIDDEN_COMMUNITY_DISEASES)
     with _connect() as conn:
         if region_clean:
             total = conn.execute(
                 "SELECT COUNT(*) FROM community_scans "
-                "WHERE country = ? AND region = ?",
-                (country, region_clean),
+                "WHERE country = ? AND region = ?" + exclude_clause,
+                (country, region_clean, *exclude_params),
             ).fetchone()[0]
             last_week = conn.execute(
                 "SELECT COUNT(*) FROM community_scans "
-                "WHERE country = ? AND region = ? AND created_at >= ?",
-                (country, region_clean, week_ago),
+                "WHERE country = ? AND region = ? AND created_at >= ?"
+                + exclude_clause,
+                (country, region_clean, week_ago, *exclude_params),
             ).fetchone()[0]
             disease_rows = conn.execute(
                 "SELECT disease, COUNT(*) AS n FROM community_scans "
-                "WHERE country = ? AND region = ? AND created_at >= ? "
-                "GROUP BY disease ORDER BY n DESC LIMIT 3",
-                (country, region_clean, week_ago),
+                "WHERE country = ? AND region = ? AND created_at >= ?"
+                + exclude_clause
+                + " GROUP BY disease ORDER BY n DESC LIMIT 3",
+                (country, region_clean, week_ago, *exclude_params),
             ).fetchall()
             top_region_rows: list[tuple] = []
         else:
             total = conn.execute(
-                "SELECT COUNT(*) FROM community_scans WHERE country = ?",
-                (country,),
+                "SELECT COUNT(*) FROM community_scans WHERE country = ?"
+                + exclude_clause,
+                (country, *exclude_params),
             ).fetchone()[0]
             last_week = conn.execute(
                 "SELECT COUNT(*) FROM community_scans "
-                "WHERE country = ? AND created_at >= ?",
-                (country, week_ago),
+                "WHERE country = ? AND created_at >= ?" + exclude_clause,
+                (country, week_ago, *exclude_params),
             ).fetchone()[0]
             disease_rows = conn.execute(
                 "SELECT disease, COUNT(*) AS n FROM community_scans "
-                "WHERE country = ? AND created_at >= ? "
-                "GROUP BY disease ORDER BY n DESC LIMIT 3",
-                (country, week_ago),
+                "WHERE country = ? AND created_at >= ?" + exclude_clause
+                + " GROUP BY disease ORDER BY n DESC LIMIT 3",
+                (country, week_ago, *exclude_params),
             ).fetchall()
             top_region_rows = conn.execute(
                 "SELECT region, COUNT(*) AS n FROM community_scans "
-                "WHERE country = ? AND region != '' AND created_at >= ? "
-                "GROUP BY region ORDER BY n DESC LIMIT 3",
-                (country, week_ago),
+                "WHERE country = ? AND region != '' AND created_at >= ?"
+                + exclude_clause
+                + " GROUP BY region ORDER BY n DESC LIMIT 3",
+                (country, week_ago, *exclude_params),
             ).fetchall()
     top_diseases = [
         {"disease": str(r[0]), "count": int(r[1])} for r in disease_rows
@@ -412,11 +418,8 @@ def delete_for_user(user_pseudo_id: str) -> int:
         thumb = row[0]
         if not thumb:
             continue
-        path = COMMUNITY_THUMB_DIR / thumb
-        try:
-            path.unlink(missing_ok=True)
-        except OSError:
-            pass
+        with contextlib.suppress(OSError):
+            (COMMUNITY_THUMB_DIR / thumb).unlink(missing_ok=True)
     return int(deleted or 0)
 
 
@@ -442,10 +445,8 @@ def prune_older_than(days: int) -> int:
         thumb = row[0]
         if not thumb:
             continue
-        try:
+        with contextlib.suppress(OSError):
             (COMMUNITY_THUMB_DIR / thumb).unlink(missing_ok=True)
-        except OSError:
-            pass
     return int(deleted or 0)
 
 

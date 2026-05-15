@@ -11,6 +11,7 @@ Stage 2:  MobileNetV3-Large    — distilled student (KD from
 """
 
 import asyncio
+import contextlib
 import io
 import ipaddress
 import json
@@ -77,6 +78,9 @@ try:
     from .config import get_float, get_int, get_list, get_str
     from .diseases_data import DISEASES_DATABASE, lookup_pet_toxicity
     from .feedback import (
+        attach_image_path as feedback_attach_image_path,
+    )
+    from .feedback import (
         daily_write_count_for_ip_hash as feedback_daily_writes,
     )
     from .feedback import (
@@ -85,6 +89,7 @@ try:
         is_scan_id_issued,
         record_feedback,
         record_issued_scan_id,
+        save_feedback_image,
     )
     from .feedback import (
         init_db as init_feedback_db,
@@ -132,6 +137,9 @@ except ImportError:
     from config import get_float, get_int, get_list, get_str
     from diseases_data import DISEASES_DATABASE, lookup_pet_toxicity
     from feedback import (
+        attach_image_path as feedback_attach_image_path,
+    )
+    from feedback import (
         daily_write_count_for_ip_hash as feedback_daily_writes,
     )
     from feedback import (
@@ -140,6 +148,7 @@ except ImportError:
         is_scan_id_issued,
         record_feedback,
         record_issued_scan_id,
+        save_feedback_image,
     )
     from feedback import (
         init_db as init_feedback_db,
@@ -250,16 +259,6 @@ FEEDBACK_RETENTION_DAYS = get_int("FEEDBACK_RETENTION_DAYS", 180)
 COMMUNITY_RETENTION_DAYS = get_int("COMMUNITY_RETENTION_DAYS", 90)
 PRUNE_INTERVAL_SECONDS = get_int("PRUNE_INTERVAL_SECONDS", 24 * 60 * 60)
 
-# Feedback ↔ analyze scan-id binding. When ENFORCE_ISSUED_SCAN_IDS is
-# truthy (set as "1"/"true" in env), /api/feedback rejects any
-# scan_id that wasn't recorded by a recent /api/analyze response.
-# Defaults to "log only" so older clients (whose scan_ids were
-# minted before this gate existed) keep working until the install
-# base catches up; operators flip to enforce mode once telemetry
-# shows < ~1% of feedback uses unknown scan_ids.
-ENFORCE_ISSUED_SCAN_IDS = (
-    get_str("ENFORCE_ISSUED_SCAN_IDS", "false").strip().lower() in {"1", "true", "yes", "on"}
-)
 # Server-issued scan_ids stay valid for this long. Long enough that
 # a user can scan today and leave feedback in a week; short enough
 # that a leaked id can't be reused indefinitely.
@@ -565,10 +564,8 @@ async def lifespan(app: FastAPI):
     finally:
         logger.info("Server shutting down")
         prune_task.cancel()
-        try:
+        with contextlib.suppress(asyncio.CancelledError, Exception):
             await prune_task
-        except (asyncio.CancelledError, Exception):  # noqa: BLE001
-            pass
         with _executor_lock:
             if _inference_executor is not None:
                 # `wait=True` lets in-flight inferences drain. The bound is
@@ -733,7 +730,7 @@ async def version():
     int8_shipped = False
     int8_artifact: str | None = None
     try:
-        with open(MODELS_DIR / "model_card.json", "r", encoding="utf-8") as fh:
+        with open(MODELS_DIR / "model_card.json", encoding="utf-8") as fh:
             card = json.load(fh)
         int8_section = card.get("int8") or {}
         int8_shipped = bool(int8_section.get("shipped", False))
@@ -858,7 +855,7 @@ async def _species_identify_best_effort(image_bytes: bytes, *, timeout: float) -
             ),
             timeout=timeout,
         )
-    except (asyncio.TimeoutError, asyncio.CancelledError):
+    except (TimeoutError, asyncio.CancelledError):
         logger.info("Species identify skipped (timeout / cancelled)")
         return None
     except Exception as exc:  # noqa: BLE001
@@ -969,7 +966,7 @@ async def analyze_image(image: UploadFile = File(...), species: str | None = Non
             loop.run_in_executor(_get_inference_executor(), pipeline.analyze, img),
             timeout=INFERENCE_TIMEOUT,
         )
-    except asyncio.TimeoutError as exc:
+    except TimeoutError as exc:
         species_task.cancel()
         _record_error()
         logger.error("Inference timed out after %.0fs for %s", INFERENCE_TIMEOUT, fname)
@@ -1093,6 +1090,14 @@ async def analyze_image(image: UploadFile = File(...), species: str | None = Non
     }
 
     return JSONResponse(content={
+        # Canonical class key the pipeline landed on AFTER all
+        # post-processing (weak-healthy reroute, OOD gate, etc.).
+        # ``disease_name`` / ``disease_name_ru`` are the localised
+        # display strings derived from this key. Clients should echo
+        # ``class_name`` back as ``predicted_class`` on /api/feedback
+        # — argmax(all_probs) is the PRE-reroute class and would
+        # poison per-class accuracy metrics if used instead.
+        "class_name": class_name,
         "disease_name": disease_info["name_en"],
         "disease_name_ru": disease_info["name_ru"],
         "confidence": round(confidence, 3),
@@ -1270,27 +1275,34 @@ class ProgressionRequest(BaseModel):
     history: list[dict] | None = None
 
 
-# Class keys the strict-mode `corrected_class` validator accepts.
-# Includes both the active trainable classes (from classes.json) and
-# the deferred physiological classes — clients should be allowed to
-# point us at conditions the next model release will cover.
-_FEEDBACK_ALLOWED_CORRECTIONS: frozenset[str] = frozenset({
-    "bacterial_leaf_spot",
-    "gray_mold_botrytis",
-    "healthy",
-    "leaf_spot_fungal",
-    "not_a_plant",
-    "powdery_mildew",
-    "viral_disease",
-    # Deferred (post-v2.1) physiological classes — accepted as
-    # feedback signals so the retraining loop can prioritise labelling.
+# Classes the production head can actually predict. Tracks the
+# ``class_names`` declaration in ``models/classes.json`` via
+# ``classifier.DEFAULT_CLASS_NAMES`` so we only have one source of
+# truth — feedback's ``out_of_head`` flag falls out the moment a
+# correction lands outside this set.
+try:
+    from .classifier import DEFAULT_CLASS_NAMES as _HEAD_CLASS_NAMES
+except ImportError:
+    from classifier import DEFAULT_CLASS_NAMES as _HEAD_CLASS_NAMES
+
+_FEEDBACK_IN_HEAD_CLASSES: frozenset[str] = frozenset(_HEAD_CLASS_NAMES)
+
+# Out-of-head corrections — deferred physiological classes the
+# v2.1 head doesn't carry yet, plus a free-form catch-all. We accept
+# them on /api/feedback (otherwise the user has no way to tell us
+# "your model can't say this") and tag each row with ``out_of_head=1``
+# so retraining can prioritise expanding the label set.
+_FEEDBACK_OUT_OF_HEAD_CLASSES: frozenset[str] = frozenset({
     "edema",
     "leaf_scorch_underwatering",
     "nutrient_deficiency",
     "sunburn_or_scorch",
-    # Catch-all the client can send when none of the above match.
     "other",
 })
+
+_FEEDBACK_ALLOWED_CORRECTIONS: frozenset[str] = (
+    _FEEDBACK_IN_HEAD_CLASSES | _FEEDBACK_OUT_OF_HEAD_CLASSES
+)
 
 _FEEDBACK_ALLOWED_REASONS: frozenset[str] = frozenset({
     "wrong_class",
@@ -1366,6 +1378,14 @@ class FeedbackRequest(BaseModel):
     # against any future image-side analytics without the image bytes
     # leaving the device.
     image_hash: str | None = Field(default=None, min_length=32, max_length=128)
+    # Conformal prediction set the server returned with the original
+    # /api/analyse response (the classes the model couldn't rule out
+    # at the configured coverage). Persisting it on the feedback row
+    # lets us answer "was the correct answer in the 90 % set?" — a
+    # cleaner diagnostic than top1-only accuracy because it
+    # separates calibration failures from point-estimate failures.
+    # Capped at 16 keys / 64 chars each as a sanity guard.
+    prediction_set: list[str] | None = Field(default=None, max_length=16)
 
     @field_validator("scan_id", "user_pseudo_id")
     @classmethod
@@ -1533,15 +1553,17 @@ async def chat_endpoint(payload: ChatRequest, request: Request):
             diagnosis_context=diagnosis,
         ),
     )
-    if not result.get("available"):
-        # Abuse logging: cap-rejection from a specific IP is the
-        # signature pattern for a runaway client. Log at WARNING so
-        # ops dashboards can alert on it.
-        if result.get("reason") in ("session_turn_cap", "session_token_cap"):
-            logger.warning(
-                "AI Doctor budget cap hit  ip=%s session=%s reason=%s",
-                client_ip, payload.session_id, result["reason"],
-            )
+    # Abuse logging: cap-rejection from a specific IP is the
+    # signature pattern for a runaway client. Log at WARNING so
+    # ops dashboards can alert on it.
+    if (
+        not result.get("available")
+        and result.get("reason") in ("session_turn_cap", "session_token_cap")
+    ):
+        logger.warning(
+            "AI Doctor budget cap hit  ip=%s session=%s reason=%s",
+            client_ip, payload.session_id, result["reason"],
+        )
     return JSONResponse(content=result)
 
 
@@ -1648,29 +1670,23 @@ async def feedback_endpoint(payload: FeedbackRequest, request: Request):
             detail="Daily feedback quota reached. Try again tomorrow.",
         )
 
-    # Bind the feedback to a scan_id we actually issued. The check
-    # runs in "warn-only" mode by default (older clients minted
-    # their own UUIDs and won't be in the table); flip
-    # ENFORCE_ISSUED_SCAN_IDS=true once the new client is the
-    # dominant install base to switch this gate to hard reject.
+    # Bind the feedback to a scan_id we actually issued. Unknown
+    # scan_ids are rejected — that's how we keep arbitrary clients
+    # from poisoning the corrections corpus the retraining loop
+    # consumes.
     scan_id_clean = payload.scan_id.strip()
     issued = await asyncio.get_running_loop().run_in_executor(
         _get_inference_executor(),
         lambda: is_scan_id_issued(scan_id_clean, ttl_days=ISSUED_SCAN_ID_TTL_DAYS),
     )
     if not issued:
-        if ENFORCE_ISSUED_SCAN_IDS:
-            logger.warning(
-                "Rejected feedback on unissued scan_id=%s ip_hash=%s",
-                scan_id_clean[:16], ip_hash,
-            )
-            raise HTTPException(
-                status_code=422,
-                detail="Unknown scan_id — please re-scan before sending feedback.",
-            )
-        # Soft mode: log so operators can watch the unknown-id rate.
-        logger.info(
-            "Feedback on unissued scan_id=%s (soft mode)", scan_id_clean[:16],
+        logger.warning(
+            "Rejected feedback on unissued scan_id=%s ip_hash=%s",
+            scan_id_clean[:16], ip_hash,
+        )
+        raise HTTPException(
+            status_code=422,
+            detail="Unknown scan_id — please re-scan before sending feedback.",
         )
 
     # Pydantic v2 has already normalised these — corrected_class is
@@ -1682,6 +1698,13 @@ async def feedback_endpoint(payload: FeedbackRequest, request: Request):
         if payload.top3 else None
     )
 
+    # ``out_of_head`` only carries signal when the user supplied a
+    # correction. For correct=1 rows or rows without a correction we
+    # leave it NULL so retraining filters on ``IS 1`` rather than
+    # treating absence as a no.
+    out_of_head: bool | None = None
+    if payload.corrected_class:
+        out_of_head = payload.corrected_class not in _FEEDBACK_IN_HEAD_CLASSES
     try:
         row_id = await asyncio.get_running_loop().run_in_executor(
             _get_inference_executor(),
@@ -1704,6 +1727,8 @@ async def feedback_endpoint(payload: FeedbackRequest, request: Request):
                 feedback_latency_ms=payload.feedback_latency_ms,
                 reason=payload.reason,
                 image_hash=payload.image_hash,
+                out_of_head=out_of_head,
+                prediction_set=payload.prediction_set,
             ),
         )
     except Exception as exc:  # noqa: BLE001
@@ -1723,6 +1748,81 @@ async def feedback_endpoint(payload: FeedbackRequest, request: Request):
         payload.reason,
     )
     return JSONResponse(content={"ok": True, "id": row_id})
+
+
+@app.post("/api/feedback/image")
+async def feedback_image_upload(
+    request: Request,
+    scan_id: str = Form(...),
+    image: UploadFile = File(...),
+):
+    """Persist the original image bytes for a negative-feedback row.
+
+    Called by the Android client immediately after a successful
+    ``correct=false`` ``/api/feedback`` submission. The image is
+    written to ``FEEDBACK_IMG_DIR`` keyed by SHA-256 of the bytes,
+    and the most recent feedback row for ``scan_id`` is updated
+    in-place with ``image_path``. Same per-IP rate limit and
+    scan-id-was-issued gate as ``/api/feedback`` so a hostile
+    client can't spray arbitrary bytes at the corpus.
+
+    Privacy note: this endpoint reverses the historical "we never
+    store the photo" promise, but only for ``correct=false`` rows
+    where the training value is highest. The Android feedback sheet
+    discloses this in its copy; if the user wants their image
+    purged they can use the existing community delete-for-user path
+    (which doesn't currently sweep this directory; a separate
+    cleanup endpoint is owed but out of scope here).
+    """
+    client_ip = _client_ip(request)
+    ip_hash = hash_client_ip(client_ip)
+    today_writes = await asyncio.get_running_loop().run_in_executor(
+        _get_inference_executor(),
+        lambda: feedback_daily_writes(ip_hash),
+    )
+    if today_writes >= FEEDBACK_DAILY_QUOTA:
+        raise HTTPException(
+            status_code=429,
+            detail="Daily feedback quota reached. Try again tomorrow.",
+        )
+
+    scan_id_clean = scan_id.strip()
+    if not scan_id_clean or any(ch not in _SCAN_ID_ALLOWED for ch in scan_id_clean):
+        raise HTTPException(status_code=422, detail="Invalid scan_id")
+    issued = await asyncio.get_running_loop().run_in_executor(
+        _get_inference_executor(),
+        lambda: is_scan_id_issued(scan_id_clean, ttl_days=ISSUED_SCAN_ID_TTL_DAYS),
+    )
+    if not issued:
+        raise HTTPException(
+            status_code=422,
+            detail="Unknown scan_id — please re-scan before sending feedback.",
+        )
+
+    image_bytes = await image.read()
+    saved = await asyncio.get_running_loop().run_in_executor(
+        _get_inference_executor(),
+        lambda: save_feedback_image(
+            image_bytes,
+            content_type=image.content_type,
+        ),
+    )
+    if saved is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Image rejected (empty / oversized / write failed)",
+        )
+    filename, digest = saved
+
+    updated = await asyncio.get_running_loop().run_in_executor(
+        _get_inference_executor(),
+        lambda: feedback_attach_image_path(scan_id_clean, filename),
+    )
+    logger.info(
+        "Feedback image stored scan=%s file=%s linked=%s",
+        scan_id_clean[:16], filename, updated,
+    )
+    return JSONResponse(content={"ok": True, "filename": filename, "hash": digest})
 
 
 # ── Community scan corpus ───────────────────────────────────────────
@@ -1881,7 +1981,16 @@ async def community_scan_nearby(
         limit=max(1, min(int(limit), 50)),
         exclude_user_pseudo_id=user_pseudo_id,
     )
-    summary = community_region_summary(country_norm, region_norm or None)
+    # Exclude the requesting user's own rows from the summary too —
+    # otherwise the chip row and the ``last_7d`` count include the
+    # scan the user just uploaded and surface phantom diagnoses
+    # (e.g. "Healthy Plant · 1" when the only Healthy Plant in the
+    # bucket is the user's own).
+    summary = community_region_summary(
+        country_norm,
+        region_norm or None,
+        exclude_user_pseudo_id=user_pseudo_id,
+    )
     return JSONResponse(content={"items": rows, "summary": summary})
 
 

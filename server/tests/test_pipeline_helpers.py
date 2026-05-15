@@ -68,29 +68,24 @@ def test_taxonomy_is_v21_disease_only():
         )
 
 
-def test_healthy_gate_attaches_warning_without_rerouting():
-    """Between the reroute floor (0.50) and the strong-healthy
-    threshold (0.75), the gate must only attach the
-    ``uncertain_healthy`` warning. The class stays ``healthy`` because
-    the harder reroute rule below only fires under 0.50.
+def test_healthy_gate_reroutes_on_narrow_gap_even_above_floor():
+    """Tight-margin healthy verdicts above the absolute reroute floor
+    must still reroute under the gap-based gate. Mirrors the production
+    error band the user surfaced: top-1 healthy at ~0.55 with a
+    disease alternative at ~0.45 is essentially a coin flip, even
+    though the absolute floor (0.50) wouldn't catch it. The gap
+    floor (HEALTHY_GAP_MARGIN=0.30) does.
     """
-    from pipeline import HEALTHY_MARGIN, _apply_postprocessing_rules
+    from pipeline import HEALTHY_GAP_MARGIN, _apply_postprocessing_rules
 
-    # Build a distribution where healthy stays above the 0.50 reroute
-    # floor after normalisation, but its margin over the next class is
-    # under HEALTHY_MARGIN so the soft gate still fires.
-    # We can't just scale both top-1 and top-2 by HEALTHY_MARGIN — the
-    # numerator/denominator cancel after normalisation, so the
-    # post-norm fraction stays at 0.50 exactly. Picking absolute
-    # raw values directly so post-norm healthy lands ~0.51 with a
-    # ~0.07 margin (under HEALTHY_MARGIN but above the reroute floor).
     probs = {n: 0.01 for n in EXPECTED_CLASSES}
     probs["healthy"] = 0.60
     probs["leaf_spot_fungal"] = 0.52
     s = sum(probs.values())
     probs = {k: v / s for k, v in probs.items()}
-    assert probs["healthy"] > 0.50  # sanity: stays above the reroute floor
-    assert probs["healthy"] - probs["leaf_spot_fungal"] < HEALTHY_MARGIN
+    assert probs["healthy"] > 0.50  # absolute floor wouldn't trigger
+    gap = probs["healthy"] - probs["leaf_spot_fungal"]
+    assert gap < HEALTHY_GAP_MARGIN  # gap floor must trigger
 
     classification = {
         "class_name": "healthy",
@@ -100,7 +95,40 @@ def test_healthy_gate_attaches_warning_without_rerouting():
     }
     out = _apply_postprocessing_rules(classification, list(probs.keys()))
 
-    assert out["class_name"] == "healthy", "gate must NOT reroute the class"
+    assert out["class_name"] == "leaf_spot_fungal", (
+        "narrow-gap healthy must reroute to the strongest disease"
+    )
+    assert "weak_healthy_rerouted" in out["warnings"]
+
+
+def test_healthy_gate_attaches_warning_when_gap_is_wide():
+    """The gap floor must NOT fire when the margin to the strongest
+    disease is wide enough — even if healthy itself is in the weak
+    (< 0.75) band. Verdict stays healthy with the soft
+    ``uncertain_healthy`` / disease-suspected warnings.
+    """
+    from pipeline import HEALTHY_GAP_MARGIN, _apply_postprocessing_rules
+
+    probs = {n: 0.01 for n in EXPECTED_CLASSES}
+    # ~0.69 healthy, ~0.23 leaf_spot post-normalisation: gap ≈ 0.46,
+    # safely above HEALTHY_GAP_MARGIN. Healthy stays below 0.75 so
+    # the soft uncertainty warning still attaches.
+    probs["healthy"] = 0.70
+    probs["leaf_spot_fungal"] = 0.23
+    s = sum(probs.values())
+    probs = {k: v / s for k, v in probs.items()}
+    gap = probs["healthy"] - probs["leaf_spot_fungal"]
+    assert gap >= HEALTHY_GAP_MARGIN
+
+    classification = {
+        "class_name": "healthy",
+        "confidence": probs["healthy"],
+        "all_probs": probs,
+        "low_confidence": False,
+    }
+    out = _apply_postprocessing_rules(classification, list(probs.keys()))
+
+    assert out["class_name"] == "healthy", "gate must NOT reroute on a wide gap"
     assert "uncertain_healthy" in out["warnings"]
     assert "weak_healthy_rerouted" not in out["warnings"]
 
@@ -196,28 +224,100 @@ def test_low_confidence_warning_is_propagated():
     assert "low_confidence" in out["warnings"]
 
 
-def test_healthy_fallback_emits_disease_uncertain_warning():
-    """When the healthy fallback fires, the postprocessor must surface
-    a ``disease_uncertain:<class>`` warning."""
+def test_very_low_confidence_warning_fires_on_disease_under_floor():
+    """Regression for the meme-image screenshot: top-1 was
+    ``gray_mold_botrytis`` at 0.31 and the UI happily rendered
+    "Disease detected, Gray Mold, 31%". Any verdict that commits
+    below ``VERY_LOW_CONFIDENCE_FLOOR`` (0.40) must carry the
+    ``very_low_confidence`` warning so the result screen can render
+    the "retake the photo" banner over the verdict card.
+    """
+    from pipeline import VERY_LOW_CONFIDENCE_FLOOR, _apply_postprocessing_rules
+
+    # 0.31 < 0.40 — clearly below the floor. Other classes share the
+    # remaining mass uniformly so the gap-reroute can't kick in.
+    probs = _uniform_probs()
+    probs["gray_mold_botrytis"] = 0.31
+    leftover = 1.0 - 0.31
+    others = [k for k in probs if k != "gray_mold_botrytis"]
+    for k in others:
+        probs[k] = leftover / len(others)
+    classification = {
+        "class_name": "gray_mold_botrytis",
+        "confidence": 0.31,
+        "all_probs": probs,
+        "low_confidence": True,
+    }
+    out = _apply_postprocessing_rules(classification, list(probs.keys()))
+
+    assert VERY_LOW_CONFIDENCE_FLOOR == 0.40
+    assert "very_low_confidence" in out["warnings"]
+    assert out["class_name"] == "gray_mold_botrytis"  # verdict not swapped
+
+
+def test_very_low_confidence_warning_silent_above_floor():
+    """Same shape but at 0.45 — comfortably above the floor — must
+    NOT trigger the very-low-confidence banner. The soft
+    ``low_confidence`` warning still fires (top-1 < 0.75) but that
+    one is intended for the inline demotion, not the prominent banner.
+    """
     from pipeline import _apply_postprocessing_rules
 
     probs = _uniform_probs()
-    probs["healthy"] = 0.55
-    probs["powdery_mildew"] = 0.15
+    probs["powdery_mildew"] = 0.45
+    leftover = 1.0 - 0.45
+    others = [k for k in probs if k != "powdery_mildew"]
+    for k in others:
+        probs[k] = leftover / len(others)
+    classification = {
+        "class_name": "powdery_mildew",
+        "confidence": 0.45,
+        "all_probs": probs,
+        "low_confidence": True,
+    }
+    out = _apply_postprocessing_rules(classification, list(probs.keys()))
+
+    assert "very_low_confidence" not in out["warnings"]
+
+
+def test_weak_disease_verdict_stays_disease_not_synthesised_healthy():
+    """Regression for the dominant bug in the post-launch feedback
+    corpus: ``_maybe_apply_healthy_fallback`` used to flip a weak
+    disease verdict to a synthesised ``healthy`` (transferring the
+    rejected disease's mass), then the ``_suspected_disease`` guard
+    gated off the weak-healthy reroute, and two contradictory disease
+    names landed in the warnings (the killed-by-fallback class and the
+    worst-after-fallback class). The fallback has been removed — a
+    weak disease verdict must stay disease, with ``low_confidence``
+    carrying the uncertainty.
+    """
+    from pipeline import _apply_postprocessing_rules
+
+    probs = _uniform_probs()
+    probs["viral_disease"] = 0.32     # would have been the rejected top-1
+    probs["leaf_spot_fungal"] = 0.30  # the band the old reroute couldn't catch
+    probs["healthy"] = 0.22
     s = sum(probs.values())
     probs = {k: v / s for k, v in probs.items()}
 
     classification = {
-        "class_name": "healthy",
-        "confidence": probs["healthy"],
+        "class_name": "viral_disease",
+        "confidence": probs["viral_disease"],
         "all_probs": probs,
-        "low_confidence": False,
-        "_suspected_disease": "powdery_mildew",
+        "low_confidence": True,
     }
     out = _apply_postprocessing_rules(classification, list(probs.keys()))
 
-    assert out["class_name"] == "healthy"
-    assert "disease_uncertain:powdery_mildew" in out["warnings"]
+    assert out["class_name"] == "viral_disease", (
+        "weak disease must not be downgraded to healthy"
+    )
+    assert "low_confidence" in out["warnings"]
+    # The contradictory-warnings bug: neither of these strings may
+    # appear, even though both diseases sit in the distribution.
+    assert not any(w.startswith("disease_uncertain:") for w in out["warnings"])
+    # The post-fallback "uncertain_healthy" branch must not fire on a
+    # disease verdict either.
+    assert "uncertain_healthy" not in out["warnings"]
 
 
 def test_postprocessor_emits_nap_ood_warning():
@@ -286,30 +386,6 @@ def test_classes_json_in_repo_drives_pipeline_config():
     assert meta.get("model_version", "").startswith("2.")
 
 
-def test_healthy_fallback_keeps_top_k_consistent_with_class_name():
-    """After the healthy fallback fires, the chosen class must be the
-    actual top-1 in all_probs / top_k."""
-    from pipeline import _apply_postprocessing_rules
-
-    probs = _uniform_probs()
-    probs["healthy"] = 0.55
-    probs["powdery_mildew"] = 0.15
-    s = sum(probs.values())
-    probs = {k: v / s for k, v in probs.items()}
-    aggregated = {
-        "class_name": "healthy",
-        "confidence": probs["healthy"],
-        "all_probs": probs,
-        "low_confidence": False,
-        "_suspected_disease": "powdery_mildew",
-    }
-    out = _apply_postprocessing_rules(aggregated, list(probs.keys()))
-
-    assert out["top_k"][0]["class"] == out["class_name"], (
-        f"top_k[0]={out['top_k'][0]} but class_name={out['class_name']}"
-    )
-
-
 def test_severity_low_for_non_disease():
     """compute_severity must short-circuit to "low" for healthy / NAP."""
     from pipeline import compute_severity
@@ -344,48 +420,15 @@ def test_severity_escalates_with_area_and_margin():
     assert low == "low"
 
 
-def test_healthy_fallback_helper_fires_on_weak_margin():
-    """`_maybe_apply_healthy_fallback` must downgrade a weak disease
-    verdict — the suspected class is reported back so the postprocessor
-    can surface a `disease_uncertain:<class>` warning."""
-    from pipeline import HEALTHY_FALLBACK_MARGIN, _maybe_apply_healthy_fallback
-
-    probs = {n: 0.01 for n in EXPECTED_CLASSES}
-    probs["powdery_mildew"] = 0.40
-    probs["healthy"] = 0.40 - (HEALTHY_FALLBACK_MARGIN / 2)
-    s = sum(probs.values())
-    probs = {k: v / s for k, v in probs.items()}
-    out = _maybe_apply_healthy_fallback(probs, "powdery_mildew", probs["powdery_mildew"])
-
-    assert out is not None
-    assert out["suspected"] == "powdery_mildew"
-    assert 0.0 < out["top1_conf"] <= 1.0
-
-
-def test_healthy_fallback_helper_skips_strong_disease_verdict():
-    """A confident disease verdict with healthy well below must be left alone."""
-    from pipeline import _maybe_apply_healthy_fallback
-
-    strong_probs = {n: 0.01 for n in EXPECTED_CLASSES}
-    strong_probs["powdery_mildew"] = 0.85
-    strong_probs["healthy"] = 0.05
-    s = sum(strong_probs.values())
-    strong_probs = {k: v / s for k, v in strong_probs.items()}
-    assert _maybe_apply_healthy_fallback(
-        strong_probs, "powdery_mildew", strong_probs["powdery_mildew"],
-    ) is None
-
-
 def test_blur_gate_rejects_uniform_image():
     """Solid-colour PNGs have ~zero edge variance — must trip the gate."""
     from PIL import Image
 
-    from pipeline import BLUR_LAPLACIAN_FLOOR, _variance_of_laplacian, is_image_too_blurry
+    from pipeline import BLUR_LAPLACIAN_FLOOR, _variance_of_laplacian
 
     flat = Image.new("RGB", (640, 480), color=(120, 160, 80))
     score = _variance_of_laplacian(flat)
     assert score < 1.0
-    assert is_image_too_blurry(flat) is True
     assert score < BLUR_LAPLACIAN_FLOOR
 
 

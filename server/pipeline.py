@@ -20,9 +20,12 @@ Behaviour summary:
   the room).
 * **Size filter** drops tiny detections (<32 px or <0.5 % image area)
   before classification.
-* **Healthy fallback** — disease verdicts with weak margin or sub-
-  ``DISEASE_MIN_CONFIDENCE`` confidence are downgraded to ``healthy``
-  and the suspected disease is surfaced as a warning.
+* **Weak-healthy reroute** — when top-1 is ``healthy`` but the
+  margin to the strongest disease is too narrow, we surface the
+  disease instead so the UI doesn't reassure on an obviously-sick
+  plant. (Symmetric "weak-disease → healthy" downgrade was removed
+  in favour of an honest low-confidence flag — see the comment in
+  ``_pick_primary``.)
 * **Temperature scaling** — when ``temperature.json`` is present, we
   recalibrate probabilities before voting; otherwise T=1.0 (no-op).
 * **OOD gating** — combines detector confidence with a **MaxLogit**
@@ -40,7 +43,6 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 from PIL import Image
@@ -71,24 +73,52 @@ HEALTHY_MARGIN = 0.10
 # Even when top-1 = healthy with confidence ≥ HEALTHY_MIN_CONFIDENCE, if
 # the strongest disease has non-trivial mass we still surface an
 # ``uncertain_healthy`` warning + the suspected disease in top_k.
-HEALTHY_DISEASE_FLOOR = 0.18
+HEALTHY_DISEASE_FLOOR = 0.12
 
 # Hard reroute — when top-1 = healthy but the confidence is below this
-# floor (typical example: 0.29 healthy / 0.24 leaf_spot_fungal / 0.21
-# gray_mold), the model is essentially guessing. We swap the verdict to
-# the strongest disease class so the UI doesn't reassure the user about
-# an obviously-unhealthy plant. Companion rule: if there's no disease
+# floor, the model is essentially guessing. We swap the verdict to the
+# strongest disease class so the UI doesn't reassure the user about an
+# obviously-unhealthy plant. Companion rule: if there's no disease
 # alternative meeting ``HEALTHY_DISEASE_FLOOR`` we keep ``healthy`` but
 # attach the ``low_confidence`` warning so the UI demotes the verdict.
-HEALTHY_REROUTE_FLOOR = 0.50
+#
+# Tightened from 0.50 → 0.65 after a feedback-screenshot review where
+# the model was happily emitting "Healthy 55–61 %" on visibly dead
+# / dried plants (the head doesn't carry leaf-scorch / nutrient-
+# deficiency yet, so damage signal collapses to the weakest healthy).
+# 0.65 is the empirical knee — below it the in-frame disease class
+# is reliable enough to swap to; above it we leave the verdict alone
+# and let the soft ``uncertain_healthy`` warning carry the demotion.
+HEALTHY_REROUTE_FLOOR = 0.65
+
+# Second healthy-reroute gate, this time keyed on the *margin* between
+# healthy and the strongest disease class rather than the absolute
+# confidence. Caught a class of errors the absolute floor missed:
+# top1=healthy at e.g. 0.55 with disease at 0.35 is essentially a
+# coin flip but slips past ``HEALTHY_REROUTE_FLOOR``. Threshold
+# pulled from feedback-row analysis: error rows had next-diseased
+# gaps of 0.06 / 0.20 / 0.42; <0.30 catches the 0.06 and 0.20 cases.
+# Companion ``HEALTHY_GAP_DISEASE_FLOOR`` keeps the gate from firing
+# when the strongest disease is itself just noise (e.g. 0.05).
+HEALTHY_GAP_MARGIN = 0.30
+HEALTHY_GAP_DISEASE_FLOOR = 0.10
+
+# Very-low-confidence floor — applies to ANY verdict (healthy or
+# disease) and is purely a UI-demotion signal. When top-1 commits
+# below this floor the response gains a ``very_low_confidence``
+# warning so the Android result screen can render a prominent
+# "low confidence — please retake the photo" banner instead of
+# showing a confident-looking 31 %-confidence disease badge. Driven
+# by a feedback-screenshot where a meme image got Gray-Mold@31 %.
+VERY_LOW_CONFIDENCE_FLOOR = 0.40
 
 # Disease-side gate. If averaged top-1 is a disease but its softmax
-# mass is below this threshold, we downgrade to healthy.
+# mass is below this threshold, we gate community-upload eligibility
+# and severity escalation via ``_is_diseased``. (The disease verdict
+# itself is no longer downgraded to healthy below this floor — the
+# legacy fallback was removed because it manufactured fake-healthy
+# distributions; see the comment block in ``_pick_primary``.)
 DISEASE_MIN_CONFIDENCE = 0.65
-
-# If averaged top-1 is a disease but its margin over ``healthy`` is
-# below this, downgrade.
-HEALTHY_FALLBACK_MARGIN = 0.15
 
 # NAP (out-of-distribution) gate.
 #
@@ -252,15 +282,6 @@ def _variance_of_laplacian(img: Image.Image, max_side: int = BLUR_DOWNSCALE) -> 
     return float(inner.var())
 
 
-def is_image_too_blurry(img: Image.Image, floor: float = BLUR_LAPLACIAN_FLOOR) -> bool:
-    """True when the variance-of-Laplacian is below ``floor``.
-
-    Exposed at module level so the FastAPI layer (and tests) can call
-    it without instantiating the full pipeline.
-    """
-    return _variance_of_laplacian(img) < floor
-
-
 def _apply_temperature(probs: dict[str, float], T: float) -> dict[str, float]:
     """Apply temperature scaling on already-softmaxed probabilities.
 
@@ -299,6 +320,14 @@ class PlantDiseasePipeline:
         self.conformal: ConformalConfig | None = load_conformal_config(
             classifier_path.parent
         )
+        if self.nap_max_logit_floor <= 0:
+            logger.warning(
+                "OOD MaxLogit gate is OFF on this model — separation_p50 in "
+                "classes.json showed NAP medians above plant medians, so the "
+                "AND-gate degrades to detector-confidence-only. NAP rejection "
+                "rests on the classifier's own not_a_plant head until a "
+                "different OOD score is calibrated.",
+            )
         logger.info(
             "Pipeline ready  classifier=%s backend  T=%.3f  "
             "MaxLogit floor=%s  conformal=%s",
@@ -483,7 +512,7 @@ class PlantDiseasePipeline:
         is_diseased: bool,
         stage1_confidence: float,
         regions: list[dict],
-        primary_region: Optional[dict],
+        primary_region: dict | None,
         t0: float,
     ) -> dict:
         elapsed = (time.perf_counter() - t0) * 1000
@@ -543,10 +572,9 @@ class PlantDiseasePipeline:
         # behaviour for backwards compatibility.
         max_logit_low = (ml_floor > 0) and (max_logit < ml_floor)
 
-        if ml_floor > 0:
-            triggered = detector_low and max_logit_low
-        else:
-            triggered = detector_low
+        triggered = (
+            (detector_low and max_logit_low) if ml_floor > 0 else detector_low
+        )
 
         if triggered:
             logger.info(
@@ -608,19 +636,26 @@ class PlantDiseasePipeline:
         top1_class = max(mean_probs, key=mean_probs.get)
         top1_conf = float(mean_probs[top1_class])
 
-        downgrade = _maybe_apply_healthy_fallback(mean_probs, top1_class, top1_conf)
-        if downgrade is not None:
-            mean_probs = downgrade["mean_probs"]
-            top1_class = "healthy"
-            top1_conf = downgrade["top1_conf"]
-            suspected_disease: Optional[str] = downgrade["suspected"]
-        else:
-            suspected_disease = None
+        # The legacy ``_maybe_apply_healthy_fallback`` used to flip a
+        # weak disease verdict to healthy by transferring the rejected
+        # disease's softmax mass onto healthy. That synthesised a fake
+        # "healthy ~0.51" distribution out of a real disease
+        # prediction, gated off the weak-healthy reroute via the
+        # ``_suspected_disease`` flag, and surfaced two contradictory
+        # disease names in the warnings (the killed-by-fallback class
+        # and the worst-after-fallback class). It was the dominant
+        # source of "user-sees-healthy-but-photo-is-clearly-sick"
+        # errors in the feedback corpus. Removed entirely — weak
+        # disease verdicts now stay disease verdicts and carry
+        # ``low_confidence`` for the UI to demote honestly. The
+        # symmetric "weak healthy with a disease alternative" case is
+        # still caught by the gap reroute in
+        # ``_apply_postprocessing_rules``.
 
         primary_box = self._select_primary_box(
             results=results,
             top1_class=top1_class,
-            downgraded=downgrade is not None,
+            downgraded=False,
         )
 
         aggregated_cls = {
@@ -630,7 +665,6 @@ class PlantDiseasePipeline:
             "max_logit": max_logit_seen if max_logit_seen != -float("inf") else 0.0,
             "low_confidence": top1_conf < HEALTHY_MIN_CONFIDENCE,
             "_voted_over": n_boxes,
-            "_suspected_disease": suspected_disease,
         }
         return primary_box, aggregated_cls
 
@@ -662,23 +696,45 @@ class PlantDiseasePipeline:
         top1_class: str,
         downgraded: bool,
     ) -> dict:
-        """Prefer a bbox whose own top-1 matches the aggregated decision."""
-        matching = [
-            (box, cls) for box, cls in results
-            if cls.get("class_name") == top1_class or (
-                downgraded and top1_class == "healthy"
-                and max(cls["all_probs"], key=cls["all_probs"].get) == "healthy"
-            )
-        ]
-        if matching:
-            return max(
-                matching,
-                key=lambda r: float(r[1]["all_probs"].get(top1_class, 0.0)),
-            )[0]
-        return max(
+        """Pick the bbox most worth highlighting on the result screen.
+
+        Heuristic: rank every region by ``1 − P(healthy)`` (i.e. its
+        own per-crop probability of being NOT healthy) and pick the
+        worst-looking one. This surfaces the suspicious region rather
+        than the most-confident-healthy leaf, which matters most when
+        the aggregated verdict is itself a disease — the user expects
+        to see the diseased leaf called out, not the picture-perfect
+        one beside it. Even on a confidently-healthy aggregate it's a
+        better default: if any single region looks sick, showing it is
+        more informative than centring on the showiest healthy leaf.
+
+        Tie-breakers (in order): higher per-crop confidence for the
+        aggregated ``top1_class``, then larger area — same fallbacks
+        the old "matches top-1" path used.
+        """
+        if not results:
+            raise ValueError("_select_primary_box called with no regions")
+
+        def disease_score(crop_cls: dict) -> float:
+            return 1.0 - float(crop_cls["all_probs"].get("healthy", 0.0))
+
+        def top1_match(crop_cls: dict) -> float:
+            return float(crop_cls["all_probs"].get(top1_class, 0.0))
+
+        def area(box: dict) -> int:
+            return int(box.get("width", 0)) * int(box.get("height", 0))
+
+        ranked = sorted(
             results,
-            key=lambda r: int(r[0].get("width", 0)) * int(r[0].get("height", 0)),
-        )[0]
+            key=lambda r: (disease_score(r[1]), top1_match(r[1]), area(r[0])),
+            reverse=True,
+        )
+        # ``downgraded`` is kept in the signature for call-site
+        # compatibility; the new ranking already does the right thing
+        # in the downgrade case (the most-diseased region still wins
+        # even when the aggregate flipped to healthy).
+        _ = downgraded
+        return ranked[0][0]
 
     def _reroute_to_nap(self, classification: dict) -> dict:
         """Rewrite an OOD-gated classification to a confident NAP verdict.
@@ -711,12 +767,11 @@ class PlantDiseasePipeline:
             "max_logit": float(classification.get("max_logit", 0.0)),
             "low_confidence": False,
             "_voted_over": classification.get("_voted_over", 1),
-            "_suspected_disease": None,
             "_ood_gated": True,
         }
 
     @staticmethod
-    def _extract_crop(img: Image.Image, region: Optional[dict]) -> Image.Image:
+    def _extract_crop(img: Image.Image, region: dict | None) -> Image.Image:
         if region is None:
             return img
         x = int(region.get("x", 0))
@@ -739,64 +794,12 @@ class PlantDiseasePipeline:
 # ── pure helpers (exposed for tests) ─────────────────────────────────
 
 
-def _maybe_apply_healthy_fallback(
-    mean_probs: dict[str, float],
-    top1_class: str,
-    top1_conf: float,
-) -> dict | None:
-    """Downgrade weak disease verdicts to ``healthy``.
-
-    Returns the rewritten state on downgrade, or ``None`` to keep the
-    original verdict. Mutates the caller's ``mean_probs`` only when
-    downgrading.
-    """
-    if top1_class in _NON_DISEASE or "healthy" not in mean_probs:
-        return None
-
-    healthy_p = float(mean_probs.get("healthy", 0.0))
-    margin = top1_conf - healthy_p
-
-    if margin >= HEALTHY_FALLBACK_MARGIN and top1_conf >= DISEASE_MIN_CONFIDENCE:
-        return None
-
-    reason = (
-        f"margin={margin:.3f}<{HEALTHY_FALLBACK_MARGIN}"
-        if margin < HEALTHY_FALLBACK_MARGIN
-        else f"threshold={top1_conf:.3f}<{DISEASE_MIN_CONFIDENCE}"
-    )
-    inverted_conf = min(max(healthy_p, 1.0 - top1_conf), 0.95)
-    logger.info(
-        "Healthy fallback (%s)  was=%s/%.3f  → healthy/%.3f",
-        reason, top1_class, top1_conf, inverted_conf,
-    )
-
-    target_healthy = max(inverted_conf, healthy_p)
-    delta = min(top1_conf - inverted_conf, mean_probs[top1_class])
-    if delta > 0:
-        mean_probs[top1_class] -= delta
-        mean_probs["healthy"] = mean_probs.get("healthy", 0.0) + delta
-
-    total = sum(mean_probs.values())
-    if total > 0:
-        mean_probs = {n: p / total for n, p in mean_probs.items()}
-
-    new_conf = float(mean_probs["healthy"])
-    if new_conf < target_healthy:
-        new_conf = target_healthy
-
-    return {
-        "mean_probs": mean_probs,
-        "top1_conf": new_conf,
-        "suspected": top1_class,
-    }
-
-
 def compute_severity(
     *,
     class_name: str,
     confidence: float,
     healthy_prob: float,
-    primary_box: Optional[dict],
+    primary_box: dict | None,
     image_size: tuple[int, int],
     is_diseased: bool,
 ) -> str:
@@ -856,9 +859,6 @@ def _apply_postprocessing_rules(
       * ``uncertain_healthy`` — top-1 is healthy, no disease above the
         reroute threshold, but confidence/margin still below the soft
         thresholds. Surfaces alternatives, no class swap.
-      * ``disease_uncertain`` — the healthy-fallback fired in
-        ``_pick_primary``: top-1 was a disease but margin/threshold was
-        weak so the class was downgraded to healthy.
       * ``low_confidence`` — top-1 below the healthy threshold.
     """
     probs = classification["all_probs"]
@@ -873,23 +873,40 @@ def _apply_postprocessing_rules(
     # while a real disease class has any meaningful mass, "healthy" is
     # almost certainly wrong. Reroute the verdict so the UI surfaces
     # the more likely call.
-    if (
-        top1_name == "healthy"
-        and "healthy" in class_names
-        and top1_prob < HEALTHY_REROUTE_FLOOR
-    ):
+    if top1_name == "healthy" and "healthy" in class_names:
         worst_disease = max(
             ((n, p) for n, p in probs.items() if n not in _NON_DISEASE),
             key=lambda kv: kv[1],
             default=(None, 0.0),
         )
-        if (
-            worst_disease[0] is not None
+        # Two parallel triggers, either of which is enough on its own:
+        #
+        #   * absolute floor — top1 confidence < REROUTE_FLOOR (0.50)
+        #     with any non-trivial disease (>= DISEASE_FLOOR, 0.18)
+        #   * gap floor — healthy is winning but only by < GAP_MARGIN
+        #     (0.30) over the strongest disease, and that disease has
+        #     at least GAP_DISEASE_FLOOR (0.10) mass
+        #
+        # The gap floor catches the "healthy 0.55 / leaf_spot 0.35"
+        # band the absolute floor misses but where the model is
+        # essentially a coin flip.
+        absolute_hit = (
+            top1_prob < HEALTHY_REROUTE_FLOOR
             and worst_disease[1] >= HEALTHY_DISEASE_FLOOR
-        ):
+        )
+        gap = top1_prob - worst_disease[1] if worst_disease[0] is not None else float("inf")
+        gap_hit = (
+            worst_disease[0] is not None
+            and worst_disease[1] >= HEALTHY_GAP_DISEASE_FLOOR
+            and gap < HEALTHY_GAP_MARGIN
+        )
+        if worst_disease[0] is not None and (absolute_hit or gap_hit):
             logger.info(
-                "Weak-healthy reroute  was=healthy/%.3f  → %s/%.3f",
+                "Weak-healthy reroute  was=healthy/%.3f  → %s/%.3f  "
+                "trigger=%s  gap=%.3f",
                 top1_prob, worst_disease[0], worst_disease[1],
+                "absolute" if absolute_hit else "gap",
+                gap,
             )
             classification = {
                 **classification,
@@ -930,15 +947,22 @@ def _apply_postprocessing_rules(
                 top1_prob, margin, worst_disease[0], worst_disease[1],
             )
 
-    suspected = classification.get("_suspected_disease")
-    if suspected:
-        warnings.append(f"disease_uncertain:{suspected}")
-
     if classification.get("_ood_gated"):
         warnings.append("nap_ood_gated")
 
     if classification.get("low_confidence"):
         warnings.append("low_confidence")
+
+    # Very-low-confidence floor — purely a UI hint, no class swap.
+    # The post-reroute confidence is what the user sees, so we check
+    # ``classification["confidence"]`` rather than the original
+    # ``top1_prob`` (which may have been a 0.51-healthy that got
+    # rerouted to a 0.32-disease above). Any verdict that lands below
+    # the floor — including a disease that the model emitted at
+    # 31 % on a junk image — earns the warning so the UI can render
+    # a "please retake the photo" banner.
+    if float(classification["confidence"]) < VERY_LOW_CONFIDENCE_FLOOR:
+        warnings.append("very_low_confidence")
 
     return {
         "class_name": classification["class_name"],

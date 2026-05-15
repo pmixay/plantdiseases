@@ -50,6 +50,15 @@ data class PredictionSet(
 
 /** Response from the server after analyzing an image */
 data class AnalysisResponse(
+    // Canonical class key (e.g. ``leaf_spot_fungal``) the pipeline
+    // landed on AFTER post-processing — this is what
+    // ``diseaseName`` is derived from. Echo this back as
+    // ``predictedClass`` on feedback. ``argmax(allProbs)`` may
+    // disagree because the weak-healthy reroute rewrites
+    // ``className`` / ``diseaseName`` but leaves ``allProbs``
+    // un-mutated; using argmax would poison server-side per-class
+    // accuracy metrics.
+    @SerializedName("class_name") val classKey: String? = null,
     @SerializedName("disease_name") val diseaseName: String,
     @SerializedName("disease_name_ru") val diseaseNameRu: String,
     @SerializedName("confidence") val confidence: Float,
@@ -78,7 +87,12 @@ data class AnalysisResponse(
      *  fan-out. ``null`` when the upstream failed; ``available=false``
      *  when PlantNet isn't configured on this server. */
     @SerializedName("species") val species: SpeciesBlock? = null,
-    @SerializedName("elapsed_ms") val elapsedMs: Float? = null
+    @SerializedName("elapsed_ms") val elapsedMs: Float? = null,
+    // Server-minted scan_id from /api/analyse. We MUST echo this on
+    // /api/feedback — the server rejects any scan_id it didn't issue
+    // (422 "Unknown scan_id"). Optional in the type so older cached
+    // responses without it still deserialise cleanly.
+    @SerializedName("scan_id") val scanId: String? = null,
 )
 
 /** Species block carried inside AnalysisResponse. */
@@ -451,6 +465,11 @@ data class FeedbackRequest(
     @SerializedName("primary_region_index") val primaryRegionIndex: Int? = null,
     @SerializedName("feedback_latency_ms") val feedbackLatencyMs: Long? = null,
     @SerializedName("image_hash") val imageHash: String? = null,
+    // Conformal prediction set from the analyse response that
+    // produced this scan. Echoed back so the server can answer
+    // "was the right answer in the 90 % set?" without joining
+    // against the original analyse log.
+    @SerializedName("prediction_set") val predictionSet: List<String>? = null,
 )
 
 /** One entry of the model's top-3 prediction set used by the feedback payload. */

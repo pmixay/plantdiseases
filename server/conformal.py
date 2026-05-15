@@ -160,10 +160,10 @@ def prediction_set(
     order = np.argsort(-p)                  # descending
     p_sorted = p[order]
 
-    if cfg.method == "aps":
-        scores = aps_score(p_sorted)
-    else:                                   # raps
-        scores = raps_score(p_sorted, cfg.lambda_reg, cfg.k_reg)
+    scores = (
+        aps_score(p_sorted) if cfg.method == "aps"
+        else raps_score(p_sorted, cfg.lambda_reg, cfg.k_reg)
+    )
 
     # Smallest k such that score[k] >= q_hat → set size is k+1.
     above = np.where(scores >= cfg.q_hat)[0]
@@ -217,10 +217,10 @@ def calibrate_q_hat(
     for i in range(n):
         order = np.argsort(-cal_probs[i])
         p_sorted = cal_probs[i, order]
-        if method == "aps":
-            scores = aps_score(p_sorted)
-        else:
-            scores = raps_score(p_sorted, lambda_reg, k_reg)
+        scores = (
+            aps_score(p_sorted) if method == "aps"
+            else raps_score(p_sorted, lambda_reg, k_reg)
+        )
         rank_of_true = int(np.where(order == cal_labels[i])[0][0])
         nonconf[i] = scores[rank_of_true]
 
@@ -242,10 +242,10 @@ def calibrate_q_hat(
     for i in range(n):
         order = np.argsort(-cal_probs[i])
         p_sorted = cal_probs[i, order]
-        if method == "aps":
-            scores = aps_score(p_sorted)
-        else:
-            scores = raps_score(p_sorted, lambda_reg, k_reg)
+        scores = (
+            aps_score(p_sorted) if method == "aps"
+            else raps_score(p_sorted, lambda_reg, k_reg)
+        )
         above = np.where(scores >= q_hat)[0]
         size = int(above[0]) + 1 if above.size else len(p_sorted)
         size = max(size, 1)

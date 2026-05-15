@@ -130,6 +130,12 @@ def test_analyze_response_contract(client, png_bytes):
     body = r.json()
 
     required = {
+        # ``class_name`` is the canonical post-reroute key — clients
+        # echo it back on /api/feedback as ``predicted_class`` so
+        # per-class accuracy metrics see the same verdict the user
+        # saw rather than argmax(all_probs) (which can disagree
+        # after a weak-healthy reroute).
+        "class_name",
         "disease_name",
         "disease_name_ru",
         "confidence",
@@ -152,6 +158,10 @@ def test_analyze_response_contract(client, png_bytes):
     }
     missing = required - set(body.keys())
     assert not missing, f"missing keys: {missing}"
+    # The canonical class key must match what the localised display
+    # strings were derived from. If they ever diverge, the feedback
+    # round-trip will pollute per-class accuracy metrics.
+    assert isinstance(body["class_name"], str) and body["class_name"]
 
     assert 0.0 <= body["confidence"] <= 1.0
     assert 0.0 <= body["uncertainty"] <= 1.0
@@ -292,14 +302,10 @@ def test_analyze_response_carries_issued_scan_id(client, png_bytes):
     assert fb.is_scan_id_issued(scan_id)
 
 
-def test_feedback_enforce_mode_rejects_unissued_scan_id(client, png_bytes, monkeypatch):
-    """With ENFORCE_ISSUED_SCAN_IDS flipped on, a feedback POST whose
-    scan_id wasn't seen on /api/analyze must 422 instead of being
-    quietly persisted. Default flow stays "log only" (covered by the
-    rest of the feedback test suite)."""
-    import main as server_main
-
-    monkeypatch.setattr(server_main, "ENFORCE_ISSUED_SCAN_IDS", True)
+def test_feedback_rejects_unissued_scan_id(client, png_bytes):
+    """A feedback POST whose scan_id wasn't seen on /api/analyze must
+    422 instead of being quietly persisted — that's the gate that
+    keeps test/poison rows out of the retraining corpus."""
     r = client.post(
         "/api/feedback",
         json={"scan_id": "neverissuedXYZ", "correct": True},

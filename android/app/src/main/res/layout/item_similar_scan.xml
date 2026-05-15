@@ -1,44 +1,76 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Single cell in the "Similar scans near you" horizontal carousel.
-    Sized so 3-4 cells peek into the screen at typical phone widths.
+    Single cell in the "Similar scans near you" carousel.
+
+    Each cell is a 160dp-wide card: thumbnail on top, disease name +
+    region + relative time below. Tapping the cell logs but doesn't
+    navigate yet — the corpus exposes anonymised regional context, not
+    other users' history. Width is fixed so the horizontal RecyclerView
+    snaps evenly regardless of label length.
 -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<com.google.android.material.card.MaterialCardView
+    xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    android:layout_width="96dp"
+    android:layout_width="160dp"
     android:layout_height="wrap_content"
-    android:orientation="vertical"
-    android:layout_marginEnd="@dimen/space_sm"
+    android:layout_marginEnd="@dimen/space_md"
     android:clickable="true"
     android:focusable="true"
-    android:background="?android:attr/selectableItemBackground">
+    app:cardCornerRadius="@dimen/radius_md"
+    app:cardElevation="0dp"
+    app:cardBackgroundColor="?attr/colorSurfaceContainer"
+    app:strokeWidth="0dp">
 
-    <com.google.android.material.card.MaterialCardView
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="96dp"
-        app:cardCornerRadius="@dimen/radius_md"
-        app:cardElevation="0dp"
-        app:cardBackgroundColor="@color/surface_variant">
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
 
         <ImageView
             android:id="@+id/iv_similar_thumb"
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
+            android:layout_height="96dp"
             android:scaleType="centerCrop"
+            android:background="?attr/colorSurfaceVariant"
             android:contentDescription="@null" />
 
-    </com.google.android.material.card.MaterialCardView>
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="@dimen/space_md"
+            android:paddingVertical="@dimen/space_sm">
 
-    <TextView
-        android:id="@+id/tv_similar_label"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="@dimen/space_xs"
-        android:gravity="center"
-        android:maxLines="2"
-        android:ellipsize="end"
-        android:textSize="@dimen/text_caption"
-        android:textColor="@color/on_surface_secondary"
-        android:lineSpacingExtra="1dp" />
+            <TextView
+                android:id="@+id/tv_similar_label"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textAppearance="@style/TextAppearance.App.Body"
+                android:textColor="?attr/colorOnSurface"
+                android:fontFamily="sans-serif-medium"
+                android:maxLines="2"
+                android:ellipsize="end" />
 
-</LinearLayout>
+            <TextView
+                android:id="@+id/tv_similar_region"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:textAppearance="@style/TextAppearance.App.Caption"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:maxLines="1"
+                android:ellipsize="end" />
+
+            <TextView
+                android:id="@+id/tv_similar_time"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:textAppearance="@style/TextAppearance.App.Caption"
+                android:textColor="?attr/colorOnSurfaceVariant" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</com.google.android.material.card.MaterialCardView>

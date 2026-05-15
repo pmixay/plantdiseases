@@ -91,7 +91,7 @@ def test_accuracy_smoke():
 
     # Prefer ONNX over .pth; falls through to whatever exists.
     classifier_path = next(
-        (
+        
             p
             for p in (
                 MODELS_DIR / "classifier_int8.onnx",
@@ -99,7 +99,7 @@ def test_accuracy_smoke():
                 MODELS_DIR / "classifier.pth",
             )
             if p.exists()
-        )
+        
     )
     detector_path = next(
         p for p in (MODELS_DIR / "detector.onnx", MODELS_DIR / "detector.pt") if p.exists()

@@ -46,42 +46,15 @@ object RegionResolver {
     private const val KEY_LOCALITY = "cached_locality"
     private const val KEY_REGION_TIMESTAMP = "cached_region_ts"
 
-    // Legacy key — earlier builds stored a composite "City, Country"
-    // string here. Read once on resolution so we don't lose an
-    // already-cached region on an upgrade.
-    private const val KEY_LEGACY_REGION = "cached_region"
-
     private const val CACHE_VALID_MS = 24L * 60L * 60L * 1000L  // refresh once a day
 
     /** Persisted last-known country + locality, or ``null`` if
      *  we've never resolved. */
     fun cachedRegion(context: Context): ResolvedRegion? {
         val p = prefs(context)
-        val country = p.getString(KEY_COUNTRY, null)?.takeIf { it.isNotBlank() }
-        if (country != null) {
-            val locality = p.getString(KEY_LOCALITY, null)?.takeIf { it.isNotBlank() }
-            return ResolvedRegion(country, locality)
-        }
-        // One-time migration off the legacy composite key.
-        val legacy = p.getString(KEY_LEGACY_REGION, null)?.takeIf { it.isNotBlank() }
-        if (legacy != null) {
-            val (city, c) = splitComposite(legacy)
-            if (c.isNotBlank()) {
-                p.edit()
-                    .putString(KEY_COUNTRY, c)
-                    .putString(KEY_LOCALITY, city)
-                    .remove(KEY_LEGACY_REGION)
-                    .apply()
-                return ResolvedRegion(c, city.takeIf { it.isNotBlank() })
-            }
-        }
-        return null
-    }
-
-    private fun splitComposite(value: String): Pair<String, String> {
-        val idx = value.lastIndexOf(',')
-        if (idx < 0) return "" to value.trim()
-        return value.substring(0, idx).trim() to value.substring(idx + 1).trim()
+        val country = p.getString(KEY_COUNTRY, null)?.takeIf { it.isNotBlank() } ?: return null
+        val locality = p.getString(KEY_LOCALITY, null)?.takeIf { it.isNotBlank() }
+        return ResolvedRegion(country, locality)
     }
 
     /** Permission probe — true when we hold ``ACCESS_COARSE_LOCATION``. */

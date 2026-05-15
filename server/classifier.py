@@ -50,8 +50,6 @@ DEFAULT_CLASS_NAMES = [
 NORM_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 NORM_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
-LOW_CONFIDENCE_THRESHOLD = 0.35
-
 
 class ClassifierLoadError(RuntimeError):
     """Raised when no usable classifier artefact can be loaded."""
@@ -316,6 +314,9 @@ class DiseaseClassifier:
             probs = e / denom
         top_idx = int(np.argmax(probs))
         top_conf = float(probs[top_idx])
+        # ``low_confidence`` is set later, post-aggregation, by
+        # ``pipeline._pick_primary`` against ``HEALTHY_MIN_CONFIDENCE``
+        # — the per-crop value is not used anywhere downstream.
         return {
             "class_name": self.CLASS_NAMES[top_idx],
             "confidence": round(top_conf, 4),
@@ -324,5 +325,4 @@ class DiseaseClassifier:
                 for i in range(self.NUM_CLASSES)
             },
             "max_logit": max_logit,
-            "low_confidence": top_conf < LOW_CONFIDENCE_THRESHOLD,
         }

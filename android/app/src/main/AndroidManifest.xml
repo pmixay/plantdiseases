@@ -37,8 +37,18 @@
             android:name=".MainActivity"
             android:exported="true"
             android:theme="@style/Theme.PlantDiseases.Splash"
-            android:windowSoftInputMode="adjustResize"
-            android:configChanges="uiMode|fontScale">
+            android:windowSoftInputMode="adjustResize">
+            <!--
+                No ``android:configChanges`` — we want the system to
+                recreate MainActivity on uiMode (night-mode) and
+                locale flips. Letting AppCompatDelegate do the
+                recreate is the only reliable way to get the view
+                tree to re-resolve themed attributes; intercepting
+                via ``onConfigurationChanged`` leaves the layouts on
+                the old colours and used to hang the app when the
+                profile screen tried to compensate with a manual
+                ``recreate()`` racing against AppCompat's own.
+            -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

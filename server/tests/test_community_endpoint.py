@@ -202,6 +202,63 @@ def test_community_nearby_excludes_requesting_user(client, isolated_community):
     )
     body = r.json()
     assert {item["scan_id"] for item in body["items"]} == {"scanotherid1"}
+    # The summary block must apply the same exclusion. Otherwise the
+    # chip row on Android shows a phantom disease — the user's own
+    # scan they just uploaded — alongside the carousel that already
+    # filters them out, which was confusing in practice.
+    summary = body["summary"]
+    assert summary["total"] == 1
+    assert summary["last_7d"] == 1
+    assert [d["disease"] for d in summary["top_diseases"]] == ["healthy"]
+    assert summary["top_diseases"][0]["count"] == 1
+
+
+def test_community_nearby_hides_not_a_plant(client, isolated_community):
+    """``not_a_plant`` is noise in the community feed — typically faces
+    or random objects — and must not surface in either the carousel
+    rows or the summary aggregates, even if it's the freshest row in
+    the bucket.
+    """
+    # One healthy row + two not_a_plant rows, none from the requesting
+    # user so the user-exclusion filter can't account for the result.
+    client.post(
+        "/api/community/scan",
+        data=_form(
+            scan_id="hidehealthy1",
+            user_pseudo_id="pseudo-feed-x",
+            region="Berlin, DE",
+            disease="healthy",
+        ),
+    )
+    for sid in ("hidenotplant1", "hidenotplant2"):
+        client.post(
+            "/api/community/scan",
+            data=_form(
+                scan_id=sid,
+                user_pseudo_id="pseudo-feed-x",
+                region="Berlin, DE",
+                disease="not_a_plant",
+            ),
+        )
+    r = client.get(
+        "/api/community/nearby",
+        params={"region": "Berlin, DE"},
+    )
+    body = r.json()
+    assert {item["disease"] for item in body["items"]} == {"healthy"}
+    summary = body["summary"]
+    assert summary["total"] == 1
+    assert summary["last_7d"] == 1
+    assert [d["disease"] for d in summary["top_diseases"]] == ["healthy"]
+
+    # Even an explicit ``disease=not_a_plant`` query must not surface
+    # any hidden rows. The filler stage may return other diagnoses,
+    # but no item in the carousel can carry the hidden disease.
+    r2 = client.get(
+        "/api/community/nearby",
+        params={"region": "Berlin, DE", "disease": "not_a_plant"},
+    )
+    assert all(item["disease"] != "not_a_plant" for item in r2.json()["items"])
 
 
 def test_community_nearby_handles_empty_region(client, isolated_community):

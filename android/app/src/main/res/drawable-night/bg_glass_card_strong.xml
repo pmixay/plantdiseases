@@ -1,16 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Dark-mode strong glass card (description/status header). Light-mode
-    uses the flat default in res/drawable/.
+    Dark-mode strong card — slightly elevated tonal variant for status
+    headers; still flat (no glass overlay).
 -->
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item>
-        <shape android:shape="rectangle">
-            <solid android:color="@color/glass_white_strong" />
-            <corners android:radius="@dimen/radius_lg" />
-            <stroke
-                android:width="@dimen/glass_stroke_width"
-                android:color="@color/glass_stroke_strong" />
-        </shape>
-    </item>
-</layer-list>
+<shape
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/surface_variant" />
+    <corners android:radius="@dimen/radius_lg" />
+</shape>

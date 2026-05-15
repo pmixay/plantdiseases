@@ -2,17 +2,17 @@
 <resources>
     <!-- ─── Brand · Botanical green palette (dark) ───────────────── -->
     <color name="primary">#7DDB9C</color>
-    <color name="primary_dark">#3CA065</color>
     <color name="primary_light">#15331E</color>
     <color name="primary_variant">#5BC889</color>
-    <color name="primary_soft">#15331E</color>
     <color name="on_primary">#06140A</color>
     <color name="on_primary_secondary">#B0061409</color>
+    <!-- Theme overrides for ``values/themes.xml``'s colorPrimaryDark /
+         colorSecondary / colorOnSecondary attributes. No direct
+         ``R.color.X`` / ``@color/X`` reference, but the themes consume
+         them. -->
+    <color name="primary_dark">#3CA065</color>
     <color name="secondary">#5BC889</color>
     <color name="on_secondary">#06140A</color>
-    <color name="accent_lime">#A3F0B5</color>
-    <color name="accent_mint">#9CE7C7</color>
-
     <!-- Gradient stops -->
     <color name="gradient_start">#06140A</color>
     <color name="gradient_mid">#143E22</color>
@@ -34,7 +34,6 @@
     <color name="background">#070F09</color>
     <color name="surface">#101810</color>
     <color name="surface_variant">#162117</color>
-    <color name="surface_elevated">#152113</color>
     <color name="on_surface">#F5F8F5</color>
     <color name="on_surface_secondary">#C8D0C8</color>
 
@@ -42,14 +41,10 @@
          On dark backgrounds we use a faint white sheen instead of an
          opaque tint so the surface still reveals the live wallpaper /
          photo behind it. -->
-    <color name="glass_white">#1FFFFFFF</color>
     <color name="glass_white_soft">#14FFFFFF</color>
-    <color name="glass_white_strong">#33FFFFFF</color>
-    <color name="glass_green_tint">#3D7DDB9C</color>
     <color name="glass_green_tint_soft">#1F7DDB9C</color>
     <color name="glass_stroke">#33FFFFFF</color>
     <color name="glass_stroke_strong">#52FFFFFF</color>
-    <color name="glass_dark_scrim">#33000000</color>
     <color name="glass_dark_scrim_strong">#66000000</color>
 
     <!-- ─── Semantic colors ─────────────────────────────────────── -->
@@ -68,10 +63,7 @@
 
     <!-- ─── Misc ────────────────────────────────────────────────── -->
     <color name="scan_frame_color">#80FFFFFF</color>
-    <color name="bottom_panel_bg">#101810</color>
     <color name="icon_bg">#1F3527</color>
-    <color name="semi_transparent">#60000000</color>
-    <color name="hint_pill_bg">#80000000</color>
     <color name="divider">#1F2820</color>
     <color name="card_stroke">#1F2820</color>
     <color name="soft_error_icon_bg">#2A2421</color>

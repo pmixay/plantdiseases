@@ -12,11 +12,6 @@ connection per call. A module-level RLock serialises writes so two
 concurrent requests can't race on the (cheap) cursor / commit cycle.
 The classifier inference loop dominates wall time, so the lock is
 never the bottleneck.
-
-Schema is forward-compatible: ``init_db()`` adds any missing columns
-from ``_EXTRA_COLUMNS`` on startup so older DB files keep working when
-the server is upgraded. We never drop columns — orphaned data stays
-in place for the retraining loop to ignore.
 """
 
 from __future__ import annotations
@@ -27,8 +22,8 @@ import logging
 import sqlite3
 import threading
 import time
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 try:
     from .config import get_str  # type: ignore[import-not-found]
@@ -40,23 +35,49 @@ logger = logging.getLogger(__name__)
 _DEFAULT_DB_PATH = Path(__file__).resolve().parent / "feedback.db"
 FEEDBACK_DB_PATH = Path(get_str("FEEDBACK_DB_PATH", str(_DEFAULT_DB_PATH)))
 
+# Disk root for image bytes attached to negative-feedback rows.
+# Filename is the SHA-256 of the image bytes, suffixed with the
+# detected extension, so multiple feedback rows pointing at the same
+# image collapse to one on-disk artefact. Bytes are only ever stored
+# when the user submits a ``correct=false`` feedback — see the
+# /api/feedback/image endpoint in main.py.
+_DEFAULT_IMG_DIR = Path(__file__).resolve().parent / "feedback_images"
+FEEDBACK_IMG_DIR = Path(get_str("FEEDBACK_IMG_DIR", str(_DEFAULT_IMG_DIR)))
+
 # Stable IP hashing pepper. When the env var is unset we still hash so
 # raw IPs never land on disk; the operator can rotate the pepper to
 # break correlation across deployments.
 _IP_HASH_PEPPER = get_str("FEEDBACK_IP_PEPPER", "plantvision-static-pepper-v1")
 
-_CORE_SCHEMA = """
+_SCHEMA = """
 CREATE TABLE IF NOT EXISTS feedback (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    scan_id         TEXT    NOT NULL,
-    correct         INTEGER NOT NULL,
-    corrected_class TEXT,
-    note            TEXT,
-    client_ip       TEXT,
-    created_at      INTEGER NOT NULL
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    scan_id               TEXT    NOT NULL,
+    correct               INTEGER NOT NULL,
+    corrected_class       TEXT,
+    note                  TEXT,
+    client_ip             TEXT,
+    created_at            INTEGER NOT NULL,
+    predicted_class       TEXT,
+    predicted_confidence  REAL,
+    top3_json             TEXT,
+    model_version         TEXT,
+    app_version           TEXT,
+    locale                TEXT,
+    platform              TEXT,
+    user_pseudo_id        TEXT,
+    region_count          INTEGER,
+    primary_region_index  INTEGER,
+    feedback_latency_ms   INTEGER,
+    reason                TEXT,
+    image_hash            TEXT,
+    client_ip_hash        TEXT
 );
-CREATE INDEX IF NOT EXISTS ix_feedback_scan_id  ON feedback(scan_id);
-CREATE INDEX IF NOT EXISTS ix_feedback_created  ON feedback(created_at);
+CREATE INDEX IF NOT EXISTS ix_feedback_scan_id        ON feedback(scan_id);
+CREATE INDEX IF NOT EXISTS ix_feedback_created        ON feedback(created_at);
+CREATE INDEX IF NOT EXISTS ix_feedback_user_pseudo    ON feedback(user_pseudo_id);
+CREATE INDEX IF NOT EXISTS ix_feedback_model_version  ON feedback(model_version);
+CREATE INDEX IF NOT EXISTS ix_feedback_predicted_class ON feedback(predicted_class);
 
 -- Short-lived issuance log. /api/analyze inserts a row here per
 -- response; /api/feedback consults it before accepting a payload so
@@ -69,31 +90,6 @@ CREATE TABLE IF NOT EXISTS issued_scan_ids (
 );
 CREATE INDEX IF NOT EXISTS ix_issued_created ON issued_scan_ids(created_at);
 """
-
-# Columns added in later schema revisions. Listed (name, DDL fragment)
-# so init_db can ALTER TABLE on an existing DB without losing rows.
-_EXTRA_COLUMNS: tuple[tuple[str, str], ...] = (
-    ("predicted_class",       "TEXT"),
-    ("predicted_confidence",  "REAL"),
-    ("top3_json",             "TEXT"),
-    ("model_version",         "TEXT"),
-    ("app_version",           "TEXT"),
-    ("locale",                "TEXT"),
-    ("platform",              "TEXT"),
-    ("user_pseudo_id",        "TEXT"),
-    ("region_count",          "INTEGER"),
-    ("primary_region_index",  "INTEGER"),
-    ("feedback_latency_ms",   "INTEGER"),
-    ("reason",                "TEXT"),
-    ("image_hash",            "TEXT"),
-    ("client_ip_hash",        "TEXT"),
-)
-
-_EXTRA_INDICES: tuple[str, ...] = (
-    "CREATE INDEX IF NOT EXISTS ix_feedback_user_pseudo ON feedback(user_pseudo_id);",
-    "CREATE INDEX IF NOT EXISTS ix_feedback_model_version ON feedback(model_version);",
-    "CREATE INDEX IF NOT EXISTS ix_feedback_predicted_class ON feedback(predicted_class);",
-)
 
 _write_lock = threading.RLock()
 _init_lock = threading.Lock()
@@ -117,18 +113,15 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
-def _existing_columns(conn: sqlite3.Connection) -> set[str]:
-    rows = conn.execute("PRAGMA table_info(feedback)").fetchall()
-    return {row[1] for row in rows}
-
-
 def init_db() -> None:
     """Create the schema if it doesn't already exist. Idempotent.
 
-    Also runs a forward-only migration step: any column in
-    ``_EXTRA_COLUMNS`` that's missing from an existing DB is added
-    with ``ALTER TABLE``. SQLite ``ADD COLUMN`` is O(1) on append-only
-    tables, so this stays cheap even with millions of rows.
+    Late-added columns (``out_of_head``, ``prediction_set_json``,
+    ``image_path``) are applied via ``ALTER TABLE ADD COLUMN`` rather
+    than a separate migration step — SQLite accepts the no-op when
+    the column already exists, so the call is idempotent across
+    fresh installs (where the column is missing) and rolling
+    deployments (where prior schemas may already have it).
     """
     global _initialised
     with _init_lock:
@@ -136,15 +129,34 @@ def init_db() -> None:
             return
         FEEDBACK_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
         with _connect() as conn:
-            conn.executescript(_CORE_SCHEMA)
-            present = _existing_columns(conn)
-            for name, ddl in _EXTRA_COLUMNS:
-                if name not in present:
-                    conn.execute(f"ALTER TABLE feedback ADD COLUMN {name} {ddl}")
-            for index_sql in _EXTRA_INDICES:
-                conn.execute(index_sql)
+            conn.executescript(_SCHEMA)
+            _add_column_if_missing(conn, "feedback", "out_of_head", "INTEGER")
+            _add_column_if_missing(
+                conn, "feedback", "prediction_set_json", "TEXT",
+            )
+            _add_column_if_missing(conn, "feedback", "image_path", "TEXT")
         _initialised = True
         logger.info("Feedback DB ready at %s", FEEDBACK_DB_PATH)
+
+
+def _add_column_if_missing(
+    conn: sqlite3.Connection,
+    table: str,
+    column: str,
+    decl: str,
+) -> None:
+    """Idempotent ``ALTER TABLE ADD COLUMN``.
+
+    SQLite has no ``ADD COLUMN IF NOT EXISTS`` so we probe the
+    PRAGMA table_info first. Existing rows get NULL for the new
+    column, which is what every late-added column here needs.
+    """
+    cols = {
+        row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+    }
+    if column in cols:
+        return
+    conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
 
 
 def hash_client_ip(client_ip: str | None) -> str | None:
@@ -157,7 +169,7 @@ def hash_client_ip(client_ip: str | None) -> str | None:
     if not client_ip:
         return None
     digest = hashlib.sha256(
-        f"{_IP_HASH_PEPPER}|{client_ip}".encode("utf-8")
+        f"{_IP_HASH_PEPPER}|{client_ip}".encode()
     ).hexdigest()
     # 16 hex chars (64 bits) is plenty of entropy for abuse tracking
     # without giving a colour-by-numbers re-identification surface.
@@ -213,12 +225,26 @@ def record_feedback(
     feedback_latency_ms: int | None = None,
     reason: str | None = None,
     image_hash: str | None = None,
+    out_of_head: bool | None = None,
+    prediction_set: Iterable[str] | None = None,
 ) -> int:
-    """Append a feedback row. Returns the new row id."""
+    """Append a feedback row. Returns the new row id.
+
+    ``out_of_head`` and ``prediction_set`` are late-added columns:
+    ``out_of_head`` flags a correction whose class isn't in the
+    production head (retraining uses it to prioritise label-set
+    expansion), and ``prediction_set`` is the conformal set the
+    classifier returned — persisting it lets us answer "was the
+    correct answer in the 90 % set?" after the fact.
+    """
     init_db()
     now = int(time.time())
     top3_json = _normalise_top3(top3)
     ip_hash = hash_client_ip(client_ip)
+    prediction_set_json = _normalise_prediction_set(prediction_set)
+    out_of_head_int: int | None = None
+    if out_of_head is not None:
+        out_of_head_int = 1 if out_of_head else 0
     with _write_lock, _connect() as conn:
         cur = conn.execute(
             "INSERT INTO feedback ("
@@ -226,13 +252,13 @@ def record_feedback(
             "  predicted_class, predicted_confidence, top3_json, model_version, "
             "  app_version, locale, platform, user_pseudo_id, region_count, "
             "  primary_region_index, feedback_latency_ms, reason, image_hash, "
-            "  client_ip_hash"
+            "  client_ip_hash, out_of_head, prediction_set_json"
             ") VALUES ("
             "  ?, ?, ?, ?, ?, ?,"
             "  ?, ?, ?, ?,"
             "  ?, ?, ?, ?, ?,"
             "  ?, ?, ?, ?,"
-            "  ?"
+            "  ?, ?, ?"
             ")",
             (
                 scan_id,
@@ -258,9 +284,102 @@ def record_feedback(
                 reason,
                 image_hash,
                 ip_hash,
+                out_of_head_int,
+                prediction_set_json,
             ),
         )
         return int(cur.lastrowid or 0)
+
+
+def _normalise_prediction_set(
+    prediction_set: Iterable[str] | None,
+) -> str | None:
+    """Compact-JSON of the conformal prediction set.
+
+    Accepts an iterable of class keys. Returns ``None`` for empty
+    inputs so the column stays NULL when the upstream call had no
+    set to record.
+    """
+    if prediction_set is None:
+        return None
+    cleaned = [
+        str(c)[:64] for c in prediction_set
+        if isinstance(c, str) and c
+    ][:16]
+    if not cleaned:
+        return None
+    return json.dumps(cleaned, separators=(",", ":"))
+
+
+def save_feedback_image(
+    image_bytes: bytes,
+    *,
+    content_type: str | None = None,
+    max_bytes: int = 4 * 1024 * 1024,
+) -> tuple[str, str] | None:
+    """Persist the bytes of a negative-feedback image under
+    ``FEEDBACK_IMG_DIR``. Returns ``(filename, sha256_hex)`` on
+    success, or ``None`` when the bytes are empty / oversized / fail
+    to write.
+
+    The filename is ``<sha256>.<ext>`` where ``<ext>`` is derived
+    from ``content_type`` (jpeg/png/webp); unknown types fall back to
+    ``.bin`` so we still keep the bytes for retraining even when the
+    client didn't send a Content-Type. The hash collapses duplicate
+    uploads to a single artefact.
+    """
+    if not image_bytes:
+        return None
+    if len(image_bytes) > max_bytes:
+        logger.info(
+            "Feedback image rejected (oversized: %d bytes)", len(image_bytes),
+        )
+        return None
+    digest = hashlib.sha256(image_bytes).hexdigest()
+    ext_by_type = {
+        "image/jpeg": "jpg",
+        "image/jpg": "jpg",
+        "image/png": "png",
+        "image/webp": "webp",
+    }
+    ext = ext_by_type.get((content_type or "").strip().lower(), "bin")
+    filename = f"{digest}.{ext}"
+    FEEDBACK_IMG_DIR.mkdir(parents=True, exist_ok=True)
+    target = FEEDBACK_IMG_DIR / filename
+    if target.exists():
+        # Same bytes already on disk — skip the write but still
+        # return the filename so the caller can backfill the row.
+        return filename, digest
+    try:
+        target.write_bytes(image_bytes)
+    except OSError as exc:
+        logger.warning("Failed to write feedback image %s: %s", target, exc)
+        return None
+    return filename, digest
+
+
+def attach_image_path(scan_id: str, image_path: str) -> bool:
+    """Backfill ``image_path`` on the most recent feedback row for
+    ``scan_id``. Returns True on a successful update, False when no
+    matching row exists.
+
+    Called from the /api/feedback/image upload endpoint after the
+    image bytes have been written to disk. We update rather than
+    insert because the JSON /api/feedback call lands first and we
+    don't want a second row for the same scan.
+    """
+    if not scan_id or not image_path:
+        return False
+    init_db()
+    with _write_lock, _connect() as conn:
+        cur = conn.execute(
+            "UPDATE feedback SET image_path = ? "
+            "WHERE id = (SELECT id FROM feedback "
+            "            WHERE scan_id = ? AND image_path IS NULL "
+            "            ORDER BY created_at DESC LIMIT 1)",
+            (image_path, scan_id),
+        )
+        return bool(cur.rowcount)
 
 
 def record_issued_scan_id(scan_id: str) -> None:
