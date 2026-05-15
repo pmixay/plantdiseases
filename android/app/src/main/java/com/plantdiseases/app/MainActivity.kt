@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.view.animation.OvershootInterpolator
@@ -210,20 +209,6 @@ class MainActivity : AppCompatActivity() {
 
     private fun clearGalleryBadge() {
         binding.bottomNavigation.removeBadge(R.id.galleryFragment)
-    }
-
-    /**
-     * Dark-mode / font-scale config changes still come through here
-     * (declared in the manifest) so the activity stays alive — the
-     * existing view tree already inherits the new resources. Locale
-     * changes are *not* in ``configChanges`` because routing them
-     * here used to fight the activity's cached base context and
-     * left half the UI in the old language; we now let the system
-     * recreate the activity on a locale switch and pick up the new
-     * locale via ``attachBaseContext`` → ``LocaleHelper.applyLocale``.
-     */
-    override fun onConfigurationChanged(newConfig: Configuration) {
-        super.onConfigurationChanged(newConfig)
     }
 
     override fun onResume() {
