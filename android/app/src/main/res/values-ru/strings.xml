@@ -378,7 +378,7 @@
 
     <!-- Bottom-sheet correction flow -->
     <string name="feedback_sheet_title">Помогите нам учиться</string>
-    <string name="feedback_sheet_subtitle">Ваши правки тренируют следующую модель. Когда вы отмечаете диагноз как неверный, мы также загружаем фото, чтобы правильно разметить его для переобучения.</string>
+    <string name="feedback_sheet_subtitle">Ваши правки тренируют следующую модель. Мы сохраняем только контекст диагноза — фото не передаётся.</string>
     <string name="feedback_sheet_we_thought">Мы определили</string>
     <string name="feedback_sheet_actual_label">Что это на самом деле?</string>
     <string name="feedback_sheet_reason_label">Почему диагноз неверный?</string>

@@ -152,7 +152,6 @@ def test_analyze_response_contract(client, png_bytes):
         "top_k",
         "warnings",
         "severity",
-        "prediction_set",
         "elapsed_ms",
         "server_version",
     }
@@ -162,6 +161,10 @@ def test_analyze_response_contract(client, png_bytes):
     # strings were derived from. If they ever diverge, the feedback
     # round-trip will pollute per-class accuracy metrics.
     assert isinstance(body["class_name"], str) and body["class_name"]
+    # The conformal ``prediction_set`` was removed with the
+    # auto-retraining infrastructure — no UI ever rendered it and
+    # its only consumer was the retired retraining diagnostic.
+    assert "prediction_set" not in body
 
     assert 0.0 <= body["confidence"] <= 1.0
     assert 0.0 <= body["uncertainty"] <= 1.0

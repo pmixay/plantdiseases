@@ -77,9 +77,6 @@ try:
     from .config import get_float, get_int, get_list, get_str
     from .diseases_data import DISEASES_DATABASE, lookup_pet_toxicity
     from .feedback import (
-        attach_image_path as feedback_attach_image_path,
-    )
-    from .feedback import (
         daily_write_count_for_ip_hash as feedback_daily_writes,
     )
     from .feedback import (
@@ -88,7 +85,6 @@ try:
         is_scan_id_issued,
         record_feedback,
         record_issued_scan_id,
-        save_feedback_image,
     )
     from .feedback import (
         init_db as init_feedback_db,
@@ -136,9 +132,6 @@ except ImportError:
     from config import get_float, get_int, get_list, get_str
     from diseases_data import DISEASES_DATABASE, lookup_pet_toxicity
     from feedback import (
-        attach_image_path as feedback_attach_image_path,
-    )
-    from feedback import (
         daily_write_count_for_ip_hash as feedback_daily_writes,
     )
     from feedback import (
@@ -147,7 +140,6 @@ except ImportError:
         is_scan_id_issued,
         record_feedback,
         record_issued_scan_id,
-        save_feedback_image,
     )
     from feedback import (
         init_db as init_feedback_db,
@@ -1035,36 +1027,6 @@ async def analyze_image(image: UploadFile = File(...), species: str | None = Non
     is_healthy_effective = bool(disease_info.get("is_healthy", False))
 
     # Conformal prediction set: classes the model can't rule out at the
-    # configured coverage level. Annotated with bilingual names so the
-    # UI can render "leaf_spot_fungal OR bacterial_leaf_spot @ 90%"
-    # without a second lookup table. ``None`` when calibration data
-    # isn't yet available — clients must treat it as optional.
-    prediction_set = result.get("prediction_set")
-    if prediction_set is not None:
-        # ``advisory`` is True until the conformal calibration set
-        # carries ≥ 50 samples per class. Today's per-class counts
-        # (bacterial_leaf_spot=3, gray_mold_botrytis=5,
-        # powdery_mildew=5, not_a_plant=0 — see
-        # ``server/models/model_card.json``) are too sparse for the
-        # stated 90 % coverage to be statistically meaningful. The
-        # client-facing flag tells the UI to render the set as
-        # "alternative candidates" rather than "guaranteed coverage".
-        prediction_set = {
-            **prediction_set,
-            "advisory": True,
-            "items": [
-                {
-                    "class": cls,
-                    "name_en": DISEASES_DATABASE.get(cls, DISEASES_DATABASE["unknown"]).get(
-                        "name_en", cls.replace("_", " ").title()
-                    ),
-                    "name_ru": DISEASES_DATABASE.get(cls, DISEASES_DATABASE["unknown"]).get(
-                        "name_ru", cls
-                    ),
-                }
-                for cls in prediction_set["classes"]
-            ],
-        }
 
     # Resolve the species fan-out. We started it in parallel with the
     # disease pipeline so this normally returns immediately. If the
@@ -1115,7 +1077,6 @@ async def analyze_image(image: UploadFile = File(...), species: str | None = Non
         "all_probs": rounded_probs,
         "top_k": top_k_localised,
         "warnings": warnings,
-        "prediction_set": prediction_set,
         "toxic_to_pets": toxicity["toxic_to_pets"],
         "toxic_species_list": toxicity["species_list"],
         "toxicity_source": toxicity["source"],
@@ -1280,13 +1241,13 @@ class ProgressionRequest(BaseModel):
 # Includes both the active trainable classes (from classes.json) and
 # the deferred physiological classes — clients should be allowed to
 # point us at conditions the next model release will cover.
-# Classes the v2.1 head can actually predict — the production
-# 7-class set. Anything OUTSIDE this set is an "out-of-head"
-# correction: a real signal the user is asking for, but one the
-# current model can't produce on its own. The retraining loop joins
-# on the ``out_of_head`` column persisted with each feedback row to
-# decide which classes to grow the head with.
-_FEEDBACK_IN_HEAD_CLASSES: frozenset[str] = frozenset({
+# Class keys the feedback ``corrected_class`` validator accepts.
+# Includes both the v2.1 head's seven trainable classes and the
+# deferred physiological classes — users should be able to point us
+# at conditions the head doesn't yet predict (we collect the signal;
+# what happens with it is a separate question that this codebase no
+# longer answers).
+_FEEDBACK_ALLOWED_CORRECTIONS: frozenset[str] = frozenset({
     "bacterial_leaf_spot",
     "gray_mold_botrytis",
     "healthy",
@@ -1294,24 +1255,12 @@ _FEEDBACK_IN_HEAD_CLASSES: frozenset[str] = frozenset({
     "not_a_plant",
     "powdery_mildew",
     "viral_disease",
-})
-
-# Out-of-head corrections — deferred physiological classes the
-# v2.1 head doesn't carry yet, plus a free-form catch-all. We accept
-# them on /api/feedback (otherwise the user has no way to tell us
-# "your model can't say this") and tag each row with ``out_of_head=1``
-# so retraining can prioritise expanding the label set.
-_FEEDBACK_OUT_OF_HEAD_CLASSES: frozenset[str] = frozenset({
     "edema",
     "leaf_scorch_underwatering",
     "nutrient_deficiency",
     "sunburn_or_scorch",
     "other",
 })
-
-_FEEDBACK_ALLOWED_CORRECTIONS: frozenset[str] = (
-    _FEEDBACK_IN_HEAD_CLASSES | _FEEDBACK_OUT_OF_HEAD_CLASSES
-)
 
 _FEEDBACK_ALLOWED_REASONS: frozenset[str] = frozenset({
     "wrong_class",
@@ -1387,14 +1336,6 @@ class FeedbackRequest(BaseModel):
     # against any future image-side analytics without the image bytes
     # leaving the device.
     image_hash: str | None = Field(default=None, min_length=32, max_length=128)
-    # Conformal prediction set the server returned with the original
-    # /api/analyse response (the classes the model couldn't rule out
-    # at the configured coverage). Persisting it on the feedback row
-    # lets us answer "was the correct answer in the 90 % set?" — a
-    # cleaner diagnostic than top1-only accuracy because it
-    # separates calibration failures from point-estimate failures.
-    # Capped at 16 keys / 64 chars each as a sanity guard.
-    prediction_set: list[str] | None = Field(default=None, max_length=16)
 
     @field_validator("scan_id", "user_pseudo_id")
     @classmethod
@@ -1705,13 +1646,6 @@ async def feedback_endpoint(payload: FeedbackRequest, request: Request):
         if payload.top3 else None
     )
 
-    # ``out_of_head`` only carries signal when the user supplied a
-    # correction. For correct=1 rows or rows without a correction we
-    # leave it NULL so retraining filters on ``IS 1`` rather than
-    # treating absence as a no.
-    out_of_head: bool | None = None
-    if payload.corrected_class:
-        out_of_head = payload.corrected_class not in _FEEDBACK_IN_HEAD_CLASSES
     try:
         row_id = await asyncio.get_running_loop().run_in_executor(
             _get_inference_executor(),
@@ -1734,8 +1668,6 @@ async def feedback_endpoint(payload: FeedbackRequest, request: Request):
                 feedback_latency_ms=payload.feedback_latency_ms,
                 reason=payload.reason,
                 image_hash=payload.image_hash,
-                out_of_head=out_of_head,
-                prediction_set=payload.prediction_set,
             ),
         )
     except Exception as exc:  # noqa: BLE001
@@ -1756,80 +1688,6 @@ async def feedback_endpoint(payload: FeedbackRequest, request: Request):
     )
     return JSONResponse(content={"ok": True, "id": row_id})
 
-
-@app.post("/api/feedback/image")
-async def feedback_image_upload(
-    request: Request,
-    scan_id: str = Form(...),
-    image: UploadFile = File(...),
-):
-    """Persist the original image bytes for a negative-feedback row.
-
-    Called by the Android client immediately after a successful
-    ``correct=false`` ``/api/feedback`` submission. The image is
-    written to ``FEEDBACK_IMG_DIR`` keyed by SHA-256 of the bytes,
-    and the most recent feedback row for ``scan_id`` is updated
-    in-place with ``image_path``. Same per-IP rate limit and
-    scan-id-was-issued gate as ``/api/feedback`` so a hostile
-    client can't spray arbitrary bytes at the corpus.
-
-    Privacy note: this endpoint reverses the historical "we never
-    store the photo" promise, but only for ``correct=false`` rows
-    where the training value is highest. The Android feedback sheet
-    discloses this in its copy; if the user wants their image
-    purged they can use the existing community delete-for-user path
-    (which doesn't currently sweep this directory; a separate
-    cleanup endpoint is owed but out of scope here).
-    """
-    client_ip = _client_ip(request)
-    ip_hash = hash_client_ip(client_ip)
-    today_writes = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(),
-        lambda: feedback_daily_writes(ip_hash),
-    )
-    if today_writes >= FEEDBACK_DAILY_QUOTA:
-        raise HTTPException(
-            status_code=429,
-            detail="Daily feedback quota reached. Try again tomorrow.",
-        )
-
-    scan_id_clean = scan_id.strip()
-    if not scan_id_clean or any(ch not in _SCAN_ID_ALLOWED for ch in scan_id_clean):
-        raise HTTPException(status_code=422, detail="Invalid scan_id")
-    issued = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(),
-        lambda: is_scan_id_issued(scan_id_clean, ttl_days=ISSUED_SCAN_ID_TTL_DAYS),
-    )
-    if not issued:
-        raise HTTPException(
-            status_code=422,
-            detail="Unknown scan_id — please re-scan before sending feedback.",
-        )
-
-    image_bytes = await image.read()
-    saved = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(),
-        lambda: save_feedback_image(
-            image_bytes,
-            content_type=image.content_type,
-        ),
-    )
-    if saved is None:
-        raise HTTPException(
-            status_code=422,
-            detail="Image rejected (empty / oversized / write failed)",
-        )
-    filename, digest = saved
-
-    updated = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(),
-        lambda: feedback_attach_image_path(scan_id_clean, filename),
-    )
-    logger.info(
-        "Feedback image stored scan=%s file=%s linked=%s",
-        scan_id_clean[:16], filename, updated,
-    )
-    return JSONResponse(content={"ok": True, "filename": filename, "hash": digest})
 
 
 # ── Community scan corpus ───────────────────────────────────────────
