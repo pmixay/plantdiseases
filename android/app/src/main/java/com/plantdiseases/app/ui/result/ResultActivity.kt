@@ -239,7 +239,13 @@ class ResultActivity : AppCompatActivity() {
                 val origBounds = if (srvW > 0 && srvH > 0) {
                     Pair(srvW, srvH)
                 } else {
-                    ImageUtils.getOrientedDimensions(scan.imagePath)
+                    // Pre-2.2 server didn't echo image dims — reconstruct
+                    // by replaying ImageUtils.prepareImageForUpload's
+                    // EXIF-rotate + downscale-to-1024 chain. Both halves
+                    // of the chain matter: omitting the downscale leaves
+                    // bbox coords in the wrong scale, omitting the
+                    // rotate leaves them in the wrong axis.
+                    ImageUtils.getUploadDimensions(scan.imagePath)
                 }
                 val primaryIdx = scan.primaryRegionIndex ?: -1
                 val overlayBoxes = regions.mapIndexed { i, r ->

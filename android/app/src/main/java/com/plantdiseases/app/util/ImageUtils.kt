@@ -232,6 +232,25 @@ object ImageUtils {
         }
     }
 
+    /** Estimate the dimensions the server saw, given the original
+     *  on-disk image path. Mirrors [prepareImageForUpload]'s
+     *  EXIF-rotate-then-downscale chain so a renderer can reconstruct
+     *  the bbox coordinate frame when the server did not emit explicit
+     *  ``image_width`` / ``image_height`` fields (pre-2.2 servers).
+     *
+     *  [maxSize] must match the value passed to [prepareImageForUpload]
+     *  (default 1024). Returns the oriented raw dims unchanged when
+     *  the long side already fits under [maxSize]. */
+    fun getUploadDimensions(imagePath: String, maxSize: Int = 1024): Pair<Int, Int> {
+        val (orientedW, orientedH) = getOrientedDimensions(imagePath)
+        val longest = maxOf(orientedW, orientedH)
+        if (longest <= maxSize) return Pair(orientedW, orientedH)
+        val ratio = maxSize.toFloat() / longest
+        val scaledW = (orientedW * ratio).toInt().coerceAtLeast(1)
+        val scaledH = (orientedH * ratio).toInt().coerceAtLeast(1)
+        return Pair(scaledW, scaledH)
+    }
+
     /**
      * Compute Laplacian variance to detect blurry images.
      * Returns a variance value — lower means blurrier.
