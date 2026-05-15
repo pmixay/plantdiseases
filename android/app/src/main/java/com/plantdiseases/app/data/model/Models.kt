@@ -433,7 +433,7 @@ data class ProgressionResponse(
  *                            its top-1 class (0..1).
  *  - `top3`                : the model's top-3 (class, prob) pairs.
  *  - `modelVersion`        : the classifier version that produced the
- *                            scan (e.g. `2.1`).
+ *                            scan (e.g. `2.2`).
  *  - `appVersion`          : BuildConfig version name of this app.
  *  - `locale`              : the user's UI locale (`en` / `ru`).
  *  - `platform`            : `android` (constant, but explicit so the

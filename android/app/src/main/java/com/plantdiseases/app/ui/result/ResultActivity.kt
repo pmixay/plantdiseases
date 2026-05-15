@@ -1372,7 +1372,8 @@ class ResultActivity : AppCompatActivity() {
     }
 
     private fun classKeyDisplayName(key: String, isRu: Boolean): String? = when (key) {
-        // PlantVision v2.0 — 11 classes
+        // PlantVision v2.2 — 9 in-head classes + 2 deferred
+        // (edema, sunburn_or_scorch) accepted on the feedback path.
         "healthy" -> if (isRu) "Здоровое растение" else "Healthy Plant"
         "powdery_mildew" -> if (isRu) "Мучнистая роса" else "Powdery Mildew"
         "gray_mold_botrytis" -> if (isRu) "Серая гниль (ботритис)" else "Gray Mold (Botrytis)"
@@ -1395,7 +1396,7 @@ class ResultActivity : AppCompatActivity() {
         // Pinned to the classifier release in server/models/classes.json.
         // When the server exposes model_version in /api/analyze we'll
         // start trusting that value per-scan instead.
-        private const val SERVER_MODEL_VERSION = "2.1"
+        private const val SERVER_MODEL_VERSION = "2.2"
     }
 
     private fun isFeedbackAlreadySubmitted(scanId: Long): Boolean =

@@ -6,8 +6,11 @@ Stage 1 (Detector)   — YOLOv8n single-class. Locates ``plant_leaf``
                        indoor leaf crops, not PlantDoc).
 Stage 2 (Classifier) — distilled MobileNetV3-Large student (KD ←
                        EfficientNetV2-S teacher) at 256 px. Classifies
-                       cropped leaf regions into one of the v2.1
+                       cropped leaf regions into one of the v2.2
                        trainable classes including ``not_a_plant``.
+                       The runtime reads ``models/classes.json`` at
+                       boot so the actual class set is whatever the
+                       shipped artefact declares.
 
 Behaviour summary:
 
