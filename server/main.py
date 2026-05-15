@@ -1865,7 +1865,16 @@ async def community_scan_nearby(
         limit=max(1, min(int(limit), 50)),
         exclude_user_pseudo_id=user_pseudo_id,
     )
-    summary = community_region_summary(country_norm, region_norm or None)
+    # Exclude the requesting user's own rows from the summary too —
+    # otherwise the chip row and the ``last_7d`` count include the
+    # scan the user just uploaded and surface phantom diagnoses
+    # (e.g. "Healthy Plant · 1" when the only Healthy Plant in the
+    # bucket is the user's own).
+    summary = community_region_summary(
+        country_norm,
+        region_norm or None,
+        exclude_user_pseudo_id=user_pseudo_id,
+    )
     return JSONResponse(content={"items": rows, "summary": summary})
 
 

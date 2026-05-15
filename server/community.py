@@ -273,7 +273,12 @@ def nearby_scans(
     return matched + fillers
 
 
-def region_summary(country: str, region: str | None = None) -> dict:
+def region_summary(
+    country: str,
+    region: str | None = None,
+    *,
+    exclude_user_pseudo_id: str | None = None,
+) -> dict:
     """Aggregate the corpus for one country (or country+region).
 
     Used by the Android "near you" card to render a quick "5 scans
@@ -282,51 +287,65 @@ def region_summary(country: str, region: str | None = None) -> dict:
     summarise the whole country and surface the top 3 cities in a
     ``top_regions`` block so the client can switch the grouping
     granularity from the same response.
+
+    ``exclude_user_pseudo_id`` drops the requesting user's own rows
+    from every count, mirroring the carousel's behaviour. Without
+    this the chips and ``last_7d`` would include the scan the user
+    just uploaded and surface a phantom disease in the summary.
     """
     init_db()
     now = int(time.time())
     week_ago = now - 7 * 86_400
     region_clean = (region or "").strip()
+    exclude_clause = ""
+    exclude_params: tuple = ()
+    if exclude_user_pseudo_id:
+        exclude_clause = " AND user_pseudo_id != ?"
+        exclude_params = (exclude_user_pseudo_id,)
     with _connect() as conn:
         if region_clean:
             total = conn.execute(
                 "SELECT COUNT(*) FROM community_scans "
-                "WHERE country = ? AND region = ?",
-                (country, region_clean),
+                "WHERE country = ? AND region = ?" + exclude_clause,
+                (country, region_clean, *exclude_params),
             ).fetchone()[0]
             last_week = conn.execute(
                 "SELECT COUNT(*) FROM community_scans "
-                "WHERE country = ? AND region = ? AND created_at >= ?",
-                (country, region_clean, week_ago),
+                "WHERE country = ? AND region = ? AND created_at >= ?"
+                + exclude_clause,
+                (country, region_clean, week_ago, *exclude_params),
             ).fetchone()[0]
             disease_rows = conn.execute(
                 "SELECT disease, COUNT(*) AS n FROM community_scans "
-                "WHERE country = ? AND region = ? AND created_at >= ? "
-                "GROUP BY disease ORDER BY n DESC LIMIT 3",
-                (country, region_clean, week_ago),
+                "WHERE country = ? AND region = ? AND created_at >= ?"
+                + exclude_clause
+                + " GROUP BY disease ORDER BY n DESC LIMIT 3",
+                (country, region_clean, week_ago, *exclude_params),
             ).fetchall()
             top_region_rows: list[tuple] = []
         else:
             total = conn.execute(
-                "SELECT COUNT(*) FROM community_scans WHERE country = ?",
-                (country,),
+                "SELECT COUNT(*) FROM community_scans WHERE country = ?"
+                + exclude_clause,
+                (country, *exclude_params),
             ).fetchone()[0]
             last_week = conn.execute(
                 "SELECT COUNT(*) FROM community_scans "
-                "WHERE country = ? AND created_at >= ?",
-                (country, week_ago),
+                "WHERE country = ? AND created_at >= ?" + exclude_clause,
+                (country, week_ago, *exclude_params),
             ).fetchone()[0]
             disease_rows = conn.execute(
                 "SELECT disease, COUNT(*) AS n FROM community_scans "
-                "WHERE country = ? AND created_at >= ? "
-                "GROUP BY disease ORDER BY n DESC LIMIT 3",
-                (country, week_ago),
+                "WHERE country = ? AND created_at >= ?" + exclude_clause
+                + " GROUP BY disease ORDER BY n DESC LIMIT 3",
+                (country, week_ago, *exclude_params),
             ).fetchall()
             top_region_rows = conn.execute(
                 "SELECT region, COUNT(*) AS n FROM community_scans "
-                "WHERE country = ? AND region != '' AND created_at >= ? "
-                "GROUP BY region ORDER BY n DESC LIMIT 3",
-                (country, week_ago),
+                "WHERE country = ? AND region != '' AND created_at >= ?"
+                + exclude_clause
+                + " GROUP BY region ORDER BY n DESC LIMIT 3",
+                (country, week_ago, *exclude_params),
             ).fetchall()
     top_diseases = [
         {"disease": str(r[0]), "count": int(r[1])} for r in disease_rows

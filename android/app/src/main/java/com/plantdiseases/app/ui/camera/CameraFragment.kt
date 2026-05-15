@@ -203,16 +203,24 @@ class CameraFragment : Fragment() {
     }
 
     private fun checkCameraPermission() {
-        when {
-            ContextCompat.checkSelfPermission(
-                requireContext(), Manifest.permission.CAMERA
-            ) == PackageManager.PERMISSION_GRANTED -> {
-                startCamera()
-            }
-            else -> {
-                permissionLauncher.launch(Manifest.permission.CAMERA)
-            }
+        val granted = ContextCompat.checkSelfPermission(
+            requireContext(), Manifest.permission.CAMERA,
+        ) == PackageManager.PERMISSION_GRANTED
+        if (granted) {
+            startCamera()
+            return
         }
+        // No auto-launch from the fragment: MainActivity batches the
+        // startup permission ask (camera + location + notifications)
+        // into a single RequestMultiplePermissions flow so the system
+        // dialogs surface reliably. Firing another launch() here at
+        // the same time used to race with that batch and Android
+        // would silently auto-deny the camera prompt — landing the
+        // user on this Grant-button screen without ever showing the
+        // system dialog. ``onResume`` re-checks once the batch
+        // completes so the camera starts as soon as the user grants.
+        binding.permissionLayout.visibility = View.VISIBLE
+        binding.cameraPreview.visibility = View.GONE
     }
 
     private fun startCamera() {
@@ -401,6 +409,17 @@ class CameraFragment : Fragment() {
         // Re-arm the shutter in case we came back from gallery /
         // analysis without a fresh photo (cancelled, error, etc.).
         captureInFlight = false
+        // If MainActivity's startup permission batch just finished and
+        // CAMERA flipped to granted, start the preview now — onResume
+        // is the first point we're sure the system dialog has been
+        // dismissed and the permission state is stable.
+        if (_binding != null &&
+            binding.permissionLayout.visibility == View.VISIBLE &&
+            ContextCompat.checkSelfPermission(
+                requireContext(), Manifest.permission.CAMERA,
+            ) == PackageManager.PERMISSION_GRANTED) {
+            startCamera()
+        }
     }
 
     private fun registerNetworkCallback() {

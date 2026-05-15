@@ -202,6 +202,15 @@ def test_community_nearby_excludes_requesting_user(client, isolated_community):
     )
     body = r.json()
     assert {item["scan_id"] for item in body["items"]} == {"scanotherid1"}
+    # The summary block must apply the same exclusion. Otherwise the
+    # chip row on Android shows a phantom disease — the user's own
+    # scan they just uploaded — alongside the carousel that already
+    # filters them out, which was confusing in practice.
+    summary = body["summary"]
+    assert summary["total"] == 1
+    assert summary["last_7d"] == 1
+    assert [d["disease"] for d in summary["top_diseases"]] == ["healthy"]
+    assert summary["top_diseases"][0]["count"] == 1
 
 
 def test_community_nearby_handles_empty_region(client, isolated_community):

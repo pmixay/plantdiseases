@@ -27,27 +27,20 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
 
-    // Notification runtime permission (Android 13+). The result itself is
-    // ignored — POST_NOTIFICATIONS is non-essential, the rest of the app
-    // still works without it. We just don't want plant reminders to fail
-    // silently in PlantReminderWorker because the permission was never
-    // even requested.
-    private val notificationPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { /* no-op; reminders gracefully skip notify() when denied */ }
-
-    private val locationPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (!granted) return@registerForActivityResult
-        // Warm the region cache off the main thread so the next scan's
-        // result screen can render the "similar scans near you" card
-        // without a permission round-trip.
-        val app = application as PlantDiseasesApp
-        app.appScope.launch {
-            runCatching {
-                com.plantdiseases.app.util.RegionResolver.resolveRegion(this@MainActivity)
-            }
+    // Single batched request for every startup permission we care
+    // about (camera + coarse location + notifications on 13+). Before
+    // this consolidation, three separate launchers fired from
+    // MainActivity.onCreate and CameraFragment.onViewCreated in quick
+    // succession; Android silently auto-denied the later ones without
+    // ever showing their system dialogs, so the user never saw the
+    // location prompt and the camera tab landed straight on the
+    // in-app Grant button. ``RequestMultiplePermissions`` serialises
+    // the dialogs internally so all of them surface.
+    private val startupPermissionsLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
+        if (grants[Manifest.permission.ACCESS_COARSE_LOCATION] == true) {
+            warmRegionCache()
         }
     }
 
@@ -66,8 +59,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        maybeRequestNotificationPermission()
-        maybeRequestLocationPermission()
+        maybeRequestStartupPermissions()
 
         // Edge-to-edge display
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -146,40 +138,50 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Ask for POST_NOTIFICATIONS once on Android 13+. Without this prompt,
-     * PlantReminderWorker silently no-ops every time it fires
-     * (PlantReminderWorker.kt:31-36) and users see no watering reminders.
+     * Ask for every startup permission the app needs in one batched
+     * system flow. Bundling them in a single ``RequestMultiplePermissions``
+     * call is what makes them all surface — see the launcher comment
+     * for the race we hit before.
+     *
+     * - CAMERA               : the scan tab is the start destination
+     *                          so the user needs this immediately
+     * - ACCESS_COARSE_LOCATION: used by the "similar scans near you"
+     *                          card; fine location is never requested
+     * - POST_NOTIFICATIONS    : (Android 13+) without it
+     *                          PlantReminderWorker can't notify
      */
-    private fun maybeRequestNotificationPermission() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
-        val granted = ContextCompat.checkSelfPermission(
-            this, Manifest.permission.POST_NOTIFICATIONS,
-        ) == PackageManager.PERMISSION_GRANTED
-        if (granted) return
-        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-    }
-
-    /**
-     * Ask for ACCESS_COARSE_LOCATION once. The region is used by the
-     * result screen to render "similar scans near you" — without the
-     * permission that card never appears. Approximate-location is
-     * enough for our use case; we never request fine location.
-     */
-    private fun maybeRequestLocationPermission() {
-        val granted = ContextCompat.checkSelfPermission(
-            this, Manifest.permission.ACCESS_COARSE_LOCATION,
-        ) == PackageManager.PERMISSION_GRANTED
-        if (granted) {
-            // Already granted on a previous launch — warm the cache.
-            val app = application as PlantDiseasesApp
-            app.appScope.launch {
-                runCatching {
-                    com.plantdiseases.app.util.RegionResolver.resolveRegion(this@MainActivity)
-                }
-            }
+    private fun maybeRequestStartupPermissions() {
+        val needed = mutableListOf<String>()
+        if (ContextCompat.checkSelfPermission(
+                this, Manifest.permission.CAMERA,
+            ) != PackageManager.PERMISSION_GRANTED) {
+            needed += Manifest.permission.CAMERA
+        }
+        if (ContextCompat.checkSelfPermission(
+                this, Manifest.permission.ACCESS_COARSE_LOCATION,
+            ) != PackageManager.PERMISSION_GRANTED) {
+            needed += Manifest.permission.ACCESS_COARSE_LOCATION
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                this, Manifest.permission.POST_NOTIFICATIONS,
+            ) != PackageManager.PERMISSION_GRANTED) {
+            needed += Manifest.permission.POST_NOTIFICATIONS
+        }
+        if (needed.isEmpty()) {
+            warmRegionCache()
             return
         }
-        locationPermissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
+        startupPermissionsLauncher.launch(needed.toTypedArray())
+    }
+
+    private fun warmRegionCache() {
+        val app = application as PlantDiseasesApp
+        app.appScope.launch {
+            runCatching {
+                com.plantdiseases.app.util.RegionResolver.resolveRegion(this@MainActivity)
+            }
+        }
     }
 
     // Bounce animation on Scan tab icon
