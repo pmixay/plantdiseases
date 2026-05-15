@@ -297,8 +297,15 @@ class ScanRepository(
                 ?.takeIf { it.isNotEmpty() }
                 ?.let { gson.toJson(it) }
             val best = result.species?.best
+            // Prefer the server-issued scan_id so /api/feedback can
+            // bind this scan back to the row in the issued_scan_ids
+            // table. Fall back to a local UUID only if the server
+            // didn't return one (older deployment) — feedback for
+            // those will fail validation, which matches the legacy
+            // behaviour anyway.
+            val serverScanId = result.scanId?.takeIf { it.isNotBlank() }
             val entity = ScanEntity(
-                clientScanId = java.util.UUID.randomUUID().toString(),
+                clientScanId = serverScanId ?: java.util.UUID.randomUUID().toString(),
                 speciesScientific = best?.scientificName,
                 speciesCommon = best?.commonName,
                 speciesScore = best?.score?.takeIf { it > 0f },

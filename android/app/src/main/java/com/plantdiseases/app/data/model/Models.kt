@@ -78,7 +78,12 @@ data class AnalysisResponse(
      *  fan-out. ``null`` when the upstream failed; ``available=false``
      *  when PlantNet isn't configured on this server. */
     @SerializedName("species") val species: SpeciesBlock? = null,
-    @SerializedName("elapsed_ms") val elapsedMs: Float? = null
+    @SerializedName("elapsed_ms") val elapsedMs: Float? = null,
+    // Server-minted scan_id from /api/analyse. We MUST echo this on
+    // /api/feedback — the server rejects any scan_id it didn't issue
+    // (422 "Unknown scan_id"). Optional in the type so older cached
+    // responses without it still deserialise cleanly.
+    @SerializedName("scan_id") val scanId: String? = null,
 )
 
 /** Species block carried inside AnalysisResponse. */
