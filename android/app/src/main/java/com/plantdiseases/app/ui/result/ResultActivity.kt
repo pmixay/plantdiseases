@@ -501,10 +501,14 @@ class ResultActivity : AppCompatActivity() {
             return
         }
 
-        // Priority order: blur (re-shoot is the only fix) > detector
-        // mismatch (model disagreed with itself) > uncertain_healthy
+        // Priority order: very_low_confidence (re-shoot is the only
+        // honest path — the verdict in the card is essentially a
+        // guess) > blur > detector mismatch > uncertain_healthy
         // (soft hedge).
         val (titleRes, bodyRes) = when {
+            "very_low_confidence" in warnings ->
+                R.string.warning_very_low_confidence_title to
+                    R.string.warning_very_low_confidence
             "blurry_image" in warnings ->
                 R.string.warning_blurry_image_title to
                     R.string.warning_blurry_image

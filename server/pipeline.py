@@ -73,16 +73,23 @@ HEALTHY_MARGIN = 0.10
 # Even when top-1 = healthy with confidence ≥ HEALTHY_MIN_CONFIDENCE, if
 # the strongest disease has non-trivial mass we still surface an
 # ``uncertain_healthy`` warning + the suspected disease in top_k.
-HEALTHY_DISEASE_FLOOR = 0.18
+HEALTHY_DISEASE_FLOOR = 0.12
 
 # Hard reroute — when top-1 = healthy but the confidence is below this
-# floor (typical example: 0.29 healthy / 0.24 leaf_spot_fungal / 0.21
-# gray_mold), the model is essentially guessing. We swap the verdict to
-# the strongest disease class so the UI doesn't reassure the user about
-# an obviously-unhealthy plant. Companion rule: if there's no disease
+# floor, the model is essentially guessing. We swap the verdict to the
+# strongest disease class so the UI doesn't reassure the user about an
+# obviously-unhealthy plant. Companion rule: if there's no disease
 # alternative meeting ``HEALTHY_DISEASE_FLOOR`` we keep ``healthy`` but
 # attach the ``low_confidence`` warning so the UI demotes the verdict.
-HEALTHY_REROUTE_FLOOR = 0.50
+#
+# Tightened from 0.50 → 0.65 after a feedback-screenshot review where
+# the model was happily emitting "Healthy 55–61 %" on visibly dead
+# / dried plants (the head doesn't carry leaf-scorch / nutrient-
+# deficiency yet, so damage signal collapses to the weakest healthy).
+# 0.65 is the empirical knee — below it the in-frame disease class
+# is reliable enough to swap to; above it we leave the verdict alone
+# and let the soft ``uncertain_healthy`` warning carry the demotion.
+HEALTHY_REROUTE_FLOOR = 0.65
 
 # Second healthy-reroute gate, this time keyed on the *margin* between
 # healthy and the strongest disease class rather than the absolute
@@ -95,6 +102,15 @@ HEALTHY_REROUTE_FLOOR = 0.50
 # when the strongest disease is itself just noise (e.g. 0.05).
 HEALTHY_GAP_MARGIN = 0.30
 HEALTHY_GAP_DISEASE_FLOOR = 0.10
+
+# Very-low-confidence floor — applies to ANY verdict (healthy or
+# disease) and is purely a UI-demotion signal. When top-1 commits
+# below this floor the response gains a ``very_low_confidence``
+# warning so the Android result screen can render a prominent
+# "low confidence — please retake the photo" banner instead of
+# showing a confident-looking 31 %-confidence disease badge. Driven
+# by a feedback-screenshot where a meme image got Gray-Mold@31 %.
+VERY_LOW_CONFIDENCE_FLOOR = 0.40
 
 # Disease-side gate. If averaged top-1 is a disease but its softmax
 # mass is below this threshold, we gate community-upload eligibility
@@ -936,6 +952,17 @@ def _apply_postprocessing_rules(
 
     if classification.get("low_confidence"):
         warnings.append("low_confidence")
+
+    # Very-low-confidence floor — purely a UI hint, no class swap.
+    # The post-reroute confidence is what the user sees, so we check
+    # ``classification["confidence"]`` rather than the original
+    # ``top1_prob`` (which may have been a 0.51-healthy that got
+    # rerouted to a 0.32-disease above). Any verdict that lands below
+    # the floor — including a disease that the model emitted at
+    # 31 % on a junk image — earns the warning so the UI can render
+    # a "please retake the photo" banner.
+    if float(classification["confidence"]) < VERY_LOW_CONFIDENCE_FLOOR:
+        warnings.append("very_low_confidence")
 
     return {
         "class_name": classification["class_name"],

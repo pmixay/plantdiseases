@@ -197,6 +197,8 @@
     <string name="retry_analysis">Retry Analysis</string>
 
     <!-- Pipeline warnings -->
+    <string name="warning_very_low_confidence_title">Very low confidence</string>
+    <string name="warning_very_low_confidence">The model isn\'t confident in this verdict — please retake the photo with the leaf filling most of the frame, in good even light, and on a plain background.</string>
     <string name="warning_uncertain_healthy_title">Could be disease</string>
     <string name="warning_uncertain_healthy">The model is not confident that the plant is healthy. Please check the alternative diagnoses below — they may apply.</string>
     <string name="warning_detector_mismatch_title">Detector sees damage</string>

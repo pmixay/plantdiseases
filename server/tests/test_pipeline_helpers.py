@@ -224,6 +224,62 @@ def test_low_confidence_warning_is_propagated():
     assert "low_confidence" in out["warnings"]
 
 
+def test_very_low_confidence_warning_fires_on_disease_under_floor():
+    """Regression for the meme-image screenshot: top-1 was
+    ``gray_mold_botrytis`` at 0.31 and the UI happily rendered
+    "Disease detected, Gray Mold, 31%". Any verdict that commits
+    below ``VERY_LOW_CONFIDENCE_FLOOR`` (0.40) must carry the
+    ``very_low_confidence`` warning so the result screen can render
+    the "retake the photo" banner over the verdict card.
+    """
+    from pipeline import VERY_LOW_CONFIDENCE_FLOOR, _apply_postprocessing_rules
+
+    # 0.31 < 0.40 — clearly below the floor. Other classes share the
+    # remaining mass uniformly so the gap-reroute can't kick in.
+    probs = _uniform_probs()
+    probs["gray_mold_botrytis"] = 0.31
+    leftover = 1.0 - 0.31
+    others = [k for k in probs if k != "gray_mold_botrytis"]
+    for k in others:
+        probs[k] = leftover / len(others)
+    classification = {
+        "class_name": "gray_mold_botrytis",
+        "confidence": 0.31,
+        "all_probs": probs,
+        "low_confidence": True,
+    }
+    out = _apply_postprocessing_rules(classification, list(probs.keys()))
+
+    assert VERY_LOW_CONFIDENCE_FLOOR == 0.40
+    assert "very_low_confidence" in out["warnings"]
+    assert out["class_name"] == "gray_mold_botrytis"  # verdict not swapped
+
+
+def test_very_low_confidence_warning_silent_above_floor():
+    """Same shape but at 0.45 — comfortably above the floor — must
+    NOT trigger the very-low-confidence banner. The soft
+    ``low_confidence`` warning still fires (top-1 < 0.75) but that
+    one is intended for the inline demotion, not the prominent banner.
+    """
+    from pipeline import _apply_postprocessing_rules
+
+    probs = _uniform_probs()
+    probs["powdery_mildew"] = 0.45
+    leftover = 1.0 - 0.45
+    others = [k for k in probs if k != "powdery_mildew"]
+    for k in others:
+        probs[k] = leftover / len(others)
+    classification = {
+        "class_name": "powdery_mildew",
+        "confidence": 0.45,
+        "all_probs": probs,
+        "low_confidence": True,
+    }
+    out = _apply_postprocessing_rules(classification, list(probs.keys()))
+
+    assert "very_low_confidence" not in out["warnings"]
+
+
 def test_weak_disease_verdict_stays_disease_not_synthesised_healthy():
     """Regression for the dominant bug in the post-launch feedback
     corpus: ``_maybe_apply_healthy_fallback`` used to flip a weak
