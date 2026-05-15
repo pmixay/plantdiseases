@@ -77,10 +77,12 @@ try:
     from .config import get_float, get_int, get_list, get_str
     from .diseases_data import DISEASES_DATABASE, lookup_pet_toxicity
     from .feedback import (
+        attach_image_path as feedback_attach_image_path,
+    )
+    from .feedback import (
         daily_write_count_for_ip_hash as feedback_daily_writes,
     )
     from .feedback import (
-        attach_image_path as feedback_attach_image_path,
         feedback_counts,
         hash_client_ip,
         is_scan_id_issued,
@@ -134,10 +136,12 @@ except ImportError:
     from config import get_float, get_int, get_list, get_str
     from diseases_data import DISEASES_DATABASE, lookup_pet_toxicity
     from feedback import (
+        attach_image_path as feedback_attach_image_path,
+    )
+    from feedback import (
         daily_write_count_for_ip_hash as feedback_daily_writes,
     )
     from feedback import (
-        attach_image_path as feedback_attach_image_path,
         feedback_counts,
         hash_client_ip,
         is_scan_id_issued,
