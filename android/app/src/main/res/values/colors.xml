@@ -10,6 +10,15 @@
     <color name="primary_variant">#21A65A</color>
     <color name="on_primary">#FFFFFF</color>
     <color name="on_primary_secondary">#B8FFFFFF</color>
+    <!-- ``primary_dark`` / ``secondary`` / ``on_secondary`` are
+         consumed by ``values/themes.xml`` (Material 3 colorPrimaryDark
+         / colorSecondary / colorOnSecondary attributes); they have no
+         direct ``R.color.X`` / ``@color/X`` reference anywhere else.
+         Keep them next to ``primary*`` so the theme palette lives in
+         one block. -->
+    <color name="primary_dark">#063B1F</color>
+    <color name="secondary">#5DD08C</color>
+    <color name="on_secondary">#FFFFFF</color>
     <!-- Gradient stops (ordered dark -> medium -> light). The hero
          gradient leans toward the cool side so the white liquid-glass
          overlay reads as "frosted leaf" rather than candy. -->

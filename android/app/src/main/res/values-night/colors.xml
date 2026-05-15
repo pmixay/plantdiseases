@@ -6,6 +6,13 @@
     <color name="primary_variant">#5BC889</color>
     <color name="on_primary">#06140A</color>
     <color name="on_primary_secondary">#B0061409</color>
+    <!-- Theme overrides for ``values/themes.xml``'s colorPrimaryDark /
+         colorSecondary / colorOnSecondary attributes. No direct
+         ``R.color.X`` / ``@color/X`` reference, but the themes consume
+         them. -->
+    <color name="primary_dark">#3CA065</color>
+    <color name="secondary">#5BC889</color>
+    <color name="on_secondary">#06140A</color>
     <!-- Gradient stops -->
     <color name="gradient_start">#06140A</color>
     <color name="gradient_mid">#143E22</color>
