@@ -103,10 +103,9 @@ and what could bite.
   (`gray/grey mold/mould`).
 * **Concern:** the request uses a **browser-spoofed User-Agent**
   (`Mozilla/5.0 … Chrome/124`) instead of the project's own UA.
-  Comment doesn't explain why. Two readings: (a) Openverse's CDN
-  returns 403 on non-browser UAs (plausible) or (b) someone copy-
-  pasted a working snippet without thinking. Either way it's worth
-  one line of justification next to the constant.
+  ✓ Inline justification comment added in the audit follow-up
+  (Openverse CDN returns 403 on the project's own UA; browser-spoof
+  is the documented workaround).
 * **Risk:** Openverse is a thin layer over Wikimedia / Flickr —
   there's no quality-gate on the actual photos, so the green-content
   / pHash dedup later is what's actually carrying the quality bar.
@@ -169,9 +168,9 @@ The shipped `models/model_card.json` records training counts:
 
 ### 2.1 `gray_mold_botrytis` is 5× under-supplied  ⚠ medium
 
-* `THRESH_TRAIN = 150` in the §2 guard. Botrytis ships at 227 — only
-  50 % over the floor. Any tightening of pHash threshold or
-  green-content ratio would push it under.
+* `THRESH_TRAIN_DEFAULT = 150` in the §2 guard. Botrytis ships at
+  227 in v2.1 — only 50 % over the floor. Any tightening of pHash
+  threshold or green-content ratio would push it under.
 * The two upstream channels (iNat Botrytis taxa + Openverse top-up)
   are **the only sources** for this class; PlantDoc has no Botrytis
   label, PV's standard release has no Botrytis label.
@@ -179,13 +178,14 @@ The shipped `models/model_card.json` records training counts:
   than every other disease class. Botrytis recall on `val_realworld`
   is the canonical class to watch on the ship gate's per-class
   `recall=0` check.
-* **Recommendation:** raise `THRESH_TRAIN` to **400** for Botrytis
-  specifically (or as a global floor) so the build fails loud
-  *before* the model bakes the under-supply in. The honest fallback
-  is to drop Botrytis from v2.1 entirely if the supply chain can't
-  sustain ≥ 400 — the runtime healthy gate + low-confidence banner
-  will still surface the diagnosis as "uncertain" rather than
-  confidently wrong.
+* ✓ **Fixed**: per-class floor added in the audit follow-up.
+  ``THRESH_TRAIN_PER_CLASS = {'gray_mold_botrytis': 400}`` — the
+  §2 finishing guard fails loud on Botrytis < 400 instead of waving
+  227 through. The honest fallback when the supply chain can't
+  sustain ≥ 400 is to drop Botrytis from v2.1 entirely; the runtime
+  healthy gate + very-low-confidence banner will still surface a
+  Botrytis-looking photo as "uncertain" rather than confidently
+  wrong.
 
 ### 2.2 `powdery_mildew` val_realworld is thin  ℹ low
 
@@ -320,10 +320,11 @@ Walked the whole §6 cell. Findings inline.
 * If static drift > `fail_drift=0.05` for a candidate, fall back to
   weight-only dynamic quant. Smart.
 
-**Nit:** the silent cap at `min(n, len(dataset))` should print a
-warning when `len(temp_cal_ds) < 500` so the operator can tell
-whether they're running with a thin calibration set. Today it's
-silent.
+✓ **Fixed**: thin-set warning added in the audit follow-up. When
+fewer than the requested 500 rows are available, `CalibrationReader`
+prints the actual count and a "drop more rows into TEMP_CAL"
+suggestion so the operator can correlate a high INT8 drift with a
+thin calibration set.
 
 ### 5.2 Winner selection across candidates  ✓ ok
 
@@ -391,15 +392,16 @@ The four gate clauses:
 
 All four catch the failure modes the v2.0 release surfaced. Stays.
 
-### 5.8 Artefact cleanup  ⚠ minor
+### 5.8 Artefact cleanup  ✓ fixed
 
-The notebook leaves `models/classifier_candidates.pt` on disk after
-§6 finishes. It's a 4-state-dict bag that the server doesn't read.
-For deploy-bundle assembly, the operator has to know to drop it.
+The notebook used to leave `models/classifier_candidates.pt` on disk
+after §6 finished (4 state-dict bag, ~80 MB, never read by the
+server).
 
-**Recommendation:** after the winner is promoted in step 2, delete
-`models/classifier_candidates.pt` *unless* a `KEEP_KD_CANDIDATES=True`
-flag is set. Small win, cleaner deploy.
+✓ **Fixed**: §6 now has a `KEEP_KD_CANDIDATES=False` knob at the
+tail; when unset (the default) the file is deleted after the winner
+is promoted. Set `KEEP_KD_CANDIDATES=True` if you want to keep the
+runner-up snapshots for an offline re-quant experiment.
 
 ---
 
@@ -457,28 +459,26 @@ this gap.
 Every consumer-side path has a sane fallback when the file is
 missing (defaults baked into the module).
 
-### 7.2 Two confidence floors in two files  ⚠ minor
+### 7.2 Confidence floors  ✓ resolved
 
-* `classifier.py:LOW_CONFIDENCE_THRESHOLD = 0.35` — drives the
-  classifier-level `low_confidence` flag.
 * `pipeline.py:HEALTHY_MIN_CONFIDENCE = 0.75` — drives the
   healthy-gate soft warning.
 * `pipeline.py:HEALTHY_REROUTE_FLOOR = 0.65` (tightened recently) —
   drives the hard healthy-reroute.
-* `pipeline.py:VERY_LOW_CONFIDENCE_FLOOR = 0.40` (new) — drives the
+* `pipeline.py:VERY_LOW_CONFIDENCE_FLOOR = 0.40` — drives the
   retake-photo banner.
 
-Four thresholds, two files, three semantic levels (re-shoot / demote /
-soft warn). The `classifier.py:0.35` value isn't actually consumed
-anywhere — `pipeline._apply_postprocessing_rules` overrides it with
-its own 0.75. Dead constant.
+Three thresholds, one file, three semantic levels (re-shoot / demote
+/ soft warn) — consistent, single source of truth.
 
-**Recommendation:** drop `LOW_CONFIDENCE_THRESHOLD` from
-`classifier.py` (or document it as the per-crop "is this crop
-trustworthy enough to include in the mean-vote" floor — different
-semantics, but right now it's just unused).
+✓ **Fixed**: the redundant `classifier.py:LOW_CONFIDENCE_THRESHOLD =
+0.35` constant and the per-crop `low_confidence` field on
+`classify()` results have been removed — both were computed but
+never read. The post-aggregation flag set by
+`pipeline._pick_primary` against `HEALTHY_MIN_CONFIDENCE` is the
+authoritative value.
 
-### 7.3 Notebook's `int8_realworld_f1` ≠ production's `disease_macro_f1`  ℹ doc-only
+### 7.3 Notebook's `int8_realworld_f1` ≠ production's `disease_macro_f1`  ✓ documented
 
 §6's `eval_onnx` uses raw `argmax(logits)` — no temperature, no
 weak-healthy reroute, no gap-reroute. Production applies all three.
@@ -486,7 +486,11 @@ weak-healthy reroute, no gap-reroute. Production applies all three.
 The ship gate uses the raw INT8 number, which is the **conservative**
 choice (production behaviour is at least as accurate, never less),
 but it means the model_card's `f1_int8` is a floor on what production
-delivers. Worth a `_note` in the model card.
+delivers.
+
+✓ **Fixed**: §6 now writes a verbatim `_note` into the
+`model_card.json -> int8` block making the floor semantics explicit,
+so anyone parsing the card downstream doesn't have to re-derive it.
 
 ### 7.4 `THRESH_TRAIN` is module-global
 
@@ -509,15 +513,16 @@ with a 150 default, applied in the §2 finishing guard.
 previous cleanup pass. Patched to "or drop additional real-world
 photos into TRAIN_ROOT/<class>/" in the same commit as this report.
 
-### 8.2 `model_version: '2.1'` hard-coded in §6  ℹ low
+### 8.2 `model_version: '2.1'` hard-coded in §6  ✓ fixed
 
-The version in `classes.json` / `model_card.json` is hard-coded. If
-the user retrains with a different taxonomy or training recipe, the
-emitted version still claims 2.1. Not a bug, just a footgun.
+The version in `classes.json` / `model_card.json` used to be
+hard-coded. If the user retrained with a different taxonomy or
+training recipe, the emitted version still claimed 2.1.
 
-**Recommendation:** set `MODEL_VERSION` as a §1 constant alongside
-`SEED`, default `'2.1'`, and reference it in §6. The operator changes
-one line when bumping.
+✓ **Fixed**: `MODEL_VERSION = '2.1'` now lives next to `SEED` in
+§1, and §6 reads it into both `classes.json -> model_version` and
+`model_card.json -> version`. The operator changes one line on a
+taxonomy / recipe bump.
 
 ### 8.3 §2 dedup runs before splits ✓ ok
 
@@ -526,54 +531,124 @@ the splitters. The §3 dedup is a cross-check on the held-out splits,
 not a primary defence. (Audit fix #1 from a previous review — already
 addressed.)
 
-### 8.4 Detector data leakage  ⚠ check
+### 8.4 Detector data leakage  ❌ retracted
 
-The new §3 PlantDoc-bbox YOLO builder splits `PlantDoc/test` rows
-entirely into YOLO `val`, but PlantDoc/train rows split 85/15 by
-seeded RNG. **Sub-finding:** the same PlantDoc image can land in
-*both* the classification crop store (via `fetch_plantdoc`) and the
-detection dataset. The detection dataset doesn't dedup against the
-classification splits.
+The original concern was that the new §3 PlantDoc-bbox YOLO builder
+splits `PlantDoc/test` rows entirely into YOLO `val` while sub-
+splitting `PlantDoc/train` rows 85/15, so the same PlantDoc image
+could land in both the classification crop store (via
+`fetch_plantdoc`) and the detection dataset.
 
-Practical impact: the YOLO val set may share image IDs with the
-classifier's train set. That's *only* a problem for evaluating
-detector recall — the classifier-side split-leakage audit
-(`assert_no_exact_split_leakage`) still catches classifier overlap
-because the detection dataset isn't a classifier split.
+On a closer trace this isn't actually a leakage path. The detector
+and the classifier are **separate models with no shared parameters**:
 
-**Recommendation:** add a one-liner SHA cross-check in §3 between
-`data_v2/detector/images/val/` and the classifier training crops, so
-YOLO val accuracy isn't inflated by the same PlantDoc bytes the
-classifier already saw.
+* The detector trains on the YOLO dataset alone; it never reads the
+  classification crops.
+* The classifier trains on the crops alone; it never reads the YOLO
+  val set.
 
-### 8.5 `LOW_CONFIDENCE_THRESHOLD` in classifier.py is dead  → § 7.2
+A PlantDoc image landing in YOLO `val` AND classifier train is the
+expected case: the classifier ate the bbox crop during *its*
+training, and the detector — a different network — sees the full
+image at *its* eval time without ever having been fitted to it.
 
-### 8.6 `inat_observations` lacks per-call backoff diagnostic ℹ low
+The actual hold-out contract is still enforced by
+`fetch_plantdoc`'s split routing: `PlantDoc/test` always goes to
+`VAL_PRIMARY` (the classifier's ship-gate slice), never to
+`TRAIN_ROOT`. The classifier-side `assert_no_exact_split_leakage`
+catches the SHA-overlap case. The detector-side YOLO val
+sufficiency is its own concern and is bounded by PlantDoc's own
+train/test boundary.
 
-If an iNat fetch hits a 429, the outer `http_get_json` retries
-(correct) but `inat_observations` doesn't log it. After-the-fact you
-see a smaller class count and have to dig into `run_log.jsonl`.
-Cosmetic.
+No fix needed.
+
+### 8.5 `LOW_CONFIDENCE_THRESHOLD` in classifier.py is dead  ✓ fixed
+
+Dropped in this audit's follow-up commit. `pipeline._pick_primary`
+sets `low_confidence` against `HEALTHY_MIN_CONFIDENCE = 0.75` on
+the aggregated dict — the per-crop value was computed but never
+read. Both the constant and the per-crop ``low_confidence`` field
+are gone now.
+
+### 8.6 `inat_observations` lacks per-call backoff diagnostic  ✓ fixed
+
+`http_get_json` now prints the URL, attempt, and next-sleep delay
+on every backoff so a class whose iNat fetch stalls under
+rate-limit gives the operator real-time signal instead of a silent
+under-count.
 
 ---
 
 ## 9. Summary of action items
 
-Ordered by impact for the next training pass:
+Status as of the follow-up commit that ran the audit's "fix small
+problems" pass:
+
+### Deferred — need data / retraining cycle, not a code change
 
 1. **Widen NAP pool** with Open Images Indoor + Wikimedia synthetic.
-   ([§ 4.3](#43-what-to-add).)
+   ([§ 4.3](#43-what-to-add).) Needs a new fetch helper + a fresh
+   training pass to land. Highest-impact item for the production
+   failure rate.
 2. **Add deferred physiological classes** (`leaf_scorch_underwatering`,
-   `nutrient_deficiency`) to the head. ([§ 6](#6-the-v21-head-cant-predict-drought--nutrient-damage).)
-3. **Raise per-class `THRESH_TRAIN`** for Botrytis to 400.
-   ([§ 2.1](#21-gray_mold_botrytis-is-5-under-supplied--medium).)
+   `nutrient_deficiency`) to the head.
+   ([§ 6](#6-the-v21-head-cant-predict-drought--nutrient-damage).)
+   Needs a taxonomy bump in `CLASSES` + a new data fetch + a fresh
+   training pass.
 4. **Tighten `_green_content_ratio` floor** to 0.04 once Botrytis
    supply is fatter. ([§ 1.1](#11-inaturalist--apiinaturalistorgv1).)
-5. **Drop `LOW_CONFIDENCE_THRESHOLD`** from `classifier.py` (dead).
-6. **Cleanup `classifier_candidates.pt`** at end of §6 unless flag set.
-7. **Add detector-vs-classifier SHA cross-check** in §3.
-8. **Sweep model_card to flag `model_version`** as a §1 constant.
+   Conditional on #1/#3 — premature today because Botrytis would
+   fall under its floor.
 
-None of 1–8 are notebook blockers; they're improvements for the
-next iteration. The notebook as it stands today produces a working
-end-to-end artefact set, and the runtime consumes it correctly.
+### Fixed in this audit's follow-up commit
+
+3. **Per-class `THRESH_TRAIN`** for Botrytis — now
+   `THRESH_TRAIN_PER_CLASS = {'gray_mold_botrytis': 400}` with a 150
+   default. The §2 finishing guard fails loud on Botrytis < 400
+   instead of waving 227 through as it did for v2.1.
+   ([§ 2.1](#21-gray_mold_botrytis-is-5-under-supplied--medium).)
+5. **Dropped `LOW_CONFIDENCE_THRESHOLD`** from `classifier.py`. Both
+   the constant and the per-crop `low_confidence` field were dead.
+   `pipeline._pick_primary` owns the post-aggregation flag. ([§ 7.2](#72-two-confidence-floors-in-two-files-minor),
+   [§ 8.5](#85-low_confidence_threshold-in-classifierpy-is-dead--72).)
+6. **Cleanup `classifier_candidates.pt`** at end of §6. New
+   `KEEP_KD_CANDIDATES=False` knob deletes the runner-up state-dict
+   bag (~80 MB) once §6 finishes. The deploy bundle stays clean by
+   default. ([§ 5.8](#58-artefact-cleanup--minor).)
+8. **`MODEL_VERSION` as a §1 constant.** Defined once at the top of
+   §1; §6 reads it into both `classes.json -> model_version` and
+   `model_card.json -> version`. The operator changes one line on
+   a taxonomy / recipe bump. ([§ 8.2](#82-model_version-21-hard-coded-in-6--low).)
+
+### Retracted on second look
+
+7. **Detector-vs-classifier SHA cross-check** in §3. Re-trace: the
+   detector and classifier are separate models with no shared
+   parameters. A PlantDoc image landing in YOLO val AND classifier
+   train is not a leakage path. ([§ 8.4](#84-detector-data-leakage--retracted).)
+
+### Also fixed in this pass (smaller findings scattered through the report)
+
+* **Openverse browser-UA** now carries an inline justification
+  comment pointing at the documented Openverse 403-on-non-browser-UA
+  behaviour. ([§ 1.4](#14-openverse--apiopenverseorgv1images).)
+* **iNat backoff diagnostic** — `http_get_json` now logs every
+  retry attempt with URL, attempt index, and next-sleep delay so a
+  rate-limited class fetch gives real-time signal instead of a
+  silent under-count. ([§ 8.6](#86-inat_observations-lacks-per-call-backoff-diagnostic--low).)
+* **INT8 calibration thin-set warning** — `CalibrationReader` now
+  prints when fewer than the requested 500 rows are available in
+  TEMP_CAL so the operator knows the per-channel scales are
+  noisier than usual. ([§ 5.1](#51-int8-calibration-steps-12--ok).)
+* **`model_card.int8._note`** — added a verbatim disclaimer that
+  `f1_int8` / `f1_fp32` are raw argmax-on-logits, no temperature,
+  no weak-healthy reroute, no very-low-confidence demotion. The
+  runtime applies all three on top; the ship-gate threshold is a
+  conservative floor on production. ([§ 7.3](#73-notebooks-int8_realworld_f1-%E2%89%A0-productions-disease_macro_f1--doc-only).)
+* **§ 8.1 stale `collect_smoke_set.py` reference** in the §2 error
+  message — already patched in `02c9375` when the audit was first
+  written.
+
+The notebook as it stands today produces a working end-to-end
+artefact set, and the runtime consumes it correctly. Items 1, 2, and
+4 stay as the queue for the next training pass.
