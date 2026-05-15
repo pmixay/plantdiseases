@@ -82,6 +82,18 @@ HEALTHY_DISEASE_FLOOR = 0.18
 # attach the ``low_confidence`` warning so the UI demotes the verdict.
 HEALTHY_REROUTE_FLOOR = 0.50
 
+# Second healthy-reroute gate, this time keyed on the *margin* between
+# healthy and the strongest disease class rather than the absolute
+# confidence. Caught a class of errors the absolute floor missed:
+# top1=healthy at e.g. 0.55 with disease at 0.35 is essentially a
+# coin flip but slips past ``HEALTHY_REROUTE_FLOOR``. Threshold
+# pulled from feedback-row analysis: error rows had next-diseased
+# gaps of 0.06 / 0.20 / 0.42; <0.30 catches the 0.06 and 0.20 cases.
+# Companion ``HEALTHY_GAP_DISEASE_FLOOR`` keeps the gate from firing
+# when the strongest disease is itself just noise (e.g. 0.05).
+HEALTHY_GAP_MARGIN = 0.30
+HEALTHY_GAP_DISEASE_FLOOR = 0.10
+
 # Disease-side gate. If averaged top-1 is a disease but its softmax
 # mass is below this threshold, we downgrade to healthy.
 DISEASE_MIN_CONFIDENCE = 0.65
@@ -662,23 +674,45 @@ class PlantDiseasePipeline:
         top1_class: str,
         downgraded: bool,
     ) -> dict:
-        """Prefer a bbox whose own top-1 matches the aggregated decision."""
-        matching = [
-            (box, cls) for box, cls in results
-            if cls.get("class_name") == top1_class or (
-                downgraded and top1_class == "healthy"
-                and max(cls["all_probs"], key=cls["all_probs"].get) == "healthy"
-            )
-        ]
-        if matching:
-            return max(
-                matching,
-                key=lambda r: float(r[1]["all_probs"].get(top1_class, 0.0)),
-            )[0]
-        return max(
+        """Pick the bbox most worth highlighting on the result screen.
+
+        Heuristic: rank every region by ``1 − P(healthy)`` (i.e. its
+        own per-crop probability of being NOT healthy) and pick the
+        worst-looking one. This surfaces the suspicious region rather
+        than the most-confident-healthy leaf, which matters most when
+        the aggregated verdict is itself a disease — the user expects
+        to see the diseased leaf called out, not the picture-perfect
+        one beside it. Even on a confidently-healthy aggregate it's a
+        better default: if any single region looks sick, showing it is
+        more informative than centring on the showiest healthy leaf.
+
+        Tie-breakers (in order): higher per-crop confidence for the
+        aggregated ``top1_class``, then larger area — same fallbacks
+        the old "matches top-1" path used.
+        """
+        if not results:
+            raise ValueError("_select_primary_box called with no regions")
+
+        def disease_score(crop_cls: dict) -> float:
+            return 1.0 - float(crop_cls["all_probs"].get("healthy", 0.0))
+
+        def top1_match(crop_cls: dict) -> float:
+            return float(crop_cls["all_probs"].get(top1_class, 0.0))
+
+        def area(box: dict) -> int:
+            return int(box.get("width", 0)) * int(box.get("height", 0))
+
+        ranked = sorted(
             results,
-            key=lambda r: int(r[0].get("width", 0)) * int(r[0].get("height", 0)),
-        )[0]
+            key=lambda r: (disease_score(r[1]), top1_match(r[1]), area(r[0])),
+            reverse=True,
+        )
+        # ``downgraded`` is kept in the signature for call-site
+        # compatibility; the new ranking already does the right thing
+        # in the downgrade case (the most-diseased region still wins
+        # even when the aggregate flipped to healthy).
+        _ = downgraded
+        return ranked[0][0]
 
     def _reroute_to_nap(self, classification: dict) -> dict:
         """Rewrite an OOD-gated classification to a confident NAP verdict.
@@ -884,7 +918,6 @@ def _apply_postprocessing_rules(
     if (
         top1_name == "healthy"
         and "healthy" in class_names
-        and top1_prob < HEALTHY_REROUTE_FLOOR
         and not classification.get("_suspected_disease")
     ):
         worst_disease = max(
@@ -892,13 +925,34 @@ def _apply_postprocessing_rules(
             key=lambda kv: kv[1],
             default=(None, 0.0),
         )
-        if (
-            worst_disease[0] is not None
+        # Two parallel triggers, either of which is enough on its own:
+        #
+        #   * absolute floor — top1 confidence < REROUTE_FLOOR (0.50)
+        #     with any non-trivial disease (>= DISEASE_FLOOR, 0.18)
+        #   * gap floor — healthy is winning but only by < GAP_MARGIN
+        #     (0.30) over the strongest disease, and that disease has
+        #     at least GAP_DISEASE_FLOOR (0.10) mass
+        #
+        # The gap floor catches the "healthy 0.55 / leaf_spot 0.35"
+        # band the absolute floor misses but where the model is
+        # essentially a coin flip.
+        absolute_hit = (
+            top1_prob < HEALTHY_REROUTE_FLOOR
             and worst_disease[1] >= HEALTHY_DISEASE_FLOOR
-        ):
+        )
+        gap = top1_prob - worst_disease[1] if worst_disease[0] is not None else float("inf")
+        gap_hit = (
+            worst_disease[0] is not None
+            and worst_disease[1] >= HEALTHY_GAP_DISEASE_FLOOR
+            and gap < HEALTHY_GAP_MARGIN
+        )
+        if worst_disease[0] is not None and (absolute_hit or gap_hit):
             logger.info(
-                "Weak-healthy reroute  was=healthy/%.3f  → %s/%.3f",
+                "Weak-healthy reroute  was=healthy/%.3f  → %s/%.3f  "
+                "trigger=%s  gap=%.3f",
                 top1_prob, worst_disease[0], worst_disease[1],
+                "absolute" if absolute_hit else "gap",
+                gap,
             )
             classification = {
                 **classification,

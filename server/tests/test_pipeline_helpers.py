@@ -68,29 +68,24 @@ def test_taxonomy_is_v21_disease_only():
         )
 
 
-def test_healthy_gate_attaches_warning_without_rerouting():
-    """Between the reroute floor (0.50) and the strong-healthy
-    threshold (0.75), the gate must only attach the
-    ``uncertain_healthy`` warning. The class stays ``healthy`` because
-    the harder reroute rule below only fires under 0.50.
+def test_healthy_gate_reroutes_on_narrow_gap_even_above_floor():
+    """Tight-margin healthy verdicts above the absolute reroute floor
+    must still reroute under the gap-based gate. Mirrors the production
+    error band the user surfaced: top-1 healthy at ~0.55 with a
+    disease alternative at ~0.45 is essentially a coin flip, even
+    though the absolute floor (0.50) wouldn't catch it. The gap
+    floor (HEALTHY_GAP_MARGIN=0.30) does.
     """
-    from pipeline import HEALTHY_MARGIN, _apply_postprocessing_rules
+    from pipeline import HEALTHY_GAP_MARGIN, _apply_postprocessing_rules
 
-    # Build a distribution where healthy stays above the 0.50 reroute
-    # floor after normalisation, but its margin over the next class is
-    # under HEALTHY_MARGIN so the soft gate still fires.
-    # We can't just scale both top-1 and top-2 by HEALTHY_MARGIN — the
-    # numerator/denominator cancel after normalisation, so the
-    # post-norm fraction stays at 0.50 exactly. Picking absolute
-    # raw values directly so post-norm healthy lands ~0.51 with a
-    # ~0.07 margin (under HEALTHY_MARGIN but above the reroute floor).
     probs = {n: 0.01 for n in EXPECTED_CLASSES}
     probs["healthy"] = 0.60
     probs["leaf_spot_fungal"] = 0.52
     s = sum(probs.values())
     probs = {k: v / s for k, v in probs.items()}
-    assert probs["healthy"] > 0.50  # sanity: stays above the reroute floor
-    assert probs["healthy"] - probs["leaf_spot_fungal"] < HEALTHY_MARGIN
+    assert probs["healthy"] > 0.50  # absolute floor wouldn't trigger
+    gap = probs["healthy"] - probs["leaf_spot_fungal"]
+    assert gap < HEALTHY_GAP_MARGIN  # gap floor must trigger
 
     classification = {
         "class_name": "healthy",
@@ -100,7 +95,40 @@ def test_healthy_gate_attaches_warning_without_rerouting():
     }
     out = _apply_postprocessing_rules(classification, list(probs.keys()))
 
-    assert out["class_name"] == "healthy", "gate must NOT reroute the class"
+    assert out["class_name"] == "leaf_spot_fungal", (
+        "narrow-gap healthy must reroute to the strongest disease"
+    )
+    assert "weak_healthy_rerouted" in out["warnings"]
+
+
+def test_healthy_gate_attaches_warning_when_gap_is_wide():
+    """The gap floor must NOT fire when the margin to the strongest
+    disease is wide enough — even if healthy itself is in the weak
+    (< 0.75) band. Verdict stays healthy with the soft
+    ``uncertain_healthy`` / disease-suspected warnings.
+    """
+    from pipeline import HEALTHY_GAP_MARGIN, _apply_postprocessing_rules
+
+    probs = {n: 0.01 for n in EXPECTED_CLASSES}
+    # ~0.69 healthy, ~0.23 leaf_spot post-normalisation: gap ≈ 0.46,
+    # safely above HEALTHY_GAP_MARGIN. Healthy stays below 0.75 so
+    # the soft uncertainty warning still attaches.
+    probs["healthy"] = 0.70
+    probs["leaf_spot_fungal"] = 0.23
+    s = sum(probs.values())
+    probs = {k: v / s for k, v in probs.items()}
+    gap = probs["healthy"] - probs["leaf_spot_fungal"]
+    assert gap >= HEALTHY_GAP_MARGIN
+
+    classification = {
+        "class_name": "healthy",
+        "confidence": probs["healthy"],
+        "all_probs": probs,
+        "low_confidence": False,
+    }
+    out = _apply_postprocessing_rules(classification, list(probs.keys()))
+
+    assert out["class_name"] == "healthy", "gate must NOT reroute on a wide gap"
     assert "uncertain_healthy" in out["warnings"]
     assert "weak_healthy_rerouted" not in out["warnings"]
 

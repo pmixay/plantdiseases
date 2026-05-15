@@ -456,6 +456,11 @@ data class FeedbackRequest(
     @SerializedName("primary_region_index") val primaryRegionIndex: Int? = null,
     @SerializedName("feedback_latency_ms") val feedbackLatencyMs: Long? = null,
     @SerializedName("image_hash") val imageHash: String? = null,
+    // Conformal prediction set from the analyse response that
+    // produced this scan. Echoed back so the server can answer
+    // "was the right answer in the 90 % set?" without joining
+    // against the original analyse log.
+    @SerializedName("prediction_set") val predictionSet: List<String>? = null,
 )
 
 /** One entry of the model's top-3 prediction set used by the feedback payload. */

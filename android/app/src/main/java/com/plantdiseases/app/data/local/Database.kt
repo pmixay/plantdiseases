@@ -110,6 +110,12 @@ data class ScanEntity(
     @ColumnInfo(name = "species_scientific") val speciesScientific: String? = null,
     @ColumnInfo(name = "species_common") val speciesCommon: String? = null,
     @ColumnInfo(name = "species_score") val speciesScore: Float? = null,
+    // Conformal prediction set the server returned at /api/analyse
+    // time (JSON array of class keys). Persisted here so feedback
+    // submission later — even from a stale gallery row — can echo it
+    // back to the server, enabling the "was the right answer in the
+    // 90 % set?" diagnostic.
+    @ColumnInfo(name = "prediction_set") val predictionSet: String? = null,
 )
 
 // ─── Plant Reminder Entity ──────────────────────────────────────────────────
@@ -261,7 +267,13 @@ interface PlantJournalDao {
         PlantReminderEntity::class,
         ChatMessageEntity::class,
     ],
-    version = 1,
+    // v2: added ScanEntity.prediction_set (JSON array). Schema is
+    // resolved via fallbackToDestructiveMigration() below — existing
+    // local scans are wiped on first launch with this version. Same
+    // contract the rest of the app has been shipping on, and the
+    // feedback-loop value of having prediction_set persisted is
+    // worth the one-off local-cache loss.
+    version = 2,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {

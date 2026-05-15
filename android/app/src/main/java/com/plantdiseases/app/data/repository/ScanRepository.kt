@@ -209,6 +209,40 @@ class ScanRepository(
             }
         }
 
+    /**
+     * Upload the original image bytes for a ``correct=false``
+     * feedback row. Best-effort — failures are swallowed because the
+     * primary feedback signal has already landed; the image is only
+     * additional training value. Caller is responsible for only
+     * invoking this on negative-feedback paths so the privacy
+     * disclosure on the feedback sheet matches the network traffic.
+     */
+    suspend fun uploadFeedbackImage(
+        scanId: String,
+        imageFile: java.io.File,
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            if (!imageFile.exists()) {
+                return@withContext Result.failure(Exception("Image file missing"))
+            }
+            val mime = when (imageFile.extension.lowercase()) {
+                "png" -> "image/png"
+                "webp" -> "image/webp"
+                else -> "image/jpeg"
+            }
+            val requestBody = imageFile.asRequestBody(mime.toMediaTypeOrNull())
+            val part = MultipartBody.Part.createFormData(
+                "image", imageFile.name, requestBody,
+            )
+            val scanIdBody = scanId.toRequestBody("text/plain".toMediaTypeOrNull())
+            val response = apiService.feedbackImage(scanIdBody, part)
+            if (response.isSuccessful) Result.success(Unit)
+            else Result.failure(Exception("Server error: ${response.code()}"))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun fetchProgression(request: ProgressionRequest): Result<ProgressionResponse> =
         withContext(Dispatchers.IO) {
             try {
@@ -304,8 +338,14 @@ class ScanRepository(
             // those will fail validation, which matches the legacy
             // behaviour anyway.
             val serverScanId = result.scanId?.takeIf { it.isNotBlank() }
+            // Persist the conformal classes list (if any) so feedback
+            // submission can echo it back to the server later.
+            val predictionSetJson = result.predictionSet?.classes
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { gson.toJson(it) }
             val entity = ScanEntity(
                 clientScanId = serverScanId ?: java.util.UUID.randomUUID().toString(),
+                predictionSet = predictionSetJson,
                 speciesScientific = best?.scientificName,
                 speciesCommon = best?.commonName,
                 speciesScore = best?.score?.takeIf { it > 0f },
