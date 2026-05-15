@@ -28,6 +28,7 @@ Privacy posture
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import logging
 import sqlite3
@@ -417,11 +418,8 @@ def delete_for_user(user_pseudo_id: str) -> int:
         thumb = row[0]
         if not thumb:
             continue
-        path = COMMUNITY_THUMB_DIR / thumb
-        try:
-            path.unlink(missing_ok=True)
-        except OSError:
-            pass
+        with contextlib.suppress(OSError):
+            (COMMUNITY_THUMB_DIR / thumb).unlink(missing_ok=True)
     return int(deleted or 0)
 
 
@@ -447,10 +445,8 @@ def prune_older_than(days: int) -> int:
         thumb = row[0]
         if not thumb:
             continue
-        try:
+        with contextlib.suppress(OSError):
             (COMMUNITY_THUMB_DIR / thumb).unlink(missing_ok=True)
-        except OSError:
-            pass
     return int(deleted or 0)
 
 

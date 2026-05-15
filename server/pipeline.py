@@ -43,7 +43,6 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 from PIL import Image
@@ -265,15 +264,6 @@ def _variance_of_laplacian(img: Image.Image, max_side: int = BLUR_DOWNSCALE) -> 
     if inner.size == 0:
         return 0.0
     return float(inner.var())
-
-
-def is_image_too_blurry(img: Image.Image, floor: float = BLUR_LAPLACIAN_FLOOR) -> bool:
-    """True when the variance-of-Laplacian is below ``floor``.
-
-    Exposed at module level so the FastAPI layer (and tests) can call
-    it without instantiating the full pipeline.
-    """
-    return _variance_of_laplacian(img) < floor
 
 
 def _apply_temperature(probs: dict[str, float], T: float) -> dict[str, float]:
@@ -506,7 +496,7 @@ class PlantDiseasePipeline:
         is_diseased: bool,
         stage1_confidence: float,
         regions: list[dict],
-        primary_region: Optional[dict],
+        primary_region: dict | None,
         t0: float,
     ) -> dict:
         elapsed = (time.perf_counter() - t0) * 1000
@@ -566,10 +556,9 @@ class PlantDiseasePipeline:
         # behaviour for backwards compatibility.
         max_logit_low = (ml_floor > 0) and (max_logit < ml_floor)
 
-        if ml_floor > 0:
-            triggered = detector_low and max_logit_low
-        else:
-            triggered = detector_low
+        triggered = (
+            (detector_low and max_logit_low) if ml_floor > 0 else detector_low
+        )
 
         if triggered:
             logger.info(
@@ -766,7 +755,7 @@ class PlantDiseasePipeline:
         }
 
     @staticmethod
-    def _extract_crop(img: Image.Image, region: Optional[dict]) -> Image.Image:
+    def _extract_crop(img: Image.Image, region: dict | None) -> Image.Image:
         if region is None:
             return img
         x = int(region.get("x", 0))
@@ -794,7 +783,7 @@ def compute_severity(
     class_name: str,
     confidence: float,
     healthy_prob: float,
-    primary_box: Optional[dict],
+    primary_box: dict | None,
     image_size: tuple[int, int],
     is_diseased: bool,
 ) -> str:

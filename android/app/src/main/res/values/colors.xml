@@ -6,17 +6,10 @@
          accent shifts toward a fresh dewdrop tint that pairs well with
          the glassmorphic surfaces below. -->
     <color name="primary">#0F7A3E</color>
-    <color name="primary_dark">#063B1F</color>
     <color name="primary_light">#D7F1DD</color>
     <color name="primary_variant">#21A65A</color>
-    <color name="primary_soft">#E8F6EC</color>
     <color name="on_primary">#FFFFFF</color>
     <color name="on_primary_secondary">#B8FFFFFF</color>
-    <color name="secondary">#5DD08C</color>
-    <color name="on_secondary">#FFFFFF</color>
-    <color name="accent_lime">#A6F1A6</color>
-    <color name="accent_mint">#B7F5DA</color>
-
     <!-- Gradient stops (ordered dark -> medium -> light). The hero
          gradient leans toward the cool side so the white liquid-glass
          overlay reads as "frosted leaf" rather than candy. -->
@@ -40,7 +33,6 @@
     <color name="background">#F1FAF3</color>
     <color name="surface">#FFFFFF</color>
     <color name="surface_variant">#E5F2E8</color>
-    <color name="surface_elevated">#F7FCF8</color>
     <color name="on_surface">#0E1A11</color>
     <color name="on_surface_secondary">#475749</color>
 
@@ -49,14 +41,14 @@
          (bg_glass_card / bg_glass_card_strong). The "tint" colours are
          designed to read as a sheet of green-tinted glass — a faint
          saturated overlay on top of a translucent white base. -->
-    <color name="glass_white">#CCFFFFFF</color>           <!-- 80% white, primary glass card surface -->
+    <!-- 80% white, primary glass card surface -->
     <color name="glass_white_soft">#A6FFFFFF</color>      <!-- 65% white, used over photos -->
-    <color name="glass_white_strong">#E6FFFFFF</color>    <!-- 90% white, body surface -->
-    <color name="glass_green_tint">#330F7A3E</color>      <!-- 20% primary, frosted leaf overlay -->
+    <!-- 90% white, body surface -->
+    <!-- 20% primary, frosted leaf overlay -->
     <color name="glass_green_tint_soft">#1A0F7A3E</color> <!-- 10% primary, panel highlight -->
     <color name="glass_stroke">#33FFFFFF</color>          <!-- 20% white, inner-glow border -->
     <color name="glass_stroke_strong">#66FFFFFF</color>   <!-- 40% white, edge highlight -->
-    <color name="glass_dark_scrim">#26000000</color>      <!-- 15% black, contrast guard for camera/photo overlays -->
+    <!-- 15% black, contrast guard for camera/photo overlays -->
     <color name="glass_dark_scrim_strong">#4D000000</color>
 
     <!-- ─── Semantic colors ─────────────────────────────────────── -->
@@ -75,10 +67,7 @@
 
     <!-- ─── Misc ────────────────────────────────────────────────── -->
     <color name="scan_frame_color">#80FFFFFF</color>
-    <color name="bottom_panel_bg">#F1FAF3</color>
     <color name="icon_bg">#DDF1E2</color>
-    <color name="semi_transparent">#40000000</color>
-    <color name="hint_pill_bg">#80000000</color>
     <color name="divider">#D6E5D9</color>
     <color name="card_stroke">#DCE9DE</color>
     <color name="soft_error_icon_bg">#F6ECE9</color>

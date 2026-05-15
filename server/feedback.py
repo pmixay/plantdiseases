@@ -22,8 +22,8 @@ import logging
 import sqlite3
 import threading
 import time
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 try:
     from .config import get_str  # type: ignore[import-not-found]
@@ -169,7 +169,7 @@ def hash_client_ip(client_ip: str | None) -> str | None:
     if not client_ip:
         return None
     digest = hashlib.sha256(
-        f"{_IP_HASH_PEPPER}|{client_ip}".encode("utf-8")
+        f"{_IP_HASH_PEPPER}|{client_ip}".encode()
     ).hexdigest()
     # 16 hex chars (64 bits) is plenty of entropy for abuse tracking
     # without giving a colour-by-numbers re-identification surface.

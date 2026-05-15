@@ -68,7 +68,7 @@ _FILE_DATA: dict[str, Any] = _load_file()
 
 def get(key: str, default: Any = None, cast: type | None = None) -> Any:
     """Read a config key. File wins over env wins over default."""
-    raw: Any = _FILE_DATA.get(key.upper(), None)
+    raw: Any = _FILE_DATA.get(key.upper())
     if raw is None:
         raw = os.environ.get(key, None)
     if raw is None:
@@ -99,7 +99,7 @@ def get_float(key: str, default: float) -> float:
 
 def get_list(key: str, default: list[str] | None = None, sep: str = ",") -> list[str]:
     """Parse a list. JSON arrays are returned as-is; strings are split on ``sep``."""
-    raw = _FILE_DATA.get(key.upper(), None)
+    raw = _FILE_DATA.get(key.upper())
     if raw is None:
         raw = os.environ.get(key, None)
     if raw is None:

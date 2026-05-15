@@ -37,7 +37,7 @@ import re
 import threading
 import time
 from collections import OrderedDict
-from typing import Any, Optional
+from typing import Any
 
 try:
     from .config import get_float, get_int, get_str  # type: ignore[import-not-found]
@@ -88,7 +88,7 @@ class _LRU:
 
     def __init__(self, maxsize: int):
         self.maxsize = max(1, int(maxsize))
-        self._d: "OrderedDict[str, Any]" = OrderedDict()
+        self._d: OrderedDict[str, Any] = OrderedDict()
         self._lock = threading.Lock()
 
     def get(self, key: str) -> Any | None:
@@ -358,7 +358,7 @@ def _gc_chat_sessions(now: float) -> None:
         del _chat_sessions[sid]
 
 
-def _build_system_text(locale: str, diagnosis_context: Optional[dict]) -> str:
+def _build_system_text(locale: str, diagnosis_context: dict | None) -> str:
     """Compose the system prompt: doctor instructions + locale hint +
     optional structured diagnosis context. Plain string so OpenRouter
     receives one clean system message."""
@@ -383,7 +383,7 @@ def chat_reply(
     session_id: str,
     user_message: str,
     locale: str = "en",
-    diagnosis_context: Optional[dict] = None,
+    diagnosis_context: dict | None = None,
 ) -> dict:
     """Reply to a single user turn within a session.
 
@@ -1245,10 +1245,10 @@ def _humidity_habit(species: str | None) -> str | None:
 def generate_care_plan(
     *,
     disease: str,
-    species: Optional[str] = None,
+    species: str | None = None,
     light: str = "bright_indirect",
     locale: str = "en",
-    season: Optional[str] = None,
+    season: str | None = None,
     today: _dt.date | None = None,
 ) -> dict:
     """Build a full houseplant care plan for the (disease, light) tuple.
@@ -1412,7 +1412,7 @@ def generate_care_plan(
 _SEVERITY_ORDER = {"low": 0, "medium": 1, "high": 2}
 
 
-def compare_progression(*, current: dict, previous: Optional[dict]) -> dict:
+def compare_progression(*, current: dict, previous: dict | None) -> dict:
     """Pure-function progression diff between two scans.
 
     ``current`` and ``previous`` are dicts shaped like the

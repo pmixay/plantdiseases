@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 from PIL import Image
@@ -29,7 +28,6 @@ from PIL import Image
 logger = logging.getLogger(__name__)
 
 DETECTOR_IMG_SIZE = 640
-DETECTOR_CLASSES = ("plant_leaf",)
 # Indoor-trained detector — recall-biased so that wide-frame indoor
 # compositions don't drop the only leaf bbox. The OOD gate downstream
 # (detector confidence + classifier MaxLogit) cleans up false positives.
@@ -151,7 +149,7 @@ class LeafDetector:
     def _build_result(detections: list[dict]) -> dict:
         if not detections:
             return LeafDetector._empty_result()
-        primary: Optional[dict] = detections[0]
+        primary: dict | None = detections[0]
         best_conf = max(d["confidence"] for d in detections)
         return {
             "detections": detections,

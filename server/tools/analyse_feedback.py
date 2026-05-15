@@ -178,13 +178,27 @@ def _parse_class_list(raw: str | None) -> list[str]:
 
 def _row_to_dataclass(
     row: sqlite3.Row,
+    columns: frozenset[str],
     image_dir: Path | None,
 ) -> FeedbackRow:
-    image_path = row["image_path"] if "image_path" in row.keys() else None
+    """Adapt a sqlite ``Row`` into a typed ``FeedbackRow``.
+
+    ``columns`` is the set of column names actually present on this
+    DB (the late-added ones — ``image_path`` / ``out_of_head`` /
+    ``prediction_set_json`` — may or may not exist). Computed once
+    per ``_load_rows`` pass and passed in so we don't probe the
+    schema for every row.
+    """
+    image_path = row["image_path"] if "image_path" in columns else None
     image_present = False
     if image_path and image_dir is not None:
         image_present = (image_dir / image_path).is_file()
-    out_of_head_raw = row["out_of_head"] if "out_of_head" in row.keys() else None
+    out_of_head_raw = row["out_of_head"] if "out_of_head" in columns else None
+    prediction_set_raw = (
+        row["prediction_set_json"]
+        if "prediction_set_json" in columns
+        else None
+    )
     return FeedbackRow(
         id=int(row["id"]),
         scan_id=str(row["scan_id"]),
@@ -200,11 +214,7 @@ def _row_to_dataclass(
             else None
         ),
         top3=_parse_top3(row["top3_json"]),
-        prediction_set=_parse_class_list(
-            row["prediction_set_json"]
-            if "prediction_set_json" in row.keys()
-            else None
-        ),
+        prediction_set=_parse_class_list(prediction_set_raw),
         out_of_head=(
             None if out_of_head_raw is None else bool(out_of_head_raw)
         ),
@@ -282,7 +292,15 @@ def _load_rows(
             sql += " WHERE created_at >= ?"
             params = (since_ts,)
         sql += " ORDER BY created_at ASC"
-        return [_row_to_dataclass(r, image_dir) for r in conn.execute(sql, params)]
+        # Snapshot the present-column set once and reuse it for every
+        # row — ``PRAGMA table_info`` is cheap but unnecessary per-row,
+        # and ``sqlite3.Row`` has no ``__contains__`` so a per-row
+        # ``"x" in row.keys()`` would be the only alternative.
+        present_cols = frozenset(select_cols)
+        return [
+            _row_to_dataclass(r, present_cols, image_dir)
+            for r in conn.execute(sql, params)
+        ]
     finally:
         conn.close()
 

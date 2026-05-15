@@ -8,7 +8,6 @@
     <string name="tab_guide">Справка</string>
 
     <!-- Camera -->
-    <string name="scan_hint">Наведите на лист растения</string>
     <string name="take_photo">Сфотографировать</string>
     <string name="gallery">Галерея</string>
     <string name="flash">Вспышка</string>
@@ -39,9 +38,7 @@
     <string name="status_disease">Обнаружена болезнь</string>
     <string name="status_not_a_plant">Не растение</string>
     <string name="not_a_plant_diagnosis_name">В кадре нет растения</string>
-    <string name="not_a_plant_result_title">Это не похоже на растение</string>
     <string name="not_a_plant_result_body">Модель не нашла лист растения на фото. Попробуйте сделать снимок так, чтобы лист занимал большую часть кадра, при ровном освещении и без дрожания.</string>
-    <string name="not_a_plant_retry_hint">Подсказка: подойдите ближе к одному листу на однотонном фоне.</string>
     <string name="description_label">Описание</string>
     <string name="treatment_label">Лечение</string>
     <string name="prevention_label">Профилактика</string>
@@ -66,7 +63,6 @@
 
     <!-- Profile -->
     <string name="tab_profile">Профиль</string>
-    <string name="profile_title">Ваша статистика</string>
     <string name="total_scans">Всего сканов</string>
     <string name="healthy_plants">Здоровые</string>
     <string name="diseased_plants">Больные</string>
@@ -74,7 +70,6 @@
     <string name="most_common_disease">Частая проблема</string>
     <string name="no_scans_yet">Пока нет сканов</string>
     <string name="start_scanning_hint">Начните сканировать растения, чтобы увидеть статистику</string>
-    <string name="app_version">Версия приложения</string>
     <string name="clear_history">Очистить историю</string>
     <string name="clear_history_confirm">Это безвозвратно удалит всю историю сканов. Вы уверены?</string>
     <string name="clear_all">Очистить всё</string>
@@ -97,8 +92,6 @@
     <string name="heatmap_label">Область обнаружения</string>
 
     <!-- Camera -->
-    <string name="not_a_plant_warning">Это не похоже на растение. Продолжить?</string>
-    <string name="not_a_plant_title">Не растение?</string>
     <string name="continue_anyway">Продолжить</string>
 
     <!-- Gallery filters -->
@@ -132,7 +125,6 @@
     <string name="offline_banner">Нет подключения к интернету</string>
 
     <!-- Server status / diagnostics -->
-    <string name="server_status">Статус сервера</string>
     <string name="server_online">Онлайн</string>
     <string name="server_offline">Недоступен</string>
     <string name="server_checking">Проверка…</string>
@@ -152,19 +144,12 @@
 
     <string name="species_card_title">Определённый вид</string>
     <string name="species_card_score">PlantNet — %1$d%%</string>
-    <string name="species_card_unavailable">Определение вида не настроено на этом сервере.</string>
-
     <string name="similar_scans_title">Похожие сканы рядом</string>
     <string name="similar_scans_subtitle">%1$d сканов рядом с %2$s</string>
     <string name="similar_scans_subtitle_region">Недавние диагнозы рядом с %1$s</string>
     <string name="similar_scans_subtitle_no_region">Включите приблизительное местоположение, чтобы видеть сканы рядом.</string>
     <string name="similar_scans_empty">Похожих сканов пока нет — ваш будет первым.</string>
     <string name="similar_scans_chip_format">%1$s · %2$d</string>
-
-    <string name="community_consent_title">Делиться сканами с сообществом?</string>
-    <string name="community_consent_body">PlantDiseases может загрузить миниатюру скана и диагноз, чтобы помочь другим в вашем регионе. Передаётся только регион (город и страна) — точная геолокация остаётся на устройстве. В любой момент можно выключить в профиле.</string>
-    <string name="community_consent_accept">Делиться сканами</string>
-    <string name="community_consent_decline">Не делиться</string>
     <string name="community_toggle_title">Делиться сканами с сообществом</string>
     <string name="community_toggle_subtitle">Регион + диагноз + миниатюра 512px. Можно выключить — всё останется на устройстве.</string>
     <string name="community_delete_title">Удалить мои данные из сообщества</string>
@@ -214,25 +199,10 @@
     <string name="guide_search_empty">Ничего не найдено по запросу \"%s\". Попробуйте другое слово.</string>
 
     <!-- Camera grid overlay -->
-    <string name="grid_overlay">Сетка</string>
-    <string name="zoom_indicator">%sx</string>
-
     <!-- My Garden -->
     <string name="tab_garden">Сад</string>
     <string name="garden_title">Мой сад</string>
     <string name="garden_subtitle">Все растения, история сканов, заметки, фото и полив в одном зелёном месте.</string>
-    <plurals name="garden_summary">
-        <item quantity="one">%1$d растение под наблюдением, %2$d сканов</item>
-        <item quantity="few">%1$d растения под наблюдением, %2$d сканов</item>
-        <item quantity="many">%1$d растений под наблюдением, %2$d сканов</item>
-        <item quantity="other">%1$d растения под наблюдением, %2$d сканов</item>
-    </plurals>
-    <plurals name="scan_count">
-        <item quantity="one">%d скан</item>
-        <item quantity="few">%d скана</item>
-        <item quantity="many">%d сканов</item>
-        <item quantity="other">%d скана</item>
-    </plurals>
     <string name="add_plant">Добавить</string>
     <string name="edit_plant">Редактировать</string>
     <string name="plant_name">Название растения</string>
@@ -271,7 +241,6 @@
     <string name="create_new_plant">Создать растение</string>
     <string name="scan_added_to_garden">Скан добавлен в сад</string>
     <string name="change_language">Сменить</string>
-    <string name="language_hint">Переключение между русским и английским.</string>
     <string name="delete_plant">Удалить растение</string>
     <string name="delete_plant_confirm">Удалить это растение? Записи журнала также будут удалены. Сканы останутся, но будут отвязаны.</string>
     <string name="plant_deleted">Растение удалено</string>
@@ -296,19 +265,16 @@
     <string name="reminder_subtitle">Настройте расписание ухода</string>
     <!-- Doctor Chat -->
     <string name="doctor_title">ИИ-врач растений</string>
-    <string name="doctor_subtitle">Локальная заглушка ассистента по уходу</string>
     <string name="doctor_stub_subtitle">Чат сохраняется и готов к серверному ИИ</string>
     <string name="doctor_hint">Симптомы, уход, лечение…</string>
     <string name="doctor_send">Отправить</string>
     <string name="doctor_thinking">Думаю…</string>
-    <string name="doctor_offline">Сервер недоступен. Проверьте подключение.</string>
     <string name="doctor_q1">Болезнь заразна для других растений?</string>
     <string name="doctor_q2">Причина и как предотвратить рецидив?</string>
     <string name="doctor_q3">Самое быстрое домашнее лечение?</string>
     <string name="doctor_clear">Очистить чат</string>
     <!-- Light Meter -->
     <string name="light_meter">Люксметр</string>
-    <string name="light_meter_hint">Сравните освещение с потребностями растения</string>
     <string name="light_plant_type">Тип растения</string>
     <string name="light_lux">лк</string>
     <string name="light_too_dark">Слишком темно</string>
@@ -357,19 +323,13 @@
     <string name="species_suggest_hint">Используем этот снимок, чтобы спросить PlantNet о наиболее вероятном виде.</string>
     <string name="species_suggest_button">Подобрать вид</string>
     <string name="species_suggest_loading">Спрашиваем PlantNet…</string>
-    <string name="species_suggest_unavailable_title">PlantNet недоступен</string>
     <string name="species_suggest_unavailable_body">Не удалось связаться с сервисом определения вида. Введите вид вручную.</string>
     <string name="species_suggest_unavailable_no_key">Определение вида ещё не настроено на сервере. Введите вид вручную.</string>
     <string name="species_suggest_unavailable_rate_limited">Дневная квота PlantNet исчерпана. Попробуйте позже или введите вид вручную.</string>
     <string name="species_suggest_unavailable_auth_failed">Ключ PlantNet на сервере недействителен. Введите вид вручную.</string>
-    <string name="species_suggest_pick">Выбрать этот вид</string>
-    <string name="species_suggest_keep_manual">Оставить ввод вручную</string>
     <string name="species_suggest_match">совпадение %d%%</string>
     <string name="species_suggest_no_results">Уверенных совпадений не найдено.</string>
     <string name="species_suggest_unknown_name">Без названия</string>
-    <string name="species_scientific_label">Научное название</string>
-    <string name="species_common_label">Бытовое название</string>
-
     <!-- Diagnosis feedback -->
     <string name="feedback_title">Диагноз верный?</string>
     <string name="feedback_subtitle">Ваш ответ поможет улучшить модель.</string>
@@ -383,8 +343,6 @@
     <string name="feedback_sheet_actual_label">Что это на самом деле?</string>
     <string name="feedback_sheet_reason_label">Почему диагноз неверный?</string>
     <string name="feedback_sheet_note_hint">Что ещё хотите сказать? (необязательно)</string>
-    <string name="feedback_class_pick_prompt">Выберите один диагноз</string>
-
     <string name="feedback_class_healthy">Здоровое</string>
     <string name="feedback_class_powdery_mildew">Мучнистая роса</string>
     <string name="feedback_class_gray_mold_botrytis">Серая гниль</string>
@@ -404,9 +362,6 @@
     <string name="feedback_reason_multiple_plants">Несколько растений</string>
     <string name="feedback_reason_ambiguous_symptoms">Симптомы неясны</string>
     <string name="feedback_reason_other">Другое</string>
-    <string name="feedback_correction_title">Что это на самом деле?</string>
-    <string name="feedback_correction_hint">Название болезни (необязательно)</string>
-    <string name="feedback_note_hint">Что ещё хотите сказать? (необязательно)</string>
     <string name="feedback_send">Отправить</string>
     <string name="feedback_sent">Спасибо — ваш отзыв сохранён.</string>
     <string name="feedback_rate_limited">Слишком часто — попробуйте через секунду.</string>
@@ -415,11 +370,8 @@
     <!-- Pet-toxicity surface -->
     <string name="toxicity_toxic_title">Токсично для питомцев</string>
     <string name="toxicity_safe_title">Безопасно для питомцев</string>
-    <string name="toxicity_unknown_title">Безопасность не подтверждена</string>
     <string name="toxicity_toxic_body">Это растение токсично для: %1$s. Уберите подальше от животных, при отравлении — к ветеринару.</string>
     <string name="toxicity_safe_body">Данных о токсичности для кошек и собак нет.</string>
-    <string name="toxicity_unknown_body">Безопасность для питомцев не подтверждена. Определите вид и перепроверьте, прежде чем подпускать животных.</string>
-
     <!-- Historical progression sparkline -->
     <string name="progression_title">Динамика заболевания</string>
     <string name="progression_trend_improving">Улучшается</string>

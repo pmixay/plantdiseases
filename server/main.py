@@ -11,6 +11,7 @@ Stage 2:  MobileNetV3-Large    — distilled student (KD from
 """
 
 import asyncio
+import contextlib
 import io
 import ipaddress
 import json
@@ -563,10 +564,8 @@ async def lifespan(app: FastAPI):
     finally:
         logger.info("Server shutting down")
         prune_task.cancel()
-        try:
+        with contextlib.suppress(asyncio.CancelledError, Exception):
             await prune_task
-        except (asyncio.CancelledError, Exception):  # noqa: BLE001
-            pass
         with _executor_lock:
             if _inference_executor is not None:
                 # `wait=True` lets in-flight inferences drain. The bound is
@@ -731,7 +730,7 @@ async def version():
     int8_shipped = False
     int8_artifact: str | None = None
     try:
-        with open(MODELS_DIR / "model_card.json", "r", encoding="utf-8") as fh:
+        with open(MODELS_DIR / "model_card.json", encoding="utf-8") as fh:
             card = json.load(fh)
         int8_section = card.get("int8") or {}
         int8_shipped = bool(int8_section.get("shipped", False))
@@ -856,7 +855,7 @@ async def _species_identify_best_effort(image_bytes: bytes, *, timeout: float) -
             ),
             timeout=timeout,
         )
-    except (asyncio.TimeoutError, asyncio.CancelledError):
+    except (TimeoutError, asyncio.CancelledError):
         logger.info("Species identify skipped (timeout / cancelled)")
         return None
     except Exception as exc:  # noqa: BLE001
@@ -967,7 +966,7 @@ async def analyze_image(image: UploadFile = File(...), species: str | None = Non
             loop.run_in_executor(_get_inference_executor(), pipeline.analyze, img),
             timeout=INFERENCE_TIMEOUT,
         )
-    except asyncio.TimeoutError as exc:
+    except TimeoutError as exc:
         species_task.cancel()
         _record_error()
         logger.error("Inference timed out after %.0fs for %s", INFERENCE_TIMEOUT, fname)
@@ -1276,25 +1275,17 @@ class ProgressionRequest(BaseModel):
     history: list[dict] | None = None
 
 
-# Class keys the strict-mode `corrected_class` validator accepts.
-# Includes both the active trainable classes (from classes.json) and
-# the deferred physiological classes — clients should be allowed to
-# point us at conditions the next model release will cover.
-# Classes the v2.1 head can actually predict — the production
-# 7-class set. Anything OUTSIDE this set is an "out-of-head"
-# correction: a real signal the user is asking for, but one the
-# current model can't produce on its own. The retraining loop joins
-# on the ``out_of_head`` column persisted with each feedback row to
-# decide which classes to grow the head with.
-_FEEDBACK_IN_HEAD_CLASSES: frozenset[str] = frozenset({
-    "bacterial_leaf_spot",
-    "gray_mold_botrytis",
-    "healthy",
-    "leaf_spot_fungal",
-    "not_a_plant",
-    "powdery_mildew",
-    "viral_disease",
-})
+# Classes the production head can actually predict. Tracks the
+# ``class_names`` declaration in ``models/classes.json`` via
+# ``classifier.DEFAULT_CLASS_NAMES`` so we only have one source of
+# truth — feedback's ``out_of_head`` flag falls out the moment a
+# correction lands outside this set.
+try:
+    from .classifier import DEFAULT_CLASS_NAMES as _HEAD_CLASS_NAMES
+except ImportError:
+    from classifier import DEFAULT_CLASS_NAMES as _HEAD_CLASS_NAMES
+
+_FEEDBACK_IN_HEAD_CLASSES: frozenset[str] = frozenset(_HEAD_CLASS_NAMES)
 
 # Out-of-head corrections — deferred physiological classes the
 # v2.1 head doesn't carry yet, plus a free-form catch-all. We accept
@@ -1562,15 +1553,17 @@ async def chat_endpoint(payload: ChatRequest, request: Request):
             diagnosis_context=diagnosis,
         ),
     )
-    if not result.get("available"):
-        # Abuse logging: cap-rejection from a specific IP is the
-        # signature pattern for a runaway client. Log at WARNING so
-        # ops dashboards can alert on it.
-        if result.get("reason") in ("session_turn_cap", "session_token_cap"):
-            logger.warning(
-                "AI Doctor budget cap hit  ip=%s session=%s reason=%s",
-                client_ip, payload.session_id, result["reason"],
-            )
+    # Abuse logging: cap-rejection from a specific IP is the
+    # signature pattern for a runaway client. Log at WARNING so
+    # ops dashboards can alert on it.
+    if (
+        not result.get("available")
+        and result.get("reason") in ("session_turn_cap", "session_token_cap")
+    ):
+        logger.warning(
+            "AI Doctor budget cap hit  ip=%s session=%s reason=%s",
+            client_ip, payload.session_id, result["reason"],
+        )
     return JSONResponse(content=result)
 
 

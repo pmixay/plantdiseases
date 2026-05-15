@@ -368,12 +368,11 @@ def test_blur_gate_rejects_uniform_image():
     """Solid-colour PNGs have ~zero edge variance — must trip the gate."""
     from PIL import Image
 
-    from pipeline import BLUR_LAPLACIAN_FLOOR, _variance_of_laplacian, is_image_too_blurry
+    from pipeline import BLUR_LAPLACIAN_FLOOR, _variance_of_laplacian
 
     flat = Image.new("RGB", (640, 480), color=(120, 160, 80))
     score = _variance_of_laplacian(flat)
     assert score < 1.0
-    assert is_image_too_blurry(flat) is True
     assert score < BLUR_LAPLACIAN_FLOOR
 
 

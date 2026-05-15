@@ -12,10 +12,8 @@
     <dimen name="space_4xl">40dp</dimen>
 
     <!-- ─── Corner radii ─────────────────────────────────────────── -->
-    <dimen name="radius_sm">10dp</dimen>
     <dimen name="radius_md">16dp</dimen>
     <dimen name="radius_lg">22dp</dimen>
-    <dimen name="radius_xl">28dp</dimen>
     <dimen name="radius_round">999dp</dimen>
 
     <!-- ─── Glass-card geometry ──────────────────────────────────
@@ -23,8 +21,6 @@
          tint turned drop-shadows into halos). values-night/ keeps the
          frosted-glass elevation so the dark theme retains its depth. -->
     <dimen name="glass_stroke_width">1dp</dimen>
-    <dimen name="glass_blur_radius">28dp</dimen>
-    <dimen name="glass_blur_radius_soft">18dp</dimen>
     <dimen name="glass_elevation">0dp</dimen>
     <dimen name="glass_elevation_soft">0dp</dimen>
 
@@ -35,5 +31,4 @@
     <dimen name="text_title_sm">16sp</dimen>
     <dimen name="text_title">20sp</dimen>
     <dimen name="text_headline">24sp</dimen>
-    <dimen name="text_display">32sp</dimen>
-</resources>
+    </resources>
