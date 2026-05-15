@@ -80,6 +80,24 @@ _write_lock = threading.RLock()
 _init_lock = threading.Lock()
 _initialised = False
 
+# Disease classes that should never surface in the community feed.
+# ``not_a_plant`` rows are uninteresting to other users (and often
+# faces / objects / random photos), so we silently hide them from
+# both the carousel and the summary aggregates. Existing rows stay
+# on disk for retraining; only the read paths filter them out.
+_HIDDEN_COMMUNITY_DISEASES = ("not_a_plant",)
+
+
+def _hidden_clause(table_alias: str = "") -> str:
+    """SQL fragment + placeholders for the hidden-disease filter.
+
+    Returns a string starting with " AND " so callers can append
+    directly to existing WHERE conditions.
+    """
+    prefix = f"{table_alias}." if table_alias else ""
+    placeholders = ", ".join(["?"] * len(_HIDDEN_COMMUNITY_DISEASES))
+    return f" AND {prefix}disease NOT IN ({placeholders})"
+
 
 def _connect() -> sqlite3.Connection:
     conn = sqlite3.connect(
@@ -234,6 +252,12 @@ def nearby_scans(
     if exclude_user_pseudo_id:
         base_extra += " AND user_pseudo_id != ?"
         base_params.append(exclude_user_pseudo_id)
+    # Skip rows whose disease shouldn't surface in the community feed
+    # (currently just ``not_a_plant``). The constant lives at module
+    # scope so the same set drives ``region_summary`` aggregates.
+    if _HIDDEN_COMMUNITY_DISEASES:
+        base_extra += _hidden_clause()
+        base_params.extend(_HIDDEN_COMMUNITY_DISEASES)
     region_clean = (region or "").strip()
     region_extra = base_extra
     region_params = list(base_params)
@@ -302,6 +326,13 @@ def region_summary(
     if exclude_user_pseudo_id:
         exclude_clause = " AND user_pseudo_id != ?"
         exclude_params = (exclude_user_pseudo_id,)
+    # Hide rows whose disease shouldn't surface in the community
+    # feed (currently just ``not_a_plant``). Filtering here keeps
+    # ``total`` / ``last_7d`` / ``top_diseases`` consistent with the
+    # carousel rows returned by ``nearby_scans``.
+    if _HIDDEN_COMMUNITY_DISEASES:
+        exclude_clause += _hidden_clause()
+        exclude_params = (*exclude_params, *_HIDDEN_COMMUNITY_DISEASES)
     with _connect() as conn:
         if region_clean:
             total = conn.execute(

@@ -47,6 +47,15 @@ class CommunityUploader(
         val resolved = RegionResolver.resolveRegion(context)
             ?: return@withContext UploadOutcome.NoRegion
         val disease = canonicalDiseaseKey(analysis) ?: scan.diseaseName
+        // Skip diagnoses that shouldn't be surfaced in the community
+        // feed (currently just ``not_a_plant`` — typically faces,
+        // objects, or random photos that other users have no reason
+        // to browse). The server already filters these on read; this
+        // saves the upload bandwidth + the row + the thumb file on
+        // disk for an entry no one will ever see.
+        if (disease in HIDDEN_COMMUNITY_DISEASES) {
+            return@withContext UploadOutcome.HiddenDisease
+        }
         val thumb = makeThumbnail(scan)
         val species = analysis.species?.best?.scientificName
         val score = analysis.species?.best?.score?.takeIf { it > 0f }
@@ -81,7 +90,9 @@ class CommunityUploader(
 
     /** Outcome of one upload attempt — surfaced to callers only for
      *  logging; never user-visible. */
-    enum class UploadOutcome { Uploaded, OptedOut, NoRegion, MissingScanId, Failed }
+    enum class UploadOutcome {
+        Uploaded, OptedOut, NoRegion, MissingScanId, Failed, HiddenDisease,
+    }
 
     /**
      * The server's CommunityScanRequest constrains ``disease`` to the
@@ -146,5 +157,9 @@ class CommunityUploader(
         private const val TAG = "CommunityUploader"
         private const val THUMB_LONG_EDGE = 512
         private const val THUMB_QUALITY = 78
+        // Mirrors the server's ``_HIDDEN_COMMUNITY_DISEASES`` set —
+        // diagnoses we never surface in the community feed and so
+        // shouldn't upload either.
+        private val HIDDEN_COMMUNITY_DISEASES = setOf("not_a_plant")
     }
 }

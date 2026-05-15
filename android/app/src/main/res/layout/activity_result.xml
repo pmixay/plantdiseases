@@ -555,6 +555,8 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_md"
                         app:singleLine="false"
+                        app:selectionRequired="false"
+                        app:singleSelection="true"
                         app:chipSpacingHorizontal="@dimen/space_xs"
                         app:chipSpacingVertical="@dimen/space_xs"
                         android:visibility="gone" />
