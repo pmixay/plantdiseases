@@ -5,7 +5,7 @@ Classifies a (preferably cropped) leaf region into one of the
 houseplant-relevant condition classes including the rejection class
 ``not_a_plant``. Class names + input resolution live in
 ``models/classes.json``; if the file is missing the built-in default
-matching the v2.1 taxonomy (7 trainable classes) is used.
+matching the v2.2 taxonomy (9 trainable classes) is used.
 
 Production artefact is a distilled MobileNetV3-Large student
 (EfficientNetV2-S teacher → KD). Loading order:
@@ -33,16 +33,20 @@ logger = logging.getLogger(__name__)
 DEFAULT_IMG_SIZE = 256
 
 # Alphabetical — must match training-time ``sorted(ImageFolder.classes)``.
-# v2.1 trainable taxonomy. The four physiological classes from the v2.0
-# design (``edema``, ``leaf_scorch_underwatering``, ``nutrient_deficiency``,
-# ``sunburn_or_scorch``) are deferred until labelled real-world data is
-# added — see server/models/MODEL_CARD.md.
+# v2.2 trainable taxonomy. ``leaf_scorch_underwatering`` and
+# ``nutrient_deficiency`` were added per NOTEBOOK_AUDIT §6 — the two
+# remaining physiological classes (``edema``, ``sunburn_or_scorch``)
+# stay deferred until upstream supply justifies them.
+# Production reads ``classes.json -> class_names`` first; this list is
+# only used as a fallback when the artefact is missing.
 DEFAULT_CLASS_NAMES = [
     "bacterial_leaf_spot",
     "gray_mold_botrytis",
     "healthy",
+    "leaf_scorch_underwatering",
     "leaf_spot_fungal",
     "not_a_plant",
+    "nutrient_deficiency",
     "powdery_mildew",
     "viral_disease",
 ]
@@ -301,7 +305,8 @@ class DiseaseClassifier:
         # overflow; the smallest meaningful tail (`exp(-30)`) is well
         # within float32 range (~9.4e-14). float64 was a precaution
         # that doubled the dict-construction allocation per call for
-        # no measurable accuracy delta on the 7-class head.
+        # no measurable accuracy delta on the head (7 classes in v2.1,
+        # 9 in v2.2).
         logits32 = logits.astype(np.float32, copy=False)
         max_logit = float(logits32.max())
         e = np.exp(logits32 - max_logit)

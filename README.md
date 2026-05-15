@@ -44,7 +44,7 @@ plant care reminders and an AI plant doctor.
 │  • Profile + stats   │         │   │ Stage 2 — classifier     │   │
 │                      │         │   │ MobileNetV3-Large (KD ←  │   │
 │                      │         │   │ EfficientNetV2-S teacher)│   │
-│                      │         │   │ 7 classes incl. NaP head │   │
+│                      │         │   │ 9 classes incl. NaP head │   │
 │                      │         │   │ + MaxLogit OOD gate      │   │
 │                      │         │   │ + blur (var-Laplacian)   │   │
 │                      │         │   └──────────────────────────┘   │
@@ -67,24 +67,25 @@ Detailed training recipe lives in
 
 ## Classes
 
-The classifier head is **7 trainable classes** (alphabetical, matching
+The classifier head is **9 trainable classes** (alphabetical, matching
 `sorted(ImageFolder.classes)`):
 
 | # | Class | EN name | RU name |
 |---|-------|---------|---------|
-| 0 | `bacterial_leaf_spot`        | Bacterial Leaf Spot    | Бактериальная пятнистость |
-| 1 | `gray_mold_botrytis`         | Gray Mold (Botrytis)   | Серая гниль (ботритис)    |
-| 2 | `healthy`                    | Healthy Plant          | Здоровое растение         |
-| 3 | `leaf_spot_fungal`           | Fungal Leaf Spot       | Грибковая пятнистость     |
-| 4 | `not_a_plant`                | Not a Plant            | Не растение               |
-| 5 | `powdery_mildew`             | Powdery Mildew         | Мучнистая роса            |
-| 6 | `viral_disease`              | Viral Disease          | Вирусное заболевание      |
+| 0 | `bacterial_leaf_spot`        | Bacterial Leaf Spot           | Бактериальная пятнистость |
+| 1 | `gray_mold_botrytis`         | Gray Mold (Botrytis)          | Серая гниль (ботритис)    |
+| 2 | `healthy`                    | Healthy Plant                 | Здоровое растение         |
+| 3 | `leaf_scorch_underwatering`  | Leaf Scorch (Under-watering)  | Краевой ожог (недолив)    |
+| 4 | `leaf_spot_fungal`           | Fungal Leaf Spot              | Грибковая пятнистость     |
+| 5 | `not_a_plant`                | Not a Plant                   | Не растение               |
+| 6 | `nutrient_deficiency`        | Nutrient Deficiency           | Дефицит питания           |
+| 7 | `powdery_mildew`             | Powdery Mildew                | Мучнистая роса            |
+| 8 | `viral_disease`              | Viral Disease                 | Вирусное заболевание      |
 
-The pipeline also emits four **deferred** physiological classes
-(`edema`, `leaf_scorch_underwatering`, `nutrient_deficiency`,
-`sunburn_or_scorch`) as feedback labels, even though the classifier
-head doesn't predict them yet — the retraining loop uses them to
-prioritise the next round of data collection.
+The pipeline also emits two remaining **deferred** physiological
+classes (`edema`, `sunburn_or_scorch`) as feedback labels, even though
+the classifier head doesn't predict them yet — the retraining loop
+uses them to prioritise the next round of data collection.
 
 Canonical list: [`server/models/classes.json`](server/models/classes.json).
 
@@ -197,7 +198,7 @@ plantdiseases/
   classifier architecture, training data, calibration, intended use,
   known limitations.
 - [`server/train_notebook.ipynb`](server/train_notebook.ipynb) — full
-  v2.1 training recipe, data hygiene, KD setup, calibration export.
+  v2.2 training recipe, data hygiene, KD setup, calibration export.
 
 ---
 

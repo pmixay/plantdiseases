@@ -1287,15 +1287,16 @@ except ImportError:
 
 _FEEDBACK_IN_HEAD_CLASSES: frozenset[str] = frozenset(_HEAD_CLASS_NAMES)
 
-# Out-of-head corrections — deferred physiological classes the
-# v2.1 head doesn't carry yet, plus a free-form catch-all. We accept
+# Out-of-head corrections — physiological classes the
+# v2.2 head doesn't carry yet, plus a free-form catch-all. We accept
 # them on /api/feedback (otherwise the user has no way to tell us
 # "your model can't say this") and tag each row with ``out_of_head=1``
 # so retraining can prioritise expanding the label set.
+# ``leaf_scorch_underwatering`` and ``nutrient_deficiency`` moved
+# into the head set in v2.2 (NOTEBOOK_AUDIT §6) and now arrive via
+# ``_FEEDBACK_IN_HEAD_CLASSES`` instead.
 _FEEDBACK_OUT_OF_HEAD_CLASSES: frozenset[str] = frozenset({
     "edema",
-    "leaf_scorch_underwatering",
-    "nutrient_deficiency",
     "sunburn_or_scorch",
     "other",
 })
