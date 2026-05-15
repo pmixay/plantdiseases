@@ -224,28 +224,44 @@ def test_low_confidence_warning_is_propagated():
     assert "low_confidence" in out["warnings"]
 
 
-def test_healthy_fallback_emits_disease_uncertain_warning():
-    """When the healthy fallback fires, the postprocessor must surface
-    a ``disease_uncertain:<class>`` warning."""
+def test_weak_disease_verdict_stays_disease_not_synthesised_healthy():
+    """Regression for the dominant bug in the post-launch feedback
+    corpus: ``_maybe_apply_healthy_fallback`` used to flip a weak
+    disease verdict to a synthesised ``healthy`` (transferring the
+    rejected disease's mass), then the ``_suspected_disease`` guard
+    gated off the weak-healthy reroute, and two contradictory disease
+    names landed in the warnings (the killed-by-fallback class and the
+    worst-after-fallback class). The fallback has been removed — a
+    weak disease verdict must stay disease, with ``low_confidence``
+    carrying the uncertainty.
+    """
     from pipeline import _apply_postprocessing_rules
 
     probs = _uniform_probs()
-    probs["healthy"] = 0.55
-    probs["powdery_mildew"] = 0.15
+    probs["viral_disease"] = 0.32     # would have been the rejected top-1
+    probs["leaf_spot_fungal"] = 0.30  # the band the old reroute couldn't catch
+    probs["healthy"] = 0.22
     s = sum(probs.values())
     probs = {k: v / s for k, v in probs.items()}
 
     classification = {
-        "class_name": "healthy",
-        "confidence": probs["healthy"],
+        "class_name": "viral_disease",
+        "confidence": probs["viral_disease"],
         "all_probs": probs,
-        "low_confidence": False,
-        "_suspected_disease": "powdery_mildew",
+        "low_confidence": True,
     }
     out = _apply_postprocessing_rules(classification, list(probs.keys()))
 
-    assert out["class_name"] == "healthy"
-    assert "disease_uncertain:powdery_mildew" in out["warnings"]
+    assert out["class_name"] == "viral_disease", (
+        "weak disease must not be downgraded to healthy"
+    )
+    assert "low_confidence" in out["warnings"]
+    # The contradictory-warnings bug: neither of these strings may
+    # appear, even though both diseases sit in the distribution.
+    assert not any(w.startswith("disease_uncertain:") for w in out["warnings"])
+    # The post-fallback "uncertain_healthy" branch must not fire on a
+    # disease verdict either.
+    assert "uncertain_healthy" not in out["warnings"]
 
 
 def test_postprocessor_emits_nap_ood_warning():
@@ -314,30 +330,6 @@ def test_classes_json_in_repo_drives_pipeline_config():
     assert meta.get("model_version", "").startswith("2.")
 
 
-def test_healthy_fallback_keeps_top_k_consistent_with_class_name():
-    """After the healthy fallback fires, the chosen class must be the
-    actual top-1 in all_probs / top_k."""
-    from pipeline import _apply_postprocessing_rules
-
-    probs = _uniform_probs()
-    probs["healthy"] = 0.55
-    probs["powdery_mildew"] = 0.15
-    s = sum(probs.values())
-    probs = {k: v / s for k, v in probs.items()}
-    aggregated = {
-        "class_name": "healthy",
-        "confidence": probs["healthy"],
-        "all_probs": probs,
-        "low_confidence": False,
-        "_suspected_disease": "powdery_mildew",
-    }
-    out = _apply_postprocessing_rules(aggregated, list(probs.keys()))
-
-    assert out["top_k"][0]["class"] == out["class_name"], (
-        f"top_k[0]={out['top_k'][0]} but class_name={out['class_name']}"
-    )
-
-
 def test_severity_low_for_non_disease():
     """compute_severity must short-circuit to "low" for healthy / NAP."""
     from pipeline import compute_severity
@@ -370,38 +362,6 @@ def test_severity_escalates_with_area_and_margin():
     )
     assert high == "high"
     assert low == "low"
-
-
-def test_healthy_fallback_helper_fires_on_weak_margin():
-    """`_maybe_apply_healthy_fallback` must downgrade a weak disease
-    verdict — the suspected class is reported back so the postprocessor
-    can surface a `disease_uncertain:<class>` warning."""
-    from pipeline import HEALTHY_FALLBACK_MARGIN, _maybe_apply_healthy_fallback
-
-    probs = {n: 0.01 for n in EXPECTED_CLASSES}
-    probs["powdery_mildew"] = 0.40
-    probs["healthy"] = 0.40 - (HEALTHY_FALLBACK_MARGIN / 2)
-    s = sum(probs.values())
-    probs = {k: v / s for k, v in probs.items()}
-    out = _maybe_apply_healthy_fallback(probs, "powdery_mildew", probs["powdery_mildew"])
-
-    assert out is not None
-    assert out["suspected"] == "powdery_mildew"
-    assert 0.0 < out["top1_conf"] <= 1.0
-
-
-def test_healthy_fallback_helper_skips_strong_disease_verdict():
-    """A confident disease verdict with healthy well below must be left alone."""
-    from pipeline import _maybe_apply_healthy_fallback
-
-    strong_probs = {n: 0.01 for n in EXPECTED_CLASSES}
-    strong_probs["powdery_mildew"] = 0.85
-    strong_probs["healthy"] = 0.05
-    s = sum(strong_probs.values())
-    strong_probs = {k: v / s for k, v in strong_probs.items()}
-    assert _maybe_apply_healthy_fallback(
-        strong_probs, "powdery_mildew", strong_probs["powdery_mildew"],
-    ) is None
 
 
 def test_blur_gate_rejects_uniform_image():

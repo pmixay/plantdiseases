@@ -1294,7 +1294,17 @@ class ResultActivity : AppCompatActivity() {
         note: String?,
     ): FeedbackRequest {
         val repository = (application as PlantDiseasesApp).scanRepository
-        val predictedKey = repository.topClassKey(scan)
+        // Prefer the server-issued ``displayedClassKey`` — that's the
+        // verdict the user actually saw (post-weak-healthy-reroute).
+        // Falling back to argmax(all_probs) only when the column is
+        // empty (legacy scans saved before this build, or a server
+        // old enough that the field wasn't returned). Without this
+        // we'd echo the pre-reroute argmax back as
+        // ``predicted_class`` and rot the per-class accuracy
+        // metrics on the server side.
+        val displayedKey = scan.displayedClassKey?.takeIf { it.isNotBlank() }
+        val argmaxKey = repository.topClassKey(scan)
+        val predictedKey = displayedKey ?: argmaxKey
         val allProbs = repository.parseAllProbs(scan.allProbs)
         val predictedConfidence = predictedKey
             ?.let { allProbs[it] }

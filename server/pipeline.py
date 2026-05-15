@@ -20,9 +20,12 @@ Behaviour summary:
   the room).
 * **Size filter** drops tiny detections (<32 px or <0.5 % image area)
   before classification.
-* **Healthy fallback** — disease verdicts with weak margin or sub-
-  ``DISEASE_MIN_CONFIDENCE`` confidence are downgraded to ``healthy``
-  and the suspected disease is surfaced as a warning.
+* **Weak-healthy reroute** — when top-1 is ``healthy`` but the
+  margin to the strongest disease is too narrow, we surface the
+  disease instead so the UI doesn't reassure on an obviously-sick
+  plant. (Symmetric "weak-disease → healthy" downgrade was removed
+  in favour of an honest low-confidence flag — see the comment in
+  ``_pick_primary``.)
 * **Temperature scaling** — when ``temperature.json`` is present, we
   recalibrate probabilities before voting; otherwise T=1.0 (no-op).
 * **OOD gating** — combines detector confidence with a **MaxLogit**
@@ -95,12 +98,12 @@ HEALTHY_GAP_MARGIN = 0.30
 HEALTHY_GAP_DISEASE_FLOOR = 0.10
 
 # Disease-side gate. If averaged top-1 is a disease but its softmax
-# mass is below this threshold, we downgrade to healthy.
+# mass is below this threshold, we gate community-upload eligibility
+# and severity escalation via ``_is_diseased``. (The disease verdict
+# itself is no longer downgraded to healthy below this floor — the
+# legacy fallback was removed because it manufactured fake-healthy
+# distributions; see the comment block in ``_pick_primary``.)
 DISEASE_MIN_CONFIDENCE = 0.65
-
-# If averaged top-1 is a disease but its margin over ``healthy`` is
-# below this, downgrade.
-HEALTHY_FALLBACK_MARGIN = 0.15
 
 # NAP (out-of-distribution) gate.
 #
@@ -311,6 +314,14 @@ class PlantDiseasePipeline:
         self.conformal: ConformalConfig | None = load_conformal_config(
             classifier_path.parent
         )
+        if self.nap_max_logit_floor <= 0:
+            logger.warning(
+                "OOD MaxLogit gate is OFF on this model — separation_p50 in "
+                "classes.json showed NAP medians above plant medians, so the "
+                "AND-gate degrades to detector-confidence-only. NAP rejection "
+                "rests on the classifier's own not_a_plant head until a "
+                "different OOD score is calibrated.",
+            )
         logger.info(
             "Pipeline ready  classifier=%s backend  T=%.3f  "
             "MaxLogit floor=%s  conformal=%s",
@@ -620,19 +631,26 @@ class PlantDiseasePipeline:
         top1_class = max(mean_probs, key=mean_probs.get)
         top1_conf = float(mean_probs[top1_class])
 
-        downgrade = _maybe_apply_healthy_fallback(mean_probs, top1_class, top1_conf)
-        if downgrade is not None:
-            mean_probs = downgrade["mean_probs"]
-            top1_class = "healthy"
-            top1_conf = downgrade["top1_conf"]
-            suspected_disease: Optional[str] = downgrade["suspected"]
-        else:
-            suspected_disease = None
+        # The legacy ``_maybe_apply_healthy_fallback`` used to flip a
+        # weak disease verdict to healthy by transferring the rejected
+        # disease's softmax mass onto healthy. That synthesised a fake
+        # "healthy ~0.51" distribution out of a real disease
+        # prediction, gated off the weak-healthy reroute via the
+        # ``_suspected_disease`` flag, and surfaced two contradictory
+        # disease names in the warnings (the killed-by-fallback class
+        # and the worst-after-fallback class). It was the dominant
+        # source of "user-sees-healthy-but-photo-is-clearly-sick"
+        # errors in the feedback corpus. Removed entirely — weak
+        # disease verdicts now stay disease verdicts and carry
+        # ``low_confidence`` for the UI to demote honestly. The
+        # symmetric "weak healthy with a disease alternative" case is
+        # still caught by the gap reroute in
+        # ``_apply_postprocessing_rules``.
 
         primary_box = self._select_primary_box(
             results=results,
             top1_class=top1_class,
-            downgraded=downgrade is not None,
+            downgraded=False,
         )
 
         aggregated_cls = {
@@ -642,7 +660,6 @@ class PlantDiseasePipeline:
             "max_logit": max_logit_seen if max_logit_seen != -float("inf") else 0.0,
             "low_confidence": top1_conf < HEALTHY_MIN_CONFIDENCE,
             "_voted_over": n_boxes,
-            "_suspected_disease": suspected_disease,
         }
         return primary_box, aggregated_cls
 
@@ -745,7 +762,6 @@ class PlantDiseasePipeline:
             "max_logit": float(classification.get("max_logit", 0.0)),
             "low_confidence": False,
             "_voted_over": classification.get("_voted_over", 1),
-            "_suspected_disease": None,
             "_ood_gated": True,
         }
 
@@ -771,59 +787,6 @@ class PlantDiseasePipeline:
 
 
 # ── pure helpers (exposed for tests) ─────────────────────────────────
-
-
-def _maybe_apply_healthy_fallback(
-    mean_probs: dict[str, float],
-    top1_class: str,
-    top1_conf: float,
-) -> dict | None:
-    """Downgrade weak disease verdicts to ``healthy``.
-
-    Returns the rewritten state on downgrade, or ``None`` to keep the
-    original verdict. The returned ``mean_probs`` is updated so the
-    surfaced distribution agrees with the verdict — ``healthy`` is
-    always the new top class and the returned ``top1_conf`` is the
-    actual post-shift P(healthy). We deliberately do not fabricate
-    confidence from ``1 - top1_conf``: the old behaviour produced
-    e.g. "Healthy 75%" when the model's real healthy probability was
-    22%, which contradicted the top-k panel the client renders.
-    """
-    if top1_class in _NON_DISEASE or "healthy" not in mean_probs:
-        return None
-
-    healthy_p = float(mean_probs.get("healthy", 0.0))
-    margin = top1_conf - healthy_p
-
-    if margin >= HEALTHY_FALLBACK_MARGIN and top1_conf >= DISEASE_MIN_CONFIDENCE:
-        return None
-
-    reason = (
-        f"margin={margin:.3f}<{HEALTHY_FALLBACK_MARGIN}"
-        if margin < HEALTHY_FALLBACK_MARGIN
-        else f"threshold={top1_conf:.3f}<{DISEASE_MIN_CONFIDENCE}"
-    )
-
-    # Transfer the rejected disease's mass to ``healthy`` and
-    # renormalise so the displayed top-k matches the verdict.
-    rejected_mass = float(mean_probs[top1_class])
-    mean_probs[top1_class] = 0.0
-    mean_probs["healthy"] = healthy_p + rejected_mass
-    total = sum(mean_probs.values())
-    if total > 0:
-        mean_probs = {n: p / total for n, p in mean_probs.items()}
-
-    new_conf = float(mean_probs["healthy"])
-    logger.info(
-        "Healthy fallback (%s)  was=%s/%.3f  → healthy/%.3f",
-        reason, top1_class, top1_conf, new_conf,
-    )
-
-    return {
-        "mean_probs": mean_probs,
-        "top1_conf": new_conf,
-        "suspected": top1_class,
-    }
 
 
 def compute_severity(
@@ -891,9 +854,6 @@ def _apply_postprocessing_rules(
       * ``uncertain_healthy`` — top-1 is healthy, no disease above the
         reroute threshold, but confidence/margin still below the soft
         thresholds. Surfaces alternatives, no class swap.
-      * ``disease_uncertain`` — the healthy-fallback fired in
-        ``_pick_primary``: top-1 was a disease but margin/threshold was
-        weak so the class was downgraded to healthy.
       * ``low_confidence`` — top-1 below the healthy threshold.
     """
     probs = classification["all_probs"]
@@ -908,18 +868,7 @@ def _apply_postprocessing_rules(
     # while a real disease class has any meaningful mass, "healthy" is
     # almost certainly wrong. Reroute the verdict so the UI surfaces
     # the more likely call.
-    #
-    # Skip when ``_suspected_disease`` is set: that means
-    # ``_maybe_apply_healthy_fallback`` already moved us from a weak
-    # disease verdict TO healthy on this same scan, and rerouting back
-    # to a different disease would just ping-pong — we'd surface a
-    # third class on every call. Trust the upstream fallback and let
-    # the ``disease_uncertain`` warning carry the nuance.
-    if (
-        top1_name == "healthy"
-        and "healthy" in class_names
-        and not classification.get("_suspected_disease")
-    ):
+    if top1_name == "healthy" and "healthy" in class_names:
         worst_disease = max(
             ((n, p) for n, p in probs.items() if n not in _NON_DISEASE),
             key=lambda kv: kv[1],
@@ -992,10 +941,6 @@ def _apply_postprocessing_rules(
                 "healthy gate soft-warning  top1=%.3f  margin=%.3f  worst_disease=%s/%.3f",
                 top1_prob, margin, worst_disease[0], worst_disease[1],
             )
-
-    suspected = classification.get("_suspected_disease")
-    if suspected:
-        warnings.append(f"disease_uncertain:{suspected}")
 
     if classification.get("_ood_gated"):
         warnings.append("nap_ood_gated")

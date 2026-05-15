@@ -50,6 +50,15 @@ data class PredictionSet(
 
 /** Response from the server after analyzing an image */
 data class AnalysisResponse(
+    // Canonical class key (e.g. ``leaf_spot_fungal``) the pipeline
+    // landed on AFTER post-processing — this is what
+    // ``diseaseName`` is derived from. Echo this back as
+    // ``predictedClass`` on feedback. ``argmax(allProbs)`` may
+    // disagree because the weak-healthy reroute rewrites
+    // ``className`` / ``diseaseName`` but leaves ``allProbs``
+    // un-mutated; using argmax would poison server-side per-class
+    // accuracy metrics.
+    @SerializedName("class_name") val classKey: String? = null,
     @SerializedName("disease_name") val diseaseName: String,
     @SerializedName("disease_name_ru") val diseaseNameRu: String,
     @SerializedName("confidence") val confidence: Float,

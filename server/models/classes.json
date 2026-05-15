@@ -38,8 +38,8 @@
   },
   "ood": {
     "score": "max_logit",
-    "max_logit_floor": 1.6244090795516968,
-    "_score_note": "MaxLogit (Hendrycks 2019) \u2014 robust under temperature scaling and label smoothing where MSP fails.",
+    "max_logit_floor": null,
+    "_score_note": "MaxLogit (Hendrycks 2019) is theoretically robust under temperature scaling and label smoothing where MSP collapses. Disabled on this model because the calibration set below shows NEGATIVE separation \u2014 NAP medians sit ABOVE plant medians, so a floor that hits the target_plant_fpr=0.05 (plant_p05=1.62) catches zero NAPs (nap_p05=3.22). _should_route_to_nap therefore degrades to a detector-confidence-only gate; OOD is left to the classifier's own not_a_plant head until a different score (energy/MSP/etc.) is calibrated.",
     "_calibration": {
       "target_plant_fpr": 0.05,
       "plant_n": 283,
@@ -50,7 +50,8 @@
       "nap_p05": 3.2214927196502687,
       "nap_p50": 4.6157612800598145,
       "nap_p95": 5.513560581207274,
-      "separation_p50": -0.27212095260620117
+      "separation_p50": -0.27212095260620117,
+      "_separation_note": "separation_p50 < 0 means MaxLogit gives the WRONG-SIGN signal on this model \u2014 NAPs score higher than plants on the metric. Any positive floor here would over-fire on real plants; any floor low enough to spare plants misses every NAP. Hence max_logit_floor=null above."
     }
   }
 }

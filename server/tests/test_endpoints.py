@@ -130,6 +130,12 @@ def test_analyze_response_contract(client, png_bytes):
     body = r.json()
 
     required = {
+        # ``class_name`` is the canonical post-reroute key — clients
+        # echo it back on /api/feedback as ``predicted_class`` so
+        # per-class accuracy metrics see the same verdict the user
+        # saw rather than argmax(all_probs) (which can disagree
+        # after a weak-healthy reroute).
+        "class_name",
         "disease_name",
         "disease_name_ru",
         "confidence",
@@ -152,6 +158,10 @@ def test_analyze_response_contract(client, png_bytes):
     }
     missing = required - set(body.keys())
     assert not missing, f"missing keys: {missing}"
+    # The canonical class key must match what the localised display
+    # strings were derived from. If they ever diverge, the feedback
+    # round-trip will pollute per-class accuracy metrics.
+    assert isinstance(body["class_name"], str) and body["class_name"]
 
     assert 0.0 <= body["confidence"] <= 1.0
     assert 0.0 <= body["uncertainty"] <= 1.0

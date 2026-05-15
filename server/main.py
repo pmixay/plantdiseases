@@ -1091,6 +1091,14 @@ async def analyze_image(image: UploadFile = File(...), species: str | None = Non
     }
 
     return JSONResponse(content={
+        # Canonical class key the pipeline landed on AFTER all
+        # post-processing (weak-healthy reroute, OOD gate, etc.).
+        # ``disease_name`` / ``disease_name_ru`` are the localised
+        # display strings derived from this key. Clients should echo
+        # ``class_name`` back as ``predicted_class`` on /api/feedback
+        # — argmax(all_probs) is the PRE-reroute class and would
+        # poison per-class accuracy metrics if used instead.
+        "class_name": class_name,
         "disease_name": disease_info["name_en"],
         "disease_name_ru": disease_info["name_ru"],
         "confidence": round(confidence, 3),

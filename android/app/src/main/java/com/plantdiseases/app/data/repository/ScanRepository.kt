@@ -343,9 +343,15 @@ class ScanRepository(
             val predictionSetJson = result.predictionSet?.classes
                 ?.takeIf { it.isNotEmpty() }
                 ?.let { gson.toJson(it) }
+            // ``classKey`` (when the server is recent enough to emit
+            // it) is the post-reroute verdict. Persisting it as
+            // ``displayedClassKey`` keeps feedback's predicted_class
+            // aligned with what the UI showed.
+            val displayedClassKey = result.classKey?.takeIf { it.isNotBlank() }
             val entity = ScanEntity(
                 clientScanId = serverScanId ?: java.util.UUID.randomUUID().toString(),
                 predictionSet = predictionSetJson,
+                displayedClassKey = displayedClassKey,
                 speciesScientific = best?.scientificName,
                 speciesCommon = best?.commonName,
                 speciesScore = best?.score?.takeIf { it > 0f },

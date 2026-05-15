@@ -116,6 +116,12 @@ data class ScanEntity(
     // back to the server, enabling the "was the right answer in the
     // 90 % set?" diagnostic.
     @ColumnInfo(name = "prediction_set") val predictionSet: String? = null,
+    // Canonical class key the server returned for this scan (e.g.
+    // ``leaf_spot_fungal``). Persisted because ``argmax(all_probs)``
+    // can disagree after the server's weak-healthy reroute, and
+    // feedback submission must echo the DISPLAYED verdict — not
+    // the argmax — to keep per-class accuracy metrics honest.
+    @ColumnInfo(name = "displayed_class_key") val displayedClassKey: String? = null,
 )
 
 // ─── Plant Reminder Entity ──────────────────────────────────────────────────
@@ -267,13 +273,14 @@ interface PlantJournalDao {
         PlantReminderEntity::class,
         ChatMessageEntity::class,
     ],
-    // v2: added ScanEntity.prediction_set (JSON array). Schema is
-    // resolved via fallbackToDestructiveMigration() below — existing
-    // local scans are wiped on first launch with this version. Same
-    // contract the rest of the app has been shipping on, and the
-    // feedback-loop value of having prediction_set persisted is
-    // worth the one-off local-cache loss.
-    version = 2,
+    // v3: added ScanEntity.displayed_class_key so feedback
+    // submissions echo the verdict the user actually saw rather
+    // than argmax(all_probs), which can disagree after the
+    // server's weak-healthy reroute. v2 added prediction_set.
+    // ``fallbackToDestructiveMigration`` is configured below;
+    // local scan history is wiped on first launch with the new
+    // version. Same trade-off the app has been shipping under.
+    version = 3,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
