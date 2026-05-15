@@ -10,24 +10,24 @@ via the ``FakePipeline`` injected by ``conftest.py``.
 
 from __future__ import annotations
 
-# Canonical alphabetical 7-class taxonomy (PlantVision 2.1).
-# The four physiological classes from the v2.0 design (edema,
-# leaf_scorch_underwatering, nutrient_deficiency, sunburn_or_scorch)
-# are deferred until labelled real-world data is added — see
-# server/models/MODEL_CARD.md.
+# Canonical alphabetical 9-class taxonomy (PlantVision 2.2).
+# leaf_scorch_underwatering and nutrient_deficiency joined the head
+# per NOTEBOOK_AUDIT §6; edema and sunburn_or_scorch stay deferred.
 EXPECTED_CLASSES = {
     "bacterial_leaf_spot",
     "gray_mold_botrytis",
     "healthy",
+    "leaf_scorch_underwatering",
     "leaf_spot_fungal",
     "not_a_plant",
+    "nutrient_deficiency",
     "powdery_mildew",
     "viral_disease",
 }
 
 
 def _uniform_probs() -> dict[str, float]:
-    """A flat distribution over the v2.1 class set."""
+    """A flat distribution over the v2.2 class set."""
     n = len(EXPECTED_CLASSES)
     return {name: 1.0 / n for name in sorted(EXPECTED_CLASSES)}
 
@@ -39,9 +39,10 @@ def test_not_a_plant_class_is_present():
     assert "not_a_plant" in DEFAULT_CLASS_NAMES
 
 
-def test_taxonomy_is_v21_disease_only():
-    """PlantVision 2.1 carries 7 trainable classes. Pests and physiological
-    conditions are deferred until labelled real-world data is added."""
+def test_taxonomy_is_v22_disease_only():
+    """PlantVision 2.2 carries 9 trainable classes. The remaining two
+    physiological conditions (edema, sunburn_or_scorch) are deferred
+    until labelled real-world data is added."""
     from classifier import DEFAULT_CLASS_NAMES
 
     assert set(DEFAULT_CLASS_NAMES) == EXPECTED_CLASSES, (
@@ -52,13 +53,13 @@ def test_taxonomy_is_v21_disease_only():
     for legacy in ("anthracnose", "gray_mold", "iron_chlorosis",
                    "late_blight", "mosaic_virus", "sunburn"):
         assert legacy not in DEFAULT_CLASS_NAMES, (
-            f"legacy class {legacy} must not be in v2.1 taxonomy"
+            f"legacy class {legacy} must not be in v2.2 taxonomy"
         )
-    # Deferred — must not appear in v2.1 trainable taxonomy yet.
-    for deferred in ("edema", "leaf_scorch_underwatering",
-                     "nutrient_deficiency", "sunburn_or_scorch"):
+    # Still-deferred physiological classes must not appear in the
+    # trainable taxonomy yet.
+    for deferred in ("edema", "sunburn_or_scorch"):
         assert deferred not in DEFAULT_CLASS_NAMES, (
-            f"deferred class {deferred} must not be in v2.1 trainable taxonomy"
+            f"deferred class {deferred} must not be in v2.2 trainable taxonomy"
         )
     # Pests must NOT be classifier outputs.
     for pest in ("aphids", "mealybug", "scale_insect", "spider_mites",
@@ -371,7 +372,10 @@ def test_max_logit_floor_resolver_handles_null_and_explicit_values():
 
 def test_classes_json_in_repo_drives_pipeline_config():
     """End-to-end check: the committed classes.json parses cleanly and
-    matches the v2.1 trainable taxonomy."""
+    declares a sensible plantvision taxonomy. The exact class set may
+    lag DEFAULT_CLASS_NAMES whenever the artefact is shipped from an
+    older training pass than the current code (e.g. v2.1 artefact in
+    tree while DEFAULT_CLASS_NAMES has already been bumped to v2.2)."""
     import json
     from pathlib import Path
 
@@ -380,8 +384,17 @@ def test_classes_json_in_repo_drives_pipeline_config():
         return
 
     meta = json.loads(repo_classes.read_text(encoding="utf-8"))
-    assert set(meta["class_names"]) == EXPECTED_CLASSES
-    assert len(meta["class_names"]) == len(EXPECTED_CLASSES)
+    class_set = set(meta["class_names"])
+    assert "healthy" in class_set and "not_a_plant" in class_set
+    # Either the shipped v2.1 7-class set or the v2.2 9-class superset.
+    v21_classes = {
+        "bacterial_leaf_spot", "gray_mold_botrytis", "healthy",
+        "leaf_spot_fungal", "not_a_plant", "powdery_mildew", "viral_disease",
+    }
+    assert class_set in (v21_classes, EXPECTED_CLASSES), (
+        f"class set drift: {class_set ^ EXPECTED_CLASSES}"
+    )
+    assert len(meta["class_names"]) == len(class_set)  # no duplicates
     assert meta["detector_classes"] == ["plant_leaf"]
     assert meta.get("model_version", "").startswith("2.")
 

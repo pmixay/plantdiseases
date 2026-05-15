@@ -146,16 +146,17 @@ def test_feedback_endpoint_accepts_deferred_class(client, isolated_feedback_db):
 
 
 def test_feedback_endpoint_tags_out_of_head_correction(client, isolated_feedback_db):
-    """Out-of-head corrections (deferred physiological classes,
+    """Out-of-head corrections (still-deferred physiological classes,
     ``other``) must be persisted with ``out_of_head=1`` so retraining
-    can prioritise growing the label set.
+    can prioritise growing the label set. ``edema`` is one of the two
+    classes still deferred after the v2.2 head expansion.
     """
     client.post(
         "/api/feedback",
         json={
             "scan_id": "scan-oohead1",
             "correct": False,
-            "corrected_class": "nutrient_deficiency",
+            "corrected_class": "edema",
         },
     )
     with sqlite3.connect(isolated_feedback_db) as conn:
@@ -164,7 +165,7 @@ def test_feedback_endpoint_tags_out_of_head_correction(client, isolated_feedback
             "WHERE scan_id = ?",
             ("scan-oohead1",),
         ).fetchone()
-    assert row == ("nutrient_deficiency", 1)
+    assert row == ("edema", 1)
 
 
 def test_feedback_endpoint_marks_in_head_correction(client, isolated_feedback_db):
