@@ -198,11 +198,38 @@ object ImageUtils {
         }
     }
 
-    /** Get image dimensions without fully decoding the bitmap */
+    /** Get image dimensions without fully decoding the bitmap. Returns
+     *  raw pixel dims — does NOT apply EXIF orientation. Use
+     *  [getOrientedDimensions] when the caller renders against the
+     *  display image (which Glide rotates per EXIF). */
     fun getImageDimensions(imagePath: String): Pair<Int, Int> {
         val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(imagePath, options)
         return Pair(options.outWidth.coerceAtLeast(1), options.outHeight.coerceAtLeast(1))
+    }
+
+    /** Get image dimensions in display orientation — raw bitmap dims
+     *  with EXIF rotation applied. For portrait phone photos the raw
+     *  bitmap is landscape; Glide / centerCrop will display it
+     *  rotated, so any overlay coords must scale against the rotated
+     *  dims. Falls back to raw dims if the EXIF tag is missing or
+     *  unreadable. */
+    fun getOrientedDimensions(imagePath: String): Pair<Int, Int> {
+        val (rawW, rawH) = getImageDimensions(imagePath)
+        return try {
+            val orientation = ExifInterface(imagePath).getAttributeInt(
+                ExifInterface.TAG_ORIENTATION,
+                ExifInterface.ORIENTATION_NORMAL,
+            )
+            val swapped = orientation == ExifInterface.ORIENTATION_ROTATE_90 ||
+                orientation == ExifInterface.ORIENTATION_ROTATE_270 ||
+                orientation == ExifInterface.ORIENTATION_TRANSPOSE ||
+                orientation == ExifInterface.ORIENTATION_TRANSVERSE
+            if (swapped) Pair(rawH, rawW) else Pair(rawW, rawH)
+        } catch (e: IOException) {
+            Log.w(TAG, "EXIF read failed in getOrientedDimensions, using raw dims", e)
+            Pair(rawW, rawH)
+        }
     }
 
     /**

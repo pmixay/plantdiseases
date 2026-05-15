@@ -224,7 +224,23 @@ class ResultActivity : AppCompatActivity() {
             // region. NAP and healthy verdicts skip the overlay.
             val regions = repository.parseRegions(scan.regions)
             if (!isNotAPlant && !isHealthyVerdict && regions.isNotEmpty()) {
-                val origBounds = ImageUtils.getImageDimensions(scan.imagePath)
+                // Bbox coordinates are in the *server-side* image's pixel
+                // space (the upload after PIL decode, which Android
+                // pre-rotates+downscales to <=1024 px in
+                // ImageUtils.prepareImageForUpload). The raw camera file
+                // is usually much larger and may carry EXIF rotation in
+                // the opposite axis — using it here causes the boxes
+                // to cluster in one corner. Trust the server-emitted
+                // dims when present (v2.2+); fall back to an
+                // EXIF-applied decode of the on-disk file for older
+                // servers.
+                val srvW = scan.detectionImageWidth ?: 0
+                val srvH = scan.detectionImageHeight ?: 0
+                val origBounds = if (srvW > 0 && srvH > 0) {
+                    Pair(srvW, srvH)
+                } else {
+                    ImageUtils.getOrientedDimensions(scan.imagePath)
+                }
                 val primaryIdx = scan.primaryRegionIndex ?: -1
                 val overlayBoxes = regions.mapIndexed { i, r ->
                     HeatmapOverlayView.Box(

@@ -368,6 +368,8 @@ class ScanRepository(
                 isHealthy = result.isHealthy,
                 regions = if (regions.isEmpty()) null else gson.toJson(regions),
                 primaryRegionIndex = primaryIndex,
+                detectionImageWidth = detection?.imageWidth,
+                detectionImageHeight = detection?.imageHeight,
                 allProbs = result.allProbs?.let { gson.toJson(it) },
                 warnings = warningsJson,
                 toxicToPets = result.toxicToPets,

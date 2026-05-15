@@ -88,6 +88,14 @@ data class ScanEntity(
     @ColumnInfo(name = "regions") val regions: String? = null,
     // Index into `regions` that Stage 2 used as the primary crop (-1 if none).
     @ColumnInfo(name = "primary_region_index") val primaryRegionIndex: Int? = null,
+    // Pixel dims of the image the server actually saw (post-upload-decode).
+    // ``regions`` coordinates live in this space, so the overlay renderer
+    // must scale against these instead of the raw camera file (which is
+    // typically larger and EXIF-rotated). Nullable for back-compat with
+    // pre-2.2 servers that don't emit the field — clients fall back to
+    // ``ImageUtils.getOrientedDimensions`` in that case.
+    @ColumnInfo(name = "detection_image_width") val detectionImageWidth: Int? = null,
+    @ColumnInfo(name = "detection_image_height") val detectionImageHeight: Int? = null,
     // Per-class probabilities from the classifier (JSON map).
     @ColumnInfo(name = "all_probs") val allProbs: String? = null,
     // Diagnostic flags from the pipeline post-processing rules
@@ -273,14 +281,19 @@ interface PlantJournalDao {
         PlantReminderEntity::class,
         ChatMessageEntity::class,
     ],
-    // v3: added ScanEntity.displayed_class_key so feedback
-    // submissions echo the verdict the user actually saw rather
-    // than argmax(all_probs), which can disagree after the
-    // server's weak-healthy reroute. v2 added prediction_set.
+    // v4: added ScanEntity.detection_image_width / detection_image_height
+    // so the overlay renderer can scale the YOLO bboxes against the
+    // image the server actually saw (post-upload-decode), instead of
+    // the raw camera bitmap. Fixes the "boxes cluster in upper-left
+    // corner" bug on portrait phone photos.
+    // v3 added ScanEntity.displayed_class_key so feedback submissions
+    // echo the verdict the user actually saw rather than
+    // argmax(all_probs), which can disagree after the server's
+    // weak-healthy reroute. v2 added prediction_set.
     // ``fallbackToDestructiveMigration`` is configured below;
     // local scan history is wiped on first launch with the new
     // version. Same trade-off the app has been shipping under.
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {

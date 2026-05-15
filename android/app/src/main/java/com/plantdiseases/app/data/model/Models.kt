@@ -12,10 +12,20 @@ data class DetectionRegion(
     @SerializedName("confidence") val confidence: Float? = null
 )
 
-/** Stage 1 detection result — list of boxes plus the one Stage 2 used. */
+/** Stage 1 detection result — list of boxes plus the one Stage 2 used.
+ *
+ * ``image_width`` / ``image_height`` are the pixel dims of the image
+ * the server actually saw (post-upload-decode). The bbox coordinates
+ * are in that space, so any overlay renderer must scale against these
+ * dims rather than against the raw camera file's bitmap (which is
+ * typically larger and may be EXIF-rotated). Both fields are nullable
+ * for backwards compatibility with pre-2.2 servers — older builds
+ * omit them. */
 data class Detection(
     @SerializedName("is_diseased") val isDiseased: Boolean,
     @SerializedName("detector_confidence") val detectorConfidence: Float,
+    @SerializedName("image_width") val imageWidth: Int? = null,
+    @SerializedName("image_height") val imageHeight: Int? = null,
     @SerializedName("regions") val regions: List<DetectionRegion> = emptyList(),
     @SerializedName("primary_region") val primaryRegion: DetectionRegion? = null
 )
