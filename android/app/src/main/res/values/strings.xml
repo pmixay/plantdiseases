@@ -2,6 +2,19 @@
 <resources>
     <string name="app_name">PlantDiseases</string>
 
+    <!-- Plurals consumed by GardenFragment via getQuantityString —
+         only reachable through ``R.plurals.X``, never via
+         ``R.string.X`` / ``@string/X``, which is why the dead-code
+         sweep on a previous commit mis-flagged them as orphans. -->
+    <plurals name="garden_summary">
+        <item quantity="one">%1$d plant watched with %2$d scans</item>
+        <item quantity="other">%1$d plants watched with %2$d scans</item>
+    </plurals>
+    <plurals name="scan_count">
+        <item quantity="one">%d scan</item>
+        <item quantity="other">%d scans</item>
+    </plurals>
+
     <!-- Tabs -->
     <string name="tab_scan">Scan</string>
     <string name="tab_gallery">Gallery</string>

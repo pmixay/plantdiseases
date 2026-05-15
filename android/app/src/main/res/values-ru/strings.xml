@@ -2,6 +2,20 @@
 <resources>
     <string name="app_name">PlantDiseases</string>
 
+    <!-- Plurals consumed by GardenFragment via getQuantityString. -->
+    <plurals name="garden_summary">
+        <item quantity="one">%1$d растение под наблюдением, %2$d сканов</item>
+        <item quantity="few">%1$d растения под наблюдением, %2$d сканов</item>
+        <item quantity="many">%1$d растений под наблюдением, %2$d сканов</item>
+        <item quantity="other">%1$d растения под наблюдением, %2$d сканов</item>
+    </plurals>
+    <plurals name="scan_count">
+        <item quantity="one">%d скан</item>
+        <item quantity="few">%d скана</item>
+        <item quantity="many">%d сканов</item>
+        <item quantity="other">%d скана</item>
+    </plurals>
+
     <!-- Tabs -->
     <string name="tab_scan">Сканер</string>
     <string name="tab_gallery">Галерея</string>
