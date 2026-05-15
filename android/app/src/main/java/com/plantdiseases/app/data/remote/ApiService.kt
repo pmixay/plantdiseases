@@ -67,6 +67,20 @@ interface ApiService {
     suspend fun feedback(@Body request: FeedbackRequest): retrofit2.Response<FeedbackResponse>
 
     /**
+     * Upload the original image bytes for a negative-feedback row.
+     * Called immediately after a successful ``correct=false``
+     * /api/feedback POST. The server stores the bytes under
+     * ``feedback_images/<sha256>.<ext>`` and backfills the
+     * ``image_path`` column on the matching feedback row.
+     */
+    @Multipart
+    @POST("api/feedback/image")
+    suspend fun feedbackImage(
+        @Part("scan_id") scanId: RequestBody,
+        @Part image: MultipartBody.Part,
+    ): retrofit2.Response<okhttp3.ResponseBody>
+
+    /**
      * Upload one community-shared scan. ``image`` is optional — when
      * omitted, the server records the row without a thumbnail and the
      * carousel renders a fallback icon. All other parts are form

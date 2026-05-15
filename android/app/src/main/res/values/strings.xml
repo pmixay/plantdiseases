@@ -393,7 +393,7 @@
          server's known class keys; reason chips map to the
          _FEEDBACK_ALLOWED_REASONS set on the server. -->
     <string name="feedback_sheet_title">Help us learn</string>
-    <string name="feedback_sheet_subtitle">Your correction trains the next model release. We only store the diagnosis context, never the photo.</string>
+    <string name="feedback_sheet_subtitle">Your correction trains the next model release. When you mark a diagnosis as wrong, we also upload the photo so we can label it correctly for retraining.</string>
     <string name="feedback_sheet_we_thought">We diagnosed</string>
     <string name="feedback_sheet_actual_label">What is it actually?</string>
     <string name="feedback_sheet_reason_label">Why was it wrong?</string>

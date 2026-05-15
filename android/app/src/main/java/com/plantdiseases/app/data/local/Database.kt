@@ -110,17 +110,18 @@ data class ScanEntity(
     @ColumnInfo(name = "species_scientific") val speciesScientific: String? = null,
     @ColumnInfo(name = "species_common") val speciesCommon: String? = null,
     @ColumnInfo(name = "species_score") val speciesScore: Float? = null,
+    // Conformal prediction set the server returned at /api/analyse
+    // time (JSON array of class keys). Persisted here so feedback
+    // submission later — even from a stale gallery row — can echo it
+    // back to the server, enabling the "was the right answer in the
+    // 90 % set?" diagnostic.
+    @ColumnInfo(name = "prediction_set") val predictionSet: String? = null,
     // Canonical class key the server returned for this scan (e.g.
     // ``leaf_spot_fungal``). Persisted because ``argmax(all_probs)``
     // can disagree after the server's weak-healthy reroute, and
     // feedback submission must echo the DISPLAYED verdict — not
     // the argmax — to keep per-class accuracy metrics honest.
     @ColumnInfo(name = "displayed_class_key") val displayedClassKey: String? = null,
-    // Server build version (e.g. ``"2.1"``) of the model that
-    // produced this scan. Persisted so feedback rows can be cohorted
-    // by the version actually loaded on the server, not by a stale
-    // client constant.
-    @ColumnInfo(name = "server_version") val serverVersion: String? = null,
 )
 
 // ─── Plant Reminder Entity ──────────────────────────────────────────────────
@@ -275,11 +276,10 @@ interface PlantJournalDao {
     // v3: added ScanEntity.displayed_class_key so feedback
     // submissions echo the verdict the user actually saw rather
     // than argmax(all_probs), which can disagree after the
-    // server's weak-healthy reroute. (v2's prediction_set column
-    // was removed alongside the retired auto-retraining loop;
-    // we stay on v3 with that column gone via ``fallbackToDestructiveMigration``,
-    // which wipes the local scan history on first launch with
-    // the new schema — same trade-off the app has been shipping under.)
+    // server's weak-healthy reroute. v2 added prediction_set.
+    // ``fallbackToDestructiveMigration`` is configured below;
+    // local scan history is wiped on first launch with the new
+    // version. Same trade-off the app has been shipping under.
     version = 3,
     exportSchema = false,
 )

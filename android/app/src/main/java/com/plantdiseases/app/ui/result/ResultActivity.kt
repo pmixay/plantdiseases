@@ -1253,6 +1253,21 @@ class ResultActivity : AppCompatActivity() {
                 binding.tvFeedbackStatus.visibility = View.VISIBLE
                 binding.tvFeedbackStatus.setText(R.string.feedback_sent)
                 Haptics.success(this@ResultActivity)
+                // On negative feedback the original image is high-value
+                // for retraining. Best-effort upload: failures are
+                // swallowed (the JSON feedback row has already
+                // landed). Filename on the server is the SHA-256 of
+                // the bytes, matching the ``image_hash`` we already
+                // sent in the JSON payload.
+                if (!correct) {
+                    val scanId = request.scanId
+                    val imageFile = java.io.File(scan.imagePath)
+                    if (imageFile.exists()) {
+                        runCatching {
+                            app.scanRepository.uploadFeedbackImage(scanId, imageFile)
+                        }
+                    }
+                }
             }.onFailure { error ->
                 binding.btnFeedbackYes.isEnabled = true
                 binding.btnFeedbackNo.isEnabled = true
@@ -1319,6 +1334,17 @@ class ResultActivity : AppCompatActivity() {
             ImageUtils.sha256Hex(java.io.File(scan.imagePath))
         }
 
+        // Parse the persisted prediction set (JSON array of class
+        // keys, stored at saveScan time) back into a list. Stale
+        // gallery rows from before v2 of the local schema won't have
+        // it; that's fine — the server treats the field as optional.
+        val predictionSet: List<String>? = scan.predictionSet?.let { raw ->
+            runCatching {
+                com.google.gson.Gson()
+                    .fromJson(raw, Array<String>::class.java).toList()
+            }.getOrNull()?.takeIf { it.isNotEmpty() }
+        }
+
         return FeedbackRequest(
             scanId = scanId,
             correct = correct,
@@ -1328,11 +1354,7 @@ class ResultActivity : AppCompatActivity() {
             predictedClass = predictedKey,
             predictedConfidence = predictedConfidence,
             top3 = top3,
-            // Per-scan ``server_version`` persisted at saveScan time
-            // (from the analyse response). Falls back to ``null`` for
-            // legacy gallery rows; the server treats the field as
-            // optional rather than constant-poisoning the column.
-            modelVersion = scan.serverVersion,
+            modelVersion = SERVER_MODEL_VERSION,
             appVersion = BuildConfig.VERSION_NAME,
             locale = if (isRu) "ru" else "en",
             platform = "android",
@@ -1341,6 +1363,7 @@ class ResultActivity : AppCompatActivity() {
             primaryRegionIndex = scan.primaryRegionIndex,
             feedbackLatencyMs = latencyMs,
             imageHash = imageHashHex,
+            predictionSet = predictionSet,
         )
     }
 
@@ -1365,6 +1388,10 @@ class ResultActivity : AppCompatActivity() {
         private const val TAG = "ResultActivity"
         private const val FEEDBACK_PREFS = "plantdiseases_feedback_prefs"
         private const val FEEDBACK_KEY_PREFIX = "scan_"
+        // Pinned to the classifier release in server/models/classes.json.
+        // When the server exposes model_version in /api/analyze we'll
+        // start trusting that value per-scan instead.
+        private const val SERVER_MODEL_VERSION = "2.1"
     }
 
     private fun isFeedbackAlreadySubmitted(scanId: Long): Boolean =

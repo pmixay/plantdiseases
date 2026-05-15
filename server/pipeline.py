@@ -50,9 +50,11 @@ from PIL import Image
 
 try:
     from .classifier import DiseaseClassifier  # type: ignore[import-not-found]
+    from .conformal import ConformalConfig, load_conformal_config, prediction_set
     from .detector import LeafDetector
 except ImportError:
     from classifier import DiseaseClassifier
+    from conformal import ConformalConfig, load_conformal_config, prediction_set
     from detector import LeafDetector
 
 logger = logging.getLogger(__name__)
@@ -309,6 +311,9 @@ class PlantDiseasePipeline:
         self.temperature = _load_temperature(classifier_path)
         meta = getattr(self.classifier, "meta", None) or {}
         self.nap_max_logit_floor = _resolve_max_logit_floor(meta)
+        self.conformal: ConformalConfig | None = load_conformal_config(
+            classifier_path.parent
+        )
         if self.nap_max_logit_floor <= 0:
             logger.warning(
                 "OOD MaxLogit gate is OFF on this model — separation_p50 in "
@@ -318,10 +323,13 @@ class PlantDiseasePipeline:
                 "different OOD score is calibrated.",
             )
         logger.info(
-            "Pipeline ready  classifier=%s backend  T=%.3f  MaxLogit floor=%s",
+            "Pipeline ready  classifier=%s backend  T=%.3f  "
+            "MaxLogit floor=%s  conformal=%s",
             self.classifier.backend,
             self.temperature,
             "off" if self.nap_max_logit_floor <= 0 else f"{self.nap_max_logit_floor:.2f}",
+            "off" if self.conformal is None
+            else f"{self.conformal.method}@{self.conformal.coverage_target:.0%}",
         )
 
     # ── main entry point ─────────────────────────────────────────────
@@ -509,6 +517,7 @@ class PlantDiseasePipeline:
             "top_k": final["top_k"],
             "warnings": final["warnings"],
             "severity": severity,
+            "prediction_set": self._build_prediction_set(final["all_probs"]),
             "detection": {
                 "is_diseased": is_diseased,
                 "detector_confidence": stage1_confidence,
@@ -570,6 +579,25 @@ class PlantDiseasePipeline:
                 f"<{ml_floor:.2f}" if ml_floor > 0 else " <off>",
             )
         return triggered
+
+    def _build_prediction_set(self, probs: dict[str, float]) -> dict | None:
+        """Return the conformal prediction set or ``None`` if unconfigured.
+
+        Honest UX: clients should render the *set* — "leaf_spot_fungal
+        OR bacterial_leaf_spot at 90 % coverage" — instead of pretending
+        the top-1 was a single confident answer. The dict is keyed by
+        ``classes`` / ``coverage`` / ``method`` so the client doesn't
+        need to know about the calibration internals.
+        """
+        cfg = self.conformal
+        if cfg is None or not probs:
+            return None
+        classes = prediction_set(probs, cfg)
+        return {
+            "classes": classes,
+            "coverage": cfg.coverage_target,
+            "method": cfg.method,
+        }
 
     def _pick_primary(self, img: Image.Image, detections: list[dict]):
         """Mean-voting primary classification over valid bboxes.

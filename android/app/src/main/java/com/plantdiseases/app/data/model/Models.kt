@@ -29,6 +29,25 @@ data class TopKEntry(
     @SerializedName("is_healthy") val isHealthy: Boolean? = null
 )
 
+/** One class inside a conformal prediction set, with bilingual labels. */
+data class PredictionSetItem(
+    @SerializedName("class") val className: String,
+    @SerializedName("name_en") val nameEn: String? = null,
+    @SerializedName("name_ru") val nameRu: String? = null,
+)
+
+/**
+ * Conformal prediction set — the classes the model can't rule out at
+ * the configured coverage level (e.g. 90 %). Surfaced honestly when
+ * calibration data is loaded server-side; the field is null otherwise.
+ */
+data class PredictionSet(
+    @SerializedName("classes") val classes: List<String> = emptyList(),
+    @SerializedName("coverage") val coverage: Float = 0f,
+    @SerializedName("method") val method: String? = null,
+    @SerializedName("items") val items: List<PredictionSetItem> = emptyList(),
+)
+
 /** Response from the server after analyzing an image */
 data class AnalysisResponse(
     // Canonical class key (e.g. ``leaf_spot_fungal``) the pipeline
@@ -54,6 +73,7 @@ data class AnalysisResponse(
     @SerializedName("all_probs") val allProbs: Map<String, Float>? = null,
     @SerializedName("top_k") val topK: List<TopKEntry>? = null,
     @SerializedName("warnings") val warnings: List<String>? = null,
+    @SerializedName("prediction_set") val predictionSet: PredictionSet? = null,
     /**
      * Toxic-to-pets surface. `toxicitySource` is `"db"` when the
      * server matched the species against its ASPCA-derived table,
@@ -68,11 +88,6 @@ data class AnalysisResponse(
      *  when PlantNet isn't configured on this server. */
     @SerializedName("species") val species: SpeciesBlock? = null,
     @SerializedName("elapsed_ms") val elapsedMs: Float? = null,
-    // Server build version of the model that produced this verdict
-    // (e.g. ``"2.1"``). Persisted on the local scan + echoed on
-    // feedback so per-version accuracy metrics aren't built off the
-    // client's hard-coded constant.
-    @SerializedName("server_version") val serverVersion: String? = null,
     // Server-minted scan_id from /api/analyse. We MUST echo this on
     // /api/feedback — the server rejects any scan_id it didn't issue
     // (422 "Unknown scan_id"). Optional in the type so older cached
@@ -450,6 +465,11 @@ data class FeedbackRequest(
     @SerializedName("primary_region_index") val primaryRegionIndex: Int? = null,
     @SerializedName("feedback_latency_ms") val feedbackLatencyMs: Long? = null,
     @SerializedName("image_hash") val imageHash: String? = null,
+    // Conformal prediction set from the analyse response that
+    // produced this scan. Echoed back so the server can answer
+    // "was the right answer in the 90 % set?" without joining
+    // against the original analyse log.
+    @SerializedName("prediction_set") val predictionSet: List<String>? = null,
 )
 
 /** One entry of the model's top-3 prediction set used by the feedback payload. */
