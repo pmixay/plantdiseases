@@ -365,9 +365,12 @@ class PlantDetailActivity : AppCompatActivity() {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            layoutParams = android.widget.HorizontalScrollView.LayoutParams(
-                android.widget.HorizontalScrollView.LayoutParams.WRAP_CONTENT,
-                android.widget.HorizontalScrollView.LayoutParams.WRAP_CONTENT,
+            // HorizontalScrollView extends FrameLayout, so its child
+            // params are FrameLayout.LayoutParams. WRAP_CONTENT on both
+            // axes lets the scroller measure the row's natural width.
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
             )
         }
         row.addView(actionTile(R.string.add_note, R.drawable.ic_note_pencil) { showNoteDialog() })
