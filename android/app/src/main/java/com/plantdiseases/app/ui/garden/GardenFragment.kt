@@ -227,19 +227,62 @@ class GardenFragment : Fragment() {
             plants.sumOf { it.scanCount },
         )
 
-        plants.forEachIndexed { index, summary ->
-            val card = buildPlantCard(summary)
-            card.alpha = 0f
-            card.translationY = 24.dp().toFloat()
-            plantsContainer.addView(card)
-            card.animate()
+        // Group by room. Named rooms render in alphabetical order;
+        // unassigned plants land at the bottom in their own group so
+        // the user has a visible nudge to assign rooms without the
+        // app silently hiding anything. When NO plant has a room
+        // (the common first-launch case) we skip the group headers
+        // entirely so the list looks the same as before.
+        val byRoom = plants.groupBy {
+            it.plant.room?.trim()?.takeIf { r -> r.isNotEmpty() }
+        }
+        val orderedRooms = byRoom.keys.filterNotNull().sortedBy { it.lowercase() } +
+            listOfNotNull(if (byRoom.containsKey(null)) null else null)
+        val anyNamed = byRoom.keys.any { it != null }
+        var animIndex = 0
+        val emit: (View) -> Unit = { view ->
+            view.alpha = 0f
+            view.translationY = 24.dp().toFloat()
+            plantsContainer.addView(view)
+            view.animate()
                 .alpha(1f)
                 .translationY(0f)
                 .setDuration(260)
-                .setStartDelay((index * 45).toLong())
+                .setStartDelay((animIndex * 45).toLong())
                 .setInterpolator(DecelerateInterpolator())
                 .start()
+            animIndex++
         }
+        orderedRooms.forEach { room ->
+            val bucket = byRoom[room].orEmpty()
+            if (bucket.isEmpty()) return@forEach
+            if (anyNamed) emit(buildRoomHeader(room ?: getString(R.string.plant_room_unassigned)))
+            bucket.forEach { emit(buildPlantCard(it)) }
+        }
+        // The unassigned bucket key is `null` — handle it last.
+        byRoom[null]?.takeIf { it.isNotEmpty() && anyNamed }?.let { bucket ->
+            emit(buildRoomHeader(getString(R.string.plant_room_unassigned)))
+            bucket.forEach { emit(buildPlantCard(it)) }
+        }
+    }
+
+    /** Sticky-header-style label for a room group. Renders as small
+     *  uppercase text with a thin top divider so it reads as a group
+     *  separator without dominating the card stack. */
+    private fun buildRoomHeader(label: String): View = TextView(requireContext()).apply {
+        text = label.uppercase()
+        textSize = 11f
+        letterSpacing = 0.08f
+        setTextColor(requireContext().getColor(R.color.on_surface_secondary))
+        typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        ).apply {
+            topMargin = 14.dp()
+            bottomMargin = 6.dp()
+        }
+        setPadding(4.dp(), 0, 4.dp(), 0)
     }
 
     private fun buildPlantCard(summary: PlantRepository.PlantSummary): View {
@@ -559,8 +602,10 @@ class GardenFragment : Fragment() {
         }
         val name = inputField(getString(R.string.plant_name), existing?.name, InputType.TYPE_CLASS_TEXT)
         val species = inputField(getString(R.string.plant_species), existing?.species, InputType.TYPE_CLASS_TEXT)
+        val room = inputField(getString(R.string.plant_room), existing?.room, InputType.TYPE_CLASS_TEXT)
         fields.addView(name.first)
         fields.addView(species.first)
+        fields.addView(room.first)
         container.addView(header)
         container.addView(fields)
 
@@ -585,6 +630,7 @@ class GardenFragment : Fragment() {
                     plantName,
                     species.second.text?.toString(),
                     existing,
+                    room = room.second.text?.toString(),
                 )
                 awaitKeyboardClosed()
                 renderPlants(plantRepository.getPlants())

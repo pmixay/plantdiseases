@@ -223,6 +223,8 @@
     <string name="edit_plant">Редактировать</string>
     <string name="plant_name">Название растения</string>
     <string name="plant_species">Вид</string>
+    <string name="plant_room">Комната (необязательно)</string>
+    <string name="plant_room_unassigned">Без комнаты</string>
     <string name="plant_name_required">Укажите название</string>
     <string name="plant_species_unknown">Вид не указан</string>
     <string name="plant_dialog_add_subtitle">Создайте аккуратный профиль для сканов, заметок, фото и полива.</string>
@@ -321,6 +323,16 @@
     <string name="light_measuring">Измерение…</string>
     <string name="light_no_sensor">Нет датчика освещённости — направьте камеру</string>
     <string name="light_ideal_range">Норма для %1$s: %2$d – %3$d лк</string>
+    <string name="light_ideal_range_with_peak">Норма для %1$s: %2$d – %3$d лк  ·  пик %4$d</string>
+    <!-- Кнопки действий в напоминании + журнал напоминаний на экране растения -->
+    <string name="reminder_action_done">Сделал</string>
+    <string name="reminder_action_snooze">Отложить на 1 д</string>
+    <string name="reminder_log_empty">Напоминания пока не срабатывали.</string>
+    <string name="reminder_log_done">%1$s · сделано %2$s</string>
+    <string name="reminder_log_pending">%1$s · ждёт действия %2$s</string>
+    <string name="reminder_log_snoozed">%1$s · отложено %2$s</string>
+    <string name="reminder_streak_last_watered">Последний полив: %s</string>
+    <string name="reminder_streak_never_watered">Через напоминания пока ни разу не поливали</string>
     <string name="light_tip_dark">Подвиньте ближе к окну или добавьте фитолампу.</string>
     <string name="light_tip_ideal">Отличное место! Растение будет процветать.</string>
     <string name="light_tip_bright">Притените тонкой шторой или отодвиньте чуть дальше.</string>

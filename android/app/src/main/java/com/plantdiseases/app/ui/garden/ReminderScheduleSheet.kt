@@ -409,7 +409,7 @@ class ReminderScheduleSheet : BottomSheetDialogFragment() {
                 val days = row.picker.value
                 val hour = row.hourPicker.value
                 val minute = row.minutePicker.value * 15
-                repo.saveReminder(
+                val savedId = repo.saveReminder(
                     PlantReminderEntity(
                         plantId = plant.id,
                         type = type,
@@ -420,7 +420,10 @@ class ReminderScheduleSheet : BottomSheetDialogFragment() {
                     )
                 )
                 if (enabled) {
-                    ReminderManager.schedule(ctx, plant.id, plant.name, type, days, hour, minute)
+                    ReminderManager.schedule(
+                        ctx, plant.id, plant.name, type, days, hour, minute,
+                        reminderId = savedId,
+                    )
                 } else {
                     ReminderManager.cancel(ctx, plant.id, type)
                 }

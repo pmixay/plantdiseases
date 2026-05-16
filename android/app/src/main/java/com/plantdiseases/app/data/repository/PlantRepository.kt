@@ -8,6 +8,8 @@ import com.plantdiseases.app.data.local.PlantJournalDao
 import com.plantdiseases.app.data.local.PlantJournalEntity
 import com.plantdiseases.app.data.local.PlantReminderDao
 import com.plantdiseases.app.data.local.PlantReminderEntity
+import com.plantdiseases.app.data.local.PlantReminderEventDao
+import com.plantdiseases.app.data.local.PlantReminderEventEntity
 import com.plantdiseases.app.data.local.ScanDao
 import com.plantdiseases.app.data.local.ScanEntity
 import kotlinx.coroutines.Dispatchers
@@ -18,6 +20,7 @@ class PlantRepository(
     private val journalDao: PlantJournalDao,
     private val scanDao: ScanDao,
     private val reminderDao: PlantReminderDao,
+    private val reminderEventDao: PlantReminderEventDao,
     private val chatMessageDao: ChatMessageDao,
 ) {
     suspend fun getPlants(): List<PlantSummary> = withContext(Dispatchers.IO) {
@@ -75,10 +78,12 @@ class PlantRepository(
         existing: PlantEntity? = null,
         scientificName: String? = null,
         commonName: String? = null,
+        room: String? = null,
     ): Long = withContext(Dispatchers.IO) {
         val cleanSpecies = species?.trim()?.takeIf { it.isNotEmpty() }
         val cleanScientific = scientificName?.trim()?.takeIf { it.isNotEmpty() }
         val cleanCommon = commonName?.trim()?.takeIf { it.isNotEmpty() }
+        val cleanRoom = room?.trim()?.takeIf { it.isNotEmpty() }
         if (existing == null) {
             plantDao.insert(
                 PlantEntity(
@@ -86,6 +91,7 @@ class PlantRepository(
                     species = cleanSpecies,
                     scientificName = cleanScientific,
                     commonName = cleanCommon,
+                    room = cleanRoom,
                 )
             )
         } else {
@@ -98,6 +104,7 @@ class PlantRepository(
                     // re-identification step).
                     scientificName = cleanScientific ?: existing.scientificName,
                     commonName = cleanCommon ?: existing.commonName,
+                    room = cleanRoom ?: existing.room,
                 )
             )
             existing.id
@@ -196,14 +203,68 @@ class PlantRepository(
     suspend fun getReminders(plantId: Long): List<PlantReminderEntity> =
         withContext(Dispatchers.IO) { reminderDao.getForPlant(plantId) }
 
-    suspend fun saveReminder(entity: PlantReminderEntity) = withContext(Dispatchers.IO) {
-        val existing = reminderDao.getByPlantAndType(entity.plantId, entity.type)
-        reminderDao.upsert(entity.copy(id = existing?.id ?: entity.id))
-    }
+    /** Upsert a reminder. Returns the row id so the caller can pass it
+     *  to ``ReminderManager.schedule(reminderId = …)`` for event-log
+     *  tracking. */
+    suspend fun saveReminder(entity: PlantReminderEntity): Long =
+        withContext(Dispatchers.IO) {
+            val existing = reminderDao.getByPlantAndType(entity.plantId, entity.type)
+            reminderDao.upsert(entity.copy(id = existing?.id ?: entity.id))
+        }
 
     suspend fun deleteReminders(plantId: Long) = withContext(Dispatchers.IO) {
         reminderDao.deleteByPlant(plantId)
     }
+
+    suspend fun getReminderById(id: Long): PlantReminderEntity? =
+        withContext(Dispatchers.IO) { reminderDao.getById(id) }
+
+    // ─── Reminder events ──────────────────────────────────────────────────────
+
+    /** Record a reminder firing as a pending event. The worker calls
+     *  this right before posting the notification. Returns the event
+     *  id so the notification action receivers can resolve back to
+     *  this row. */
+    suspend fun recordReminderFire(reminder: PlantReminderEntity): Long =
+        withContext(Dispatchers.IO) {
+            reminderEventDao.insert(
+                PlantReminderEventEntity(
+                    reminderId = reminder.id,
+                    plantId = reminder.plantId,
+                    type = reminder.type,
+                    firedAt = System.currentTimeMillis(),
+                    action = "pending",
+                )
+            )
+        }
+
+    /** Resolve a previously-fired event with an action (done /
+     *  snoozed / skipped). "done" additionally back-fills a matching
+     *  journal entry (watering / fertilising) so the user sees their
+     *  care record without an extra tap. */
+    suspend fun resolveReminderEvent(eventId: Long, action: String) =
+        withContext(Dispatchers.IO) {
+            val event = reminderEventDao.getById(eventId) ?: return@withContext
+            val now = System.currentTimeMillis()
+            reminderEventDao.update(event.copy(action = action, doneAt = now))
+            if (action == "done") {
+                when (event.type) {
+                    "watering" -> addWatering(event.plantId, text = null)
+                    "fertilize" -> addFertilising(event.plantId, text = null)
+                    // "check" doesn't have a matching journal type — it's
+                    // a re-shoot prompt, not a logged care action.
+                }
+            }
+        }
+
+    suspend fun recentReminderEvents(plantId: Long, limit: Int = 50): List<PlantReminderEventEntity> =
+        withContext(Dispatchers.IO) { reminderEventDao.recentForPlant(plantId, limit) }
+
+    /** Epoch ms of the most-recent ``done`` event for this (plant, type)
+     *  pair, or null if never done. Used to render "last watered N
+     *  days ago" on the plant detail. */
+    suspend fun lastReminderDoneAt(plantId: Long, type: String): Long? =
+        withContext(Dispatchers.IO) { reminderEventDao.lastDoneAt(plantId, type) }
 
     // ─── Chat Messages ────────────────────────────────────────────────────────
 

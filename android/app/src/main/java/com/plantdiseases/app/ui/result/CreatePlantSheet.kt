@@ -17,6 +17,7 @@ import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.SpeciesCandidate
+import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -95,7 +96,8 @@ class CreatePlantSheet : BottomSheetDialogFragment() {
                 statusText.text = getString(R.string.species_suggest_loading)
                 candidateChips.removeAllViews()
                 candidateChips.visibility = View.GONE
-                val res = app.scanRepository.identifySpecies(file)
+                val locale = if (LocaleHelper.isRussian(requireContext())) "ru" else "en"
+                val res = app.scanRepository.identifySpecies(file, locale = locale)
                 identifyBtn.isEnabled = true
                 res.onSuccess { id ->
                     if (!id.available || id.results.isEmpty()) {

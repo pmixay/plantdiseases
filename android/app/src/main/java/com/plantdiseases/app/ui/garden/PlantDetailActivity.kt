@@ -148,6 +148,10 @@ class PlantDetailActivity : AppCompatActivity() {
                         }
                         true
                     }
+                    R.id.action_delete_plant -> {
+                        confirmDeletePlant()
+                        true
+                    }
                     else -> false
                 }
             }
@@ -346,56 +350,69 @@ class PlantDetailActivity : AppCompatActivity() {
         return box
     }
 
-    /** Horizontally-scrollable strip of per-plant action chips. The
-     *  three "first-class" actions (Note / Photo / Water) keep their
-     *  original visual weight; the four physiological-care actions
-     *  (Fertilise / Repot / Prune / Mist) are reachable in one
-     *  horizontal swipe. Reminders is pinned at the end. */
+    /** Two-row action grid. Eight chips in a single horizontal scroller
+     *  feels chaotic and hides the lower-priority actions; arranging
+     *  them as 4×2 keeps the most-used row at the top (Note, Photo,
+     *  Water, Reminders) and groups the physiological-care actions
+     *  below (Fertilise, Prune, Repot, Mist). All tiles size equally
+     *  so the row reads as a deliberate grid, not a sloppy wrap. */
     private fun buildActionRow(): View {
-        val scroller = android.widget.HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled = false
-            overScrollMode = View.OVER_SCROLL_NEVER
-            clipToPadding = false
-            setPadding(0, 0, 0, 0)
+        val outer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             ).apply { topMargin = 12.dp() }
         }
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            // HorizontalScrollView extends FrameLayout, so its child
-            // params are FrameLayout.LayoutParams. WRAP_CONTENT on both
-            // axes lets the scroller measure the row's natural width.
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-            )
-        }
-        row.addView(actionTile(R.string.add_note, R.drawable.ic_note_pencil) { showNoteDialog() })
-        row.addView(actionTile(R.string.add_photo_log, R.drawable.ic_gallery) { pickPhoto.launch(arrayOf("image/*")) })
-        row.addView(actionTile(R.string.log_watering, R.drawable.ic_watering) { showWateringDialog() })
-        row.addView(actionTile(R.string.log_fertilising, R.drawable.ic_treatment) {
-            showLogDialog(JournalAction.FERTILISE)
-        })
-        row.addView(actionTile(R.string.log_pruning, R.drawable.ic_note_pencil) {
-            showLogDialog(JournalAction.PRUNE)
-        })
-        row.addView(actionTile(R.string.log_repotting, R.drawable.ic_garden) {
-            showLogDialog(JournalAction.REPOT)
-        })
-        row.addView(actionTile(R.string.log_misting, R.drawable.ic_warning) {
-            showLogDialog(JournalAction.MIST)
-        })
-        row.addView(actionTile(R.string.reminders, R.drawable.ic_clock) {
-            currentPlant?.let { ReminderScheduleSheet.show(supportFragmentManager, it) }
-        })
-        scroller.addView(row)
-        return scroller
+        val rowOne = actionRow(listOf(
+            ActionSpec(R.string.add_note, R.drawable.ic_note_pencil) { showNoteDialog() },
+            ActionSpec(R.string.add_photo_log, R.drawable.ic_gallery) { pickPhoto.launch(arrayOf("image/*")) },
+            ActionSpec(R.string.log_watering, R.drawable.ic_watering) { showWateringDialog() },
+            ActionSpec(R.string.reminders, R.drawable.ic_clock) {
+                currentPlant?.let { ReminderScheduleSheet.show(supportFragmentManager, it) }
+            },
+        ))
+        val rowTwo = actionRow(listOf(
+            ActionSpec(R.string.log_fertilising, R.drawable.ic_treatment) {
+                showLogDialog(JournalAction.FERTILISE)
+            },
+            ActionSpec(R.string.log_pruning, R.drawable.ic_note_pencil) {
+                showLogDialog(JournalAction.PRUNE)
+            },
+            ActionSpec(R.string.log_repotting, R.drawable.ic_garden) {
+                showLogDialog(JournalAction.REPOT)
+            },
+            ActionSpec(R.string.log_misting, R.drawable.ic_warning) {
+                showLogDialog(JournalAction.MIST)
+            },
+        ))
+        (rowTwo.layoutParams as LinearLayout.LayoutParams).topMargin = 8.dp()
+        outer.addView(rowOne)
+        outer.addView(rowTwo)
+        return outer
     }
 
-    private fun actionTile(labelRes: Int, iconRes: Int, action: () -> Unit): View =
+    private data class ActionSpec(val labelRes: Int, val iconRes: Int, val onClick: () -> Unit)
+
+    private fun actionRow(specs: List<ActionSpec>): LinearLayout {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+        }
+        specs.forEachIndexed { idx, spec ->
+            row.addView(actionTile(spec.labelRes, spec.iconRes, spec.onClick).apply {
+                layoutParams = LinearLayout.LayoutParams(0, 66.dp(), 1f).apply {
+                    if (idx > 0) marginStart = 8.dp()
+                }
+            })
+        }
+        return row
+    }
+
+    private fun actionTile(labelRes: Int, iconRes: Int, action: () -> Unit): MaterialCardView =
         MaterialCardView(this).apply {
             radius = 18.dp().toFloat()
             cardElevation = 0f
@@ -405,10 +422,6 @@ class PlantDetailActivity : AppCompatActivity() {
             isClickable = true
             foreground = selectable()
             contentDescription = getString(labelRes)
-            layoutParams = LinearLayout.LayoutParams(78.dp(), 66.dp()).apply {
-                marginStart = 4.dp()
-                marginEnd = 4.dp()
-            }
             setOnClickListener {
                 Haptics.tick(this@PlantDetailActivity)
                 action()
@@ -597,10 +610,20 @@ class PlantDetailActivity : AppCompatActivity() {
             ).apply { topMargin = 10.dp() }
             setOnClickListener {
                 Haptics.tick(this@PlantDetailActivity)
-                startActivity(Intent(
+                // Forward the plant's scientific name so the gauge
+                // pre-selects the right species bucket (succulent /
+                // tropical / fern / vegetable / general).
+                val intent = Intent(
                     this@PlantDetailActivity,
                     com.plantdiseases.app.ui.camera.LightMeterActivity::class.java,
-                ))
+                )
+                plant.scientificName?.takeIf { it.isNotBlank() }?.let {
+                    intent.putExtra(
+                        com.plantdiseases.app.ui.camera.LightMeterActivity.EXTRA_SCIENTIFIC_NAME,
+                        it,
+                    )
+                }
+                startActivity(intent)
             }
             addView(LinearLayout(this@PlantDetailActivity).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -1301,7 +1324,7 @@ class PlantDetailActivity : AppCompatActivity() {
                         minute = 0,
                         enabled = true,
                     )
-                    plantRepository.saveReminder(reminder)
+                    val rid = plantRepository.saveReminder(reminder)
                     com.plantdiseases.app.util.ReminderManager.schedule(
                         context = this@PlantDetailActivity,
                         plantId = plant.id,
@@ -1310,6 +1333,7 @@ class PlantDetailActivity : AppCompatActivity() {
                         intervalDays = reminder.intervalDays,
                         hour = reminder.hour,
                         minute = reminder.minute,
+                        reminderId = rid,
                     )
                     Toast.makeText(
                         this@PlantDetailActivity,
@@ -1350,6 +1374,29 @@ class PlantDetailActivity : AppCompatActivity() {
         val deduped = ordered.distinct()
         if (deduped.isEmpty()) return
         PhotoViewerActivity.open(this, deduped, 0)
+    }
+
+    private fun confirmDeletePlant() {
+        val plant = currentPlant ?: return
+        MaterialAlertDialogBuilder(this)
+            .setTitle(plant.name)
+            .setMessage(R.string.delete_plant_confirm)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.delete) { _, _ ->
+                lifecycleScope.launch {
+                    com.plantdiseases.app.util.ReminderManager.cancelAll(
+                        this@PlantDetailActivity, plant.id,
+                    )
+                    plantRepository.deletePlant(plant.id)
+                    Toast.makeText(
+                        this@PlantDetailActivity,
+                        R.string.plant_deleted,
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                    finish()
+                }
+            }
+            .show()
     }
 
     companion object {

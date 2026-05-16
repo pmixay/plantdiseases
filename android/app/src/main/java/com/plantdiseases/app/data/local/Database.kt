@@ -22,6 +22,10 @@ data class PlantEntity(
     @ColumnInfo(name = "scientific_name") val scientificName: String? = null,
     /** Localised common name (e.g. "Rubber Plant"). */
     @ColumnInfo(name = "common_name") val commonName: String? = null,
+    /** Free-text room / location (e.g. "Living room", "Bathroom").
+     *  Garden list groups by this when populated; null plants land
+     *  in an "Unassigned" group at the bottom. */
+    @ColumnInfo(name = "room") val room: String? = null,
 )
 
 @Entity(
@@ -166,11 +170,76 @@ interface PlantReminderDao {
     @Query("SELECT * FROM plant_reminders WHERE plant_id = :plantId AND type = :type LIMIT 1")
     suspend fun getByPlantAndType(plantId: Long, type: String): PlantReminderEntity?
 
+    @Query("SELECT * FROM plant_reminders WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): PlantReminderEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(reminder: PlantReminderEntity): Long
 
     @Query("DELETE FROM plant_reminders WHERE plant_id = :plantId")
     suspend fun deleteByPlant(plantId: Long)
+}
+
+// ─── Reminder event log ──────────────────────────────────────────────
+//
+// Persists every reminder firing + its disposition (pending / done /
+// snoozed / skipped). The plant-detail "Reminders" surface reads this
+// to show a streak ("last watered 3 days ago · 5-day streak"); the
+// notification-action receivers write into it when the user taps
+// Done / Snooze on a fired notification. ``fired_at`` is the epoch
+// when the WorkManager worker ran; ``done_at`` is set on disposition.
+
+@Entity(
+    tableName = "plant_reminder_events",
+    foreignKeys = [
+        ForeignKey(
+            entity = PlantReminderEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["reminder_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [
+        Index(value = ["reminder_id"]),
+        Index(value = ["plant_id", "fired_at"]),
+    ],
+)
+data class PlantReminderEventEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(name = "reminder_id") val reminderId: Long,
+    @ColumnInfo(name = "plant_id") val plantId: Long,
+    @ColumnInfo(name = "type") val type: String,
+    @ColumnInfo(name = "fired_at") val firedAt: Long,
+    /** "pending" | "done" | "snoozed" | "skipped". A "done" event also
+     *  triggers an auto-created journal entry of the matching type. */
+    @ColumnInfo(name = "action") val action: String = "pending",
+    @ColumnInfo(name = "done_at") val doneAt: Long? = null,
+)
+
+@Dao
+interface PlantReminderEventDao {
+    @Insert
+    suspend fun insert(event: PlantReminderEventEntity): Long
+
+    @Update
+    suspend fun update(event: PlantReminderEventEntity)
+
+    @Query("SELECT * FROM plant_reminder_events WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): PlantReminderEventEntity?
+
+    @Query("""
+        SELECT * FROM plant_reminder_events
+        WHERE plant_id = :plantId
+        ORDER BY fired_at DESC
+        LIMIT :limit
+    """)
+    suspend fun recentForPlant(plantId: Long, limit: Int = 50): List<PlantReminderEventEntity>
+
+    @Query("""
+        SELECT MAX(done_at) FROM plant_reminder_events
+        WHERE plant_id = :plantId AND type = :type AND action = 'done'
+    """)
+    suspend fun lastDoneAt(plantId: Long, type: String): Long?
 }
 
 // ─── Chat Message Entity ─────────────────────────────────────────────────────
@@ -278,6 +347,7 @@ interface PlantJournalDao {
         PlantEntity::class,
         PlantJournalEntity::class,
         PlantReminderEntity::class,
+        PlantReminderEventEntity::class,
         ChatMessageEntity::class,
     ],
     // The schema is treated as ephemeral while the app is in pre-release
@@ -292,6 +362,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun plantDao(): PlantDao
     abstract fun plantJournalDao(): PlantJournalDao
     abstract fun plantReminderDao(): PlantReminderDao
+    abstract fun plantReminderEventDao(): PlantReminderEventDao
     abstract fun chatMessageDao(): ChatMessageDao
 
     companion object {

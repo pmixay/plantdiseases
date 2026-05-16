@@ -42,12 +42,20 @@ class ScanRepository(
      * against its ASPCA-derived table; without it the response carries
      * `toxicity_source = "unknown"`.
      */
-    suspend fun analyzeImage(imageFile: File, speciesHint: String? = null): Result<AnalysisResponse> =
+    suspend fun analyzeImage(
+        imageFile: File,
+        speciesHint: String? = null,
+        locale: String = "en",
+    ): Result<AnalysisResponse> =
         withContext(Dispatchers.IO) {
             try {
                 val requestBody = imageFile.asRequestBody("image/jpeg".toMediaTypeOrNull())
                 val part = MultipartBody.Part.createFormData("image", imageFile.name, requestBody)
-                val response = apiService.analyzeImage(part, speciesHint?.takeIf { it.isNotBlank() })
+                val response = apiService.analyzeImage(
+                    part,
+                    speciesHint?.takeIf { it.isNotBlank() },
+                    locale,
+                )
                 if (response.isSuccessful && response.body() != null) {
                     Result.success(response.body()!!)
                 } else if (response.code() == 429) {
@@ -77,12 +85,16 @@ class ScanRepository(
      * into a 200 OK with `available=false`, so a `Result.success` here may
      * still mean "no candidates" — callers must check `IdentifyResponse.available`.
      */
-    suspend fun identifySpecies(imageFile: File, organ: String = "leaf"): Result<IdentifyResponse> =
+    suspend fun identifySpecies(
+        imageFile: File,
+        organ: String = "leaf",
+        locale: String = "en",
+    ): Result<IdentifyResponse> =
         withContext(Dispatchers.IO) {
             try {
                 val body = imageFile.asRequestBody("image/jpeg".toMediaTypeOrNull())
                 val part = MultipartBody.Part.createFormData("image", imageFile.name, body)
-                val response = apiService.identifySpecies(part, organ)
+                val response = apiService.identifySpecies(part, organ, locale)
                 if (response.isSuccessful && response.body() != null) {
                     Result.success(response.body()!!)
                 } else if (response.code() == 429) {

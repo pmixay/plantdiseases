@@ -870,11 +870,17 @@ async def metrics_prometheus():
     )
 
 
-async def _species_identify_best_effort(image_bytes: bytes, *, timeout: float) -> dict | None:
+async def _species_identify_best_effort(
+    image_bytes: bytes, *, timeout: float, lang: str = "en",
+) -> dict | None:
     """Run PlantNet identify in the inference executor with a tight
     timeout. Returns the compact species block ({class, score,
     scientific, common, source}) for the response, or ``None`` if the
     call failed, timed out, or PlantNet isn't configured.
+
+    ``lang`` is forwarded so the returned ``common_name`` is
+    localised — without it the carousel shows "Rubber tree" even on
+    a Russian-locale device.
 
     Never raises — every failure mode is logged at INFO and folded
     into ``None`` so the analyze response stays whole.
@@ -884,11 +890,11 @@ async def _species_identify_best_effort(image_bytes: bytes, *, timeout: float) -
         raw = await asyncio.wait_for(
             loop.run_in_executor(
                 _get_inference_executor(),
-                # identify_species's ``organ`` is keyword-only —
-                # ``run_in_executor`` only takes positional args, so
-                # we wrap in a lambda. Passing positionally raises
-                # TypeError at call time and surfaces as a 500.
-                lambda: identify_species(image_bytes, organ="leaf"),
+                # identify_species keyword args (organ, lang) are
+                # keyword-only — run_in_executor only takes positional
+                # args, so we wrap in a lambda. Passing positionally
+                # raises TypeError at call time and surfaces as a 500.
+                lambda: identify_species(image_bytes, organ="leaf", lang=lang),
             ),
             timeout=timeout,
         )
@@ -932,12 +938,18 @@ async def _species_identify_best_effort(image_bytes: bytes, *, timeout: float) -
 
 
 @app.post("/api/analyze")
-async def analyze_image(image: UploadFile = File(...), species: str | None = None):
+async def analyze_image(
+    image: UploadFile = File(...),
+    species: str | None = None,
+    locale: str = "en",
+):
     """Analyse a plant image for diseases (two-stage pipeline).
 
     Accepts JPEG, PNG, WebP, or BMP images up to 10 MB.
     Returns bilingual (EN/RU) disease diagnosis with treatment advice,
-    detected region (with severity score) and the top-k class probabilities.
+    detected region (with severity score) and the top-k class
+    probabilities. ``locale`` (default "en") is forwarded to PlantNet
+    so the species ``common_name`` is localised in the response.
     """
     if pipeline is None:
         _record_error()
@@ -1026,8 +1038,9 @@ async def analyze_image(image: UploadFile = File(...), species: str | None = Non
     # is much tighter than INFERENCE_TIMEOUT (30s) because PlantNet is
     # an external HTTP hop and a slow upstream shouldn't hold the
     # whole analyze response hostage.
+    plantnet_lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
     species_task = asyncio.create_task(
-        _species_identify_best_effort(contents, timeout=6.0)
+        _species_identify_best_effort(contents, timeout=6.0, lang=plantnet_lang)
     )
     try:
         result = await asyncio.wait_for(
@@ -1574,14 +1587,22 @@ class FeedbackRequest(BaseModel):
 
 
 @app.post("/api/identify")
-async def identify_endpoint(image: UploadFile = File(...), organ: str = "leaf"):
+async def identify_endpoint(
+    image: UploadFile = File(...),
+    organ: str = "leaf",
+    locale: str = "en",
+):
     """PlantNet-backed plant species identification.
 
     Returns up to 5 candidate species with confidence scores. When the
     PlantNet API key is missing we still respond 200 OK with
     ``available: false`` so the client can render a graceful state
     instead of an error toast. Cached server-side by SHA-256(image) +
-    organ to keep the daily PlantNet quota intact.
+    organ + locale to keep the daily PlantNet quota intact.
+
+    ``locale`` is forwarded to PlantNet's ``lang`` query param so the
+    common names come back localised (e.g. "Каучуковое дерево" on
+    ru-RU instead of "Rubber tree").
     """
     if pipeline is None:
         _record_error()
@@ -1606,10 +1627,11 @@ async def identify_endpoint(image: UploadFile = File(...), organ: str = "leaf"):
     organ = (organ or "leaf").strip().lower()
     if organ not in ("leaf", "flower", "fruit", "bark", "habit", "auto"):
         organ = "leaf"
+    plantnet_lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
     loop = asyncio.get_running_loop()
     result = await loop.run_in_executor(
         _get_inference_executor(),
-        lambda: identify_species(contents, organ=organ),
+        lambda: identify_species(contents, organ=organ, lang=plantnet_lang),
     )
     return JSONResponse(content={**result, "organ": organ})
 

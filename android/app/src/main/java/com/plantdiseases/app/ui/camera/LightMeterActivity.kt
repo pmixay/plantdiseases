@@ -61,6 +61,10 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
     private lateinit var cameraExecutor: ExecutorService
     private var selectedSpecies = SPECIES[0]
     private var lastCameraSampleAt = 0L
+    // Session peak — the highest reading since onCreate. Used both as
+    // a "remember the brightest spot" affordance for the user and as
+    // an auto-expand hint when the reading goes off the 30 k cap.
+    private var peakLux = 0f
 
     private val cameraPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -76,6 +80,19 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
     data class SpeciesInfo(val labelRes: Int, val minLux: Int, val maxLux: Int)
 
     companion object {
+        /** Pass the plant's PlantNet scientific name in this extra to
+         *  pre-select the matching species bucket on launch. Without
+         *  it the gauge defaults to "general" — fine for unknown
+         *  plants, wrong for succulents (need 5-15k) or ferns
+         *  (need 200-1k). */
+        const val EXTRA_SCIENTIFIC_NAME = "extra_scientific_name"
+
+        private const val IDX_GENERAL = 0
+        private const val IDX_SUCCULENT = 1
+        private const val IDX_TROPICAL = 2
+        private const val IDX_FERN = 3
+        private const val IDX_VEGETABLE = 4
+
         private val SPECIES = listOf(
             SpeciesInfo(R.string.light_species_general, 1000, 5000),
             SpeciesInfo(R.string.light_species_succulent, 5000, 15000),
@@ -83,6 +100,36 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
             SpeciesInfo(R.string.light_species_fern, 200, 1000),
             SpeciesInfo(R.string.light_species_vegetable, 5000, 10000),
         )
+
+        /** Heuristic genus→bucket mapping. Lower-cases the genus
+         *  (first whitespace-separated token of the binomial) and
+         *  routes the popular indoor genera into the right bucket;
+         *  anything else falls through to "general". Adding more
+         *  genera here is the right place to grow coverage. */
+        @JvmStatic
+        fun pickSpeciesBucket(scientificName: String): Int {
+            val genus = scientificName.trim().substringBefore(' ').lowercase()
+            return when (genus) {
+                // Common indoor succulents.
+                "echeveria", "sedum", "crassula", "aloe", "haworthia",
+                "kalanchoe", "sansevieria", "agave", "lithops",
+                "euphorbia" -> IDX_SUCCULENT
+                // Tropical aroids + foliage favourites.
+                "monstera", "philodendron", "epipremnum", "pothos",
+                "calathea", "maranta", "spathiphyllum", "anthurium",
+                "ficus", "syngonium", "alocasia", "dieffenbachia",
+                "dracaena", "schefflera", "begonia", "peperomia",
+                "saintpaulia" -> IDX_TROPICAL
+                // Ferns.
+                "nephrolepis", "adiantum", "asplenium", "platycerium",
+                "pteris", "davallia", "polystichum" -> IDX_FERN
+                // Edible / vegetable seedlings often started indoors.
+                "solanum", "capsicum", "lactuca", "ocimum", "mentha",
+                "petroselinum" -> IDX_VEGETABLE
+                else -> IDX_GENERAL
+            }
+        }
+
         // Houseplant-relevant range. Above 30k lux you're outdoors in
         // direct sun and the species bands stop being useful — capping
         // the gauge here gives indoor readings (10..2000 lux) most of
@@ -108,6 +155,14 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         cameraExecutor = Executors.newSingleThreadExecutor()
+        // Pre-select the species bucket based on the launching plant's
+        // scientific name. Without this, every plant lands on "general"
+        // (1000-5000 lux) which is wrong for both succulents (which
+        // want 5-15k) and ferns (which want 200-1000).
+        intent.getStringExtra(EXTRA_SCIENTIFIC_NAME)?.let { sci ->
+            val pick = pickSpeciesBucket(sci)
+            if (pick in SPECIES.indices) selectedSpecies = SPECIES[pick]
+        }
 
         val root = androidx.coordinatorlayout.widget.CoordinatorLayout(this).apply {
             setBackgroundColor(getColor(R.color.background))
@@ -330,11 +385,12 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
         chipGroup = ChipGroup(this).apply {
             isSingleSelection = true
         }
+        val initialIndex = SPECIES.indexOf(selectedSpecies).coerceAtLeast(0)
         SPECIES.forEachIndexed { i, species ->
             val chip = Chip(this).apply {
                 text = getString(species.labelRes)
                 isCheckable = true
-                isChecked = (i == 0)
+                isChecked = (i == initialIndex)
                 layoutParams = ChipGroup.LayoutParams(
                     ChipGroup.LayoutParams.WRAP_CONTENT,
                     ChipGroup.LayoutParams.WRAP_CONTENT,
@@ -577,6 +633,7 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
     }
 
     private fun updateDisplay(lux: Float) {
+        if (lux > peakLux) peakLux = lux
         val luxInt = lux.toInt()
         tvLux.text = if (luxInt > 999) "%,d".format(luxInt) else luxInt.toString()
 
@@ -596,11 +653,16 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
     }
 
     private fun updateSpeciesDisplay() {
+        // Show session-peak alongside the species ideal range so the
+        // user can sweep the phone around the room and remember the
+        // brightest spot without having to watch the live number.
+        val peakInt = peakLux.toInt()
         tvSpeciesIdeal.text = getString(
-            R.string.light_ideal_range,
+            R.string.light_ideal_range_with_peak,
             getString(selectedSpecies.labelRes),
             selectedSpecies.minLux,
             selectedSpecies.maxLux,
+            peakInt,
         )
         val currentLux = smoothedLux.toInt()
         tvSpeciesStatus.text = when {

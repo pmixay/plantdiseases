@@ -85,6 +85,15 @@
             android:exported="false"
             android:screenOrientation="portrait" />
 
+        <receiver
+            android:name=".worker.ReminderActionReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.plantdiseases.action.REMINDER_DONE" />
+                <action android:name="com.plantdiseases.action.REMINDER_SNOOZE" />
+            </intent-filter>
+        </receiver>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

@@ -123,17 +123,27 @@ def _image_hash(image_bytes: bytes) -> str:
     return hashlib.sha256(image_bytes).hexdigest()
 
 
-def identify_species(image_bytes: bytes, *, organ: str = "leaf") -> dict:
+def identify_species(
+    image_bytes: bytes, *, organ: str = "leaf", lang: str = "en",
+) -> dict:
     """Identify the plant species via PlantNet.
 
     Returns a dict with up to 5 candidate species. When the API key is
     missing we return ``{"available": False, "results": []}`` so the
     caller can render a graceful degraded state.
+
+    ``lang`` is forwarded to PlantNet's ``lang`` query param so the
+    returned ``common_names`` are localised — "Каучуковое дерево"
+    in Russian instead of "Rubber tree". The English/Latin
+    scientific name is unchanged.
     """
     if not PLANTNET_API_KEY:
         return {"available": False, "results": [], "source": "no_api_key"}
 
-    cache_key = f"{_image_hash(image_bytes)}:{organ}"
+    # Normalise so we don't cache "en" and "EN" as separate entries.
+    lang = (lang or "en").strip().lower()[:5] or "en"
+
+    cache_key = f"{_image_hash(image_bytes)}:{organ}:{lang}"
     cached = _PLANTNET_CACHE.get(cache_key)
     if cached is not None:
         return {**cached, "cached": True}
@@ -144,7 +154,7 @@ def identify_species(image_bytes: bytes, *, organ: str = "leaf") -> dict:
 
         url = (
             f"https://my-api.plantnet.org/v2/identify/{PLANTNET_PROJECT}"
-            f"?api-key={PLANTNET_API_KEY}"
+            f"?api-key={PLANTNET_API_KEY}&lang={lang}"
         )
         files = {"images": ("plant.jpg", image_bytes, "image/jpeg")}
         data = {"organs": organ}
