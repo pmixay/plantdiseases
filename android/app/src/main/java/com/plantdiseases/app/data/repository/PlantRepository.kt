@@ -123,6 +123,19 @@ class PlantRepository(
         plantDao.update(existing.copy(coverPhotoUri = uri))
     }
 
+    /** Record the latest measured lux reading for a plant. Called
+     *  when the Light Meter closes after a session launched with
+     *  this plant's context. Stamps ``measuredLuxAt`` so the plant
+     *  detail can render "measured 3 days ago". */
+    suspend fun updateMeasuredLux(id: Long, lux: Int) = withContext(Dispatchers.IO) {
+        if (lux <= 0) return@withContext
+        val existing = plantDao.getPlantById(id) ?: return@withContext
+        plantDao.update(existing.copy(
+            measuredLux = lux,
+            measuredLuxAt = System.currentTimeMillis(),
+        ))
+    }
+
     suspend fun assignScanToPlant(scanId: Long, plantId: Long?) = withContext(Dispatchers.IO) {
         scanDao.assignScanToPlant(scanId, plantId)
     }
@@ -265,6 +278,64 @@ class PlantRepository(
      *  days ago" on the plant detail. */
     suspend fun lastReminderDoneAt(plantId: Long, type: String): Long? =
         withContext(Dispatchers.IO) { reminderEventDao.lastDoneAt(plantId, type) }
+
+    /** Greg-style adaptive watering. Looks at the last ≥5
+     *  done-resolution events for a (plant, type) reminder, computes
+     *  the mean lateness vs the reminder's scheduled interval, and
+     *  if the user is consistently early or late by more than a day
+     *  emits a [WateringSuggestion] proposing a new interval. Never
+     *  auto-edits the reminder — the UI surfaces this as a
+     *  "shorten to N days?" chip the user accepts. */
+    suspend fun adaptiveWateringSuggestion(
+        plantId: Long,
+        type: String = "watering",
+        minSamples: Int = 5,
+        deltaThresholdDays: Double = 1.0,
+        maxDeltaDays: Int = 1,
+    ): WateringSuggestion? = withContext(Dispatchers.IO) {
+        val reminder = reminderDao.getByPlantAndType(plantId, type) ?: return@withContext null
+        if (!reminder.enabled) return@withContext null
+        val events = reminderEventDao.recentForPlant(plantId, limit = 50)
+            .filter { it.type == type && it.action == "done" && it.doneAt != null }
+            .sortedByDescending { it.firedAt }
+            .take(minSamples * 2)
+        if (events.size < minSamples) return@withContext null
+
+        // Pair up adjacent "done" events by firedAt and treat the
+        // gap between consecutive done_at timestamps as the user's
+        // ACTUAL cadence. Then compare to the reminder's intended
+        // interval; mean delta drives the suggestion.
+        val sortedAsc = events.sortedBy { it.firedAt }
+        val gaps = sortedAsc.zipWithNext { a, b ->
+            val ax = a.doneAt ?: a.firedAt
+            val bx = b.doneAt ?: b.firedAt
+            (bx - ax).toDouble() / (24.0 * 60.0 * 60.0 * 1000.0)
+        }
+        if (gaps.isEmpty()) return@withContext null
+        val meanGapDays = gaps.average()
+        val deltaDays = meanGapDays - reminder.intervalDays.toDouble()
+        if (kotlin.math.abs(deltaDays) < deltaThresholdDays) return@withContext null
+        val proposedInterval = (reminder.intervalDays + deltaDays.toInt()
+            .coerceIn(-maxDeltaDays, maxDeltaDays))
+            .coerceIn(1, 30)
+        if (proposedInterval == reminder.intervalDays) return@withContext null
+        WateringSuggestion(
+            type = type,
+            currentIntervalDays = reminder.intervalDays,
+            proposedIntervalDays = proposedInterval,
+            meanGapDays = meanGapDays,
+            samples = gaps.size + 1,
+        )
+    }
+
+    /** Proposed interval change emitted by [adaptiveWateringSuggestion]. */
+    data class WateringSuggestion(
+        val type: String,
+        val currentIntervalDays: Int,
+        val proposedIntervalDays: Int,
+        val meanGapDays: Double,
+        val samples: Int,
+    )
 
     // ─── Chat Messages ────────────────────────────────────────────────────────
 

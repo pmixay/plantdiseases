@@ -26,6 +26,11 @@ data class PlantEntity(
      *  Garden list groups by this when populated; null plants land
      *  in an "Unassigned" group at the bottom. */
     @ColumnInfo(name = "room") val room: String? = null,
+    /** Most recent peak lux reading from the Light Meter, captured
+     *  on a session launched WITH this plant's context. Null until
+     *  the user runs the meter from plant detail. */
+    @ColumnInfo(name = "measured_lux") val measuredLux: Int? = null,
+    @ColumnInfo(name = "measured_lux_at") val measuredLuxAt: Long? = null,
 )
 
 @Entity(

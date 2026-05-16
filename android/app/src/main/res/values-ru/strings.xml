@@ -343,6 +343,21 @@
     <string name="photo_compare_need_two">Нужно минимум два фото для сравнения.</string>
     <string name="photo_compare_pick_title">Сравнить с</string>
     <string name="photo_compare_pick_item">Фото %d</string>
+    <!-- Переход в руководство с экрана растения -->
+    <string name="guide_link_title">Подробнее в Руководстве</string>
+    <string name="guide_link_subtitle">Статья об уходе и лечении: %s</string>
+    <!-- Шаринг сохранённого скана через системный диалог -->
+    <string name="share_scan_chooser">Поделиться сканом</string>
+    <string name="share_confidence_format">Уверенность %d%%</string>
+    <!-- Адаптивный полив (C2) -->
+    <string name="adaptive_watering_title">💡 Сократить интервал полива с %1$d до %2$d дней?</string>
+    <string name="adaptive_watering_subtitle">По %1$d отметкам «Сделано» вы фактически поливаете в среднем раз в %2$s дн.</string>
+    <string name="adaptive_watering_apply">Поставить %d дн.</string>
+    <string name="adaptive_watering_dismiss">Не сейчас</string>
+    <string name="adaptive_watering_applied">Интервал полива: %d дн.</string>
+    <!-- Сигнал ухудшения (C3) -->
+    <string name="progression_alert_title">«%s» ухудшается</string>
+    <string name="progression_alert_body">Два скана подряд показывают ухудшение симптомов — сделайте свежий снимок, чтобы обновить динамику.</string>
     <string name="light_tip_dark">Подвиньте ближе к окну или добавьте фитолампу.</string>
     <string name="light_tip_ideal">Отличное место! Растение будет процветать.</string>
     <string name="light_tip_bright">Притените тонкой шторой или отодвиньте чуть дальше.</string>
@@ -475,4 +490,5 @@
     <!-- Экран растения → переход в люксметр -->
     <string name="light_meter_entry_title">Измерить освещение</string>
     <string name="light_meter_entry_subtitle">С помощью датчика телефона проверьте уровень освещения у этого растения.</string>
+    <string name="light_meter_entry_subtitle_recorded">Последнее измерение здесь: %1$d лк · %2$s</string>
 </resources>

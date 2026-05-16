@@ -350,6 +350,21 @@
     <string name="photo_compare_need_two">Need at least two photos to compare.</string>
     <string name="photo_compare_pick_title">Compare with</string>
     <string name="photo_compare_pick_item">Photo %d</string>
+    <!-- Guide deep-link from plant detail -->
+    <string name="guide_link_title">Learn more in the Guide</string>
+    <string name="guide_link_subtitle">Care + treatment article for %s</string>
+    <!-- Share a past scan to the OS share sheet -->
+    <string name="share_scan_chooser">Share scan</string>
+    <string name="share_confidence_format">Confidence %d%%</string>
+    <!-- Adaptive watering suggestion (C2) -->
+    <string name="adaptive_watering_title">💡 Shorten watering from %1$d to %2$d days?</string>
+    <string name="adaptive_watering_subtitle">Based on %1$d of your "Done" actions, you actually water every %2$s days on average.</string>
+    <string name="adaptive_watering_apply">Use %d days</string>
+    <string name="adaptive_watering_dismiss">Not now</string>
+    <string name="adaptive_watering_applied">Watering reminder set to %d days</string>
+    <!-- Progression alert (C3) -->
+    <string name="progression_alert_title">%s is getting worse</string>
+    <string name="progression_alert_body">Two consecutive scans show worsening symptoms — take a fresh scan to update the trend.</string>
     <string name="light_tip_dark">Move closer to a window or add a grow light.</string>
     <string name="light_tip_ideal">Great spot! Your plant will thrive here.</string>
     <string name="light_tip_bright">Diffuse with a sheer curtain or move slightly back.</string>
@@ -489,4 +504,5 @@
     <!-- Plant detail → Light Meter shortcut -->
     <string name="light_meter_entry_title">Measure light here</string>
     <string name="light_meter_entry_subtitle">Use your phone\'s light sensor to check the lux level at this plant\'s spot.</string>
+    <string name="light_meter_entry_subtitle_recorded">Last measured here: %1$d lx · %2$s</string>
 </resources>

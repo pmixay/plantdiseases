@@ -1607,6 +1607,19 @@ def compare_progression_history(history: list[dict]) -> dict:
         else:
             pair["trend"] = "improving"
 
+    # Alert flag — fires when the LAST TWO points in the severity
+    # series both rose vs the point before. Two-in-a-row guards
+    # against a single noisy scan flipping the flag. The plant-
+    # detail screen treats this as a hint to push a "your plant
+    # is getting worse — take a fresh scan?" notification.
+    alert = False
+    alert_reason: str | None = None
+    if len(points_raw) >= 3:
+        last3 = points_raw[-3:]
+        if last3[1] > last3[0] + 1e-3 and last3[2] > last3[1] + 1e-3:
+            alert = True
+            alert_reason = "two_step_worsening"
+
     return {
         "sparkline": sparkline,
         "trend": pair["trend"],
@@ -1617,4 +1630,6 @@ def compare_progression_history(history: list[dict]) -> dict:
         "delta_severity": pair["delta_severity"],
         "class_changed": pair["class_changed"],
         "points": [round(p, 4) for p in points_raw],
+        "alert": alert,
+        "alert_reason": alert_reason,
     }

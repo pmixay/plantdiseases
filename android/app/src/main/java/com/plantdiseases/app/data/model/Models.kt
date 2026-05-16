@@ -415,6 +415,11 @@ data class ProgressionResponse(
     @SerializedName("sparkline") val sparkline: List<Float>? = null,
     @SerializedName("history_length") val historyLength: Int? = null,
     @SerializedName("points") val points: List<Float>? = null,
+    /** Server flag — set when the LAST TWO points both rose; the
+     *  plant-detail screen pushes a "take a fresh scan" notification
+     *  in that case. */
+    @SerializedName("alert") val alert: Boolean = false,
+    @SerializedName("alert_reason") val alertReason: String? = null,
 )
 
 /**

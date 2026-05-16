@@ -36,6 +36,7 @@ import com.google.android.material.chip.ChipGroup
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.plantdiseases.app.R
 import com.plantdiseases.app.util.LocaleHelper
+import kotlinx.coroutines.launch
 import kotlin.math.ln
 import kotlin.math.pow
 import java.util.concurrent.ExecutorService
@@ -65,6 +66,7 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
     // a "remember the brightest spot" affordance for the user and as
     // an auto-expand hint when the reading goes off the 30 k cap.
     private var peakLux = 0f
+    private var contextPlantId: Long = -1L
 
     private val cameraPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -86,6 +88,11 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
          *  plants, wrong for succulents (need 5-15k) or ferns
          *  (need 200-1k). */
         const val EXTRA_SCIENTIFIC_NAME = "extra_scientific_name"
+        /** Pass the plant's row id (>0) so the session's peak lux
+         *  gets recorded back onto the plant on close. Without it
+         *  the meter behaves as a pure standalone tool — no
+         *  persistence. */
+        const val EXTRA_PLANT_ID = "extra_plant_id"
 
         private const val IDX_GENERAL = 0
         private const val IDX_SUCCULENT = 1
@@ -163,6 +170,7 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
             val pick = pickSpeciesBucket(sci)
             if (pick in SPECIES.indices) selectedSpecies = SPECIES[pick]
         }
+        contextPlantId = intent.getLongExtra(EXTRA_PLANT_ID, -1L)
 
         val root = androidx.coordinatorlayout.widget.CoordinatorLayout(this).apply {
             setBackgroundColor(getColor(R.color.background))
@@ -695,6 +703,22 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
         super.onPause()
         sensorManager?.unregisterListener(this)
         cameraProvider?.unbindAll()
+        // Persist the session peak back to the launching plant so
+        // the Care Plan card can show "measured here: N lx · 3 days
+        // ago". onPause runs reliably for both back-button and
+        // home-button exits; doing it on a click would miss the
+        // common "user just navigates away" exit.
+        val plantId = contextPlantId
+        val peak = peakLux.toInt()
+        if (plantId > 0 && peak > 0) {
+            val app = applicationContext as com.plantdiseases.app.PlantDiseasesApp
+            // Fire-and-forget — by the time onPause returns the
+            // activity is gone, so we can't await without leaking
+            // a coroutine into a stopped lifecycle.
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                app.plantRepository.updateMeasuredLux(plantId, peak)
+            }
+        }
     }
 
     override fun onSensorChanged(event: SensorEvent) {

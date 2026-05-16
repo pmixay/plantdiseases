@@ -20,6 +20,8 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.setPadding
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.resource.bitmap.CenterCrop
 import com.bumptech.glide.load.resource.bitmap.RoundedCorners
@@ -199,6 +201,8 @@ class PlantDetailActivity : AppCompatActivity() {
         setContentView(root)
     }
 
+    private var wateringSuggestion: PlantRepository.WateringSuggestion? = null
+
     private fun loadPlant() {
         lifecycleScope.launch {
             val plant = plantRepository.getPlant(plantId)
@@ -209,6 +213,7 @@ class PlantDetailActivity : AppCompatActivity() {
             currentPlant = plant
             val scans = plantRepository.getScansForPlant(plantId)
             val journal = plantRepository.getJournalEntries(plantId)
+            wateringSuggestion = plantRepository.adaptiveWateringSuggestion(plantId)
             render(plant, scans, journal)
         }
     }
@@ -222,8 +227,10 @@ class PlantDetailActivity : AppCompatActivity() {
         toolbarTitle.text = plant.name
         content.addView(buildHeader(plant, scans, journal))
         content.addView(buildActionRow())
+        buildAdaptiveWateringChip()?.let { content.addView(it) }
         content.addView(buildProgressionCard(scans))
         content.addView(buildCarePlanSlot(plant, scans))
+        buildGuideLink(scans)?.let { content.addView(it) }
         content.addView(buildLightMeterEntry(plant))
         content.addView(buildDoctorEntry(plant, scans))
         content.addView(buildTabs())
@@ -602,6 +609,202 @@ class PlantDetailActivity : AppCompatActivity() {
             ?: scan.diseaseName.lowercase().replace(' ', '_')
     }
 
+    /** Surfaces a "💡 Tighten the watering schedule from N to M days?"
+     *  pill when the user has ≥5 done watering events that show
+     *  they're consistently early or late by >1 day. Tap → updates
+     *  the reminder + reschedules WorkManager. */
+    private fun buildAdaptiveWateringChip(): View? {
+        val s = wateringSuggestion ?: return null
+        val plant = currentPlant ?: return null
+        val card = MaterialCardView(this).apply {
+            radius = 18.dp().toFloat()
+            cardElevation = 0f
+            strokeWidth = 1.dp()
+            strokeColor = getColor(R.color.primary)
+            setCardBackgroundColor(getColor(R.color.surface))
+            isClickable = true
+            foreground = selectable()
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = 10.dp() }
+        }
+        val inner = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(14.dp(), 12.dp(), 14.dp(), 12.dp())
+        }
+        inner.addView(TextView(this).apply {
+            text = getString(
+                R.string.adaptive_watering_title,
+                s.currentIntervalDays, s.proposedIntervalDays,
+            )
+            textSize = 14f
+            typeface = android.graphics.Typeface.create(
+                "sans-serif-medium", android.graphics.Typeface.NORMAL,
+            )
+            setTextColor(getColor(R.color.on_surface))
+        })
+        inner.addView(TextView(this).apply {
+            text = getString(
+                R.string.adaptive_watering_subtitle,
+                s.samples,
+                String.format("%.1f", s.meanGapDays),
+            )
+            textSize = 12f
+            setTextColor(getColor(R.color.on_surface_secondary))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = 2.dp() }
+        })
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = 8.dp() }
+        }
+        actions.addView(com.google.android.material.button.MaterialButton(
+            this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle,
+        ).apply {
+            text = getString(R.string.adaptive_watering_apply, s.proposedIntervalDays)
+            cornerRadius = 12.dp()
+            setOnClickListener {
+                Haptics.tick(this@PlantDetailActivity)
+                lifecycleScope.launch {
+                    val existing = plantRepository.getReminders(plant.id)
+                        .firstOrNull { it.type == s.type }
+                    val updated = (existing ?: com.plantdiseases.app.data.local.PlantReminderEntity(
+                        plantId = plant.id, type = s.type,
+                    )).copy(
+                        intervalDays = s.proposedIntervalDays,
+                        enabled = true,
+                    )
+                    val rid = plantRepository.saveReminder(updated)
+                    com.plantdiseases.app.util.ReminderManager.schedule(
+                        context = this@PlantDetailActivity,
+                        plantId = plant.id,
+                        plantName = plant.name,
+                        type = updated.type,
+                        intervalDays = updated.intervalDays,
+                        hour = updated.hour,
+                        minute = updated.minute,
+                        reminderId = rid,
+                    )
+                    Toast.makeText(
+                        this@PlantDetailActivity,
+                        getString(R.string.adaptive_watering_applied, s.proposedIntervalDays),
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                    wateringSuggestion = null
+                    loadPlant()
+                }
+            }
+        })
+        actions.addView(com.google.android.material.button.MaterialButton(
+            this, null, com.google.android.material.R.attr.borderlessButtonStyle,
+        ).apply {
+            text = getString(R.string.adaptive_watering_dismiss)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { marginStart = 4.dp() }
+            setOnClickListener {
+                wateringSuggestion = null
+                card.visibility = View.GONE
+            }
+        })
+        inner.addView(actions)
+        card.addView(inner)
+        return card
+    }
+
+    /** Static map from a disease class key (as it appears on
+     *  ScanEntity.diseaseName or the resolved classKey) to the
+     *  matching id in [GuideDataProvider]. Returns null when there's
+     *  no helpful guide article — healthy / not_a_plant fall here. */
+    private fun guideIdForClass(classKey: String): String? = when (classKey) {
+        "powdery_mildew" -> "powdery_mildew"
+        "gray_mold_botrytis" -> "botrytis"
+        "viral_disease" -> "viral_disease"
+        "leaf_spot_fungal", "bacterial_leaf_spot" -> "leaf_spot"
+        "nutrient_deficiency" -> "fertilizing"
+        "leaf_scorch_underwatering" -> "watering_basics"
+        else -> null
+    }
+
+    /** "Learn more in the Guide →" link card. Returns null when the
+     *  latest scan's class doesn't map to a guide article (healthy,
+     *  not_a_plant, or no scan yet). */
+    private fun buildGuideLink(scans: List<ScanEntity>): View? {
+        val latest = scans.maxByOrNull { it.timestamp } ?: return null
+        val classKey = resolveClassKey(latest)
+        val guideId = guideIdForClass(classKey) ?: return null
+        return MaterialCardView(this).apply {
+            radius = 18.dp().toFloat()
+            cardElevation = 0f
+            strokeWidth = 1.dp()
+            strokeColor = getColor(R.color.card_stroke)
+            setCardBackgroundColor(getColor(R.color.surface))
+            isClickable = true
+            foreground = selectable()
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = 10.dp() }
+            setOnClickListener {
+                Haptics.tick(this@PlantDetailActivity)
+                com.plantdiseases.app.ui.guide.GuideDetailSheet
+                    .newInstance(guideId)
+                    .show(supportFragmentManager, "guide_detail")
+            }
+            addView(LinearLayout(this@PlantDetailActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(14.dp(), 12.dp(), 14.dp(), 12.dp())
+                addView(FrameLayout(this@PlantDetailActivity).apply {
+                    setBackgroundResource(R.drawable.bg_icon_circle)
+                    layoutParams = LinearLayout.LayoutParams(42.dp(), 42.dp())
+                    addView(ImageView(this@PlantDetailActivity).apply {
+                        setImageResource(R.drawable.ic_care)
+                        setColorFilter(getColor(R.color.primary))
+                        layoutParams = FrameLayout.LayoutParams(23.dp(), 23.dp(), Gravity.CENTER)
+                    })
+                })
+                addView(LinearLayout(this@PlantDetailActivity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                        .apply { marginStart = 12.dp() }
+                    addView(TextView(this@PlantDetailActivity).apply {
+                        text = getString(R.string.guide_link_title)
+                        textSize = 15f
+                        setTextColor(getColor(R.color.on_surface))
+                        typeface = android.graphics.Typeface.create(
+                            "sans-serif-medium",
+                            android.graphics.Typeface.NORMAL,
+                        )
+                    })
+                    addView(TextView(this@PlantDetailActivity).apply {
+                        text = getString(R.string.guide_link_subtitle, latest.diseaseName)
+                        textSize = 12f
+                        setTextColor(getColor(R.color.on_surface_secondary))
+                        maxLines = 2
+                        ellipsize = android.text.TextUtils.TruncateAt.END
+                        layoutParams = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                        ).apply { topMargin = 2.dp() }
+                    })
+                })
+                addView(ImageView(this@PlantDetailActivity).apply {
+                    setImageResource(R.drawable.ic_chevron_right)
+                    setColorFilter(getColor(R.color.on_surface_secondary))
+                    layoutParams = LinearLayout.LayoutParams(22.dp(), 22.dp())
+                })
+            })
+        }
+    }
+
     /** Light-meter shortcut. Launches the standalone
      *  [com.plantdiseases.app.ui.camera.LightMeterActivity] (which
      *  already ships under Profile) so the user can verify the actual
@@ -623,7 +826,9 @@ class PlantDetailActivity : AppCompatActivity() {
                 Haptics.tick(this@PlantDetailActivity)
                 // Forward the plant's scientific name so the gauge
                 // pre-selects the right species bucket (succulent /
-                // tropical / fern / vegetable / general).
+                // tropical / fern / vegetable / general), and the
+                // plant id so the session peak gets persisted back
+                // onto this plant on close.
                 val intent = Intent(
                     this@PlantDetailActivity,
                     com.plantdiseases.app.ui.camera.LightMeterActivity::class.java,
@@ -634,6 +839,10 @@ class PlantDetailActivity : AppCompatActivity() {
                         it,
                     )
                 }
+                intent.putExtra(
+                    com.plantdiseases.app.ui.camera.LightMeterActivity.EXTRA_PLANT_ID,
+                    plant.id,
+                )
                 startActivity(intent)
             }
             addView(LinearLayout(this@PlantDetailActivity).apply {
@@ -663,7 +872,23 @@ class PlantDetailActivity : AppCompatActivity() {
                         )
                     })
                     addView(TextView(this@PlantDetailActivity).apply {
-                        text = getString(R.string.light_meter_entry_subtitle)
+                        // Surface the previously-recorded lux + when
+                        // it was measured if the user has run the
+                        // Light Meter on this plant before; otherwise
+                        // fall back to the generic invite copy.
+                        val measured = plant.measuredLux
+                        val measuredAt = plant.measuredLuxAt
+                        text = if (measured != null && measured > 0 && measuredAt != null) {
+                            getString(
+                                R.string.light_meter_entry_subtitle_recorded,
+                                measured,
+                                ImageUtils.formatRelativeDate(
+                                    this@PlantDetailActivity, measuredAt,
+                                ),
+                            )
+                        } else {
+                            getString(R.string.light_meter_entry_subtitle)
+                        }
                         textSize = 12f
                         setTextColor(getColor(R.color.on_surface_secondary))
                         maxLines = 2
@@ -948,7 +1173,145 @@ class PlantDetailActivity : AppCompatActivity() {
                     .putExtra(ResultActivity.EXTRA_SCAN_ID, scan.id)
             )
         }
+        card.isLongClickable = true
+        card.setOnLongClickListener {
+            Haptics.medium(this)
+            shareScan(scan)
+            true
+        }
         return card
+    }
+
+    /** Hand a scan off to the OS share sheet — branded image (the
+     *  scan photo + verdict overlay rendered into a square PNG) +
+     *  bilingual caption. Saves the user the round-trip through
+     *  ResultActivity if they just want to send a recent diagnosis
+     *  to a friend or a forum. */
+    private fun shareScan(scan: ScanEntity) {
+        val isRu = LocaleHelper.isRussian(this)
+        val caption = buildString {
+            append(if (isRu) "🌿 PlantDiseases — Диагноз\n\n" else "🌿 PlantDiseases — Diagnosis\n\n")
+            append(if (isRu) scan.diseaseNameRu else scan.diseaseName)
+            append(" (")
+            append((scan.confidence * 100).toInt())
+            append("%)")
+        }
+        val imageFile = File(scan.imagePath)
+        if (!imageFile.exists()) {
+            // Image already gone — share text only.
+            startActivity(Intent.createChooser(
+                Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TEXT, caption)
+                },
+                getString(R.string.share_scan_chooser),
+            ))
+            return
+        }
+        // Render the branded share image off the UI thread.
+        lifecycleScope.launch {
+            val composed = withContext(Dispatchers.IO) {
+                runCatching { composeShareImage(scan, isRu) }.getOrNull()
+            }
+            if (composed == null) {
+                startActivity(Intent.createChooser(
+                    Intent(Intent.ACTION_SEND).apply {
+                        type = "image/jpeg"
+                        putExtra(Intent.EXTRA_TEXT, caption)
+                        putExtra(
+                            Intent.EXTRA_STREAM,
+                            androidx.core.content.FileProvider.getUriForFile(
+                                this@PlantDetailActivity,
+                                "${packageName}.fileprovider",
+                                imageFile,
+                            ),
+                        )
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    },
+                    getString(R.string.share_scan_chooser),
+                ))
+                return@launch
+            }
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                this@PlantDetailActivity,
+                "${packageName}.fileprovider",
+                composed,
+            )
+            startActivity(Intent.createChooser(
+                Intent(Intent.ACTION_SEND).apply {
+                    type = "image/jpeg"
+                    putExtra(Intent.EXTRA_TEXT, caption)
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                },
+                getString(R.string.share_scan_chooser),
+            ))
+        }
+    }
+
+    /** Compose a 1080×1350 share image: scan photo on top (square
+     *  letterbox-fit), verdict + confidence + app brand overlaid at
+     *  the bottom. Written to cache as JPEG and handed back. */
+    private fun composeShareImage(scan: ScanEntity, isRu: Boolean): File {
+        val w = 1080
+        val photoH = 1080
+        val footerH = 270
+        val totalH = photoH + footerH
+        val bitmap = android.graphics.Bitmap.createBitmap(
+            w, totalH, android.graphics.Bitmap.Config.ARGB_8888,
+        )
+        val canvas = android.graphics.Canvas(bitmap)
+        canvas.drawColor(getColor(R.color.surface))
+        // Photo: load + center-crop into the top square.
+        val source = android.graphics.BitmapFactory.decodeFile(scan.imagePath)
+        if (source != null) {
+            val srcSide = minOf(source.width, source.height)
+            val sx = (source.width - srcSide) / 2
+            val sy = (source.height - srcSide) / 2
+            val srcRect = android.graphics.Rect(sx, sy, sx + srcSide, sy + srcSide)
+            val dstRect = android.graphics.Rect(0, 0, w, photoH)
+            val paint = android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG)
+            canvas.drawBitmap(source, srcRect, dstRect, paint)
+            source.recycle()
+        }
+        // Footer: solid surface + verdict text.
+        val footerPaint = android.graphics.Paint().apply {
+            color = getColor(R.color.surface)
+        }
+        canvas.drawRect(0f, photoH.toFloat(), w.toFloat(), totalH.toFloat(), footerPaint)
+        val titlePaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = getColor(R.color.on_surface)
+            textSize = 64f
+            typeface = android.graphics.Typeface.create(
+                "sans-serif-medium", android.graphics.Typeface.NORMAL,
+            )
+        }
+        val subPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = getColor(R.color.on_surface_secondary)
+            textSize = 38f
+        }
+        val brandPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = getColor(R.color.primary)
+            textSize = 32f
+            typeface = android.graphics.Typeface.create(
+                "sans-serif-medium", android.graphics.Typeface.NORMAL,
+            )
+        }
+        val title = if (isRu) scan.diseaseNameRu else scan.diseaseName
+        val confidenceStr = getString(
+            R.string.share_confidence_format,
+            (scan.confidence * 100).toInt(),
+        )
+        canvas.drawText(title, 48f, photoH + 90f, titlePaint)
+        canvas.drawText(confidenceStr, 48f, photoH + 150f, subPaint)
+        canvas.drawText("🌿 PlantDiseases", 48f, photoH + 230f, brandPaint)
+
+        val outFile = File(cacheDir, "share_scan_${scan.id}_${System.currentTimeMillis()}.jpg")
+        outFile.outputStream().use {
+            bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 92, it)
+        }
+        bitmap.recycle()
+        return outFile
     }
 
     private fun journalCard(entry: PlantJournalEntity): View {
@@ -1371,6 +1734,13 @@ class PlantDetailActivity : AppCompatActivity() {
                     resp.historyLength ?: ordered.size,
                     formatRelativeDate(this@PlantDetailActivity, newest.timestamp),
                 )
+                // Per-plant progression alert (C3) — when the server
+                // flags two-in-a-row worsening points, push a
+                // high-priority notification with a "Take a scan"
+                // CTA so the user sees it even if the app isn't open.
+                if (resp.alert) {
+                    fireProgressionAlert(currentPlant?.name ?: "")
+                }
             }.onFailure {
                 trendChip.text = getString(R.string.progression_trend_baseline)
                 trendChip.setTextColor(getColor(R.color.on_surface_secondary))
@@ -1474,6 +1844,45 @@ class PlantDetailActivity : AppCompatActivity() {
         val deduped = ordered.distinct()
         if (deduped.isEmpty()) return
         PhotoViewerActivity.open(this, deduped, 0)
+    }
+
+    /** Notify the user that the plant's severity series is worsening
+     *  twice in a row. Reuses the existing plant-reminders
+     *  notification channel + intent into the plant detail. */
+    private fun fireProgressionAlert(plantName: String) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                this, android.Manifest.permission.POST_NOTIFICATIONS,
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+        val notificationId = (plantId * 10 + 9).toInt()
+        val contentIntent = android.app.PendingIntent.getActivity(
+            this,
+            notificationId,
+            Intent(this, PlantDetailActivity::class.java).apply {
+                putExtra(EXTRA_PLANT_ID, plantId)
+            },
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
+        )
+        val title = getString(R.string.progression_alert_title, plantName)
+        val body = getString(R.string.progression_alert_body)
+        val builder = androidx.core.app.NotificationCompat.Builder(
+            this, com.plantdiseases.app.PlantDiseasesApp.CHANNEL_PLANT_REMINDERS,
+        )
+            .setSmallIcon(R.drawable.ic_warning)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setContentIntent(contentIntent)
+            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+        try {
+            (getSystemService(android.app.NotificationManager::class.java))
+                ?.notify(notificationId, builder.build())
+        } catch (_: SecurityException) {
+            // permission revoked between check and notify — ignore.
+        }
     }
 
     private fun confirmDeletePlant() {
