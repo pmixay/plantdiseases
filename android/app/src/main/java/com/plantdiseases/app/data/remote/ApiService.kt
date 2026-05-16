@@ -106,6 +106,7 @@ interface ApiService {
         @Query("country") country: String,
         @Query("region") region: String? = null,
         @Query("disease") disease: String? = null,
+        @Query("species") species: String? = null,
         @Query("limit") limit: Int = 12,
         @Query("user_pseudo_id") userPseudoId: String? = null,
     ): retrofit2.Response<CommunityScansResponse>

@@ -35,6 +35,9 @@ class CreatePlantSheet : BottomSheetDialogFragment() {
 
     private var scanId: Long = -1
     private var initialName: String? = null
+    private var prefilledScientific: String? = null
+    private var prefilledCommon: String? = null
+    private var prefilledScore: Float? = null
     private var listener: Listener? = null
 
     fun interface Listener {
@@ -59,8 +62,20 @@ class CreatePlantSheet : BottomSheetDialogFragment() {
 
         etName.setText(initialName.orEmpty())
 
-        var pickedScientific: String? = null
-        var pickedCommon: String? = null
+        // Pre-fill from the species PlantNet already identified at
+        // scan time. The user can still tap "Identify" to widen the
+        // candidate set or override, but the common case (the
+        // scan-time detection was correct) needs zero extra taps.
+        var pickedScientific: String? = prefilledScientific
+        var pickedCommon: String? = prefilledCommon
+        val prefilledDisplay = prefilledCommon ?: prefilledScientific
+        if (!prefilledDisplay.isNullOrBlank()) {
+            etSpecies.setText(prefilledDisplay)
+            statusText.text = getString(
+                R.string.species_suggest_prefilled,
+                ((prefilledScore ?: 0f) * 100).toInt().coerceIn(0, 100),
+            )
+        }
 
         identifyBtn.setOnClickListener {
             val activity = activity ?: return@setOnClickListener
@@ -223,6 +238,14 @@ class CreatePlantSheet : BottomSheetDialogFragment() {
             val sheet = CreatePlantSheet()
             sheet.scanId = scan.id
             sheet.initialName = initialName
+            // The scan already carries the PlantNet result from analyse
+            // time — pre-fill the species fields so the user doesn't
+            // have to tap Identify a second time. Each is nullable on
+            // ScanEntity; the empty case falls back to the manual
+            // identify flow.
+            sheet.prefilledScientific = scan.speciesScientific?.takeIf { it.isNotBlank() }
+            sheet.prefilledCommon = scan.speciesCommon?.takeIf { it.isNotBlank() }
+            sheet.prefilledScore = scan.speciesScore
             sheet.listener = listener
             sheet.show(fm, TAG)
             return sheet

@@ -217,21 +217,31 @@ def nearby_scans(
     country: str,
     region: str | None = None,
     disease: str | None = None,
+    species: str | None = None,
     limit: int = 20,
     exclude_user_pseudo_id: str | None = None,
 ) -> list[dict]:
     """Return the most recent shared scans within ``country``.
 
-    ``region`` narrows the result set to a sub-country locality
-    (city / admin area) when supplied. Same disease-first ordering as
-    before: rows that match ``disease`` come first, then we top up
-    with other diagnoses in the same bucket until ``limit``.
-    ``exclude_user_pseudo_id`` drops the requesting user's own rows.
+    ``region`` narrows to a sub-country locality (city / admin area)
+    when supplied. ``species`` (scientific name, case-insensitive
+    exact match) narrows further to the same plant species — without
+    it, rows of different plants but the same disease end up mixed
+    in the carousel, which is confusing for users browsing "is
+    powdery mildew on MY plant common around here?".
 
-    When ``region`` is supplied but produces fewer than ``limit``
-    rows, we widen to the country bucket so a small city still gets
-    a populated carousel. Each row is a compact dict; ``thumb_path``
-    is the filename served by /api/community/thumb/<filename>.
+    Fall-through ordering, most-specific bucket first:
+
+    1. same disease + same species + same region
+    2. same disease + same species (any region)
+    3. same disease + same region (any species)
+    4. same disease (any region, any species)
+    5. same region (any disease)
+    6. same country (any disease)
+
+    Each bucket only contributes until ``limit`` is reached.
+    ``exclude_user_pseudo_id`` drops the requesting user's own rows
+    across every bucket.
     """
     init_db()
     limit = max(1, min(int(limit), 50))
@@ -265,37 +275,50 @@ def nearby_scans(
     if region_clean:
         region_extra += " AND region = ?"
         region_params.append(region_clean)
+    species_clean = (species or "").strip()
 
-    # Disease-matching rows first, narrowed to region when supplied.
-    matched: list[dict] = []
-    fillers: list[dict] = []
-    if disease:
-        matched = _query(
+    seen: set[str] = set()
+    out: list[dict] = []
+
+    def _append_unique(rows: list[dict]) -> None:
+        for row in rows:
+            sid = row["scan_id"]
+            if sid in seen:
+                continue
+            out.append(row)
+            seen.add(sid)
+
+    # Buckets ordered most → least specific. Each one is queried only
+    # if we still need rows AND the relevant filter is in play.
+    if disease and species_clean and region_clean:
+        _append_unique(_query(
+            region_extra + " AND disease = ? AND LOWER(species) = LOWER(?)",
+            region_params + [disease, species_clean],
+            limit,
+        ))
+    if len(out) < limit and disease and species_clean:
+        _append_unique(_query(
+            base_extra + " AND disease = ? AND LOWER(species) = LOWER(?)",
+            base_params + [disease, species_clean],
+            limit,
+        ))
+    if len(out) < limit and disease and region_clean:
+        _append_unique(_query(
             region_extra + " AND disease = ?",
             region_params + [disease],
             limit,
-        )
-    if len(matched) < limit:
-        seen = {m["scan_id"] for m in matched}
-        # Stage 1: same locality, any disease.
-        if region_clean:
-            for d in _query(region_extra, region_params, limit + len(matched)):
-                if d["scan_id"] in seen:
-                    continue
-                fillers.append(d)
-                seen.add(d["scan_id"])
-                if len(matched) + len(fillers) >= limit:
-                    break
-        # Stage 2: widen to the whole country if we still need more.
-        if len(matched) + len(fillers) < limit:
-            for d in _query(base_extra, base_params, limit + len(matched) + len(fillers)):
-                if d["scan_id"] in seen:
-                    continue
-                fillers.append(d)
-                seen.add(d["scan_id"])
-                if len(matched) + len(fillers) >= limit:
-                    break
-    return matched + fillers
+        ))
+    if len(out) < limit and disease:
+        _append_unique(_query(
+            base_extra + " AND disease = ?",
+            base_params + [disease],
+            limit,
+        ))
+    if len(out) < limit and region_clean:
+        _append_unique(_query(region_extra, region_params, limit))
+    if len(out) < limit:
+        _append_unique(_query(base_extra, base_params, limit))
+    return out[:limit]
 
 
 def region_summary(

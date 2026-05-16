@@ -399,6 +399,7 @@
     <string name="species_suggest_unavailable_rate_limited">PlantNet\'s daily quota is exhausted. Try again later, or add the species manually.</string>
     <string name="species_suggest_unavailable_auth_failed">The PlantNet API key on the server is invalid. Add the species manually.</string>
     <string name="species_suggest_match">%d%% match</string>
+    <string name="species_suggest_prefilled">Detected at scan time (%d%% match). Tap Identify to widen the candidate list.</string>
     <string name="species_suggest_no_results">No confident matches found.</string>
     <string name="species_suggest_unknown_name">Unnamed candidate</string>
     <!-- Diagnosis feedback (/api/feedback) -->

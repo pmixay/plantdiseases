@@ -609,11 +609,16 @@ class ScanRepository(
         }
 
     /** Fetch the most recent community scans in a country (optionally
-     *  narrowed to one sub-country region). */
+     *  narrowed to one sub-country region, one disease, and one
+     *  scientific-name species). The species filter is the key
+     *  reason this carousel feels relevant — without it the user sees
+     *  "leaf spot on Monstera" next to "leaf spot on Ficus" and the
+     *  care advice is wildly different. */
     suspend fun communityNearby(
         country: String,
         region: String? = null,
         disease: String?,
+        species: String? = null,
         userPseudoId: String?,
         limit: Int = 12,
     ): Result<com.plantdiseases.app.data.model.CommunityScansResponse> =
@@ -623,6 +628,7 @@ class ScanRepository(
                     country = country,
                     region = region?.takeIf { it.isNotBlank() },
                     disease = disease?.takeIf { it.isNotBlank() },
+                    species = species?.takeIf { it.isNotBlank() },
                     userPseudoId = userPseudoId?.takeIf { it.isNotBlank() },
                     limit = limit,
                 )

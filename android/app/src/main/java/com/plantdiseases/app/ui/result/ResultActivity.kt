@@ -615,6 +615,7 @@ class ResultActivity : AppCompatActivity() {
                 pseudoId = pseudoId,
                 initialDisease = diseaseKey,
                 filterDisease = null,
+                speciesScientific = scan.speciesScientific,
                 isRu = isRu,
             )
         }
@@ -638,6 +639,7 @@ class ResultActivity : AppCompatActivity() {
         pseudoId: String,
         initialDisease: String,
         filterDisease: String?,
+        speciesScientific: String?,
         isRu: Boolean,
     ) {
         val card = binding.cardSimilarScans
@@ -651,6 +653,12 @@ class ResultActivity : AppCompatActivity() {
                 country = resolved.country,
                 region = resolved.locality,
                 disease = effectiveDisease,
+                // Narrow by detected scientific name so a "Powdery
+                // mildew on Monstera" scan doesn't render "Powdery
+                // mildew on Ficus" thumbnails — different species,
+                // different care. Server falls back gracefully when
+                // the species bucket is empty.
+                species = speciesScientific,
                 userPseudoId = pseudoId,
                 limit = 12,
             )
@@ -699,6 +707,7 @@ class ResultActivity : AppCompatActivity() {
                                 pseudoId = pseudoId,
                                 initialDisease = initialDisease,
                                 filterDisease = selectedDisease,
+                                speciesScientific = speciesScientific,
                                 isRu = isRu,
                             )
                         },
