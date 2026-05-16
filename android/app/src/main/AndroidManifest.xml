@@ -81,6 +81,11 @@
             android:screenOrientation="portrait" />
 
         <activity
+            android:name=".ui.garden.PhotoCompareActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
+        <activity
             android:name=".ui.camera.LightMeterActivity"
             android:exported="false"
             android:screenOrientation="portrait" />

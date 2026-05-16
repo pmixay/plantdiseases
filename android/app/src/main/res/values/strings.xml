@@ -340,6 +340,16 @@
     <string name="reminder_log_snoozed">%1$s · snoozed %2$s</string>
     <string name="reminder_streak_last_watered">Last watered %s</string>
     <string name="reminder_streak_never_watered">Never watered through reminders yet</string>
+    <!-- Photos tab + before/after compare slider -->
+    <string name="plant_photos">Photos</string>
+    <string name="plant_photos_empty_title">No photos yet</string>
+    <string name="plant_photos_empty_hint">Every scan + every photo entry shows up here. Long-press a tile to compare two photos side-by-side.</string>
+    <string name="photo_compare_title">Before / after</string>
+    <string name="photo_compare_left">← Left photo</string>
+    <string name="photo_compare_right">Right photo →</string>
+    <string name="photo_compare_need_two">Need at least two photos to compare.</string>
+    <string name="photo_compare_pick_title">Compare with</string>
+    <string name="photo_compare_pick_item">Photo %d</string>
     <string name="light_tip_dark">Move closer to a window or add a grow light.</string>
     <string name="light_tip_ideal">Great spot! Your plant will thrive here.</string>
     <string name="light_tip_bright">Diffuse with a sheer curtain or move slightly back.</string>
