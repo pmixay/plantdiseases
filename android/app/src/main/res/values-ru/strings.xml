@@ -378,6 +378,8 @@
     <string name="care_plan_temp_night">Ночь %1$d – %2$d °C</string>
     <string name="care_plan_checkpoint_line">День %1$d · %2$s</string>
     <string name="care_plan_isolation_required">Изолируйте от других растений до выздоровления</string>
+    <string name="care_plan_detail_setup">Подготовка</string>
+    <string name="care_plan_day_badge">Д%1$d</string>
 
     <!-- Species suggestion (PlantNet) -->
     <string name="species_suggest_title">Определить по фото</string>

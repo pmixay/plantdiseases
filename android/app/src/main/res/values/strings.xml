@@ -385,6 +385,8 @@
     <string name="care_plan_temp_night">Night %1$d – %2$d °C</string>
     <string name="care_plan_checkpoint_line">Day %1$d · %2$s</string>
     <string name="care_plan_isolation_required">Quarantine from other plants until recovered</string>
+    <string name="care_plan_detail_setup">Setup</string>
+    <string name="care_plan_day_badge">D%1$d</string>
 
     <!-- Species suggestion (PlantNet) -->
     <string name="species_suggest_title">Identify from photo</string>
