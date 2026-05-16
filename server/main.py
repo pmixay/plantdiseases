@@ -995,6 +995,14 @@ async def analyze_image(image: UploadFile = File(...), species: str | None = Non
     # ``is_repeat=true`` and ``cached_at`` so the client can render
     # a "you saw this one earlier" banner instead of pretending it's
     # a fresh diagnosis.
+    #
+    # The cache key is the image hash ONLY, not (image, species). The
+    # ``?species=`` override drives toxicity lookup only — see the
+    # auto/explicit fall-through ~80 lines below — so on a cache hit
+    # we re-resolve toxicity against the override and patch the three
+    # affected fields, leaving the verdict / detection / species
+    # block / care-plan-relevant fields untouched (they're properties
+    # of the image, not of the user's species hint).
     image_sha = hashlib.sha256(contents).hexdigest()
     cache_hit = _analyze_cache_get(image_sha)
     if cache_hit is not None:
@@ -1002,6 +1010,12 @@ async def analyze_image(image: UploadFile = File(...), species: str | None = Non
         cached_payload["is_repeat"] = True
         cached_payload["cached_at"] = cache_hit["cached_at"]
         cached_payload["elapsed_ms"] = 0
+        species_override = (species or "").strip() or None
+        if species_override:
+            overridden = lookup_pet_toxicity(species_override)
+            cached_payload["toxic_to_pets"] = overridden["toxic_to_pets"]
+            cached_payload["toxic_species_list"] = overridden["species_list"]
+            cached_payload["toxicity_source"] = overridden["source"]
         return JSONResponse(content=cached_payload)
 
     loop = asyncio.get_running_loop()
