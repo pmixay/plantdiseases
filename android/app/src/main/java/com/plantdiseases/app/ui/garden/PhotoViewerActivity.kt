@@ -1,0 +1,279 @@
+package com.plantdiseases.app.ui.garden
+
+import android.content.Context
+import android.content.Intent
+import android.graphics.Color
+import android.graphics.Matrix
+import android.os.Bundle
+import android.view.Gravity
+import android.view.MotionEvent
+import android.view.ScaleGestureDetector
+import android.view.View
+import android.widget.FrameLayout
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.TextView
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.recyclerview.widget.RecyclerView
+import androidx.viewpager2.widget.ViewPager2
+import com.bumptech.glide.Glide
+import com.plantdiseases.app.R
+import com.plantdiseases.app.util.LocaleHelper
+
+/**
+ * Full-screen swipeable photo viewer with pinch-to-zoom + pan.
+ *
+ * Pure-Kotlin / programmatic UI on top of `ViewPager2`. Pinch and pan
+ * are implemented per-page so each photo zooms independently — when
+ * the user pinches one photo to 2× and swipes, the next photo
+ * arrives at its own 1× scale, not the previous page's residual
+ * transform.
+ *
+ * The viewer is launched in two modes:
+ *   * single photo — pass [EXTRA_URIS] with one entry. Swipe is
+ *     disabled, page indicator is hidden.
+ *   * gallery     — pass [EXTRA_URIS] (chronological) plus
+ *     [EXTRA_START_INDEX] to land on the right page. Swipe is enabled,
+ *     page indicator ("3 / 12") is shown.
+ *
+ * Photo sources are loaded via Glide so they accept both
+ * ``file://`` paths from the scan store AND ``content://`` URIs from
+ * picked journal photos with no special-casing.
+ */
+class PhotoViewerActivity : AppCompatActivity() {
+
+    private lateinit var pager: ViewPager2
+    private lateinit var indicator: TextView
+    private lateinit var uris: List<String>
+
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(LocaleHelper.applyLocale(newBase))
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val passed = intent.getStringArrayListExtra(EXTRA_URIS) ?: arrayListOf()
+        if (passed.isEmpty()) {
+            finish()
+            return
+        }
+        uris = passed
+        val start = intent.getIntExtra(EXTRA_START_INDEX, 0).coerceIn(0, uris.size - 1)
+
+        val root = FrameLayout(this).apply {
+            layoutParams = ViewGroup_FILL
+            setBackgroundColor(Color.BLACK)
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            v.setPadding(0, bars.top, 0, bars.bottom)
+            insets
+        }
+
+        pager = ViewPager2(this).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT,
+            )
+            adapter = PhotoAdapter(uris)
+            isUserInputEnabled = uris.size > 1
+        }
+        root.addView(pager)
+
+        // Top dismiss bar — close button on the left, "i/n" indicator
+        // on the right, both readable against an arbitrary photo via
+        // a soft black scrim behind them.
+        val topBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setBackgroundColor(Color.argb(96, 0, 0, 0))
+            setPadding(16.dp(), 12.dp(), 16.dp(), 12.dp())
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP,
+            )
+        }
+        val closeBtn = ImageView(this).apply {
+            setImageResource(R.drawable.ic_back)
+            setColorFilter(Color.WHITE)
+            layoutParams = LinearLayout.LayoutParams(28.dp(), 28.dp())
+            isClickable = true
+            setOnClickListener { finish() }
+        }
+        topBar.addView(closeBtn)
+        indicator = TextView(this).apply {
+            textSize = 14f
+            setTextColor(Color.WHITE)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                .apply { marginStart = 16.dp() }
+            gravity = Gravity.END
+        }
+        topBar.addView(indicator)
+        root.addView(topBar)
+
+        pager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
+            override fun onPageSelected(position: Int) {
+                updateIndicator(position)
+            }
+        })
+        pager.setCurrentItem(start, false)
+        updateIndicator(start)
+
+        setContentView(root)
+    }
+
+    private fun updateIndicator(position: Int) {
+        indicator.text = if (uris.size > 1) {
+            getString(R.string.photo_viewer_indicator, position + 1, uris.size)
+        } else {
+            ""
+        }
+    }
+
+    private fun Int.dp(): Int =
+        (this * resources.displayMetrics.density).toInt()
+
+    // ── Adapter ──────────────────────────────────────────────────────
+
+    private inner class PhotoAdapter(
+        private val items: List<String>,
+    ) : RecyclerView.Adapter<PhotoAdapter.PageHolder>() {
+
+        override fun onCreateViewHolder(parent: android.view.ViewGroup, viewType: Int): PageHolder {
+            val container = FrameLayout(parent.context).apply {
+                layoutParams = ViewPager2_PAGE_PARAMS
+            }
+            val image = ZoomableImageView(parent.context).apply {
+                layoutParams = FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                )
+            }
+            container.addView(image)
+            return PageHolder(container, image)
+        }
+
+        override fun getItemCount(): Int = items.size
+
+        override fun onBindViewHolder(holder: PageHolder, position: Int) {
+            holder.image.reset()
+            Glide.with(holder.image.context)
+                .load(items[position])
+                .into(holder.image)
+        }
+
+        inner class PageHolder(
+            container: FrameLayout, val image: ZoomableImageView,
+        ) : RecyclerView.ViewHolder(container)
+    }
+
+    companion object {
+        const val EXTRA_URIS = "extra_uris"
+        const val EXTRA_START_INDEX = "extra_start_index"
+
+        fun open(context: Context, uris: List<String>, startIndex: Int = 0) {
+            if (uris.isEmpty()) return
+            val intent = Intent(context, PhotoViewerActivity::class.java)
+                .putStringArrayListExtra(EXTRA_URIS, ArrayList(uris))
+                .putExtra(EXTRA_START_INDEX, startIndex.coerceIn(0, uris.size - 1))
+            context.startActivity(intent)
+        }
+
+        private val ViewGroup_FILL = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT,
+        )
+        private val ViewPager2_PAGE_PARAMS = RecyclerView.LayoutParams(
+            RecyclerView.LayoutParams.MATCH_PARENT,
+            RecyclerView.LayoutParams.MATCH_PARENT,
+        )
+    }
+}
+
+/**
+ * ImageView that supports pinch-to-zoom + pan via matrix transforms.
+ * Reset on each rebind so paging into a new photo starts at 1×.
+ */
+class ZoomableImageView(context: Context) : androidx.appcompat.widget.AppCompatImageView(context) {
+
+    private val matrixCurrent = Matrix()
+    private var scale = 1f
+    private var lastTouchX = 0f
+    private var lastTouchY = 0f
+    private val scaleDetector: ScaleGestureDetector
+
+    init {
+        scaleType = ScaleType.MATRIX
+        scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            override fun onScale(detector: ScaleGestureDetector): Boolean {
+                val factor = detector.scaleFactor
+                val newScale = (scale * factor).coerceIn(1f, 4f)
+                val realFactor = newScale / scale
+                scale = newScale
+                matrixCurrent.postScale(realFactor, realFactor, detector.focusX, detector.focusY)
+                imageMatrix = matrixCurrent
+                return true
+            }
+        })
+    }
+
+    /** Reset transforms — called by the adapter on rebind so paging
+     *  into a new photo starts at 1× regardless of the previous page's
+     *  zoom level. */
+    fun reset() {
+        scale = 1f
+        matrixCurrent.reset()
+        // Letterbox-fit on the first layout pass.
+        post {
+            val d = drawable ?: return@post
+            val vw = width.toFloat()
+            val vh = height.toFloat()
+            val dw = d.intrinsicWidth.toFloat().coerceAtLeast(1f)
+            val dh = d.intrinsicHeight.toFloat().coerceAtLeast(1f)
+            val baseScale = minOf(vw / dw, vh / dh)
+            val tx = (vw - dw * baseScale) / 2f
+            val ty = (vh - dh * baseScale) / 2f
+            matrixCurrent.reset()
+            matrixCurrent.postScale(baseScale, baseScale)
+            matrixCurrent.postTranslate(tx, ty)
+            imageMatrix = matrixCurrent
+        }
+    }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        scaleDetector.onTouchEvent(event)
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                lastTouchX = event.x
+                lastTouchY = event.y
+                // Claim the gesture from the pager once the user starts
+                // zooming so a horizontal drag at >1x scale pans the
+                // image instead of paging.
+                parent?.requestDisallowInterceptTouchEvent(scale > 1.01f)
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (scale > 1.01f && event.pointerCount == 1) {
+                    val dx = event.x - lastTouchX
+                    val dy = event.y - lastTouchY
+                    matrixCurrent.postTranslate(dx, dy)
+                    imageMatrix = matrixCurrent
+                    lastTouchX = event.x
+                    lastTouchY = event.y
+                    parent?.requestDisallowInterceptTouchEvent(true)
+                }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                parent?.requestDisallowInterceptTouchEvent(false)
+                if (scale <= 1.01f) {
+                    // Snap back to letterbox so any drift from sub-1×
+                    // pinches doesn't leave the photo half-off-screen.
+                    reset()
+                }
+            }
+        }
+        return true
+    }
+}

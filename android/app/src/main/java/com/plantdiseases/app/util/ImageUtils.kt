@@ -198,57 +198,15 @@ object ImageUtils {
         }
     }
 
-    /** Get image dimensions without fully decoding the bitmap. Returns
-     *  raw pixel dims — does NOT apply EXIF orientation. Use
-     *  [getOrientedDimensions] when the caller renders against the
-     *  display image (which Glide rotates per EXIF). */
+    /** Raw pixel dimensions of the file on disk — does NOT apply EXIF
+     *  orientation. Bbox-overlay callers must use the server-emitted
+     *  image_width / image_height fields instead (the upload pipeline
+     *  pre-rotates pixels before sending, so the server's frame is
+     *  always display-correct). */
     fun getImageDimensions(imagePath: String): Pair<Int, Int> {
         val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(imagePath, options)
         return Pair(options.outWidth.coerceAtLeast(1), options.outHeight.coerceAtLeast(1))
-    }
-
-    /** Get image dimensions in display orientation — raw bitmap dims
-     *  with EXIF rotation applied. For portrait phone photos the raw
-     *  bitmap is landscape; Glide / centerCrop will display it
-     *  rotated, so any overlay coords must scale against the rotated
-     *  dims. Falls back to raw dims if the EXIF tag is missing or
-     *  unreadable. */
-    fun getOrientedDimensions(imagePath: String): Pair<Int, Int> {
-        val (rawW, rawH) = getImageDimensions(imagePath)
-        return try {
-            val orientation = ExifInterface(imagePath).getAttributeInt(
-                ExifInterface.TAG_ORIENTATION,
-                ExifInterface.ORIENTATION_NORMAL,
-            )
-            val swapped = orientation == ExifInterface.ORIENTATION_ROTATE_90 ||
-                orientation == ExifInterface.ORIENTATION_ROTATE_270 ||
-                orientation == ExifInterface.ORIENTATION_TRANSPOSE ||
-                orientation == ExifInterface.ORIENTATION_TRANSVERSE
-            if (swapped) Pair(rawH, rawW) else Pair(rawW, rawH)
-        } catch (e: IOException) {
-            Log.w(TAG, "EXIF read failed in getOrientedDimensions, using raw dims", e)
-            Pair(rawW, rawH)
-        }
-    }
-
-    /** Estimate the dimensions the server saw, given the original
-     *  on-disk image path. Mirrors [prepareImageForUpload]'s
-     *  EXIF-rotate-then-downscale chain so a renderer can reconstruct
-     *  the bbox coordinate frame when the server did not emit explicit
-     *  ``image_width`` / ``image_height`` fields (pre-2.2 servers).
-     *
-     *  [maxSize] must match the value passed to [prepareImageForUpload]
-     *  (default 1024). Returns the oriented raw dims unchanged when
-     *  the long side already fits under [maxSize]. */
-    fun getUploadDimensions(imagePath: String, maxSize: Int = 1024): Pair<Int, Int> {
-        val (orientedW, orientedH) = getOrientedDimensions(imagePath)
-        val longest = maxOf(orientedW, orientedH)
-        if (longest <= maxSize) return Pair(orientedW, orientedH)
-        val ratio = maxSize.toFloat() / longest
-        val scaledW = (orientedW * ratio).toInt().coerceAtLeast(1)
-        val scaledH = (orientedH * ratio).toInt().coerceAtLeast(1)
-        return Pair(scaledW, scaledH)
     }
 
     /**

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <!-- The cover photo controls live in an overflow group rather than
+         as toolbar icons because they're rare actions (touched on
+         creation + the odd update). Set + Clear share the same slot;
+         the UI doesn't try to grey out Clear when no cover is set
+         because the action is harmless and the no-op feedback is
+         cheap. -->
+    <item
+        android:id="@+id/action_set_cover_photo"
+        android:title="@string/cover_photo_set"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_clear_cover_photo"
+        android:title="@string/cover_photo_clear"
+        app:showAsAction="never" />
+
+</menu>

@@ -43,7 +43,6 @@ try:
     from .ai_services import (  # type: ignore[import-not-found]
         chat_metrics_snapshot,
         chat_reply,
-        compare_progression,
         compare_progression_history,
         generate_care_plan,
         identify_species,
@@ -102,7 +101,6 @@ except ImportError:
     from ai_services import (
         chat_metrics_snapshot,
         chat_reply,
-        compare_progression,
         compare_progression_history,
         generate_care_plan,
         identify_species,
@@ -1266,13 +1264,10 @@ class CommunityScanRequest(BaseModel):
 
 
 class ProgressionRequest(BaseModel):
-    # Back-compat pairwise shape: callers can pass just `current` plus
-    # optional `previous`. New callers should populate `history` with a
-    # time-ordered list (oldest first) — when present it takes priority
-    # over the pairwise fields.
-    current: dict | None = None
-    previous: dict | None = None
-    history: list[dict] | None = None
+    """Time-ordered list of scans (oldest first) for the disease-
+    progression sparkline + trend the plant-detail screen renders."""
+
+    history: list[dict]
 
 
 # Classes the production head can actually predict. Tracks the
@@ -1608,33 +1603,12 @@ async def care_plan_endpoint(payload: CarePlanRequest):
 
 @app.post("/api/progression")
 async def progression_endpoint(payload: ProgressionRequest):
-    """Disease-progression analysis. Accepts two shapes:
-
-      * **Historical**: ``history=[scan1, scan2, ...]`` (oldest first).
-        Returns a 5-point severity sparkline plus a trend slope across
-        the full history. This is the new path for the Android plant-
-        detail screen.
-      * **Pairwise (legacy)**: ``current`` + optional ``previous``.
-        Returns the same trend / delta_* fields the v2.0 client
-        expects. Kept for backward compatibility — older clients still
-        in the wild pre-date the historical endpoint.
-
-    When ``history`` is non-empty it takes precedence and the response
-    additionally carries the sparkline. When only the pairwise fields
-    are supplied the response keeps the v2.0 shape so older clients
-    never see an unexpected key, but new clients can rely on the
-    sparkline + history_length fields.
-    """
-    if payload.history is not None:
-        return JSONResponse(content=compare_progression_history(payload.history))
-    # Pairwise back-compat path.
-    if payload.current is None:
-        raise HTTPException(status_code=400, detail="current or history is required")
-    return JSONResponse(
-        content=compare_progression(
-            current=payload.current, previous=payload.previous,
-        )
-    )
+    """Disease-progression analysis. Returns a 5-point severity
+    sparkline + a trend slope across the supplied history (oldest
+    first). An empty list is allowed and yields a zero-padded
+    baseline so the client can render an "awaiting data" state
+    without special-casing."""
+    return JSONResponse(content=compare_progression_history(payload.history))
 
 
 @app.post("/api/feedback")

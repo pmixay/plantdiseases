@@ -247,6 +247,20 @@
     <string name="add_note">Note</string>
     <string name="add_photo_log">Photo</string>
     <string name="log_watering">Water</string>
+    <string name="log_fertilising">Fertilise</string>
+    <string name="log_repotting">Repot</string>
+    <string name="log_pruning">Prune</string>
+    <string name="log_misting">Mist</string>
+    <!-- Garden card status row -->
+    <string name="garden_card_health_healthy">Healthy %1$d%%</string>
+    <string name="garden_card_health_disease">%1$s</string>
+    <string name="garden_card_action_overdue">%1$s overdue</string>
+    <string name="garden_card_action_tomorrow">%1$s tomorrow</string>
+    <string name="garden_card_action_in_days">%1$s in %2$d days</string>
+    <!-- Plant cover photo (toolbar overflow on plant detail) -->
+    <string name="cover_photo_set">Set cover photo</string>
+    <string name="cover_photo_clear">Clear cover photo</string>
+    <string name="cover_photo_updated">Cover photo updated</string>
     <string name="empty_plant_scans_title">No scans for this plant</string>
     <string name="empty_plant_scans_hint">Use Add to garden from a diagnosis result to build this plant timeline.</string>
     <string name="empty_journal_title">No reminders or notes yet</string>
@@ -255,8 +269,16 @@
     <string name="note_entry">Free-text note</string>
     <string name="photo_entry">Photo log</string>
     <string name="watering_entry">Watering log</string>
+    <string name="fertilising_entry">Fertilising log</string>
+    <string name="repotting_entry">Repotting log</string>
+    <string name="pruning_entry">Pruning log</string>
+    <string name="misting_entry">Misting log</string>
     <string name="note_hint">What changed? New leaves, spots, soil, light...</string>
     <string name="watering_hint">Optional: amount, fertilizer, soil moisture...</string>
+    <string name="fertilising_hint">Optional: brand, NPK ratio, dilution...</string>
+    <string name="repotting_hint">Optional: pot size, soil mix...</string>
+    <string name="pruning_hint">Optional: what you removed, why...</string>
+    <string name="misting_hint">Optional: room humidity, frequency...</string>
     <string name="photo_caption_hint">Optional caption for this photo</string>
     <string name="journal_text_required">Write a note first</string>
     <string name="add_to_garden">Add to garden</string>
@@ -288,7 +310,7 @@
     <string name="reminder_subtitle">Set care schedules for this plant</string>
     <!-- Doctor Chat -->
     <string name="doctor_title">AI Plant Doctor</string>
-    <string name="doctor_stub_subtitle">Saved chat, ready for server AI later</string>
+    <string name="doctor_stub_subtitle">Ask about this plant — symptoms, watering, light…</string>
     <string name="doctor_hint">Ask about symptoms, care, treatment…</string>
     <string name="doctor_send">Send</string>
     <string name="doctor_thinking">Thinking…</string>
@@ -340,6 +362,29 @@
     <string name="care_plan_awaiting_scan">Scan a leaf first to get a tailored plan. Without a diagnosis we can\'t recommend specific treatment intervals.</string>
     <string name="care_plan_scan_now">Scan now</string>
     <string name="care_plan_awaiting_scan_toast">Open the Scan tab to take a photo of this plant.</string>
+    <!-- Care Plan — details expander (server v2 fields). -->
+    <string name="care_plan_show_details">Show details</string>
+    <string name="care_plan_hide_details">Hide details</string>
+    <string name="care_plan_detail_placement">Placement</string>
+    <string name="care_plan_detail_acclimation">Acclimation</string>
+    <string name="care_plan_detail_watering_method">Watering method</string>
+    <string name="care_plan_detail_soil_mix">Soil mix</string>
+    <string name="care_plan_detail_npk">Fertiliser NPK</string>
+    <string name="care_plan_detail_light_lux">Light (lux)</string>
+    <string name="care_plan_detail_humidity">Humidity band</string>
+    <string name="care_plan_detail_temperature">Temperature</string>
+    <string name="care_plan_detail_treatment">Treatment checklist</string>
+    <string name="care_plan_detail_sanitation">Sanitation</string>
+    <string name="care_plan_detail_isolation">Isolation</string>
+    <string name="care_plan_detail_red_flags">Red flags</string>
+    <string name="care_plan_detail_checkpoints">Checkpoints</string>
+    <string name="care_plan_detail_season_note">Season note</string>
+    <string name="care_plan_lux_range">%1$d – %2$d lx</string>
+    <string name="care_plan_humidity_range">%1$d – %2$d %%</string>
+    <string name="care_plan_temp_day">Day %1$d – %2$d °C</string>
+    <string name="care_plan_temp_night">Night %1$d – %2$d °C</string>
+    <string name="care_plan_checkpoint_line">Day %1$d · %2$s</string>
+    <string name="care_plan_isolation_required">Quarantine from other plants until recovered</string>
 
     <!-- Species suggestion (PlantNet) -->
     <string name="species_suggest_title">Identify from photo</string>
@@ -411,4 +456,12 @@
     <string name="progression_history_meta">%1$d scans · latest %2$s</string>
     <string name="progression_loading">Building progression sparkline…</string>
     <string name="progression_failed">Could not load progression data.</string>
+    <string name="progression_followup_cta">Take a follow-up scan in a week to see how this plant changes — the sparkline above will fill in.</string>
+    <string name="progression_followup_remind">Remind me in 7 days</string>
+    <string name="progression_followup_scheduled">Follow-up reminder scheduled</string>
+    <!-- Full-screen photo viewer -->
+    <string name="photo_viewer_indicator">%1$d / %2$d</string>
+    <!-- Plant detail → Light Meter shortcut -->
+    <string name="light_meter_entry_title">Measure light here</string>
+    <string name="light_meter_entry_subtitle">Use your phone\'s light sensor to check the lux level at this plant\'s spot.</string>
 </resources>

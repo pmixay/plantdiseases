@@ -42,6 +42,8 @@ class CarePlanCardView @JvmOverloads constructor(
     private val noteBody: TextView
     private val followUpView: TextView
     private val applyToRemindersBtn: MaterialButton
+    private val detailsToggle: MaterialButton
+    private val detailsContainer: LinearLayout
 
     private var onRetryClick: (() -> Unit)? = null
     private var onApplyToReminders: ((CarePlanResponse) -> Unit)? = null
@@ -237,6 +239,56 @@ class CarePlanCardView @JvmOverloads constructor(
             }
         }
         statusContainer.addView(applyToRemindersBtn)
+
+        // Details expander — collapsed by default to keep the card
+        // visually light. Surfaces the v2 care-plan response fields
+        // (placement, soil mix, NPK, lux band, humidity band,
+        // temperature, treatment checklist, sanitation, red flags,
+        // checkpoints) when they're populated. Each row null-guards
+        // independently so a plan missing a single field still
+        // renders the others.
+        detailsContainer = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = 14.dp() }
+        }
+        statusContainer.addView(detailsContainer)
+
+        detailsToggle = MaterialButton(
+            context, null, com.google.android.material.R.attr.borderlessButtonStyle,
+        ).apply {
+            text = context.getString(R.string.care_plan_show_details)
+            setTextColor(context.getColor(R.color.on_primary))
+            iconTint = android.content.res.ColorStateList.valueOf(
+                context.getColor(R.color.on_primary)
+            )
+            setIconResource(R.drawable.ic_chevron_down)
+            iconGravity = MaterialButton.ICON_GRAVITY_TEXT_END
+            visibility = View.GONE
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply {
+                topMargin = 8.dp()
+                marginStart = -12.dp() // pull flush with the card padding
+            }
+            setOnClickListener {
+                val expanded = detailsContainer.visibility == View.VISIBLE
+                detailsContainer.visibility = if (expanded) View.GONE else View.VISIBLE
+                text = context.getString(
+                    if (expanded) R.string.care_plan_show_details
+                    else R.string.care_plan_hide_details,
+                )
+                setIconResource(
+                    if (expanded) R.drawable.ic_chevron_down
+                    else R.drawable.ic_chevron_up,
+                )
+            }
+        }
+        statusContainer.addView(detailsToggle)
     }
 
     fun showLoading(speciesHint: String?) {
@@ -247,6 +299,8 @@ class CarePlanCardView @JvmOverloads constructor(
         noteContainer.visibility = View.GONE
         followUpView.visibility = View.GONE
         applyToRemindersBtn.visibility = View.GONE
+        detailsToggle.visibility = View.GONE
+        detailsContainer.visibility = View.GONE
     }
 
     fun showError(onRetry: () -> Unit) {
@@ -256,6 +310,8 @@ class CarePlanCardView @JvmOverloads constructor(
         noteContainer.visibility = View.GONE
         followUpView.visibility = View.GONE
         applyToRemindersBtn.visibility = View.GONE
+        detailsToggle.visibility = View.GONE
+        detailsContainer.visibility = View.GONE
         // Reset error-state text in case a previous showAwaitingScan() call
         // overrode it on this same instance.
         errorBody.text = context.getString(R.string.care_plan_unavailable)
@@ -278,6 +334,8 @@ class CarePlanCardView @JvmOverloads constructor(
         noteContainer.visibility = View.GONE
         followUpView.visibility = View.GONE
         applyToRemindersBtn.visibility = View.GONE
+        detailsToggle.visibility = View.GONE
+        detailsContainer.visibility = View.GONE
         errorView.visibility = View.VISIBLE
         errorBody.text = context.getString(R.string.care_plan_awaiting_scan)
         retryButton.text = context.getString(R.string.care_plan_scan_now)
@@ -348,6 +406,175 @@ class CarePlanCardView @JvmOverloads constructor(
 
         applyToRemindersBtn.visibility =
             if (showApplyToReminders && onApplyToReminders != null) View.VISIBLE else View.GONE
+
+        // Build v2-field details panel and toggle visibility based on
+        // whether any v2 field is populated.
+        val rendered = applyV2Details(plan)
+        detailsToggle.visibility = if (rendered) View.VISIBLE else View.GONE
+        if (!rendered) detailsContainer.visibility = View.GONE
+    }
+
+    /** Render the rich v2 care-plan fields into [detailsContainer].
+     *  Returns ``true`` when at least one section had content (i.e. the
+     *  toggle should be visible), ``false`` when the plan is v1-only. */
+    private fun applyV2Details(plan: CarePlanResponse): Boolean {
+        detailsContainer.removeAllViews()
+        var any = false
+
+        plan.placement?.takeIf { it.isNotBlank() }?.let {
+            detailsContainer.addView(detailRow(R.string.care_plan_detail_placement, it))
+            any = true
+        }
+        plan.acclimation?.takeIf { it.isNotBlank() }?.let {
+            detailsContainer.addView(detailRow(R.string.care_plan_detail_acclimation, it))
+            any = true
+        }
+        plan.wateringMethod?.takeIf { it.isNotBlank() }?.let {
+            detailsContainer.addView(detailRow(R.string.care_plan_detail_watering_method, it))
+            any = true
+        }
+        plan.soilMix?.takeIf { it.isNotBlank() }?.let {
+            detailsContainer.addView(detailRow(R.string.care_plan_detail_soil_mix, it))
+            any = true
+        }
+        plan.fertiliserNpk?.takeIf { it.isNotBlank() }?.let {
+            detailsContainer.addView(detailRow(R.string.care_plan_detail_npk, it))
+            any = true
+        }
+        plan.lightLuxTarget?.let { lux ->
+            if (lux.min > 0 || lux.max > 0) {
+                detailsContainer.addView(detailRow(
+                    R.string.care_plan_detail_light_lux,
+                    context.resources.getString(R.string.care_plan_lux_range, lux.min, lux.max),
+                ))
+                any = true
+            }
+        }
+        plan.humidityBand?.let { hum ->
+            if (hum.min > 0 || hum.max > 0) {
+                detailsContainer.addView(detailRow(
+                    R.string.care_plan_detail_humidity,
+                    context.resources.getString(R.string.care_plan_humidity_range, hum.min, hum.max),
+                ))
+                any = true
+            }
+        }
+        plan.temperatureC?.let { temp ->
+            val day = temp.day?.takeIf { it.size == 2 }
+            val night = temp.night?.takeIf { it.size == 2 }
+            if (day != null || night != null) {
+                val parts = mutableListOf<String>()
+                if (day != null) parts.add(
+                    context.resources.getString(R.string.care_plan_temp_day, day[0], day[1])
+                )
+                if (night != null) parts.add(
+                    context.resources.getString(R.string.care_plan_temp_night, night[0], night[1])
+                )
+                detailsContainer.addView(detailRow(
+                    R.string.care_plan_detail_temperature,
+                    parts.joinToString("  ·  "),
+                ))
+                any = true
+            }
+        }
+        plan.treatment?.filter { it.isNotBlank() }?.takeIf { it.isNotEmpty() }?.let { items ->
+            detailsContainer.addView(detailBulletList(
+                R.string.care_plan_detail_treatment, items, alert = false,
+            ))
+            any = true
+        }
+        plan.sanitation?.filter { it.isNotBlank() }?.takeIf { it.isNotEmpty() }?.let { items ->
+            detailsContainer.addView(detailBulletList(
+                R.string.care_plan_detail_sanitation, items, alert = false,
+            ))
+            any = true
+        }
+        if (plan.isolation) {
+            detailsContainer.addView(detailRow(
+                R.string.care_plan_detail_isolation,
+                context.getString(R.string.care_plan_isolation_required),
+            ))
+            any = true
+        }
+        plan.redFlags?.filter { it.isNotBlank() }?.takeIf { it.isNotEmpty() }?.let { items ->
+            detailsContainer.addView(detailBulletList(
+                R.string.care_plan_detail_red_flags, items, alert = true,
+            ))
+            any = true
+        }
+        plan.checkpoints?.filter { it.check.isNotBlank() }?.takeIf { it.isNotEmpty() }?.let { items ->
+            val text = items.joinToString("\n") { cp ->
+                context.resources.getString(R.string.care_plan_checkpoint_line, cp.day, cp.check)
+            }
+            detailsContainer.addView(detailRow(R.string.care_plan_detail_checkpoints, text))
+            any = true
+        }
+        plan.seasonNote?.takeIf { it.isNotBlank() }?.let {
+            detailsContainer.addView(detailRow(R.string.care_plan_detail_season_note, it))
+            any = true
+        }
+        return any
+    }
+
+    /** Label + body row for a single care-plan detail field. */
+    private fun detailRow(labelRes: Int, body: String): View {
+        val container = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = 12.dp() }
+        }
+        container.addView(detailLabel(labelRes))
+        container.addView(TextView(context).apply {
+            text = body
+            textSize = 14f
+            setTextColor(context.getColor(R.color.on_primary))
+            setLineSpacing(2.dp().toFloat(), 1f)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = 3.dp() }
+        })
+        return container
+    }
+
+    /** Label + bulleted body for list-shaped fields (treatment,
+     *  sanitation, red_flags). The [alert] flag tints the body in the
+     *  warning colour for red_flags. */
+    private fun detailBulletList(
+        labelRes: Int, items: List<String>, alert: Boolean,
+    ): View {
+        val container = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = 12.dp() }
+        }
+        container.addView(detailLabel(labelRes))
+        container.addView(TextView(context).apply {
+            text = items.joinToString("\n") { "•  $it" }
+            textSize = 14f
+            setTextColor(context.getColor(
+                if (alert) R.color.disease_red_bg else R.color.on_primary
+            ))
+            setLineSpacing(3.dp().toFloat(), 1f)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = 3.dp() }
+        })
+        return container
+    }
+
+    /** Small all-caps label for a details-section row. */
+    private fun detailLabel(labelRes: Int): TextView = TextView(context).apply {
+        text = context.getString(labelRes).uppercase()
+        textSize = 11f
+        setTextColor(context.getColor(R.color.on_primary_secondary))
+        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        letterSpacing = 0.06f
     }
 
     private fun horizontalRow(): LinearLayout = LinearLayout(context).apply {

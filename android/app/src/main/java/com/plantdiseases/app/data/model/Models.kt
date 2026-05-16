@@ -18,14 +18,12 @@ data class DetectionRegion(
  * the server actually saw (post-upload-decode). The bbox coordinates
  * are in that space, so any overlay renderer must scale against these
  * dims rather than against the raw camera file's bitmap (which is
- * typically larger and may be EXIF-rotated). Both fields are nullable
- * for backwards compatibility with pre-2.2 servers — older builds
- * omit them. */
+ * typically larger and may be EXIF-rotated). */
 data class Detection(
     @SerializedName("is_diseased") val isDiseased: Boolean,
     @SerializedName("detector_confidence") val detectorConfidence: Float,
-    @SerializedName("image_width") val imageWidth: Int? = null,
-    @SerializedName("image_height") val imageHeight: Int? = null,
+    @SerializedName("image_width") val imageWidth: Int = 0,
+    @SerializedName("image_height") val imageHeight: Int = 0,
     @SerializedName("regions") val regions: List<DetectionRegion> = emptyList(),
     @SerializedName("primary_region") val primaryRegion: DetectionRegion? = null
 )
@@ -385,28 +383,18 @@ data class HealthResponse(
 )
 
 /**
- * /api/progression request — current and (optionally) previous scan
- * payload. Both fields are loosely typed maps because the endpoint is
- * a pure function over the analyse-shaped dicts the client already
- * has cached.
+ * /api/progression request — time-ordered scan list (oldest first).
+ * The server returns the 5-point severity sparkline + a trend slope
+ * computed across the full history.
  */
 data class ProgressionRequest(
-    @SerializedName("current") val current: Map<String, Any?>? = null,
-    @SerializedName("previous") val previous: Map<String, Any?>? = null,
-    /**
-     * Historical time-ordered scan list (oldest first). When present
-     * the server returns the 5-point severity sparkline. Either
-     * `history` or `current` must be supplied.
-     */
-    @SerializedName("history") val history: List<Map<String, Any?>>? = null,
+    @SerializedName("history") val history: List<Map<String, Any?>>,
 )
 
 /**
  * /api/progression response. `trend` ∈ {improving, stable, worsening,
- * baseline}. `baseline` means there was no previous scan to compare
- * against. `sparkline` is only populated when the request supplied
- * `history` — older pairwise calls leave it null for the v2.0
- * back-compat shape.
+ * baseline}. `baseline` means there were not enough scans to compare
+ * against. `sparkline` is always populated (5-point severity series).
  */
 data class ProgressionResponse(
     @SerializedName("trend") val trend: String,

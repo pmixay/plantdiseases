@@ -240,6 +240,20 @@
     <string name="add_note">Заметка</string>
     <string name="add_photo_log">Фото</string>
     <string name="log_watering">Полив</string>
+    <string name="log_fertilising">Подкормка</string>
+    <string name="log_repotting">Пересадка</string>
+    <string name="log_pruning">Обрезка</string>
+    <string name="log_misting">Опрыскивание</string>
+    <!-- Сад: статусная строка карточки растения -->
+    <string name="garden_card_health_healthy">Здоров %1$d%%</string>
+    <string name="garden_card_health_disease">%1$s</string>
+    <string name="garden_card_action_overdue">%1$s просрочено</string>
+    <string name="garden_card_action_tomorrow">%1$s завтра</string>
+    <string name="garden_card_action_in_days">%1$s через %2$d дн.</string>
+    <!-- Обложка растения (меню верхней панели на экране деталей) -->
+    <string name="cover_photo_set">Выбрать обложку</string>
+    <string name="cover_photo_clear">Убрать обложку</string>
+    <string name="cover_photo_updated">Обложка обновлена</string>
     <string name="empty_plant_scans_title">У растения пока нет сканов</string>
     <string name="empty_plant_scans_hint">Нажмите «Добавить в сад» на экране диагноза, чтобы собрать историю.</string>
     <string name="empty_journal_title">Пока нет напоминаний и заметок</string>
@@ -248,8 +262,16 @@
     <string name="note_entry">Свободная заметка</string>
     <string name="photo_entry">Фото в журнале</string>
     <string name="watering_entry">Полив</string>
+    <string name="fertilising_entry">Подкормка</string>
+    <string name="repotting_entry">Пересадка</string>
+    <string name="pruning_entry">Обрезка</string>
+    <string name="misting_entry">Опрыскивание</string>
     <string name="note_hint">Что изменилось? Новые листья, пятна, грунт, свет...</string>
     <string name="watering_hint">Опционально: объём, удобрение, влажность грунта...</string>
+    <string name="fertilising_hint">Опционально: марка, NPK, разведение...</string>
+    <string name="repotting_hint">Опционально: размер горшка, грунт...</string>
+    <string name="pruning_hint">Опционально: что удалили, зачем...</string>
+    <string name="misting_hint">Опционально: влажность в комнате, частота...</string>
     <string name="photo_caption_hint">Опциональная подпись к фото</string>
     <string name="journal_text_required">Сначала напишите заметку</string>
     <string name="add_to_garden">В сад</string>
@@ -281,7 +303,7 @@
     <string name="reminder_subtitle">Настройте расписание ухода</string>
     <!-- Doctor Chat -->
     <string name="doctor_title">ИИ-врач растений</string>
-    <string name="doctor_stub_subtitle">Чат сохраняется и готов к серверному ИИ</string>
+    <string name="doctor_stub_subtitle">Спросите об этом растении — симптомы, полив, свет…</string>
     <string name="doctor_hint">Симптомы, уход, лечение…</string>
     <string name="doctor_send">Отправить</string>
     <string name="doctor_thinking">Думаю…</string>
@@ -333,6 +355,29 @@
     <string name="care_plan_awaiting_scan">Сначала отсканируйте лист — без диагноза мы не можем подобрать конкретные интервалы лечения.</string>
     <string name="care_plan_scan_now">Сканировать</string>
     <string name="care_plan_awaiting_scan_toast">Откройте вкладку «Скан», чтобы сфотографировать растение.</string>
+    <!-- План ухода — раскрывающиеся подробности (v2 поля сервера). -->
+    <string name="care_plan_show_details">Показать детали</string>
+    <string name="care_plan_hide_details">Скрыть детали</string>
+    <string name="care_plan_detail_placement">Размещение</string>
+    <string name="care_plan_detail_acclimation">Акклиматизация</string>
+    <string name="care_plan_detail_watering_method">Способ полива</string>
+    <string name="care_plan_detail_soil_mix">Грунт</string>
+    <string name="care_plan_detail_npk">NPK удобрения</string>
+    <string name="care_plan_detail_light_lux">Освещение (люкс)</string>
+    <string name="care_plan_detail_humidity">Влажность</string>
+    <string name="care_plan_detail_temperature">Температура</string>
+    <string name="care_plan_detail_treatment">Чек-лист лечения</string>
+    <string name="care_plan_detail_sanitation">Санитария</string>
+    <string name="care_plan_detail_isolation">Изоляция</string>
+    <string name="care_plan_detail_red_flags">Тревожные признаки</string>
+    <string name="care_plan_detail_checkpoints">Контрольные точки</string>
+    <string name="care_plan_detail_season_note">Сезонная заметка</string>
+    <string name="care_plan_lux_range">%1$d – %2$d лк</string>
+    <string name="care_plan_humidity_range">%1$d – %2$d %%</string>
+    <string name="care_plan_temp_day">День %1$d – %2$d °C</string>
+    <string name="care_plan_temp_night">Ночь %1$d – %2$d °C</string>
+    <string name="care_plan_checkpoint_line">День %1$d · %2$s</string>
+    <string name="care_plan_isolation_required">Изолируйте от других растений до выздоровления</string>
 
     <!-- Species suggestion (PlantNet) -->
     <string name="species_suggest_title">Определить по фото</string>
@@ -397,4 +442,12 @@
     <string name="progression_history_meta">%1$d сканов · последний %2$s</string>
     <string name="progression_loading">Строим график динамики…</string>
     <string name="progression_failed">Не удалось загрузить данные динамики.</string>
+    <string name="progression_followup_cta">Сделайте повторный скан через неделю — график выше начнёт заполняться, и вы увидите динамику.</string>
+    <string name="progression_followup_remind">Напомнить через 7 дней</string>
+    <string name="progression_followup_scheduled">Напоминание запланировано</string>
+    <!-- Полноэкранный просмотр фото -->
+    <string name="photo_viewer_indicator">%1$d / %2$d</string>
+    <!-- Экран растения → переход в люксметр -->
+    <string name="light_meter_entry_title">Измерить освещение</string>
+    <string name="light_meter_entry_subtitle">С помощью датчика телефона проверьте уровень освещения у этого растения.</string>
 </resources>

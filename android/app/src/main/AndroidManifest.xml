@@ -76,6 +76,12 @@
             android:screenOrientation="portrait" />
 
         <activity
+            android:name=".ui.garden.PhotoViewerActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.AppCompat.NoActionBar" />
+
+        <activity
             android:name=".ui.camera.LightMeterActivity"
             android:exported="false"
             android:screenOrientation="portrait" />

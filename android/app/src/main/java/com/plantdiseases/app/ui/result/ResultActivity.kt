@@ -222,31 +222,14 @@ class ResultActivity : AppCompatActivity() {
 
             // YOLOv8 bbox overlay — only when we actually found a diseased
             // region. NAP and healthy verdicts skip the overlay.
+            // Bbox coordinates are in the *server-side* image's pixel
+            // space (the upload after PIL decode, which Android
+            // pre-rotates + downscales to <=1024 px). The server echoes
+            // those dims back on every response and the scan row carries
+            // them; render against those values directly.
             val regions = repository.parseRegions(scan.regions)
             if (!isNotAPlant && !isHealthyVerdict && regions.isNotEmpty()) {
-                // Bbox coordinates are in the *server-side* image's pixel
-                // space (the upload after PIL decode, which Android
-                // pre-rotates+downscales to <=1024 px in
-                // ImageUtils.prepareImageForUpload). The raw camera file
-                // is usually much larger and may carry EXIF rotation in
-                // the opposite axis — using it here causes the boxes
-                // to cluster in one corner. Trust the server-emitted
-                // dims when present (v2.2+); fall back to an
-                // EXIF-applied decode of the on-disk file for older
-                // servers.
-                val srvW = scan.detectionImageWidth ?: 0
-                val srvH = scan.detectionImageHeight ?: 0
-                val origBounds = if (srvW > 0 && srvH > 0) {
-                    Pair(srvW, srvH)
-                } else {
-                    // Pre-2.2 server didn't echo image dims — reconstruct
-                    // by replaying ImageUtils.prepareImageForUpload's
-                    // EXIF-rotate + downscale-to-1024 chain. Both halves
-                    // of the chain matter: omitting the downscale leaves
-                    // bbox coords in the wrong scale, omitting the
-                    // rotate leaves them in the wrong axis.
-                    ImageUtils.getUploadDimensions(scan.imagePath)
-                }
+                val origBounds = Pair(scan.detectionImageWidth, scan.detectionImageHeight)
                 val primaryIdx = scan.primaryRegionIndex ?: -1
                 val overlayBoxes = regions.mapIndexed { i, r ->
                     HeatmapOverlayView.Box(

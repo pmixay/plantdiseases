@@ -70,6 +70,22 @@ class PlantDetailActivity : AppCompatActivity() {
         }
     }
 
+    /** Cover-photo picker — the picked URI is persisted on
+     *  [PlantEntity.coverPhotoUri] so the garden card thumbnail and
+     *  detail-hero render against the user's chosen photo instead of
+     *  the most-recent scan. Tapping Clear cover removes it again. */
+    private val pickCover = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        if (uri != null) {
+            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            lifecycleScope.launch {
+                plantRepository.updateCoverPhoto(plantId, uri.toString())
+                Toast.makeText(this@PlantDetailActivity,
+                    R.string.cover_photo_updated, Toast.LENGTH_SHORT).show()
+                loadPlant()
+            }
+        }
+    }
+
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
     }
@@ -118,6 +134,23 @@ class PlantDetailActivity : AppCompatActivity() {
             setTitleTextAppearance(this@PlantDetailActivity, R.style.TextAppearance_App_Toolbar)
             title = ""
             setNavigationOnClickListener { finish() }
+            inflateMenu(R.menu.plant_detail_menu)
+            setOnMenuItemClickListener { item ->
+                when (item.itemId) {
+                    R.id.action_set_cover_photo -> {
+                        pickCover.launch(arrayOf("image/*"))
+                        true
+                    }
+                    R.id.action_clear_cover_photo -> {
+                        lifecycleScope.launch {
+                            plantRepository.updateCoverPhoto(plantId, null)
+                            loadPlant()
+                        }
+                        true
+                    }
+                    else -> false
+                }
+            }
             toolbarTitle = TextView(this@PlantDetailActivity).apply {
                 text = getString(R.string.plant_detail_title)
                 textSize = 22f
@@ -186,6 +219,7 @@ class PlantDetailActivity : AppCompatActivity() {
         content.addView(buildActionRow())
         content.addView(buildProgressionCard(scans))
         content.addView(buildCarePlanSlot(plant, scans))
+        content.addView(buildLightMeterEntry(plant))
         content.addView(buildDoctorEntry(plant, scans))
         content.addView(buildTabs())
 
@@ -224,6 +258,31 @@ class PlantDetailActivity : AppCompatActivity() {
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             )
         }
+        val outer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        // Cover photo strip — user-picked first, latest-scan image
+        // second, hide when neither exists so the text-only hero
+        // still feels intentional rather than missing-image. The
+        // gradient overlay at the bottom is rendered by the existing
+        // bg_garden_hero drawable underneath, so the text remains
+        // legible regardless of cover-photo brightness.
+        val coverSrc: String? = plant.coverPhotoUri
+            ?: scans.maxByOrNull { it.timestamp }?.imagePath
+        if (coverSrc != null) {
+            val cover = ImageView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    160.dp(),
+                )
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                clipToOutline = true
+                isClickable = true
+                setOnClickListener { openHeroPhotoViewer(plant, scans) }
+            }
+            Glide.with(this).load(coverSrc).into(cover)
+            outer.addView(cover)
+        }
         val body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(20.dp(), 22.dp(), 20.dp(), 20.dp())
@@ -258,7 +317,8 @@ class PlantDetailActivity : AppCompatActivity() {
         stats.addView(statPill(getString(R.string.journal), journal.size.toString()))
         stats.addView(statPill(getString(R.string.waterings), journal.count { it.type == PlantRepository.JournalType.WATERING.value }.toString(), endMargin = false))
         body.addView(stats)
-        card.addView(body)
+        outer.addView(body)
+        card.addView(outer)
         return card
     }
 
@@ -286,22 +346,50 @@ class PlantDetailActivity : AppCompatActivity() {
         return box
     }
 
+    /** Horizontally-scrollable strip of per-plant action chips. The
+     *  three "first-class" actions (Note / Photo / Water) keep their
+     *  original visual weight; the four physiological-care actions
+     *  (Fertilise / Repot / Prune / Mist) are reachable in one
+     *  horizontal swipe. Reminders is pinned at the end. */
     private fun buildActionRow(): View {
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
+        val scroller = android.widget.HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            clipToPadding = false
+            setPadding(0, 0, 0, 0)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             ).apply { topMargin = 12.dp() }
         }
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = android.widget.HorizontalScrollView.LayoutParams(
+                android.widget.HorizontalScrollView.LayoutParams.WRAP_CONTENT,
+                android.widget.HorizontalScrollView.LayoutParams.WRAP_CONTENT,
+            )
+        }
         row.addView(actionTile(R.string.add_note, R.drawable.ic_note_pencil) { showNoteDialog() })
         row.addView(actionTile(R.string.add_photo_log, R.drawable.ic_gallery) { pickPhoto.launch(arrayOf("image/*")) })
         row.addView(actionTile(R.string.log_watering, R.drawable.ic_watering) { showWateringDialog() })
+        row.addView(actionTile(R.string.log_fertilising, R.drawable.ic_treatment) {
+            showLogDialog(JournalAction.FERTILISE)
+        })
+        row.addView(actionTile(R.string.log_pruning, R.drawable.ic_note_pencil) {
+            showLogDialog(JournalAction.PRUNE)
+        })
+        row.addView(actionTile(R.string.log_repotting, R.drawable.ic_garden) {
+            showLogDialog(JournalAction.REPOT)
+        })
+        row.addView(actionTile(R.string.log_misting, R.drawable.ic_warning) {
+            showLogDialog(JournalAction.MIST)
+        })
         row.addView(actionTile(R.string.reminders, R.drawable.ic_clock) {
             currentPlant?.let { ReminderScheduleSheet.show(supportFragmentManager, it) }
         })
-        return row
+        scroller.addView(row)
+        return scroller
     }
 
     private fun actionTile(labelRes: Int, iconRes: Int, action: () -> Unit): View =
@@ -314,7 +402,7 @@ class PlantDetailActivity : AppCompatActivity() {
             isClickable = true
             foreground = selectable()
             contentDescription = getString(labelRes)
-            layoutParams = LinearLayout.LayoutParams(0, 66.dp(), 1f).apply {
+            layoutParams = LinearLayout.LayoutParams(78.dp(), 66.dp()).apply {
                 marginStart = 4.dp()
                 marginEnd = 4.dp()
             }
@@ -353,6 +441,51 @@ class PlantDetailActivity : AppCompatActivity() {
                 })
             })
         }
+
+    /** Dialog kinds for the physiological-care journal actions. The
+     *  existing watering / note / photo dialogs stay separate because
+     *  each has its own bespoke flow (photo picker, etc.). */
+    private enum class JournalAction(
+        val titleRes: Int, val hintRes: Int,
+    ) {
+        FERTILISE(R.string.log_fertilising, R.string.fertilising_hint),
+        PRUNE(R.string.log_pruning, R.string.pruning_hint),
+        REPOT(R.string.log_repotting, R.string.repotting_hint),
+        MIST(R.string.log_misting, R.string.misting_hint),
+    }
+
+    private fun showLogDialog(kind: JournalAction) {
+        val input = TextInputEditText(this).apply {
+            inputType = InputType.TYPE_CLASS_TEXT or
+                InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or
+                InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            setHint(kind.hintRes)
+            minLines = 2
+            setSingleLine(false)
+        }
+        val container = TextInputLayout(this).apply {
+            setPadding(20.dp(), 8.dp(), 20.dp(), 0)
+            boxStrokeColor = getColor(R.color.primary)
+            addView(input)
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(kind.titleRes)
+            .setView(container)
+            .setPositiveButton(R.string.reminder_save) { _, _ ->
+                val raw = input.text?.toString()
+                lifecycleScope.launch {
+                    when (kind) {
+                        JournalAction.FERTILISE -> plantRepository.addFertilising(plantId, raw)
+                        JournalAction.PRUNE -> plantRepository.addPruning(plantId, raw)
+                        JournalAction.REPOT -> plantRepository.addRepotting(plantId, raw)
+                        JournalAction.MIST -> plantRepository.addMisting(plantId, raw)
+                    }
+                    loadPlant()
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
 
     /**
      * Care Plan slot. The card itself takes care of loading / error / filled
@@ -441,6 +574,76 @@ class PlantDetailActivity : AppCompatActivity() {
             .entries.maxByOrNull { it.value }?.key
             ?: scan.diseaseName.lowercase().replace(' ', '_')
     }
+
+    /** Light-meter shortcut. Launches the standalone
+     *  [com.plantdiseases.app.ui.camera.LightMeterActivity] (which
+     *  already ships under Profile) so the user can verify the actual
+     *  lux at the plant's location. */
+    private fun buildLightMeterEntry(plant: PlantEntity): View =
+        MaterialCardView(this).apply {
+            radius = 18.dp().toFloat()
+            cardElevation = 0f
+            strokeWidth = 1.dp()
+            strokeColor = getColor(R.color.card_stroke)
+            setCardBackgroundColor(getColor(R.color.surface))
+            isClickable = true
+            foreground = selectable()
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = 10.dp() }
+            setOnClickListener {
+                Haptics.tick(this@PlantDetailActivity)
+                startActivity(Intent(
+                    this@PlantDetailActivity,
+                    com.plantdiseases.app.ui.camera.LightMeterActivity::class.java,
+                ))
+            }
+            addView(LinearLayout(this@PlantDetailActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(14.dp(), 12.dp(), 14.dp(), 12.dp())
+                addView(FrameLayout(this@PlantDetailActivity).apply {
+                    setBackgroundResource(R.drawable.bg_icon_circle)
+                    layoutParams = LinearLayout.LayoutParams(42.dp(), 42.dp())
+                    addView(ImageView(this@PlantDetailActivity).apply {
+                        setImageResource(R.drawable.ic_light)
+                        setColorFilter(getColor(R.color.primary))
+                        layoutParams = FrameLayout.LayoutParams(23.dp(), 23.dp(), Gravity.CENTER)
+                    })
+                })
+                addView(LinearLayout(this@PlantDetailActivity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                        .apply { marginStart = 12.dp() }
+                    addView(TextView(this@PlantDetailActivity).apply {
+                        text = getString(R.string.light_meter_entry_title)
+                        textSize = 15f
+                        setTextColor(getColor(R.color.on_surface))
+                        typeface = android.graphics.Typeface.create(
+                            "sans-serif-medium",
+                            android.graphics.Typeface.NORMAL,
+                        )
+                    })
+                    addView(TextView(this@PlantDetailActivity).apply {
+                        text = getString(R.string.light_meter_entry_subtitle)
+                        textSize = 12f
+                        setTextColor(getColor(R.color.on_surface_secondary))
+                        maxLines = 2
+                        ellipsize = android.text.TextUtils.TruncateAt.END
+                        layoutParams = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                        ).apply { topMargin = 2.dp() }
+                    })
+                })
+                addView(ImageView(this@PlantDetailActivity).apply {
+                    setImageResource(R.drawable.ic_chevron_right)
+                    setColorFilter(getColor(R.color.on_surface_secondary))
+                    layoutParams = LinearLayout.LayoutParams(22.dp(), 22.dp())
+                })
+            })
+        }
 
     private fun buildDoctorEntry(plant: PlantEntity, scans: List<ScanEntity>): View =
         MaterialCardView(this).apply {
@@ -574,6 +777,16 @@ class PlantDetailActivity : AppCompatActivity() {
                 .transform(CenterCrop(), RoundedCorners(16.dp()))
                 .placeholder(R.drawable.ic_plant_placeholder)
                 .into(this)
+            isClickable = true
+            setOnClickListener {
+                lifecycleScope.launch {
+                    val all = plantRepository.getScansForPlant(plantId)
+                        .sortedBy { it.timestamp }
+                        .map { it.imagePath }
+                    val start = all.indexOf(scan.imagePath).coerceAtLeast(0)
+                    PhotoViewerActivity.open(this@PlantDetailActivity, all, start)
+                }
+            }
         })
         val text = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -628,6 +841,10 @@ class PlantDetailActivity : AppCompatActivity() {
                         PlantRepository.JournalType.NOTE -> R.drawable.ic_care
                         PlantRepository.JournalType.PHOTO -> R.drawable.ic_gallery
                         PlantRepository.JournalType.WATERING -> R.drawable.ic_watering
+                        PlantRepository.JournalType.FERTILISING -> R.drawable.ic_treatment
+                        PlantRepository.JournalType.REPOTTING -> R.drawable.ic_garden
+                        PlantRepository.JournalType.PRUNING -> R.drawable.ic_note_pencil
+                        PlantRepository.JournalType.MISTING -> R.drawable.ic_warning
                     }
                 )
                 setColorFilter(getColor(R.color.primary))
@@ -644,6 +861,10 @@ class PlantDetailActivity : AppCompatActivity() {
                 PlantRepository.JournalType.NOTE -> getString(R.string.note_entry)
                 PlantRepository.JournalType.PHOTO -> getString(R.string.photo_entry)
                 PlantRepository.JournalType.WATERING -> getString(R.string.watering_entry)
+                PlantRepository.JournalType.FERTILISING -> getString(R.string.fertilising_entry)
+                PlantRepository.JournalType.REPOTTING -> getString(R.string.repotting_entry)
+                PlantRepository.JournalType.PRUNING -> getString(R.string.pruning_entry)
+                PlantRepository.JournalType.MISTING -> getString(R.string.misting_entry)
             }
             textSize = 15f
             setTextColor(getColor(R.color.on_surface))
@@ -681,6 +902,8 @@ class PlantDetailActivity : AppCompatActivity() {
                     .load(Uri.parse(uri))
                     .transform(CenterCrop(), RoundedCorners(18.dp()))
                     .into(this)
+                isClickable = true
+                setOnClickListener { openJournalPhotoViewer(uri) }
             })
         }
         row.addView(text)
@@ -719,6 +942,10 @@ class PlantDetailActivity : AppCompatActivity() {
             PlantRepository.JournalType.NOTE -> R.string.note_hint
             PlantRepository.JournalType.WATERING -> R.string.watering_hint
             PlantRepository.JournalType.PHOTO -> R.string.photo_caption_hint
+            PlantRepository.JournalType.FERTILISING -> R.string.fertilising_hint
+            PlantRepository.JournalType.REPOTTING -> R.string.repotting_hint
+            PlantRepository.JournalType.PRUNING -> R.string.pruning_hint
+            PlantRepository.JournalType.MISTING -> R.string.misting_hint
         }
         val allowEmpty = type != PlantRepository.JournalType.NOTE
 
@@ -963,7 +1190,11 @@ class PlantDetailActivity : AppCompatActivity() {
         card.addView(body)
 
         if (scans.size < 2) {
-            // Single-scan plants get a baseline placeholder; no network call.
+            // Single-scan plants get a baseline placeholder + a CTA to
+            // book a follow-up scan in 7 days. The CTA wires straight
+            // into the `check` reminder type — accepting it both
+            // confirms the schedule and removes the empty-state hint
+            // for next time.
             trendChip.text = getString(R.string.progression_trend_baseline)
             trendChip.setTextColor(getColor(R.color.on_surface_secondary))
             sparkline.setData(emptyList(), "baseline")
@@ -973,6 +1204,7 @@ class PlantDetailActivity : AppCompatActivity() {
                     scans.size,
                     formatRelativeDate(this, scans[0].timestamp),
                 )
+            if (scans.isNotEmpty()) body.addView(buildProgressionCTA())
             return card
         }
 
@@ -1021,6 +1253,100 @@ class PlantDetailActivity : AppCompatActivity() {
             }
         }
         return card
+    }
+
+    /** Builds the "Take a follow-up scan in 7 days" CTA shown when
+     *  the plant has exactly one scan so far — the sparkline has
+     *  nothing to draw, but we still want a forward-looking action
+     *  instead of a dead end. Wires into the existing `check`
+     *  reminder type via [ReminderManager]. */
+    private fun buildProgressionCTA(): View {
+        val ctx = this
+        val container = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundResource(R.drawable.bg_plant_stat_pill)
+            setPadding(14.dp(), 12.dp(), 14.dp(), 12.dp())
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = 12.dp() }
+        }
+        container.addView(TextView(ctx).apply {
+            text = getString(R.string.progression_followup_cta)
+            textSize = 13f
+            setTextColor(getColor(R.color.on_surface))
+            setLineSpacing(2.dp().toFloat(), 1f)
+        })
+        container.addView(com.google.android.material.button.MaterialButton(
+            ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle,
+        ).apply {
+            text = getString(R.string.progression_followup_remind)
+            cornerRadius = 12.dp()
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = 8.dp() }
+            setOnClickListener {
+                Haptics.tick(this@PlantDetailActivity)
+                lifecycleScope.launch {
+                    val plant = currentPlant ?: return@launch
+                    val reminder = com.plantdiseases.app.data.local.PlantReminderEntity(
+                        plantId = plant.id,
+                        type = "check",
+                        intervalDays = 7,
+                        hour = 9,
+                        minute = 0,
+                        enabled = true,
+                    )
+                    plantRepository.saveReminder(reminder)
+                    com.plantdiseases.app.util.ReminderManager.schedule(
+                        context = this@PlantDetailActivity,
+                        plantId = plant.id,
+                        plantName = plant.name,
+                        type = reminder.type,
+                        intervalDays = reminder.intervalDays,
+                        hour = reminder.hour,
+                        minute = reminder.minute,
+                    )
+                    Toast.makeText(
+                        this@PlantDetailActivity,
+                        R.string.progression_followup_scheduled,
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
+            }
+        })
+        return container
+    }
+
+    /** Open the full-screen photo viewer rooted at a journal photo entry.
+     *  Builds the viewer's chronological list from every PHOTO entry on
+     *  this plant so the user can swipe between them. */
+    private fun openJournalPhotoViewer(tappedUri: String) {
+        lifecycleScope.launch {
+            val photos = plantRepository.getJournalEntries(plantId)
+                .filter { it.type == PlantRepository.JournalType.PHOTO.value }
+                .mapNotNull { it.photoUri }
+                .sorted() // approximates chrono order; the journal-render
+                          // function already returns newest-first
+            val ordered = photos.distinct()
+            val start = ordered.indexOf(tappedUri).coerceAtLeast(0)
+            PhotoViewerActivity.open(this@PlantDetailActivity, ordered, start)
+        }
+    }
+
+    /** Open the viewer on the hero cover (the cover-photo if set, else
+     *  the most recent scan). When the plant has multiple scans we
+     *  hand the viewer the whole scan image list so the user can
+     *  swipe through them as a growth gallery. */
+    private fun openHeroPhotoViewer(plant: PlantEntity, scans: List<ScanEntity>) {
+        if (scans.isEmpty() && plant.coverPhotoUri == null) return
+        val scanImages = scans.sortedBy { it.timestamp }.map { it.imagePath }
+        val ordered = listOfNotNull(plant.coverPhotoUri) +
+            scanImages.filter { it != plant.coverPhotoUri }
+        val deduped = ordered.distinct()
+        if (deduped.isEmpty()) return
+        PhotoViewerActivity.open(this, deduped, 0)
     }
 
     companion object {

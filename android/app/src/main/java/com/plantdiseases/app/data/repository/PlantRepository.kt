@@ -23,14 +23,47 @@ class PlantRepository(
     suspend fun getPlants(): List<PlantSummary> = withContext(Dispatchers.IO) {
         plantDao.getAllPlants().map { plant ->
             val scans = scanDao.getScansForPlant(plant.id)
+            val journal = journalDao.getEntriesForPlant(plant.id)
+            val reminders = reminderDao.getForPlant(plant.id)
             PlantSummary(
                 plant = plant,
                 scanCount = scans.size,
                 latestScan = scans.maxByOrNull { it.timestamp },
-                lastJournalEntry = journalDao.getEntriesForPlant(plant.id).firstOrNull(),
+                lastJournalEntry = journal.firstOrNull(),
+                nextAction = soonestReminderDueAt(reminders, journal),
             )
         }
     }
+
+    /** Compute the soonest reminder due-time across all enabled reminders
+     *  for a plant. ``dueAt = (mostRecent matching-type journal entry's
+     *  timestamp OR plant_created_at) + interval_days * 86_400_000``.
+     *  Returns ``null`` when no reminder is enabled. */
+    private fun soonestReminderDueAt(
+        reminders: List<PlantReminderEntity>,
+        journal: List<PlantJournalEntity>,
+    ): NextAction? {
+        val active = reminders.filter { it.enabled }
+        if (active.isEmpty()) return null
+        return active.mapNotNull { reminder ->
+            val journalType = reminderTypeToJournalType(reminder.type) ?: return@mapNotNull null
+            val lastFired = journal.firstOrNull { it.type == journalType.value }?.timestamp
+                ?: reminder.id // any constant — treat as "due now" via 0 fallback below
+            val anchor = journal.firstOrNull { it.type == journalType.value }?.timestamp ?: 0L
+            val dueAt = anchor + reminder.intervalDays.toLong() * 24L * 60L * 60L * 1000L
+            NextAction(reminder.type, dueAt, lastFired)
+        }.minByOrNull { it.dueAt }
+    }
+
+    private fun reminderTypeToJournalType(reminderType: String): JournalType? =
+        when (reminderType) {
+            "watering" -> JournalType.WATERING
+            "fertilize" -> JournalType.FERTILISING
+            // "check" reminders don't correspond to a logged journal type —
+            // they're a re-shoot prompt. Treat as null so they don't gate
+            // the next-action chip.
+            else -> null
+        }
 
     suspend fun getPlant(id: Long): PlantEntity? = withContext(Dispatchers.IO) {
         plantDao.getPlantById(id)
@@ -75,6 +108,14 @@ class PlantRepository(
         plantDao.deleteById(id)
     }
 
+    /** Update the user-picked cover photo on a plant. Pass `null` to
+     *  clear it — the garden card then falls back to the latest-scan
+     *  image (or the generic icon if there are no scans yet). */
+    suspend fun updateCoverPhoto(id: Long, uri: String?) = withContext(Dispatchers.IO) {
+        val existing = plantDao.getPlantById(id) ?: return@withContext
+        plantDao.update(existing.copy(coverPhotoUri = uri))
+    }
+
     suspend fun assignScanToPlant(scanId: Long, plantId: Long?) = withContext(Dispatchers.IO) {
         scanDao.assignScanToPlant(scanId, plantId)
     }
@@ -101,10 +142,27 @@ class PlantRepository(
         )
     )
 
-    suspend fun addWatering(plantId: Long, text: String?) = addJournalEntry(
+    suspend fun addWatering(plantId: Long, text: String?) =
+        addTypedEntry(plantId, JournalType.WATERING, text)
+
+    suspend fun addFertilising(plantId: Long, text: String?) =
+        addTypedEntry(plantId, JournalType.FERTILISING, text)
+
+    suspend fun addRepotting(plantId: Long, text: String?) =
+        addTypedEntry(plantId, JournalType.REPOTTING, text)
+
+    suspend fun addPruning(plantId: Long, text: String?) =
+        addTypedEntry(plantId, JournalType.PRUNING, text)
+
+    suspend fun addMisting(plantId: Long, text: String?) =
+        addTypedEntry(plantId, JournalType.MISTING, text)
+
+    private suspend fun addTypedEntry(
+        plantId: Long, type: JournalType, text: String?,
+    ) = addJournalEntry(
         PlantJournalEntity(
             plantId = plantId,
-            type = JournalType.WATERING.value,
+            type = type.value,
             text = text?.trim()?.takeIf { it.isNotEmpty() },
         )
     )
@@ -164,12 +222,26 @@ class PlantRepository(
         val scanCount: Int,
         val latestScan: ScanEntity?,
         val lastJournalEntry: PlantJournalEntity?,
+        val nextAction: NextAction? = null,
+    )
+
+    /** Soonest "do something" hint for a plant, computed off the most
+     *  recently logged matching-type journal entry + reminder interval.
+     *  ``dueAt`` is an absolute epoch-ms; the UI renders relative. */
+    data class NextAction(
+        val type: String,           // "watering" / "fertilize" / …
+        val dueAt: Long,
+        val lastFiredAt: Long,
     )
 
     enum class JournalType(val value: String) {
         NOTE("note"),
         PHOTO("photo"),
-        WATERING("watering");
+        WATERING("watering"),
+        FERTILISING("fertilising"),
+        REPOTTING("repotting"),
+        PRUNING("pruning"),
+        MISTING("misting");
 
         companion object {
             fun from(value: String) = entries.firstOrNull { it.value == value } ?: NOTE

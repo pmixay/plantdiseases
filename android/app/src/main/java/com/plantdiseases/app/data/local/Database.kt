@@ -9,13 +9,14 @@ import androidx.room.*
 data class PlantEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     @ColumnInfo(name = "name") val name: String,
-    /**
-     * Free-text species (legacy field, kept for back-compat). When the user
-     * accepts a PlantNet suggestion this stays in sync with `commonName`
-     * for display, while the canonical Latin name lives in `scientificName`.
-     */
+    /** Free-text species. Stays in sync with `commonName` when the user
+     *  accepts a PlantNet suggestion; the canonical Latin name lives
+     *  in `scientificName`. */
     @ColumnInfo(name = "species") val species: String? = null,
-    @ColumnInfo(name = "icon_uri") val iconUri: String? = null,
+    /** Optional user-picked cover photo (content:// URI). When null the
+     *  garden card and plant-detail hero fall back to the latest scan
+     *  image; when both are null they fall back to the default icon. */
+    @ColumnInfo(name = "cover_photo_uri") val coverPhotoUri: String? = null,
     @ColumnInfo(name = "created_at") val createdAt: Long = System.currentTimeMillis(),
     /** Latin / scientific name as returned by PlantNet (e.g. "Ficus elastica"). */
     @ColumnInfo(name = "scientific_name") val scientificName: String? = null,
@@ -91,11 +92,9 @@ data class ScanEntity(
     // Pixel dims of the image the server actually saw (post-upload-decode).
     // ``regions`` coordinates live in this space, so the overlay renderer
     // must scale against these instead of the raw camera file (which is
-    // typically larger and EXIF-rotated). Nullable for back-compat with
-    // pre-2.2 servers that don't emit the field — clients fall back to
-    // ``ImageUtils.getOrientedDimensions`` in that case.
-    @ColumnInfo(name = "detection_image_width") val detectionImageWidth: Int? = null,
-    @ColumnInfo(name = "detection_image_height") val detectionImageHeight: Int? = null,
+    // typically larger and EXIF-rotated).
+    @ColumnInfo(name = "detection_image_width") val detectionImageWidth: Int = 0,
+    @ColumnInfo(name = "detection_image_height") val detectionImageHeight: Int = 0,
     // Per-class probabilities from the classifier (JSON map).
     @ColumnInfo(name = "all_probs") val allProbs: String? = null,
     // Diagnostic flags from the pipeline post-processing rules
@@ -281,19 +280,11 @@ interface PlantJournalDao {
         PlantReminderEntity::class,
         ChatMessageEntity::class,
     ],
-    // v4: added ScanEntity.detection_image_width / detection_image_height
-    // so the overlay renderer can scale the YOLO bboxes against the
-    // image the server actually saw (post-upload-decode), instead of
-    // the raw camera bitmap. Fixes the "boxes cluster in upper-left
-    // corner" bug on portrait phone photos.
-    // v3 added ScanEntity.displayed_class_key so feedback submissions
-    // echo the verdict the user actually saw rather than
-    // argmax(all_probs), which can disagree after the server's
-    // weak-healthy reroute. v2 added prediction_set.
-    // ``fallbackToDestructiveMigration`` is configured below;
-    // local scan history is wiped on first launch with the new
-    // version. Same trade-off the app has been shipping under.
-    version = 4,
+    // The schema is treated as ephemeral while the app is in pre-release
+    // testing: ``fallbackToDestructiveMigration`` is configured below
+    // and any schema change wipes local data on next launch. Real
+    // migrations come later, alongside cloud sync.
+    version = 1,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
