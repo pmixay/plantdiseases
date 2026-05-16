@@ -228,17 +228,19 @@ class GardenFragment : Fragment() {
         )
 
         // Group by room. Named rooms render in alphabetical order;
-        // unassigned plants land at the bottom in their own group so
+        // unassigned plants land at the bottom in their own bucket so
         // the user has a visible nudge to assign rooms without the
-        // app silently hiding anything. When NO plant has a room
-        // (the common first-launch case) we skip the group headers
-        // entirely so the list looks the same as before.
+        // app silently hiding anything. When NO plant has a room set
+        // (the common first-launch case) the grouping headers don't
+        // render at all and the list looks the same as before.
         val byRoom = plants.groupBy {
             it.plant.room?.trim()?.takeIf { r -> r.isNotEmpty() }
         }
-        val orderedRooms = byRoom.keys.filterNotNull().sortedBy { it.lowercase() } +
-            listOfNotNull(if (byRoom.containsKey(null)) null else null)
-        val anyNamed = byRoom.keys.any { it != null }
+        val named = byRoom.entries
+            .filter { it.key != null }
+            .sortedBy { it.key!!.lowercase() }
+        val unassigned = byRoom[null].orEmpty()
+        val anyNamed = named.isNotEmpty()
         var animIndex = 0
         val emit: (View) -> Unit = { view ->
             view.alpha = 0f
@@ -253,16 +255,17 @@ class GardenFragment : Fragment() {
                 .start()
             animIndex++
         }
-        orderedRooms.forEach { room ->
-            val bucket = byRoom[room].orEmpty()
-            if (bucket.isEmpty()) return@forEach
-            if (anyNamed) emit(buildRoomHeader(room ?: getString(R.string.plant_room_unassigned)))
+        named.forEach { (room, bucket) ->
+            emit(buildRoomHeader(room!!))
             bucket.forEach { emit(buildPlantCard(it)) }
         }
-        // The unassigned bucket key is `null` — handle it last.
-        byRoom[null]?.takeIf { it.isNotEmpty() && anyNamed }?.let { bucket ->
-            emit(buildRoomHeader(getString(R.string.plant_room_unassigned)))
-            bucket.forEach { emit(buildPlantCard(it)) }
+        // Unassigned bucket always renders when non-empty. The header
+        // only appears when there's at least one named room to
+        // distinguish from — otherwise it would just say "Unassigned"
+        // above every plant, which is noise.
+        if (unassigned.isNotEmpty()) {
+            if (anyNamed) emit(buildRoomHeader(getString(R.string.plant_room_unassigned)))
+            unassigned.forEach { emit(buildPlantCard(it)) }
         }
     }
 
