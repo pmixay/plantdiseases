@@ -358,6 +358,9 @@
     <!-- Сигнал ухудшения (C3) -->
     <string name="progression_alert_title">«%s» ухудшается</string>
     <string name="progression_alert_body">Два скана подряд показывают ухудшение симптомов — сделайте свежий снимок, чтобы обновить динамику.</string>
+    <!-- Компактная панель действий + лист «Ещё» -->
+    <string name="action_more">Ещё</string>
+    <string name="action_more_title">Дополнительные действия по уходу</string>
     <string name="light_tip_dark">Подвиньте ближе к окну или добавьте фитолампу.</string>
     <string name="light_tip_ideal">Отличное место! Растение будет процветать.</string>
     <string name="light_tip_bright">Притените тонкой шторой или отодвиньте чуть дальше.</string>

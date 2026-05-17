@@ -168,21 +168,33 @@ data class PlantReminderEntity(
 )
 
 @Dao
-interface PlantReminderDao {
+abstract class PlantReminderDao {
     @Query("SELECT * FROM plant_reminders WHERE plant_id = :plantId")
-    suspend fun getForPlant(plantId: Long): List<PlantReminderEntity>
+    abstract suspend fun getForPlant(plantId: Long): List<PlantReminderEntity>
 
     @Query("SELECT * FROM plant_reminders WHERE plant_id = :plantId AND type = :type LIMIT 1")
-    suspend fun getByPlantAndType(plantId: Long, type: String): PlantReminderEntity?
+    abstract suspend fun getByPlantAndType(plantId: Long, type: String): PlantReminderEntity?
 
     @Query("SELECT * FROM plant_reminders WHERE id = :id LIMIT 1")
-    suspend fun getById(id: Long): PlantReminderEntity?
+    abstract suspend fun getById(id: Long): PlantReminderEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(reminder: PlantReminderEntity): Long
+    abstract suspend fun upsert(reminder: PlantReminderEntity): Long
+
+    /** Read-then-write merge of a (plant_id, type) reminder inside a
+     *  single Room transaction. Two coroutines hitting saveReminder on
+     *  the same (plant_id, type) used to race — both read existing=null
+     *  and inserted, leaving an orphan row that the UI could
+     *  partially address. Wrapping the read+upsert in @Transaction
+     *  serialises them at the SQLite write-lock level. */
+    @androidx.room.Transaction
+    open suspend fun upsertByPlantAndType(entity: PlantReminderEntity): Long {
+        val existing = getByPlantAndType(entity.plantId, entity.type)
+        return upsert(entity.copy(id = existing?.id ?: entity.id))
+    }
 
     @Query("DELETE FROM plant_reminders WHERE plant_id = :plantId")
-    suspend fun deleteByPlant(plantId: Long)
+    abstract suspend fun deleteByPlant(plantId: Long)
 }
 
 // ─── Reminder event log ──────────────────────────────────────────────

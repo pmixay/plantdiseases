@@ -202,6 +202,7 @@ class PlantDetailActivity : AppCompatActivity() {
     }
 
     private var wateringSuggestion: PlantRepository.WateringSuggestion? = null
+    private var lastWateredAt: Long? = null
 
     private fun loadPlant() {
         lifecycleScope.launch {
@@ -214,6 +215,7 @@ class PlantDetailActivity : AppCompatActivity() {
             val scans = plantRepository.getScansForPlant(plantId)
             val journal = plantRepository.getJournalEntries(plantId)
             wateringSuggestion = plantRepository.adaptiveWateringSuggestion(plantId)
+            lastWateredAt = plantRepository.lastReminderDoneAt(plantId, "watering")
             render(plant, scans, journal)
         }
     }
@@ -225,14 +227,19 @@ class PlantDetailActivity : AppCompatActivity() {
     ) {
         content.removeAllViews()
         toolbarTitle.text = plant.name
+        // Order is primary-first: identity & quick actions; the
+        // time-sensitive nudge; the diagnosis; the care plan; the
+        // contextual guide link; THEN the tabs. Light Meter +
+        // Doctor used to live above the tabs but they're rare
+        // touches — moving them below lets the user reach the core
+        // data (Timeline / Photos / Journal) in one scroll.
         content.addView(buildHeader(plant, scans, journal))
         content.addView(buildActionRow())
+        buildLastWateredStrip()?.let { content.addView(it) }
         buildAdaptiveWateringChip()?.let { content.addView(it) }
         content.addView(buildProgressionCard(scans))
         content.addView(buildCarePlanSlot(plant, scans))
         buildGuideLink(scans)?.let { content.addView(it) }
-        content.addView(buildLightMeterEntry(plant))
-        content.addView(buildDoctorEntry(plant, scans))
         content.addView(buildTabs())
 
         timelineContainer = LinearLayout(this).apply {
@@ -261,6 +268,11 @@ class PlantDetailActivity : AppCompatActivity() {
         content.addView(timelineContainer)
         content.addView(journalContainer)
         content.addView(photosContainer)
+
+        // Secondary surfaces — pushed below the tabs so the
+        // primary-actions area stays scannable.
+        content.addView(buildLightMeterEntry(plant))
+        content.addView(buildDoctorEntry(plant, scans))
 
         renderTimeline(scans)
         renderJournal(journal)
@@ -368,29 +380,32 @@ class PlantDetailActivity : AppCompatActivity() {
         return box
     }
 
-    /** Two-row action grid. Eight chips in a single horizontal scroller
-     *  feels chaotic and hides the lower-priority actions; arranging
-     *  them as 4×2 keeps the most-used row at the top (Note, Photo,
-     *  Water, Reminders) and groups the physiological-care actions
-     *  below (Fertilise, Prune, Repot, Mist). All tiles size equally
-     *  so the row reads as a deliberate grid, not a sloppy wrap. */
+    /** Single-row action strip with the three most-used actions
+     *  (Water, Note, Photo) plus a More tile that opens a sheet
+     *  for the rarer logs (Fertilise, Prune, Repot, Mist) and
+     *  Reminders. Eight chips on screen at once was overwhelming;
+     *  this collapses to four equal tiles. */
     private fun buildActionRow(): View {
-        val outer = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 12.dp() }
-        }
-        val rowOne = actionRow(listOf(
+        return actionRow(listOf(
+            ActionSpec(R.string.log_watering, R.drawable.ic_watering) { showWateringDialog() },
             ActionSpec(R.string.add_note, R.drawable.ic_note_pencil) { showNoteDialog() },
             ActionSpec(R.string.add_photo_log, R.drawable.ic_gallery) { pickPhoto.launch(arrayOf("image/*")) },
-            ActionSpec(R.string.log_watering, R.drawable.ic_watering) { showWateringDialog() },
+            ActionSpec(R.string.action_more, R.drawable.ic_clock) { showMoreActionsSheet() },
+        )).apply {
+            (layoutParams as LinearLayout.LayoutParams).topMargin = 12.dp()
+        }
+    }
+
+    /** Bottom sheet for the secondary care actions (and Reminders).
+     *  Each row launches the same dialog the previous chip launched
+     *  inline; this just defers the visual weight until the user
+     *  needs it. */
+    private fun showMoreActionsSheet() {
+        val plant = currentPlant ?: return
+        val items = listOf(
             ActionSpec(R.string.reminders, R.drawable.ic_clock) {
-                currentPlant?.let { ReminderScheduleSheet.show(supportFragmentManager, it) }
+                ReminderScheduleSheet.show(supportFragmentManager, plant)
             },
-        ))
-        val rowTwo = actionRow(listOf(
             ActionSpec(R.string.log_fertilising, R.drawable.ic_treatment) {
                 showLogDialog(JournalAction.FERTILISE)
             },
@@ -403,11 +418,50 @@ class PlantDetailActivity : AppCompatActivity() {
             ActionSpec(R.string.log_misting, R.drawable.ic_warning) {
                 showLogDialog(JournalAction.MIST)
             },
-        ))
-        (rowTwo.layoutParams as LinearLayout.LayoutParams).topMargin = 8.dp()
-        outer.addView(rowOne)
-        outer.addView(rowTwo)
-        return outer
+        )
+        val sheet = com.google.android.material.bottomsheet.BottomSheetDialog(this)
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(8.dp(), 8.dp(), 8.dp(), 18.dp())
+        }
+        container.addView(TextView(this).apply {
+            text = getString(R.string.action_more_title)
+            textSize = 13f
+            letterSpacing = 0.06f
+            setTextColor(getColor(R.color.on_surface_secondary))
+            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+            setPadding(16.dp(), 8.dp(), 16.dp(), 10.dp())
+        })
+        items.forEach { spec ->
+            container.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                isClickable = true
+                foreground = selectable()
+                setPadding(16.dp(), 14.dp(), 16.dp(), 14.dp())
+                addView(ImageView(this@PlantDetailActivity).apply {
+                    setImageResource(spec.iconRes)
+                    setColorFilter(getColor(R.color.primary))
+                    layoutParams = LinearLayout.LayoutParams(24.dp(), 24.dp())
+                })
+                addView(TextView(this@PlantDetailActivity).apply {
+                    text = getString(spec.labelRes)
+                    textSize = 16f
+                    setTextColor(getColor(R.color.on_surface))
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ).apply { marginStart = 16.dp() }
+                })
+                setOnClickListener {
+                    Haptics.tick(this@PlantDetailActivity)
+                    sheet.dismiss()
+                    spec.onClick()
+                }
+            })
+        }
+        sheet.setContentView(container)
+        sheet.show()
     }
 
     private data class ActionSpec(val labelRes: Int, val iconRes: Int, val onClick: () -> Unit)
@@ -607,6 +661,27 @@ class PlantDetailActivity : AppCompatActivity() {
         return app.scanRepository.parseAllProbs(scan.allProbs)
             .entries.maxByOrNull { it.value }?.key
             ?: scan.diseaseName.lowercase().replace(' ', '_')
+    }
+
+    /** One-line "Last watered N days ago" strip directly under the
+     *  action row. Reads from the plant_reminder_events log filled
+     *  by the Done notification action; null when the user has
+     *  never tapped Done on a watering reminder for this plant. */
+    private fun buildLastWateredStrip(): View? {
+        val ts = lastWateredAt ?: return null
+        return TextView(this).apply {
+            text = getString(
+                R.string.reminder_streak_last_watered,
+                ImageUtils.formatRelativeDate(this@PlantDetailActivity, ts),
+            )
+            textSize = 12f
+            setTextColor(getColor(R.color.on_surface_secondary))
+            setPadding(4.dp(), 0, 4.dp(), 0)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = 8.dp() }
+        }
     }
 
     /** Surfaces a "💡 Tighten the watering schedule from N to M days?"
@@ -1020,6 +1095,11 @@ class PlantDetailActivity : AppCompatActivity() {
         }
         // 3-column grid via plain LinearLayout rows. Each cell is a
         // square ImageView with rounded corners. Tap → viewer at idx.
+        // Hoist the URI list out of the per-cell click listener
+        // (otherwise we allocate a fresh List<String> for every cell
+        // ON EVERY TAP — N^2 garbage on a grid that's already N
+        // images).
+        val orderedUris = ordered.map { it.uri }
         val cellsPerRow = 3
         val rowGap = 6.dp()
         val cellGap = 6.dp()
@@ -1048,12 +1128,10 @@ class PlantDetailActivity : AppCompatActivity() {
                     .transform(CenterCrop(), RoundedCorners(12.dp()))
                     .into(this)
                 setOnClickListener {
-                    PhotoViewerActivity.open(
-                        this@PlantDetailActivity, ordered.map { it.uri }, idx,
-                    )
+                    PhotoViewerActivity.open(this@PlantDetailActivity, orderedUris, idx)
                 }
                 setOnLongClickListener {
-                    pickCompareTarget(item.uri, ordered.map { it.uri })
+                    pickCompareTarget(item.uri, orderedUris)
                     true
                 }
             }

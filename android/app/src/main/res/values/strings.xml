@@ -365,6 +365,9 @@
     <!-- Progression alert (C3) -->
     <string name="progression_alert_title">%s is getting worse</string>
     <string name="progression_alert_body">Two consecutive scans show worsening symptoms — take a fresh scan to update the trend.</string>
+    <!-- Compact action row + "more actions" sheet -->
+    <string name="action_more">More</string>
+    <string name="action_more_title">More care actions</string>
     <string name="light_tip_dark">Move closer to a window or add a grow light.</string>
     <string name="light_tip_ideal">Great spot! Your plant will thrive here.</string>
     <string name="light_tip_bright">Diffuse with a sheer curtain or move slightly back.</string>

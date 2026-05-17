@@ -218,12 +218,11 @@ class PlantRepository(
 
     /** Upsert a reminder. Returns the row id so the caller can pass it
      *  to ``ReminderManager.schedule(reminderId = …)`` for event-log
-     *  tracking. */
+     *  tracking. The read-then-write merge runs inside a single Room
+     *  ``@Transaction`` so two simultaneous calls on the same
+     *  (plant_id, type) can't both insert. */
     suspend fun saveReminder(entity: PlantReminderEntity): Long =
-        withContext(Dispatchers.IO) {
-            val existing = reminderDao.getByPlantAndType(entity.plantId, entity.type)
-            reminderDao.upsert(entity.copy(id = existing?.id ?: entity.id))
-        }
+        withContext(Dispatchers.IO) { reminderDao.upsertByPlantAndType(entity) }
 
     suspend fun deleteReminders(plantId: Long) = withContext(Dispatchers.IO) {
         reminderDao.deleteByPlant(plantId)

@@ -56,12 +56,10 @@ class ProfileFragment : Fragment() {
         // tappable as a soft shortcut into the relevant tab.
         setupHowToSteps()
 
-        // The Light Meter card was here previously. The feature now
-        // lives where it's actually useful — inside each plant's
-        // detail screen, with the plant's detected species
-        // pre-selected on the gauge. Profile-level access was a
-        // detour with no plant context.
-        binding.cardLightMeter.visibility = View.GONE
+        // Light Meter was removed from this screen — it now lives
+        // on the plant detail with per-plant context. The
+        // corresponding cardLightMeter view was deleted from the
+        // layout XML in the same pass.
 
         // Profile empty state CTA
         binding.btnStartScan.setOnClickListener {

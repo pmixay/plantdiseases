@@ -359,12 +359,18 @@ class GardenFragment : Fragment() {
         }
         thumbWrap.addView(thumb)
 
+        // Two-line card: title + (health · next-action) row. The
+        // species line and the trailing "Today" fallback were both
+        // axe-able — species is in the detail screen header, scan
+        // count was duplicate of the health chip's existence, and
+        // the date fallback was just visual filler when the user
+        // hadn't scanned yet. Edit moves to the long-press menu so
+        // the right edge stops competing with the title for width.
         val textCol = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 .apply { marginStart = 14.dp() }
         }
-        // Title
         textCol.addView(TextView(requireContext()).apply {
             text = plant.name
             textSize = 18f
@@ -373,61 +379,39 @@ class GardenFragment : Fragment() {
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
         })
-        // Species + scan count
-        textCol.addView(TextView(requireContext()).apply {
-            text = buildString {
-                append(plant.species?.takeIf { it.isNotBlank() } ?: getString(R.string.plant_species_unknown))
-                append("  ")
-                append(resources.getQuantityString(R.plurals.scan_count, summary.scanCount, summary.scanCount))
-            }
-            textSize = 13f
-            setTextColor(requireContext().getColor(R.color.on_surface_secondary))
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 2.dp() }
-        })
-        // Status row — health pill + next-action chip, both optional.
-        val statusRow = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 8.dp() }
-        }
         val healthChip = buildHealthChip(summary.latestScan)
-        if (healthChip != null) statusRow.addView(healthChip)
         val nextChip = buildNextActionChip(summary)
-        if (nextChip != null) statusRow.addView(nextChip)
-        if (statusRow.childCount == 0) {
-            // No scans + no reminders yet → fall back to relative-date hint
-            // so the card still has a third line and doesn't feel sparse.
-            statusRow.addView(TextView(requireContext()).apply {
-                text = summary.latestScan?.let {
-                    getString(R.string.latest_scan_format, ImageUtils.formatRelativeDate(requireContext(), it.timestamp))
-                } ?: getString(R.string.no_scans_attached)
-                textSize = 12f
-                setTextColor(requireContext().getColor(R.color.primary))
-            })
-        }
-        textCol.addView(statusRow)
-
-        val edit = MaterialButton(requireContext(), null, com.google.android.material.R.attr.materialIconButtonStyle).apply {
-            setIconResource(R.drawable.ic_care)
-            iconTint = android.content.res.ColorStateList.valueOf(requireContext().getColor(R.color.primary))
-            contentDescription = getString(R.string.edit_plant)
-            layoutParams = LinearLayout.LayoutParams(44.dp(), 44.dp())
-            setOnClickListener {
-                Haptics.tick(requireContext())
-                showPlantDialog(plant)
+        if (healthChip != null || nextChip != null) {
+            val statusRow = LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.HORIZONTAL
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = 6.dp() }
             }
+            if (healthChip != null) statusRow.addView(healthChip)
+            if (nextChip != null) statusRow.addView(nextChip)
+            textCol.addView(statusRow)
+        } else {
+            // No scans + no reminders → one quiet subtitle so the
+            // card doesn't read as a single floating word. Lower
+            // visual weight than the chips above.
+            textCol.addView(TextView(requireContext()).apply {
+                text = plant.species?.takeIf { it.isNotBlank() }
+                    ?: getString(R.string.no_scans_attached)
+                textSize = 12f
+                setTextColor(requireContext().getColor(R.color.on_surface_secondary))
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = 4.dp() }
+            })
         }
 
         row.addView(thumbWrap)
         row.addView(textCol)
-        row.addView(edit)
         card.addView(row)
         return card
     }

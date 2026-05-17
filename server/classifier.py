@@ -252,10 +252,39 @@ class DiseaseClassifier:
         if img.mode != "RGB":
             img = img.convert("RGB")
         if img.size != (self.img_size, self.img_size):
-            img = img.resize((self.img_size, self.img_size), Image.BILINEAR)
+            img = self._aspect_preserving_square(img, self.img_size)
         arr = np.asarray(img, dtype=np.float32) / 255.0
         arr = (arr - NORM_MEAN) / NORM_STD
         return arr.transpose(2, 0, 1)
+
+    @staticmethod
+    def _aspect_preserving_square(img: Image.Image, side: int) -> Image.Image:
+        """Resize ``img`` to a ``side × side`` square WITHOUT stretching.
+
+        The training pipeline (notebook §4 ``indoor_train_tx``) feeds
+        the model a CenterCrop after a proportional Resize — so a
+        wide leaf shot at 800x400 was always reduced to 256x256 with
+        the aspect preserved (the center 256x256 region of a
+        proportionally-resized 512x256 source). Calling
+        ``img.resize((256, 256), BILINEAR)`` here squashed any
+        non-square upload into a distorted aspect, silently shaving
+        accuracy on phone photos that are rarely square.
+
+        Mirror the training transform: resize so the SHORT side
+        becomes ``side``, then center-crop the long axis to ``side``.
+        """
+        w, h = img.size
+        if w == h == side:
+            return img
+        scale = side / float(min(w, h))
+        new_w = max(side, round(w * scale))
+        new_h = max(side, round(h * scale))
+        resized = img.resize((new_w, new_h), Image.BILINEAR)
+        if new_w == new_h:
+            return resized
+        left = (new_w - side) // 2
+        top = (new_h - side) // 2
+        return resized.crop((left, top, left + side, top + side))
 
     def _preprocess(self, img: Image.Image) -> np.ndarray:
         return np.ascontiguousarray(self._to_chw(img)[None], dtype=np.float32)
