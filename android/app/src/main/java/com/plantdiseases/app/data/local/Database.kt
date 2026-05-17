@@ -9,18 +9,28 @@ import androidx.room.*
 data class PlantEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     @ColumnInfo(name = "name") val name: String,
-    /**
-     * Free-text species (legacy field, kept for back-compat). When the user
-     * accepts a PlantNet suggestion this stays in sync with `commonName`
-     * for display, while the canonical Latin name lives in `scientificName`.
-     */
+    /** Free-text species. Stays in sync with `commonName` when the user
+     *  accepts a PlantNet suggestion; the canonical Latin name lives
+     *  in `scientificName`. */
     @ColumnInfo(name = "species") val species: String? = null,
-    @ColumnInfo(name = "icon_uri") val iconUri: String? = null,
+    /** Optional user-picked cover photo (content:// URI). When null the
+     *  garden card and plant-detail hero fall back to the latest scan
+     *  image; when both are null they fall back to the default icon. */
+    @ColumnInfo(name = "cover_photo_uri") val coverPhotoUri: String? = null,
     @ColumnInfo(name = "created_at") val createdAt: Long = System.currentTimeMillis(),
     /** Latin / scientific name as returned by PlantNet (e.g. "Ficus elastica"). */
     @ColumnInfo(name = "scientific_name") val scientificName: String? = null,
     /** Localised common name (e.g. "Rubber Plant"). */
     @ColumnInfo(name = "common_name") val commonName: String? = null,
+    /** Free-text room / location (e.g. "Living room", "Bathroom").
+     *  Garden list groups by this when populated; null plants land
+     *  in an "Unassigned" group at the bottom. */
+    @ColumnInfo(name = "room") val room: String? = null,
+    /** Most recent peak lux reading from the Light Meter, captured
+     *  on a session launched WITH this plant's context. Null until
+     *  the user runs the meter from plant detail. */
+    @ColumnInfo(name = "measured_lux") val measuredLux: Int? = null,
+    @ColumnInfo(name = "measured_lux_at") val measuredLuxAt: Long? = null,
 )
 
 @Entity(
@@ -88,6 +98,12 @@ data class ScanEntity(
     @ColumnInfo(name = "regions") val regions: String? = null,
     // Index into `regions` that Stage 2 used as the primary crop (-1 if none).
     @ColumnInfo(name = "primary_region_index") val primaryRegionIndex: Int? = null,
+    // Pixel dims of the image the server actually saw (post-upload-decode).
+    // ``regions`` coordinates live in this space, so the overlay renderer
+    // must scale against these instead of the raw camera file (which is
+    // typically larger and EXIF-rotated).
+    @ColumnInfo(name = "detection_image_width") val detectionImageWidth: Int = 0,
+    @ColumnInfo(name = "detection_image_height") val detectionImageHeight: Int = 0,
     // Per-class probabilities from the classifier (JSON map).
     @ColumnInfo(name = "all_probs") val allProbs: String? = null,
     // Diagnostic flags from the pipeline post-processing rules
@@ -152,18 +168,95 @@ data class PlantReminderEntity(
 )
 
 @Dao
-interface PlantReminderDao {
+abstract class PlantReminderDao {
     @Query("SELECT * FROM plant_reminders WHERE plant_id = :plantId")
-    suspend fun getForPlant(plantId: Long): List<PlantReminderEntity>
+    abstract suspend fun getForPlant(plantId: Long): List<PlantReminderEntity>
 
     @Query("SELECT * FROM plant_reminders WHERE plant_id = :plantId AND type = :type LIMIT 1")
-    suspend fun getByPlantAndType(plantId: Long, type: String): PlantReminderEntity?
+    abstract suspend fun getByPlantAndType(plantId: Long, type: String): PlantReminderEntity?
+
+    @Query("SELECT * FROM plant_reminders WHERE id = :id LIMIT 1")
+    abstract suspend fun getById(id: Long): PlantReminderEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(reminder: PlantReminderEntity): Long
+    abstract suspend fun upsert(reminder: PlantReminderEntity): Long
+
+    /** Read-then-write merge of a (plant_id, type) reminder inside a
+     *  single Room transaction. Two coroutines hitting saveReminder on
+     *  the same (plant_id, type) used to race — both read existing=null
+     *  and inserted, leaving an orphan row that the UI could
+     *  partially address. Wrapping the read+upsert in @Transaction
+     *  serialises them at the SQLite write-lock level. */
+    @androidx.room.Transaction
+    open suspend fun upsertByPlantAndType(entity: PlantReminderEntity): Long {
+        val existing = getByPlantAndType(entity.plantId, entity.type)
+        return upsert(entity.copy(id = existing?.id ?: entity.id))
+    }
 
     @Query("DELETE FROM plant_reminders WHERE plant_id = :plantId")
-    suspend fun deleteByPlant(plantId: Long)
+    abstract suspend fun deleteByPlant(plantId: Long)
+}
+
+// ─── Reminder event log ──────────────────────────────────────────────
+//
+// Persists every reminder firing + its disposition (pending / done /
+// snoozed / skipped). The plant-detail "Reminders" surface reads this
+// to show a streak ("last watered 3 days ago · 5-day streak"); the
+// notification-action receivers write into it when the user taps
+// Done / Snooze on a fired notification. ``fired_at`` is the epoch
+// when the WorkManager worker ran; ``done_at`` is set on disposition.
+
+@Entity(
+    tableName = "plant_reminder_events",
+    foreignKeys = [
+        ForeignKey(
+            entity = PlantReminderEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["reminder_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [
+        Index(value = ["reminder_id"]),
+        Index(value = ["plant_id", "fired_at"]),
+    ],
+)
+data class PlantReminderEventEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(name = "reminder_id") val reminderId: Long,
+    @ColumnInfo(name = "plant_id") val plantId: Long,
+    @ColumnInfo(name = "type") val type: String,
+    @ColumnInfo(name = "fired_at") val firedAt: Long,
+    /** "pending" | "done" | "snoozed" | "skipped". A "done" event also
+     *  triggers an auto-created journal entry of the matching type. */
+    @ColumnInfo(name = "action") val action: String = "pending",
+    @ColumnInfo(name = "done_at") val doneAt: Long? = null,
+)
+
+@Dao
+interface PlantReminderEventDao {
+    @Insert
+    suspend fun insert(event: PlantReminderEventEntity): Long
+
+    @Update
+    suspend fun update(event: PlantReminderEventEntity)
+
+    @Query("SELECT * FROM plant_reminder_events WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): PlantReminderEventEntity?
+
+    @Query("""
+        SELECT * FROM plant_reminder_events
+        WHERE plant_id = :plantId
+        ORDER BY fired_at DESC
+        LIMIT :limit
+    """)
+    suspend fun recentForPlant(plantId: Long, limit: Int = 50): List<PlantReminderEventEntity>
+
+    @Query("""
+        SELECT MAX(done_at) FROM plant_reminder_events
+        WHERE plant_id = :plantId AND type = :type AND action = 'done'
+    """)
+    suspend fun lastDoneAt(plantId: Long, type: String): Long?
 }
 
 // ─── Chat Message Entity ─────────────────────────────────────────────────────
@@ -271,16 +364,14 @@ interface PlantJournalDao {
         PlantEntity::class,
         PlantJournalEntity::class,
         PlantReminderEntity::class,
+        PlantReminderEventEntity::class,
         ChatMessageEntity::class,
     ],
-    // v3: added ScanEntity.displayed_class_key so feedback
-    // submissions echo the verdict the user actually saw rather
-    // than argmax(all_probs), which can disagree after the
-    // server's weak-healthy reroute. v2 added prediction_set.
-    // ``fallbackToDestructiveMigration`` is configured below;
-    // local scan history is wiped on first launch with the new
-    // version. Same trade-off the app has been shipping under.
-    version = 3,
+    // The schema is treated as ephemeral while the app is in pre-release
+    // testing: ``fallbackToDestructiveMigration`` is configured below
+    // and any schema change wipes local data on next launch. Real
+    // migrations come later, alongside cloud sync.
+    version = 1,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -288,6 +379,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun plantDao(): PlantDao
     abstract fun plantJournalDao(): PlantJournalDao
     abstract fun plantReminderDao(): PlantReminderDao
+    abstract fun plantReminderEventDao(): PlantReminderEventDao
     abstract fun chatMessageDao(): ChatMessageDao
 
     companion object {

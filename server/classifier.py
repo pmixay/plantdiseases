@@ -5,7 +5,7 @@ Classifies a (preferably cropped) leaf region into one of the
 houseplant-relevant condition classes including the rejection class
 ``not_a_plant``. Class names + input resolution live in
 ``models/classes.json``; if the file is missing the built-in default
-matching the v2.1 taxonomy (7 trainable classes) is used.
+matching the v2.2 taxonomy (9 trainable classes) is used.
 
 Production artefact is a distilled MobileNetV3-Large student
 (EfficientNetV2-S teacher → KD). Loading order:
@@ -33,16 +33,20 @@ logger = logging.getLogger(__name__)
 DEFAULT_IMG_SIZE = 256
 
 # Alphabetical — must match training-time ``sorted(ImageFolder.classes)``.
-# v2.1 trainable taxonomy. The four physiological classes from the v2.0
-# design (``edema``, ``leaf_scorch_underwatering``, ``nutrient_deficiency``,
-# ``sunburn_or_scorch``) are deferred until labelled real-world data is
-# added — see server/models/MODEL_CARD.md.
+# v2.2 trainable taxonomy. ``leaf_scorch_underwatering`` and
+# ``nutrient_deficiency`` were added per NOTEBOOK_AUDIT §6 — the two
+# remaining physiological classes (``edema``, ``sunburn_or_scorch``)
+# stay deferred until upstream supply justifies them.
+# Production reads ``classes.json -> class_names`` first; this list is
+# only used as a fallback when the artefact is missing.
 DEFAULT_CLASS_NAMES = [
     "bacterial_leaf_spot",
     "gray_mold_botrytis",
     "healthy",
+    "leaf_scorch_underwatering",
     "leaf_spot_fungal",
     "not_a_plant",
+    "nutrient_deficiency",
     "powdery_mildew",
     "viral_disease",
 ]
@@ -248,10 +252,39 @@ class DiseaseClassifier:
         if img.mode != "RGB":
             img = img.convert("RGB")
         if img.size != (self.img_size, self.img_size):
-            img = img.resize((self.img_size, self.img_size), Image.BILINEAR)
+            img = self._aspect_preserving_square(img, self.img_size)
         arr = np.asarray(img, dtype=np.float32) / 255.0
         arr = (arr - NORM_MEAN) / NORM_STD
         return arr.transpose(2, 0, 1)
+
+    @staticmethod
+    def _aspect_preserving_square(img: Image.Image, side: int) -> Image.Image:
+        """Resize ``img`` to a ``side × side`` square WITHOUT stretching.
+
+        The training pipeline (notebook §4 ``indoor_train_tx``) feeds
+        the model a CenterCrop after a proportional Resize — so a
+        wide leaf shot at 800x400 was always reduced to 256x256 with
+        the aspect preserved (the center 256x256 region of a
+        proportionally-resized 512x256 source). Calling
+        ``img.resize((256, 256), BILINEAR)`` here squashed any
+        non-square upload into a distorted aspect, silently shaving
+        accuracy on phone photos that are rarely square.
+
+        Mirror the training transform: resize so the SHORT side
+        becomes ``side``, then center-crop the long axis to ``side``.
+        """
+        w, h = img.size
+        if w == h == side:
+            return img
+        scale = side / float(min(w, h))
+        new_w = max(side, round(w * scale))
+        new_h = max(side, round(h * scale))
+        resized = img.resize((new_w, new_h), Image.BILINEAR)
+        if new_w == new_h:
+            return resized
+        left = (new_w - side) // 2
+        top = (new_h - side) // 2
+        return resized.crop((left, top, left + side, top + side))
 
     def _preprocess(self, img: Image.Image) -> np.ndarray:
         return np.ascontiguousarray(self._to_chw(img)[None], dtype=np.float32)
@@ -301,7 +334,8 @@ class DiseaseClassifier:
         # overflow; the smallest meaningful tail (`exp(-30)`) is well
         # within float32 range (~9.4e-14). float64 was a precaution
         # that doubled the dict-construction allocation per call for
-        # no measurable accuracy delta on the 7-class head.
+        # no measurable accuracy delta on the head (7 classes in v2.1,
+        # 9 in v2.2).
         logits32 = logits.astype(np.float32, copy=False)
         max_logit = float(logits32.max())
         e = np.exp(logits32 - max_logit)

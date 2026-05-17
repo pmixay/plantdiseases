@@ -14,6 +14,12 @@ object ReminderManager {
     /**
      * Schedule a periodic reminder for a plant.
      * The first trigger fires at [hour]:[minute] on the next available day.
+     *
+     * ``reminderId`` is the PlantReminderEntity row id — threaded
+     * through to the worker so each firing can record an event in
+     * plant_reminder_events with the reminder it came from. Pass
+     * 0L if you don't have one (the worker will skip the
+     * Done/Snooze action buttons in that case).
      */
     fun schedule(
         context: Context,
@@ -23,9 +29,11 @@ object ReminderManager {
         intervalDays: Int,
         hour: Int,
         minute: Int,
+        reminderId: Long = 0L,
     ) {
         val inputData = Data.Builder()
             .putLong(PlantReminderWorker.KEY_PLANT_ID, plantId)
+            .putLong(PlantReminderWorker.KEY_REMINDER_ID, reminderId)
             .putString(PlantReminderWorker.KEY_REMINDER_TYPE, type)
             .putString(PlantReminderWorker.KEY_PLANT_NAME, plantName)
             .build()

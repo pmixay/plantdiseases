@@ -22,6 +22,9 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.setPadding
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
+import com.bumptech.glide.Glide
+import com.bumptech.glide.load.resource.bitmap.CenterCrop
+import com.bumptech.glide.load.resource.bitmap.RoundedCorners
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -224,19 +227,65 @@ class GardenFragment : Fragment() {
             plants.sumOf { it.scanCount },
         )
 
-        plants.forEachIndexed { index, summary ->
-            val card = buildPlantCard(summary)
-            card.alpha = 0f
-            card.translationY = 24.dp().toFloat()
-            plantsContainer.addView(card)
-            card.animate()
+        // Group by room. Named rooms render in alphabetical order;
+        // unassigned plants land at the bottom in their own bucket so
+        // the user has a visible nudge to assign rooms without the
+        // app silently hiding anything. When NO plant has a room set
+        // (the common first-launch case) the grouping headers don't
+        // render at all and the list looks the same as before.
+        val byRoom = plants.groupBy {
+            it.plant.room?.trim()?.takeIf { r -> r.isNotEmpty() }
+        }
+        val named = byRoom.entries
+            .filter { it.key != null }
+            .sortedBy { it.key!!.lowercase() }
+        val unassigned = byRoom[null].orEmpty()
+        val anyNamed = named.isNotEmpty()
+        var animIndex = 0
+        val emit: (View) -> Unit = { view ->
+            view.alpha = 0f
+            view.translationY = 24.dp().toFloat()
+            plantsContainer.addView(view)
+            view.animate()
                 .alpha(1f)
                 .translationY(0f)
                 .setDuration(260)
-                .setStartDelay((index * 45).toLong())
+                .setStartDelay((animIndex * 45).toLong())
                 .setInterpolator(DecelerateInterpolator())
                 .start()
+            animIndex++
         }
+        named.forEach { (room, bucket) ->
+            emit(buildRoomHeader(room!!))
+            bucket.forEach { emit(buildPlantCard(it)) }
+        }
+        // Unassigned bucket always renders when non-empty. The header
+        // only appears when there's at least one named room to
+        // distinguish from — otherwise it would just say "Unassigned"
+        // above every plant, which is noise.
+        if (unassigned.isNotEmpty()) {
+            if (anyNamed) emit(buildRoomHeader(getString(R.string.plant_room_unassigned)))
+            unassigned.forEach { emit(buildPlantCard(it)) }
+        }
+    }
+
+    /** Sticky-header-style label for a room group. Renders as small
+     *  uppercase text with a thin top divider so it reads as a group
+     *  separator without dominating the card stack. */
+    private fun buildRoomHeader(label: String): View = TextView(requireContext()).apply {
+        text = label.uppercase()
+        textSize = 11f
+        letterSpacing = 0.08f
+        setTextColor(requireContext().getColor(R.color.on_surface_secondary))
+        typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        ).apply {
+            topMargin = 14.dp()
+            bottomMargin = 6.dp()
+        }
+        setPadding(4.dp(), 0, 4.dp(), 0)
     }
 
     private fun buildPlantCard(summary: PlantRepository.PlantSummary): View {
@@ -271,22 +320,52 @@ class GardenFragment : Fragment() {
         val row = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(16.dp())
+            setPadding(14.dp())
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT,
             )
         }
-        val iconWrap = FrameLayout(requireContext()).apply {
-            setBackgroundResource(R.drawable.bg_icon_circle)
-            layoutParams = LinearLayout.LayoutParams(58.dp(), 58.dp())
-        }
-        iconWrap.addView(ImageView(requireContext()).apply {
-            setImageResource(R.drawable.ic_garden)
-            setColorFilter(requireContext().getColor(R.color.primary))
-            layoutParams = FrameLayout.LayoutParams(30.dp(), 30.dp(), Gravity.CENTER)
-        })
 
+        // Thumbnail: user-picked cover photo first, latest scan image
+        // second, generic leaf icon last. Rounded square (not circle)
+        // so an actual plant photo reads as a photo, not as an avatar.
+        val thumbWrap = FrameLayout(requireContext()).apply {
+            layoutParams = LinearLayout.LayoutParams(64.dp(), 64.dp())
+        }
+        val thumb = ImageView(requireContext()).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT,
+            )
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            background = requireContext().getDrawable(R.drawable.bg_icon_circle)
+            clipToOutline = true
+        }
+        val thumbSource: String? = plant.coverPhotoUri
+            ?: summary.latestScan?.imagePath
+        if (thumbSource != null) {
+            Glide.with(this@GardenFragment)
+                .load(thumbSource)
+                .transform(CenterCrop(), RoundedCorners(14.dp()))
+                .placeholder(R.drawable.ic_garden)
+                .error(R.drawable.ic_garden)
+                .into(thumb)
+        } else {
+            thumb.setImageResource(R.drawable.ic_garden)
+            thumb.setColorFilter(requireContext().getColor(R.color.primary))
+            thumb.scaleType = ImageView.ScaleType.CENTER_INSIDE
+            thumb.setPadding(16.dp(), 16.dp(), 16.dp(), 16.dp())
+        }
+        thumbWrap.addView(thumb)
+
+        // Two-line card: title + (health · next-action) row. The
+        // species line and the trailing "Today" fallback were both
+        // axe-able — species is in the detail screen header, scan
+        // count was duplicate of the health chip's existence, and
+        // the date fallback was just visual filler when the user
+        // hadn't scanned yet. Edit moves to the long-press menu so
+        // the right edge stops competing with the title for width.
         val textCol = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -300,50 +379,124 @@ class GardenFragment : Fragment() {
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
         })
-        textCol.addView(TextView(requireContext()).apply {
-            text = buildString {
-                append(plant.species?.takeIf { it.isNotBlank() } ?: getString(R.string.plant_species_unknown))
-                append("  ")
-                append(resources.getQuantityString(R.plurals.scan_count, summary.scanCount, summary.scanCount))
+        val healthChip = buildHealthChip(summary.latestScan)
+        val nextChip = buildNextActionChip(summary)
+        if (healthChip != null || nextChip != null) {
+            val statusRow = LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.HORIZONTAL
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = 6.dp() }
             }
-            textSize = 13f
-            setTextColor(requireContext().getColor(R.color.on_surface_secondary))
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 3.dp() }
-        })
-        textCol.addView(TextView(requireContext()).apply {
-            text = summary.latestScan?.let {
-                getString(R.string.latest_scan_format, ImageUtils.formatRelativeDate(requireContext(), it.timestamp))
-            } ?: getString(R.string.no_scans_attached)
-            textSize = 12f
-            setTextColor(requireContext().getColor(R.color.primary))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 8.dp() }
-        })
-
-        val edit = MaterialButton(requireContext(), null, com.google.android.material.R.attr.materialIconButtonStyle).apply {
-            setIconResource(R.drawable.ic_care)
-            iconTint = android.content.res.ColorStateList.valueOf(requireContext().getColor(R.color.primary))
-            contentDescription = getString(R.string.edit_plant)
-            layoutParams = LinearLayout.LayoutParams(44.dp(), 44.dp())
-            setOnClickListener {
-                Haptics.tick(requireContext())
-                showPlantDialog(plant)
-            }
+            if (healthChip != null) statusRow.addView(healthChip)
+            if (nextChip != null) statusRow.addView(nextChip)
+            textCol.addView(statusRow)
+        } else {
+            // No scans + no reminders → one quiet subtitle so the
+            // card doesn't read as a single floating word. Lower
+            // visual weight than the chips above.
+            textCol.addView(TextView(requireContext()).apply {
+                text = plant.species?.takeIf { it.isNotBlank() }
+                    ?: getString(R.string.no_scans_attached)
+                textSize = 12f
+                setTextColor(requireContext().getColor(R.color.on_surface_secondary))
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = 4.dp() }
+            })
         }
 
-        row.addView(iconWrap)
+        row.addView(thumbWrap)
         row.addView(textCol)
-        row.addView(edit)
         card.addView(row)
         return card
     }
+
+    /** Returns null when there is no scan yet — the card falls back to a
+     *  generic "no scans" line in that case. Otherwise renders a
+     *  colour-coded health pill (healthy = green, disease = red, NAP =
+     *  neutral) with the latest verdict + confidence. */
+    private fun buildHealthChip(scan: com.plantdiseases.app.data.local.ScanEntity?): View? {
+        if (scan == null) return null
+        val ctx = requireContext()
+        val isNotPlant = scan.diseaseName.equals("Not a Plant", ignoreCase = true) ||
+            scan.diseaseName.equals("Не растение", ignoreCase = true)
+        val (bgColor, fgColor, text) = when {
+            isNotPlant -> Triple(
+                ctx.getColor(R.color.neutral_blue_bg),
+                ctx.getColor(R.color.neutral_blue),
+                getString(R.string.status_not_a_plant),
+            )
+            scan.isHealthy -> Triple(
+                ctx.getColor(R.color.healthy_green_bg),
+                ctx.getColor(R.color.healthy_green),
+                getString(
+                    R.string.garden_card_health_healthy,
+                    (scan.confidence * 100f).toInt(),
+                ),
+            )
+            else -> Triple(
+                ctx.getColor(R.color.disease_red_bg),
+                ctx.getColor(R.color.disease_red),
+                getString(
+                    R.string.garden_card_health_disease,
+                    scan.diseaseName,
+                ),
+            )
+        }
+        return chip(text, bgColor, fgColor)
+    }
+
+    /** Soonest reminder due ("💧 in 2 days" / "💧 overdue"). null when
+     *  there is no enabled reminder on the plant. */
+    private fun buildNextActionChip(summary: PlantRepository.PlantSummary): View? {
+        val action = summary.nextAction ?: return null
+        val ctx = requireContext()
+        val nowMs = System.currentTimeMillis()
+        val deltaDays = ((action.dueAt - nowMs) / (24L * 60L * 60L * 1000L)).toInt()
+        val icon = when (action.type) {
+            "watering" -> "💧"   // 💧
+            "fertilize" -> "🌱"  // 🌱
+            else -> "⏰"               // ⏰
+        }
+        val label = when {
+            deltaDays <= 0 -> getString(R.string.garden_card_action_overdue, icon)
+            deltaDays == 1 -> getString(R.string.garden_card_action_tomorrow, icon)
+            else -> getString(R.string.garden_card_action_in_days, icon, deltaDays)
+        }
+        val (bg, fg) = if (deltaDays <= 0) {
+            ctx.getColor(R.color.disease_red_bg) to ctx.getColor(R.color.disease_red)
+        } else {
+            ctx.getColor(R.color.neutral_blue_bg) to ctx.getColor(R.color.neutral_blue)
+        }
+        val chip = chip(label, bg, fg)
+        (chip.layoutParams as? LinearLayout.LayoutParams)?.marginStart = 6.dp()
+        return chip
+    }
+
+    private fun chip(text: String, bgColor: Int, fgColor: Int): TextView =
+        TextView(requireContext()).apply {
+            this.text = text
+            textSize = 11.5f
+            setTextColor(fgColor)
+            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+            setPadding(10.dp(), 4.dp(), 10.dp(), 4.dp())
+            background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                cornerRadius = 999f
+                setColor(bgColor)
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            )
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        }
 
     private fun showPlantContextMenu(anchor: View, plant: PlantEntity) {
         PopupMenu(requireContext(), anchor).apply {
@@ -436,8 +589,10 @@ class GardenFragment : Fragment() {
         }
         val name = inputField(getString(R.string.plant_name), existing?.name, InputType.TYPE_CLASS_TEXT)
         val species = inputField(getString(R.string.plant_species), existing?.species, InputType.TYPE_CLASS_TEXT)
+        val room = inputField(getString(R.string.plant_room), existing?.room, InputType.TYPE_CLASS_TEXT)
         fields.addView(name.first)
         fields.addView(species.first)
+        fields.addView(room.first)
         container.addView(header)
         container.addView(fields)
 
@@ -462,6 +617,7 @@ class GardenFragment : Fragment() {
                     plantName,
                     species.second.text?.toString(),
                     existing,
+                    room = room.second.text?.toString(),
                 )
                 awaitKeyboardClosed()
                 renderPlants(plantRepository.getPlants())

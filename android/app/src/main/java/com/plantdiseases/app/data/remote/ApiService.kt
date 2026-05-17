@@ -42,6 +42,7 @@ interface ApiService {
     suspend fun analyzeImage(
         @Part image: MultipartBody.Part,
         @Query("species") species: String? = null,
+        @Query("locale") locale: String = "en",
     ): retrofit2.Response<AnalysisResponse>
 
     @GET("api/health")
@@ -55,6 +56,7 @@ interface ApiService {
     suspend fun identifySpecies(
         @Part image: MultipartBody.Part,
         @Query("organ") organ: String = "leaf",
+        @Query("locale") locale: String = "en",
     ): retrofit2.Response<IdentifyResponse>
 
     @POST("api/care-plan")
@@ -106,6 +108,7 @@ interface ApiService {
         @Query("country") country: String,
         @Query("region") region: String? = null,
         @Query("disease") disease: String? = null,
+        @Query("species") species: String? = null,
         @Query("limit") limit: Int = 12,
         @Query("user_pseudo_id") userPseudoId: String? = null,
     ): retrofit2.Response<CommunityScansResponse>

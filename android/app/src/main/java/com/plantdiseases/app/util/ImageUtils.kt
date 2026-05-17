@@ -198,7 +198,11 @@ object ImageUtils {
         }
     }
 
-    /** Get image dimensions without fully decoding the bitmap */
+    /** Raw pixel dimensions of the file on disk — does NOT apply EXIF
+     *  orientation. Bbox-overlay callers must use the server-emitted
+     *  image_width / image_height fields instead (the upload pipeline
+     *  pre-rotates pixels before sending, so the server's frame is
+     *  always display-correct). */
     fun getImageDimensions(imagePath: String): Pair<Int, Int> {
         val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(imagePath, options)

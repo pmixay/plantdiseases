@@ -475,7 +475,7 @@ def _prediction_set_coverage(rows: list[FeedbackRow]) -> dict[str, Any]:
 
 def _out_of_head(rows: list[FeedbackRow]) -> dict[str, Any]:
     """Distribution of out-of-head corrections — what users are asking
-    us to predict that the v2.1 head can't. Drives "should we grow
+    us to predict that the current head can't. Drives "should we grow
     the head with this class next?" decisions in a notebook, but does
     not trigger anything automated.
     """

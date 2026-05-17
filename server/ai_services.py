@@ -123,17 +123,27 @@ def _image_hash(image_bytes: bytes) -> str:
     return hashlib.sha256(image_bytes).hexdigest()
 
 
-def identify_species(image_bytes: bytes, *, organ: str = "leaf") -> dict:
+def identify_species(
+    image_bytes: bytes, *, organ: str = "leaf", lang: str = "en",
+) -> dict:
     """Identify the plant species via PlantNet.
 
     Returns a dict with up to 5 candidate species. When the API key is
     missing we return ``{"available": False, "results": []}`` so the
     caller can render a graceful degraded state.
+
+    ``lang`` is forwarded to PlantNet's ``lang`` query param so the
+    returned ``common_names`` are localised — "Каучуковое дерево"
+    in Russian instead of "Rubber tree". The English/Latin
+    scientific name is unchanged.
     """
     if not PLANTNET_API_KEY:
         return {"available": False, "results": [], "source": "no_api_key"}
 
-    cache_key = f"{_image_hash(image_bytes)}:{organ}"
+    # Normalise so we don't cache "en" and "EN" as separate entries.
+    lang = (lang or "en").strip().lower()[:5] or "en"
+
+    cache_key = f"{_image_hash(image_bytes)}:{organ}:{lang}"
     cached = _PLANTNET_CACHE.get(cache_key)
     if cached is not None:
         return {**cached, "cached": True}
@@ -144,7 +154,7 @@ def identify_species(image_bytes: bytes, *, organ: str = "leaf") -> dict:
 
         url = (
             f"https://my-api.plantnet.org/v2/identify/{PLANTNET_PROJECT}"
-            f"?api-key={PLANTNET_API_KEY}"
+            f"?api-key={PLANTNET_API_KEY}&lang={lang}"
         )
         files = {"images": ("plant.jpg", image_bytes, "image/jpeg")}
         data = {"organs": organ}
@@ -191,22 +201,26 @@ def identify_species(image_bytes: bytes, *, organ: str = "leaf") -> dict:
 # headers to amortise it.
 _DOCTOR_SYSTEM_PROMPT = """You are PlantDiseases' friendly AI Plant Doctor, helping
 people care for their houseplants. Your knowledge is grounded in the
-PlantVision v2.1 disease taxonomy (7 trainable classes):
+PlantVision v2.2 disease taxonomy (9 trainable classes):
 
 - bacterial_leaf_spot: angular brown spots with yellow halo, bacterial
 - gray_mold_botrytis: fuzzy grey growth, fungal (Botrytis cinerea)
 - healthy: no disease detected
+- leaf_scorch_underwatering: crisp brown leaf margins from
+  insufficient watering or transpiration shock
 - leaf_spot_fungal: umbrella class for anthracnose / cercospora /
   alternaria — dark spots, halos, concentric rings
 - not_a_plant: image does not contain a plant
+- nutrient_deficiency: chlorosis / interveinal yellowing — iron,
+  nitrogen, magnesium etc.
 - powdery_mildew: white powdery coating, fungal
 - viral_disease: umbrella class for mosaic, leaf curl and ringspot;
   incurable
 
-Physiological conditions (edema, leaf scorch from underwatering,
-nutrient deficiency, sunburn) are NOT yet trained classes — if the
-user's photo shows one of those patterns the classifier will return a
-low-confidence verdict or `not_a_plant`. In that case, ask the user
+Remaining deferred physiological conditions (edema, sunburn) are NOT
+yet trained classes — if the user's photo shows one of those patterns
+the classifier will return a low-confidence verdict or `not_a_plant`.
+In that case, ask the user
 about watering, light and fertiliser routine and give physiological
 advice from first principles, but be explicit that the model has not
 diagnosed it.
@@ -1593,6 +1607,19 @@ def compare_progression_history(history: list[dict]) -> dict:
         else:
             pair["trend"] = "improving"
 
+    # Alert flag — fires when the LAST TWO points in the severity
+    # series both rose vs the point before. Two-in-a-row guards
+    # against a single noisy scan flipping the flag. The plant-
+    # detail screen treats this as a hint to push a "your plant
+    # is getting worse — take a fresh scan?" notification.
+    alert = False
+    alert_reason: str | None = None
+    if len(points_raw) >= 3:
+        last3 = points_raw[-3:]
+        if last3[1] > last3[0] + 1e-3 and last3[2] > last3[1] + 1e-3:
+            alert = True
+            alert_reason = "two_step_worsening"
+
     return {
         "sparkline": sparkline,
         "trend": pair["trend"],
@@ -1603,4 +1630,6 @@ def compare_progression_history(history: list[dict]) -> dict:
         "delta_severity": pair["delta_severity"],
         "class_changed": pair["class_changed"],
         "points": [round(p, 4) for p in points_raw],
+        "alert": alert,
+        "alert_reason": alert_reason,
     }

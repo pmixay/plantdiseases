@@ -260,8 +260,8 @@ def test_analyze_species_block_survives_plantnet_failure(client, png_bytes, monk
 
 
 def test_identify_endpoint_passes_organ_as_keyword(client, png_bytes, monkeypatch):
-    """``identify_species`` declares ``organ`` keyword-only. The
-    endpoint must call it with a keyword arg — otherwise the call
+    """``identify_species`` declares ``organ`` AND ``lang`` keyword-only.
+    The endpoint must call both with keyword args — otherwise the call
     landed via ``run_in_executor(..., organ_value)`` raises
     ``TypeError`` and the route 500s.
     """
@@ -269,8 +269,9 @@ def test_identify_endpoint_passes_organ_as_keyword(client, png_bytes, monkeypatc
 
     captured: dict[str, object] = {}
 
-    def fake_identify(image_bytes, *, organ="leaf"):
+    def fake_identify(image_bytes, *, organ="leaf", lang="en"):
         captured["organ"] = organ
+        captured["lang"] = lang
         captured["bytes_len"] = len(image_bytes)
         return {"available": False, "results": [], "source": "no_api_key"}
 
@@ -278,10 +279,11 @@ def test_identify_endpoint_passes_organ_as_keyword(client, png_bytes, monkeypatc
     r = client.post(
         "/api/identify",
         files={"image": ("leaf.png", png_bytes, "image/png")},
-        params={"organ": "flower"},
+        params={"organ": "flower", "locale": "ru"},
     )
     assert r.status_code == 200, r.text
     assert captured["organ"] == "flower"
+    assert captured["lang"] == "ru"
     assert captured["bytes_len"] == len(png_bytes)
     assert r.json()["organ"] == "flower"
 

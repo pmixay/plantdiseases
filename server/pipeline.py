@@ -6,8 +6,11 @@ Stage 1 (Detector)   — YOLOv8n single-class. Locates ``plant_leaf``
                        indoor leaf crops, not PlantDoc).
 Stage 2 (Classifier) — distilled MobileNetV3-Large student (KD ←
                        EfficientNetV2-S teacher) at 256 px. Classifies
-                       cropped leaf regions into one of the v2.1
+                       cropped leaf regions into one of the v2.2
                        trainable classes including ``not_a_plant``.
+                       The runtime reads ``models/classes.json`` at
+                       boot so the actual class set is whatever the
+                       shipped artefact declares.
 
 Behaviour summary:
 
@@ -413,6 +416,7 @@ class PlantDiseasePipeline:
             stage1_confidence=stage1["confidence"],
             regions=detections,
             primary_region=primary,
+            image_size=img.size,
             t0=t0,
         )
 
@@ -468,6 +472,7 @@ class PlantDiseasePipeline:
             stage1_confidence=0.0,
             regions=[],
             primary_region=None,
+            image_size=img.size,
             t0=t0,
         )
         # Annotate the response for ops dashboards without breaking the
@@ -501,6 +506,7 @@ class PlantDiseasePipeline:
             stage1_confidence=0.0,
             regions=[],
             primary_region=None,
+            image_size=img.size,
             t0=t0,
         )
 
@@ -513,9 +519,11 @@ class PlantDiseasePipeline:
         stage1_confidence: float,
         regions: list[dict],
         primary_region: dict | None,
+        image_size: tuple[int, int],
         t0: float,
     ) -> dict:
         elapsed = (time.perf_counter() - t0) * 1000
+        img_w, img_h = image_size
         return {
             "class_name": final["class_name"],
             "confidence": final["confidence"],
@@ -527,6 +535,13 @@ class PlantDiseasePipeline:
             "detection": {
                 "is_diseased": is_diseased,
                 "detector_confidence": stage1_confidence,
+                # ``image_width`` / ``image_height`` are the pixel dims of
+                # the image the detector saw — i.e., the upload after
+                # PIL decode. Clients render bboxes against these dims,
+                # not against the raw camera file (which may be larger
+                # and EXIF-rotated in the opposite axis).
+                "image_width": img_w,
+                "image_height": img_h,
                 "regions": regions,
                 "primary_region": primary_region,
             },

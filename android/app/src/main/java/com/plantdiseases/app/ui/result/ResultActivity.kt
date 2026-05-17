@@ -222,9 +222,14 @@ class ResultActivity : AppCompatActivity() {
 
             // YOLOv8 bbox overlay — only when we actually found a diseased
             // region. NAP and healthy verdicts skip the overlay.
+            // Bbox coordinates are in the *server-side* image's pixel
+            // space (the upload after PIL decode, which Android
+            // pre-rotates + downscales to <=1024 px). The server echoes
+            // those dims back on every response and the scan row carries
+            // them; render against those values directly.
             val regions = repository.parseRegions(scan.regions)
             if (!isNotAPlant && !isHealthyVerdict && regions.isNotEmpty()) {
-                val origBounds = ImageUtils.getImageDimensions(scan.imagePath)
+                val origBounds = Pair(scan.detectionImageWidth, scan.detectionImageHeight)
                 val primaryIdx = scan.primaryRegionIndex ?: -1
                 val overlayBoxes = regions.mapIndexed { i, r ->
                     HeatmapOverlayView.Box(
@@ -610,6 +615,7 @@ class ResultActivity : AppCompatActivity() {
                 pseudoId = pseudoId,
                 initialDisease = diseaseKey,
                 filterDisease = null,
+                speciesScientific = scan.speciesScientific,
                 isRu = isRu,
             )
         }
@@ -633,6 +639,7 @@ class ResultActivity : AppCompatActivity() {
         pseudoId: String,
         initialDisease: String,
         filterDisease: String?,
+        speciesScientific: String?,
         isRu: Boolean,
     ) {
         val card = binding.cardSimilarScans
@@ -646,6 +653,12 @@ class ResultActivity : AppCompatActivity() {
                 country = resolved.country,
                 region = resolved.locality,
                 disease = effectiveDisease,
+                // Narrow by detected scientific name so a "Powdery
+                // mildew on Monstera" scan doesn't render "Powdery
+                // mildew on Ficus" thumbnails — different species,
+                // different care. Server falls back gracefully when
+                // the species bucket is empty.
+                species = speciesScientific,
                 userPseudoId = pseudoId,
                 limit = 12,
             )
@@ -694,6 +707,7 @@ class ResultActivity : AppCompatActivity() {
                                 pseudoId = pseudoId,
                                 initialDisease = initialDisease,
                                 filterDisease = selectedDisease,
+                                speciesScientific = speciesScientific,
                                 isRu = isRu,
                             )
                         },
@@ -1372,7 +1386,8 @@ class ResultActivity : AppCompatActivity() {
     }
 
     private fun classKeyDisplayName(key: String, isRu: Boolean): String? = when (key) {
-        // PlantVision v2.0 — 11 classes
+        // PlantVision v2.2 — 9 in-head classes + 2 deferred
+        // (edema, sunburn_or_scorch) accepted on the feedback path.
         "healthy" -> if (isRu) "Здоровое растение" else "Healthy Plant"
         "powdery_mildew" -> if (isRu) "Мучнистая роса" else "Powdery Mildew"
         "gray_mold_botrytis" -> if (isRu) "Серая гниль (ботритис)" else "Gray Mold (Botrytis)"
@@ -1395,7 +1410,7 @@ class ResultActivity : AppCompatActivity() {
         // Pinned to the classifier release in server/models/classes.json.
         // When the server exposes model_version in /api/analyze we'll
         // start trusting that value per-scan instead.
-        private const val SERVER_MODEL_VERSION = "2.1"
+        private const val SERVER_MODEL_VERSION = "2.2"
     }
 
     private fun isFeedbackAlreadySubmitted(scanId: Long): Boolean =

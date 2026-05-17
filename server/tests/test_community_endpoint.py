@@ -56,7 +56,7 @@ def test_community_scan_upload_minimal(client, isolated_community):
         data=_form(
             scan_id="scanabc123",
             user_pseudo_id="pseudoabc123",
-            region="London, GB",
+            region="London", country="GB",
             disease="powdery_mildew",
         ),
     )
@@ -73,7 +73,7 @@ def test_community_scan_upload_with_thumbnail(client, isolated_community):
         data=_form(
             scan_id="scanthumb01",
             user_pseudo_id="pseudothumb",
-            region="Berlin, DE",
+            region="Berlin", country="DE",
             disease="gray_mold_botrytis",
             confidence=0.71,
             species="Begonia",
@@ -96,7 +96,7 @@ def test_community_scan_rejects_unknown_disease(client, isolated_community):
         data=_form(
             scan_id="scanunknown1",
             user_pseudo_id="pseudoabc123",
-            region="London, GB",
+            region="London", country="GB",
             disease="alien_invasion",
         ),
     )
@@ -122,7 +122,7 @@ def test_community_scan_rejects_short_scan_id(client, isolated_community):
         data=_form(
             scan_id="short",
             user_pseudo_id="pseudoabc123",
-            region="London, GB",
+            region="London", country="GB",
             disease="healthy",
         ),
     )
@@ -139,7 +139,7 @@ def test_community_scan_thumbnail_size_limit(client, isolated_community):
         data=_form(
             scan_id="scanbig00001",
             user_pseudo_id="pseudoabc123",
-            region="London, GB",
+            region="London", country="GB",
             disease="healthy",
         ),
         files={"image": ("big.png", big, "image/png")},
@@ -159,13 +159,13 @@ def test_community_nearby_lists_recent_rows(client, isolated_community):
             data=_form(
                 scan_id=f"scanrow{i:04d}",
                 user_pseudo_id="pseudo-london-x",
-                region="London, GB",
+                region="London", country="GB",
                 disease=disease,
             ),
         )
     r = client.get(
         "/api/community/nearby",
-        params={"region": "London, GB", "disease": "powdery_mildew", "limit": 10},
+        params={"region": "London", "country": "GB", "disease": "powdery_mildew", "limit": 10},
     )
     assert r.status_code == 200, r.text
     body = r.json()
@@ -183,7 +183,7 @@ def test_community_nearby_excludes_requesting_user(client, isolated_community):
         data=_form(
             scan_id="scanselfid01",
             user_pseudo_id="pseudo-self-x",
-            region="Paris, FR",
+            region="Paris", country="FR",
             disease="healthy",
         ),
     )
@@ -192,13 +192,13 @@ def test_community_nearby_excludes_requesting_user(client, isolated_community):
         data=_form(
             scan_id="scanotherid1",
             user_pseudo_id="pseudo-other-y",
-            region="Paris, FR",
+            region="Paris", country="FR",
             disease="healthy",
         ),
     )
     r = client.get(
         "/api/community/nearby",
-        params={"region": "Paris, FR", "user_pseudo_id": "pseudo-self-x"},
+        params={"region": "Paris", "country": "FR", "user_pseudo_id": "pseudo-self-x"},
     )
     body = r.json()
     assert {item["scan_id"] for item in body["items"]} == {"scanotherid1"}
@@ -226,7 +226,7 @@ def test_community_nearby_hides_not_a_plant(client, isolated_community):
         data=_form(
             scan_id="hidehealthy1",
             user_pseudo_id="pseudo-feed-x",
-            region="Berlin, DE",
+            region="Berlin", country="DE",
             disease="healthy",
         ),
     )
@@ -236,13 +236,13 @@ def test_community_nearby_hides_not_a_plant(client, isolated_community):
             data=_form(
                 scan_id=sid,
                 user_pseudo_id="pseudo-feed-x",
-                region="Berlin, DE",
+                region="Berlin", country="DE",
                 disease="not_a_plant",
             ),
         )
     r = client.get(
         "/api/community/nearby",
-        params={"region": "Berlin, DE"},
+        params={"region": "Berlin", "country": "DE"},
     )
     body = r.json()
     assert {item["disease"] for item in body["items"]} == {"healthy"}
@@ -256,7 +256,7 @@ def test_community_nearby_hides_not_a_plant(client, isolated_community):
     # but no item in the carousel can carry the hidden disease.
     r2 = client.get(
         "/api/community/nearby",
-        params={"region": "Berlin, DE", "disease": "not_a_plant"},
+        params={"region": "Berlin", "country": "DE", "disease": "not_a_plant"},
     )
     assert all(item["disease"] != "not_a_plant" for item in r2.json()["items"])
 
@@ -264,7 +264,7 @@ def test_community_nearby_hides_not_a_plant(client, isolated_community):
 def test_community_nearby_handles_empty_region(client, isolated_community):
     r = client.get(
         "/api/community/nearby",
-        params={"region": "Nowheresville, ZZ"},
+        params={"region": "Nowheresville", "country": "ZZ"},
     )
     assert r.status_code == 200
     assert r.json()["items"] == []
@@ -281,7 +281,7 @@ def test_community_delete_user_purges_rows_and_thumbs(client, isolated_community
         data=_form(
             scan_id="scandel00001",
             user_pseudo_id="pseudo-delete-x",
-            region="Tokyo, JP",
+            region="Tokyo", country="JP",
             disease="healthy",
         ),
         files={"image": ("scan.png", _png_bytes(), "image/png")},
@@ -326,7 +326,7 @@ def test_metrics_surfaces_community_block(client, isolated_community):
         data=_form(
             scan_id="scanmetric01",
             user_pseudo_id="pseudo-metric",
-            region="Madrid, ES",
+            region="Madrid", country="ES",
             disease="healthy",
         ),
     )
@@ -351,7 +351,7 @@ def test_country_groups_with_region_breakdown(client, isolated_community):
         dict(scan_id="scangb-mancunian1", country="GB", region="Manchester"),
         # Legacy: composite "City, Country" sent as region with no
         # explicit country. The endpoint splits on the last comma.
-        dict(scan_id="scangb-legacy001", region="Bristol, GB"),
+        dict(scan_id="scangb-legacy001", region="Bristol", country="GB"),
     )
     for w in writes:
         r = client.post(
@@ -400,7 +400,7 @@ def test_country_groups_with_region_breakdown(client, isolated_community):
 
     # Legacy "City, Country" composite on the read path also lands.
     r_legacy = client.get(
-        "/api/community/nearby", params={"region": "Bristol, GB"},
+        "/api/community/nearby", params={"region": "Bristol", "country": "GB"},
     ).json()
     assert r_legacy["summary"]["country"] == "GB"
     assert r_legacy["summary"]["region"] == "Bristol"

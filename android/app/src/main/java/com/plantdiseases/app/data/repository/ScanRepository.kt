@@ -42,12 +42,20 @@ class ScanRepository(
      * against its ASPCA-derived table; without it the response carries
      * `toxicity_source = "unknown"`.
      */
-    suspend fun analyzeImage(imageFile: File, speciesHint: String? = null): Result<AnalysisResponse> =
+    suspend fun analyzeImage(
+        imageFile: File,
+        speciesHint: String? = null,
+        locale: String = "en",
+    ): Result<AnalysisResponse> =
         withContext(Dispatchers.IO) {
             try {
                 val requestBody = imageFile.asRequestBody("image/jpeg".toMediaTypeOrNull())
                 val part = MultipartBody.Part.createFormData("image", imageFile.name, requestBody)
-                val response = apiService.analyzeImage(part, speciesHint?.takeIf { it.isNotBlank() })
+                val response = apiService.analyzeImage(
+                    part,
+                    speciesHint?.takeIf { it.isNotBlank() },
+                    locale,
+                )
                 if (response.isSuccessful && response.body() != null) {
                     Result.success(response.body()!!)
                 } else if (response.code() == 429) {
@@ -77,12 +85,16 @@ class ScanRepository(
      * into a 200 OK with `available=false`, so a `Result.success` here may
      * still mean "no candidates" — callers must check `IdentifyResponse.available`.
      */
-    suspend fun identifySpecies(imageFile: File, organ: String = "leaf"): Result<IdentifyResponse> =
+    suspend fun identifySpecies(
+        imageFile: File,
+        organ: String = "leaf",
+        locale: String = "en",
+    ): Result<IdentifyResponse> =
         withContext(Dispatchers.IO) {
             try {
                 val body = imageFile.asRequestBody("image/jpeg".toMediaTypeOrNull())
                 val part = MultipartBody.Part.createFormData("image", imageFile.name, body)
-                val response = apiService.identifySpecies(part, organ)
+                val response = apiService.identifySpecies(part, organ, locale)
                 if (response.isSuccessful && response.body() != null) {
                     Result.success(response.body()!!)
                 } else if (response.code() == 429) {
@@ -368,6 +380,8 @@ class ScanRepository(
                 isHealthy = result.isHealthy,
                 regions = if (regions.isEmpty()) null else gson.toJson(regions),
                 primaryRegionIndex = primaryIndex,
+                detectionImageWidth = detection?.imageWidth ?: 0,
+                detectionImageHeight = detection?.imageHeight ?: 0,
                 allProbs = result.allProbs?.let { gson.toJson(it) },
                 warnings = warningsJson,
                 toxicToPets = result.toxicToPets,
@@ -607,11 +621,16 @@ class ScanRepository(
         }
 
     /** Fetch the most recent community scans in a country (optionally
-     *  narrowed to one sub-country region). */
+     *  narrowed to one sub-country region, one disease, and one
+     *  scientific-name species). The species filter is the key
+     *  reason this carousel feels relevant — without it the user sees
+     *  "leaf spot on Monstera" next to "leaf spot on Ficus" and the
+     *  care advice is wildly different. */
     suspend fun communityNearby(
         country: String,
         region: String? = null,
         disease: String?,
+        species: String? = null,
         userPseudoId: String?,
         limit: Int = 12,
     ): Result<com.plantdiseases.app.data.model.CommunityScansResponse> =
@@ -621,6 +640,7 @@ class ScanRepository(
                     country = country,
                     region = region?.takeIf { it.isNotBlank() },
                     disease = disease?.takeIf { it.isNotBlank() },
+                    species = species?.takeIf { it.isNotBlank() },
                     userPseudoId = userPseudoId?.takeIf { it.isNotBlank() },
                     limit = limit,
                 )

@@ -29,6 +29,7 @@ class PlantDiseasesApp : Application() {
             database.plantJournalDao(),
             database.scanDao(),
             database.plantReminderDao(),
+            database.plantReminderEventDao(),
             database.chatMessageDao(),
         )
     }

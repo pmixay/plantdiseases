@@ -121,7 +121,8 @@ class AnalysisActivity : AppCompatActivity() {
             }
 
             try {
-                val result = app.scanRepository.analyzeImage(uploadFile)
+                val locale = if (LocaleHelper.isRussian(this@AnalysisActivity)) "ru" else "en"
+                val result = app.scanRepository.analyzeImage(uploadFile, locale = locale)
 
                 result.onSuccess { response ->
                     val scanId = app.scanRepository.saveScan(imagePath, response)

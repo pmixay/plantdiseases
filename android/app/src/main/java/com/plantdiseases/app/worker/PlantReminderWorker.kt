@@ -16,6 +16,19 @@ import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.ui.garden.PlantDetailActivity
 
+/**
+ * Fires when a reminder's WorkManager interval elapses. Persists a
+ * ``pending`` event in plant_reminder_events and posts a notification
+ * with two action buttons:
+ *
+ *   * Done   → ReminderActionReceiver records action="done" and
+ *              auto-creates the matching journal entry.
+ *   * Snooze → records action="snoozed" so the streak chip on plant
+ *              detail still shows the firing.
+ *
+ * The event id is threaded through both pending-intents so the
+ * receivers know which row to resolve.
+ */
 class PlantReminderWorker(
     private val context: Context,
     params: WorkerParameters,
@@ -23,6 +36,7 @@ class PlantReminderWorker(
 
     @SuppressLint("MissingPermission") // permission checked at line below before notify()
     override suspend fun doWork(): Result {
+        val reminderId = inputData.getLong(KEY_REMINDER_ID, -1L)
         val plantId = inputData.getLong(KEY_PLANT_ID, -1L)
         val reminderType = inputData.getString(KEY_REMINDER_TYPE) ?: return Result.failure()
         val plantName = inputData.getString(KEY_PLANT_NAME) ?: return Result.failure()
@@ -42,6 +56,17 @@ class PlantReminderWorker(
             else -> return Result.failure()
         }
         val notificationId = (plantId * 10 + typeIndex).toInt()
+
+        // Log the firing as a pending event BEFORE posting the notify
+        // so the action receivers always have a row to resolve. If
+        // resolution doesn't happen (user dismisses without tapping),
+        // the row stays "pending" and the recent-events list shows it
+        // — that's an audit signal, not a bug.
+        val app = context.applicationContext as PlantDiseasesApp
+        val reminder = if (reminderId > 0) app.plantRepository.getReminderById(reminderId) else null
+        val eventId = if (reminder != null) {
+            app.plantRepository.recordReminderFire(reminder)
+        } else -1L
 
         val (title, body) = when (reminderType) {
             TYPE_WATERING -> Pair(
@@ -68,23 +93,55 @@ class PlantReminderWorker(
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
-        val notification = NotificationCompat.Builder(context, PlantDiseasesApp.CHANNEL_PLANT_REMINDERS)
+        val builder = NotificationCompat.Builder(context, PlantDiseasesApp.CHANNEL_PLANT_REMINDERS)
             .setSmallIcon(R.drawable.ic_care)
             .setContentTitle(title)
             .setContentText(body)
             .setContentIntent(contentIntent)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
-            .build()
+
+        // Done + Snooze actions are only useful when we know which
+        // event to resolve; if recordReminderFire couldn't find the
+        // PlantReminder row (e.g. the user deleted it but the worker
+        // already enqueued), skip them silently — the notification
+        // still shows.
+        if (eventId > 0) {
+            val doneIntent = ReminderActionReceiver.buildIntent(
+                context, eventId, notificationId, ReminderActionReceiver.ACTION_DONE,
+            )
+            val donePending = PendingIntent.getBroadcast(
+                context,
+                (notificationId * 10) + 1,
+                doneIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            val snoozeIntent = ReminderActionReceiver.buildIntent(
+                context, eventId, notificationId, ReminderActionReceiver.ACTION_SNOOZE,
+            )
+            val snoozePending = PendingIntent.getBroadcast(
+                context,
+                (notificationId * 10) + 2,
+                snoozeIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            builder.addAction(
+                R.drawable.ic_care, context.getString(R.string.reminder_action_done), donePending,
+            )
+            builder.addAction(
+                R.drawable.ic_clock, context.getString(R.string.reminder_action_snooze), snoozePending,
+            )
+        }
 
         val nm = context.getSystemService(NotificationManager::class.java)
-        nm.notify(notificationId, notification)
+        nm.notify(notificationId, builder.build())
 
         return Result.success()
     }
 
     companion object {
         const val KEY_PLANT_ID = "plant_id"
+        const val KEY_REMINDER_ID = "reminder_id"
         const val KEY_REMINDER_TYPE = "reminder_type"
         const val KEY_PLANT_NAME = "plant_name"
 

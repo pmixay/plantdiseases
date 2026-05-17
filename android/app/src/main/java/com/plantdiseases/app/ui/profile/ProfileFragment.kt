@@ -18,7 +18,6 @@ import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.databinding.FragmentProfileBinding
-import com.plantdiseases.app.ui.camera.LightMeterActivity
 import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.TelemetryIds
@@ -57,10 +56,10 @@ class ProfileFragment : Fragment() {
         // tappable as a soft shortcut into the relevant tab.
         setupHowToSteps()
 
-        // Light Meter
-        binding.cardLightMeter.setOnClickListener {
-            startActivity(Intent(requireContext(), LightMeterActivity::class.java))
-        }
+        // Light Meter was removed from this screen — it now lives
+        // on the plant detail with per-plant context. The
+        // corresponding cardLightMeter view was deleted from the
+        // layout XML in the same pass.
 
         // Profile empty state CTA
         binding.btnStartScan.setOnClickListener {

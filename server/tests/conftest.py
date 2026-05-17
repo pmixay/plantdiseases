@@ -153,6 +153,14 @@ def client():
             mw.min_interval = 0.0
             with mw._lock:
                 mw._last_request.clear()
+        # The same-photo dedup cache leaks state across tests because
+        # the test PNG bytes hash to a stable SHA-256 — without this
+        # reset, a confident-pipeline test gets the unconfident response
+        # the previous test cached for the identical bytes. Clearing
+        # at fixture entry is enough; tests inside the same fixture run
+        # are already isolated by ``client`` being function-scoped.
+        with server_main._analyze_cache_lock:
+            server_main._analyze_cache.clear()
         yield c
 
 

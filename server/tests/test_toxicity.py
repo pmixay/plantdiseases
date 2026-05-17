@@ -67,6 +67,67 @@ def test_analyze_response_toxicity_unknown_without_species(client, png_bytes):
     assert body["toxic_species_list"] == []
 
 
+def test_analyze_cache_hit_re_resolves_toxicity_for_override(client, png_bytes):
+    """Regression: the same-photo dedup cache keys on image hash only,
+    so a second /api/analyze on the same bytes with a different
+    ``?species=`` override used to silently keep the first call's
+    toxicity. The cache-hit path now re-resolves toxicity against the
+    fresh override and patches just those three fields, leaving the
+    rest of the cached payload (verdict, detection, species block)
+    untouched.
+    """
+    # First call: toxic species → cache populated with toxic_to_pets=True.
+    r1 = client.post(
+        "/api/analyze?species=Monstera%20deliciosa",
+        files={"image": ("leaf.png", png_bytes, "image/png")},
+    )
+    assert r1.status_code == 200, r1.text
+    body1 = r1.json()
+    assert body1["is_repeat"] is False
+    assert body1["toxic_to_pets"] is True
+
+    # Second call: same bytes, safe species override → must reflect the
+    # override AND surface ``is_repeat=true`` to confirm the cache fired.
+    r2 = client.post(
+        "/api/analyze?species=Calathea%20ornata",
+        files={"image": ("leaf.png", png_bytes, "image/png")},
+    )
+    assert r2.status_code == 200, r2.text
+    body2 = r2.json()
+    assert body2["is_repeat"] is True
+    assert body2["toxic_to_pets"] is False
+    assert body2["toxic_species_list"] == []
+    assert body2["toxicity_source"] == "db"
+    # Verdict & detection MUST be byte-identical — the species override
+    # is a toxicity hint only, it must not change the diagnosis.
+    assert body2["class_name"] == body1["class_name"]
+    assert body2["confidence"] == body1["confidence"]
+    assert body2["detection"] == body1["detection"]
+
+
+def test_analyze_cache_hit_without_override_preserves_cached_toxicity(client, png_bytes):
+    """The cache-hit re-resolve path must ONLY fire when the override
+    is supplied — otherwise it stomps the cached toxicity with
+    'unknown'. A second call with no ``?species=`` should replay the
+    first call's toxicity verbatim.
+    """
+    r1 = client.post(
+        "/api/analyze?species=Dieffenbachia",
+        files={"image": ("leaf.png", png_bytes, "image/png")},
+    )
+    body1 = r1.json()
+    assert body1["toxic_to_pets"] is True
+
+    r2 = client.post(
+        "/api/analyze",
+        files={"image": ("leaf.png", png_bytes, "image/png")},
+    )
+    body2 = r2.json()
+    assert body2["is_repeat"] is True
+    assert body2["toxic_to_pets"] is True  # NOT overwritten to unknown
+    assert body2["toxicity_source"] == "db"
+
+
 def test_care_plan_response_includes_toxicity(client):
     r = client.post(
         "/api/care-plan",

@@ -12,6 +12,7 @@ Stage 2:  MobileNetV3-Large    — distilled student (KD from
 
 import asyncio
 import contextlib
+import hashlib
 import io
 import ipaddress
 import json
@@ -19,6 +20,7 @@ import logging
 import math
 import threading
 import time
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from logging.handlers import RotatingFileHandler
@@ -43,7 +45,6 @@ try:
     from .ai_services import (  # type: ignore[import-not-found]
         chat_metrics_snapshot,
         chat_reply,
-        compare_progression,
         compare_progression_history,
         generate_care_plan,
         identify_species,
@@ -102,7 +103,6 @@ except ImportError:
     from ai_services import (
         chat_metrics_snapshot,
         chat_reply,
-        compare_progression,
         compare_progression_history,
         generate_care_plan,
         identify_species,
@@ -202,6 +202,43 @@ CLASSIFIER_PATH = MODELS_DIR / "classifier.pth"
 MAX_FILE_SIZE = get_int("MAX_FILE_SIZE", 10 * 1024 * 1024)  # 10 MB
 MAX_IMAGE_DIMENSION = get_int("MAX_IMAGE_DIMENSION", 4096)
 INFERENCE_TIMEOUT = get_float("INFERENCE_TIMEOUT", 30.0)
+
+# Same-photo dedup. Users frequently re-upload the same JPEG within
+# minutes (gallery picker mis-tap, "did the verdict change?" curiosity,
+# the test harness). Caching the *response* by SHA-256 of the upload
+# bytes saves a full pipeline cycle + a PlantNet call AND lets the
+# client render a friendly "you saw this one earlier" banner. The
+# cache is intentionally in-memory only: it loses state on restart,
+# which is the right behaviour while the model itself is in flux.
+ANALYZE_CACHE_TTL_SECONDS = get_int("ANALYZE_CACHE_TTL_SECONDS", 3600)
+ANALYZE_CACHE_MAX_ENTRIES = get_int("ANALYZE_CACHE_MAX_ENTRIES", 512)
+_analyze_cache: "OrderedDict[str, tuple[float, dict]]" = OrderedDict()
+_analyze_cache_lock = threading.Lock()
+
+def _analyze_cache_get(image_sha: str) -> dict | None:
+    """Return a previously-stored analyse response keyed by image hash,
+    or ``None`` if there's nothing fresh under that key. Updates LRU
+    recency on hit so frequent re-uploads stay warm."""
+    now = time.time()
+    with _analyze_cache_lock:
+        item = _analyze_cache.get(image_sha)
+        if item is None:
+            return None
+        cached_at, payload = item
+        if now - cached_at > ANALYZE_CACHE_TTL_SECONDS:
+            # Stale — drop it so the upload re-runs against the
+            # current model.
+            _analyze_cache.pop(image_sha, None)
+            return None
+        _analyze_cache.move_to_end(image_sha)
+        return {"cached_at": cached_at, "payload": payload}
+
+def _analyze_cache_put(image_sha: str, payload: dict) -> None:
+    with _analyze_cache_lock:
+        _analyze_cache[image_sha] = (time.time(), payload)
+        _analyze_cache.move_to_end(image_sha)
+        while len(_analyze_cache) > ANALYZE_CACHE_MAX_ENTRIES:
+            _analyze_cache.popitem(last=False)
 ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp", "image/bmp"}
 # Bare RIFF is intentionally NOT in this tuple: RIFF can be WAV / AVI /
 # ANI as well as WebP, and any of those would have passed a generic
@@ -833,11 +870,17 @@ async def metrics_prometheus():
     )
 
 
-async def _species_identify_best_effort(image_bytes: bytes, *, timeout: float) -> dict | None:
+async def _species_identify_best_effort(
+    image_bytes: bytes, *, timeout: float, lang: str = "en",
+) -> dict | None:
     """Run PlantNet identify in the inference executor with a tight
     timeout. Returns the compact species block ({class, score,
     scientific, common, source}) for the response, or ``None`` if the
     call failed, timed out, or PlantNet isn't configured.
+
+    ``lang`` is forwarded so the returned ``common_name`` is
+    localised — without it the carousel shows "Rubber tree" even on
+    a Russian-locale device.
 
     Never raises — every failure mode is logged at INFO and folded
     into ``None`` so the analyze response stays whole.
@@ -847,11 +890,11 @@ async def _species_identify_best_effort(image_bytes: bytes, *, timeout: float) -
         raw = await asyncio.wait_for(
             loop.run_in_executor(
                 _get_inference_executor(),
-                # identify_species's ``organ`` is keyword-only —
-                # ``run_in_executor`` only takes positional args, so
-                # we wrap in a lambda. Passing positionally raises
-                # TypeError at call time and surfaces as a 500.
-                lambda: identify_species(image_bytes, organ="leaf"),
+                # identify_species keyword args (organ, lang) are
+                # keyword-only — run_in_executor only takes positional
+                # args, so we wrap in a lambda. Passing positionally
+                # raises TypeError at call time and surfaces as a 500.
+                lambda: identify_species(image_bytes, organ="leaf", lang=lang),
             ),
             timeout=timeout,
         )
@@ -895,12 +938,18 @@ async def _species_identify_best_effort(image_bytes: bytes, *, timeout: float) -
 
 
 @app.post("/api/analyze")
-async def analyze_image(image: UploadFile = File(...), species: str | None = None):
+async def analyze_image(
+    image: UploadFile = File(...),
+    species: str | None = None,
+    locale: str = "en",
+):
     """Analyse a plant image for diseases (two-stage pipeline).
 
     Accepts JPEG, PNG, WebP, or BMP images up to 10 MB.
     Returns bilingual (EN/RU) disease diagnosis with treatment advice,
-    detected region (with severity score) and the top-k class probabilities.
+    detected region (with severity score) and the top-k class
+    probabilities. ``locale`` (default "en") is forwarded to PlantNet
+    so the species ``common_name`` is localised in the response.
     """
     if pipeline is None:
         _record_error()
@@ -950,6 +999,37 @@ async def analyze_image(image: UploadFile = File(...), species: str | None = Non
                    f"Maximum dimension: {MAX_IMAGE_DIMENSION}px",
         )
 
+    # Same-photo short-circuit. The hash is over the raw upload bytes,
+    # not the decoded pixels, so even a re-encode produces a fresh
+    # entry (which is the right call: re-encoded photos can differ
+    # under quantisation in ways that flip the verdict). Cached
+    # responses are re-emitted byte-identical with two added fields:
+    # ``is_repeat=true`` and ``cached_at`` so the client can render
+    # a "you saw this one earlier" banner instead of pretending it's
+    # a fresh diagnosis.
+    #
+    # The cache key is the image hash ONLY, not (image, species). The
+    # ``?species=`` override drives toxicity lookup only — see the
+    # auto/explicit fall-through ~80 lines below — so on a cache hit
+    # we re-resolve toxicity against the override and patch the three
+    # affected fields, leaving the verdict / detection / species
+    # block / care-plan-relevant fields untouched (they're properties
+    # of the image, not of the user's species hint).
+    image_sha = hashlib.sha256(contents).hexdigest()
+    cache_hit = _analyze_cache_get(image_sha)
+    if cache_hit is not None:
+        cached_payload = dict(cache_hit["payload"])
+        cached_payload["is_repeat"] = True
+        cached_payload["cached_at"] = cache_hit["cached_at"]
+        cached_payload["elapsed_ms"] = 0
+        species_override = (species or "").strip() or None
+        if species_override:
+            overridden = lookup_pet_toxicity(species_override)
+            cached_payload["toxic_to_pets"] = overridden["toxic_to_pets"]
+            cached_payload["toxic_species_list"] = overridden["species_list"]
+            cached_payload["toxicity_source"] = overridden["source"]
+        return JSONResponse(content=cached_payload)
+
     loop = asyncio.get_running_loop()
     # Fire the PlantNet species identify in parallel with the disease
     # pipeline. PlantNet is best-effort: if the call fails / times out
@@ -958,8 +1038,9 @@ async def analyze_image(image: UploadFile = File(...), species: str | None = Non
     # is much tighter than INFERENCE_TIMEOUT (30s) because PlantNet is
     # an external HTTP hop and a slow upstream shouldn't hold the
     # whole analyze response hostage.
+    plantnet_lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
     species_task = asyncio.create_task(
-        _species_identify_best_effort(contents, timeout=6.0)
+        _species_identify_best_effort(contents, timeout=6.0, lang=plantnet_lang)
     )
     try:
         result = await asyncio.wait_for(
@@ -1078,6 +1159,18 @@ async def analyze_image(image: UploadFile = File(...), species: str | None = Non
     except Exception:  # noqa: BLE001 — defensive; helper already swallows
         species_payload = None
 
+    # PlantNet on a non-plant photo always returns a low-quality guess
+    # ("Phaseolus vulgaris" because there was some green pixel noise)
+    # which is actively misleading on the result screen. When the
+    # pipeline lands on ``not_a_plant`` we suppress the species block
+    # entirely — the LRU cache in ``identify_species`` keeps the API
+    # call from being wasted on a repeat upload of the same image.
+    if class_name == "not_a_plant":
+        species_payload = {
+            "available": False, "source": "skipped_nap",
+            "best": None, "candidates": [],
+        }
+
     # Pet-toxicity surface — resolves from the explicit ``species``
     # query param when supplied, otherwise falls back to the auto-
     # detected best match. Without either we return
@@ -1089,7 +1182,7 @@ async def analyze_image(image: UploadFile = File(...), species: str | None = Non
         "toxic_to_pets": False, "species_list": [], "source": "unknown",
     }
 
-    return JSONResponse(content={
+    response_payload = {
         # Canonical class key the pipeline landed on AFTER all
         # post-processing (weak-healthy reroute, OOD gate, etc.).
         # ``disease_name`` / ``disease_name_ru`` are the localised
@@ -1121,13 +1214,20 @@ async def analyze_image(image: UploadFile = File(...), species: str | None = Non
         "species": species_payload,
         "elapsed_ms": result["elapsed_ms"],
         "server_version": APP_VERSION,
+        # Set to true only when the response is replayed from the
+        # SHA-256 cache above; first-time scans get false here.
+        "is_repeat": False,
         # Server-minted scan_id for this response. Clients should
         # send this same string back on /api/feedback so the gate
         # in main.py can confirm the feedback ties to a real scan
         # we ran. Stored in the issued_scan_ids table; expires after
         # ISSUED_SCAN_ID_TTL_DAYS.
         "scan_id": _issue_scan_id(),
-    })
+    }
+    # Stash the freshly-built response under its image hash so the
+    # NEXT identical upload short-circuits at the top of this handler.
+    _analyze_cache_put(image_sha, response_payload)
+    return JSONResponse(content=response_payload)
 
 
 # ── Smart APIs ──────────────────────────────────────────────────────
@@ -1266,13 +1366,10 @@ class CommunityScanRequest(BaseModel):
 
 
 class ProgressionRequest(BaseModel):
-    # Back-compat pairwise shape: callers can pass just `current` plus
-    # optional `previous`. New callers should populate `history` with a
-    # time-ordered list (oldest first) — when present it takes priority
-    # over the pairwise fields.
-    current: dict | None = None
-    previous: dict | None = None
-    history: list[dict] | None = None
+    """Time-ordered list of scans (oldest first) for the disease-
+    progression sparkline + trend the plant-detail screen renders."""
+
+    history: list[dict]
 
 
 # Classes the production head can actually predict. Tracks the
@@ -1287,15 +1384,16 @@ except ImportError:
 
 _FEEDBACK_IN_HEAD_CLASSES: frozenset[str] = frozenset(_HEAD_CLASS_NAMES)
 
-# Out-of-head corrections — deferred physiological classes the
-# v2.1 head doesn't carry yet, plus a free-form catch-all. We accept
+# Out-of-head corrections — physiological classes the
+# v2.2 head doesn't carry yet, plus a free-form catch-all. We accept
 # them on /api/feedback (otherwise the user has no way to tell us
 # "your model can't say this") and tag each row with ``out_of_head=1``
 # so retraining can prioritise expanding the label set.
+# ``leaf_scorch_underwatering`` and ``nutrient_deficiency`` moved
+# into the head set in v2.2 (NOTEBOOK_AUDIT §6) and now arrive via
+# ``_FEEDBACK_IN_HEAD_CLASSES`` instead.
 _FEEDBACK_OUT_OF_HEAD_CLASSES: frozenset[str] = frozenset({
     "edema",
-    "leaf_scorch_underwatering",
-    "nutrient_deficiency",
     "sunburn_or_scorch",
     "other",
 })
@@ -1489,14 +1587,22 @@ class FeedbackRequest(BaseModel):
 
 
 @app.post("/api/identify")
-async def identify_endpoint(image: UploadFile = File(...), organ: str = "leaf"):
+async def identify_endpoint(
+    image: UploadFile = File(...),
+    organ: str = "leaf",
+    locale: str = "en",
+):
     """PlantNet-backed plant species identification.
 
     Returns up to 5 candidate species with confidence scores. When the
     PlantNet API key is missing we still respond 200 OK with
     ``available: false`` so the client can render a graceful state
     instead of an error toast. Cached server-side by SHA-256(image) +
-    organ to keep the daily PlantNet quota intact.
+    organ + locale to keep the daily PlantNet quota intact.
+
+    ``locale`` is forwarded to PlantNet's ``lang`` query param so the
+    common names come back localised (e.g. "Каучуковое дерево" on
+    ru-RU instead of "Rubber tree").
     """
     if pipeline is None:
         _record_error()
@@ -1521,10 +1627,11 @@ async def identify_endpoint(image: UploadFile = File(...), organ: str = "leaf"):
     organ = (organ or "leaf").strip().lower()
     if organ not in ("leaf", "flower", "fruit", "bark", "habit", "auto"):
         organ = "leaf"
+    plantnet_lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
     loop = asyncio.get_running_loop()
     result = await loop.run_in_executor(
         _get_inference_executor(),
-        lambda: identify_species(contents, organ=organ),
+        lambda: identify_species(contents, organ=organ, lang=plantnet_lang),
     )
     return JSONResponse(content={**result, "organ": organ})
 
@@ -1607,33 +1714,12 @@ async def care_plan_endpoint(payload: CarePlanRequest):
 
 @app.post("/api/progression")
 async def progression_endpoint(payload: ProgressionRequest):
-    """Disease-progression analysis. Accepts two shapes:
-
-      * **Historical**: ``history=[scan1, scan2, ...]`` (oldest first).
-        Returns a 5-point severity sparkline plus a trend slope across
-        the full history. This is the new path for the Android plant-
-        detail screen.
-      * **Pairwise (legacy)**: ``current`` + optional ``previous``.
-        Returns the same trend / delta_* fields the v2.0 client
-        expects. Kept for backward compatibility — older clients still
-        in the wild pre-date the historical endpoint.
-
-    When ``history`` is non-empty it takes precedence and the response
-    additionally carries the sparkline. When only the pairwise fields
-    are supplied the response keeps the v2.0 shape so older clients
-    never see an unexpected key, but new clients can rely on the
-    sparkline + history_length fields.
-    """
-    if payload.history is not None:
-        return JSONResponse(content=compare_progression_history(payload.history))
-    # Pairwise back-compat path.
-    if payload.current is None:
-        raise HTTPException(status_code=400, detail="current or history is required")
-    return JSONResponse(
-        content=compare_progression(
-            current=payload.current, previous=payload.previous,
-        )
-    )
+    """Disease-progression analysis. Returns a 5-point severity
+    sparkline + a trend slope across the supplied history (oldest
+    first). An empty list is allowed and yields a zero-padded
+    baseline so the client can render an "awaiting data" state
+    without special-casing."""
+    return JSONResponse(content=compare_progression_history(payload.history))
 
 
 @app.post("/api/feedback")
@@ -1840,7 +1926,7 @@ async def community_scan_upload(
     request: Request,
     scan_id: str = Form(...),
     user_pseudo_id: str = Form(...),
-    country: str | None = Form(None),
+    country: str = Form(...),
     region: str = Form(""),
     disease: str = Form(...),
     confidence: float | None = Form(None),
@@ -1851,25 +1937,11 @@ async def community_scan_upload(
 ):
     """Append one community-shared scan to the corpus.
 
-    Hierarchy: ``country`` is the canonical top bucket, ``region``
-    is the optional sub-country locality. Older clients still on the
-    legacy "region only" contract may omit ``country`` and pass a
-    composite ``"City, Country"`` string in ``region``; in that
-    case we split on the last comma so the right pieces land in
-    the right columns. The image is optional — when omitted we
-    still store the row, just without a thumbnail.
+    Hierarchy: ``country`` is the canonical top bucket (required),
+    ``region`` is the optional sub-country locality. The image is
+    optional — when omitted we still store the row, just without a
+    thumbnail.
     """
-    # Legacy fallback: pre-hierarchy clients only sent ``region``.
-    # Pull a country out of the comma tail when ``country`` is
-    # missing; the locality keeps whatever leads the comma.
-    if not country:
-        if "," in region:
-            head, _, tail = region.rpartition(",")
-            country = tail.strip()
-            region = head.strip()
-        else:
-            country = region
-            region = ""
 
     try:
         payload = CommunityScanRequest(
@@ -1946,29 +2018,24 @@ async def community_scan_nearby(
     country: str | None = None,
     region: str | None = None,
     disease: str | None = None,
+    species: str | None = None,
     limit: int = 20,
     user_pseudo_id: str | None = None,
 ):
     """List the most recent community-shared scans within ``country``.
 
     ``region`` narrows the result set to a sub-country locality
-    (city / admin area) when supplied. Server prefers same-disease
-    matches, falls back to same-locality, and finally widens to the
-    whole country so a small city still gets a populated carousel.
+    (city / admin area) when supplied. ``species`` (scientific name,
+    exact match) narrows further so the carousel only shows scans of
+    the same plant — without it, "Ficus elastica with leaf spot"
+    appears next to "Monstera with leaf spot" and conflates two
+    different care routines.
 
-    Backward-compat: callers that pre-date the hierarchy may pass
-    only ``region`` with a composite "City, Country" string; we
-    split on the last comma and fill ``country`` from the tail.
+    Fall-through ordering inside ``nearby_scans`` is most-specific
+    first: same disease+species+region → same disease+species → …
+    → same country (any disease). The carousel always fills up to
+    ``limit`` so a thin local bucket still surfaces something.
     """
-    # Legacy fallback for the older Android build.
-    if not country:
-        if region and "," in region:
-            head, _, tail = region.rpartition(",")
-            country = tail.strip()
-            region = head.strip()
-        else:
-            country = region or ""
-            region = None
     country_norm = _normalise_country(country)
     region_norm = _normalise_locality(region) if region else ""
     if not country_norm:
@@ -1978,6 +2045,7 @@ async def community_scan_nearby(
         country=country_norm,
         region=region_norm or None,
         disease=(disease or None),
+        species=(species or None),
         limit=max(1, min(int(limit), 50)),
         exclude_user_pseudo_id=user_pseudo_id,
     )

@@ -415,47 +415,12 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical">
 
-                <LinearLayout
-                    android:id="@+id/card_light_meter"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:padding="@dimen/space_lg"
-                    android:gravity="center_vertical"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:foreground="?android:attr/selectableItemBackground">
-
-                    <ImageView
-                        android:layout_width="22dp"
-                        android:layout_height="22dp"
-                        android:src="@drawable/ic_light"
-                        android:contentDescription="@string/light_meter"
-                        app:tint="@color/primary" />
-
-                    <TextView
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginStart="@dimen/space_md"
-                        android:text="@string/light_meter"
-                        android:textSize="@dimen/text_title_sm"
-                        android:textColor="@color/on_surface" />
-
-                    <ImageView
-                        android:layout_width="20dp"
-                        android:layout_height="20dp"
-                        android:src="@drawable/ic_chevron_right"
-                        android:importantForAccessibility="no"
-                        app:tint="@color/on_surface_secondary" />
-
-                </LinearLayout>
-
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginHorizontal="@dimen/space_lg"
-                    android:background="@color/divider" />
+                <!-- Light Meter card used to live here. It moved into
+                     per-plant context on the plant-detail screen
+                     (where the meter pre-selects the right species
+                     bucket and persists the session peak back onto
+                     the plant) and was deleted from this surface as
+                     part of the production-polish pass. -->
 
                 <!-- Inline "how to use" mini-guide: replaces the old
                      full-screen onboarding re-open button with a quick
