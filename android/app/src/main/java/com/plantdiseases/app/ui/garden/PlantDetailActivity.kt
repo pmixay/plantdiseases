@@ -340,14 +340,21 @@ class PlantDetailActivity : AppCompatActivity() {
             text = plant.name
             textSize = 30f
             setTextColor(getColor(R.color.hero_stat_text))
-            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+            // PictureThis-style bold hero on the vivid green gradient
+            // — medium read as undersized once the header sat on a
+            // saturated background.
+            typeface = android.graphics.Typeface.create("sans-serif-black", android.graphics.Typeface.NORMAL)
+            letterSpacing = -0.02f
             maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
         })
         body.addView(TextView(this).apply {
             text = plant.species?.takeIf { it.isNotBlank() } ?: getString(R.string.plant_species_unknown)
             textSize = 15f
             setTextColor(getColor(R.color.hero_stat_text))
             alpha = 0.82f
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -1586,10 +1593,13 @@ class PlantDetailActivity : AppCompatActivity() {
     }
 
     private fun baseCard(): MaterialCardView = MaterialCardView(this).apply {
-        radius = 18.dp().toFloat()
-        cardElevation = 0f
-        strokeWidth = 1.dp()
-        strokeColor = getColor(R.color.card_stroke)
+        // PictureThis-style soft card: no stroke, 2dp elevation, 20dp
+        // corners. Single source of truth for every detail-screen
+        // panel (care plan, watering, doctor, photos, journal). The
+        // earlier hairline stroke fought the new white surface.
+        radius = 20.dp().toFloat()
+        cardElevation = 2.dp().toFloat()
+        strokeWidth = 0
         setCardBackgroundColor(getColor(R.color.surface))
         isClickable = true
         foreground = selectable()
@@ -1603,17 +1613,22 @@ class PlantDetailActivity : AppCompatActivity() {
         LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(24.dp())
+            setPadding(28.dp(), 24.dp(), 28.dp(), 28.dp())
             addView(ImageView(this@PlantDetailActivity).apply {
                 setImageResource(imageRes)
-                layoutParams = LinearLayout.LayoutParams(170.dp(), 170.dp())
+                layoutParams = LinearLayout.LayoutParams(180.dp(), 180.dp())
             })
             addView(TextView(this@PlantDetailActivity).apply {
                 text = title
-                textSize = 20f
+                textSize = 22f
                 gravity = Gravity.CENTER
                 setTextColor(getColor(R.color.on_surface))
-                typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+                typeface = android.graphics.Typeface.create("sans-serif-black", android.graphics.Typeface.NORMAL)
+                letterSpacing = -0.02f
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = 8.dp() }
             })
             addView(TextView(this@PlantDetailActivity).apply {
                 text = body

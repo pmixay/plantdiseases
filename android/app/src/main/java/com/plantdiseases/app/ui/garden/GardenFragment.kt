@@ -148,38 +148,84 @@ class GardenFragment : Fragment() {
     }
 
     private fun buildEmptyState() {
-        emptyState = LinearLayout(requireContext()).apply {
+        val ctx = requireContext()
+        emptyState = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(24.dp())
+            setPadding(28.dp(), 16.dp(), 28.dp(), 24.dp())
             visibility = View.GONE
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 30.dp() }
+            ).apply { topMargin = 24.dp() }
         }
-        emptyState.addView(ImageView(requireContext()).apply {
+        emptyState.addView(ImageView(ctx).apply {
             setImageResource(R.drawable.illustration_empty_garden)
-            layoutParams = LinearLayout.LayoutParams(190.dp(), 190.dp())
+            layoutParams = LinearLayout.LayoutParams(220.dp(), 220.dp())
         })
-        emptyState.addView(TextView(requireContext()).apply {
+        emptyState.addView(TextView(ctx).apply {
             text = getString(R.string.empty_garden_title)
-            textSize = 22f
+            textSize = 24f
             gravity = Gravity.CENTER
-            setTextColor(requireContext().getColor(R.color.on_surface))
-            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+            setTextColor(ctx.getColor(R.color.on_surface))
+            typeface = android.graphics.Typeface.create("sans-serif-black", android.graphics.Typeface.NORMAL)
+            letterSpacing = -0.02f
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = 4.dp() }
         })
-        emptyState.addView(TextView(requireContext()).apply {
+        emptyState.addView(TextView(ctx).apply {
             text = getString(R.string.empty_garden_hint)
-            textSize = 14f
+            textSize = 15f
             gravity = Gravity.CENTER
-            setTextColor(requireContext().getColor(R.color.on_surface_secondary))
+            setTextColor(ctx.getColor(R.color.on_surface_secondary))
             setLineSpacing(4.dp().toFloat(), 1f)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 8.dp() }
+            ).apply {
+                topMargin = 8.dp()
+                marginStart = 8.dp()
+                marginEnd = 8.dp()
+            }
         })
+
+        // Primary CTA inside the empty state — the bottom-right FAB is
+        // less discoverable when the screen is otherwise blank. Picks
+        // up the new App.Button.Filled style (vivid green, rounded
+        // pill, white text) by default.
+        emptyState.addView(
+            com.google.android.material.button.MaterialButton(ctx).apply {
+                text = getString(R.string.empty_garden_cta_add)
+                setIconResource(R.drawable.ic_garden)
+                iconPadding = 8.dp()
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = 20.dp() }
+                setOnClickListener {
+                    Haptics.medium(ctx)
+                    showPlantDialog(null)
+                }
+            },
+        )
+
+        // Secondary hint linking to the scan flow — many first-time
+        // users get here by tapping the tab before they've ever
+        // scanned, so we surface the alternative path that auto-
+        // populates a plant from a diagnosis result.
+        emptyState.addView(TextView(ctx).apply {
+            text = getString(R.string.empty_garden_secondary_hint)
+            textSize = 13f
+            gravity = Gravity.CENTER
+            setTextColor(ctx.getColor(R.color.on_surface_secondary))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = 12.dp() }
+        })
+
         content.addView(emptyState)
     }
 

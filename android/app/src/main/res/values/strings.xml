@@ -238,6 +238,8 @@
     <string name="plant_dialog_edit_subtitle">Keep this plant profile accurate as it grows.</string>
     <string name="empty_garden_title">Your garden is ready</string>
     <string name="empty_garden_hint">Add your first plant to keep scans, care notes and watering history together.</string>
+    <string name="empty_garden_cta_add">Add your first plant</string>
+    <string name="empty_garden_secondary_hint">Already scanned a plant? Tap “Add to garden” on a result.</string>
     <string name="latest_scan_format">Last scan: %s</string>
     <string name="no_scans_attached">No scans attached yet</string>
     <string name="plant_detail_title">Plant detail</string>
