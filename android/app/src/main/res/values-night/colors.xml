@@ -1,69 +1,72 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- ─── Brand · Botanical green palette (dark) ───────────────── -->
-    <color name="primary">#7DDB9C</color>
-    <color name="primary_light">#15331E</color>
-    <color name="primary_variant">#5BC889</color>
-    <color name="on_primary">#06140A</color>
-    <color name="on_primary_secondary">#B0061409</color>
+    <!-- ─── Brand · Vivid leaf-green palette (dark) ───────────────
+         On dark surfaces the saturated greens read overwhelming and
+         the body-text contrast inverts. We pull primary up to Tailwind
+         green-400, dark the hero / toolbar to green-700, and keep
+         primary_light as a deep desaturated green so chips on the
+         dark surface stay readable. -->
+    <color name="primary">#4ADE80</color>
+    <color name="primary_light">#14532D</color>
+    <color name="primary_variant">#22C55E</color>
+    <color name="on_primary">#052E16</color>
+    <color name="on_primary_secondary">#B0052E16</color>
     <!-- Theme overrides for ``values/themes.xml``'s colorPrimaryDark /
-         colorSecondary / colorOnSecondary attributes. No direct
-         ``R.color.X`` / ``@color/X`` reference, but the themes consume
-         them. -->
-    <color name="primary_dark">#3CA065</color>
-    <color name="secondary">#5BC889</color>
-    <color name="on_secondary">#06140A</color>
+         colorSecondary / colorOnSecondary attributes. -->
+    <color name="primary_dark">#16A34A</color>
+    <color name="secondary">#22C55E</color>
+    <color name="on_secondary">#052E16</color>
     <!-- Gradient stops -->
-    <color name="gradient_start">#06140A</color>
-    <color name="gradient_mid">#143E22</color>
-    <color name="gradient_end">#1F6A3D</color>
-    <color name="hero_gradient_start">#0B1B11</color>
-    <color name="hero_gradient_mid">#1A3A23</color>
-    <color name="hero_gradient_end">#2C633D</color>
-    <color name="hero_solid">#1A3A23</color>
+    <color name="gradient_start">#14532D</color>
+    <color name="gradient_mid">#166534</color>
+    <color name="gradient_end">#16A34A</color>
+    <color name="hero_gradient_start">#14532D</color>
+    <color name="hero_gradient_mid">#166534</color>
+    <color name="hero_gradient_end">#22C55E</color>
+    <color name="hero_solid">#15803D</color>
     <color name="hero_stat_bg">#33FFFFFF</color>
     <color name="hero_stat_stroke">#52FFFFFF</color>
-    <color name="hero_stat_text">#F5F8F5</color>
+    <color name="hero_stat_text">#F0FDF4</color>
 
     <!-- Toolbar background (subtle vertical gradient) -->
-    <color name="toolbar_top">#143E22</color>
-    <color name="toolbar_bottom">#0A1F12</color>
-    <color name="toolbar_title">#F5F8F5</color>
+    <color name="toolbar_top">#14532D</color>
+    <color name="toolbar_bottom">#166534</color>
+    <color name="toolbar_title">#F0FDF4</color>
 
     <!-- ─── Surface · Dark theme ─────────────────────────────────── -->
-    <color name="background">#070F09</color>
-    <color name="surface">#101810</color>
-    <color name="surface_variant">#162117</color>
-    <color name="on_surface">#F5F8F5</color>
-    <color name="on_surface_secondary">#C8D0C8</color>
+    <color name="background">#0A0F0C</color>
+    <color name="surface">#131A14</color>
+    <color name="surface_variant">#1A211B</color>
+    <color name="on_surface">#F0FDF4</color>
+    <color name="on_surface_secondary">#9CA3AF</color>
 
-    <!-- ─── Liquid-glass tokens (dark) ─────────────────────────────
+    <!-- ─── Soft-card tokens (dark) ────────────────────────────────
          On dark backgrounds we use a faint white sheen instead of an
          opaque tint so the surface still reveals the live wallpaper /
          photo behind it. -->
     <color name="glass_white_soft">#14FFFFFF</color>
-    <color name="glass_green_tint_soft">#1F7DDB9C</color>
+    <color name="glass_green_tint_soft">#1F4ADE80</color>
     <color name="glass_stroke">#33FFFFFF</color>
     <color name="glass_stroke_strong">#52FFFFFF</color>
     <color name="glass_dark_scrim_strong">#66000000</color>
 
     <!-- ─── Semantic colors ─────────────────────────────────────── -->
-    <color name="healthy_green">#7DDB9C</color>
-    <color name="healthy_green_bg">#15331E</color>
-    <color name="disease_red">#E07A6E</color>
+    <color name="healthy_green">#4ADE80</color>
+    <color name="healthy_green_bg">#14532D</color>
+    <color name="disease_red">#F87171</color>
     <color name="disease_red_bg">#3A1B1B</color>
-    <color name="warning_amber">#E8A94D</color>
+    <color name="warning_amber">#FBBF24</color>
     <color name="warning_amber_bg">#3A2E1B</color>
-    <color name="neutral_blue">#7BA9D9</color>
+    <color name="neutral_blue">#60A5FA</color>
     <color name="neutral_blue_bg">#1E2D40</color>
 
     <!-- ─── Category accents ────────────────────────────────────── -->
-    <color name="watering_blue">#64B5F6</color>
-    <color name="lighting_yellow">#FFD54F</color>
+    <color name="watering_blue">#60A5FA</color>
+    <color name="lighting_yellow">#FBBF24</color>
 
     <!-- ─── Misc ────────────────────────────────────────────────── -->
     <color name="scan_frame_color">#80FFFFFF</color>
-    <color name="icon_bg">#1F3527</color>
+    <color name="icon_bg">#14532D</color>
     <color name="divider">#1F2820</color>
     <color name="card_stroke">#1F2820</color>
     <color name="soft_error_icon_bg">#2A2421</color>
@@ -74,7 +77,7 @@
 
     <!-- ─── AI Doctor chat bubbles (dark) ───────────────────────── -->
     <color name="chat_bubble_bot_bg">#1F2820</color>
-    <color name="chat_bubble_user_bg">#1E4028</color>
-    <color name="chat_bubble_text">#E8EDE8</color>
-    <color name="chat_bubble_text_secondary">#9AA89D</color>
+    <color name="chat_bubble_user_bg">#14532D</color>
+    <color name="chat_bubble_text">#F0FDF4</color>
+    <color name="chat_bubble_text_secondary">#9CA3AF</color>
 </resources>
