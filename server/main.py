@@ -12,6 +12,7 @@ Stage 2:  MobileNetV3-Large    — distilled student (KD from
 
 import asyncio
 import contextlib
+import copy
 import hashlib
 import io
 import ipaddress
@@ -1026,7 +1027,12 @@ async def analyze_image(
     cache_key = f"{image_sha}:{plantnet_lang}"
     cache_hit = _analyze_cache_get(cache_key)
     if cache_hit is not None:
-        cached_payload = dict(cache_hit["payload"])
+        # Deep-copy so the toxicity-override patch below (and any
+        # incidental mutation by downstream middleware) can't poison
+        # the cached entry for the next reader. A shallow ``dict(...)``
+        # only copies the top level — nested ``species.candidates`` /
+        # ``top_k`` / ``detection.regions`` would still be aliased.
+        cached_payload = copy.deepcopy(cache_hit["payload"])
         cached_payload["is_repeat"] = True
         cached_payload["cached_at"] = cache_hit["cached_at"]
         cached_payload["elapsed_ms"] = 0

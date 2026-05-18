@@ -596,11 +596,14 @@ class ResultActivity : AppCompatActivity() {
         lifecycleScope.launch {
             // First-scan-after-permission may not have a cached
             // region yet because the MainActivity warmer races with
-            // this code. Resolve actively (background-threaded
-            // inside the helper) so the card lights up on the same
-            // scan instead of the next one.
-            val resolved = com.plantdiseases.app.util.RegionResolver.cachedRegion(this@ResultActivity)
-                ?: com.plantdiseases.app.util.RegionResolver.resolveRegion(this@ResultActivity)
+            // this code. Resolve actively so the card lights up on
+            // the same scan instead of the next one — Geocoder /
+            // LocationManager block, so dispatch to IO; lifecycleScope
+            // is Main by default.
+            val resolved = withContext(Dispatchers.IO) {
+                com.plantdiseases.app.util.RegionResolver.cachedRegion(this@ResultActivity)
+                    ?: com.plantdiseases.app.util.RegionResolver.resolveRegion(this@ResultActivity)
+            }
             if (resolved == null) {
                 // No region yet. Render a soft hint so the user
                 // knows why the card is empty.
