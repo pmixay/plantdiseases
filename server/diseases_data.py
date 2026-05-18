@@ -22,6 +22,8 @@ Pests have been removed from the taxonomy entirely — they are no
 longer modelled as a hint section.
 """
 
+import copy
+
 DISEASES_DATABASE = {
     "healthy": {
         "name_en": "Healthy Plant",
@@ -536,4 +538,9 @@ def lookup_pet_toxicity(species: str | None) -> dict:
         entry = PET_TOXICITY_DATABASE.get(genus)
     if entry is None:
         return {"toxic_to_pets": False, "species_list": [], "source": "unknown"}
-    return {**entry, "source": "db", "matched": key}
+    # Deep-copy so callers that mutate the returned ``species_list``
+    # (e.g. a route appending "humans" for a UI hint) can't poison the
+    # global ``PET_TOXICITY_DATABASE`` entry for every subsequent
+    # request. ``{**entry, ...}`` is a shallow merge and the list is
+    # still aliased.
+    return {**copy.deepcopy(entry), "source": "db", "matched": key}

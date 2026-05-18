@@ -1648,7 +1648,12 @@ async def identify_endpoint(
         _get_inference_executor(),
         lambda: identify_species(contents, organ=organ, lang=plantnet_lang),
     )
-    return JSONResponse(content={**result, "organ": organ})
+    # Deep-copy result before merging so a cache-hit return from
+    # ``identify_species`` (which now also deep-copies, but defence in
+    # depth is cheap) doesn't share its nested ``results`` /
+    # ``common_names`` lists with the JSON response — middleware mutation
+    # would otherwise corrupt the PlantNet LRU entry for the next reader.
+    return JSONResponse(content={**copy.deepcopy(result), "organ": organ})
 
 
 @app.post("/api/chat")
