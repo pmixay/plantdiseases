@@ -263,6 +263,7 @@
     <string name="cover_photo_set">Set cover photo</string>
     <string name="cover_photo_clear">Clear cover photo</string>
     <string name="cover_photo_updated">Cover photo updated</string>
+    <string name="photo_picker_permission_refused">Couldn\'t access that photo — try a different one</string>
     <string name="empty_plant_scans_title">No scans for this plant</string>
     <string name="empty_plant_scans_hint">Use Add to garden from a diagnosis result to build this plant timeline.</string>
     <string name="empty_journal_title">No reminders or notes yet</string>

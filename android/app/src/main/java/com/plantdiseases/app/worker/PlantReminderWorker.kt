@@ -46,6 +46,17 @@ class PlantReminderWorker(
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
         ) {
+            // Reminder fired but POST_NOTIFICATIONS was revoked / never
+            // granted. Return success so WorkManager doesn't keep
+            // retrying, but log loudly so "reminders silently dropped"
+            // shows up in adb logcat instead of looking like a missing
+            // alarm.
+            android.util.Log.w(
+                "PlantReminderWorker",
+                "POST_NOTIFICATIONS missing — silently skipping reminder " +
+                    "for plant_id=$plantId type=$reminderType. Ask the user " +
+                    "to re-grant the notification permission in Settings.",
+            )
             return Result.success()
         }
 

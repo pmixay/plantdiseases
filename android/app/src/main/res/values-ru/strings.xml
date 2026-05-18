@@ -256,6 +256,7 @@
     <string name="cover_photo_set">Выбрать обложку</string>
     <string name="cover_photo_clear">Убрать обложку</string>
     <string name="cover_photo_updated">Обложка обновлена</string>
+    <string name="photo_picker_permission_refused">Не удалось открыть это фото — попробуйте другое</string>
     <string name="empty_plant_scans_title">У растения пока нет сканов</string>
     <string name="empty_plant_scans_hint">Нажмите «Добавить в сад» на экране диагноза, чтобы собрать историю.</string>
     <string name="empty_journal_title">Пока нет напоминаний и заметок</string>

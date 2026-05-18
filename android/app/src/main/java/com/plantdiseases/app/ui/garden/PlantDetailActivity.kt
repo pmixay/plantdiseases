@@ -67,8 +67,7 @@ class PlantDetailActivity : AppCompatActivity() {
         get() = (application as PlantDiseasesApp).plantRepository
 
     private val pickPhoto = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        if (uri != null) {
-            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        if (uri != null && tryPersistRead(uri)) {
             showPhotoCaptionDialog(uri)
         }
     }
@@ -78,8 +77,7 @@ class PlantDetailActivity : AppCompatActivity() {
      *  detail-hero render against the user's chosen photo instead of
      *  the most-recent scan. Tapping Clear cover removes it again. */
     private val pickCover = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        if (uri != null) {
-            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        if (uri != null && tryPersistRead(uri)) {
             lifecycleScope.launch {
                 plantRepository.updateCoverPhoto(plantId, uri.toString())
                 Toast.makeText(this@PlantDetailActivity,
@@ -87,6 +85,22 @@ class PlantDetailActivity : AppCompatActivity() {
                 loadPlant()
             }
         }
+    }
+
+    /** ``takePersistableUriPermission`` throws SecurityException on
+     *  picker URIs whose content provider didn't actually grant the
+     *  persistable flag — most system pickers do, some third-party
+     *  file providers don't. Without this guard the picker callback
+     *  silently crashed and the user saw nothing happen after picking
+     *  a photo. Returns true when the URI is now safe to persist;
+     *  false ⇒ caller should bail out of the flow. */
+    private fun tryPersistRead(uri: Uri): Boolean = try {
+        contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        true
+    } catch (e: SecurityException) {
+        android.util.Log.w("PlantDetail", "Persistable URI grant refused for $uri: $e")
+        Toast.makeText(this, R.string.photo_picker_permission_refused, Toast.LENGTH_SHORT).show()
+        false
     }
 
     override fun attachBaseContext(newBase: Context) {
