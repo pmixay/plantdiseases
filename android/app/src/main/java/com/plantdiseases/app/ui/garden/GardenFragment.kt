@@ -25,7 +25,6 @@ import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.resource.bitmap.CenterCrop
 import com.bumptech.glide.load.resource.bitmap.RoundedCorners
-import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputEditText
@@ -35,7 +34,6 @@ import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.PlantEntity
 import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.util.Haptics
-import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.ReminderManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch

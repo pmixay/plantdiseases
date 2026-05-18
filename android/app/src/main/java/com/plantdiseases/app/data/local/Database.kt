@@ -192,9 +192,6 @@ abstract class PlantReminderDao {
         val existing = getByPlantAndType(entity.plantId, entity.type)
         return upsert(entity.copy(id = existing?.id ?: entity.id))
     }
-
-    @Query("DELETE FROM plant_reminders WHERE plant_id = :plantId")
-    abstract suspend fun deleteByPlant(plantId: Long)
 }
 
 // ─── Reminder event log ──────────────────────────────────────────────
