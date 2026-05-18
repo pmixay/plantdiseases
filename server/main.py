@@ -215,28 +215,29 @@ ANALYZE_CACHE_MAX_ENTRIES = get_int("ANALYZE_CACHE_MAX_ENTRIES", 512)
 _analyze_cache: "OrderedDict[str, tuple[float, dict]]" = OrderedDict()
 _analyze_cache_lock = threading.Lock()
 
-def _analyze_cache_get(image_sha: str) -> dict | None:
-    """Return a previously-stored analyse response keyed by image hash,
-    or ``None`` if there's nothing fresh under that key. Updates LRU
-    recency on hit so frequent re-uploads stay warm."""
+def _analyze_cache_get(cache_key: str) -> dict | None:
+    """Return a previously-stored analyse response keyed by
+    ``<image_sha>:<plantnet_lang>``, or ``None`` if there's nothing
+    fresh under that key. Updates LRU recency on hit so frequent
+    re-uploads stay warm."""
     now = time.time()
     with _analyze_cache_lock:
-        item = _analyze_cache.get(image_sha)
+        item = _analyze_cache.get(cache_key)
         if item is None:
             return None
         cached_at, payload = item
         if now - cached_at > ANALYZE_CACHE_TTL_SECONDS:
             # Stale — drop it so the upload re-runs against the
             # current model.
-            _analyze_cache.pop(image_sha, None)
+            _analyze_cache.pop(cache_key, None)
             return None
-        _analyze_cache.move_to_end(image_sha)
+        _analyze_cache.move_to_end(cache_key)
         return {"cached_at": cached_at, "payload": payload}
 
-def _analyze_cache_put(image_sha: str, payload: dict) -> None:
+def _analyze_cache_put(cache_key: str, payload: dict) -> None:
     with _analyze_cache_lock:
-        _analyze_cache[image_sha] = (time.time(), payload)
-        _analyze_cache.move_to_end(image_sha)
+        _analyze_cache[cache_key] = (time.time(), payload)
+        _analyze_cache.move_to_end(cache_key)
         while len(_analyze_cache) > ANALYZE_CACHE_MAX_ENTRIES:
             _analyze_cache.popitem(last=False)
 ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp", "image/bmp"}
@@ -1008,15 +1009,22 @@ async def analyze_image(
     # a "you saw this one earlier" banner instead of pretending it's
     # a fresh diagnosis.
     #
-    # The cache key is the image hash ONLY, not (image, species). The
-    # ``?species=`` override drives toxicity lookup only — see the
-    # auto/explicit fall-through ~80 lines below — so on a cache hit
-    # we re-resolve toxicity against the override and patch the three
-    # affected fields, leaving the verdict / detection / species
-    # block / care-plan-relevant fields untouched (they're properties
-    # of the image, not of the user's species hint).
+    # The cache key is (image_hash, plantnet_lang). The ``?species=``
+    # override drives toxicity lookup only — see the auto/explicit
+    # fall-through ~80 lines below — so on a cache hit we re-resolve
+    # toxicity against the override and patch the three affected
+    # fields, leaving the verdict / detection / care-plan-relevant
+    # fields untouched (they're properties of the image, not of the
+    # user's species hint). The species block, however, IS locale-
+    # dependent — PlantNet's ``common_name`` comes back in the
+    # request's ``lang``. Without ``plantnet_lang`` in the cache key,
+    # a Russian user's first upload poisons the cached species block
+    # with Russian names for every later English-locale viewer of the
+    # same image (and vice versa).
+    plantnet_lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
     image_sha = hashlib.sha256(contents).hexdigest()
-    cache_hit = _analyze_cache_get(image_sha)
+    cache_key = f"{image_sha}:{plantnet_lang}"
+    cache_hit = _analyze_cache_get(cache_key)
     if cache_hit is not None:
         cached_payload = dict(cache_hit["payload"])
         cached_payload["is_repeat"] = True
@@ -1037,8 +1045,8 @@ async def analyze_image(
     # diagnosis — the species field just lands as ``None``. The 6s cap
     # is much tighter than INFERENCE_TIMEOUT (30s) because PlantNet is
     # an external HTTP hop and a slow upstream shouldn't hold the
-    # whole analyze response hostage.
-    plantnet_lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
+    # whole analyze response hostage. ``plantnet_lang`` was resolved
+    # above for the cache key.
     species_task = asyncio.create_task(
         _species_identify_best_effort(contents, timeout=6.0, lang=plantnet_lang)
     )
@@ -1224,9 +1232,10 @@ async def analyze_image(
         # ISSUED_SCAN_ID_TTL_DAYS.
         "scan_id": _issue_scan_id(),
     }
-    # Stash the freshly-built response under its image hash so the
-    # NEXT identical upload short-circuits at the top of this handler.
-    _analyze_cache_put(image_sha, response_payload)
+    # Stash the freshly-built response under its (image_hash,
+    # plantnet_lang) key so the NEXT identical upload from the same
+    # locale short-circuits at the top of this handler.
+    _analyze_cache_put(cache_key, response_payload)
     return JSONResponse(content=response_payload)
 
 
