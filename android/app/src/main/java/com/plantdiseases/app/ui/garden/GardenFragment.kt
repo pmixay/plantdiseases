@@ -288,56 +288,59 @@ class GardenFragment : Fragment() {
 
     private fun buildPlantCard(summary: PlantRepository.PlantSummary): View {
         val plant = summary.plant
-        val card = MaterialCardView(requireContext()).apply {
+        val ctx = requireContext()
+        val card = MaterialCardView(ctx).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             ).apply { bottomMargin = 12.dp() }
-            radius = 18.dp().toFloat()
-            cardElevation = 1.dp().toFloat()
-            strokeWidth = 1.dp()
-            strokeColor = requireContext().getColor(R.color.card_stroke)
-            setCardBackgroundColor(requireContext().getColor(R.color.surface))
+            radius = 20.dp().toFloat()
+            cardElevation = 2.dp().toFloat()
+            // PictureThis-style soft card: no stroke, rely on elevation
+            // and rounded corners to lift it off the white background.
+            strokeWidth = 0
+            setCardBackgroundColor(ctx.getColor(R.color.surface))
             isClickable = true
             isLongClickable = true
             foreground = typedSelectable()
             setOnClickListener {
-                Haptics.tick(requireContext())
+                Haptics.tick(ctx)
                 startActivity(
-                    Intent(requireContext(), PlantDetailActivity::class.java)
+                    Intent(ctx, PlantDetailActivity::class.java)
                         .putExtra(PlantDetailActivity.EXTRA_PLANT_ID, plant.id)
                 )
             }
             setOnLongClickListener { anchor ->
-                Haptics.medium(requireContext())
+                Haptics.medium(ctx)
                 showPlantContextMenu(anchor, plant)
                 true
             }
         }
 
-        val row = LinearLayout(requireContext()).apply {
+        val row = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(14.dp())
+            setPadding(16.dp(), 16.dp(), 16.dp(), 16.dp())
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT,
             )
         }
 
-        // Thumbnail: user-picked cover photo first, latest scan image
-        // second, generic leaf icon last. Rounded square (not circle)
-        // so an actual plant photo reads as a photo, not as an avatar.
-        val thumbWrap = FrameLayout(requireContext()).apply {
-            layoutParams = LinearLayout.LayoutParams(64.dp(), 64.dp())
+        // ── Thumbnail (96dp) with a small health-status dot in the
+        // top-right corner. Picture-first cards: cover photo first,
+        // latest scan second, leaf icon last.
+        val thumbWrap = FrameLayout(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams(96.dp(), 96.dp())
+            clipChildren = false
         }
-        val thumb = ImageView(requireContext()).apply {
+        val thumb = ImageView(ctx).apply {
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT,
             )
             scaleType = ImageView.ScaleType.CENTER_CROP
-            background = requireContext().getDrawable(R.drawable.bg_icon_circle)
+            background = ctx.getDrawable(R.drawable.bg_icon_circle)
             clipToOutline = true
         }
         val thumbSource: String? = plant.coverPhotoUri
@@ -345,60 +348,73 @@ class GardenFragment : Fragment() {
         if (thumbSource != null) {
             Glide.with(this@GardenFragment)
                 .load(thumbSource)
-                .transform(CenterCrop(), RoundedCorners(14.dp()))
+                .transform(CenterCrop(), RoundedCorners(18.dp()))
                 .placeholder(R.drawable.ic_garden)
                 .error(R.drawable.ic_garden)
                 .into(thumb)
         } else {
             thumb.setImageResource(R.drawable.ic_garden)
-            thumb.setColorFilter(requireContext().getColor(R.color.primary))
+            thumb.setColorFilter(ctx.getColor(R.color.primary))
             thumb.scaleType = ImageView.ScaleType.CENTER_INSIDE
-            thumb.setPadding(16.dp(), 16.dp(), 16.dp(), 16.dp())
+            thumb.setPadding(22.dp(), 22.dp(), 22.dp(), 22.dp())
         }
         thumbWrap.addView(thumb)
+        buildHealthDot(summary.latestScan)?.let { dot ->
+            thumbWrap.addView(dot)
+        }
 
-        // Two-line card: title + (health · next-action) row. The
-        // species line and the trailing "Today" fallback were both
-        // axe-able — species is in the detail screen header, scan
-        // count was duplicate of the health chip's existence, and
-        // the date fallback was just visual filler when the user
-        // hadn't scanned yet. Edit moves to the long-press menu so
-        // the right edge stops competing with the title for width.
-        val textCol = LinearLayout(requireContext()).apply {
+        // ── Text column: name (bold) → species (subtle) → status chips
+        // row. The status row carries the health pill + the soonest
+        // reminder; both are optional so the card collapses gracefully
+        // on a freshly-added plant with no scans / reminders.
+        val textCol = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                .apply { marginStart = 14.dp() }
+                .apply { marginStart = 16.dp() }
         }
-        textCol.addView(TextView(requireContext()).apply {
+        textCol.addView(TextView(ctx).apply {
             text = plant.name
             textSize = 18f
-            setTextColor(requireContext().getColor(R.color.on_surface))
+            setTextColor(ctx.getColor(R.color.on_surface))
             typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
         })
+        val speciesText = plant.species?.takeIf { it.isNotBlank() }
+            ?: plant.commonName?.takeIf { it.isNotBlank() }
+        if (speciesText != null) {
+            textCol.addView(TextView(ctx).apply {
+                text = speciesText
+                textSize = 13f
+                setTextColor(ctx.getColor(R.color.on_surface_secondary))
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = 2.dp() }
+            })
+        }
         val healthChip = buildHealthChip(summary.latestScan)
         val nextChip = buildNextActionChip(summary)
         if (healthChip != null || nextChip != null) {
-            val statusRow = LinearLayout(requireContext()).apply {
+            val statusRow = LinearLayout(ctx).apply {
                 orientation = LinearLayout.HORIZONTAL
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = 6.dp() }
+                ).apply { topMargin = 8.dp() }
             }
             if (healthChip != null) statusRow.addView(healthChip)
             if (nextChip != null) statusRow.addView(nextChip)
             textCol.addView(statusRow)
-        } else {
-            // No scans + no reminders → one quiet subtitle so the
-            // card doesn't read as a single floating word. Lower
-            // visual weight than the chips above.
-            textCol.addView(TextView(requireContext()).apply {
-                text = plant.species?.takeIf { it.isNotBlank() }
-                    ?: getString(R.string.no_scans_attached)
+        } else if (speciesText == null) {
+            // No scans, no reminders, no species — one quiet subtitle
+            // so the card doesn't read as a single floating word.
+            textCol.addView(TextView(ctx).apply {
+                text = getString(R.string.no_scans_attached)
                 textSize = 12f
-                setTextColor(requireContext().getColor(R.color.on_surface_secondary))
+                setTextColor(ctx.getColor(R.color.on_surface_secondary))
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
                 layoutParams = LinearLayout.LayoutParams(
@@ -412,6 +428,36 @@ class GardenFragment : Fragment() {
         row.addView(textCol)
         card.addView(row)
         return card
+    }
+
+    /** Tiny circular health indicator overlaid on the thumbnail's
+     *  top-right corner. Green = healthy, red = disease, neutral =
+     *  NAP / unknown. Returns null when there's no scan to read state
+     *  from — empty thumbnail stays unadorned. */
+    private fun buildHealthDot(scan: com.plantdiseases.app.data.local.ScanEntity?): View? {
+        if (scan == null) return null
+        val ctx = requireContext()
+        val isNotPlant = scan.diseaseName.equals("Not a Plant", ignoreCase = true) ||
+            scan.diseaseName.equals("Не растение", ignoreCase = true)
+        val dotColor = when {
+            isNotPlant -> ctx.getColor(R.color.neutral_blue)
+            scan.isHealthy -> ctx.getColor(R.color.healthy_green)
+            else -> ctx.getColor(R.color.disease_red)
+        }
+        return View(ctx).apply {
+            layoutParams = FrameLayout.LayoutParams(14.dp(), 14.dp()).apply {
+                gravity = Gravity.TOP or Gravity.END
+                // Pulled slightly outside the thumb so the white halo
+                // reads as a separate badge, not as a corner pixel.
+                topMargin = (-2).dp()
+                marginEnd = (-2).dp()
+            }
+            background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.OVAL
+                setColor(dotColor)
+                setStroke(2.dp(), ctx.getColor(R.color.surface))
+            }
+        }
     }
 
     /** Returns null when there is no scan yet — the card falls back to a
@@ -479,10 +525,10 @@ class GardenFragment : Fragment() {
     private fun chip(text: String, bgColor: Int, fgColor: Int): TextView =
         TextView(requireContext()).apply {
             this.text = text
-            textSize = 11.5f
+            textSize = 12f
             setTextColor(fgColor)
             typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
-            setPadding(10.dp(), 4.dp(), 10.dp(), 4.dp())
+            setPadding(12.dp(), 6.dp(), 12.dp(), 6.dp())
             background = android.graphics.drawable.GradientDrawable().apply {
                 shape = android.graphics.drawable.GradientDrawable.RECTANGLE
                 cornerRadius = 999f
