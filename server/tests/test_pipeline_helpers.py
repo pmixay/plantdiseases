@@ -166,6 +166,47 @@ def test_weak_healthy_below_reroute_floor_swaps_to_top_disease():
     assert "weak_healthy_rerouted" in out["warnings"]
 
 
+def test_weak_healthy_does_not_reroute_onto_low_mass_disease():
+    """Regression: when healthy is below HEALTHY_REROUTE_FLOOR (0.65) but
+    the strongest disease has only the soft-warning floor of mass
+    (HEALTHY_DISEASE_FLOOR = 0.12, well below
+    HEALTHY_REROUTE_DISEASE_FLOOR = 0.25), the absolute_hit path must
+    NOT fire. Otherwise a 0.54 healthy gets flipped to a 0.12 disease
+    verdict the UI then has to demote with very_low_confidence — the
+    user sees `gray_mold_botrytis 12%` instead of `healthy 54%` with
+    a disease_suspected warning, which is the wrong UX. The gap_hit
+    path also stays silent here because the 0.42 gap is wider than
+    HEALTHY_GAP_MARGIN.
+    """
+    from pipeline import _apply_postprocessing_rules
+
+    probs = {n: 0.0 for n in EXPECTED_CLASSES}
+    probs["healthy"] = 0.54
+    probs["gray_mold_botrytis"] = 0.12
+    leftover = 1.0 - (0.54 + 0.12)
+    others = [n for n in probs if n not in ("healthy", "gray_mold_botrytis")]
+    for n in others:
+        probs[n] = leftover / len(others)
+    classification = {
+        "class_name": "healthy",
+        "confidence": probs["healthy"],
+        "all_probs": probs,
+        "low_confidence": False,
+    }
+    out = _apply_postprocessing_rules(classification, list(probs.keys()))
+
+    assert out["class_name"] == "healthy", (
+        "must not reroute a 0.54 healthy onto a 0.12 disease — the rerouted "
+        "verdict would itself fall below VERY_LOW_CONFIDENCE_FLOOR"
+    )
+    assert "weak_healthy_rerouted" not in out["warnings"]
+    # Soft-warning path must still surface the suspected disease.
+    assert "uncertain_healthy" in out["warnings"]
+    assert any(w == "disease_suspected:gray_mold_botrytis" for w in out["warnings"]), (
+        f"expected disease_suspected:gray_mold_botrytis in {out['warnings']}"
+    )
+
+
 def test_weak_healthy_keeps_class_when_no_disease_alternative():
     """If healthy is weak but every disease class is also tiny, we
     leave the verdict alone — there's nothing better to swap to. The
