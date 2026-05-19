@@ -287,9 +287,9 @@ def test_ood_floor_is_calibrated_not_hardcoded():
     )
     assert m, "max_logit_floor entry missing"
     val = m.group(1)
-    assert val == "ML_FLOOR", (
-        f"audit fix #2 — max_logit_floor is {val}, must reference the "
-        f"calibrated ML_FLOOR variable"
+    assert val in ("ML_FLOOR", "ML_FLOOR_PERSISTED"), (
+        f"max_logit_floor is {val}, must reference the calibrated "
+        f"ML_FLOOR / ML_FLOOR_PERSISTED variable, not a hardcoded number"
     )
 
 
@@ -384,14 +384,14 @@ def test_int8_drift_within_fail_threshold():
     The notebook itself raises during §6, but this catches the case where
     someone produced the artefact via a custom path.
 
-    Exception: when both static-INT8 (QDQ) export and the dynamic-quant
-    fallback exceed the fail-drift threshold, the notebook documents
-    falling back to shipping the FP32 ONNX renamed as the int8 artefact
-    (`int8.shipped is False`, `shipped_artifact == "classifier.onnx
-    (renamed)"`). The drift recorded in that case is from the rejected
-    quant attempt, not from the actually-shipped artefact, so this gate
-    does not apply — but we still assert that `shipped_artifact` reflects
-    the fallback rather than a silent regression.
+    Exception: when static-INT8 (QDQ + QOperator retry) exceeds the
+    fail-drift threshold, §6 ships the FP32 graph honestly under
+    ``classifier_fp32.onnx`` (NOT renamed as ``classifier_int8.onnx``)
+    and records ``shipped=False`` with
+    ``shipped_artifact="classifier_fp32.onnx (int8 export failed drift gate)"``.
+    The drift in that record is from the rejected quant attempt, not the
+    actually-shipped artefact, so this gate does not apply — but we still
+    assert that ``shipped_artifact`` reflects the documented fallback.
     """
     mc = REPO_ROOT / "server" / "models" / "model_card.json"
     if not mc.exists():
@@ -402,18 +402,18 @@ def test_int8_drift_within_fail_threshold():
     if drift is None:
         pytest.skip("int8.drift not in model_card.json")
     if int8.get("shipped") is False:
-        # The §6 FP32-renamed fallback path. Sanity-check the artefact
-        # label so a silent shipped=false with no fallback path doesn't
-        # slip through.
+        # The §6 honest FP32 fallback path.
         shipped = int8.get("shipped_artifact") or ""
-        assert "renamed" in shipped.lower() or "fp32" in shipped.lower(), (
+        accepted = ("fp32", "int8 export failed", "renamed")
+        assert any(s in shipped.lower() for s in accepted), (
             f"int8.shipped=False but shipped_artifact={shipped!r} — "
-            f"expected the documented 'classifier.onnx (renamed)' "
-            f"FP32 fallback"
+            f"expected the documented 'classifier_fp32.onnx (int8 export "
+            f"failed drift gate)' fallback (or the legacy "
+            f"'classifier.onnx (renamed)' marker on pre-v2.2 builds)"
         )
         pytest.skip(
-            f"INT8 quant fell back to FP32-renamed (drift {drift:+.4f} "
-            f"from the rejected quant attempt). Gate does not apply."
+            f"INT8 quant fell back to FP32 (drift {drift:+.4f} from the "
+            f"rejected quant attempt). Gate does not apply."
         )
     assert float(drift) <= 0.05, (
         f"INT8 drift {drift:+.4f} exceeds the 0.05 fail threshold — "
