@@ -1,14 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
 
     <style name="Theme.PlantDiseases" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="colorPrimary">@color/primary</item>
         <item name="colorPrimaryDark">@color/primary_dark</item>
         <item name="colorOnPrimary">@color/on_primary</item>
         <item name="colorPrimaryContainer">@color/primary_light</item>
+        <item name="colorOnPrimaryContainer">@color/primary_dark</item>
         <item name="colorSecondary">@color/secondary</item>
         <item name="colorOnSecondary">@color/on_secondary</item>
         <item name="colorSecondaryContainer">@color/primary_light</item>
+        <item name="colorOnSecondaryContainer">@color/primary_dark</item>
         <item name="android:colorBackground">@color/background</item>
         <item name="colorSurface">@color/surface</item>
         <item name="colorSurfaceVariant">@color/surface_variant</item>
@@ -22,22 +24,39 @@
         <!-- Material default for top app bar uses a tonal surface — we
              want our liquid-glass header instead, so leave this off. -->
         <item name="appBarLayoutStyle">@style/Widget.Material3.AppBarLayout</item>
+
+        <!-- Push the leaf-green palette into the default MaterialButton.
+             Layouts that explicitly set style="@style/Widget.Material3.Button.*"
+             still get that exact style — this only changes the default
+             when no style attribute is provided (i.e. naive
+             <MaterialButton>). -->
+        <item name="materialButtonStyle">@style/App.Button.Filled</item>
+        <item name="floatingActionButtonStyle">@style/App.FAB</item>
+        <item name="extendedFloatingActionButtonStyle">@style/App.FAB.Extended</item>
     </style>
 
     <style name="TextAppearance.App.Toolbar" parent="TextAppearance.Material3.TitleLarge">
         <item name="android:textSize">@dimen/text_title</item>
-        <item name="android:fontFamily">sans-serif-medium</item>
+        <!-- Bumped medium → black so the toolbar title sits visibly
+             on top of the vivid green hero gradient. -->
+        <item name="android:fontFamily">sans-serif-black</item>
+        <item name="android:letterSpacing">-0.01</item>
     </style>
 
     <style name="TextAppearance.App.Headline" parent="TextAppearance.Material3.HeadlineSmall">
         <item name="android:textSize">@dimen/text_headline</item>
-        <item name="android:fontFamily">sans-serif-medium</item>
+        <!-- PictureThis-style heavy headlines on white backgrounds. -->
+        <item name="android:fontFamily">sans-serif-black</item>
+        <item name="android:letterSpacing">-0.02</item>
         <item name="android:textColor">@color/on_surface</item>
     </style>
 
     <style name="TextAppearance.App.Title" parent="TextAppearance.Material3.TitleMedium">
         <item name="android:textSize">@dimen/text_title_sm</item>
+        <!-- Section titles a step heavier (medium → bold) — pairs
+             with the heavier headline above. -->
         <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textFontWeight" tools:targetApi="p">600</item>
         <item name="android:textColor">@color/on_surface</item>
     </style>
 
@@ -84,6 +103,74 @@
         <item name="android:textColor">?attr/colorOnSurface</item>
         <item name="android:textSize">@dimen/text_caption</item>
         <item name="android:fontFamily">sans-serif-medium</item>
+    </style>
+
+    <!-- ─── Button shape ────────────────────────────────────────────
+         Almost-pill rounded buttons (24dp on a ~48dp tall surface
+         reads as fully pill from a phone arm's length) — the
+         signature PictureThis "soft tablet" look. Material3's default
+         is the medium-component shape (~12dp); we override per-style
+         so existing TextButton / IconButton callsites aren't surprised. -->
+    <style name="ShapeAppearance.App.Button" parent="ShapeAppearance.Material3.Corner.Large">
+        <item name="cornerSize">24dp</item>
+    </style>
+
+    <!-- ─── Buttons: leaf-green primary, soft tonal secondary ──── -->
+    <style name="App.Button.Filled" parent="Widget.Material3.Button">
+        <item name="backgroundTint">@color/primary</item>
+        <item name="android:textColor">@color/on_primary</item>
+        <item name="rippleColor">@color/primary_dark</item>
+        <item name="shapeAppearanceOverlay">@style/ShapeAppearance.App.Button</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="android:paddingHorizontal">@dimen/space_2xl</item>
+        <item name="android:textSize">@dimen/text_body</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:letterSpacing">0.01</item>
+        <item name="iconTint">@color/on_primary</item>
+        <item name="elevation">0dp</item>
+    </style>
+
+    <style name="App.Button.Tonal" parent="Widget.Material3.Button.TonalButton">
+        <item name="backgroundTint">@color/primary_light</item>
+        <item name="android:textColor">@color/primary_dark</item>
+        <item name="rippleColor">@color/primary</item>
+        <item name="shapeAppearanceOverlay">@style/ShapeAppearance.App.Button</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="android:paddingHorizontal">@dimen/space_2xl</item>
+        <item name="android:textSize">@dimen/text_body</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="iconTint">@color/primary_dark</item>
+    </style>
+
+    <style name="App.Button.Text" parent="Widget.Material3.Button.TextButton">
+        <item name="android:textColor">@color/primary</item>
+        <item name="rippleColor">@color/primary_light</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="iconTint">@color/primary</item>
+    </style>
+
+    <!-- ─── FABs ────────────────────────────────────────────────────
+         The vivid green primary on the new white canvas would burn
+         readers' retinas at full saturation, so the FAB uses the
+         slightly darker ``primary_dark`` for the surface and full
+         white for the icon. Extended FAB inherits the same. -->
+    <style name="App.FAB" parent="Widget.Material3.FloatingActionButton.Primary">
+        <item name="backgroundTint">@color/primary</item>
+        <item name="tint">@color/on_primary</item>
+        <item name="rippleColor">@color/primary_dark</item>
+        <item name="elevation">6dp</item>
+        <item name="hoveredFocusedTranslationZ">8dp</item>
+        <item name="pressedTranslationZ">10dp</item>
+    </style>
+
+    <style name="App.FAB.Extended" parent="Widget.Material3.ExtendedFloatingActionButton.Primary">
+        <item name="backgroundTint">@color/primary</item>
+        <item name="iconTint">@color/on_primary</item>
+        <item name="android:textColor">@color/on_primary</item>
+        <item name="rippleColor">@color/primary_dark</item>
+        <item name="elevation">6dp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:letterSpacing">0.02</item>
     </style>
 
 </resources>

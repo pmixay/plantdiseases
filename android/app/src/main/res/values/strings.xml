@@ -238,6 +238,8 @@
     <string name="plant_dialog_edit_subtitle">Keep this plant profile accurate as it grows.</string>
     <string name="empty_garden_title">Your garden is ready</string>
     <string name="empty_garden_hint">Add your first plant to keep scans, care notes and watering history together.</string>
+    <string name="empty_garden_cta_add">Add your first plant</string>
+    <string name="empty_garden_secondary_hint">Already scanned a plant? Tap “Add to garden” on a result.</string>
     <string name="latest_scan_format">Last scan: %s</string>
     <string name="no_scans_attached">No scans attached yet</string>
     <string name="plant_detail_title">Plant detail</string>
@@ -263,6 +265,7 @@
     <string name="cover_photo_set">Set cover photo</string>
     <string name="cover_photo_clear">Clear cover photo</string>
     <string name="cover_photo_updated">Cover photo updated</string>
+    <string name="photo_picker_permission_refused">Couldn\'t access that photo — try a different one</string>
     <string name="empty_plant_scans_title">No scans for this plant</string>
     <string name="empty_plant_scans_hint">Use Add to garden from a diagnosis result to build this plant timeline.</string>
     <string name="empty_journal_title">No reminders or notes yet</string>

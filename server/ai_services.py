@@ -29,6 +29,7 @@ core ``/api/analyze`` flow.
 
 from __future__ import annotations
 
+import copy
 import datetime as _dt
 import hashlib
 import json
@@ -146,7 +147,11 @@ def identify_species(
     cache_key = f"{_image_hash(image_bytes)}:{organ}:{lang}"
     cached = _PLANTNET_CACHE.get(cache_key)
     if cached is not None:
-        return {**cached, "cached": True}
+        # Deep-copy so the caller can mutate the returned ``results``
+        # list / ``common_names`` sub-list without poisoning the LRU
+        # entry for the next reader (``{**cached, ...}`` is a shallow
+        # copy and the nested list-of-dicts is still aliased).
+        return {**copy.deepcopy(cached), "cached": True}
 
     try:
         # Lazy import — only the identify path needs requests.

@@ -240,6 +240,70 @@ def test_analyze_species_block_includes_best_match(client, png_bytes, monkeypatc
     assert len(species["candidates"]) == 3
 
 
+def test_analyze_cache_keys_on_locale_so_species_common_name_localises(
+    client, png_bytes, monkeypatch,
+):
+    """Regression: the same-photo dedup cache used to key on image hash
+    alone. PlantNet's ``common_names`` come back in the request's
+    ``lang``, so a Russian user's first upload poisoned every later
+    English-locale viewer of the same image with Russian names (and
+    vice versa). The cache key now includes the resolved PlantNet
+    lang, so each locale gets its own cached payload and the species
+    block always matches the requesting client's locale.
+    """
+    import main as server_main
+
+    captured_langs: list[str] = []
+
+    def fake_identify(image_bytes, *, organ="leaf", lang="en"):
+        captured_langs.append(lang)
+        common = {
+            "ru": "Каучуковое дерево",
+            "en": "Rubber tree",
+        }.get(lang, "Rubber tree")
+        return {
+            "available": True, "source": "plantnet",
+            "results": [
+                {"scientific_name": "Ficus elastica",
+                 "common_names": [common], "score": 0.91},
+            ],
+        }
+
+    monkeypatch.setattr(server_main, "identify_species", fake_identify)
+
+    r_ru = client.post(
+        "/api/analyze?locale=ru",
+        files={"image": ("leaf.png", png_bytes, "image/png")},
+    )
+    assert r_ru.status_code == 200, r_ru.text
+    body_ru = r_ru.json()
+    assert body_ru["is_repeat"] is False
+    assert body_ru["species"]["best"]["common_name"] == "Каучуковое дерево"
+
+    # Identical bytes, different locale — must NOT serve the Russian
+    # cache entry to an English client.
+    r_en = client.post(
+        "/api/analyze?locale=en",
+        files={"image": ("leaf.png", png_bytes, "image/png")},
+    )
+    assert r_en.status_code == 200, r_en.text
+    body_en = r_en.json()
+    assert body_en["species"]["best"]["common_name"] == "Rubber tree"
+    assert body_en["is_repeat"] is False  # fresh entry under the en key
+    # Same-locale repeat MUST still hit the cache — we didn't sacrifice
+    # the dedup feature, just partitioned it by locale.
+    r_en2 = client.post(
+        "/api/analyze?locale=en",
+        files={"image": ("leaf.png", png_bytes, "image/png")},
+    )
+    body_en2 = r_en2.json()
+    assert body_en2["is_repeat"] is True
+    assert body_en2["species"]["best"]["common_name"] == "Rubber tree"
+
+    # PlantNet was called once per distinct locale, not three times.
+    assert sorted(captured_langs) == ["en", "ru"]
+
+
 def test_analyze_species_block_survives_plantnet_failure(client, png_bytes, monkeypatch):
     """If identify_species raises, the analyze response still
     completes — ``species`` lands as ``None`` rather than 500-ing the

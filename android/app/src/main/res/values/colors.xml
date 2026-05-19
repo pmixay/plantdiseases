@@ -1,96 +1,104 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- ─── Brand · Botanical green palette ───────────────────────
-         A deeper, richer take on the brand green: the primary darkens
-         half a step so white text on top hits AAA contrast, and the
-         accent shifts toward a fresh dewdrop tint that pairs well with
-         the glassmorphic surfaces below. -->
-    <color name="primary">#0F7A3E</color>
-    <color name="primary_light">#D7F1DD</color>
-    <color name="primary_variant">#21A65A</color>
+    <!-- ─── Brand · Vivid leaf-green palette ───────────────────────
+         PictureThis-style: a saturated, fresh green that pops on
+         white surfaces. The primary is Tailwind green-600 — vivid
+         enough to read as a brand identity, dark enough for AAA
+         contrast with white text. ``primary_variant`` (green-500)
+         drives buttons / FABs where we want a slightly brighter
+         feel; ``primary_light`` (green-100) is the standard chip
+         background. -->
+    <color name="primary">#16A34A</color>
+    <color name="primary_light">#DCFCE7</color>
+    <color name="primary_variant">#22C55E</color>
     <color name="on_primary">#FFFFFF</color>
-    <color name="on_primary_secondary">#B8FFFFFF</color>
+    <color name="on_primary_secondary">#CCFFFFFF</color>
     <!-- ``primary_dark`` / ``secondary`` / ``on_secondary`` are
          consumed by ``values/themes.xml`` (Material 3 colorPrimaryDark
          / colorSecondary / colorOnSecondary attributes); they have no
          direct ``R.color.X`` / ``@color/X`` reference anywhere else.
          Keep them next to ``primary*`` so the theme palette lives in
          one block. -->
-    <color name="primary_dark">#063B1F</color>
-    <color name="secondary">#5DD08C</color>
-    <color name="on_secondary">#FFFFFF</color>
+    <color name="primary_dark">#15803D</color>
+    <color name="secondary">#4ADE80</color>
+    <color name="on_secondary">#052E16</color>
     <!-- Gradient stops (ordered dark -> medium -> light). The hero
-         gradient leans toward the cool side so the white liquid-glass
-         overlay reads as "frosted leaf" rather than candy. -->
-    <color name="gradient_start">#063B1F</color>
-    <color name="gradient_mid">#0F7A3E</color>
-    <color name="gradient_end">#5DD08C</color>
-    <color name="hero_gradient_start">#073A1F</color>
-    <color name="hero_gradient_mid">#1A8A4D</color>
-    <color name="hero_gradient_end">#7DE4A4</color>
-    <color name="hero_solid">#0F7A3E</color>
-    <color name="hero_stat_bg">#33FFFFFF</color>
+         leans bright so the green reads as "fresh leaf" rather than
+         "deep forest" — PictureThis-style bold header. -->
+    <color name="gradient_start">#15803D</color>
+    <color name="gradient_mid">#16A34A</color>
+    <color name="gradient_end">#4ADE80</color>
+    <color name="hero_gradient_start">#15803D</color>
+    <color name="hero_gradient_mid">#22C55E</color>
+    <color name="hero_gradient_end">#4ADE80</color>
+    <color name="hero_solid">#16A34A</color>
+    <color name="hero_stat_bg">#29FFFFFF</color>
     <color name="hero_stat_stroke">#52FFFFFF</color>
     <color name="hero_stat_text">#FFFFFF</color>
 
     <!-- Toolbar background (subtle vertical gradient with mid stop). -->
-    <color name="toolbar_top">#063B1F</color>
-    <color name="toolbar_bottom">#1A8A4D</color>
+    <color name="toolbar_top">#16A34A</color>
+    <color name="toolbar_bottom">#22C55E</color>
     <color name="toolbar_title">#FFFFFF</color>
 
-    <!-- ─── Surface · Light theme ────────────────────────────────── -->
-    <color name="background">#F1FAF3</color>
+    <!-- ─── Surface · Light theme ──────────────────────────────────
+         True white surfaces with a very subtle green tint on
+         ``surface_variant`` for grouped panels. Body text is a deep
+         botanical green-black so dark-on-white reads botanical rather
+         than corporate-grey. -->
+    <color name="background">#FFFFFF</color>
     <color name="surface">#FFFFFF</color>
-    <color name="surface_variant">#E5F2E8</color>
-    <color name="on_surface">#0E1A11</color>
-    <color name="on_surface_secondary">#475749</color>
+    <color name="surface_variant">#F0FDF4</color>
+    <color name="on_surface">#052E16</color>
+    <color name="on_surface_secondary">#4B5563</color>
 
-    <!-- ─── Liquid-glass tokens ─────────────────────────────────────
+    <!-- ─── Soft-card tokens ───────────────────────────────────────
          Layer with android:elevation + the matching frosted background
          (bg_glass_card / bg_glass_card_strong). The "tint" colours are
-         designed to read as a sheet of green-tinted glass — a faint
-         saturated overlay on top of a translucent white base. -->
-    <!-- 80% white, primary glass card surface -->
-    <color name="glass_white_soft">#A6FFFFFF</color>      <!-- 65% white, used over photos -->
-    <!-- 90% white, body surface -->
-    <!-- 20% primary, frosted leaf overlay -->
-    <color name="glass_green_tint_soft">#1A0F7A3E</color> <!-- 10% primary, panel highlight -->
-    <color name="glass_stroke">#33FFFFFF</color>          <!-- 20% white, inner-glow border -->
-    <color name="glass_stroke_strong">#66FFFFFF</color>   <!-- 40% white, edge highlight -->
-    <!-- 15% black, contrast guard for camera/photo overlays -->
+         designed to read as a sheet of green-tinted glass on photo
+         backgrounds; on solid backgrounds they're a soft sheen. -->
+    <!-- 65% white, used over photos -->
+    <color name="glass_white_soft">#A6FFFFFF</color>
+    <!-- 10% primary, panel highlight -->
+    <color name="glass_green_tint_soft">#1A16A34A</color>
+    <!-- 20% white, inner-glow border -->
+    <color name="glass_stroke">#33FFFFFF</color>
+    <!-- 40% white, edge highlight -->
+    <color name="glass_stroke_strong">#66FFFFFF</color>
+    <!-- 30% black, contrast guard for camera/photo overlays -->
     <color name="glass_dark_scrim_strong">#4D000000</color>
 
     <!-- ─── Semantic colors ─────────────────────────────────────── -->
-    <color name="healthy_green">#0F7A3E</color>
-    <color name="healthy_green_bg">#DDF1E2</color>
-    <color name="disease_red">#C44536</color>
-    <color name="disease_red_bg">#FCEAE8</color>
-    <color name="warning_amber">#B8700A</color>
-    <color name="warning_amber_bg">#FFF3E0</color>
-    <color name="neutral_blue">#3B6EA8</color>
-    <color name="neutral_blue_bg">#E6EFF8</color>
+    <color name="healthy_green">#16A34A</color>
+    <color name="healthy_green_bg">#DCFCE7</color>
+    <color name="disease_red">#DC2626</color>
+    <color name="disease_red_bg">#FEE2E2</color>
+    <color name="warning_amber">#D97706</color>
+    <color name="warning_amber_bg">#FEF3C7</color>
+    <color name="neutral_blue">#2563EB</color>
+    <color name="neutral_blue_bg">#DBEAFE</color>
 
     <!-- ─── Category accents ────────────────────────────────────── -->
-    <color name="watering_blue">#1976D2</color>
-    <color name="lighting_yellow">#F9A825</color>
+    <color name="watering_blue">#2563EB</color>
+    <color name="lighting_yellow">#F59E0B</color>
 
     <!-- ─── Misc ────────────────────────────────────────────────── -->
     <color name="scan_frame_color">#80FFFFFF</color>
-    <color name="icon_bg">#DDF1E2</color>
-    <color name="divider">#D6E5D9</color>
-    <color name="card_stroke">#DCE9DE</color>
-    <color name="soft_error_icon_bg">#F6ECE9</color>
-    <color name="search_highlight">#FFF3B0</color>
-    <color name="shimmer_base">#E2EBE3</color>
-    <color name="shimmer_highlight">#F5FAF5</color>
+    <color name="icon_bg">#DCFCE7</color>
+    <color name="divider">#E5E7EB</color>
+    <color name="card_stroke">#E5E7EB</color>
+    <color name="soft_error_icon_bg">#FEE2E2</color>
+    <color name="search_highlight">#FEF08A</color>
+    <color name="shimmer_base">#E5E7EB</color>
+    <color name="shimmer_highlight">#F9FAFB</color>
     <color name="camera_scrim">#33000000</color>
     <color name="camera_control_scrim">#66000000</color>
 
     <!-- ─── AI Doctor chat bubbles ───────────────────────────────
-         Liquid-glass styling: bot bubble is frosted white, user bubble
-         carries the brand-green tint. Text uses chat_bubble_text. -->
-    <color name="chat_bubble_bot_bg">#F2FFFFFF</color>
-    <color name="chat_bubble_user_bg">#D7F1DD</color>
-    <color name="chat_bubble_text">#0E1A11</color>
-    <color name="chat_bubble_text_secondary">#4D5E50</color>
+         Bot bubble is neutral grey for legibility; user bubble carries
+         the brand-green tint. Text uses chat_bubble_text. -->
+    <color name="chat_bubble_bot_bg">#F3F4F6</color>
+    <color name="chat_bubble_user_bg">#DCFCE7</color>
+    <color name="chat_bubble_text">#052E16</color>
+    <color name="chat_bubble_text_secondary">#4B5563</color>
 </resources>

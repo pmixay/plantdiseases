@@ -67,8 +67,7 @@ class PlantDetailActivity : AppCompatActivity() {
         get() = (application as PlantDiseasesApp).plantRepository
 
     private val pickPhoto = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        if (uri != null) {
-            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        if (uri != null && tryPersistRead(uri)) {
             showPhotoCaptionDialog(uri)
         }
     }
@@ -78,8 +77,7 @@ class PlantDetailActivity : AppCompatActivity() {
      *  detail-hero render against the user's chosen photo instead of
      *  the most-recent scan. Tapping Clear cover removes it again. */
     private val pickCover = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        if (uri != null) {
-            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        if (uri != null && tryPersistRead(uri)) {
             lifecycleScope.launch {
                 plantRepository.updateCoverPhoto(plantId, uri.toString())
                 Toast.makeText(this@PlantDetailActivity,
@@ -87,6 +85,22 @@ class PlantDetailActivity : AppCompatActivity() {
                 loadPlant()
             }
         }
+    }
+
+    /** ``takePersistableUriPermission`` throws SecurityException on
+     *  picker URIs whose content provider didn't actually grant the
+     *  persistable flag — most system pickers do, some third-party
+     *  file providers don't. Without this guard the picker callback
+     *  silently crashed and the user saw nothing happen after picking
+     *  a photo. Returns true when the URI is now safe to persist;
+     *  false ⇒ caller should bail out of the flow. */
+    private fun tryPersistRead(uri: Uri): Boolean = try {
+        contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        true
+    } catch (e: SecurityException) {
+        android.util.Log.w("PlantDetail", "Persistable URI grant refused for $uri: $e")
+        Toast.makeText(this, R.string.photo_picker_permission_refused, Toast.LENGTH_SHORT).show()
+        false
     }
 
     override fun attachBaseContext(newBase: Context) {
@@ -326,14 +340,21 @@ class PlantDetailActivity : AppCompatActivity() {
             text = plant.name
             textSize = 30f
             setTextColor(getColor(R.color.hero_stat_text))
-            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+            // PictureThis-style bold hero on the vivid green gradient
+            // — medium read as undersized once the header sat on a
+            // saturated background.
+            typeface = android.graphics.Typeface.create("sans-serif-black", android.graphics.Typeface.NORMAL)
+            letterSpacing = -0.02f
             maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
         })
         body.addView(TextView(this).apply {
             text = plant.species?.takeIf { it.isNotBlank() } ?: getString(R.string.plant_species_unknown)
             textSize = 15f
             setTextColor(getColor(R.color.hero_stat_text))
             alpha = 0.82f
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -1572,10 +1593,13 @@ class PlantDetailActivity : AppCompatActivity() {
     }
 
     private fun baseCard(): MaterialCardView = MaterialCardView(this).apply {
-        radius = 18.dp().toFloat()
-        cardElevation = 0f
-        strokeWidth = 1.dp()
-        strokeColor = getColor(R.color.card_stroke)
+        // PictureThis-style soft card: no stroke, 2dp elevation, 20dp
+        // corners. Single source of truth for every detail-screen
+        // panel (care plan, watering, doctor, photos, journal). The
+        // earlier hairline stroke fought the new white surface.
+        radius = 20.dp().toFloat()
+        cardElevation = 2.dp().toFloat()
+        strokeWidth = 0
         setCardBackgroundColor(getColor(R.color.surface))
         isClickable = true
         foreground = selectable()
@@ -1589,17 +1613,22 @@ class PlantDetailActivity : AppCompatActivity() {
         LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(24.dp())
+            setPadding(28.dp(), 24.dp(), 28.dp(), 28.dp())
             addView(ImageView(this@PlantDetailActivity).apply {
                 setImageResource(imageRes)
-                layoutParams = LinearLayout.LayoutParams(170.dp(), 170.dp())
+                layoutParams = LinearLayout.LayoutParams(180.dp(), 180.dp())
             })
             addView(TextView(this@PlantDetailActivity).apply {
                 text = title
-                textSize = 20f
+                textSize = 22f
                 gravity = Gravity.CENTER
                 setTextColor(getColor(R.color.on_surface))
-                typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+                typeface = android.graphics.Typeface.create("sans-serif-black", android.graphics.Typeface.NORMAL)
+                letterSpacing = -0.02f
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = 8.dp() }
             })
             addView(TextView(this@PlantDetailActivity).apply {
                 text = body

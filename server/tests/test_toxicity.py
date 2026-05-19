@@ -12,6 +12,27 @@ def test_toxicity_lookup_known_toxic_species():
     assert out["source"] == "db"
 
 
+def test_toxicity_lookup_returns_independent_species_list():
+    """Regression: ``lookup_pet_toxicity`` used to ``{**entry, ...}`` the
+    matched row, which is a shallow copy — the ``species_list`` was
+    still aliased to the module-level ``PET_TOXICITY_DATABASE`` entry.
+    A caller mutating the returned list (a UI helper appending
+    "humans", or a JSON serializer doing list_in_place tricks) would
+    corrupt the global for every subsequent request.
+    """
+    from diseases_data import lookup_pet_toxicity
+
+    first = lookup_pet_toxicity("Monstera deliciosa")
+    assert "cats" in first["species_list"]
+    first["species_list"].append("__poisoned__")
+
+    # A fresh lookup must NOT see the poisoned entry.
+    second = lookup_pet_toxicity("Monstera deliciosa")
+    assert "__poisoned__" not in second["species_list"], (
+        "lookup_pet_toxicity is leaking the global PET_TOXICITY_DATABASE row"
+    )
+
+
 def test_toxicity_lookup_known_safe_species():
     from diseases_data import lookup_pet_toxicity
 

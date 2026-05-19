@@ -213,17 +213,29 @@ def test_kd_keeps_topk_candidates():
 
 
 def test_int8_select_by_deployed_metric():
-    """audit fix #9: §6 must evaluate every top-K candidate at INT8 on
-    val_realworld and ship the winner — not blindly export the FP32-best
-    candidate."""
+    """§6 must evaluate every top-K candidate at INT8 and pick the
+    winner from the resulting metrics — not blindly export the FP32-
+    best candidate. The selection target was tightened: an earlier
+    version sorted by ``int8_realworld_f1``, which leaked the ship-
+    gate slice into the selector (val_realworld was both selector
+    and judge, a low-DoF but real source of optimism bias). The
+    winner is now picked by ``int8_indomain_f1`` so val_realworld
+    stays a clean ship gate; both indomain and realworld INT8 numbers
+    are still measured so the drift gate / NAP MaxLogit fit / ship
+    gate downstream have what they need.
+    """
     src = _notebook_source()
     assert "_export_and_eval_int8_candidate" in src, (
-        "audit fix #9 — INT8 candidate evaluator missing"
+        "INT8 candidate evaluator missing"
     )
     assert re.search(
-        r"candidate_results\.sort\(key=lambda r: -r\['int8_realworld_f1'\]\)",
+        r"candidate_results\.sort\(key=lambda r: -r\['int8_indomain_f1'\]\)",
         src,
-    ), "audit fix #9 — winner selection sort missing"
+    ), "winner selection must sort by int8_indomain_f1 (val_realworld is the ship gate, not the selector)"
+    assert "int8_realworld_f1" in src, (
+        "realworld INT8 metric must still be computed — the drift gate, "
+        "NAP MaxLogit fit and ship gate downstream read it"
+    )
 
 
 def test_make_group_split_skips_empty_class_subdirs():

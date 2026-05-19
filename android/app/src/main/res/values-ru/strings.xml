@@ -231,6 +231,8 @@
     <string name="plant_dialog_edit_subtitle">Поддерживайте профиль растения точным по мере роста.</string>
     <string name="empty_garden_title">Ваш сад готов</string>
     <string name="empty_garden_hint">Добавьте первое растение, чтобы хранить сканы, заметки и полив вместе.</string>
+    <string name="empty_garden_cta_add">Добавить первое растение</string>
+    <string name="empty_garden_secondary_hint">Уже сканировали растение? Нажмите «Добавить в сад» на результате.</string>
     <string name="latest_scan_format">Последний скан: %s</string>
     <string name="no_scans_attached">Сканы ещё не привязаны</string>
     <string name="plant_detail_title">Растение</string>
@@ -256,6 +258,7 @@
     <string name="cover_photo_set">Выбрать обложку</string>
     <string name="cover_photo_clear">Убрать обложку</string>
     <string name="cover_photo_updated">Обложка обновлена</string>
+    <string name="photo_picker_permission_refused">Не удалось открыть это фото — попробуйте другое</string>
     <string name="empty_plant_scans_title">У растения пока нет сканов</string>
     <string name="empty_plant_scans_hint">Нажмите «Добавить в сад» на экране диагноза, чтобы собрать историю.</string>
     <string name="empty_journal_title">Пока нет напоминаний и заметок</string>

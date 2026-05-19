@@ -1,6 +1,5 @@
 package com.plantdiseases.app.ui.profile
 
-import android.content.Intent
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.LayoutInflater

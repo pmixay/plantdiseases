@@ -224,10 +224,6 @@ class PlantRepository(
     suspend fun saveReminder(entity: PlantReminderEntity): Long =
         withContext(Dispatchers.IO) { reminderDao.upsertByPlantAndType(entity) }
 
-    suspend fun deleteReminders(plantId: Long) = withContext(Dispatchers.IO) {
-        reminderDao.deleteByPlant(plantId)
-    }
-
     suspend fun getReminderById(id: Long): PlantReminderEntity? =
         withContext(Dispatchers.IO) { reminderDao.getById(id) }
 
@@ -268,9 +264,6 @@ class PlantRepository(
                 }
             }
         }
-
-    suspend fun recentReminderEvents(plantId: Long, limit: Int = 50): List<PlantReminderEventEntity> =
-        withContext(Dispatchers.IO) { reminderEventDao.recentForPlant(plantId, limit) }
 
     /** Epoch ms of the most-recent ``done`` event for this (plant, type)
      *  pair, or null if never done. Used to render "last watered N
