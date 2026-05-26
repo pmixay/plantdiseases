@@ -106,6 +106,16 @@ HEALTHY_REROUTE_FLOOR = 0.65
 HEALTHY_GAP_MARGIN = 0.30
 HEALTHY_GAP_DISEASE_FLOOR = 0.10
 
+# Stricter disease floor for the *absolute_hit* reroute path. The 0.12
+# ``HEALTHY_DISEASE_FLOOR`` was designed for the soft ``uncertain_healthy``
+# warning that surfaces a suspected disease next to a confident healthy
+# verdict; reusing it for the hard reroute let a 12 % gray_mold trump a
+# 54 % healthy and produced a 12 %-confident disease verdict that the
+# UI then had to demote. The gap_hit path keeps its own floor so the
+# 0.29 / 0.24 "visibly dead plant" screenshot regression still reroutes
+# via the margin trigger.
+HEALTHY_REROUTE_DISEASE_FLOOR = 0.25
+
 # Very-low-confidence floor — applies to ANY verdict (healthy or
 # disease) and is purely a UI-demotion signal. When top-1 commits
 # below this floor the response gains a ``very_low_confidence``
@@ -896,18 +906,23 @@ def _apply_postprocessing_rules(
         )
         # Two parallel triggers, either of which is enough on its own:
         #
-        #   * absolute floor — top1 confidence < REROUTE_FLOOR (0.50)
-        #     with any non-trivial disease (>= DISEASE_FLOOR, 0.18)
+        #   * absolute floor — top1 confidence < HEALTHY_REROUTE_FLOOR
+        #     (0.65) with the strongest disease at or above
+        #     HEALTHY_REROUTE_DISEASE_FLOOR (0.25). The 0.25 floor blocks
+        #     reroutes onto sub-quarter-confidence noise: a 0.54 healthy
+        #     vs 0.12 disease should stay healthy, with the soft
+        #     `disease_suspected` warning carrying the alert.
         #   * gap floor — healthy is winning but only by < GAP_MARGIN
         #     (0.30) over the strongest disease, and that disease has
-        #     at least GAP_DISEASE_FLOOR (0.10) mass
+        #     at least GAP_DISEASE_FLOOR (0.10) mass.
         #
-        # The gap floor catches the "healthy 0.55 / leaf_spot 0.35"
-        # band the absolute floor misses but where the model is
-        # essentially a coin flip.
+        # The gap floor catches the "healthy 0.29 / leaf_spot 0.24"
+        # visibly-dead-plant screenshot where the model is essentially
+        # a coin flip and the absolute floor's 0.25 disease threshold
+        # is intentionally just out of reach.
         absolute_hit = (
             top1_prob < HEALTHY_REROUTE_FLOOR
-            and worst_disease[1] >= HEALTHY_DISEASE_FLOOR
+            and worst_disease[1] >= HEALTHY_REROUTE_DISEASE_FLOOR
         )
         gap = top1_prob - worst_disease[1] if worst_disease[0] is not None else float("inf")
         gap_hit = (
