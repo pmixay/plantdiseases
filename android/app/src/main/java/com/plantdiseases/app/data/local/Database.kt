@@ -133,7 +133,7 @@ data class ScanEntity(
     // 90 % set?" diagnostic.
     @ColumnInfo(name = "prediction_set") val predictionSet: String? = null,
     // Canonical class key the server returned for this scan (e.g.
-    // ``leaf_spot_fungal``). Persisted because ``argmax(all_probs)``
+    // ``leaf_spot``). Persisted because ``argmax(all_probs)``
     // can disagree after the server's weak-healthy reroute, and
     // feedback submission must echo the DISPLAYED verdict — not
     // the argmax — to keep per-class accuracy metrics honest.

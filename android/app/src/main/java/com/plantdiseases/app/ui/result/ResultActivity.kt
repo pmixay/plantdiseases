@@ -1389,11 +1389,13 @@ class ResultActivity : AppCompatActivity() {
     }
 
     private fun classKeyDisplayName(key: String, isRu: Boolean): String? = when (key) {
-        // PlantVision v2.2 — 9 in-head classes + 2 deferred
+        // PlantVision v2.2 — 8 in-head classes + 2 deferred
         // (edema, sunburn_or_scorch) accepted on the feedback path.
         "healthy" -> if (isRu) "Здоровое растение" else "Healthy Plant"
         "powdery_mildew" -> if (isRu) "Мучнистая роса" else "Powdery Mildew"
         "gray_mold_botrytis" -> if (isRu) "Серая гниль (ботритис)" else "Gray Mold (Botrytis)"
+        "leaf_spot" -> if (isRu) "Пятнистость листьев" else "Leaf Spot"
+        // legacy keys from pre-merge models / historical scans:
         "leaf_spot_fungal" -> if (isRu) "Грибковая пятнистость" else "Fungal Leaf Spot"
         "bacterial_leaf_spot" -> if (isRu) "Бактериальная пятнистость" else "Bacterial Leaf Spot"
         "viral_disease" -> if (isRu) "Вирусное заболевание" else "Viral Disease"

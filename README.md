@@ -20,7 +20,7 @@ plant care reminders and an AI plant doctor.
 
 | | |
 |---|---|
-| 📷 | **Snap a leaf, get a diagnosis** — 9-class classifier including a real `not_a_plant` rejection head plus a blur gate so unfocused shots don't get fake confidence. |
+| 📷 | **Snap a leaf, get a diagnosis** — 8-class classifier including a real `not_a_plant` rejection head plus a blur gate so unfocused shots don't get fake confidence. |
 | 🌍 | **Bilingual care plans** — every diagnosis ships with EN + RU description, treatment checklist, prevention tips, watering / feeding / humidity schedule, and red-flag escalation list. |
 | 🪴 | **Personal garden** — Room-backed scan history, multi-plant tracking, watering / fertilising reminders via WorkManager. |
 | 🤖 | **AI plant doctor** — opt-in OpenRouter chat scoped to your scan's diagnosis for follow-up questions. |
@@ -44,7 +44,7 @@ plant care reminders and an AI plant doctor.
 │  • Profile + stats   │         │   │ Stage 2 — classifier     │   │
 │                      │         │   │ MobileNetV3-Large (KD ←  │   │
 │                      │         │   │ EfficientNetV2-S teacher)│   │
-│                      │         │   │ 9 classes incl. NaP head │   │
+│                      │         │   │ 8 classes incl. NaP head │   │
 │                      │         │   │ + MaxLogit OOD gate      │   │
 │                      │         │   │ + blur (var-Laplacian)   │   │
 │                      │         │   └──────────────────────────┘   │
@@ -67,20 +67,20 @@ Detailed training recipe lives in
 
 ## Classes
 
-The classifier head is **9 trainable classes** (alphabetical, matching
-`sorted(ImageFolder.classes)`):
+The classifier head is **8 trainable classes** (alphabetical, matching
+`sorted(ImageFolder.classes)`). `leaf_spot` merges bacterial and fungal
+leaf spot — the two are not reliably separable from a phone photo:
 
 | # | Class | EN name | RU name |
 |---|-------|---------|---------|
-| 0 | `bacterial_leaf_spot`        | Bacterial Leaf Spot           | Бактериальная пятнистость |
-| 1 | `gray_mold_botrytis`         | Gray Mold (Botrytis)          | Серая гниль (ботритис)    |
-| 2 | `healthy`                    | Healthy Plant                 | Здоровое растение         |
-| 3 | `leaf_scorch_underwatering`  | Leaf Scorch (Under-watering)  | Краевой ожог (недолив)    |
-| 4 | `leaf_spot_fungal`           | Fungal Leaf Spot              | Грибковая пятнистость     |
-| 5 | `not_a_plant`                | Not a Plant                   | Не растение               |
-| 6 | `nutrient_deficiency`        | Nutrient Deficiency           | Дефицит питания           |
-| 7 | `powdery_mildew`             | Powdery Mildew                | Мучнистая роса            |
-| 8 | `viral_disease`              | Viral Disease                 | Вирусное заболевание      |
+| 0 | `gray_mold_botrytis`         | Gray Mold (Botrytis)          | Серая гниль (ботритис)    |
+| 1 | `healthy`                    | Healthy Plant                 | Здоровое растение         |
+| 2 | `leaf_scorch_underwatering`  | Leaf Scorch (Under-watering)  | Краевой ожог (недолив)    |
+| 3 | `leaf_spot`                  | Leaf Spot (fungal + bacterial)| Пятнистость листьев       |
+| 4 | `not_a_plant`                | Not a Plant                   | Не растение               |
+| 5 | `nutrient_deficiency`        | Nutrient Deficiency           | Дефицит питания           |
+| 6 | `powdery_mildew`             | Powdery Mildew                | Мучнистая роса            |
+| 7 | `viral_disease`              | Viral Disease                 | Вирусное заболевание      |
 
 The pipeline also emits two remaining **deferred** physiological
 classes (`edema`, `sunburn_or_scorch`) as feedback labels, even though

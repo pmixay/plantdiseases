@@ -1,13 +1,15 @@
 """
 Bilingual disease information database for PlantVision.
 
-Stage 2 classifier outputs one of the 9 trainable v2.2 classes — the
+Stage 2 classifier outputs one of the 8 trainable v2.2 classes — the
 bilingual content for each lives in ``DISEASES_DATABASE`` below.
 
-Trainable v2.2 classes (alphabetical): ``bacterial_leaf_spot``,
-``gray_mold_botrytis``, ``healthy``, ``leaf_scorch_underwatering``,
-``leaf_spot_fungal``, ``not_a_plant``, ``nutrient_deficiency``,
-``powdery_mildew``, ``viral_disease``.
+Trainable v2.2 classes (alphabetical): ``gray_mold_botrytis``,
+``healthy``, ``leaf_scorch_underwatering``, ``leaf_spot``,
+``not_a_plant``, ``nutrient_deficiency``, ``powdery_mildew``,
+``viral_disease``. ``leaf_spot`` is the merged bacterial+fungal
+leaf-spot class — the two are not reliably separable from a phone
+photo, so they share one content card.
 
 Authoritative list: ``server/models/classes.json``.
 
@@ -123,70 +125,36 @@ DISEASES_DATABASE = {
         "is_healthy": False,
     },
 
-    "leaf_spot_fungal": {
-        "name_en": "Fungal Leaf Spot",
-        "name_ru": "Грибковая пятнистость листьев",
-        "description_en": "Umbrella class for the common fungal leaf-spot diseases (anthracnose / Colletotrichum, cercospora, alternaria). Symptoms range from dark sunken lesions with yellow halos (anthracnose) through small grey-brown spots with a dark border (cercospora) to concentric brown rings (alternaria). All thrive on wet foliage and poor airflow.",
-        "description_ru": "Сборный класс для распространённых грибковых пятнистостей (антракноз / Colletotrichum, церкоспороз, альтернариоз). Симптомы — от тёмных вдавленных пятен с жёлтым ореолом (антракноз) до мелких серо-коричневых пятен с тёмной каймой (церкоспороз) и концентрических коричневых колец (альтернариоз). Все развиваются на мокрых листьях при слабой вентиляции.",
+    "leaf_spot": {
+        "name_en": "Leaf Spot",
+        "name_ru": "Пятнистость листьев",
+        "description_en": "Umbrella class for fungal and bacterial leaf spot. Fungal spots (anthracnose, cercospora, alternaria) appear as dark sunken lesions with yellow halos, grey-brown spots with a dark border, or concentric brown rings. Bacterial spots (Pseudomonas, Xanthomonas) are small angular water-soaked spots between the veins, often with a yellow halo. Both thrive on wet foliage and poor airflow, and the distinction is genuinely hard to make from a phone photo — the care below covers both.",
+        "description_ru": "Сборный класс для грибковой и бактериальной пятнистости. Грибковые пятна (антракноз, церкоспороз, альтернариоз) — тёмные вдавленные пятна с жёлтым ореолом, серо-коричневые пятна с тёмной каймой или концентрические коричневые кольца. Бактериальные пятна (Pseudomonas, Xanthomonas) — мелкие угловатые водянистые пятна между жилками, часто с жёлтым ореолом. И те и другие развиваются на мокрых листьях при слабой вентиляции, а различить их по фото с телефона практически невозможно — уход ниже подходит для обоих случаев.",
         "treatment_en": [
             "Cut off the worst-affected leaves with sterile scissors and dispose (do not compost)",
-            "Spray with a copper-based fungicide or chlorothalonil weekly for 3 weeks",
-            "Reduce overhead watering — keep foliage dry, water only the substrate",
-            "Improve airflow; isolate the plant for 2–3 weeks",
-            "Disinfect tools with 70 % isopropyl alcohol between plants"
+            "Stop misting and overhead watering — keep the foliage dry, water the substrate only",
+            "Spray a copper-based fungicide/bactericide (copper hydroxide) or chlorothalonil weekly for 3–4 weeks per label",
+            "Improve airflow and isolate the plant for 2–3 weeks",
+            "Disinfect tools with 70 % isopropyl alcohol between plants and between cuts"
         ],
         "treatment_ru": [
             "Срежьте сильно поражённые листья стерильными ножницами, выбросьте (не в компост)",
-            "Опрыскивайте медьсодержащим фунгицидом или хлороталонилом раз в неделю в течение 3 недель",
-            "Прекратите полив сверху — листья держите сухими, поливайте только в субстрат",
-            "Обеспечьте циркуляцию воздуха, изолируйте растение на 2–3 недели",
-            "Дезинфицируйте инструмент 70% спиртом между растениями"
+            "Прекратите опрыскивание и полив сверху — листья держите сухими, поливайте только в субстрат",
+            "Опрыскивайте медьсодержащим фунгицидом/бактерицидом (гидроксид меди) или хлороталонилом раз в неделю в течение 3–4 недель по инструкции",
+            "Обеспечьте циркуляцию воздуха и изолируйте растение на 2–3 недели",
+            "Дезинфицируйте инструмент 70% спиртом между растениями и между срезами"
         ],
         "prevention_en": [
             "Avoid wetting the leaves; use bottom watering when possible",
-            "Don't crowd plants — fungal spores love still humid air",
+            "Don't crowd plants — spores and bacteria love still, humid air",
             "Quarantine new plants for 2 weeks before adding to the collection",
             "Wipe leaves with a damp cloth monthly so spores don't accumulate"
         ],
         "prevention_ru": [
             "Не мочите листья — по возможности поливайте снизу",
-            "Не размещайте растения вплотную — споры любят застойный влажный воздух",
+            "Не размещайте растения вплотную — споры и бактерии любят застойный влажный воздух",
             "Новые растения держите 2 недели на карантине",
             "Раз в месяц протирайте листья влажной тряпкой — споры не скапливаются"
-        ],
-        "is_healthy": False,
-    },
-
-    "bacterial_leaf_spot": {
-        "name_en": "Bacterial Leaf Spot",
-        "name_ru": "Бактериальная пятнистость",
-        "description_en": "Small angular brown-to-black water-soaked spots, often surrounded by a yellow halo. Caused by Pseudomonas or Xanthomonas bacteria — common on dieffenbachia, philodendron, syngonium, anthurium and other Araceae kept in damp, poorly ventilated rooms. Spots stay confined to areas between leaf veins because the bacteria spread through the water film on the leaf surface.",
-        "description_ru": "Мелкие угловатые тёмные пятна со слегка водянистой каймой и жёлтым ореолом вокруг. Вызывают бактерии Pseudomonas и Xanthomonas — часто встречаются на диффенбахиях, филодендронах, сингониумах и других ароидных в сырых плохо проветриваемых комнатах. Пятна остаются между жилками — бактерии переносятся плёнкой воды на поверхности листа.",
-        "treatment_en": [
-            "Remove and bin (do not compost) all visibly affected leaves",
-            "Move the plant away from neighbours — bacterial spots spread quickly",
-            "Stop misting and overhead watering; water at the soil level only",
-            "Spray a copper-based fungicide (copper hydroxide / copper sulfate) per label",
-            "Sterilise scissors with isopropyl alcohol before each cut"
-        ],
-        "treatment_ru": [
-            "Удалите и выбросьте (не в компост) все поражённые листья",
-            "Изолируйте растение от соседей — бактерия быстро перемещается",
-            "Прекратите опрыскивание и полив сверху; поливайте только под корень",
-            "Обработайте препаратом на основе меди (хлорокись меди / медный купорос) по инструкции",
-            "Ножницы перед каждым срезом протирайте изопропиловым спиртом"
-        ],
-        "prevention_en": [
-            "Keep leaves dry — water the soil, not the foliage",
-            "Provide good air circulation; avoid crowding plants together",
-            "Quarantine new plants for 2 weeks before placing them with the rest",
-            "Avoid handling plants when leaves are wet"
-        ],
-        "prevention_ru": [
-            "Держите листья сухими — поливайте под корень, а не сверху",
-            "Обеспечьте циркуляцию воздуха; не ставьте растения вплотную",
-            "Новые растения держите 2 недели на карантине",
-            "Не трогайте растения, когда листья мокрые — бактерии переносятся руками"
         ],
         "is_healthy": False,
     },

@@ -125,8 +125,7 @@ def test_care_plan_disease_protocol_carries_treatment_and_red_flags():
     for d in (
         "powdery_mildew",
         "gray_mold_botrytis",
-        "leaf_spot_fungal",
-        "bacterial_leaf_spot",
+        "leaf_spot",
         "viral_disease",
     ):
         plan = ai.generate_care_plan(disease=d, light="bright_indirect")
@@ -147,7 +146,7 @@ def test_progression_baseline_when_no_previous():
     import ai_services as ai
 
     out = ai.compare_progression(
-        current={"class_name": "leaf_spot_fungal", "confidence": 0.7,
+        current={"class_name": "leaf_spot", "confidence": 0.7,
                  "severity": "medium"},
         previous=None,
     )
@@ -159,9 +158,9 @@ def test_progression_worsening_on_severity_step_up():
     import ai_services as ai
 
     out = ai.compare_progression(
-        current={"class_name": "leaf_spot_fungal", "confidence": 0.85,
+        current={"class_name": "leaf_spot", "confidence": 0.85,
                  "severity": "high"},
-        previous={"class_name": "leaf_spot_fungal", "confidence": 0.65,
+        previous={"class_name": "leaf_spot", "confidence": 0.65,
                   "severity": "medium"},
     )
     assert out["trend"] == "worsening"

@@ -17,15 +17,26 @@ from total KD steps — `1 − 1/max(KD_steps/4, 100)`; the v2.1 run
 landed on 0.9947 over 728 KD steps) is what we evaluate, save and
 export.
 
-## Classes (7 trainable, v2.1)
+## Classes
 
-`bacterial_leaf_spot`, `gray_mold_botrytis`, `healthy`,
-`leaf_spot_fungal`, `not_a_plant`, `powdery_mildew`, `viral_disease`.
+**Shipped artefact (v2.1): 7 trainable classes** — `bacterial_leaf_spot`,
+`gray_mold_botrytis`, `healthy`, `leaf_spot_fungal`, `not_a_plant`,
+`powdery_mildew`, `viral_disease`. This is what `classes.json` /
+`classifier.onnx` on disk still declare today.
 
-`leaf_spot_fungal` is a coarse umbrella for anthracnose / cercospora /
-alternaria — visually overlapping at 256 px and sharing treatment
-advice (copper fungicide, dry foliage, isolate). `viral_disease`
-covers mosaic + leaf curl + ringspot.
+**Code target (v2.2): 8 trainable classes** — `bacterial_leaf_spot` and
+`leaf_spot_fungal` are merged into a single `leaf_spot` class (the
+distinction is not reliably separable from a phone photo — see the
+confusion note under *Known limitations*), and the physiological classes
+`leaf_scorch_underwatering` + `nutrient_deficiency` join the head. The
+8-class artefact lands on the next A100 retrain, which regenerates
+`classes.json` + `classifier.onnx` together; the notebook and server code
+already target it.
+
+`leaf_spot` is a coarse umbrella for fungal (anthracnose / cercospora /
+alternaria) and bacterial leaf spot — visually overlapping at 256 px and
+sharing treatment advice (copper spray, dry foliage, isolate).
+`viral_disease` covers mosaic + leaf curl + ringspot.
 
 ### Deferred
 
@@ -165,7 +176,8 @@ Colab T4 is roughly 2-3× slower; reduce `BATCH=64`.
   while the rest of the taxonomy sits at 0.68 – 1.00. The pair shares
   first-line treatment advice in the Android client, so the practical
   impact is bounded — but per-class recall reporting must call this
-  out as a known limitation.
+  out as a known limitation. **Resolved in v2.2** by merging the two
+  into a single `leaf_spot` class; this card updates on the next retrain.
 * **INT8 did not ship in v2.1.** Static QDQ and dynamic-quant fallback
   both exceeded the 0.05 drift gate on MobileNetV3-Large under Torch
   2.10. `classifier_int8.onnx` is the FP32 ONNX renamed; deployed CPU
@@ -204,7 +216,7 @@ are approximate.
 |---|---|---|---|
 | iNaturalist Observations API | <https://api.inaturalist.org/v1/observations> with `quality_grade=research`, `term_id=36` (Leaves), `term_value_id=38` (Green Leaves) for `healthy`; `taxon_id` of *Botrytis cinerea* / *Botrytis* (genus) for `gray_mold_botrytis` | Houseplant supplement (Ficus / Monstera / Epipremnum / Calathea / Spathiphyllum / Dracaena / Sansevieria / Philodendron) | ~180 photos × 8 taxa × 1 photo each = ~1.4 k healthy; ~160 × 2 taxa = ~300 botrytis |
 | COCO val2017 | <http://images.cocodataset.org/zips/val2017.zip> + `annotations_trainval2017.zip` | `not_a_plant` negatives, plant-like categories filtered out | ~1 GB; capped at 1 500 images |
-| PlantDoc (HF mirror) | <https://huggingface.co/datasets/agyaatcoder/PlantDoc> — 2 340 train + 236 test, XYWH bbox format, CC-BY-4.0 | `bacterial_leaf_spot`, `leaf_spot_fungal`, `powdery_mildew`, `viral_disease` supplement | ~992 MB |
+| PlantDoc (HF mirror) | <https://huggingface.co/datasets/agyaatcoder/PlantDoc> — 2 340 train + 236 test, XYWH bbox format, CC-BY-4.0 | `leaf_spot` (merged bacterial + fungal), `powdery_mildew`, `viral_disease` supplement | ~992 MB |
 | PlantVillage (HF mirror, primary) | <https://huggingface.co/datasets/BrandonFors/Plant-Diseases-PlantVillage-Dataset> — 43 500 train + 10 800 test, 38 classes, CC0-1.0 | `val_studio` only (transfer / background-bias monitor); a hash-fraction also goes to train | ~852 MB |
 | PlantVillage (HF mirror, fallback) | <https://huggingface.co/datasets/mohanty/PlantVillage> with config name `color` (the repo ships color/grayscale/segmented configs and `load_dataset` now refuses to pick one) | Same role as primary — kept as a fallback when BrandonFors mirror is unreachable | ~2.2 GB total across configs |
 | Roboflow Universe (Stage 1) | User-supplied `data.yaml` under `data_v2/`. The notebook does not download it — provide indoor leaf bboxes from <https://universe.roboflow.com> houseplant projects + hand-labelled user uploads. PlantDoc is excluded from detector training because its agricultural close-ups bias localisation toward field shots. | YOLOv8n single-class `plant_leaf` detector | 300–800 indoor crops |

@@ -613,8 +613,8 @@ class PlantDiseasePipeline:
     def _build_prediction_set(self, probs: dict[str, float]) -> dict | None:
         """Return the conformal prediction set or ``None`` if unconfigured.
 
-        Honest UX: clients should render the *set* — "leaf_spot_fungal
-        OR bacterial_leaf_spot at 90 % coverage" — instead of pretending
+        Honest UX: clients should render the *set* — "leaf_spot
+        OR viral_disease at 90 % coverage" — instead of pretending
         the top-1 was a single confident answer. The dict is keyed by
         ``classes`` / ``coverage`` / ``method`` so the client doesn't
         need to know about the calibration internals.

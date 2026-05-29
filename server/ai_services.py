@@ -206,15 +206,15 @@ def identify_species(
 # headers to amortise it.
 _DOCTOR_SYSTEM_PROMPT = """You are PlantDiseases' friendly AI Plant Doctor, helping
 people care for their houseplants. Your knowledge is grounded in the
-PlantVision v2.2 disease taxonomy (9 trainable classes):
+PlantVision v2.2 disease taxonomy (8 trainable classes):
 
-- bacterial_leaf_spot: angular brown spots with yellow halo, bacterial
 - gray_mold_botrytis: fuzzy grey growth, fungal (Botrytis cinerea)
 - healthy: no disease detected
 - leaf_scorch_underwatering: crisp brown leaf margins from
   insufficient watering or transpiration shock
-- leaf_spot_fungal: umbrella class for anthracnose / cercospora /
-  alternaria — dark spots, halos, concentric rings
+- leaf_spot: umbrella class for fungal and bacterial leaf spot —
+  dark/angular spots, yellow halos, concentric rings (the two are
+  not reliably separable from a phone photo, so they share one class)
 - not_a_plant: image does not contain a plant
 - nutrient_deficiency: chlorosis / interveinal yellowing — iron,
   nitrogen, magnesium etc.
@@ -662,40 +662,24 @@ _DISEASE_PROTOCOL: dict[str, dict] = {
         "follow_up_days": 7,
         "fertilise_weeks": 6,
     },
-    "leaf_spot_fungal": {
-        "key_action": "Bottom-water, remove infected leaves, and apply copper fungicide weekly.",
+    "leaf_spot": {
+        "key_action": "Remove infected leaves, stop overhead watering, and apply a copper-based spray weekly.",
         "watering_method": "bottom_water",
         "treatment": [
             "Strip all leaves with >25% spot coverage; discard sealed.",
-            "Apply chlorothalonil or copper-hydroxide once a week for 3 weeks per label dose.",
-            "Keep the foliage dry — no misting, no overhead watering.",
+            "Stop all overhead watering and misting — keep the foliage dry.",
+            "Spray copper-hydroxide (covers fungal and bacterial) or chlorothalonil weekly for 3–4 weeks per label dose.",
             "Improve airflow with a fan during the wettest part of the day.",
-        ],
-        "sanitation": ["Sterilise pruners between cuts; do not reuse infected soil."],
-        "isolation": True,
-        "red_flags": [
-            "Spots expand or new spots appear after 14 days.",
-            "Spots develop yellow halos and rapid yellowing of leaves.",
-        ],
-        "follow_up_days": 7,
-    },
-    "bacterial_leaf_spot": {
-        "key_action": "No misting; bottom-water; isolate; consider copper bactericide.",
-        "watering_method": "bottom_water",
-        "treatment": [
-            "Stop all overhead watering and misting immediately.",
-            "Prune lesions back to clean tissue and discard sealed.",
-            "Spray a fixed-copper bactericide every 7–10 days per label for 4 weeks.",
-            "Keep the plant in airy, bright shade until new growth is clean.",
+            "Isolate the plant until new growth comes in clean.",
         ],
         "sanitation": [
-            "Sterilise tools with 70% isopropyl between cuts.",
+            "Sterilise pruners with 70% isopropyl between cuts; do not reuse infected soil.",
             "Wash hands between handling this plant and other houseplants.",
         ],
         "isolation": True,
         "red_flags": [
-            "Lesions ooze or smell bad — bacterial soft rot.",
-            "Stem darkening at the soil line.",
+            "Spots expand or new spots appear after 14 days.",
+            "Lesions ooze or smell bad, or the stem darkens at the soil line — bacterial soft rot.",
         ],
         "follow_up_days": 7,
     },
@@ -848,35 +832,22 @@ _DISEASE_PROTOCOL_RU: dict[str, dict] = {
             "Листья продолжают опадать даже при более сухих условиях.",
         ],
     },
-    "leaf_spot_fungal": {
-        "key_action": "Нижний полив, удалите поражённые листья и применяйте препарат меди раз в неделю.",
+    "leaf_spot": {
+        "key_action": "Удалите поражённые листья, прекратите полив сверху и применяйте препарат меди раз в неделю.",
         "treatment": [
             "Срежьте все листья с пятнистостью более 25% и выбросьте в пакете.",
-            "Раз в неделю в течение 3 недель применяйте хлороталонил или гидроксид меди по инструкции.",
-            "Держите листву сухой — никакого опрыскивания и полива по листьям.",
+            "Прекратите полив сверху и опрыскивание — держите листву сухой.",
+            "Раз в неделю в течение 3–4 недель применяйте гидроксид меди (подходит и против грибка, и против бактерий) или хлороталонил по инструкции.",
             "Включайте вентилятор в самое влажное время дня.",
-        ],
-        "sanitation": ["Стерилизуйте секатор между срезами; не используйте заражённый грунт повторно."],
-        "red_flags": [
-            "Через 14 дней пятна разрастаются или появляются новые.",
-            "У пятен появляется жёлтый ореол и быстрое пожелтение листьев.",
-        ],
-    },
-    "bacterial_leaf_spot": {
-        "key_action": "Никакого опрыскивания; нижний полив; изоляция; рассмотрите бактерицид с медью.",
-        "treatment": [
-            "Немедленно прекратите полив сверху и опрыскивание.",
-            "Срежьте поражения до здоровой ткани и выбросьте в пакете.",
-            "Каждые 7–10 дней в течение 4 недель опрыскивайте бактерицидом с фиксированной медью по инструкции.",
-            "Держите растение в светлой, проветриваемой полутени до появления чистого нового прироста.",
+            "Изолируйте растение до появления чистого нового прироста.",
         ],
         "sanitation": [
-            "Стерилизуйте инструменты изопропиловым 70%-м спиртом между срезами.",
+            "Стерилизуйте секатор 70%-м изопропиловым спиртом между срезами; не используйте заражённый грунт повторно.",
             "Мойте руки между этим растением и другими.",
         ],
         "red_flags": [
-            "Очаги мокнут или плохо пахнут — бактериальная мягкая гниль.",
-            "Стебель темнеет у уровня почвы.",
+            "Через 14 дней пятна разрастаются или появляются новые.",
+            "Очаги мокнут или плохо пахнут, либо стебель темнеет у почвы — бактериальная мягкая гниль.",
         ],
     },
     "viral_disease": {

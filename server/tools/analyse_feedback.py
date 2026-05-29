@@ -78,10 +78,9 @@ from typing import Any
 # stands alone (a notebook can run it against a DB snapshot without
 # wiring up the FastAPI app's import graph).
 IN_HEAD_CLASSES: frozenset[str] = frozenset({
-    "bacterial_leaf_spot",
     "gray_mold_botrytis",
     "healthy",
-    "leaf_spot_fungal",
+    "leaf_spot",
     "not_a_plant",
     "powdery_mildew",
     "viral_disease",
