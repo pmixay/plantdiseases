@@ -178,7 +178,7 @@ def test_feedback_endpoint_marks_in_head_correction(client, isolated_feedback_db
         json={
             "scan_id": "scan-inhead1",
             "correct": False,
-            "corrected_class": "leaf_spot_fungal",
+            "corrected_class": "leaf_spot",
         },
     )
     with sqlite3.connect(isolated_feedback_db) as conn:
@@ -214,7 +214,7 @@ def test_feedback_image_upload_stores_bytes_and_links_row(
         json={
             "scan_id": "scan-imgupload1",
             "correct": False,
-            "corrected_class": "leaf_spot_fungal",
+            "corrected_class": "leaf_spot",
         },
     )
     img_bytes = b"\xff\xd8\xff\xe0fake-jpeg-bytes-for-test"
@@ -250,9 +250,9 @@ def test_feedback_endpoint_persists_prediction_set(client, isolated_feedback_db)
         json={
             "scan_id": "scan-predset",
             "correct": False,
-            "corrected_class": "leaf_spot_fungal",
+            "corrected_class": "leaf_spot",
             "prediction_set": [
-                "healthy", "leaf_spot_fungal", "gray_mold_botrytis",
+                "healthy", "leaf_spot", "gray_mold_botrytis",
             ],
         },
     )
@@ -263,7 +263,7 @@ def test_feedback_endpoint_persists_prediction_set(client, isolated_feedback_db)
         ).fetchone()
     import json
     assert json.loads(raw) == [
-        "healthy", "leaf_spot_fungal", "gray_mold_botrytis",
+        "healthy", "leaf_spot", "gray_mold_botrytis",
     ]
 
 

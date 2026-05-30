@@ -1130,14 +1130,14 @@ async def analyze_image(
 
     # Conformal prediction set: classes the model can't rule out at the
     # configured coverage level. Annotated with bilingual names so the
-    # UI can render "leaf_spot_fungal OR bacterial_leaf_spot @ 90%"
+    # UI can render "leaf_spot OR viral_disease @ 90%"
     # without a second lookup table. ``None`` when calibration data
     # isn't yet available — clients must treat it as optional.
     prediction_set = result.get("prediction_set")
     if prediction_set is not None:
         # ``advisory`` is True until the conformal calibration set
         # carries ≥ 50 samples per class. Today's per-class counts
-        # (bacterial_leaf_spot=3, gray_mold_botrytis=5,
+        # (gray_mold_botrytis=5, leaf_scorch_underwatering=3,
         # powdery_mildew=5, not_a_plant=0 — see
         # ``server/models/model_card.json``) are too sparse for the
         # stated 90 % coverage to be statistically meaningful. The

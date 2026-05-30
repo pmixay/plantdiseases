@@ -823,7 +823,9 @@ class PlantDetailActivity : AppCompatActivity() {
         "powdery_mildew" -> "powdery_mildew"
         "gray_mold_botrytis" -> "botrytis"
         "viral_disease" -> "viral_disease"
-        "leaf_spot_fungal", "bacterial_leaf_spot" -> "leaf_spot"
+        // "leaf_spot" is the v2.2 merged class; the other two are legacy
+        // keys from pre-merge models / historical scans.
+        "leaf_spot", "leaf_spot_fungal", "bacterial_leaf_spot" -> "leaf_spot"
         "nutrient_deficiency" -> "fertilizing"
         "leaf_scorch_underwatering" -> "watering_basics"
         else -> null

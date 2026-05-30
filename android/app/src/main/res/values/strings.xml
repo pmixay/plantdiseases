@@ -470,8 +470,7 @@
     <string name="feedback_class_healthy">Healthy</string>
     <string name="feedback_class_powdery_mildew">Powdery Mildew</string>
     <string name="feedback_class_gray_mold_botrytis">Gray Mold</string>
-    <string name="feedback_class_leaf_spot_fungal">Fungal Leaf Spot</string>
-    <string name="feedback_class_bacterial_leaf_spot">Bacterial Leaf Spot</string>
+    <string name="feedback_class_leaf_spot">Leaf Spot</string>
     <string name="feedback_class_viral_disease">Viral Disease</string>
     <string name="feedback_class_not_a_plant">Not a Plant</string>
     <string name="feedback_class_edema">Edema</string>

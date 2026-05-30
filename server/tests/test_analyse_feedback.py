@@ -74,7 +74,7 @@ def populated_db(tmp_path: Path) -> Path:
     _make_db(db)
     # Three rows that exercise every analysis branch:
     #   1. Correct healthy verdict, in-head, no correction.
-    #   2. Wrong healthy → leaf_spot_fungal (in-head correction, classic
+    #   2. Wrong healthy → leaf_spot (in-head correction, classic
     #      class-imbalance miss). Carries a top3 + prediction_set
     #      that includes the corrected class — should count toward
     #      conformal coverage.
@@ -97,10 +97,10 @@ def populated_db(tmp_path: Path) -> Path:
     _insert(
         db,
         scan_id="scan-bbbbbbbb", correct=0,
-        corrected_class="leaf_spot_fungal", reason="wrong_class",
+        corrected_class="leaf_spot", reason="wrong_class",
         predicted_class="healthy",
-        top3_json='[{"class":"healthy","prob":0.55},{"class":"leaf_spot_fungal","prob":0.40}]',
-        prediction_set_json='["healthy","leaf_spot_fungal"]',
+        top3_json='[{"class":"healthy","prob":0.55},{"class":"leaf_spot","prob":0.40}]',
+        prediction_set_json='["healthy","leaf_spot"]',
         out_of_head=0,
         model_version="2.1", app_version="1.0", locale="en",
         platform="android", region_count=3,
@@ -185,12 +185,12 @@ def test_build_report_overall_and_per_class(populated_db: Path) -> None:
 def test_build_report_confusion_and_corrections(populated_db: Path) -> None:
     rows = af._load_rows(populated_db, None, since_ts=None)
     report = af.build_report(rows)
-    assert report["confusion"]["healthy"]["leaf_spot_fungal"] == 1
+    assert report["confusion"]["healthy"]["leaf_spot"] == 1
     assert report["confusion"]["viral_disease"]["nutrient_deficiency"] == 1
     pairs = {(p["predicted"], p["corrected"]): p for p in report["top_corrections"]}
-    assert ("healthy", "leaf_spot_fungal") in pairs
+    assert ("healthy", "leaf_spot") in pairs
     assert ("viral_disease", "nutrient_deficiency") in pairs
-    assert pairs[("healthy", "leaf_spot_fungal")]["count"] == 1
+    assert pairs[("healthy", "leaf_spot")]["count"] == 1
 
 
 def test_build_report_prediction_set_coverage(populated_db: Path) -> None:
@@ -212,7 +212,7 @@ def test_build_report_out_of_head_signal(populated_db: Path) -> None:
     assert ooh["total_corrections"] == 2
     assert ooh["out_of_head_total"] == 1
     assert ooh["by_class"]["nutrient_deficiency"] == 1
-    assert ooh["by_class"]["leaf_spot_fungal"] == 1
+    assert ooh["by_class"]["leaf_spot"] == 1
 
 
 def test_build_report_calibration_buckets(populated_db: Path) -> None:
@@ -239,7 +239,7 @@ def test_main_writes_full_artefact_set(populated_db: Path, tmp_path: Path) -> No
     assert metrics["row_count"] == 3
     # The Markdown summary should mention the dominant correction pair.
     summary = (out_dir / "summary.md").read_text()
-    assert "leaf_spot_fungal" in summary
+    assert "leaf_spot" in summary
     assert "nutrient_deficiency" in summary
     # rows.csv has one header line + one row per feedback.
     rows_lines = (out_dir / "rows.csv").read_text().splitlines()

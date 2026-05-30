@@ -58,7 +58,7 @@ data class PredictionSet(
 
 /** Response from the server after analyzing an image */
 data class AnalysisResponse(
-    // Canonical class key (e.g. ``leaf_spot_fungal``) the pipeline
+    // Canonical class key (e.g. ``leaf_spot``) the pipeline
     // landed on AFTER post-processing — this is what
     // ``diseaseName`` is derived from. Echo this back as
     // ``predictedClass`` on feedback. ``argmax(allProbs)`` may

@@ -44,7 +44,7 @@ def _notebook_source() -> str:
 
 def test_pd_label_map_drops_rust_and_fruit_diseases():
     """audit fix #3 + #11: rust morphology and fruit-stage diseases must
-    NOT map to leaf_spot_fungal."""
+    NOT map to leaf_spot."""
     src = _notebook_source()
     # The drop list must mention rust + fruit rot keywords.
     assert "_PD_DROP_KEYWORDS" in src, (
@@ -57,20 +57,20 @@ def test_pd_label_map_drops_rust_and_fruit_diseases():
 def test_pv_label_map_excludes_physiological_and_fruit():
     """audit fix #11: Strawberry leaf scorch (physiological) and apple
     black rot / cedar apple rust (fruit / rust) must NOT land in
-    leaf_spot_fungal."""
+    leaf_spot."""
     src = _notebook_source()
     bad_pairs = [
-        ("'Strawberry___Leaf_scorch'", "'leaf_spot_fungal'"),
-        ("'Apple___Black_rot'", "'leaf_spot_fungal'"),
-        ("'Apple___Cedar_apple_rust'", "'leaf_spot_fungal'"),
-        ("'Corn_(maize)___Common_rust_'", "'leaf_spot_fungal'"),
+        ("'Strawberry___Leaf_scorch'", "'leaf_spot'"),
+        ("'Apple___Black_rot'", "'leaf_spot'"),
+        ("'Apple___Cedar_apple_rust'", "'leaf_spot'"),
+        ("'Corn_(maize)___Common_rust_'", "'leaf_spot'"),
     ]
     # Find every line containing the LHS and check it doesn't map to
     # the RHS.
     for lhs, rhs in bad_pairs:
         for line in src.splitlines():
             if lhs in line and ":" in line:
-                # Allow None mapping; refuse the leaf_spot_fungal mapping.
+                # Allow None mapping; refuse the leaf_spot mapping.
                 assert rhs not in line, (
                     f"PV label {lhs} still maps to {rhs} — audit fix #11"
                 )

@@ -4,7 +4,7 @@ Inductive conformal prediction for the PlantVision classifier.
 Temperature scaling fixes the *miscalibration* of the softmax (so a 0.85
 probability really means 85 %). It does **not** fix the second failure
 mode the UI cares about: at the top-1 boundary between two visually
-similar classes (e.g. ``leaf_spot_fungal`` ↔ ``bacterial_leaf_spot``)
+similar classes (e.g. ``leaf_spot`` ↔ ``viral_disease``)
 the model still routinely returns a single confident answer when the
 honest answer is "either of these two".
 

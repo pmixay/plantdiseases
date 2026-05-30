@@ -5,7 +5,7 @@ Classifies a (preferably cropped) leaf region into one of the
 houseplant-relevant condition classes including the rejection class
 ``not_a_plant``. Class names + input resolution live in
 ``models/classes.json``; if the file is missing the built-in default
-matching the v2.2 taxonomy (9 trainable classes) is used.
+matching the v2.2 taxonomy (8 trainable classes) is used.
 
 Production artefact is a distilled MobileNetV3-Large student
 (EfficientNetV2-S teacher → KD). Loading order:
@@ -39,12 +39,13 @@ DEFAULT_IMG_SIZE = 256
 # stay deferred until upstream supply justifies them.
 # Production reads ``classes.json -> class_names`` first; this list is
 # only used as a fallback when the artefact is missing.
+# ``leaf_spot`` is the merged bacterial+fungal leaf-spot class (the
+# distinction is not reliably separable from a phone photo).
 DEFAULT_CLASS_NAMES = [
-    "bacterial_leaf_spot",
     "gray_mold_botrytis",
     "healthy",
     "leaf_scorch_underwatering",
-    "leaf_spot_fungal",
+    "leaf_spot",
     "not_a_plant",
     "nutrient_deficiency",
     "powdery_mildew",

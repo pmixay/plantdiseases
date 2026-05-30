@@ -39,10 +39,10 @@ def test_progression_history_worsening_trend(client):
     """A monotonically worsening series of scans must yield a worsening
     trend AND a non-decreasing sparkline."""
     history = [
-        _scan("leaf_spot_fungal", 0.4, "low"),
-        _scan("leaf_spot_fungal", 0.6, "medium"),
-        _scan("leaf_spot_fungal", 0.8, "medium"),
-        _scan("leaf_spot_fungal", 0.9, "high"),
+        _scan("leaf_spot", 0.4, "low"),
+        _scan("leaf_spot", 0.6, "medium"),
+        _scan("leaf_spot", 0.8, "medium"),
+        _scan("leaf_spot", 0.9, "high"),
     ]
     r = client.post("/api/progression", json={"history": history})
     body = r.json()
@@ -58,7 +58,7 @@ def test_progression_history_improving_trend(client):
     history = [
         _scan("viral_disease", 0.95, "high"),
         _scan("viral_disease", 0.85, "medium"),
-        _scan("leaf_spot_fungal", 0.65, "medium"),
+        _scan("leaf_spot", 0.65, "medium"),
         _scan("healthy", 0.9),
     ]
     r = client.post("/api/progression", json={"history": history})

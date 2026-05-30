@@ -10,15 +10,15 @@ via the ``FakePipeline`` injected by ``conftest.py``.
 
 from __future__ import annotations
 
-# Canonical alphabetical 9-class taxonomy (PlantVision 2.2).
+# Canonical alphabetical 8-class taxonomy (PlantVision 2.2);
+# leaf_spot = merged bacterial + fungal leaf spot.
 # leaf_scorch_underwatering and nutrient_deficiency joined the head
 # per NOTEBOOK_AUDIT §6; edema and sunburn_or_scorch stay deferred.
 EXPECTED_CLASSES = {
-    "bacterial_leaf_spot",
     "gray_mold_botrytis",
     "healthy",
     "leaf_scorch_underwatering",
-    "leaf_spot_fungal",
+    "leaf_spot",
     "not_a_plant",
     "nutrient_deficiency",
     "powdery_mildew",
@@ -81,11 +81,11 @@ def test_healthy_gate_reroutes_on_narrow_gap_even_above_floor():
 
     probs = {n: 0.01 for n in EXPECTED_CLASSES}
     probs["healthy"] = 0.60
-    probs["leaf_spot_fungal"] = 0.52
+    probs["leaf_spot"] = 0.52
     s = sum(probs.values())
     probs = {k: v / s for k, v in probs.items()}
     assert probs["healthy"] > 0.50  # absolute floor wouldn't trigger
-    gap = probs["healthy"] - probs["leaf_spot_fungal"]
+    gap = probs["healthy"] - probs["leaf_spot"]
     assert gap < HEALTHY_GAP_MARGIN  # gap floor must trigger
 
     classification = {
@@ -96,7 +96,7 @@ def test_healthy_gate_reroutes_on_narrow_gap_even_above_floor():
     }
     out = _apply_postprocessing_rules(classification, list(probs.keys()))
 
-    assert out["class_name"] == "leaf_spot_fungal", (
+    assert out["class_name"] == "leaf_spot", (
         "narrow-gap healthy must reroute to the strongest disease"
     )
     assert "weak_healthy_rerouted" in out["warnings"]
@@ -115,10 +115,10 @@ def test_healthy_gate_attaches_warning_when_gap_is_wide():
     # safely above HEALTHY_GAP_MARGIN. Healthy stays below 0.75 so
     # the soft uncertainty warning still attaches.
     probs["healthy"] = 0.70
-    probs["leaf_spot_fungal"] = 0.23
+    probs["leaf_spot"] = 0.23
     s = sum(probs.values())
     probs = {k: v / s for k, v in probs.items()}
-    gap = probs["healthy"] - probs["leaf_spot_fungal"]
+    gap = probs["healthy"] - probs["leaf_spot"]
     assert gap >= HEALTHY_GAP_MARGIN
 
     classification = {
@@ -137,19 +137,19 @@ def test_healthy_gate_attaches_warning_when_gap_is_wide():
 def test_weak_healthy_below_reroute_floor_swaps_to_top_disease():
     """When healthy is below 0.50 and a disease alternative crosses
     ``HEALTHY_DISEASE_FLOOR``, the verdict must swap to that disease.
-    Matches the screenshot bug: 0.29 healthy / 0.24 leaf_spot_fungal /
+    Matches the screenshot bug: 0.29 healthy / 0.24 leaf_spot /
     0.21 gray_mold_botrytis should not be reported as a healthy plant.
     """
     from pipeline import _apply_postprocessing_rules
 
     probs = {n: 0.0 for n in EXPECTED_CLASSES}
     probs["healthy"] = 0.29
-    probs["leaf_spot_fungal"] = 0.24
+    probs["leaf_spot"] = 0.24
     probs["gray_mold_botrytis"] = 0.21
     # Spread the remaining mass over the other classes so the dict
     # still sums to 1.0.
     leftover = 1.0 - (0.29 + 0.24 + 0.21)
-    other_classes = [n for n in probs if n not in ("healthy", "leaf_spot_fungal", "gray_mold_botrytis")]
+    other_classes = [n for n in probs if n not in ("healthy", "leaf_spot", "gray_mold_botrytis")]
     for n in other_classes:
         probs[n] = leftover / len(other_classes)
     classification = {
@@ -160,7 +160,7 @@ def test_weak_healthy_below_reroute_floor_swaps_to_top_disease():
     }
     out = _apply_postprocessing_rules(classification, list(probs.keys()))
 
-    assert out["class_name"] == "leaf_spot_fungal", (
+    assert out["class_name"] == "leaf_spot", (
         "weak-healthy reroute must surface the strongest disease alternative"
     )
     assert "weak_healthy_rerouted" in out["warnings"]
@@ -256,7 +256,7 @@ def test_low_confidence_warning_is_propagated():
 
     probs = _uniform_probs()
     classification = {
-        "class_name": "leaf_spot_fungal",
+        "class_name": "leaf_spot",
         "confidence": 1.0 / len(probs),
         "all_probs": probs,
         "low_confidence": True,
@@ -337,7 +337,7 @@ def test_weak_disease_verdict_stays_disease_not_synthesised_healthy():
 
     probs = _uniform_probs()
     probs["viral_disease"] = 0.32     # would have been the rejected top-1
-    probs["leaf_spot_fungal"] = 0.30  # the band the old reroute couldn't catch
+    probs["leaf_spot"] = 0.30  # the band the old reroute couldn't catch
     probs["healthy"] = 0.22
     s = sum(probs.values())
     probs = {k: v / s for k, v in probs.items()}
@@ -427,12 +427,16 @@ def test_classes_json_in_repo_drives_pipeline_config():
     meta = json.loads(repo_classes.read_text(encoding="utf-8"))
     class_set = set(meta["class_names"])
     assert "healthy" in class_set and "not_a_plant" in class_set
-    # Either the shipped v2.1 7-class set or the v2.2 9-class superset.
-    v21_classes = {
+    # The current code targets the merged 8-class set (EXPECTED_CLASSES),
+    # but the shipped artefact lags until the next A100 retrain regenerates
+    # classes.json + classifier.onnx together. The artefact in tree today is
+    # the v2.1 7-class set (pre-merge, pre-physiological), still valid on
+    # disk, so accept either. Anything else is genuine taxonomy drift.
+    LEGACY_V21_CLASSES = {
         "bacterial_leaf_spot", "gray_mold_botrytis", "healthy",
         "leaf_spot_fungal", "not_a_plant", "powdery_mildew", "viral_disease",
     }
-    assert class_set in (v21_classes, EXPECTED_CLASSES), (
+    assert class_set in (LEGACY_V21_CLASSES, EXPECTED_CLASSES), (
         f"class set drift: {class_set ^ EXPECTED_CLASSES}"
     )
     assert len(meta["class_names"]) == len(class_set)  # no duplicates
@@ -463,11 +467,11 @@ def test_severity_escalates_with_area_and_margin():
     small_box = {"width": 30, "height": 30}
 
     high = compute_severity(
-        class_name="leaf_spot_fungal", confidence=0.92, healthy_prob=0.05,
+        class_name="leaf_spot", confidence=0.92, healthy_prob=0.05,
         primary_box=big_box, image_size=(640, 640), is_diseased=True,
     )
     low = compute_severity(
-        class_name="leaf_spot_fungal", confidence=0.66, healthy_prob=0.40,
+        class_name="leaf_spot", confidence=0.66, healthy_prob=0.40,
         primary_box=small_box, image_size=(640, 640), is_diseased=True,
     )
     assert high == "high"

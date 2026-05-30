@@ -453,8 +453,7 @@
     <string name="feedback_class_healthy">Здоровое</string>
     <string name="feedback_class_powdery_mildew">Мучнистая роса</string>
     <string name="feedback_class_gray_mold_botrytis">Серая гниль</string>
-    <string name="feedback_class_leaf_spot_fungal">Грибковая пятнистость</string>
-    <string name="feedback_class_bacterial_leaf_spot">Бактериальная пятнистость</string>
+    <string name="feedback_class_leaf_spot">Пятнистость листьев</string>
     <string name="feedback_class_viral_disease">Вирусное заболевание</string>
     <string name="feedback_class_not_a_plant">Не растение</string>
     <string name="feedback_class_edema">Эдема</string>
