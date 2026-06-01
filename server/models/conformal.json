@@ -1,19 +1,23 @@
 {
   "method": "raps",
   "alpha": 0.1,
-  "q_hat": 0.9919968247413635,
+  "q_hat": 0.9992967844009399,
   "lambda_reg": 0.01,
   "k_reg": 1,
-  "calibration_n": 128,
-  "empirical_coverage": 1.0,
+  "calibration_n": 452,
+  "empirical_coverage": 0.9912280701754386,
   "empirical_coverage_kind": "out_of_sample",
-  "mean_set_size": 3.4375,
-  "audit_n": 128,
-  "in_sample_coverage": 0.9921875,
-  "in_sample_mean_set_size": 3.4453125,
-  "coverage_scope": "plant inputs (plantdoc+inat); not_a_plant routes through Stage 1 detector + MaxLogit OOD gate, not RAPS",
+  "mean_set_size": 2.6052631578947367,
+  "audit_n": 114,
+  "in_sample_coverage": 0.9823008849557522,
+  "in_sample_mean_set_size": 2.7101769911504423,
+  "coverage_scope": "all 9 classes (plantdoc, inat, coco, inat_animalia, openimages_indoor); not_a_plant is additionally guarded by the Stage 1 detector + MaxLogit OOD floor.",
   "cal_sources": [
     "plantdoc",
-    "inat"
-  ]
+    "inat",
+    "coco",
+    "inat_animalia",
+    "openimages_indoor"
+  ],
+  "fit_source": "int8"
 }
