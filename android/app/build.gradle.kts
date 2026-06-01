@@ -151,4 +151,7 @@ dependencies {
 
     // WorkManager (plant reminders)
     implementation("androidx.work:work-runtime-ktx:2.9.0")
+
+    // TensorFlow Lite (offline inference fallback)
+    implementation("org.tensorflow:tensorflow-lite:2.14.0")
 }

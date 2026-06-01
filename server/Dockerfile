@@ -3,7 +3,7 @@
 # Pip + apt artefacts stay in this stage; only the resulting wheels
 # travel to the runtime image. Saves ~700 MB and trims the runtime
 # attack surface (no compiler, no apt-get, no pip cache).
-FROM python:3.11-slim AS builder
+FROM python:3.11.9-slim AS builder
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -12,21 +12,17 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /build
 
-# Build deps for any wheels that need to compile (numpy on platforms
-# without a manylinux wheel, occasionally onnxruntime).
+# Build deps for any wheels that need to compile
 RUN apt-get update && \
     apt-get install -y --no-install-recommends gcc g++ && \
     rm -rf /var/lib/apt/lists/*
 
-# Install everything into /install so the runtime stage can copy
-# `site-packages` wholesale.
+# Install requirements
 COPY requirements.txt .
-RUN pip install --prefix=/install \
-        torch torchvision --index-url https://download.pytorch.org/whl/cpu && \
-    pip install --prefix=/install -r requirements.txt
+RUN pip install --prefix=/install -r requirements.txt
 
 # ── Runtime stage ────────────────────────────────────────────────────
-FROM python:3.11-slim AS runtime
+FROM python:3.11.9-slim AS runtime
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

@@ -56,7 +56,7 @@ def _flatten(data: dict[str, Any], prefix: str = "") -> dict[str, Any]:
     forcing us to invent a new key namespace."""
     flat: dict[str, Any] = {}
     for k, v in data.items():
-        if isinstance(v, dict):
+        if isinstance(v, dict) and k.lower() != "api_keys":
             flat.update(_flatten(v, prefix=""))
         else:
             flat[k.upper()] = v
@@ -67,10 +67,10 @@ _FILE_DATA: dict[str, Any] = _load_file()
 
 
 def get(key: str, default: Any = None, cast: type | None = None) -> Any:
-    """Read a config key. File wins over env wins over default."""
-    raw: Any = _FILE_DATA.get(key.upper())
+    """Read a config key. Env variables override file config wins over default fallback."""
+    raw: Any = os.environ.get(key, None)
     if raw is None:
-        raw = os.environ.get(key, None)
+        raw = _FILE_DATA.get(key.upper())
     if raw is None:
         return default
     if cast is None or isinstance(raw, cast):

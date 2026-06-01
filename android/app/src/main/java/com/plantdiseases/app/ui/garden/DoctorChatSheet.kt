@@ -296,7 +296,7 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
                     "class_name" to classKey,
                     "disease_name" to it.diseaseName,
                     "confidence" to it.confidence.toDouble(),
-                    "severity" to severityHint(it.confidence, it.isHealthy),
+                    "severity" to it.severity,
                     "is_healthy" to it.isHealthy,
                     "warnings" to scanRepo.parseWarnings(it.warnings),
                     "plant_name" to plant.name,

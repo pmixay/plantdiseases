@@ -101,6 +101,7 @@ data class AnalysisResponse(
     // (422 "Unknown scan_id"). Optional in the type so older cached
     // responses without it still deserialise cleanly.
     @SerializedName("scan_id") val scanId: String? = null,
+    @SerializedName("severity") val severity: String? = null,
     // Same-photo dedup signal from /api/analyse. ``isRepeat=true``
     // means the server replayed a previously-computed response from
     // its SHA-256 cache; the verdict is byte-identical to whatever

@@ -13,8 +13,8 @@ Loading is fail-fast: if no usable artefact is found, ``__init__``
 raises ``DetectorLoadError`` so the API never boots in a half-broken
 state. There is no heuristic / demo fallback path.
 
-ONNX is loaded transparently: ``YOLO('detector.onnx')`` works exactly
-like the .pt path. Production deployments should ship ``detector.onnx``.
+ONNX is loaded transparently via raw onnxruntime. Production deployments
+must ship ``detector.onnx``.
 """
 
 from __future__ import annotations
@@ -47,48 +47,110 @@ def _resolve_detector_path(model_path: Path | None) -> Path | None:
     onnx = parent / "detector.onnx"
     if onnx.exists():
         return onnx
-    if model_path.exists():
+    if model_path.suffix.lower() == ".onnx" and model_path.exists():
         return model_path
+    alternative = model_path.with_suffix(".onnx")
+    if alternative.exists():
+        return alternative
     return None
 
 
+def nms(boxes: np.ndarray, scores: np.ndarray, iou_threshold: float) -> list[int]:
+    """Pure NumPy Non-Maximum Suppression (NMS)."""
+    if len(boxes) == 0:
+        return []
+    x1 = boxes[:, 0]
+    y1 = boxes[:, 1]
+    x2 = boxes[:, 2]
+    y2 = boxes[:, 3]
+    areas = (x2 - x1) * (y2 - y1)
+    order = scores.argsort()[::-1]
+
+    keep = []
+    while order.size > 0:
+        i = order[0]
+        keep.append(i)
+        xx1 = np.maximum(x1[i], x1[order[1:]])
+        yy1 = np.maximum(y1[i], y1[order[1:]])
+        xx2 = np.minimum(x2[i], x2[order[1:]])
+        yy2 = np.minimum(y2[i], y2[order[1:]])
+
+        w = np.maximum(0.0, xx2 - xx1)
+        h = np.maximum(0.0, yy2 - yy1)
+        inter = w * h
+        ovr = inter / (areas[i] + areas[order[1:]] - inter)
+
+        inds = np.where(ovr <= iou_threshold)[0]
+        order = order[inds + 1]
+    return keep
+
+
+def letterbox(img: Image.Image, target_size: int = 640) -> tuple[np.ndarray, float, tuple[float, float]]:
+    """Resize keeping aspect ratio, and pad to target_size x target_size."""
+    w, h = img.size
+    scale = target_size / max(w, h)
+    new_w = int(round(w * scale))
+    new_h = int(round(h * scale))
+    resized = img.resize((new_w, new_h), Image.BILINEAR)
+
+    # 114 is the standard YOLO grey padding
+    new_img = Image.new("RGB", (target_size, target_size), (114, 114, 114))
+    pad_x = (target_size - new_w) // 2
+    pad_y = (target_size - new_h) // 2
+    new_img.paste(resized, (pad_x, pad_y))
+
+    arr = np.asarray(new_img, dtype=np.float32) / 255.0
+    arr = arr.transpose(2, 0, 1)  # HWC to CHW
+    arr = np.ascontiguousarray(arr[None])  # NCHW
+    return arr, scale, (pad_x, pad_y)
+
+
 class LeafDetector:
-    """YOLOv8n-based single-class leaf detector."""
+    """YOLOv8n-based single-class leaf detector running on raw ONNX Runtime."""
 
     def __init__(self, model_path: Path | None = None):
         self.model = None
-        self.device = "cpu"
+        self.input_name = ""
 
         resolved = _resolve_detector_path(model_path)
         if resolved is None:
             raise DetectorLoadError(
-                "Cannot start without a trained detector. "
-                "Expected detector.onnx or detector.pt next to the configured model path."
+                "Cannot start without a trained detector ONNX model. "
+                "Expected detector.onnx next to the configured model path."
             )
         try:
             self._load_model(resolved)
         except Exception as e:
-            raise DetectorLoadError(f"Failed to load YOLO detector {resolved}: {e}") from e
+            raise DetectorLoadError(f"Failed to load YOLO ONNX detector {resolved}: {e}") from e
 
     @property
     def is_loaded(self) -> bool:
         return self.model is not None
 
     def _load_model(self, path: Path) -> None:
-        from ultralytics import YOLO  # type: ignore
+        import onnxruntime as ort
 
-        self.model = YOLO(str(path))
-        # Warm up so the first request isn't paying JIT/init cost.
-        self.model.predict(
-            np.zeros((DETECTOR_IMG_SIZE, DETECTOR_IMG_SIZE, 3), dtype=np.uint8),
-            imgsz=DETECTOR_IMG_SIZE, verbose=False, device=self.device,
+        opts = ort.SessionOptions()
+        opts.intra_op_num_threads = 1
+        opts.inter_op_num_threads = 1
+        opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+
+        self.model = ort.InferenceSession(
+            str(path),
+            sess_options=opts,
+            providers=["CPUExecutionProvider"],
         )
-        logger.info("YOLOv8 detector loaded from %s", path)
+        self.input_name = self.model.get_inputs()[0].name
+
+        # Warm up so the first request isn't paying JIT/init cost.
+        dummy_input = np.zeros((1, 3, DETECTOR_IMG_SIZE, DETECTOR_IMG_SIZE), dtype=np.float32)
+        self.model.run(None, {self.input_name: dummy_input})
+        logger.info("ONNX YOLOv8 detector loaded from %s", path)
 
     # ── public API ───────────────────────────────────────────────────
 
     def detect(self, img: Image.Image) -> dict:
-        """Run detection on a PIL image.
+        """Run detection on a PIL image using ONNX Runtime.
 
         Returns
         -------
@@ -101,38 +163,69 @@ class LeafDetector:
                           pipeline may override this after consulting
                           the classifier (disease-aware selection).
         """
-        arr = np.array(img)
-        results = self.model.predict(
-            arr,
-            imgsz=DETECTOR_IMG_SIZE,
-            conf=MIN_CONFIDENCE,
-            iou=0.45,
-            max_det=MAX_DETECTIONS,
-            verbose=False,
-            device=self.device,
-        )
-        if not results:
-            return self._empty_result()
-        r = results[0]
-        if r.boxes is None or len(r.boxes) == 0:
+        orig_w, orig_h = img.size
+        input_data, scale, (pad_x, pad_y) = letterbox(img, DETECTOR_IMG_SIZE)
+
+        outputs = self.model.run(None, {self.input_name: input_data})
+        output = outputs[0][0]  # Shape (5, 8400) for single-class YOLOv8
+
+        confs = output[4, :]
+        indices = np.where(confs >= MIN_CONFIDENCE)[0]
+        if len(indices) == 0:
             return self._empty_result()
 
-        boxes_xyxy = r.boxes.xyxy.cpu().numpy()
-        confs = r.boxes.conf.cpu().numpy()
+        boxes = output[:4, indices].T  # Shape (N, 4)
+        confs = confs[indices]
+
+        # Convert cx, cy, w, h to x1, y1, x2, y2 (640x640 space)
+        cx, cy, w, h = boxes[:, 0], boxes[:, 1], boxes[:, 2], boxes[:, 3]
+        x1 = cx - w / 2.0
+        y1 = cy - h / 2.0
+        x2 = cx + w / 2.0
+        y2 = cy + h / 2.0
+        xyxy = np.stack([x1, y1, x2, y2], axis=1)
+
+        # Run NMS
+        keep = nms(xyxy, confs, iou_threshold=0.45)
+        if not keep:
+            return self._empty_result()
+
+        xyxy = xyxy[keep]
+        confs = confs[keep]
 
         detections: list[dict] = []
-        # strict=True: a length mismatch between bboxes and confidences would
-        # be an upstream YOLO bug, not something to silently mask.
-        for (x1, y1, x2, y2), conf in zip(boxes_xyxy, confs, strict=True):
-            detections.append({
-                "x": int(max(0, round(x1))),
-                "y": int(max(0, round(y1))),
-                "width": int(max(1, round(x2 - x1))),
-                "height": int(max(1, round(y2 - y1))),
-                "class": "plant_leaf",
-                "confidence": round(float(conf), 4),
-            })
+        for i in range(len(xyxy)):
+            box = xyxy[i]
+            conf = confs[i]
+
+            # Map back to original image space
+            bx1 = (box[0] - pad_x) / scale
+            by1 = (box[1] - pad_y) / scale
+            bx2 = (box[2] - pad_x) / scale
+            by2 = (box[3] - pad_y) / scale
+
+            # Clip coordinates to original image bounds
+            bx1 = max(0.0, min(bx1, float(orig_w)))
+            by1 = max(0.0, min(by1, float(orig_h)))
+            bx2 = max(0.0, min(bx2, float(orig_w)))
+            by2 = max(0.0, min(by2, float(orig_h)))
+
+            bw = bx2 - bx1
+            bh = by2 - by1
+
+            if bw >= 1 and bh >= 1:
+                detections.append({
+                    "x": int(round(bx1)),
+                    "y": int(round(by1)),
+                    "width": int(round(bw)),
+                    "height": int(round(bh)),
+                    "class": "plant_leaf",
+                    "confidence": round(float(conf), 4),
+                })
+
         detections.sort(key=lambda d: -d["confidence"])
+        detections = detections[:MAX_DETECTIONS]
+
         return self._build_result(detections)
 
     # ── helpers ──────────────────────────────────────────────────────

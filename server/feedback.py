@@ -560,3 +560,51 @@ def feedback_counts() -> dict:
         "top_corrections": top_corrections,
         "reasons": reasons,
     }
+
+
+def delete_for_user(user_pseudo_id: str) -> int:
+    """Erase every row + feedback image associated with user_pseudo_id. Part of GDPR data deletion."""
+    init_db()
+    if not user_pseudo_id:
+        return 0
+    with _write_lock, _connect() as conn:
+        rows = conn.execute(
+            "SELECT image_path FROM feedback WHERE user_pseudo_id = ?",
+            (user_pseudo_id,),
+        ).fetchall()
+        deleted = conn.execute(
+            "DELETE FROM feedback WHERE user_pseudo_id = ?",
+            (user_pseudo_id,),
+        ).rowcount
+
+    import contextlib
+    for row in rows:
+        img_path = row[0]
+        if not img_path:
+            continue
+        # Verify if any other feedback rows still reference this image
+        with _connect() as conn:
+            still_referenced = conn.execute(
+                "SELECT 1 FROM feedback WHERE image_path = ? LIMIT 1",
+                (img_path,),
+            ).fetchone()
+        if not still_referenced:
+            with contextlib.suppress(OSError):
+                (FEEDBACK_IMG_DIR / img_path).unlink(missing_ok=True)
+
+    return int(deleted or 0)
+
+
+def get_user_data(user_pseudo_id: str) -> list[dict]:
+    """Retrieve all feedback submissions for a user. Part of GDPR data portability."""
+    init_db()
+    if not user_pseudo_id:
+        return []
+    with _connect() as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT * FROM feedback WHERE user_pseudo_id = ? ORDER BY created_at DESC",
+            (user_pseudo_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+

@@ -138,6 +138,7 @@ data class ScanEntity(
     // feedback submission must echo the DISPLAYED verdict — not
     // the argmax — to keep per-class accuracy metrics honest.
     @ColumnInfo(name = "displayed_class_key") val displayedClassKey: String? = null,
+    @ColumnInfo(name = "severity") val severity: String = "low",
 )
 
 // ─── Plant Reminder Entity ──────────────────────────────────────────────────
@@ -368,7 +369,7 @@ interface PlantJournalDao {
     // testing: ``fallbackToDestructiveMigration`` is configured below
     // and any schema change wipes local data on next launch. Real
     // migrations come later, alongside cloud sync.
-    version = 1,
+    version = 2,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -383,6 +384,12 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
+        val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE scans ADD COLUMN severity TEXT NOT NULL DEFAULT 'low'")
+            }
+        }
+
         fun getInstance(context: android.content.Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -390,6 +397,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "plantdiseases_db"
                 )
+                    .addMigrations(MIGRATION_1_2)
                     .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance

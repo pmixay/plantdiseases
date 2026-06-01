@@ -122,7 +122,10 @@ class DiseaseClassifier:
 
         if not self.is_loaded and model_path and model_path.exists():
             try:
+                import torch
                 self._load_pytorch_model(model_path)
+            except ImportError:
+                logger.info("PyTorch is not installed; skipping PyTorch classifier fallback")
             except Exception as e:
                 load_errors.append(f"PyTorch {model_path}: {e}")
                 logger.error("Failed to load PyTorch classifier %s: %s", model_path, e)

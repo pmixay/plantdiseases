@@ -61,6 +61,7 @@ PLANTNET_CACHE_SIZE = get_int("PLANTNET_CACHE_SIZE", 256)
 OPENROUTER_API_KEY = get_str("OPENROUTER_API_KEY", "").strip()
 OPENROUTER_MODEL = get_str("OPENROUTER_MODEL", "openai/gpt-oss-120b").strip()
 OPENROUTER_BASE_URL = get_str("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
+OPENROUTER_TOTAL_TIMEOUT = get_float("OPENROUTER_TOTAL_TIMEOUT", 20.0)
 
 # Hard caps so a runaway client can't blow the budget. Tune via config
 # in production.
@@ -316,11 +317,20 @@ def _call_openrouter(
     }
 
     last_exc: Exception | None = None
+    start_time = time.time()
     for attempt in range(_OPENROUTER_MAX_RETRIES):
+        elapsed = time.time() - start_time
+        remaining = OPENROUTER_TOTAL_TIMEOUT - elapsed
+        if remaining <= 0.5:
+            if last_exc:
+                raise last_exc
+            raise requests.Timeout("OpenRouter request timed out (total budget exceeded)")
+        
+        attempt_timeout = max(1.0, remaining)
         try:
             r = requests.post(
                 f"{OPENROUTER_BASE_URL}/chat/completions",
-                headers=headers, json=payload, timeout=20.0,
+                headers=headers, json=payload, timeout=attempt_timeout,
             )
         except (requests.ConnectionError, requests.Timeout) as exc:
             last_exc = exc
@@ -1151,6 +1161,68 @@ def _build_markdown_summary(plan: dict, locale: str) -> str:
     return md
 
 
+def _enforce_canonical_dosages(text: str, plan: dict) -> bool:
+    """Verify that the LLM-polished summary does not contradict the canonical dosages.
+    Returns True if valid, False if it violates the canonical numbers.
+    """
+    import re
+    text_lower = text.lower()
+    
+    # 1. Check NPK: if the canonical NPK has digits (like "10-15-10"), the polished text
+    # should not contain a different NPK ratio pattern.
+    canonical_npk = str(plan.get("fertiliser_npk", "")).lower()
+    npk_pattern = re.compile(r"\b\d{1,2}[-:\s]+\d{1,2}[-:\s]+\d{1,2}\b")
+    canonical_npk_nums = re.findall(r"\d+", canonical_npk)
+    
+    for match in npk_pattern.finditer(text_lower):
+        matched_str = match.group(0)
+        matched_nums = re.findall(r"\d+", matched_str)
+        if matched_nums != canonical_npk_nums:
+            logger.warning(
+                "LLM polish rejected: NPK ratio mismatch. Polished: %r, Canonical: %r",
+                matched_str, canonical_npk
+            )
+            return False
+
+    # Helper to check numbers near keywords
+    def check_keyword_number(keywords: list[str], canonical_val: int, label: str) -> bool:
+        for kw in keywords:
+            # Search for keyword and check any numbers within 40 characters before or after
+            for match in re.finditer(re.escape(kw), text_lower):
+                start = max(0, match.start() - 40)
+                end = min(len(text_lower), match.end() + 40)
+                window = text_lower[start:end]
+                # Find all numbers in this window
+                numbers = [int(n) for n in re.findall(r"\b\d+\b", window)]
+                for num in numbers:
+                    # Ignore common numbers like 1 (as in "1 time") or 0
+                    if num in (0, 1):
+                        continue
+                    if num != canonical_val:
+                        logger.warning(
+                            "LLM polish rejected: %s mismatch in window %r around %r. Polished: %d, Canonical: %d",
+                            label, window, kw, num, canonical_val
+                        )
+                        return False
+        return True
+
+    # 2. Check watering days
+    watering_val = plan.get("watering_days")
+    if isinstance(watering_val, int):
+        watering_kws = ["water", "watering", "полив"]
+        if not check_keyword_number(watering_kws, watering_val, "watering"):
+            return False
+
+    # 3. Check fertilising weeks
+    fertilise_val = plan.get("fertilise_weeks")
+    if isinstance(fertilise_val, int):
+        fertilise_kws = ["fertiliz", "fertilise", "fertilising", "fertilizer", "удобр"]
+        if not check_keyword_number(fertilise_kws, fertilise_val, "fertilise"):
+            return False
+
+    return True
+
+
 def _polish_plan_with_llm(plan: dict, locale: str) -> dict:
     """Optional LLM polish step. Returns the plan with a friendly
     Markdown summary attached, or the input plan unchanged on failure.
@@ -1173,7 +1245,7 @@ def _polish_plan_with_llm(plan: dict, locale: str) -> dict:
     user_blocks = [{"role": "user", "content": json.dumps(plan, ensure_ascii=False)}]
     try:
         polish, _, _ = _call_openrouter(system, user_blocks, max_tokens=400)
-        if polish:
+        if polish and _enforce_canonical_dosages(polish, plan):
             plan = {**plan, "summary_md": polish}
     except Exception as e:  # noqa: BLE001
         logger.info("Care-plan polish skipped: %s", e)

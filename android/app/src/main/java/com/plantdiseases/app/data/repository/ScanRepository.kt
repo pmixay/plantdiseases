@@ -17,6 +17,7 @@ import com.plantdiseases.app.data.model.ProgressionResponse
 import com.plantdiseases.app.data.model.ScanHistoryItem
 import com.plantdiseases.app.data.remote.ApiService
 import com.plantdiseases.app.data.remote.PlantApiClient
+import com.plantdiseases.app.data.classifier.TFLiteClassifier
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -30,11 +31,13 @@ import java.net.UnknownHostException
 class ScanRepository(
     private val scanDao: ScanDao,
     private val apiClient: PlantApiClient,
+    private val context: android.content.Context,
 ) {
     private val apiService: ApiService
         get() = apiClient.apiService
 
     private val gson = Gson()
+    private val offlineClassifier by lazy { TFLiteClassifier(context) }
 
     /**
      * Send image to server for analysis. `speciesHint` is optional —
@@ -68,15 +71,25 @@ class ScanRepository(
                     Result.failure(Exception("Server error: ${response.code()} ${response.message()}"))
                 }
             } catch (e: SocketTimeoutException) {
-                Result.failure(ServerTimeoutException())
+                runOfflineFallback(imageFile, e)
             } catch (e: UnknownHostException) {
-                Result.failure(NoNetworkException())
+                runOfflineFallback(imageFile, e)
             } catch (e: java.net.ConnectException) {
-                Result.failure(ServerTimeoutException())
+                runOfflineFallback(imageFile, e)
+            } catch (e: java.io.IOException) {
+                runOfflineFallback(imageFile, e)
             } catch (e: Exception) {
                 Result.failure(e)
             }
         }
+
+    private fun runOfflineFallback(imageFile: File, cause: Exception): Result<AnalysisResponse> {
+        return try {
+            Result.success(offlineClassifier.classifyImage(imageFile))
+        } catch (e: Exception) {
+            Result.failure(cause)
+        }
+    }
 
     /**
      * Ask the server's PlantNet proxy to identify the species in `imageFile`.
@@ -287,7 +300,7 @@ class ScanRepository(
             "disease_name" to scan.diseaseName,
             "confidence" to scan.confidence.toDouble(),
             "is_healthy" to scan.isHealthy,
-            "severity" to severityHint(scan),
+            "severity" to scan.severity,
             "warnings" to parseWarnings(scan.warnings),
         )
     }
@@ -389,6 +402,7 @@ class ScanRepository(
                     .takeIf { it.isNotEmpty() }
                     ?.let { gson.toJson(it) },
                 toxicitySource = result.toxicitySource,
+                severity = result.severity ?: "low",
             )
             scanDao.insert(entity)
         }

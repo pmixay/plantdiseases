@@ -21,18 +21,23 @@ import logging
 import math
 import threading
 import time
+import uuid
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+import redis
+import sentry_sdk
+from fastapi import FastAPI, APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel, Field, field_validator
+from sentry_sdk.integrations.fastapi import FastApiIntegration
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response as StarletteResponse
 
@@ -52,52 +57,31 @@ try:
     )
     from .community import (
         COMMUNITY_THUMB_DIR,
-    )
-    from .community import (
         daily_write_count_for_ip_hash as community_daily_writes,
-    )
-    from .community import (
         delete_for_user as community_delete_for_user,
-    )
-    from .community import (
         init_db as init_community_db,
-    )
-    from .community import (
         nearby_scans as community_nearby_scans,
-    )
-    from .community import (
         prune_older_than as community_prune_older_than,
-    )
-    from .community import (
         record_scan as community_record_scan,
-    )
-    from .community import (
         region_summary as community_region_summary,
-    )
-    from .community import (
         stats_snapshot as community_stats_snapshot,
+        get_user_data as community_get_user_data,
     )
-    from .config import get_float, get_int, get_list, get_str
+    from .config import get, get_float, get_int, get_list, get_str
     from .diseases_data import DISEASES_DATABASE, lookup_pet_toxicity
     from .feedback import (
         attach_image_path as feedback_attach_image_path,
-    )
-    from .feedback import (
         daily_write_count_for_ip_hash as feedback_daily_writes,
-    )
-    from .feedback import (
         feedback_counts,
         hash_client_ip,
         is_scan_id_issued,
         record_feedback,
         record_issued_scan_id,
         save_feedback_image,
-    )
-    from .feedback import (
         init_db as init_feedback_db,
-    )
-    from .feedback import (
         prune_older_than as feedback_prune_older_than,
+        delete_for_user as feedback_delete_for_user,
+        get_user_data as feedback_get_user_data,
     )
     from .pipeline import PlantDiseasePipeline
 except ImportError:
@@ -110,52 +94,31 @@ except ImportError:
     )
     from community import (
         COMMUNITY_THUMB_DIR,
-    )
-    from community import (
         daily_write_count_for_ip_hash as community_daily_writes,
-    )
-    from community import (
         delete_for_user as community_delete_for_user,
-    )
-    from community import (
         init_db as init_community_db,
-    )
-    from community import (
         nearby_scans as community_nearby_scans,
-    )
-    from community import (
         prune_older_than as community_prune_older_than,
-    )
-    from community import (
         record_scan as community_record_scan,
-    )
-    from community import (
         region_summary as community_region_summary,
-    )
-    from community import (
         stats_snapshot as community_stats_snapshot,
+        get_user_data as community_get_user_data,
     )
-    from config import get_float, get_int, get_list, get_str
+    from config import get, get_float, get_int, get_list, get_str
     from diseases_data import DISEASES_DATABASE, lookup_pet_toxicity
     from feedback import (
         attach_image_path as feedback_attach_image_path,
-    )
-    from feedback import (
         daily_write_count_for_ip_hash as feedback_daily_writes,
-    )
-    from feedback import (
         feedback_counts,
         hash_client_ip,
         is_scan_id_issued,
         record_feedback,
         record_issued_scan_id,
         save_feedback_image,
-    )
-    from feedback import (
         init_db as init_feedback_db,
-    )
-    from feedback import (
         prune_older_than as feedback_prune_older_than,
+        delete_for_user as feedback_delete_for_user,
+        get_user_data as feedback_get_user_data,
     )
     from pipeline import PlantDiseasePipeline
 
@@ -167,14 +130,46 @@ except Exception:
 # Limit Pillow decompression to prevent zip-bomb DoS
 Image.MAX_IMAGE_PIXELS = 20_000_000  # ~4500×4500
 
+# ── Telemetry & Telemetry ────────────────────────────────────────────
+sentry_dsn = get_str("SENTRY_DSN", "").strip()
+if sentry_dsn:
+    sentry_sdk.init(
+        dsn=sentry_dsn,
+        integrations=[FastApiIntegration()],
+        traces_sample_rate=get_float("SENTRY_TRACES_SAMPLE_RATE", 1.0),
+        profiles_sample_rate=get_float("SENTRY_PROFILES_SAMPLE_RATE", 1.0),
+    )
+
+request_id_var: ContextVar[str] = ContextVar("request_id", default="")
+
+class JSONFormatter(logging.Formatter):
+    def format(self, record):
+        log_entry = {
+            "timestamp": self.formatTime(record, self.datefmt),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        trace_id = request_id_var.get()
+        if trace_id:
+            log_entry["trace_id"] = trace_id
+        if record.exc_info:
+            log_entry["exception"] = self.formatException(record.exc_info)
+        return json.dumps(log_entry, ensure_ascii=False)
+
 # ── Logging ──────────────────────────────────────────────────────────
 LOG_DIR = Path(get_str("LOG_DIR", "logs"))
 LOG_DIR.mkdir(exist_ok=True)
 
-_log_fmt = logging.Formatter(
-    "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
+USE_STRUCTURED_LOGS = get("STRUCTURED_LOGS", False, cast=bool)
+if USE_STRUCTURED_LOGS:
+    _log_fmt = JSONFormatter(datefmt="%Y-%m-%d %H:%M:%S")
+else:
+    _log_fmt = logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
 console_handler = logging.StreamHandler()
 console_handler.setLevel(logging.INFO)
 console_handler.setFormatter(_log_fmt)
@@ -211,6 +206,30 @@ INFERENCE_TIMEOUT = get_float("INFERENCE_TIMEOUT", 30.0)
 # client render a friendly "you saw this one earlier" banner. The
 # cache is intentionally in-memory only: it loses state on restart,
 # which is the right behaviour while the model itself is in flux.
+# Redis client initialization for multi-instance cache and quotas
+_redis_client = None
+_redis_available = False
+
+redis_url = get_str("REDIS_URL", "").strip()
+if not redis_url:
+    redis_host = get_str("REDIS_HOST", "").strip()
+    redis_port = get_int("REDIS_PORT", 6379)
+    redis_db = get_int("REDIS_DB", 0)
+    redis_password = get_str("REDIS_PASSWORD", "").strip()
+    if redis_host:
+        redis_url = f"redis://:{redis_password}@{redis_host}:{redis_port}/{redis_db}" if redis_password else f"redis://{redis_host}:{redis_port}/{redis_db}"
+
+if redis_url:
+    try:
+        _redis_client = redis.Redis.from_url(redis_url, socket_timeout=2.0)
+        _redis_client.ping()
+        _redis_available = True
+        logger.info("Connected to Redis cache at %s", redis_url)
+    except Exception as e:
+        logger.warning("Failed to connect to Redis, using in-memory fallback: %s", e)
+        _redis_client = None
+        _redis_available = False
+
 ANALYZE_CACHE_TTL_SECONDS = get_int("ANALYZE_CACHE_TTL_SECONDS", 3600)
 ANALYZE_CACHE_MAX_ENTRIES = get_int("ANALYZE_CACHE_MAX_ENTRIES", 512)
 _analyze_cache: "OrderedDict[str, tuple[float, dict]]" = OrderedDict()
@@ -220,7 +239,16 @@ def _analyze_cache_get(cache_key: str) -> dict | None:
     """Return a previously-stored analyse response keyed by
     ``<image_sha>:<plantnet_lang>``, or ``None`` if there's nothing
     fresh under that key. Updates LRU recency on hit so frequent
-    re-uploads stay warm."""
+    re-uploads stay warm. Resolves from Redis if available, with in-memory fallback."""
+    if _redis_available and _redis_client:
+        try:
+            val = _redis_client.get(f"plantvision:analyze:{cache_key}")
+            if val:
+                data = json.loads(val.decode("utf-8"))
+                return data
+        except Exception as e:
+            logger.warning("Redis cache get error: %s", e)
+
     now = time.time()
     with _analyze_cache_lock:
         item = _analyze_cache.get(cache_key)
@@ -228,16 +256,27 @@ def _analyze_cache_get(cache_key: str) -> dict | None:
             return None
         cached_at, payload = item
         if now - cached_at > ANALYZE_CACHE_TTL_SECONDS:
-            # Stale — drop it so the upload re-runs against the
-            # current model.
             _analyze_cache.pop(cache_key, None)
             return None
         _analyze_cache.move_to_end(cache_key)
         return {"cached_at": cached_at, "payload": payload}
 
 def _analyze_cache_put(cache_key: str, payload: dict) -> None:
+    now = time.time()
+    if _redis_available and _redis_client:
+        try:
+            data = {"cached_at": now, "payload": payload}
+            _redis_client.setex(
+                f"plantvision:analyze:{cache_key}",
+                ANALYZE_CACHE_TTL_SECONDS,
+                json.dumps(data, ensure_ascii=False)
+            )
+            return
+        except Exception as e:
+            logger.warning("Redis cache put error: %s", e)
+
     with _analyze_cache_lock:
-        _analyze_cache[cache_key] = (time.time(), payload)
+        _analyze_cache[cache_key] = (now, payload)
         _analyze_cache.move_to_end(cache_key)
         while len(_analyze_cache) > ANALYZE_CACHE_MAX_ENTRIES:
             _analyze_cache.popitem(last=False)
@@ -284,6 +323,115 @@ RATE_LIMIT_RPS = get_float("RATE_LIMIT_RPS", 1.0)
 # scan + its post-result side calls.
 RATE_LIMIT_BURST = get_float("RATE_LIMIT_BURST", 5.0)
 TRUSTED_PROXIES = set(get_list("TRUSTED_PROXIES", []))
+
+# API Keys configuration
+REQUIRE_API_KEY = get("REQUIRE_API_KEY", False, cast=bool)
+api_keys_raw = get("API_KEYS", {})
+if isinstance(api_keys_raw, str):
+    try:
+        API_KEYS = json.loads(api_keys_raw)
+    except Exception:
+        API_KEYS = {}
+else:
+    API_KEYS = api_keys_raw or {}
+
+# Thread-safe structures for Quotas & Abuse/Banning
+_quota_lock = threading.Lock()
+_in_memory_quotas: dict[str, dict[str, int]] = {}  # key -> {date_str: count}
+
+_abuse_lock = threading.Lock()
+_in_memory_violations: dict[str, tuple[float, int]] = {} # identifier -> (reset_time, count)
+_in_memory_bans: dict[str, float] = {} # identifier -> banned_until
+
+VIOLATION_THRESHOLD = 5
+VIOLATION_WINDOW = 60.0
+BAN_DURATION = 300.0
+
+def _check_and_increment_quota(api_key: str, daily_limit: int) -> bool:
+    """Check if the daily quota is exceeded, and if not, increment it.
+    Returns True if quota is NOT exceeded, False if exceeded.
+    """
+    if daily_limit <= 0:
+        return True
+    
+    current_day = time.strftime("%Y-%m-%d", time.gmtime())
+    
+    if _redis_available and _redis_client:
+        redis_key = f"plantvision:quota:{api_key}:{current_day}"
+        try:
+            val = _redis_client.incr(redis_key)
+            if val == 1:
+                _redis_client.expire(redis_key, 90000) # 25 hours
+            if val > daily_limit:
+                return False
+            return True
+        except Exception as e:
+            logger.warning("Redis quota error: %s, falling back to in-memory", e)
+            
+    with _quota_lock:
+        if api_key not in _in_memory_quotas:
+            _in_memory_quotas[api_key] = {}
+        day_dict = _in_memory_quotas[api_key]
+        for old_day in list(day_dict.keys()):
+            if old_day != current_day:
+                day_dict.pop(old_day, None)
+        current_count = day_dict.get(current_day, 0)
+        if current_count >= daily_limit:
+            return False
+        day_dict[current_day] = current_count + 1
+        return True
+
+def _is_banned(identifier: str) -> bool:
+    now = time.time()
+    if _redis_available and _redis_client:
+        try:
+            return bool(_redis_client.exists(f"plantvision:ban:{identifier}"))
+        except Exception as e:
+            logger.warning("Redis ban check error: %s, falling back to in-memory", e)
+            
+    with _abuse_lock:
+        banned_until = _in_memory_bans.get(identifier, 0.0)
+        if banned_until > now:
+            return True
+        elif identifier in _in_memory_bans:
+            del _in_memory_bans[identifier]
+        return False
+
+def _record_violation(identifier: str) -> None:
+    now = time.time()
+    if _redis_available and _redis_client:
+        try:
+            abuse_key = f"plantvision:abuse:{identifier}"
+            ban_key = f"plantvision:ban:{identifier}"
+            val = _redis_client.incr(abuse_key)
+            if val == 1:
+                _redis_client.expire(abuse_key, int(VIOLATION_WINDOW))
+            if val >= VIOLATION_THRESHOLD:
+                _redis_client.setex(ban_key, int(BAN_DURATION), "1")
+                logger.warning("Temporary ban applied to identifier=%s (Redis)", identifier)
+            return
+        except Exception as e:
+            logger.warning("Redis abuse recording error: %s, falling back to in-memory", e)
+
+    with _abuse_lock:
+        reset_time, count = _in_memory_violations.get(identifier, (now + VIOLATION_WINDOW, 0))
+        if now > reset_time:
+            reset_time = now + VIOLATION_WINDOW
+            count = 0
+        count += 1
+        _in_memory_violations[identifier] = (reset_time, count)
+        if count >= VIOLATION_THRESHOLD:
+            _in_memory_bans[identifier] = now + BAN_DURATION
+            logger.warning("Temporary ban applied to identifier=%s (in-memory) until %s", identifier, now + BAN_DURATION)
+
+def _extract_api_key(request: Request) -> str | None:
+    key = request.headers.get("x-api-key")
+    if key:
+        return key.strip()
+    auth = request.headers.get("authorization")
+    if auth and auth.lower().startswith("bearer "):
+        return auth[7:].strip()
+    return None
 
 # Daily per-IP write quotas. Stops one bad actor from filling the
 # feedback / community SQLite files with spam (which would also
@@ -478,8 +626,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             del self._buckets[ip]
 
     async def dispatch(self, request: Request, call_next):
+        # Remove version prefix if present to check for free endpoints
+        path = request.url.path
+        if path.startswith("/api/v2"):
+            normalized_path = "/api" + path[7:]
+        else:
+            normalized_path = path
+
         # Health, metadata and metrics endpoints are always free
-        if request.url.path in (
+        if normalized_path in (
             "/api/health",
             "/api/version",
             "/api/classes",
@@ -489,9 +644,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         # Soft warning the operator missed configuring TRUSTED_PROXIES
-        # while deploying behind a reverse proxy. Without it every
-        # client behind the proxy shares a single bucket because we
-        # see only the proxy's IP as the "client IP".
+        # while deploying behind a reverse proxy.
         if (
             not self._warned_about_xff
             and not TRUSTED_PROXIES
@@ -505,34 +658,85 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             )
 
         client_ip = _client_ip(request)
-        # Monotonic clock so an NTP step / DST jump cannot lock every
-        # client out by making elapsed time go negative.
-        now = time.monotonic()
+        api_key = _extract_api_key(request)
 
+        # 1. API Key validation and requirement check
+        if REQUIRE_API_KEY:
+            if not api_key:
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "API key required. Provide via X-API-Key or Authorization header."},
+                )
+            if api_key not in API_KEYS:
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Invalid API key."},
+                )
+        elif api_key and api_key not in API_KEYS:
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Invalid API key."},
+            )
+
+        # 2. Determine identifier and limits
+        if api_key:
+            identifier = f"key:{api_key}"
+            key_cfg = API_KEYS[api_key]
+            rate = float(key_cfg.get("rate_limit_rps", self.rate))
+            capacity = float(key_cfg.get("burst", self.capacity))
+            quota_daily = int(key_cfg.get("quota_daily", 0))
+        else:
+            identifier = f"ip:{client_ip}"
+            rate = self.rate
+            capacity = self.capacity
+            quota_daily = 0
+
+        # 3. Check Banned state (abuse control)
+        if _is_banned(identifier):
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "API key or IP temporarily banned due to suspected abuse."},
+            )
+
+        # 4. Check Daily Quota (if key has quota)
+        if quota_daily > 0:
+            if not _check_and_increment_quota(api_key, quota_daily):
+                logger.warning("Daily quota exceeded for key=%s quota=%d", api_key[:12], quota_daily)
+                return JSONResponse(
+                    status_code=429,
+                    content={"detail": "Daily quota exceeded for this API key. Try again tomorrow."},
+                )
+
+        # Bypass rate limiter checks if rate is infinity or non-positive
+        if rate == float("inf") or rate <= 0:
+            return await call_next(request)
+
+        # 5. Token bucket rate limit check
+        now = time.monotonic()
         with self._lock:
             if now - self._last_cleanup > _RATE_LIMIT_CLEANUP_INTERVAL:
                 self._cleanup_stale(now)
                 self._last_cleanup = now
 
-            tokens, last = self._buckets.get(client_ip, (self.capacity, now))
+            tokens, last = self._buckets.get(identifier, (capacity, now))
             elapsed = max(0.0, now - last)
-            tokens = min(self.capacity, tokens + elapsed * self.rate)
+            tokens = min(capacity, tokens + elapsed * rate)
             if tokens < 1.0:
-                logger.warning("Rate limited IP=%s tokens=%.2f", client_ip, tokens)
-                # Wait time until one more token is available.
+                logger.warning("Rate limited identifier=%s tokens=%.2f", identifier[:24], tokens)
                 deficit = 1.0 - tokens
-                retry_after = max(1, int(math.ceil(deficit / self.rate))) if self.rate > 0 else 60
-                # Persist the refilled-but-still-empty bucket so a
-                # rapid retry doesn't grant a fresh token from a stale
-                # snapshot.
-                self._buckets[client_ip] = (tokens, now)
+                retry_after = max(1, int(math.ceil(deficit / rate))) if rate > 0 else 60
+                self._buckets[identifier] = (tokens, now)
+                
+                # Record violation for abuse control
+                _record_violation(identifier)
+                
                 return JSONResponse(
                     status_code=429,
                     headers={"Retry-After": str(retry_after)},
                     content={"detail": "Too many requests. Please wait before trying again."},
                 )
             tokens -= 1.0
-            self._buckets[client_ip] = (tokens, now)
+            self._buckets[identifier] = (tokens, now)
 
         return await call_next(request)
 
@@ -554,19 +758,26 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
     """Logs every request with method, path, status, and duration."""
 
     async def dispatch(self, request: Request, call_next):
+        trace_id = request.headers.get("x-trace-id") or request.headers.get("x-request-id") or uuid.uuid4().hex
+        token = request_id_var.set(trace_id)
+        
         _record_request()
         start = time.time()
-        response: StarletteResponse = await call_next(request)
-        elapsed = time.time() - start
-        logger.info(
-            "REQUEST %s %s -> %d (%.3fs) IP=%s",
-            request.method,
-            request.url.path,
-            response.status_code,
-            elapsed,
-            _client_ip(request),
-        )
-        return response
+        try:
+            response: StarletteResponse = await call_next(request)
+            response.headers["X-Trace-ID"] = trace_id
+            elapsed = time.time() - start
+            logger.info(
+                "REQUEST %s %s -> %d (%.3fs) IP=%s",
+                request.method,
+                request.url.path,
+                response.status_code,
+                elapsed,
+                _client_ip(request),
+            )
+            return response
+        finally:
+            request_id_var.reset(token)
 
 
 # ── Lifecycle ────────────────────────────────────────────────────────
@@ -741,7 +952,9 @@ def _open_image(contents: bytes) -> Image.Image:
 
 # ── Endpoints ────────────────────────────────────────────────────────
 
-@app.get("/api/health")
+api_router = APIRouter()
+
+@api_router.get("/health")
 async def health_check():
     """Health check — server status, uptime, request count."""
     if pipeline is None:
@@ -756,7 +969,7 @@ async def health_check():
     }
 
 
-@app.get("/api/version")
+@api_router.get("/version")
 async def version():
     """Server version and model architecture."""
     if pipeline is None:
@@ -793,7 +1006,7 @@ async def version():
     }
 
 
-@app.get("/api/classes")
+@api_router.get("/classes")
 async def classes():
     """List of known disease classes with bilingual names."""
     if pipeline is None:
@@ -810,7 +1023,7 @@ async def classes():
     return {"count": len(items), "classes": items}
 
 
-@app.get("/api/metrics")
+@api_router.get("/metrics")
 async def metrics():
     """Operational metrics (JSON). Useful for dashboards and jury demos."""
     snap = _snapshot_metrics()
@@ -831,7 +1044,7 @@ def _prom_label(value: str) -> str:
     return value.translate(_PROM_LABEL_ESCAPE)
 
 
-@app.get("/api/metrics/prometheus")
+@api_router.get("/metrics/prometheus")
 async def metrics_prometheus():
     """Prometheus text exposition (v0.0.4) of the same counters as /api/metrics."""
     snap = _snapshot_metrics()
@@ -939,7 +1152,7 @@ async def _species_identify_best_effort(
     }
 
 
-@app.post("/api/analyze")
+@api_router.post("/analyze")
 async def analyze_image(
     image: UploadFile = File(...),
     species: str | None = None,
@@ -1601,7 +1814,7 @@ class FeedbackRequest(BaseModel):
         return cleaned or None
 
 
-@app.post("/api/identify")
+@api_router.post("/identify")
 async def identify_endpoint(
     image: UploadFile = File(...),
     organ: str = "leaf",
@@ -1656,7 +1869,7 @@ async def identify_endpoint(
     return JSONResponse(content={**copy.deepcopy(result), "organ": organ})
 
 
-@app.post("/api/chat")
+@api_router.post("/chat")
 async def chat_endpoint(payload: ChatRequest, request: Request):
     """AI Plant Doctor — OpenRouter chat completion (default model
     ``openai/gpt-oss-120b``).
@@ -1694,7 +1907,7 @@ async def chat_endpoint(payload: ChatRequest, request: Request):
     return JSONResponse(content=result)
 
 
-@app.post("/api/care-plan")
+@api_router.post("/care-plan")
 async def care_plan_endpoint(payload: CarePlanRequest):
     """Build a watering / fertilising / humidity schedule for a plant.
 
@@ -1732,7 +1945,7 @@ async def care_plan_endpoint(payload: CarePlanRequest):
     return JSONResponse(content=plan)
 
 
-@app.post("/api/progression")
+@api_router.post("/progression")
 async def progression_endpoint(payload: ProgressionRequest):
     """Disease-progression analysis. Returns a 5-point severity
     sparkline + a trend slope across the supplied history (oldest
@@ -1742,7 +1955,7 @@ async def progression_endpoint(payload: ProgressionRequest):
     return JSONResponse(content=compare_progression_history(payload.history))
 
 
-@app.post("/api/feedback")
+@api_router.post("/feedback")
 async def feedback_endpoint(payload: FeedbackRequest, request: Request):
     """Capture a thumbs-up / thumbs-down on a diagnosis, with full
     diagnostic + client context.
@@ -1856,7 +2069,7 @@ async def feedback_endpoint(payload: FeedbackRequest, request: Request):
     return JSONResponse(content={"ok": True, "id": row_id})
 
 
-@app.post("/api/feedback/image")
+@api_router.post("/feedback/image")
 async def feedback_image_upload(
     request: Request,
     scan_id: str = Form(...),
@@ -1941,7 +2154,7 @@ async def feedback_image_upload(
 _COMMUNITY_ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
 
-@app.post("/api/community/scan")
+@api_router.post("/community/scan")
 async def community_scan_upload(
     request: Request,
     scan_id: str = Form(...),
@@ -2033,7 +2246,7 @@ async def community_scan_upload(
     return JSONResponse(content={"ok": True, "id": row_id})
 
 
-@app.get("/api/community/nearby")
+@api_router.get("/community/nearby")
 async def community_scan_nearby(
     country: str | None = None,
     region: str | None = None,
@@ -2082,7 +2295,7 @@ async def community_scan_nearby(
     return JSONResponse(content={"items": rows, "summary": summary})
 
 
-@app.get("/api/community/thumb/{filename}")
+@api_router.get("/community/thumb/{filename}")
 async def community_scan_thumb(filename: str):
     """Serve a community thumbnail by filename.
 
@@ -2103,18 +2316,51 @@ async def community_scan_thumb(filename: str):
     )
 
 
-@app.delete("/api/community/user/{user_pseudo_id}")
+@api_router.delete("/community/user/{user_pseudo_id}")
 async def community_scan_delete_user(user_pseudo_id: str):
     """Erase all rows + thumbnails attributed to one install. Used by
     the Android "delete my contributions" affordance.
     """
     if not user_pseudo_id or any(ch not in _SCAN_ID_ALLOWED for ch in user_pseudo_id):
         raise HTTPException(status_code=422, detail="Invalid user id")
-    deleted = await asyncio.get_running_loop().run_in_executor(
+    deleted_community = await asyncio.get_running_loop().run_in_executor(
         _get_inference_executor(),
         lambda: community_delete_for_user(user_pseudo_id),
     )
-    return JSONResponse(content={"ok": True, "deleted": deleted})
+    deleted_feedback = await asyncio.get_running_loop().run_in_executor(
+        _get_inference_executor(),
+        lambda: feedback_delete_for_user(user_pseudo_id),
+    )
+    return JSONResponse(content={
+        "ok": True,
+        "deleted": deleted_community,
+        "deleted_community": deleted_community,
+        "deleted_feedback": deleted_feedback,
+    })
+
+
+@api_router.get("/user/export/{user_pseudo_id}")
+async def export_user_data(user_pseudo_id: str):
+    """GDPR Data Portability: Export all data associated with the user_pseudo_id."""
+    if not user_pseudo_id or any(ch not in _SCAN_ID_ALLOWED for ch in user_pseudo_id):
+        raise HTTPException(status_code=422, detail="Invalid user id")
+    community_data = await asyncio.get_running_loop().run_in_executor(
+        _get_inference_executor(),
+        lambda: community_get_user_data(user_pseudo_id),
+    )
+    feedback_data = await asyncio.get_running_loop().run_in_executor(
+        _get_inference_executor(),
+        lambda: feedback_get_user_data(user_pseudo_id),
+    )
+    return JSONResponse(content={
+        "user_pseudo_id": user_pseudo_id,
+        "community_scans": community_data,
+        "feedback_submissions": feedback_data,
+    })
+
+
+app.include_router(api_router, prefix="/api")
+app.include_router(api_router, prefix="/api/v2")
 
 
 if __name__ == "__main__":

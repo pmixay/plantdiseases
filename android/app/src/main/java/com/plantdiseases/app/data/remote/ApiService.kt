@@ -204,10 +204,16 @@ class PlantApiClient {
                 HttpLoggingInterceptor.Level.NONE
             }
         }
+        val certificatePinner = okhttp3.CertificatePinner.Builder()
+            .add("pdis.arbuz.lol", "sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+            .add("pdis.arbuz.lol", "sha256/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=")
+            .build()
+
         OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)
+            .certificatePinner(certificatePinner)
             .addInterceptor(RetryInterceptor(maxRetries = 3, initialDelayMs = 1000))
             .addInterceptor(logging)
             .build()
