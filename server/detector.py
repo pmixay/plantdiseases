@@ -163,6 +163,12 @@ class LeafDetector:
                           pipeline may override this after consulting
                           the classifier (disease-aware selection).
         """
+        # Force 3-channel RGB. A PNG upload can arrive as RGBA/P (4-channel
+        # or palette) and a grayscale JPEG as single-channel L; passing
+        # those straight to the onnxruntime session changes the channel
+        # count/order the detector was trained on and corrupts Stage 1.
+        if img.mode != "RGB":
+            img = img.convert("RGB")
         orig_w, orig_h = img.size
         input_data, scale, (pad_x, pad_y) = letterbox(img, DETECTOR_IMG_SIZE)
 

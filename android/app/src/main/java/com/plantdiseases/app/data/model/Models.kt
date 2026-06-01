@@ -20,8 +20,8 @@ data class DetectionRegion(
  * dims rather than against the raw camera file's bitmap (which is
  * typically larger and may be EXIF-rotated). */
 data class Detection(
-    @SerializedName("is_diseased") val isDiseased: Boolean,
-    @SerializedName("detector_confidence") val detectorConfidence: Float,
+    @SerializedName("is_diseased") val isDiseased: Boolean = false,
+    @SerializedName("detector_confidence") val detectorConfidence: Float = 0f,
     @SerializedName("image_width") val imageWidth: Int = 0,
     @SerializedName("image_height") val imageHeight: Int = 0,
     @SerializedName("regions") val regions: List<DetectionRegion> = emptyList(),
@@ -54,6 +54,13 @@ data class PredictionSet(
     @SerializedName("coverage") val coverage: Float = 0f,
     @SerializedName("method") val method: String? = null,
     @SerializedName("items") val items: List<PredictionSetItem> = emptyList(),
+    /**
+     * True until the conformal calibration set is large enough for the
+     * coverage figure to carry a real statistical guarantee. When
+     * `advisory`, the UI must render the set as "other candidates to
+     * consider" rather than claiming "<coverage>% guaranteed coverage".
+     */
+    @SerializedName("advisory") val advisory: Boolean = true,
 )
 
 /** Response from the server after analyzing an image */
@@ -67,16 +74,26 @@ data class AnalysisResponse(
     // un-mutated; using argmax would poison server-side per-class
     // accuracy metrics.
     @SerializedName("class_name") val classKey: String? = null,
-    @SerializedName("disease_name") val diseaseName: String,
-    @SerializedName("disease_name_ru") val diseaseNameRu: String,
-    @SerializedName("confidence") val confidence: Float,
-    @SerializedName("description") val description: String,
-    @SerializedName("description_ru") val descriptionRu: String,
-    @SerializedName("treatment") val treatment: List<String>,
-    @SerializedName("treatment_ru") val treatmentRu: List<String>,
-    @SerializedName("prevention") val prevention: List<String>,
-    @SerializedName("prevention_ru") val preventionRu: List<String>,
-    @SerializedName("is_healthy") val isHealthy: Boolean,
+    // Gson does not honour Kotlin non-null types, so missing/partial
+    // server responses would otherwise inject 0f / null silently (and
+    // NPE on first access for reference types). Give every
+    // always-expected field a safe default so an older / partial
+    // response degrades gracefully instead of crashing or showing 0%.
+    @SerializedName("disease_name") val diseaseName: String = "",
+    @SerializedName("disease_name_ru") val diseaseNameRu: String = "",
+    @SerializedName("confidence") val confidence: Float = 0f,
+    @SerializedName("description") val description: String = "",
+    @SerializedName("description_ru") val descriptionRu: String = "",
+    @SerializedName("treatment") val treatment: List<String> = emptyList(),
+    @SerializedName("treatment_ru") val treatmentRu: List<String> = emptyList(),
+    @SerializedName("prevention") val prevention: List<String> = emptyList(),
+    @SerializedName("prevention_ru") val preventionRu: List<String> = emptyList(),
+    @SerializedName("is_healthy") val isHealthy: Boolean = false,
+    // Server-computed severity (low|medium|high). Authoritative — the
+    // client must persist and forward this rather than re-deriving it
+    // from a confidence heuristic (which can disagree with what the
+    // pipeline actually scored).
+    @SerializedName("severity") val severity: String? = null,
     @SerializedName("detection") val detection: Detection? = null,
     @SerializedName("all_probs") val allProbs: Map<String, Float>? = null,
     @SerializedName("top_k") val topK: List<TopKEntry>? = null,

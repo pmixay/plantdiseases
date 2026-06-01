@@ -541,7 +541,9 @@ class PlantDiseasePipeline:
             "top_k": final["top_k"],
             "warnings": final["warnings"],
             "severity": severity,
-            "prediction_set": self._build_prediction_set(final["all_probs"]),
+            "prediction_set": self._build_prediction_set(
+                final["all_probs"], final["class_name"]
+            ),
             "detection": {
                 "is_diseased": is_diseased,
                 "detector_confidence": stage1_confidence,
@@ -610,7 +612,9 @@ class PlantDiseasePipeline:
             )
         return triggered
 
-    def _build_prediction_set(self, probs: dict[str, float]) -> dict | None:
+    def _build_prediction_set(
+        self, probs: dict[str, float], class_name: str | None = None
+    ) -> dict | None:
         """Return the conformal prediction set or ``None`` if unconfigured.
 
         Honest UX: clients should render the *set* — "leaf_spot
@@ -618,9 +622,16 @@ class PlantDiseasePipeline:
         the top-1 was a single confident answer. The dict is keyed by
         ``classes`` / ``coverage`` / ``method`` so the client doesn't
         need to know about the calibration internals.
+
+        The conformal calibration covers *plant* inputs only — the
+        ``not_a_plant`` verdict is reached through the detector + OOD
+        gate, not RAPS, so attaching a coverage-guaranteed set to a NAP
+        response would over-claim. Suppress it for those cases.
         """
         cfg = self.conformal
         if cfg is None or not probs:
+            return None
+        if class_name == "not_a_plant":
             return None
         classes = prediction_set(probs, cfg)
         return {

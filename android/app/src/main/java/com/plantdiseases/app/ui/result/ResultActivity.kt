@@ -506,32 +506,57 @@ class ResultActivity : AppCompatActivity() {
             return
         }
 
+        val isRu = LocaleHelper.isRussian(this)
+
+        // The server can attach a dynamic `disease_suspected:<class>`
+        // warning alongside a healthy verdict — match by prefix and
+        // surface the suspected class name (an exact-string `in`
+        // check could never match it).
+        val suspectedKey = warnings
+            .firstOrNull { it.startsWith("disease_suspected:") }
+            ?.substringAfter(":")
+
         // Priority order: very_low_confidence (re-shoot is the only
-        // honest path — the verdict in the card is essentially a
-        // guess) > blur > detector mismatch > uncertain_healthy
-        // (soft hedge).
-        val (titleRes, bodyRes) = when {
-            "very_low_confidence" in warnings ->
-                R.string.warning_very_low_confidence_title to
-                    R.string.warning_very_low_confidence
-            "blurry_image" in warnings ->
-                R.string.warning_blurry_image_title to
-                    R.string.warning_blurry_image
-            "detector_classifier_mismatch" in warnings ->
-                R.string.warning_detector_mismatch_title to
-                    R.string.warning_detector_mismatch
-            "uncertain_healthy" in warnings ->
-                R.string.warning_uncertain_healthy_title to
-                    R.string.warning_uncertain_healthy
+        // honest path — the verdict in the card is essentially a guess)
+        // > blur > not-a-leaf gate > weak-healthy reroute (verdict was
+        // rewritten) > uncertain_healthy / disease_suspected (soft
+        // hedge) > low_confidence (mild hedge).
+        binding.cardPipelineWarning.visibility = View.VISIBLE
+        when {
+            "very_low_confidence" in warnings -> {
+                binding.tvPipelineWarningTitle.setText(R.string.warning_very_low_confidence_title)
+                binding.tvPipelineWarningBody.setText(R.string.warning_very_low_confidence)
+            }
+            "blurry_image" in warnings -> {
+                binding.tvPipelineWarningTitle.setText(R.string.warning_blurry_image_title)
+                binding.tvPipelineWarningBody.setText(R.string.warning_blurry_image)
+            }
+            "nap_ood_gated" in warnings -> {
+                binding.tvPipelineWarningTitle.setText(R.string.warning_nap_ood_gated_title)
+                binding.tvPipelineWarningBody.setText(R.string.warning_nap_ood_gated)
+            }
+            "weak_healthy_rerouted" in warnings -> {
+                binding.tvPipelineWarningTitle.setText(R.string.warning_weak_healthy_rerouted_title)
+                binding.tvPipelineWarningBody.setText(R.string.warning_weak_healthy_rerouted)
+            }
+            suspectedKey != null -> {
+                val label = classKeyDisplayName(suspectedKey, isRu) ?: suspectedKey
+                binding.tvPipelineWarningTitle.setText(R.string.warning_disease_suspected_title)
+                binding.tvPipelineWarningBody.text =
+                    getString(R.string.warning_disease_suspected, label)
+            }
+            "uncertain_healthy" in warnings -> {
+                binding.tvPipelineWarningTitle.setText(R.string.warning_uncertain_healthy_title)
+                binding.tvPipelineWarningBody.setText(R.string.warning_uncertain_healthy)
+            }
+            "low_confidence" in warnings -> {
+                binding.tvPipelineWarningTitle.setText(R.string.warning_low_confidence_title)
+                binding.tvPipelineWarningBody.setText(R.string.warning_low_confidence)
+            }
             else -> {
                 binding.cardPipelineWarning.visibility = View.GONE
-                return
             }
         }
-
-        binding.cardPipelineWarning.visibility = View.VISIBLE
-        binding.tvPipelineWarningTitle.setText(titleRes)
-        binding.tvPipelineWarningBody.setText(bodyRes)
     }
 
     private fun buildSpeciesCard(scan: ScanEntity) {

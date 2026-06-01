@@ -1,5 +1,12 @@
 {
-  "temperature": 1.0790576934814453,
-  "_note": "Fitted with LBFGS on val temperature_cal NLL using INT8 ONNX logits.",
-  "fit_scope": "plant inputs (plantdoc+inat); not_a_plant logits are not represented in temp_cal, so T may be miscalibrated for that class."
+  "temperature": 0.7652018070220947,
+  "source": "int8",
+  "_note": "Fitted with LBFGS on temperature_cal NLL using int8 ONNX logits.",
+  "fit_sources": [
+    "plantdoc",
+    "inat",
+    "coco",
+    "inat_animalia",
+    "openimages_indoor"
+  ]
 }

@@ -1,11 +1,12 @@
 {
-  "model_version": "2.1",
+  "model_version": "2.2",
   "class_names": [
-    "bacterial_leaf_spot",
     "gray_mold_botrytis",
     "healthy",
-    "leaf_spot_fungal",
+    "leaf_scorch_underwatering",
+    "leaf_spot",
     "not_a_plant",
+    "nutrient_deficiency",
     "powdery_mildew",
     "viral_disease"
   ],
@@ -14,11 +15,21 @@
   ],
   "training": {
     "img_size": 256,
-    "batch_size": 96,
+    "batch_size": 256,
     "loss": "logit_adjustment_ce",
     "logit_adjustment_tau": 0.5,
     "label_smoothing": 0.05,
     "use_weighted_sampler": false,
+    "use_source_weighted_sampler": true,
+    "source_weights": {
+      "plantdoc": 1.1,
+      "plantvillage": 0.35,
+      "inat": 1.0,
+      "inat_animalia": 0.5,
+      "inat_physiological": 1.2,
+      "coco": 0.5,
+      "openimages_indoor": 0.5
+    },
     "optimizer": "AdamW",
     "weight_decay": 0.0001,
     "lr_schedule": "cosine + warmup",
@@ -33,25 +44,25 @@
     "loss": "alpha*KD + (1-alpha)*CE_LA",
     "alpha": 0.5,
     "tau": 4.0,
-    "ema_decay": 0.9946666666666667,
+    "ema_decay": 0.99,
     "epochs": 10
   },
   "ood": {
     "score": "max_logit",
     "max_logit_floor": null,
-    "_score_note": "MaxLogit (Hendrycks 2019) is theoretically robust under temperature scaling and label smoothing where MSP collapses. Disabled on this model because the calibration set below shows NEGATIVE separation \u2014 NAP medians sit ABOVE plant medians, so a floor that hits the target_plant_fpr=0.05 (plant_p05=1.62) catches zero NAPs (nap_p05=3.22). _should_route_to_nap therefore degrades to a detector-confidence-only gate; OOD is left to the classifier's own not_a_plant head until a different score (energy/MSP/etc.) is calibrated.",
+    "_score_note": "MaxLogit (Hendrycks 2019) \u2014 robust under temperature scaling and label smoothing where MSP fails.",
     "_calibration": {
       "target_plant_fpr": 0.05,
-      "plant_n": 283,
-      "plant_p05": 1.6244090795516968,
-      "plant_p50": 4.343640327453613,
-      "plant_p95": 6.033127927780151,
-      "nap_n": 225,
-      "nap_p05": 3.2214927196502687,
-      "nap_p50": 4.6157612800598145,
-      "nap_p95": 5.513560581207274,
-      "separation_p50": -0.27212095260620117,
-      "_separation_note": "separation_p50 < 0 means MaxLogit gives the WRONG-SIGN signal on this model \u2014 NAPs score higher than plants on the metric. Any positive floor here would over-fire on real plants; any floor low enough to spare plants misses every NAP. Hence max_logit_floor=null above."
+      "plant_n": 265,
+      "plant_p05": 2.202397871017456,
+      "plant_p50": 4.439659118652344,
+      "plant_p95": 7.098222923278808,
+      "nap_n": 403,
+      "nap_p05": 2.0613475799560548,
+      "nap_p50": 4.501982688903809,
+      "nap_p95": 6.452546882629394,
+      "separation_p50": -0.062323570251464844,
+      "fit_source": "int8"
     }
   }
 }

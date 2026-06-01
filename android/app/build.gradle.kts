@@ -17,11 +17,12 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // Default API base URL. Plain HTTP because the production
-        // uvicorn process listens on port 8000 with no TLS in front.
-        // When you put nginx / Let's Encrypt in front of the server,
-        // override this at build time:
-        //   ./gradlew :app:assembleDebug -PAPI_BASE_URL=https://api.example.com/
+        // Default API base URL — HTTPS in production (TLS terminated in
+        // front of the uvicorn process). Override at build time, e.g. to
+        // point a debug build at the emulator host over cleartext (only
+        // local/LAN hosts are allowed cleartext, see
+        // res/xml/network_security_config.xml):
+        //   ./gradlew :app:assembleDebug -PAPI_BASE_URL=http://10.0.2.2:8000/
         val configuredApiBaseUrl = providers.gradleProperty("API_BASE_URL")
             .orElse("https://pdis.arbuz.lol/")
             .get()
