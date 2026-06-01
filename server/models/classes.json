@@ -1,11 +1,12 @@
 {
-  "model_version": "2.1",
+  "model_version": "2.2",
   "class_names": [
-    "bacterial_leaf_spot",
     "gray_mold_botrytis",
     "healthy",
-    "leaf_spot_fungal",
+    "leaf_scorch_underwatering",
+    "leaf_spot",
     "not_a_plant",
+    "nutrient_deficiency",
     "powdery_mildew",
     "viral_disease"
   ],
@@ -39,19 +40,6 @@
   "ood": {
     "score": "max_logit",
     "max_logit_floor": null,
-    "_score_note": "MaxLogit (Hendrycks 2019) is theoretically robust under temperature scaling and label smoothing where MSP collapses. Disabled on this model because the calibration set below shows NEGATIVE separation \u2014 NAP medians sit ABOVE plant medians, so a floor that hits the target_plant_fpr=0.05 (plant_p05=1.62) catches zero NAPs (nap_p05=3.22). _should_route_to_nap therefore degrades to a detector-confidence-only gate; OOD is left to the classifier's own not_a_plant head until a different score (energy/MSP/etc.) is calibrated.",
-    "_calibration": {
-      "target_plant_fpr": 0.05,
-      "plant_n": 283,
-      "plant_p05": 1.6244090795516968,
-      "plant_p50": 4.343640327453613,
-      "plant_p95": 6.033127927780151,
-      "nap_n": 225,
-      "nap_p05": 3.2214927196502687,
-      "nap_p50": 4.6157612800598145,
-      "nap_p95": 5.513560581207274,
-      "separation_p50": -0.27212095260620117,
-      "_separation_note": "separation_p50 < 0 means MaxLogit gives the WRONG-SIGN signal on this model \u2014 NAPs score higher than plants on the metric. Any positive floor here would over-fire on real plants; any floor low enough to spare plants misses every NAP. Hence max_logit_floor=null above."
-    }
+    "_score_note": "MaxLogit (Hendrycks 2019) is theoretically robust under temperature scaling and label smoothing where MSP collapses. It is disabled on the shipped artefact (max_logit_floor=null) because the calibration showed NEGATIVE separation: the not_a_plant negatives (COCO / OpenImages / iNat-Animalia) are cleaner and easier than the noisy real-world disease classes, so NAP MaxLogit medians land ABOVE plant medians and any floor that spares real plants catches zero NAPs. With the gate disabled, _should_route_to_nap degrades to a detector-confidence-only gate and OOD rejection rests on the classifier's own not_a_plant head. Regenerate this block from the v2.2 calibration run (compute plant AND NAP MaxLogit from the SAME held-out split, and rebuild NAP with hard negatives) before enabling a floor."
   }
 }

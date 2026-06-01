@@ -101,6 +101,13 @@ class LeafDetector:
                           pipeline may override this after consulting
                           the classifier (disease-aware selection).
         """
+        # Force 3-channel RGB. A PNG upload can arrive as RGBA/P (4-channel
+        # or palette) and a grayscale JPEG as single-channel L; passing
+        # those arrays straight to YOLO changes the channel count/order the
+        # detector was trained on and corrupts Stage 1. The analyze handler
+        # already normalises to RGB, but keep the detector self-contained.
+        if img.mode != "RGB":
+            img = img.convert("RGB")
         arr = np.array(img)
         results = self.model.predict(
             arr,

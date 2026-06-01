@@ -106,6 +106,10 @@ class DiseaseClassifier:
 
         meta = _load_metadata(model_path.parent) if model_path else {}
         self.meta = meta
+        # Track provenance: a class list that came from classes.json is a
+        # hard contract (must match the checkpoint head exactly), whereas
+        # the built-in default is a best-effort fallback we may pad.
+        self._class_names_from_meta = bool(meta.get("class_names"))
         self.CLASS_NAMES = _resolve_class_names(meta)
         self.NUM_CLASSES = len(self.CLASS_NAMES)
         self.img_size = _resolve_img_size(meta)
@@ -167,9 +171,22 @@ class DiseaseClassifier:
 
         out_dim = next((d for d in out.shape if isinstance(d, int)), None)
         if out_dim is not None and out_dim != self.NUM_CLASSES:
+            if self._class_names_from_meta:
+                # classes.json explicitly declared a class list that does
+                # not match the checkpoint head. Padding with ``class_N``
+                # would silently mislabel every prediction (the v2.1
+                # 7-class metadata against the v2.2 8-output head shipped
+                # exactly this corruption). Fail fast instead so a wrong
+                # classes.json can never boot serving mislabeled answers.
+                raise ClassifierLoadError(
+                    f"classes.json declares {self.NUM_CLASSES} classes "
+                    f"({self.CLASS_NAMES}) but the ONNX checkpoint at {path} "
+                    f"has {out_dim} outputs. Ship a classes.json whose "
+                    f"class_names match the trained head, in training order."
+                )
             logger.warning(
-                "Classifier ONNX has %d outputs but classes.json declares %d. "
-                "Trusting the ONNX checkpoint and adjusting the class list.",
+                "Classifier ONNX has %d outputs but only the built-in default "
+                "(%d) was available. Adjusting the fallback class list.",
                 out_dim, self.NUM_CLASSES,
             )
             self.CLASS_NAMES = self._fit_class_names(self.CLASS_NAMES, out_dim)
@@ -201,9 +218,16 @@ class DiseaseClassifier:
             int(head_weight.shape[0]) if head_weight is not None else self.NUM_CLASSES
         )
         if ckpt_classes != self.NUM_CLASSES:
+            if self._class_names_from_meta:
+                raise ClassifierLoadError(
+                    f"classes.json declares {self.NUM_CLASSES} classes "
+                    f"({self.CLASS_NAMES}) but the .pth checkpoint at {path} "
+                    f"has {ckpt_classes} outputs. Ship a classes.json whose "
+                    f"class_names match the trained head, in training order."
+                )
             logger.warning(
-                "Classifier .pth has %d outputs but classes.json declares %d. "
-                "Trusting checkpoint, padding/truncating class list.",
+                "Classifier .pth has %d outputs but only the built-in default "
+                "(%d) was available. Adjusting the fallback class list.",
                 ckpt_classes, self.NUM_CLASSES,
             )
             self.CLASS_NAMES = self._fit_class_names(self.CLASS_NAMES, ckpt_classes)
