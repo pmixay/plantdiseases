@@ -26,8 +26,8 @@ import numpy as np
 
 try:
     import onnxruntime as ort
-except ImportError:  # pragma: no cover
-    raise SystemExit("onnxruntime is required: pip install onnxruntime")
+except ImportError as err:  # pragma: no cover
+    raise SystemExit("onnxruntime is required: pip install onnxruntime") from err
 
 
 def _peak_rss_mb() -> float | None:
