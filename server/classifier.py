@@ -336,7 +336,7 @@ class DiseaseClassifier:
         # within float32 range (~9.4e-14). float64 was a precaution
         # that doubled the dict-construction allocation per call for
         # no measurable accuracy delta on the head (7 classes in v2.1,
-        # 9 in v2.2).
+        # 8 in v2.2).
         logits32 = logits.astype(np.float32, copy=False)
         max_logit = float(logits32.max())
         e = np.exp(logits32 - max_logit)
