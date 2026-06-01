@@ -30,7 +30,7 @@ from pathlib import Path
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import BaseModel, Field, field_validator
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -1953,7 +1953,9 @@ async def feedback_image_upload(
             detail="Unknown scan_id — please re-scan before sending feedback.",
         )
 
-    image_bytes = await image.read()
+    # Hard size cap (same as /api/analyze) — the bare ``image.read()``
+    # used here previously pulled the whole body into RAM with no ceiling.
+    image_bytes = await _read_upload(image)
     saved = await asyncio.get_running_loop().run_in_executor(
         _get_inference_executor(),
         lambda: save_feedback_image(
@@ -2027,21 +2029,9 @@ async def community_scan_upload(
         logger.info("Community scan validation failed: %s", exc)
         raise HTTPException(status_code=422, detail="Invalid scan upload") from exc
 
-    image_bytes: bytes | None = None
-    if image is not None:
-        if image.content_type and image.content_type not in _COMMUNITY_ALLOWED_TYPES:
-            raise HTTPException(
-                status_code=400,
-                detail="Community thumbnail must be JPEG / PNG / WebP",
-            )
-        try:
-            image_bytes = await _read_upload(image)
-        except HTTPException:
-            raise
-        except Exception as exc:  # noqa: BLE001
-            logger.info("Community thumb read failed: %s", exc)
-            image_bytes = None
-
+    # Enforce the per-IP daily quota BEFORE reading the (up to 10 MB)
+    # image body — an over-quota client should be rejected without us
+    # ingesting its payload first.
     client_ip = _client_ip(request)
     ip_hash = hash_client_ip(client_ip)
     today_writes = await asyncio.get_running_loop().run_in_executor(
@@ -2057,6 +2047,21 @@ async def community_scan_upload(
             status_code=429,
             detail="Daily community-upload quota reached.",
         )
+
+    image_bytes: bytes | None = None
+    if image is not None:
+        if image.content_type and image.content_type not in _COMMUNITY_ALLOWED_TYPES:
+            raise HTTPException(
+                status_code=400,
+                detail="Community thumbnail must be JPEG / PNG / WebP",
+            )
+        try:
+            image_bytes = await _read_upload(image)
+        except HTTPException:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.info("Community thumb read failed: %s", exc)
+            image_bytes = None
     try:
         row_id = await asyncio.get_running_loop().run_in_executor(
             _get_inference_executor(),
@@ -2144,8 +2149,11 @@ async def community_scan_thumb(filename: str):
     path = COMMUNITY_THUMB_DIR / filename
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Thumbnail not found")
-    return StarletteResponse(
-        content=path.read_bytes(),
+    # FileResponse streams the file off the event loop instead of
+    # reading the whole thumbnail into memory inline. Thumbnails are
+    # always re-encoded to JPEG by community._save_thumbnail.
+    return FileResponse(
+        path,
         media_type="image/jpeg",
         headers={"Cache-Control": "public, max-age=86400"},
     )

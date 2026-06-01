@@ -157,13 +157,17 @@ def identify_species(
         # Lazy import — only the identify path needs requests.
         import requests  # noqa: WPS433
 
-        url = (
-            f"https://my-api.plantnet.org/v2/identify/{PLANTNET_PROJECT}"
-            f"?api-key={PLANTNET_API_KEY}&lang={lang}"
-        )
+        # Pass the API key via the query *params* argument rather than
+        # interpolating it into the URL string: a raised requests
+        # exception or any log of ``url`` would otherwise leak the secret
+        # into access logs / error traces.
+        url = f"https://my-api.plantnet.org/v2/identify/{PLANTNET_PROJECT}"
+        params = {"api-key": PLANTNET_API_KEY, "lang": lang}
         files = {"images": ("plant.jpg", image_bytes, "image/jpeg")}
         data = {"organs": organ}
-        r = requests.post(url, files=files, data=data, timeout=PLANTNET_TIMEOUT)
+        r = requests.post(
+            url, params=params, files=files, data=data, timeout=PLANTNET_TIMEOUT
+        )
         if r.status_code == 401:
             logger.error("PlantNet auth failed — check PLANTNET_API_KEY")
             return {"available": False, "results": [], "source": "auth_failed"}
