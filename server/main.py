@@ -31,7 +31,7 @@ from pathlib import Path
 
 import redis
 import sentry_sdk
-from fastapi import FastAPI, APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi import FastAPI, APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse
