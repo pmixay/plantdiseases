@@ -294,9 +294,11 @@ class ScanRepository(
 
     /**
      * Coarse client-side severity hint. The server's `/api/analyze`
-     * carries an authoritative `severity` field, but cached scans
-     * only have it when the row is post-v2.0 — for older rows we
-     * derive a low/medium/high estimate from confidence + healthy.
+     * carries an authoritative `severity` field (now parsed into
+     * `AnalysisResponse.severity`), but `ScanEntity` does not yet
+     * persist it, so the progression/chat payloads fall back to this
+     * confidence-derived estimate. TODO: add a `severity` column to
+     * `ScanEntity` (Room migration) and prefer the stored server value.
      */
     private fun severityHint(scan: ScanEntity): String = when {
         scan.isHealthy -> "low"

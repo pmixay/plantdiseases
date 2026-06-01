@@ -205,6 +205,14 @@
     <string name="warning_detector_mismatch">The detector spotted leaf damage, but the classifier decided the plant is healthy. Try re-scanning from a closer, better-lit angle.</string>
     <string name="warning_blurry_image_title">Photo is too blurry</string>
     <string name="warning_blurry_image">We couldn\'t read the leaf clearly enough to trust a diagnosis. Hold the phone steady, wait for autofocus to lock, and try again.</string>
+    <string name="warning_weak_healthy_rerouted_title">Looks unhealthy</string>
+    <string name="warning_weak_healthy_rerouted">The plant scored as healthy only narrowly, so we\'re showing the most likely problem instead. Treat this as a lead, not a firm diagnosis — re-scan in better light to confirm.</string>
+    <string name="warning_low_confidence_title">Low confidence</string>
+    <string name="warning_low_confidence">The model isn\'t very sure about this verdict. Check the alternative diagnoses below and consider re-scanning from a closer, better-lit angle.</string>
+    <string name="warning_nap_ood_gated_title">Doesn\'t look like a leaf</string>
+    <string name="warning_nap_ood_gated">This image didn\'t look like a plant leaf to the detector, so the result may be unreliable. Frame a single leaf filling most of the photo and try again.</string>
+    <string name="warning_disease_suspected_title">Possible problem spotted</string>
+    <string name="warning_disease_suspected">The plant looks mostly healthy, but the model also picked up signs of %1$s. Keep an eye on it and re-scan if it spreads.</string>
 
     <!-- How to use (onboarding from profile) -->
     <string name="how_to_use_title">How to Use</string>
