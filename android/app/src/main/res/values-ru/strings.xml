@@ -202,6 +202,14 @@
     <string name="warning_detector_mismatch">Детектор нашёл признаки повреждения, но классификатор определил растение как здоровое. Рекомендуем повторить скан с ближнего ракурса при хорошем освещении.</string>
     <string name="warning_blurry_image_title">Снимок размытый</string>
     <string name="warning_blurry_image">Не удалось разглядеть лист, чтобы поставить диагноз. Держите камеру неподвижно, дождитесь автофокуса и попробуйте снова.</string>
+    <string name="warning_weak_healthy_rerouted_title">Выглядит нездоровым</string>
+    <string name="warning_weak_healthy_rerouted">Растение лишь немного больше похоже на здоровое, поэтому мы показываем наиболее вероятную проблему. Считайте это подсказкой, а не точным диагнозом — пересними при хорошем освещении.</string>
+    <string name="warning_low_confidence_title">Низкая уверенность</string>
+    <string name="warning_low_confidence">Модель не очень уверена в этом результате. Проверьте альтернативные диагнозы ниже и попробуйте переснять ближе и при лучшем освещении.</string>
+    <string name="warning_nap_ood_gated_title">Не похоже на лист</string>
+    <string name="warning_nap_ood_gated">Детектору это изображение не показалось листом растения, поэтому результат может быть ненадёжным. Сфотографируйте один лист, заполняющий большую часть кадра, и попробуйте снова.</string>
+    <string name="warning_disease_suspected_title">Замечена возможная проблема</string>
+    <string name="warning_disease_suspected">Растение выглядит в основном здоровым, но модель также заметила признаки: %1$s. Понаблюдайте и переснимите, если симптомы усилятся.</string>
 
     <!-- How to use (onboarding from profile) -->
     <string name="how_to_use_title">Как пользоваться</string>

@@ -1,87 +1,98 @@
 {
-  "version": "2.1",
-  "trained_at": "2026-05-10T21:03:17+00:00",
+  "version": "2.2",
+  "trained_at": "2026-05-29T20:40:27+00:00",
   "classes": [
-    "bacterial_leaf_spot",
     "gray_mold_botrytis",
     "healthy",
-    "leaf_spot_fungal",
+    "leaf_scorch_underwatering",
+    "leaf_spot",
     "not_a_plant",
+    "nutrient_deficiency",
     "powdery_mildew",
     "viral_disease"
   ],
   "img_size": 256,
-  "temperature": 1.0790576934814453,
+  "temperature": 0.7652018070220947,
   "conformal": {
     "method": "raps",
     "alpha": 0.1,
-    "q_hat": 0.9919968247413635,
+    "q_hat": 0.9992967844009399,
     "lambda_reg": 0.01,
     "k_reg": 1,
-    "calibration_n": 128,
-    "empirical_coverage": 1.0,
+    "calibration_n": 452,
+    "empirical_coverage": 0.9912280701754386,
     "empirical_coverage_kind": "out_of_sample",
-    "mean_set_size": 3.4375,
-    "audit_n": 128,
-    "in_sample_coverage": 0.9921875,
-    "in_sample_mean_set_size": 3.4453125,
-    "coverage_scope": "plant inputs (plantdoc+inat); not_a_plant routes through Stage 1 detector + MaxLogit OOD gate, not RAPS",
+    "mean_set_size": 2.6052631578947367,
+    "audit_n": 114,
+    "in_sample_coverage": 0.9823008849557522,
+    "in_sample_mean_set_size": 2.7101769911504423,
+    "coverage_scope": "all 9 classes (plantdoc, inat, coco, inat_animalia, openimages_indoor); not_a_plant is additionally guarded by the Stage 1 detector + MaxLogit OOD floor.",
     "cal_sources": [
       "plantdoc",
-      "inat"
-    ]
+      "inat",
+      "coco",
+      "inat_animalia",
+      "openimages_indoor"
+    ],
+    "fit_source": "int8"
   },
   "train_counts": {
-    "bacterial_leaf_spot": 1059,
-    "gray_mold_botrytis": 227,
-    "healthy": 1244,
-    "leaf_spot_fungal": 1221,
-    "not_a_plant": 1148,
-    "powdery_mildew": 1059,
-    "viral_disease": 1243
+    "gray_mold_botrytis": 82,
+    "healthy": 1149,
+    "leaf_scorch_underwatering": 84,
+    "leaf_spot": 1159,
+    "not_a_plant": 1484,
+    "nutrient_deficiency": 79,
+    "powdery_mildew": 1025,
+    "viral_disease": 1189
   },
   "val_realworld_counts": {
-    "bacterial_leaf_spot": 60,
-    "gray_mold_botrytis": 22,
-    "healthy": 353,
-    "leaf_spot_fungal": 197,
-    "not_a_plant": 225,
-    "powdery_mildew": 37,
-    "viral_disease": 144
+    "gray_mold_botrytis": 21,
+    "healthy": 347,
+    "leaf_scorch_underwatering": 21,
+    "leaf_spot": 210,
+    "not_a_plant": 403,
+    "nutrient_deficiency": 20,
+    "powdery_mildew": 53,
+    "viral_disease": 157
   },
   "val_indomain_counts": {
-    "bacterial_leaf_spot": 25,
     "gray_mold_botrytis": 12,
-    "healthy": 133,
-    "leaf_spot_fungal": 39,
-    "not_a_plant": 127,
-    "powdery_mildew": 22,
-    "viral_disease": 52
+    "healthy": 146,
+    "leaf_scorch_underwatering": 12,
+    "leaf_spot": 37,
+    "not_a_plant": 212,
+    "nutrient_deficiency": 11,
+    "powdery_mildew": 17,
+    "viral_disease": 30
   },
   "temperature_cal_counts": {
-    "bacterial_leaf_spot": 3,
-    "gray_mold_botrytis": 5,
-    "healthy": 54,
-    "leaf_spot_fungal": 22,
-    "not_a_plant": 0,
-    "powdery_mildew": 5,
-    "viral_disease": 15
+    "gray_mold_botrytis": 12,
+    "healthy": 148,
+    "leaf_scorch_underwatering": 13,
+    "leaf_spot": 58,
+    "not_a_plant": 241,
+    "nutrient_deficiency": 12,
+    "powdery_mildew": 23,
+    "viral_disease": 59
   },
   "conformal_cal_counts": {
-    "bacterial_leaf_spot": 19,
-    "gray_mold_botrytis": 11,
-    "healthy": 144,
-    "leaf_spot_fungal": 38,
-    "not_a_plant": 0,
-    "powdery_mildew": 25,
-    "viral_disease": 19
+    "gray_mold_botrytis": 14,
+    "healthy": 148,
+    "leaf_scorch_underwatering": 14,
+    "leaf_spot": 51,
+    "not_a_plant": 259,
+    "nutrient_deficiency": 13,
+    "powdery_mildew": 30,
+    "viral_disease": 37
   },
   "val_studio_counts": {
-    "bacterial_leaf_spot": 299,
     "gray_mold_botrytis": 0,
-    "healthy": 291,
-    "leaf_spot_fungal": 298,
+    "healthy": 294,
+    "leaf_scorch_underwatering": 0,
+    "leaf_spot": 299,
     "not_a_plant": 0,
+    "nutrient_deficiency": 0,
     "powdery_mildew": 298,
     "viral_disease": 297
   },
@@ -93,43 +104,70 @@
     "la_tau": 0.5,
     "label_smoothing": 0.05,
     "use_weighted_sampler": false,
-    "batch": 96,
+    "use_source_weighted_sampler": true,
+    "source_weights": {
+      "plantdoc": 1.1,
+      "plantvillage": 0.35,
+      "inat": 1.0,
+      "inat_animalia": 0.5,
+      "inat_physiological": 1.2,
+      "coco": 0.5,
+      "openimages_indoor": 0.5
+    },
+    "batch": 256,
     "img_size": 256,
-    "ema_decay": 0.9946666666666667
+    "ema_decay": 0.99
   },
   "int8": {
-    "drift": 0.3945011462423889,
-    "f1_fp32": 0.7051996431477824,
-    "f1_int8": 0.3106984969053935,
+    "_note": "f1_int8 / f1_fp32 are measured by raw argmax(logits) on val_realworld \u2014 no temperature scaling, no weak-healthy reroute, no very-low-confidence demotion. The runtime pipeline applies all three on top; production disease macro-F1 is therefore at least as good as f1_int8, never less. The ship gate uses f1_int8 as a conservative floor.",
+    "drift": -0.038615769892961005,
+    "f1_fp32": 0.6910701606630881,
+    "f1_int8": 0.7296859305560491,
     "warn_drift": 0.02,
     "fail_drift": 0.05,
-    "quant_mode": "dynamic_weight_only",
+    "quant_mode": "static_qdq",
     "activation_type": "QUInt8",
     "weight_type": "QInt8",
     "per_channel": true,
     "format": "QDQ",
-    "calibration_split": "temperature_cal",
-    "calibration_n": 500,
+    "calibration_split": "temperature_cal+train_backfill",
+    "calibration_n": 512,
     "static_extra_options": {
+      "CalibPercentile": 99.999,
       "OpTypesToExcludeOutputQuantization": [
         "HardSigmoid",
         "HardSwish",
-        "Mul"
+        "Mul",
+        "Sigmoid",
+        "GlobalAveragePool"
       ],
       "ActivationSymmetric": false,
       "WeightSymmetric": true
     },
-    "shipped": false,
-    "shipped_artifact": "classifier.onnx (renamed)"
+    "nodes_to_exclude": [
+      "/classifier/classifier.0/Gemm",
+      "/classifier/classifier.3/Gemm",
+      "/features/features.0/features.0.0/Conv",
+      "/features/features.11/block/block.2/scale_activation/HardSigmoid",
+      "/features/features.12/block/block.2/scale_activation/HardSigmoid",
+      "/features/features.13/block/block.2/scale_activation/HardSigmoid",
+      "/features/features.14/block/block.2/scale_activation/HardSigmoid",
+      "/features/features.15/block/block.2/scale_activation/HardSigmoid",
+      "/features/features.4/block/block.2/scale_activation/HardSigmoid",
+      "/features/features.5/block/block.2/scale_activation/HardSigmoid",
+      "/features/features.6/block/block.2/scale_activation/HardSigmoid"
+    ],
+    "shipped": true,
+    "shipped_artifact": "classifier_int8.onnx"
   },
   "kd": {
-    "best_indomain_disease_f1": 0.8088212772890191,
-    "best_epoch": 9
+    "best_indomain_disease_f1": 0.6795600646362411,
+    "best_epoch": 10
   },
   "reporting_backend": "onnxruntime_int8_cpu",
   "reproducibility": {
     "seed": 0,
-    "torch": "2.10.0+cu128",
+    "torch": "2.11.0+cu128",
     "onnxruntime": "1.26.0",
     "cudnn_deterministic": false,
     "cudnn_benchmark": true

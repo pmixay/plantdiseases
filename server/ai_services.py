@@ -157,13 +157,17 @@ def identify_species(
         # Lazy import — only the identify path needs requests.
         import requests  # noqa: WPS433
 
-        url = (
-            f"https://my-api.plantnet.org/v2/identify/{PLANTNET_PROJECT}"
-            f"?api-key={PLANTNET_API_KEY}&lang={lang}"
-        )
+        # Pass the API key via the query *params* argument rather than
+        # interpolating it into the URL string: a raised requests
+        # exception or any log of ``url`` would otherwise leak the secret
+        # into access logs / error traces.
+        url = f"https://my-api.plantnet.org/v2/identify/{PLANTNET_PROJECT}"
+        params = {"api-key": PLANTNET_API_KEY, "lang": lang}
         files = {"images": ("plant.jpg", image_bytes, "image/jpeg")}
         data = {"organs": organ}
-        r = requests.post(url, files=files, data=data, timeout=PLANTNET_TIMEOUT)
+        r = requests.post(
+            url, params=params, files=files, data=data, timeout=PLANTNET_TIMEOUT
+        )
         if r.status_code == 401:
             logger.error("PlantNet auth failed — check PLANTNET_API_KEY")
             return {"available": False, "results": [], "source": "auth_failed"}
@@ -377,6 +381,41 @@ def _gc_chat_sessions(now: float) -> None:
         del _chat_sessions[sid]
 
 
+_DIAG_TOKEN_RE = re.compile(r"^[a-z][a-z0-9_]{0,40}(:[a-z0-9_]{1,40})?$")
+
+
+def _sanitize_diagnosis_context(ctx: dict) -> dict:
+    """Coerce the (client-supplied) diagnosis context into a strict
+    shape before it is embedded in the system prompt.
+
+    ``/api/chat`` callers control ``diagnosis_context``, so the raw
+    ``class`` / ``warnings`` strings are an untrusted prompt-injection
+    surface (free text in a *system* message carries the most weight).
+    We keep only values that match a tight token shape — lowercase
+    identifiers, no whitespace, no newlines — so no natural-language
+    instruction can ride along, and clamp confidence to [0, 1].
+    """
+    raw_class = ctx.get("class_name") or ctx.get("disease_name") or ""
+    cls = raw_class if _DIAG_TOKEN_RE.match(str(raw_class)) else None
+
+    severity = ctx.get("severity")
+    if severity not in ("low", "medium", "high"):
+        severity = None
+
+    try:
+        conf = float(ctx.get("confidence"))
+        conf = round(max(0.0, min(1.0, conf)), 4)
+    except (TypeError, ValueError):
+        conf = None
+
+    warnings: list[str] = []
+    for w in (ctx.get("warnings") or [])[:8]:
+        if isinstance(w, str) and _DIAG_TOKEN_RE.match(w):
+            warnings.append(w)
+
+    return {"class": cls, "confidence": conf, "severity": severity, "warnings": warnings}
+
+
 def _build_system_text(locale: str, diagnosis_context: dict | None) -> str:
     """Compose the system prompt: doctor instructions + locale hint +
     optional structured diagnosis context. Plain string so OpenRouter
@@ -387,12 +426,7 @@ def _build_system_text(locale: str, diagnosis_context: dict | None) -> str:
     )
     parts = [_DOCTOR_SYSTEM_PROMPT, locale_hint]
     if diagnosis_context:
-        compact = {
-            "class": diagnosis_context.get("class_name") or diagnosis_context.get("disease_name"),
-            "confidence": diagnosis_context.get("confidence"),
-            "severity": diagnosis_context.get("severity"),
-            "warnings": diagnosis_context.get("warnings") or [],
-        }
+        compact = _sanitize_diagnosis_context(diagnosis_context)
         parts.append("Latest classifier output:\n" + json.dumps(compact, ensure_ascii=False))
     return "\n\n".join(parts)
 

@@ -21,17 +21,18 @@ import logging
 import math
 import threading
 import time
+import uuid
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import JSONResponse
-from PIL import Image, UnidentifiedImageError
+from fastapi.responses import FileResponse, JSONResponse
+from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import BaseModel, Field, field_validator
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response as StarletteResponse
@@ -159,10 +160,35 @@ except ImportError:
     )
     from pipeline import PlantDiseasePipeline
 
-try:
-    from . import __version__ as APP_VERSION  # type: ignore
-except Exception:
-    APP_VERSION = "2.1"
+def _resolve_app_version() -> str:
+    """Resolve the served model/app version.
+
+    Prefer the package ``__version__``; when the server is run as a flat
+    module (``main:app`` in the Docker image) that import fails, so fall
+    back to the shipped model metadata (``models/classes.json ->
+    model_version``) rather than a hardcoded string that silently lags
+    the deployed model. Only if both are unavailable do we use a final
+    constant.
+    """
+    try:
+        from . import __version__ as pkg_version  # type: ignore
+
+        return str(pkg_version)
+    except Exception:
+        pass
+    try:
+        meta = json.loads(
+            (Path("models") / "classes.json").read_text(encoding="utf-8")
+        )
+        version = meta.get("model_version")
+        if version:
+            return str(version)
+    except Exception:
+        pass
+    return "2.2"
+
+
+APP_VERSION = _resolve_app_version()
 
 # Limit Pillow decompression to prevent zip-bomb DoS
 Image.MAX_IMAGE_PIXELS = 20_000_000  # ~4500×4500
@@ -202,6 +228,14 @@ CLASSIFIER_PATH = MODELS_DIR / "classifier.pth"
 
 MAX_FILE_SIZE = get_int("MAX_FILE_SIZE", 10 * 1024 * 1024)  # 10 MB
 MAX_IMAGE_DIMENSION = get_int("MAX_IMAGE_DIMENSION", 4096)
+# Reject degenerate thumbnails. A tiny upload (e.g. 8x8) carries no
+# diagnostic signal but the blur gate passes it (upscaled noise has
+# high Laplacian variance) and the detector/classifier then emit a
+# confident — and meaningless — verdict (observed live: an 8x8 noise
+# image scored viral_disease @0.72 / severity=high). Anything below
+# this on the short side is short-circuited to a clean 400 so the
+# client asks the user to retake instead of trusting a fake diagnosis.
+MIN_IMAGE_DIMENSION = get_int("MIN_IMAGE_DIMENSION", 48)
 INFERENCE_TIMEOUT = get_float("INFERENCE_TIMEOUT", 30.0)
 
 # Same-photo dedup. Users frequently re-upload the same JPEG within
@@ -378,8 +412,6 @@ def _issue_scan_id() -> str:
     and return it for the /analyze response. Run inside the request
     handler so callers don't need to think about the DB hop.
     """
-    import uuid
-
     scan_id = uuid.uuid4().hex
     try:
         record_issued_scan_id(scan_id)
@@ -726,10 +758,17 @@ async def _read_upload(image: UploadFile) -> bytes:
 
 
 def _open_image(contents: bytes) -> Image.Image:
-    """Decode bytes into a validated RGB PIL image."""
+    """Decode bytes into a validated, EXIF-normalised RGB PIL image."""
     try:
         img = Image.open(io.BytesIO(contents))
         img.load()  # force actual decoding to surface truncation errors
+        # Apply the EXIF orientation tag BEFORE converting to RGB.
+        # Phone cameras commonly store sideways/upside-down captures
+        # with an orientation flag rather than rotating pixels; PIL drops
+        # EXIF on ``convert("RGB")``, so without this the detector and
+        # classifier see a rotated leaf and lose accuracy on portrait
+        # shots. ``exif_transpose`` is a no-op when no tag is present.
+        img = ImageOps.exif_transpose(img)
         return img.convert("RGB")
     except Image.DecompressionBombError as exc:
         raise HTTPException(status_code=400, detail="Image exceeds decompression safety limit") from exc
@@ -942,8 +981,8 @@ async def _species_identify_best_effort(
 @app.post("/api/analyze")
 async def analyze_image(
     image: UploadFile = File(...),
-    species: str | None = None,
-    locale: str = "en",
+    species: str | None = Query(default=None, max_length=128),
+    locale: str = Query(default="en", max_length=16),
 ):
     """Analyse a plant image for diseases (two-stage pipeline).
 
@@ -999,6 +1038,14 @@ async def analyze_image(
             status_code=400,
             detail=f"Image resolution too large ({img_w}x{img_h}). "
                    f"Maximum dimension: {MAX_IMAGE_DIMENSION}px",
+        )
+    if min(img_w, img_h) < MIN_IMAGE_DIMENSION:
+        _record_error()
+        logger.warning("Rejected undersized image: %dx%d from %s", img_w, img_h, fname)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Image resolution too small ({img_w}x{img_h}). "
+                   f"Minimum dimension: {MIN_IMAGE_DIMENSION}px — please retake the photo.",
         )
 
     # Same-photo short-circuit. The hash is over the raw upload bytes,
@@ -1905,7 +1952,9 @@ async def feedback_image_upload(
             detail="Unknown scan_id — please re-scan before sending feedback.",
         )
 
-    image_bytes = await image.read()
+    # Hard size cap (same as /api/analyze) — the bare ``image.read()``
+    # used here previously pulled the whole body into RAM with no ceiling.
+    image_bytes = await _read_upload(image)
     saved = await asyncio.get_running_loop().run_in_executor(
         _get_inference_executor(),
         lambda: save_feedback_image(
@@ -1979,21 +2028,9 @@ async def community_scan_upload(
         logger.info("Community scan validation failed: %s", exc)
         raise HTTPException(status_code=422, detail="Invalid scan upload") from exc
 
-    image_bytes: bytes | None = None
-    if image is not None:
-        if image.content_type and image.content_type not in _COMMUNITY_ALLOWED_TYPES:
-            raise HTTPException(
-                status_code=400,
-                detail="Community thumbnail must be JPEG / PNG / WebP",
-            )
-        try:
-            image_bytes = await _read_upload(image)
-        except HTTPException:
-            raise
-        except Exception as exc:  # noqa: BLE001
-            logger.info("Community thumb read failed: %s", exc)
-            image_bytes = None
-
+    # Enforce the per-IP daily quota BEFORE reading the (up to 10 MB)
+    # image body — an over-quota client should be rejected without us
+    # ingesting its payload first.
     client_ip = _client_ip(request)
     ip_hash = hash_client_ip(client_ip)
     today_writes = await asyncio.get_running_loop().run_in_executor(
@@ -2009,6 +2046,21 @@ async def community_scan_upload(
             status_code=429,
             detail="Daily community-upload quota reached.",
         )
+
+    image_bytes: bytes | None = None
+    if image is not None:
+        if image.content_type and image.content_type not in _COMMUNITY_ALLOWED_TYPES:
+            raise HTTPException(
+                status_code=400,
+                detail="Community thumbnail must be JPEG / PNG / WebP",
+            )
+        try:
+            image_bytes = await _read_upload(image)
+        except HTTPException:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.info("Community thumb read failed: %s", exc)
+            image_bytes = None
     try:
         row_id = await asyncio.get_running_loop().run_in_executor(
             _get_inference_executor(),
@@ -2096,8 +2148,11 @@ async def community_scan_thumb(filename: str):
     path = COMMUNITY_THUMB_DIR / filename
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Thumbnail not found")
-    return StarletteResponse(
-        content=path.read_bytes(),
+    # FileResponse streams the file off the event loop instead of
+    # reading the whole thumbnail into memory inline. Thumbnails are
+    # always re-encoded to JPEG by community._save_thumbnail.
+    return FileResponse(
+        path,
         media_type="image/jpeg",
         headers={"Cache-Control": "public, max-age=86400"},
     )

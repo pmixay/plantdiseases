@@ -124,6 +124,19 @@ def test_too_high_resolution_rejected(client, monkeypatch):
     assert "resolution too large" in r.json()["detail"].lower()
 
 
+def test_too_small_image_rejected(client):
+    """A degenerate tiny upload (e.g. 8x8) carries no diagnostic signal
+    but the blur gate passes it and the pipeline emits a confident, fake
+    verdict (observed live: 8x8 noise -> viral_disease@0.72/high). It must
+    be short-circuited to a clean 400 instead."""
+    img = Image.new("RGB", (8, 8), color=(70, 140, 70))
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    r = _post_image(client, buf.getvalue(), "tiny.png", "image/png")
+    assert r.status_code == 400
+    assert "too small" in r.json()["detail"].lower()
+
+
 @pytest.mark.parametrize("fmt,content_type", [("PNG", "image/png"), ("JPEG", "image/jpeg")])
 def test_valid_image_accepted(client, fmt, content_type):
     img = Image.new("RGB", (64, 64), color=(90, 160, 90))

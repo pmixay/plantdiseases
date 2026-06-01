@@ -146,7 +146,8 @@ class RetryInterceptor(
     @Throws(IOException::class)
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
-        val effectiveRetries = if (request.method == "POST") minOf(maxRetries, 1) else maxRetries
+        val isPost = request.method == "POST"
+        val effectiveRetries = if (isPost) minOf(maxRetries, 1) else maxRetries
         var lastException: IOException? = null
         var lastResponse: Response? = null
 
@@ -166,8 +167,15 @@ class RetryInterceptor(
                 response.close()
                 sleepBackoff(attempt, serverDelay)
             } catch (e: IOException) {
+                // Never retry a POST on a transport-level IOException: the
+                // server may have already received and processed the
+                // (non-idempotent) multipart body — only the response was
+                // lost — so a blind retry can create duplicate feedback /
+                // community rows or re-run analyze. POSTs still retry on an
+                // explicit 429/503, where the server signals it did NOT
+                // process the request. GETs retry freely (idempotent).
                 lastException = e
-                if (attempt >= effectiveRetries) throw e
+                if (isPost || attempt >= effectiveRetries) throw e
                 sleepBackoff(attempt, null)
             }
         }

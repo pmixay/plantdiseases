@@ -293,6 +293,33 @@ def test_ood_floor_is_calibrated_not_hardcoded():
     )
 
 
+def test_shipped_classes_json_matches_head_taxonomy():
+    """Regression: the shipped ``classes.json`` class list MUST match the
+    classifier's built-in head taxonomy (``DEFAULT_CLASS_NAMES``), in the
+    same order. A stale v2.1 (7-class) ``classes.json`` against the v2.2
+    (8-output) head silently mislabeled every prediction by index — this
+    invariant fails loudly on that drift at CI time."""
+    import sys
+
+    server_dir = REPO_ROOT / "server"
+    if str(server_dir) not in sys.path:
+        sys.path.insert(0, str(server_dir))
+    from classifier import DEFAULT_CLASS_NAMES
+
+    classes_json = REPO_ROOT / "server" / "models" / "classes.json"
+    meta = json.loads(classes_json.read_text(encoding="utf-8"))
+    assert meta.get("class_names") == list(DEFAULT_CLASS_NAMES), (
+        "models/classes.json class_names disagree with "
+        "classifier.DEFAULT_CLASS_NAMES — the shipped metadata is stale "
+        "relative to the trained head."
+    )
+    # Version metadata must also keep up with the taxonomy.
+    assert str(meta.get("model_version", "")).startswith("2.2"), (
+        f"classes.json model_version={meta.get('model_version')} but the "
+        "shipped taxonomy is v2.2."
+    )
+
+
 # ── Data-on-disk invariants (skipped if `data_v2/` isn't present) ───
 
 
