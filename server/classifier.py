@@ -195,6 +195,17 @@ class DiseaseClassifier:
         self._onnx_session = sess
         self._onnx_input_name = inp.name
         self.backend = "onnx"
+
+        # Warm the graph once at load so the first real request doesn't
+        # eat the one-off allocation / kernel-selection cost (the detector
+        # already warms up; the classifier previously did not, adding tens
+        # of ms of jitter to the first user's scan after a deploy).
+        try:
+            warm = np.zeros((1, 3, self.img_size, self.img_size), dtype=np.float32)
+            sess.run(None, {inp.name: warm})
+        except Exception as e:  # noqa: BLE001 — warmup is best-effort
+            logger.debug("Classifier ONNX warmup skipped: %s", e)
+
         logger.info(
             "Classifier (ONNX) loaded from %s (%d classes, img_size=%d)",
             path, self.NUM_CLASSES, self.img_size,

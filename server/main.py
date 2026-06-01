@@ -21,6 +21,7 @@ import logging
 import math
 import threading
 import time
+import uuid
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
@@ -411,8 +412,6 @@ def _issue_scan_id() -> str:
     and return it for the /analyze response. Run inside the request
     handler so callers don't need to think about the DB hop.
     """
-    import uuid
-
     scan_id = uuid.uuid4().hex
     try:
         record_issued_scan_id(scan_id)
