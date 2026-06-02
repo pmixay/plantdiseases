@@ -1,9 +1,10 @@
-import sys
-import time
-import random
 import argparse
-import requests
+import random
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+import requests
+
 
 def run_request(base_url, endpoint, api_key=None):
     headers = {}

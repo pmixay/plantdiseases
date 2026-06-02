@@ -29,7 +29,7 @@ from contextvars import ContextVar
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from fastapi import FastAPI, APIRouter, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -54,31 +54,61 @@ try:
     )
     from .community import (
         COMMUNITY_THUMB_DIR,
+    )
+    from .community import (
         daily_write_count_for_ip_hash as community_daily_writes,
+    )
+    from .community import (
         delete_for_user as community_delete_for_user,
-        init_db as init_community_db,
-        nearby_scans as community_nearby_scans,
-        prune_older_than as community_prune_older_than,
-        record_scan as community_record_scan,
-        region_summary as community_region_summary,
-        stats_snapshot as community_stats_snapshot,
+    )
+    from .community import (
         get_user_data as community_get_user_data,
+    )
+    from .community import (
+        init_db as init_community_db,
+    )
+    from .community import (
+        nearby_scans as community_nearby_scans,
+    )
+    from .community import (
+        prune_older_than as community_prune_older_than,
+    )
+    from .community import (
+        record_scan as community_record_scan,
+    )
+    from .community import (
+        region_summary as community_region_summary,
+    )
+    from .community import (
+        stats_snapshot as community_stats_snapshot,
     )
     from .config import get, get_float, get_int, get_list, get_str
     from .diseases_data import DISEASES_DATABASE, lookup_pet_toxicity
     from .feedback import (
         attach_image_path as feedback_attach_image_path,
+    )
+    from .feedback import (
         daily_write_count_for_ip_hash as feedback_daily_writes,
+    )
+    from .feedback import (
+        delete_for_user as feedback_delete_for_user,
+    )
+    from .feedback import (
         feedback_counts,
         hash_client_ip,
         is_scan_id_issued,
         record_feedback,
         record_issued_scan_id,
         save_feedback_image,
-        init_db as init_feedback_db,
-        prune_older_than as feedback_prune_older_than,
-        delete_for_user as feedback_delete_for_user,
+    )
+    from .feedback import (
         get_user_data as feedback_get_user_data,
+    )
+    from .feedback import (
+        init_db as init_feedback_db,
+    )
+    from .feedback import (
+        prune_older_than as feedback_prune_older_than,
     )
     from .pipeline import PlantDiseasePipeline
 except ImportError:
@@ -91,31 +121,61 @@ except ImportError:
     )
     from community import (
         COMMUNITY_THUMB_DIR,
+    )
+    from community import (
         daily_write_count_for_ip_hash as community_daily_writes,
+    )
+    from community import (
         delete_for_user as community_delete_for_user,
-        init_db as init_community_db,
-        nearby_scans as community_nearby_scans,
-        prune_older_than as community_prune_older_than,
-        record_scan as community_record_scan,
-        region_summary as community_region_summary,
-        stats_snapshot as community_stats_snapshot,
+    )
+    from community import (
         get_user_data as community_get_user_data,
+    )
+    from community import (
+        init_db as init_community_db,
+    )
+    from community import (
+        nearby_scans as community_nearby_scans,
+    )
+    from community import (
+        prune_older_than as community_prune_older_than,
+    )
+    from community import (
+        record_scan as community_record_scan,
+    )
+    from community import (
+        region_summary as community_region_summary,
+    )
+    from community import (
+        stats_snapshot as community_stats_snapshot,
     )
     from config import get, get_float, get_int, get_list, get_str
     from diseases_data import DISEASES_DATABASE, lookup_pet_toxicity
     from feedback import (
         attach_image_path as feedback_attach_image_path,
+    )
+    from feedback import (
         daily_write_count_for_ip_hash as feedback_daily_writes,
+    )
+    from feedback import (
+        delete_for_user as feedback_delete_for_user,
+    )
+    from feedback import (
         feedback_counts,
         hash_client_ip,
         is_scan_id_issued,
         record_feedback,
         record_issued_scan_id,
         save_feedback_image,
-        init_db as init_feedback_db,
-        prune_older_than as feedback_prune_older_than,
-        delete_for_user as feedback_delete_for_user,
+    )
+    from feedback import (
         get_user_data as feedback_get_user_data,
+    )
+    from feedback import (
+        init_db as init_feedback_db,
+    )
+    from feedback import (
+        prune_older_than as feedback_prune_older_than,
     )
     from pipeline import PlantDiseasePipeline
 
