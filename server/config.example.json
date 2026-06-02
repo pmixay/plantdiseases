@@ -33,9 +33,6 @@
     "plantnet_timeout": 8.0,
     "plantnet_cache_size": 256
   },
-  "redis": {
-    "redis_url": ""
-  },
   "security": {
     "require_api_key": false,
     "api_keys": {
@@ -45,10 +42,5 @@
         "quota_daily": 500
       }
     }
-  },
-  "telemetry": {
-    "sentry_dsn": "",
-    "sentry_traces_sample_rate": 1.0,
-    "sentry_profiles_sample_rate": 1.0
   }
 }

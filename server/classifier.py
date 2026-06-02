@@ -31,6 +31,14 @@ from PIL import Image
 logger = logging.getLogger(__name__)
 
 DEFAULT_IMG_SIZE = 256
+# Train/serve crop parity: the notebook eval/calibration transform is
+# ``Resize(int(img_size * EVAL_RESIZE_RATIO)) -> CenterCrop(img_size)``
+# (a mild center zoom that trims the border). Conformal q_hat and the
+# temperature were fit on that distribution, so serving must reproduce
+# it — resizing the short side straight to ``img_size`` (ratio 1.0) fed
+# the model a slightly wider frame than calibration ever saw. The ratio
+# is overridable from ``classes.json -> training.eval_resize_ratio``.
+DEFAULT_EVAL_RESIZE_RATIO = 1.05
 
 # Alphabetical — must match training-time ``sorted(ImageFolder.classes)``.
 # v2.2 trainable taxonomy. ``leaf_scorch_underwatering`` and
@@ -83,6 +91,13 @@ def _resolve_img_size(meta: dict) -> int:
     return DEFAULT_IMG_SIZE
 
 
+def _resolve_eval_resize_ratio(meta: dict) -> float:
+    ratio = (meta.get("training") or {}).get("eval_resize_ratio")
+    if isinstance(ratio, (int, float)) and ratio >= 1.0:
+        return float(ratio)
+    return DEFAULT_EVAL_RESIZE_RATIO
+
+
 def _resolve_onnx_path(model_path: Path | None) -> Path | None:
     if model_path is None:
         return None
@@ -110,6 +125,7 @@ class DiseaseClassifier:
         # hard contract (must match the checkpoint head exactly), whereas
         # the built-in default is a best-effort fallback we may pad.
         self._class_names_from_meta = bool(meta.get("class_names"))
+        self.eval_resize_ratio = _resolve_eval_resize_ratio(meta)
         self.CLASS_NAMES = _resolve_class_names(meta)
         self.NUM_CLASSES = len(self.CLASS_NAMES)
         self.img_size = _resolve_img_size(meta)
@@ -126,7 +142,6 @@ class DiseaseClassifier:
 
         if not self.is_loaded and model_path and model_path.exists():
             try:
-                import torch
                 self._load_pytorch_model(model_path)
             except ImportError:
                 logger.info("PyTorch is not installed; skipping PyTorch classifier fallback")
@@ -296,30 +311,31 @@ class DiseaseClassifier:
         arr = (arr - NORM_MEAN) / NORM_STD
         return arr.transpose(2, 0, 1)
 
-    @staticmethod
-    def _aspect_preserving_square(img: Image.Image, side: int) -> Image.Image:
+    def _aspect_preserving_square(self, img: Image.Image, side: int) -> Image.Image:
         """Resize ``img`` to a ``side × side`` square WITHOUT stretching.
 
-        The training pipeline (notebook §4 ``indoor_train_tx``) feeds
-        the model a CenterCrop after a proportional Resize — so a
-        wide leaf shot at 800x400 was always reduced to 256x256 with
-        the aspect preserved (the center 256x256 region of a
-        proportionally-resized 512x256 source). Calling
-        ``img.resize((256, 256), BILINEAR)`` here squashed any
-        non-square upload into a distorted aspect, silently shaving
-        accuracy on phone photos that are rarely square.
-
-        Mirror the training transform: resize so the SHORT side
-        becomes ``side``, then center-crop the long axis to ``side``.
+        Mirror the notebook eval/calibration transform exactly:
+        ``Resize(int(side * eval_resize_ratio)) -> CenterCrop(side)``.
+        torchvision ``Resize`` with a single int scales the SHORT side to
+        that value (aspect preserved), so we resize the short side to
+        ``int(side * eval_resize_ratio)`` (268 px at side=256, ratio=1.05)
+        and center-crop ``side``. The 1.05 oversize is the mild center
+        zoom the conformal q_hat + temperature were calibrated against;
+        dropping it (resizing the short side straight to ``side``) fed the
+        model a wider frame than calibration saw and skewed both accuracy
+        and calibration. Squashing a non-square upload to ``side × side``
+        would distort phone photos that are rarely square, so the aspect
+        is always preserved.
         """
         w, h = img.size
-        if w == h == side:
+        target_short = max(side, int(side * self.eval_resize_ratio))
+        if w == h == target_short == side:
             return img
-        scale = side / float(min(w, h))
+        scale = target_short / float(min(w, h))
         new_w = max(side, round(w * scale))
         new_h = max(side, round(h * scale))
         resized = img.resize((new_w, new_h), Image.BILINEAR)
-        if new_w == new_h:
+        if new_w == side and new_h == side:
             return resized
         left = (new_w - side) // 2
         top = (new_h - side) // 2

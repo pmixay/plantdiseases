@@ -17,7 +17,6 @@ import com.plantdiseases.app.data.model.ProgressionResponse
 import com.plantdiseases.app.data.model.ScanHistoryItem
 import com.plantdiseases.app.data.remote.ApiService
 import com.plantdiseases.app.data.remote.PlantApiClient
-import com.plantdiseases.app.data.classifier.TFLiteClassifier
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -31,13 +30,11 @@ import java.net.UnknownHostException
 class ScanRepository(
     private val scanDao: ScanDao,
     private val apiClient: PlantApiClient,
-    private val context: android.content.Context,
 ) {
     private val apiService: ApiService
         get() = apiClient.apiService
 
     private val gson = Gson()
-    private val offlineClassifier by lazy { TFLiteClassifier(context) }
 
     /**
      * Send image to server for analysis. `speciesHint` is optional —
@@ -71,25 +68,15 @@ class ScanRepository(
                     Result.failure(Exception("Server error: ${response.code()} ${response.message()}"))
                 }
             } catch (e: SocketTimeoutException) {
-                runOfflineFallback(imageFile, e)
+                Result.failure(ServerTimeoutException())
             } catch (e: UnknownHostException) {
-                runOfflineFallback(imageFile, e)
+                Result.failure(NoNetworkException())
             } catch (e: java.net.ConnectException) {
-                runOfflineFallback(imageFile, e)
-            } catch (e: java.io.IOException) {
-                runOfflineFallback(imageFile, e)
+                Result.failure(ServerTimeoutException())
             } catch (e: Exception) {
                 Result.failure(e)
             }
         }
-
-    private fun runOfflineFallback(imageFile: File, cause: Exception): Result<AnalysisResponse> {
-        return try {
-            Result.success(offlineClassifier.classifyImage(imageFile))
-        } catch (e: Exception) {
-            Result.failure(cause)
-        }
-    }
 
     /**
      * Ask the server's PlantNet proxy to identify the species in `imageFile`.
@@ -303,21 +290,6 @@ class ScanRepository(
             "severity" to scan.severity,
             "warnings" to parseWarnings(scan.warnings),
         )
-    }
-
-    /**
-     * Coarse client-side severity hint. The server's `/api/analyze`
-     * carries an authoritative `severity` field (now parsed into
-     * `AnalysisResponse.severity`), but `ScanEntity` does not yet
-     * persist it, so the progression/chat payloads fall back to this
-     * confidence-derived estimate. TODO: add a `severity` column to
-     * `ScanEntity` (Room migration) and prefer the stored server value.
-     */
-    private fun severityHint(scan: ScanEntity): String = when {
-        scan.isHealthy -> "low"
-        scan.confidence >= 0.85f -> "high"
-        scan.confidence >= 0.65f -> "medium"
-        else -> "low"
     }
 
     /** Check server health */
