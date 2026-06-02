@@ -40,6 +40,12 @@
     <color name="on_surface">#F0FDF4</color>
     <color name="on_surface_secondary">#9CA3AF</color>
 
+    <!-- Card tonal ramp for App.GlassCard / *.Strong (see light theme).
+         Slightly lighter than the dark-green surface so cards lift off
+         the background. -->
+    <color name="surface_container_low">#161E18</color>
+    <color name="surface_container">#1C261E</color>
+
     <!-- ─── Soft-card tokens (dark) ────────────────────────────────
          On dark backgrounds we use a faint white sheen instead of an
          opaque tint so the surface still reveals the live wallpaper /

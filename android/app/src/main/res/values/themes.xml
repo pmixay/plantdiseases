@@ -16,6 +16,11 @@
         <item name="colorSurfaceVariant">@color/surface_variant</item>
         <item name="colorOnSurface">@color/on_surface</item>
         <item name="colorOnSurfaceVariant">@color/on_surface_secondary</item>
+        <!-- Card tonal containers used by App.GlassCard / *.Strong. Without
+             these, cards fall back to the Material3 baseline (lavender greys)
+             and clash with the white + green palette in light mode. -->
+        <item name="colorSurfaceContainerLow">@color/surface_container_low</item>
+        <item name="colorSurfaceContainer">@color/surface_container</item>
         <!-- Edge-to-edge: transparent status bar -->
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">false</item>
