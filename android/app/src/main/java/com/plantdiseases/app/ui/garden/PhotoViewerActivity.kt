@@ -2,15 +2,11 @@ package com.plantdiseases.app.ui.garden
 
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
 import android.graphics.Matrix
 import android.os.Bundle
-import android.view.Gravity
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.widget.FrameLayout
-import android.widget.ImageView
-import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
@@ -19,6 +15,7 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
 import com.bumptech.glide.Glide
 import com.plantdiseases.app.R
+import com.plantdiseases.app.databinding.ActivityPhotoViewerBinding
 import com.plantdiseases.app.util.LocaleHelper
 
 /**
@@ -43,6 +40,7 @@ import com.plantdiseases.app.util.LocaleHelper
  */
 class PhotoViewerActivity : AppCompatActivity() {
 
+    private lateinit var binding: ActivityPhotoViewerBinding
     private lateinit var pager: ViewPager2
     private lateinit var indicator: TextView
     private lateinit var uris: List<String>
@@ -61,57 +59,21 @@ class PhotoViewerActivity : AppCompatActivity() {
         uris = passed
         val start = intent.getIntExtra(EXTRA_START_INDEX, 0).coerceIn(0, uris.size - 1)
 
-        val root = FrameLayout(this).apply {
-            layoutParams = ViewGroup_FILL
-            setBackgroundColor(Color.BLACK)
-        }
-        ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
+        binding = ActivityPhotoViewerBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { v, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             v.setPadding(0, bars.top, 0, bars.bottom)
             insets
         }
 
-        pager = ViewPager2(this).apply {
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT,
-            )
-            adapter = PhotoAdapter(uris)
-            isUserInputEnabled = uris.size > 1
-        }
-        root.addView(pager)
+        pager = binding.photoPager
+        pager.adapter = PhotoAdapter(uris)
+        pager.isUserInputEnabled = uris.size > 1
 
-        // Top dismiss bar — close button on the left, "i/n" indicator
-        // on the right, both readable against an arbitrary photo via
-        // a soft black scrim behind them.
-        val topBar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setBackgroundColor(Color.argb(96, 0, 0, 0))
-            setPadding(16.dp(), 12.dp(), 16.dp(), 12.dp())
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                Gravity.TOP,
-            )
-        }
-        val closeBtn = ImageView(this).apply {
-            setImageResource(R.drawable.ic_back)
-            setColorFilter(Color.WHITE)
-            layoutParams = LinearLayout.LayoutParams(28.dp(), 28.dp())
-            isClickable = true
-            setOnClickListener { finish() }
-        }
-        topBar.addView(closeBtn)
-        indicator = TextView(this).apply {
-            textSize = 14f
-            setTextColor(Color.WHITE)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                .apply { marginStart = 16.dp() }
-            gravity = Gravity.END
-        }
-        topBar.addView(indicator)
-        root.addView(topBar)
+        indicator = binding.photoIndicator
+        binding.photoClose.setOnClickListener { finish() }
 
         pager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
             override fun onPageSelected(position: Int) {
@@ -120,8 +82,6 @@ class PhotoViewerActivity : AppCompatActivity() {
         })
         pager.setCurrentItem(start, false)
         updateIndicator(start)
-
-        setContentView(root)
     }
 
     private fun updateIndicator(position: Int) {
@@ -131,9 +91,6 @@ class PhotoViewerActivity : AppCompatActivity() {
             ""
         }
     }
-
-    private fun Int.dp(): Int =
-        (this * resources.displayMetrics.density).toInt()
 
     // ── Adapter ──────────────────────────────────────────────────────
 
@@ -181,10 +138,6 @@ class PhotoViewerActivity : AppCompatActivity() {
             context.startActivity(intent)
         }
 
-        private val ViewGroup_FILL = FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT,
-            FrameLayout.LayoutParams.MATCH_PARENT,
-        )
         private val ViewPager2_PAGE_PARAMS = RecyclerView.LayoutParams(
             RecyclerView.LayoutParams.MATCH_PARENT,
             RecyclerView.LayoutParams.MATCH_PARENT,

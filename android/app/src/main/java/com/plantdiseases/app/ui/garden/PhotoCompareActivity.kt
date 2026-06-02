@@ -10,20 +10,15 @@ import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.os.Bundle
 import android.util.AttributeSet
-import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
-import android.widget.FrameLayout
-import android.widget.ImageView
-import android.widget.LinearLayout
-import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import com.bumptech.glide.Glide
 import com.bumptech.glide.request.target.CustomTarget
 import com.bumptech.glide.request.transition.Transition
-import com.plantdiseases.app.R
+import com.plantdiseases.app.databinding.ActivityPhotoCompareBinding
 import com.plantdiseases.app.util.LocaleHelper
 
 /**
@@ -40,6 +35,8 @@ import com.plantdiseases.app.util.LocaleHelper
  */
 class PhotoCompareActivity : AppCompatActivity() {
 
+    private lateinit var binding: ActivityPhotoCompareBinding
+
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
     }
@@ -52,85 +49,17 @@ class PhotoCompareActivity : AppCompatActivity() {
             finish(); return
         }
 
-        val root = FrameLayout(this).apply {
-            setBackgroundColor(Color.BLACK)
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT,
-            )
-        }
-        ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
+        binding = ActivityPhotoCompareBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { v, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             v.setPadding(0, bars.top, 0, bars.bottom)
             insets
         }
 
-        val compare = CompareView(this).apply {
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT,
-            )
-        }
-        root.addView(compare)
-
-        // Top bar with close + label so the user knows which is which.
-        val topBar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setBackgroundColor(Color.argb(96, 0, 0, 0))
-            setPadding(16.dp(), 12.dp(), 16.dp(), 12.dp())
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                Gravity.TOP,
-            )
-        }
-        topBar.addView(ImageView(this).apply {
-            setImageResource(R.drawable.ic_back)
-            setColorFilter(Color.WHITE)
-            layoutParams = LinearLayout.LayoutParams(28.dp(), 28.dp())
-            isClickable = true
-            setOnClickListener { finish() }
-        })
-        topBar.addView(TextView(this).apply {
-            text = getString(R.string.photo_compare_title)
-            textSize = 14f
-            setTextColor(Color.WHITE)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                .apply { marginStart = 16.dp() }
-            gravity = Gravity.CENTER
-        })
-        root.addView(topBar)
-
-        // Bottom label strip explaining which side is which (the divider
-        // is otherwise unambiguous from the strokes around each half).
-        val legend = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setBackgroundColor(Color.argb(96, 0, 0, 0))
-            setPadding(16.dp(), 12.dp(), 16.dp(), 12.dp())
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                Gravity.BOTTOM,
-            )
-        }
-        legend.addView(TextView(this).apply {
-            text = getString(R.string.photo_compare_left)
-            textSize = 13f
-            setTextColor(Color.WHITE)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            gravity = Gravity.START
-        })
-        legend.addView(TextView(this).apply {
-            text = getString(R.string.photo_compare_right)
-            textSize = 13f
-            setTextColor(Color.WHITE)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            gravity = Gravity.END
-        })
-        root.addView(legend)
-
-        setContentView(root)
+        val compare = binding.compareView
+        binding.compareClose.setOnClickListener { finish() }
 
         // Glide loads asynchronously into CustomTarget hooks; the
         // compare view re-invalidates as soon as each side lands.
@@ -147,8 +76,6 @@ class PhotoCompareActivity : AppCompatActivity() {
             override fun onLoadCleared(placeholder: Drawable?) {}
         })
     }
-
-    private fun Int.dp(): Int = (this * resources.displayMetrics.density).toInt()
 
     companion object {
         const val EXTRA_FIRST_URI = "extra_first_uri"

@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Full-screen swipeable photo viewer. The pages (ZoomableImageView)
+    are created by PhotoViewerActivity's adapter; this layout supplies
+    the black canvas, the pager and the top dismiss bar (close + "i / n"
+    indicator) over a soft scrim.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/photo_viewer_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/black">
+
+    <androidx.viewpager2.widget.ViewPager2
+        android:id="@+id/photo_pager"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <LinearLayout
+        android:id="@+id/photo_top_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@color/camera_control_scrim"
+        android:paddingHorizontal="@dimen/space_lg"
+        android:paddingVertical="@dimen/space_md">
+
+        <ImageView
+            android:id="@+id/photo_close"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:clickable="true"
+            android:focusable="true"
+            android:src="@drawable/ic_back"
+            android:contentDescription="@string/close"
+            app:tint="@android:color/white" />
+
+        <TextView
+            android:id="@+id/photo_indicator"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="@dimen/space_lg"
+            android:gravity="end"
+            android:textColor="@android:color/white"
+            android:textSize="@dimen/text_body"
+            tools:text="3 / 12" />
+
+    </LinearLayout>
+
+</FrameLayout>

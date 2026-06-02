@@ -10,9 +10,6 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
-import android.widget.FrameLayout
-import android.widget.HorizontalScrollView
-import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -22,14 +19,13 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
-import com.google.android.material.button.MaterialButton
-import com.google.android.material.chip.Chip
 import com.google.android.material.textfield.TextInputEditText
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.ChatMessageEntity
 import com.plantdiseases.app.data.local.PlantEntity
 import com.plantdiseases.app.data.model.ChatRequest
+import com.plantdiseases.app.databinding.SheetDoctorChatBinding
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.launch
@@ -38,6 +34,9 @@ import java.util.Date
 import java.util.Locale
 
 class DoctorChatSheet : BottomSheetDialogFragment() {
+
+    private var _binding: SheetDoctorChatBinding? = null
+    private val binding get() = _binding!!
 
     private lateinit var plant: PlantEntity
     private var latestDisease: String? = null
@@ -52,194 +51,58 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?,
-    ): View = buildUI()
+    ): View {
+        _binding = SheetDoctorChatBinding.inflate(inflater, container, false)
+        return binding.root
+    }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        messagesLayout = binding.chatMessages
+        scrollView = binding.chatScroll
+        suggestionsContainer = binding.chatSuggestions
+        inputField = binding.chatInput
+        binding.chatPlantName.text = plant.name
+
+        // Suggestion chips — label comes from the layout; tapping one
+        // sends it verbatim.
+        listOf(binding.chatChip1, binding.chatChip2, binding.chatChip3).forEach { chip ->
+            chip.setOnClickListener {
+                Haptics.tick(requireContext())
+                sendMessage(chip.text.toString())
+            }
+        }
+
+        binding.chatClearBtn.setOnClickListener { clearChat() }
+        binding.chatSendBtn.setOnClickListener {
+            val txt = inputField.text?.toString()?.trim().orEmpty()
+            if (txt.isNotEmpty()) {
+                Haptics.tick(requireContext())
+                sendMessage(txt)
+            }
+        }
+        inputField.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_SEND) {
+                val txt = inputField.text?.toString()?.trim().orEmpty()
+                if (txt.isNotEmpty()) sendMessage(txt)
+                true
+            } else false
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(binding.chatInputRow) { v, insets ->
+            val bottomInset = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom
+            v.setPadding(20.dp(), 8.dp(), 20.dp(), 12.dp() + bottomInset)
+            insets
+        }
+
         val behavior = BottomSheetBehavior.from(view.parent as View)
         behavior.state = BottomSheetBehavior.STATE_EXPANDED
         behavior.peekHeight = 600.dp()
         loadMessages()
     }
 
-    private fun buildUI(): View {
-        val root = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(requireContext().getColor(R.color.background))
-        }
-
-        // Drag handle
-        root.addView(View(requireContext()).apply {
-            setBackgroundResource(R.drawable.bg_handle)
-            layoutParams = LinearLayout.LayoutParams(40.dp(), 4.dp()).apply {
-                gravity = Gravity.CENTER_HORIZONTAL
-                topMargin = 8.dp()
-                bottomMargin = 4.dp()
-            }
-        })
-
-        // Header
-        val header = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(20.dp(), 18.dp(), 20.dp(), 18.dp())
-            setBackgroundResource(R.drawable.bg_garden_hero)
-        }
-        header.addView(FrameLayout(requireContext()).apply {
-            setBackgroundResource(R.drawable.bg_icon_circle)
-            layoutParams = LinearLayout.LayoutParams(48.dp(), 48.dp())
-            addView(ImageView(requireContext()).apply {
-                setImageResource(R.drawable.ic_care)
-                setColorFilter(requireContext().getColor(R.color.primary))
-                layoutParams = FrameLayout.LayoutParams(26.dp(), 26.dp(), Gravity.CENTER)
-            })
-        })
-        val titles = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                .apply { marginStart = 14.dp() }
-        }
-        titles.addView(TextView(requireContext()).apply {
-            text = getString(R.string.doctor_title)
-            textSize = 20f
-            setTextColor(requireContext().getColor(R.color.hero_stat_text))
-            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
-        })
-        titles.addView(TextView(requireContext()).apply {
-            text = plant.name
-            textSize = 14f
-            setTextColor(requireContext().getColor(R.color.hero_stat_text))
-            alpha = 0.8f
-        })
-        header.addView(titles)
-
-        root.addView(header)
-
-        // Messages area
-        scrollView = ScrollView(requireContext()).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                0,
-                1f,
-            )
-            clipToPadding = false
-            setPadding(0, 0, 0, 8.dp())
-        }
-        messagesLayout = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(20.dp(), 12.dp(), 20.dp(), 12.dp())
-        }
-        scrollView.addView(messagesLayout)
-        root.addView(scrollView)
-
-        // Suggestion chips
-        suggestionsContainer = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            visibility = View.VISIBLE
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { setMargins(20.dp(), 4.dp(), 20.dp(), 8.dp()) }
-        }
-        val chipScroll = HorizontalScrollView(requireContext()).apply {
-            isHorizontalScrollBarEnabled = false
-        }
-        val chipRow = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(0, 4.dp(), 0, 4.dp())
-        }
-        listOf(
-            getString(R.string.doctor_q1),
-            getString(R.string.doctor_q2),
-            getString(R.string.doctor_q3),
-        ).forEach { q ->
-            chipRow.addView(Chip(requireContext()).apply {
-                text = q
-                isClickable = true
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { marginEnd = 8.dp() }
-                setOnClickListener {
-                    Haptics.tick(requireContext())
-                    sendMessage(q)
-                }
-            })
-        }
-        chipScroll.addView(chipRow)
-        suggestionsContainer.addView(chipScroll)
-        root.addView(suggestionsContainer)
-
-        val clearRow = FrameLayout(requireContext()).apply {
-            setBackgroundColor(requireContext().getColor(R.color.background))
-            setPadding(20.dp(), 4.dp(), 20.dp(), 8.dp())
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            )
-        }
-        clearRow.addView(MaterialButton(requireContext()).apply {
-            text = getString(R.string.doctor_clear)
-            textSize = 13f
-            cornerRadius = 16.dp()
-            minHeight = 48.dp()
-            minWidth = 152.dp()
-            setTextColor(requireContext().getColor(R.color.primary))
-            setBackgroundColor(requireContext().getColor(R.color.surface))
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                48.dp(),
-                Gravity.CENTER,
-            )
-            setOnClickListener { clearChat() }
-        })
-        root.addView(clearRow)
-        // Input row
-        val inputRow = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setBackgroundColor(requireContext().getColor(R.color.surface))
-            setPadding(20.dp(), 8.dp(), 20.dp(), 12.dp())
-        }
-        inputField = TextInputEditText(requireContext()).apply {
-            hint = getString(R.string.doctor_hint)
-            setSingleLine(false)
-            maxLines = 3
-            imeOptions = EditorInfo.IME_ACTION_SEND
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            setOnEditorActionListener { _, actionId, _ ->
-                if (actionId == EditorInfo.IME_ACTION_SEND) {
-                    val txt = text?.toString()?.trim().orEmpty()
-                    if (txt.isNotEmpty()) sendMessage(txt)
-                    true
-                } else false
-            }
-        }
-        inputRow.addView(inputField)
-        inputRow.addView(MaterialButton(requireContext()).apply {
-            text = getString(R.string.doctor_send)
-            cornerRadius = 16.dp()
-            setBackgroundColor(requireContext().getColor(R.color.primary))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                48.dp(),
-            ).apply { marginStart = 8.dp() }
-            setOnClickListener {
-                val txt = inputField.text?.toString()?.trim().orEmpty()
-                if (txt.isNotEmpty()) {
-                    Haptics.tick(requireContext())
-                    sendMessage(txt)
-                }
-            }
-        })
-        ViewCompat.setOnApplyWindowInsetsListener(inputRow) { view, insets ->
-            val bottomInset = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom
-            view.setPadding(20.dp(), 8.dp(), 20.dp(), 12.dp() + bottomInset)
-            insets
-        }
-        root.addView(inputRow)
-
-        return root
+    override fun onDestroyView() {
+        super.onDestroyView()
+        _binding = null
     }
 
     private fun loadMessages() {

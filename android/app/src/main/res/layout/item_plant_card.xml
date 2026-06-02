@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    A single plant row in the Garden list. Soft PictureThis-style card:
+    no stroke, gentle elevation, 96dp rounded thumbnail with a health
+    dot badge, then name / species / status-chip column. The thumbnail
+    image, health-dot colour and status chips are populated at bind time
+    by GardenFragment.buildPlantCard.
+-->
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/plant_card"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginBottom="@dimen/space_md"
+    android:clickable="true"
+    android:focusable="true"
+    android:longClickable="true"
+    app:cardBackgroundColor="@color/surface"
+    app:cardCornerRadius="@dimen/radius_lg"
+    app:cardElevation="2dp"
+    app:strokeWidth="0dp"
+    app:rippleColor="@color/primary_light">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:padding="@dimen/space_lg">
+
+        <FrameLayout
+            android:id="@+id/plant_thumb_wrap"
+            android:layout_width="96dp"
+            android:layout_height="96dp"
+            android:clipChildren="false">
+
+            <ImageView
+                android:id="@+id/plant_thumb"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@drawable/bg_icon_circle"
+                android:scaleType="centerCrop"
+                android:contentDescription="@null" />
+
+            <View
+                android:id="@+id/plant_health_dot"
+                android:layout_width="14dp"
+                android:layout_height="14dp"
+                android:layout_gravity="top|end"
+                android:visibility="gone"
+                tools:background="@color/healthy_green"
+                tools:visibility="visible" />
+
+        </FrameLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="@dimen/space_lg"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/plant_name"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:textColor="@color/on_surface"
+                android:textSize="18sp"
+                android:fontFamily="sans-serif-medium"
+                tools:text="Monstera" />
+
+            <TextView
+                android:id="@+id/plant_species"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_xxs"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:textColor="@color/on_surface_secondary"
+                android:textSize="@dimen/text_body_sm"
+                android:visibility="gone"
+                tools:text="Monstera deliciosa"
+                tools:visibility="visible" />
+
+            <LinearLayout
+                android:id="@+id/plant_status_row"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_sm"
+                android:orientation="horizontal"
+                android:visibility="gone"
+                tools:visibility="visible" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</com.google.android.material.card.MaterialCardView>

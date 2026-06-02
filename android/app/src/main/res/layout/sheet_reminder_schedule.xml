@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Reminder schedule bottom sheet. Drag handle, gradient header, three
+    reminder rows (item_reminder_row, configured in code) and a save
+    button. Replaces the fully programmatic ReminderScheduleSheet.buildUI.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@color/background">
+
+    <View
+        android:layout_width="40dp"
+        android:layout_height="4dp"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="@dimen/space_sm"
+        android:layout_marginBottom="@dimen/space_xs"
+        android:background="@drawable/bg_handle" />
+
+    <!-- Header -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@drawable/bg_garden_hero"
+        android:padding="@dimen/space_xl">
+
+        <FrameLayout
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="@drawable/bg_icon_circle">
+
+            <ImageView
+                android:layout_width="26dp"
+                android:layout_height="26dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_care"
+                android:contentDescription="@null"
+                app:tint="@color/primary" />
+
+        </FrameLayout>
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/space_md"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/reminders"
+                android:textColor="@color/on_primary"
+                android:textSize="@dimen/text_title"
+                android:fontFamily="sans-serif-medium" />
+
+            <TextView
+                android:id="@+id/reminder_plant_name"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@color/on_primary_secondary"
+                android:textSize="@dimen/text_body"
+                tools:text="Monstera" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingHorizontal="@dimen/space_xl"
+        android:paddingTop="@dimen/space_md"
+        android:paddingBottom="@dimen/space_xxs"
+        android:text="@string/reminder_subtitle"
+        android:textColor="@color/on_surface_secondary"
+        android:textSize="@dimen/text_body_sm" />
+
+    <!-- Three reminder rows. -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingHorizontal="@dimen/space_lg"
+        android:paddingTop="@dimen/space_sm">
+
+        <include
+            android:id="@+id/row_water"
+            layout="@layout/item_reminder_row" />
+
+        <include
+            android:id="@+id/row_check"
+            layout="@layout/item_reminder_row" />
+
+        <include
+            android:id="@+id/row_fertilize"
+            layout="@layout/item_reminder_row" />
+
+    </LinearLayout>
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/reminder_save_btn"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="@dimen/space_lg"
+        android:layout_marginTop="@dimen/space_xl"
+        android:layout_marginBottom="@dimen/space_2xl"
+        android:minHeight="52dp"
+        android:text="@string/reminder_save" />
+
+</LinearLayout>

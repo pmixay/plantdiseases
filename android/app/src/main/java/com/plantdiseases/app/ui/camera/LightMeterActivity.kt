@@ -13,8 +13,6 @@ import android.view.Gravity
 import android.view.View
 import androidx.activity.result.contract.ActivityResultContracts
 import android.widget.FrameLayout
-import android.widget.HorizontalScrollView
-import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -27,14 +25,12 @@ import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
-import androidx.core.widget.NestedScrollView
-import com.google.android.material.appbar.AppBarLayout
-import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.plantdiseases.app.R
+import com.plantdiseases.app.databinding.ActivityLightMeterBinding
 import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.launch
 import kotlin.math.ln
@@ -44,6 +40,7 @@ import java.util.concurrent.Executors
 
 class LightMeterActivity : AppCompatActivity(), SensorEventListener {
 
+    private lateinit var binding: ActivityLightMeterBinding
     private lateinit var tvLux: TextView
     private lateinit var tvStatus: TextView
     private lateinit var progressLight: LinearProgressIndicator
@@ -172,167 +169,64 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
         }
         contextPlantId = intent.getLongExtra(EXTRA_PLANT_ID, -1L)
 
-        val root = androidx.coordinatorlayout.widget.CoordinatorLayout(this).apply {
-            setBackgroundColor(getColor(R.color.background))
-        }
+        binding = ActivityLightMeterBinding.inflate(layoutInflater)
+        setContentView(binding.root)
 
-        // AppBar
-        val appBar = AppBarLayout(this).apply {
-            layoutParams = androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams(
-                androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams.MATCH_PARENT,
-                androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams.WRAP_CONTENT,
-            )
-            setBackgroundResource(R.drawable.bg_toolbar_gradient)
-            elevation = 0f
-            ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets ->
-                val topInset = insets.getInsets(WindowInsetsCompat.Type.systemBars()).top
-                view.setPadding(0, topInset, 0, 0)
-                insets
-            }
+        // Extend the gradient app bar behind the status bar.
+        ViewCompat.setOnApplyWindowInsetsListener(binding.lightAppBar) { view, insets ->
+            val topInset = insets.getInsets(WindowInsetsCompat.Type.systemBars()).top
+            view.setPadding(0, topInset, 0, 0)
+            insets
         }
-        val toolbar = MaterialToolbar(this).apply {
-            layoutParams = AppBarLayout.LayoutParams(
-                AppBarLayout.LayoutParams.MATCH_PARENT,
-                64.dp(),
-            )
+        binding.lightToolbar.apply {
+            // Pull the title flush to the 16dp gutter (cancels the default
+            // toolbar content insets the gradient header doesn't want).
             setContentInsetStartWithNavigation(0)
             setContentInsetsAbsolute(0, 0)
             setContentInsetsRelative(0, 0)
             setPadding(16.dp(), 0, 16.dp(), 0)
-            title = getString(R.string.light_meter)
-            setNavigationIcon(R.drawable.ic_back)
             setNavigationIconTint(getColor(R.color.toolbar_title))
-            setTitleTextColor(getColor(R.color.toolbar_title))
             setNavigationOnClickListener { finish() }
         }
-        appBar.addView(toolbar)
-        root.addView(appBar)
 
-        // Scrollable content
-        val scroll = NestedScrollView(this).apply {
-            layoutParams = androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams(
-                androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams.MATCH_PARENT,
-                androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams.MATCH_PARENT,
-            ).apply { behavior = AppBarLayout.ScrollingViewBehavior() }
-            clipToPadding = false
+        // Bind the gauge / species / tip views built in the layout.
+        tvLux = binding.lightLux
+        tvStatus = binding.lightStatus
+        progressLight = binding.lightProgress.apply {
+            max = PROGRESS_RESOLUTION
+            progress = 0
         }
-        val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(16.dp(), 16.dp(), 16.dp(), 28.dp())
-        }
-        scroll.addView(content)
-        root.addView(scroll)
-        setContentView(root)
+        tvSpeciesIdeal = binding.lightSpeciesIdeal
+        tvSpeciesStatus = binding.lightSpeciesStatus
+        tipCard = binding.lightTipCard
+        tvTip = binding.lightTip
+        chipGroup = binding.lightChipGroup
 
-        // Gauge card
-        content.addView(buildGaugeCard())
-
-        // Species chips
-        content.addView(buildSpeciesSection())
-
-        // Tips
-        content.addView(buildTipsCard())
+        // Algorithmic bits: the log-scaled tick row + the species chips.
+        binding.lightScaleRow.addView(buildScaleBar())
+        buildSpeciesChips()
+        tvSpeciesIdeal.text = getString(
+            R.string.light_ideal_range,
+            getString(selectedSpecies.labelRes),
+            selectedSpecies.minLux,
+            selectedSpecies.maxLux,
+        )
 
         // Sensor setup
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
         lightSensor = sensorManager?.getDefaultSensor(Sensor.TYPE_LIGHT)
         if (lightSensor == null) {
             hasSensor = false
-            showNoSensorMessage(content)
+            showNoSensorMessage(binding.lightContent)
             ensureCameraFallback()
         }
     }
 
-    private fun buildGaugeCard(): View {
-        val card = MaterialCardView(this).apply {
-            radius = 24.dp().toFloat()
-            cardElevation = 0f
-            strokeWidth = 1.dp()
-            strokeColor = getColor(R.color.card_stroke)
-            setCardBackgroundColor(getColor(R.color.surface))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { bottomMargin = 16.dp() }
-        }
-        val col = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(24.dp(), 28.dp(), 24.dp(), 24.dp())
-        }
-
-        // Big lux number
-        tvLux = TextView(this).apply {
-            text = getString(R.string.light_measuring)
-            textSize = 64f
-            setTextColor(getColor(R.color.primary))
-            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
-            gravity = Gravity.CENTER
-        }
-        col.addView(tvLux)
-
-        col.addView(TextView(this).apply {
-            text = getString(R.string.light_lux)
-            textSize = 18f
-            setTextColor(getColor(R.color.on_surface_secondary))
-            gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = (-4).dp() }
-        })
-
-        tvStatus = TextView(this).apply {
-            text = ""
-            textSize = 16f
-            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
-            gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 8.dp() }
-        }
-        col.addView(tvStatus)
-
-        // Progress bar: adaptive log scale (see luxToProgress). Indoor
-        // levels (10..2000 lux) sit comfortably in the middle of the
-        // bar instead of hugging the left edge.
-        progressLight = LinearProgressIndicator(this).apply {
-            max = PROGRESS_RESOLUTION
-            progress = 0
-            trackCornerRadius = 6.dp()
-            trackThickness = 12.dp()
-            setIndicatorColor(getColor(R.color.primary))
-            trackColor = getColor(R.color.card_stroke)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 16.dp() }
-        }
-        col.addView(progressLight)
-
-        // Tick row: each tick label is laid out at the same log
-        // position the bar uses, so reading the label off the bar
-        // gives the right lux value.
-        col.addView(buildScaleRow())
-
-        card.addView(col)
-        return card
-    }
-
-    private fun buildScaleRow(): View {
-        val row = FrameLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 4.dp() }
-        }
-        // We can't know the exact bar width here, so each tick is
-        // positioned by horizontal bias via a LayoutParams trick:
-        // assign each label a weight inside a LinearLayout that mirrors
-        // the bar's log spacing. The first label is left-aligned, the
-        // last right-aligned, and middle labels get translated via
-        // post-layout positioning relative to the bar width.
+    /** The log-scaled tick row (1 · 10 · 100 · 1k · 10k · 30k) placed
+     *  into the gauge card's light_scale_row container. Each label is
+     *  preceded by a weighted spacer matching the bar's log position so
+     *  the labels line up with the progress bar underneath. */
+    private fun buildScaleBar(): View {
         val bar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = FrameLayout.LayoutParams(
@@ -344,8 +238,7 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
             val pos = luxToFraction(lux.toFloat())
             val prevPos = if (idx == 0) 0f else luxToFraction(SCALE_TICKS[idx - 1].toFloat())
             // The gap before each label is proportional to log-distance
-            // from the previous tick. Using weights gives us a
-            // resolution-independent placement.
+            // from the previous tick — resolution-independent placement.
             val gapWeight = (pos - prevPos).coerceAtLeast(0f)
             if (gapWeight > 0f) {
                 bar.addView(View(this).apply {
@@ -358,8 +251,7 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
                 setTextColor(getColor(R.color.on_surface_secondary))
             })
         }
-        row.addView(bar)
-        return row
+        return bar
     }
 
     private fun formatLuxLabel(lux: Int): String = when {
@@ -367,42 +259,16 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
         else -> lux.toString()
     }
 
-    private fun buildSpeciesSection(): View {
-        val col = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { bottomMargin = 16.dp() }
-        }
-
-        col.addView(TextView(this).apply {
-            text = getString(R.string.light_plant_type)
-            textSize = 14f
-            setTextColor(getColor(R.color.on_surface_secondary))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { bottomMargin = 8.dp() }
-        })
-
-        // Horizontal chip group
-        val chipScroll = HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled = false
-        }
-        chipGroup = ChipGroup(this).apply {
-            isSingleSelection = true
-        }
+    /** Build the species chips into the layout's ChipGroup. The chip
+     *  list is data-driven (SPECIES) so it stays in code; selecting one
+     *  re-runs the gauge display against that species' ideal band. */
+    private fun buildSpeciesChips() {
         val initialIndex = SPECIES.indexOf(selectedSpecies).coerceAtLeast(0)
         SPECIES.forEachIndexed { i, species ->
             val chip = Chip(this).apply {
                 text = getString(species.labelRes)
                 isCheckable = true
                 isChecked = (i == initialIndex)
-                layoutParams = ChipGroup.LayoutParams(
-                    ChipGroup.LayoutParams.WRAP_CONTENT,
-                    ChipGroup.LayoutParams.WRAP_CONTENT,
-                )
                 setOnCheckedChangeListener { _, checked ->
                     if (checked) {
                         selectedSpecies = species
@@ -412,87 +278,6 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
             }
             chipGroup.addView(chip)
         }
-        chipScroll.addView(chipGroup)
-        col.addView(chipScroll)
-
-        // Species ideal card
-        val idealCard = MaterialCardView(this).apply {
-            radius = 16.dp().toFloat()
-            cardElevation = 0f
-            strokeWidth = 1.dp()
-            strokeColor = getColor(R.color.card_stroke)
-            setCardBackgroundColor(getColor(R.color.surface))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 10.dp() }
-        }
-        val idealContent = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(16.dp(), 14.dp(), 16.dp(), 14.dp())
-        }
-        tvSpeciesIdeal = TextView(this).apply {
-            text = getString(
-                R.string.light_ideal_range,
-                getString(SPECIES[0].labelRes),
-                SPECIES[0].minLux,
-                SPECIES[0].maxLux,
-            )
-            textSize = 15f
-            setTextColor(getColor(R.color.on_surface))
-            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
-        }
-        idealContent.addView(tvSpeciesIdeal)
-        tvSpeciesStatus = TextView(this).apply {
-            text = ""
-            textSize = 13f
-            setTextColor(getColor(R.color.on_surface_secondary))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 4.dp() }
-        }
-        idealContent.addView(tvSpeciesStatus)
-        idealCard.addView(idealContent)
-        col.addView(idealCard)
-
-        return col
-    }
-
-    private fun buildTipsCard(): View {
-        tipCard = MaterialCardView(this).apply {
-            radius = 16.dp().toFloat()
-            cardElevation = 0f
-            strokeWidth = 1.dp()
-            strokeColor = getColor(R.color.card_stroke)
-            setCardBackgroundColor(getColor(R.color.surface))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            )
-        }
-        val col = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            minimumHeight = 64.dp()
-            setPadding(16.dp(), 14.dp(), 16.dp(), 14.dp())
-        }
-        col.addView(ImageView(this).apply {
-            setImageResource(R.drawable.ic_light)
-            setColorFilter(getColor(R.color.primary))
-            layoutParams = LinearLayout.LayoutParams(24.dp(), 24.dp())
-        })
-        tvTip = TextView(this).apply {
-            text = getString(R.string.light_tip_ideal)
-            textSize = 14f
-            setTextColor(getColor(R.color.on_surface))
-            setLineSpacing(3.dp().toFloat(), 1f)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                .apply { marginStart = 12.dp() }
-        }
-        col.addView(tvTip)
-        tipCard.addView(col)
-        return tipCard
     }
 
     private fun showNoSensorMessage(parent: LinearLayout) {
