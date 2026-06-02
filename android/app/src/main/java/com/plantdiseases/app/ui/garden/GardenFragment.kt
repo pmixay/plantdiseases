@@ -2,8 +2,11 @@ package com.plantdiseases.app.ui.garden
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.text.InputType
+import android.text.TextUtils
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.LayoutInflater
@@ -19,34 +22,37 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.setPadding
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.resource.bitmap.CenterCrop
 import com.bumptech.glide.load.resource.bitmap.RoundedCorners
-import com.google.android.material.card.MaterialCardView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.PlantEntity
+import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.repository.PlantRepository
+import com.plantdiseases.app.databinding.FragmentGardenBinding
+import com.plantdiseases.app.databinding.ItemPlantCardBinding
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ReminderManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+/**
+ * Garden tab. The screen scaffold (hero, plant list container, empty
+ * state and FAB) lives in ``fragment_garden.xml``; each plant row is
+ * inflated from ``item_plant_card.xml``. Only the genuinely dynamic
+ * parts — thumbnail loading, the health dot, the status chips and the
+ * add/edit dialog — are still built in code.
+ */
 class GardenFragment : Fragment() {
 
-    private lateinit var root: FrameLayout
-    private lateinit var content: LinearLayout
-    private lateinit var plantsContainer: LinearLayout
-    private lateinit var emptyState: LinearLayout
-    private lateinit var summaryTitle: TextView
-    private lateinit var summaryBody: TextView
-    private lateinit var addPlantFab: View
+    private var _binding: FragmentGardenBinding? = null
+    private val binding get() = _binding!!
 
     private val plantRepository: PlantRepository
         get() = (requireActivity().application as PlantDiseasesApp).plantRepository
@@ -56,227 +62,57 @@ class GardenFragment : Fragment() {
         container: ViewGroup?,
         savedInstanceState: Bundle?,
     ): View {
-        root = FrameLayout(requireContext()).apply {
-            setBackgroundColor(requireContext().getColor(R.color.background))
-        }
-
-        val scroll = androidx.core.widget.NestedScrollView(requireContext()).apply {
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT,
-            )
-            clipToPadding = false
-        }
-
-        content = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(16.dp(), 16.dp(), 16.dp(), 96.dp())
-        }
-        scroll.addView(content)
-        root.addView(scroll)
-
-        buildHero()
-        plantsContainer = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 16.dp() }
-        }
-        content.addView(plantsContainer)
-        buildEmptyState()
-        buildFloatingAddButton()
-
-        return root
+        _binding = FragmentGardenBinding.inflate(inflater, container, false)
+        return binding.root
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        binding.gardenAddFab.setOnClickListener {
+            Haptics.medium(requireContext())
+            showPlantDialog(null)
+        }
+        binding.gardenEmptyCta.setOnClickListener {
+            Haptics.medium(requireContext())
+            showPlantDialog(null)
+        }
         loadPlants()
     }
 
     override fun onResume() {
         super.onResume()
-        if (::plantsContainer.isInitialized) loadPlants()
+        if (_binding != null) loadPlants()
     }
 
-    private fun buildHero() {
-        val card = MaterialCardView(requireContext()).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            )
-            radius = 24.dp().toFloat()
-            cardElevation = 0f
-            strokeWidth = 0
-        }
-        val hero = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(20.dp(), 22.dp(), 20.dp(), 20.dp())
-            setBackgroundResource(R.drawable.bg_garden_hero)
-        }
-        val icon = ImageView(requireContext()).apply {
-            setImageResource(R.drawable.ic_garden)
-            setColorFilter(requireContext().getColor(R.color.on_primary))
-            layoutParams = LinearLayout.LayoutParams(38.dp(), 38.dp())
-        }
-        summaryTitle = TextView(requireContext()).apply {
-            text = getString(R.string.garden_title)
-            textSize = 28f
-            setTextColor(requireContext().getColor(R.color.on_primary))
-            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 14.dp() }
-        }
-        summaryBody = TextView(requireContext()).apply {
-            text = getString(R.string.garden_subtitle)
-            textSize = 14f
-            setTextColor(requireContext().getColor(R.color.on_primary_secondary))
-            setLineSpacing(3.dp().toFloat(), 1f)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 6.dp() }
-        }
-        hero.addView(icon)
-        hero.addView(summaryTitle)
-        hero.addView(summaryBody)
-        card.addView(hero)
-        content.addView(card)
-    }
-
-    private fun buildEmptyState() {
-        val ctx = requireContext()
-        emptyState = LinearLayout(ctx).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(28.dp(), 16.dp(), 28.dp(), 24.dp())
-            visibility = View.GONE
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 24.dp() }
-        }
-        emptyState.addView(ImageView(ctx).apply {
-            setImageResource(R.drawable.illustration_empty_garden)
-            layoutParams = LinearLayout.LayoutParams(220.dp(), 220.dp())
-        })
-        emptyState.addView(TextView(ctx).apply {
-            text = getString(R.string.empty_garden_title)
-            textSize = 24f
-            gravity = Gravity.CENTER
-            setTextColor(ctx.getColor(R.color.on_surface))
-            typeface = android.graphics.Typeface.create("sans-serif-black", android.graphics.Typeface.NORMAL)
-            letterSpacing = -0.02f
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 4.dp() }
-        })
-        emptyState.addView(TextView(ctx).apply {
-            text = getString(R.string.empty_garden_hint)
-            textSize = 15f
-            gravity = Gravity.CENTER
-            setTextColor(ctx.getColor(R.color.on_surface_secondary))
-            setLineSpacing(4.dp().toFloat(), 1f)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply {
-                topMargin = 8.dp()
-                marginStart = 8.dp()
-                marginEnd = 8.dp()
-            }
-        })
-
-        // Primary CTA inside the empty state — the bottom-right FAB is
-        // less discoverable when the screen is otherwise blank. Picks
-        // up the new App.Button.Filled style (vivid green, rounded
-        // pill, white text) by default.
-        emptyState.addView(
-            com.google.android.material.button.MaterialButton(ctx).apply {
-                text = getString(R.string.empty_garden_cta_add)
-                setIconResource(R.drawable.ic_garden)
-                iconPadding = 8.dp()
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = 20.dp() }
-                setOnClickListener {
-                    Haptics.medium(ctx)
-                    showPlantDialog(null)
-                }
-            },
-        )
-
-        // Secondary hint linking to the scan flow — many first-time
-        // users get here by tapping the tab before they've ever
-        // scanned, so we surface the alternative path that auto-
-        // populates a plant from a diagnosis result.
-        emptyState.addView(TextView(ctx).apply {
-            text = getString(R.string.empty_garden_secondary_hint)
-            textSize = 13f
-            gravity = Gravity.CENTER
-            setTextColor(ctx.getColor(R.color.on_surface_secondary))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 12.dp() }
-        })
-
-        content.addView(emptyState)
-    }
-
-    private fun buildFloatingAddButton() {
-        val fab = com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton(requireContext()).apply {
-            text = getString(R.string.add_plant)
-            setIconResource(R.drawable.ic_garden)
-            setTextColor(requireContext().getColor(R.color.on_primary))
-            iconTint = android.content.res.ColorStateList.valueOf(
-                requireContext().getColor(R.color.on_primary)
-            )
-            backgroundTintList = android.content.res.ColorStateList.valueOf(
-                requireContext().getColor(R.color.primary)
-            )
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                Gravity.BOTTOM or Gravity.END,
-            ).apply {
-                setMargins(0, 0, 18.dp(), 22.dp())
-            }
-            setOnClickListener { showPlantDialog(null) }
-        }
-        addPlantFab = fab
-        root.addView(fab)
+    override fun onDestroyView() {
+        super.onDestroyView()
+        _binding = null
     }
 
     private fun loadPlants() {
         lifecycleScope.launch {
             val plants = plantRepository.getPlants()
-            renderPlants(plants)
+            if (_binding != null) renderPlants(plants)
         }
     }
 
     private fun renderPlants(plants: List<PlantRepository.PlantSummary>) {
-        plantsContainer.removeAllViews()
-        emptyState.visibility = if (plants.isEmpty()) View.VISIBLE else View.GONE
-        plantsContainer.visibility = if (plants.isEmpty()) View.GONE else View.VISIBLE
-        summaryBody.text = resources.getQuantityString(
+        val container = binding.gardenPlantsContainer
+        container.removeAllViews()
+        binding.gardenEmptyState.visibility = if (plants.isEmpty()) View.VISIBLE else View.GONE
+        container.visibility = if (plants.isEmpty()) View.GONE else View.VISIBLE
+        binding.gardenSummaryBody.text = resources.getQuantityString(
             R.plurals.garden_summary,
             plants.size,
             plants.size,
             plants.sumOf { it.scanCount },
         )
 
-        // Group by room. Named rooms render in alphabetical order;
-        // unassigned plants land at the bottom in their own bucket so
-        // the user has a visible nudge to assign rooms without the
-        // app silently hiding anything. When NO plant has a room set
-        // (the common first-launch case) the grouping headers don't
-        // render at all and the list looks the same as before.
+        // Group by room. Named rooms render alphabetically; unassigned
+        // plants land at the bottom in their own bucket so the user has
+        // a visible nudge to assign rooms without anything being hidden.
+        // When NO plant has a room (the common first-launch case) the
+        // grouping headers don't render at all.
         val byRoom = plants.groupBy {
             it.plant.room?.trim()?.takeIf { r -> r.isNotEmpty() }
         }
@@ -289,7 +125,7 @@ class GardenFragment : Fragment() {
         val emit: (View) -> Unit = { view ->
             view.alpha = 0f
             view.translationY = 24.dp().toFloat()
-            plantsContainer.addView(view)
+            container.addView(view)
             view.animate()
                 .alpha(1f)
                 .translationY(0f)
@@ -303,25 +139,20 @@ class GardenFragment : Fragment() {
             emit(buildRoomHeader(room!!))
             bucket.forEach { emit(buildPlantCard(it)) }
         }
-        // Unassigned bucket always renders when non-empty. The header
-        // only appears when there's at least one named room to
-        // distinguish from — otherwise it would just say "Unassigned"
-        // above every plant, which is noise.
         if (unassigned.isNotEmpty()) {
             if (anyNamed) emit(buildRoomHeader(getString(R.string.plant_room_unassigned)))
             unassigned.forEach { emit(buildPlantCard(it)) }
         }
     }
 
-    /** Sticky-header-style label for a room group. Renders as small
-     *  uppercase text with a thin top divider so it reads as a group
-     *  separator without dominating the card stack. */
+    /** Sticky-header-style label for a room group: small uppercase
+     *  text that reads as a separator without dominating the stack. */
     private fun buildRoomHeader(label: String): View = TextView(requireContext()).apply {
         text = label.uppercase()
         textSize = 11f
         letterSpacing = 0.08f
         setTextColor(requireContext().getColor(R.color.on_surface_secondary))
-        typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -335,153 +166,83 @@ class GardenFragment : Fragment() {
     private fun buildPlantCard(summary: PlantRepository.PlantSummary): View {
         val plant = summary.plant
         val ctx = requireContext()
-        val card = MaterialCardView(ctx).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { bottomMargin = 12.dp() }
-            radius = 20.dp().toFloat()
-            cardElevation = 2.dp().toFloat()
-            // PictureThis-style soft card: no stroke, rely on elevation
-            // and rounded corners to lift it off the white background.
-            strokeWidth = 0
-            setCardBackgroundColor(ctx.getColor(R.color.surface))
-            isClickable = true
-            isLongClickable = true
-            foreground = typedSelectable()
-            setOnClickListener {
-                Haptics.tick(ctx)
-                startActivity(
-                    Intent(ctx, PlantDetailActivity::class.java)
-                        .putExtra(PlantDetailActivity.EXTRA_PLANT_ID, plant.id)
-                )
-            }
-            setOnLongClickListener { anchor ->
-                Haptics.medium(ctx)
-                showPlantContextMenu(anchor, plant)
-                true
-            }
-        }
+        val row = ItemPlantCardBinding.inflate(layoutInflater, binding.gardenPlantsContainer, false)
 
-        val row = LinearLayout(ctx).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(16.dp(), 16.dp(), 16.dp(), 16.dp())
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-            )
-        }
-
-        // ── Thumbnail (96dp) with a small health-status dot in the
-        // top-right corner. Picture-first cards: cover photo first,
-        // latest scan second, leaf icon last.
-        val thumbWrap = FrameLayout(ctx).apply {
-            layoutParams = LinearLayout.LayoutParams(96.dp(), 96.dp())
-            clipChildren = false
-        }
-        val thumb = ImageView(ctx).apply {
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT,
-            )
-            scaleType = ImageView.ScaleType.CENTER_CROP
-            background = ctx.getDrawable(R.drawable.bg_icon_circle)
-            clipToOutline = true
-        }
-        val thumbSource: String? = plant.coverPhotoUri
-            ?: summary.latestScan?.imagePath
+        // ── Thumbnail: cover photo first, latest scan second, leaf icon
+        // last. clipToOutline against the oval background keeps it round.
+        row.plantThumb.clipToOutline = true
+        val thumbSource: String? = plant.coverPhotoUri ?: summary.latestScan?.imagePath
         if (thumbSource != null) {
-            Glide.with(this@GardenFragment)
+            row.plantThumb.scaleType = ImageView.ScaleType.CENTER_CROP
+            row.plantThumb.setPadding(0, 0, 0, 0)
+            row.plantThumb.colorFilter = null
+            Glide.with(this)
                 .load(thumbSource)
                 .transform(CenterCrop(), RoundedCorners(18.dp()))
                 .placeholder(R.drawable.ic_garden)
                 .error(R.drawable.ic_garden)
-                .into(thumb)
+                .into(row.plantThumb)
         } else {
-            thumb.setImageResource(R.drawable.ic_garden)
-            thumb.setColorFilter(ctx.getColor(R.color.primary))
-            thumb.scaleType = ImageView.ScaleType.CENTER_INSIDE
-            thumb.setPadding(22.dp(), 22.dp(), 22.dp(), 22.dp())
+            row.plantThumb.setImageResource(R.drawable.ic_garden)
+            row.plantThumb.setColorFilter(ctx.getColor(R.color.primary))
+            row.plantThumb.scaleType = ImageView.ScaleType.CENTER_INSIDE
+            row.plantThumb.setPadding(22.dp(), 22.dp(), 22.dp(), 22.dp())
         }
-        thumbWrap.addView(thumb)
-        buildHealthDot(summary.latestScan)?.let { dot ->
-            thumbWrap.addView(dot)
-        }
+        applyHealthDot(row.plantHealthDot, summary.latestScan)
 
-        // ── Text column: name (bold) → species (subtle) → status chips
-        // row. The status row carries the health pill + the soonest
-        // reminder; both are optional so the card collapses gracefully
-        // on a freshly-added plant with no scans / reminders.
-        val textCol = LinearLayout(ctx).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                .apply { marginStart = 16.dp() }
-        }
-        textCol.addView(TextView(ctx).apply {
-            text = plant.name
-            textSize = 18f
-            setTextColor(ctx.getColor(R.color.on_surface))
-            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-        })
+        // ── Name → species → status chips. The status row carries the
+        // health pill + soonest reminder; both optional so the card
+        // collapses gracefully on a freshly-added plant.
+        row.plantName.text = plant.name
         val speciesText = plant.species?.takeIf { it.isNotBlank() }
             ?: plant.commonName?.takeIf { it.isNotBlank() }
         if (speciesText != null) {
-            textCol.addView(TextView(ctx).apply {
-                text = speciesText
-                textSize = 13f
-                setTextColor(ctx.getColor(R.color.on_surface_secondary))
-                maxLines = 1
-                ellipsize = android.text.TextUtils.TruncateAt.END
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = 2.dp() }
-            })
+            row.plantSpecies.text = speciesText
+            row.plantSpecies.visibility = View.VISIBLE
+        } else {
+            row.plantSpecies.visibility = View.GONE
         }
+
+        row.plantStatusRow.removeAllViews()
         val healthChip = buildHealthChip(summary.latestScan)
         val nextChip = buildNextActionChip(summary)
         if (healthChip != null || nextChip != null) {
-            val statusRow = LinearLayout(ctx).apply {
-                orientation = LinearLayout.HORIZONTAL
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = 8.dp() }
+            healthChip?.let { row.plantStatusRow.addView(it) }
+            nextChip?.let { row.plantStatusRow.addView(it) }
+            row.plantStatusRow.visibility = View.VISIBLE
+        } else {
+            row.plantStatusRow.visibility = View.GONE
+            if (speciesText == null) {
+                // No scans, no reminders, no species — one quiet subtitle
+                // so the card doesn't read as a single floating word.
+                row.plantSpecies.text = getString(R.string.no_scans_attached)
+                row.plantSpecies.visibility = View.VISIBLE
             }
-            if (healthChip != null) statusRow.addView(healthChip)
-            if (nextChip != null) statusRow.addView(nextChip)
-            textCol.addView(statusRow)
-        } else if (speciesText == null) {
-            // No scans, no reminders, no species — one quiet subtitle
-            // so the card doesn't read as a single floating word.
-            textCol.addView(TextView(ctx).apply {
-                text = getString(R.string.no_scans_attached)
-                textSize = 12f
-                setTextColor(ctx.getColor(R.color.on_surface_secondary))
-                maxLines = 1
-                ellipsize = android.text.TextUtils.TruncateAt.END
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = 4.dp() }
-            })
         }
 
-        row.addView(thumbWrap)
-        row.addView(textCol)
-        card.addView(row)
-        return card
+        row.plantCard.setOnClickListener {
+            Haptics.tick(ctx)
+            startActivity(
+                Intent(ctx, PlantDetailActivity::class.java)
+                    .putExtra(PlantDetailActivity.EXTRA_PLANT_ID, plant.id)
+            )
+        }
+        row.plantCard.setOnLongClickListener {
+            Haptics.medium(ctx)
+            showPlantContextMenu(row.plantCard, plant)
+            true
+        }
+        return row.root
     }
 
-    /** Tiny circular health indicator overlaid on the thumbnail's
-     *  top-right corner. Green = healthy, red = disease, neutral =
-     *  NAP / unknown. Returns null when there's no scan to read state
-     *  from — empty thumbnail stays unadorned. */
-    private fun buildHealthDot(scan: com.plantdiseases.app.data.local.ScanEntity?): View? {
-        if (scan == null) return null
+    /** Tiny circular health indicator on the thumbnail's top-right
+     *  corner. Green = healthy, red = disease, blue = NAP. Hidden when
+     *  there's no scan to read state from. */
+    private fun applyHealthDot(dot: View, scan: ScanEntity?) {
+        if (scan == null) {
+            dot.visibility = View.GONE
+            return
+        }
         val ctx = requireContext()
         val isNotPlant = scan.diseaseName.equals("Not a Plant", ignoreCase = true) ||
             scan.diseaseName.equals("Не растение", ignoreCase = true)
@@ -490,27 +251,25 @@ class GardenFragment : Fragment() {
             scan.isHealthy -> ctx.getColor(R.color.healthy_green)
             else -> ctx.getColor(R.color.disease_red)
         }
-        return View(ctx).apply {
-            layoutParams = FrameLayout.LayoutParams(14.dp(), 14.dp()).apply {
-                gravity = Gravity.TOP or Gravity.END
-                // Pulled slightly outside the thumb so the white halo
-                // reads as a separate badge, not as a corner pixel.
-                topMargin = (-2).dp()
-                marginEnd = (-2).dp()
-            }
-            background = android.graphics.drawable.GradientDrawable().apply {
-                shape = android.graphics.drawable.GradientDrawable.OVAL
-                setColor(dotColor)
-                setStroke(2.dp(), ctx.getColor(R.color.surface))
-            }
+        dot.background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(dotColor)
+            setStroke(2.dp(), ctx.getColor(R.color.surface))
         }
+        // Pulled slightly outside the thumb so the white halo reads as a
+        // separate badge rather than a corner pixel.
+        (dot.layoutParams as? FrameLayout.LayoutParams)?.let { lp ->
+            lp.topMargin = (-2).dp()
+            lp.marginEnd = (-2).dp()
+            dot.layoutParams = lp
+        }
+        dot.visibility = View.VISIBLE
     }
 
-    /** Returns null when there is no scan yet — the card falls back to a
-     *  generic "no scans" line in that case. Otherwise renders a
-     *  colour-coded health pill (healthy = green, disease = red, NAP =
-     *  neutral) with the latest verdict + confidence. */
-    private fun buildHealthChip(scan: com.plantdiseases.app.data.local.ScanEntity?): View? {
+    /** Colour-coded health pill (healthy = green, disease = red, NAP =
+     *  neutral) with the latest verdict + confidence. null when there's
+     *  no scan yet. */
+    private fun buildHealthChip(scan: ScanEntity?): View? {
         if (scan == null) return null
         val ctx = requireContext()
         val isNotPlant = scan.diseaseName.equals("Not a Plant", ignoreCase = true) ||
@@ -549,9 +308,9 @@ class GardenFragment : Fragment() {
         val nowMs = System.currentTimeMillis()
         val deltaDays = ((action.dueAt - nowMs) / (24L * 60L * 60L * 1000L)).toInt()
         val icon = when (action.type) {
-            "watering" -> "💧"   // 💧
-            "fertilize" -> "🌱"  // 🌱
-            else -> "⏰"               // ⏰
+            "watering" -> "💧"
+            "fertilize" -> "🌱"
+            else -> "⏰"
         }
         val label = when {
             deltaDays <= 0 -> getString(R.string.garden_card_action_overdue, icon)
@@ -573,10 +332,10 @@ class GardenFragment : Fragment() {
             this.text = text
             textSize = 12f
             setTextColor(fgColor)
-            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             setPadding(12.dp(), 6.dp(), 12.dp(), 6.dp())
-            background = android.graphics.drawable.GradientDrawable().apply {
-                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
                 cornerRadius = 999f
                 setColor(bgColor)
             }
@@ -585,7 +344,7 @@ class GardenFragment : Fragment() {
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             )
             maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
+            ellipsize = TextUtils.TruncateAt.END
         }
 
     private fun showPlantContextMenu(anchor: View, plant: PlantEntity) {
@@ -656,7 +415,7 @@ class GardenFragment : Fragment() {
                 text = getString(if (existing == null) R.string.add_plant else R.string.edit_plant)
                 textSize = 20f
                 setTextColor(requireContext().getColor(R.color.on_primary))
-                typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             })
             addView(TextView(requireContext()).apply {
                 text = getString(
@@ -698,8 +457,6 @@ class GardenFragment : Fragment() {
                 name.first.error = getString(R.string.plant_name_required)
                 return@setOnClickListener
             }
-            // Render after IME settles so the bottom FAB is measured
-            // against the full garden root, not the resized window.
             hideKeyboard(dialog.window?.decorView ?: name.second)
             dialog.dismiss()
             lifecycleScope.launch {
@@ -710,14 +467,16 @@ class GardenFragment : Fragment() {
                     room = room.second.text?.toString(),
                 )
                 awaitKeyboardClosed()
-                renderPlants(plantRepository.getPlants())
-                stabilizeFloatingAddButton()
+                if (_binding != null) {
+                    renderPlants(plantRepository.getPlants())
+                    stabilizeFloatingAddButton()
+                }
             }
         }
     }
 
     private fun hideKeyboard(anchor: View) {
-        root.findFocus()?.clearFocus()
+        binding.gardenRoot.findFocus()?.clearFocus()
         val inputManager = requireContext()
             .getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
         inputManager.hideSoftInputFromWindow(anchor.windowToken, 0)
@@ -725,7 +484,7 @@ class GardenFragment : Fragment() {
 
     private suspend fun awaitKeyboardClosed() {
         repeat(10) {
-            val imeVisible = ViewCompat.getRootWindowInsets(root)
+            val imeVisible = ViewCompat.getRootWindowInsets(binding.gardenRoot)
                 ?.isVisible(WindowInsetsCompat.Type.ime()) == true
             if (!imeVisible) {
                 delay(48)
@@ -736,18 +495,13 @@ class GardenFragment : Fragment() {
         delay(96)
     }
 
+    /** The FAB lives in XML now with a fixed bottom-end gravity, but we
+     *  still nudge it back to front after a dialog + IME cycle so it
+     *  can't end up underneath a freshly re-rendered list. */
     private fun stabilizeFloatingAddButton() {
-        if (!::addPlantFab.isInitialized) return
-        addPlantFab.translationX = 0f
-        addPlantFab.translationY = 0f
-        addPlantFab.bringToFront()
-        addPlantFab.requestLayout()
-        root.post {
-            addPlantFab.translationX = 0f
-            addPlantFab.translationY = 0f
-            addPlantFab.bringToFront()
-            addPlantFab.requestLayout()
-        }
+        val fab = _binding?.gardenAddFab ?: return
+        fab.bringToFront()
+        fab.requestLayout()
     }
 
     private fun inputField(
@@ -769,12 +523,6 @@ class GardenFragment : Fragment() {
             ).apply { bottomMargin = 10.dp() }
         }
         return layout to input
-    }
-
-    private fun typedSelectable(): android.graphics.drawable.Drawable? {
-        val outValue = TypedValue()
-        requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackground, outValue, true)
-        return requireContext().getDrawable(outValue.resourceId)
     }
 
     private fun Int.dp(): Int = TypedValue.applyDimension(

@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Garden tab.
+
+    Previously this whole screen was assembled by hand in
+    GardenFragment.onCreateView (FrameLayout → NestedScrollView → …).
+    It now lives here as a proper layout interface:
+
+      • a leaf-green gradient hero (bg_garden_hero) with the title +
+        live "N plants watched" summary,
+      • the dynamically-populated plant list (item_plant_card rows are
+        inflated into garden_plants_container),
+      • a centred empty state with a primary CTA, and
+      • an Extended FAB overlaid bottom-end.
+
+    Spacing is on the @dimen space grid; type + colour come from the
+    shared leaf-green design system.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/garden_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/background">
+
+    <androidx.core.widget.NestedScrollView
+        android:id="@+id/garden_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clipToPadding="false"
+        android:paddingBottom="@dimen/space_4xl"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="@dimen/space_lg">
+
+            <!-- Hero: gradient block, rounded by bg_garden_hero itself. -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@drawable/bg_garden_hero"
+                android:paddingHorizontal="@dimen/space_xl"
+                android:paddingTop="@dimen/space_2xl"
+                android:paddingBottom="@dimen/space_xl">
+
+                <FrameLayout
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:background="@drawable/bg_circle_semi">
+
+                    <ImageView
+                        android:layout_width="26dp"
+                        android:layout_height="26dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_garden"
+                        android:contentDescription="@null"
+                        app:tint="@color/on_primary" />
+
+                </FrameLayout>
+
+                <TextView
+                    android:id="@+id/garden_summary_title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_md"
+                    android:text="@string/garden_title"
+                    android:textColor="@color/on_primary"
+                    android:textSize="28sp"
+                    android:fontFamily="sans-serif-black"
+                    android:letterSpacing="-0.02" />
+
+                <TextView
+                    android:id="@+id/garden_summary_body"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_xs"
+                    android:text="@string/garden_subtitle"
+                    android:textColor="@color/on_primary_secondary"
+                    android:textSize="@dimen/text_body"
+                    android:lineSpacingExtra="3dp" />
+
+            </LinearLayout>
+
+            <!-- Plant list — item_plant_card rows are inflated here. -->
+            <LinearLayout
+                android:id="@+id/garden_plants_container"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_lg"
+                android:orientation="vertical" />
+
+            <!-- Empty state. -->
+            <LinearLayout
+                android:id="@+id/garden_empty_state"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_2xl"
+                android:orientation="vertical"
+                android:gravity="center"
+                android:paddingHorizontal="@dimen/space_2xl"
+                android:visibility="gone"
+                tools:visibility="visible">
+
+                <ImageView
+                    android:layout_width="220dp"
+                    android:layout_height="220dp"
+                    android:src="@drawable/illustration_empty_garden"
+                    android:contentDescription="@null" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_xs"
+                    android:text="@string/empty_garden_title"
+                    android:textColor="@color/on_surface"
+                    android:textSize="@dimen/text_headline"
+                    android:fontFamily="sans-serif-black"
+                    android:letterSpacing="-0.02"
+                    android:gravity="center" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_sm"
+                    android:text="@string/empty_garden_hint"
+                    android:textColor="@color/on_surface_secondary"
+                    android:textSize="@dimen/text_body"
+                    android:gravity="center"
+                    android:lineSpacingExtra="4dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/garden_empty_cta"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_xl"
+                    android:text="@string/empty_garden_cta_add"
+                    app:icon="@drawable/ic_garden"
+                    app:iconGravity="textStart" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_md"
+                    android:text="@string/empty_garden_secondary_hint"
+                    android:textColor="@color/on_surface_secondary"
+                    android:textSize="@dimen/text_body_sm"
+                    android:gravity="center" />
+
+            </LinearLayout>
+
+        </LinearLayout>
+
+    </androidx.core.widget.NestedScrollView>
+
+    <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+        android:id="@+id/garden_add_fab"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="@dimen/space_lg"
+        android:layout_marginBottom="@dimen/space_xl"
+        android:text="@string/add_plant"
+        app:icon="@drawable/ic_garden" />
+
+</FrameLayout>
