@@ -996,8 +996,13 @@ async def version():
         "version": APP_VERSION,
         "classifier_name": "plantvision",
         "detector_arch": "YOLOv8n (single-class plant_leaf, indoor-trained)",
+        # Report the architecture the loaded model actually declares
+        # (classes.json -> architecture, surfaced as classifier.architecture)
+        # rather than a hardcoded backbone name, so this stays correct
+        # across model swaps (the MobileNetV3 student and the frozen
+        # DINOv2 ViT-S/14 + head both flow through the same ONNX path).
         "classifier_arch": (
-            f"PlantVision MobileNetV3-L (KD ← EfficientNetV2-S) @ "
+            f"PlantVision {pipeline.classifier.architecture} @ "
             f"{pipeline.classifier.img_size} px / {pipeline.classifier.backend} backend"
         ),
         "stages": 2,
