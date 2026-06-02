@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Before/after photo compare. CompareView renders the two drawables
+    with a draggable vertical divider; this layout supplies the black
+    canvas, the top bar (close + title) and the bottom left/right
+    legend strip, both over a soft scrim.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/compare_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/black">
+
+    <com.plantdiseases.app.ui.garden.CompareView
+        android:id="@+id/compare_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <LinearLayout
+        android:id="@+id/compare_top_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@color/camera_control_scrim"
+        android:paddingHorizontal="@dimen/space_lg"
+        android:paddingVertical="@dimen/space_md">
+
+        <ImageView
+            android:id="@+id/compare_close"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:clickable="true"
+            android:focusable="true"
+            android:src="@drawable/ic_back"
+            android:contentDescription="@string/close"
+            app:tint="@android:color/white" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="@dimen/space_lg"
+            android:gravity="center"
+            android:text="@string/photo_compare_title"
+            android:textColor="@android:color/white"
+            android:textSize="@dimen/text_body" />
+
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/compare_legend"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:orientation="horizontal"
+        android:background="@color/camera_control_scrim"
+        android:paddingHorizontal="@dimen/space_lg"
+        android:paddingVertical="@dimen/space_md">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="start"
+            android:text="@string/photo_compare_left"
+            android:textColor="@android:color/white"
+            android:textSize="@dimen/text_body_sm" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="end"
+            android:text="@string/photo_compare_right"
+            android:textColor="@android:color/white"
+            android:textSize="@dimen/text_body_sm" />
+
+    </LinearLayout>
+
+</FrameLayout>
