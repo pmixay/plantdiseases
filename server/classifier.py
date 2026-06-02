@@ -7,12 +7,16 @@ houseplant-relevant condition classes including the rejection class
 ``models/classes.json``; if the file is missing the built-in default
 matching the v2.2 taxonomy (8 trainable classes) is used.
 
-Production artefact is a distilled MobileNetV3-Large student
-(EfficientNetV2-S teacher → KD). Loading order:
+The production artefact is an ONNX graph, and the ONNX path is
+architecture-neutral — it serves whatever backbone+head graph is shipped
+(the historical MobileNetV3-Large KD student, or a frozen-DINOv2 ViT-S/14
++ trained head) with no code change; ``classes.json`` declares the
+``architecture`` (for the .pth dev fallback), ``img_size`` and any
+``inference.tta`` mode. Loading order:
 
-1. ``classifier_int8.onnx`` (dynamic-quantized, smallest + fastest)
+1. ``classifier_int8.onnx`` (quantized, smallest + fastest)
 2. ``classifier.onnx``      (FP32 ONNX)
-3. ``classifier.pth``       (PyTorch fallback)
+3. ``classifier.pth``       (PyTorch fallback — ``mobilenet_v3_large`` only)
 
 Loading is fail-fast: if no usable artefact is found, ``__init__``
 raises ``ClassifierLoadError`` so the API never boots in a half-broken
@@ -63,6 +67,27 @@ DEFAULT_CLASS_NAMES = [
 NORM_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 NORM_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
+# Backbone family of the trained checkpoint. Production loads ONNX (an
+# architecture-neutral graph), so this only steers the *.pth* PyTorch
+# fallback loader. ``classes.json -> architecture`` overrides it; the
+# default keeps the historical MobileNetV3-Large student working with
+# no metadata change. A frozen-DINOv2 model ships as ONNX only — see
+# ``_load_pytorch_model``.
+DEFAULT_ARCHITECTURE = "mobilenet_v3_large"
+
+# Test-time augmentation mode. ``none`` (default) is single-pass and
+# byte-for-byte the historical behaviour. ``hflip`` runs the image and
+# its horizontal mirror and AVERAGES THE LOGITS (not the softmax probs):
+# averaging logits keeps every downstream calibration step — temperature
+# scaling, the MaxLogit OOD score, conformal RAPS — operating on the same
+# kind of quantity it was fit on, so enabling TTA does not silently
+# decalibrate the model. The contract is therefore: temperature.json /
+# conformal.json / the OOD floor MUST be re-fit with the matching TTA
+# mode (the training notebook does this from ``classes.json -> inference``).
+# Turning ``hflip`` on at serve time against a model calibrated without it
+# would break train/serve parity, so the default stays ``none``.
+TTA_MODES = ("none", "hflip")
+
 
 class ClassifierLoadError(RuntimeError):
     """Raised when no usable classifier artefact can be loaded."""
@@ -98,6 +123,20 @@ def _resolve_eval_resize_ratio(meta: dict) -> float:
     return DEFAULT_EVAL_RESIZE_RATIO
 
 
+def _resolve_architecture(meta: dict) -> str:
+    arch = meta.get("architecture") or (meta.get("training") or {}).get("architecture")
+    if isinstance(arch, str) and arch:
+        return arch
+    return DEFAULT_ARCHITECTURE
+
+
+def _resolve_tta(meta: dict) -> str:
+    mode = (meta.get("inference") or {}).get("tta")
+    if isinstance(mode, str) and mode in TTA_MODES:
+        return mode
+    return "none"
+
+
 def _resolve_onnx_path(model_path: Path | None) -> Path | None:
     if model_path is None:
         return None
@@ -126,6 +165,8 @@ class DiseaseClassifier:
         # the built-in default is a best-effort fallback we may pad.
         self._class_names_from_meta = bool(meta.get("class_names"))
         self.eval_resize_ratio = _resolve_eval_resize_ratio(meta)
+        self.architecture = _resolve_architecture(meta)
+        self.tta = _resolve_tta(meta)
         self.CLASS_NAMES = _resolve_class_names(meta)
         self.NUM_CLASSES = len(self.CLASS_NAMES)
         self.img_size = _resolve_img_size(meta)
@@ -225,11 +266,28 @@ class DiseaseClassifier:
             logger.debug("Classifier ONNX warmup skipped: %s", e)
 
         logger.info(
-            "Classifier (ONNX) loaded from %s (%d classes, img_size=%d)",
-            path, self.NUM_CLASSES, self.img_size,
+            "Classifier (ONNX) loaded from %s (%d classes, img_size=%d, "
+            "arch=%s, tta=%s)",
+            path, self.NUM_CLASSES, self.img_size, self.architecture, self.tta,
         )
 
     def _load_pytorch_model(self, path: Path) -> None:
+        # The .pth path is a development fallback for the torchvision
+        # student only. A frozen-DINOv2 (or any non-torchvision) backbone
+        # would need its feature extractor rebuilt at boot (e.g. via
+        # torch.hub, which is a network call), so we refuse to guess and
+        # direct the operator to the ONNX artefact instead — exporting
+        # backbone+head into one graph is exactly what the notebook §6
+        # does. This keeps a wrong .pth from silently mislabelling.
+        if self.architecture != "mobilenet_v3_large":
+            raise ClassifierLoadError(
+                f"classes.json declares architecture={self.architecture!r}, which "
+                f"is only served from an ONNX graph (classifier_int8.onnx / "
+                f"classifier.onnx). The .pth fallback supports "
+                f"{DEFAULT_ARCHITECTURE!r} only. Export the ONNX artefact and ship "
+                f"it next to the configured model path."
+            )
+
         import torch
         import torch.nn as nn
         from torchvision import models
@@ -355,32 +413,50 @@ class DiseaseClassifier:
             out[i] = self._to_chw(im)
         return out
 
+    @staticmethod
+    def _hflip(x: np.ndarray) -> np.ndarray:
+        # Mirror a normalized NCHW batch along the width axis. ORT/torch
+        # both need a contiguous buffer, so materialise the reversed view.
+        return np.ascontiguousarray(x[..., ::-1])
+
     # ── ONNX inference ───────────────────────────────────────────────
 
-    def _classify_onnx(self, img: Image.Image) -> dict:
-        x = self._preprocess(img)
+    def _onnx_logits(self, x: np.ndarray) -> np.ndarray:
         logits = self._onnx_session.run(None, {self._onnx_input_name: x})[0]
+        if self.tta == "hflip":
+            flipped = self._onnx_session.run(
+                None, {self._onnx_input_name: self._hflip(x)}
+            )[0]
+            logits = (logits + flipped) * 0.5
+        return logits
+
+    def _classify_onnx(self, img: Image.Image) -> dict:
+        logits = self._onnx_logits(self._preprocess(img))
         return self._format_result_from_logits(logits[0])
 
     def _classify_onnx_batch(self, imgs: list[Image.Image]) -> list[dict]:
-        x = self._preprocess_batch(imgs)
-        logits = self._onnx_session.run(None, {self._onnx_input_name: x})[0]
+        logits = self._onnx_logits(self._preprocess_batch(imgs))
         return [self._format_result_from_logits(logits[i]) for i in range(logits.shape[0])]
 
     # ── PyTorch inference ────────────────────────────────────────────
 
-    def _classify_torch(self, img: Image.Image) -> dict:
+    def _torch_logits(self, x: np.ndarray) -> np.ndarray:
         import torch
-        x = torch.from_numpy(self._preprocess(img))
         with torch.no_grad():
-            logits = self._torch_model(x).cpu().numpy()
+            logits = self._torch_model(torch.from_numpy(x)).cpu().numpy()
+            if self.tta == "hflip":
+                flipped = self._torch_model(
+                    torch.from_numpy(self._hflip(x))
+                ).cpu().numpy()
+                logits = (logits + flipped) * 0.5
+        return logits
+
+    def _classify_torch(self, img: Image.Image) -> dict:
+        logits = self._torch_logits(self._preprocess(img))
         return self._format_result_from_logits(logits[0])
 
     def _classify_torch_batch(self, imgs: list[Image.Image]) -> list[dict]:
-        import torch
-        x = torch.from_numpy(self._preprocess_batch(imgs))
-        with torch.no_grad():
-            logits = self._torch_model(x).cpu().numpy()
+        logits = self._torch_logits(self._preprocess_batch(imgs))
         return [self._format_result_from_logits(logits[i]) for i in range(logits.shape[0])]
 
     def _format_result_from_logits(self, logits: np.ndarray) -> dict:
