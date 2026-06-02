@@ -74,6 +74,12 @@ def get(key: str, default: Any = None, cast: type | None = None) -> Any:
     the hard-coded default.
     """
     raw: Any = _FILE_DATA.get(key.upper())
+    # A blank file value (e.g. the empty ``""`` secrets shipped in
+    # config.example.json) counts as "unset" so a real value injected via
+    # the environment still wins — otherwise the empty string would shadow
+    # it and silently disable env-configured deployments.
+    if isinstance(raw, str) and not raw.strip():
+        raw = None
     if raw is None:
         raw = os.environ.get(key, None)
     if raw is None:
@@ -105,6 +111,10 @@ def get_float(key: str, default: float) -> float:
 def get_list(key: str, default: list[str] | None = None, sep: str = ",") -> list[str]:
     """Parse a list. JSON arrays are returned as-is; strings are split on ``sep``."""
     raw = _FILE_DATA.get(key.upper())
+    # Treat a blank file value as unset so an env-provided list still wins
+    # (mirrors ``get``); empty JSON arrays already yield an empty list.
+    if isinstance(raw, str) and not raw.strip():
+        raw = None
     if raw is None:
         raw = os.environ.get(key, None)
     if raw is None:

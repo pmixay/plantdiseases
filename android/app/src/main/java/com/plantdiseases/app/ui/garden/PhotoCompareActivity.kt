@@ -6,7 +6,6 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
-import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.os.Bundle
 import android.util.AttributeSet
@@ -165,7 +164,4 @@ class CompareView @JvmOverloads constructor(
         }
         return false
     }
-
-    @Suppress("unused")
-    private fun ignoreBitmap(d: Drawable): BitmapDrawable? = d as? BitmapDrawable
 }
