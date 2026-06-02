@@ -347,14 +347,6 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
         }
     }
 
-    /** Coarse client-side severity bucket for the diagnosis context. */
-    private fun severityHint(confidence: Float, isHealthy: Boolean): String = when {
-        isHealthy -> "low"
-        confidence >= 0.85f -> "high"
-        confidence >= 0.65f -> "medium"
-        else -> "low"
-    }
-
     /** "Server replied 200 OK with available=false" — translate the reason. */
     private fun formatChatUnavailable(reason: String?, isRu: Boolean): String {
         if (isRu) {

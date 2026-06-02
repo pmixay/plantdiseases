@@ -21,7 +21,7 @@ class PlantDiseasesApp : Application() {
     val database: AppDatabase by lazy { AppDatabase.getInstance(this) }
     val apiClient: PlantApiClient by lazy { PlantApiClient() }
     val scanRepository: ScanRepository by lazy {
-        ScanRepository(database.scanDao(), apiClient, this)
+        ScanRepository(database.scanDao(), apiClient)
     }
     val plantRepository: PlantRepository by lazy {
         PlantRepository(

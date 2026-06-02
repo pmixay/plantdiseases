@@ -67,10 +67,15 @@ _FILE_DATA: dict[str, Any] = _load_file()
 
 
 def get(key: str, default: Any = None, cast: type | None = None) -> Any:
-    """Read a config key. Env variables override file config wins over default fallback."""
-    raw: Any = os.environ.get(key, None)
+    """Read a config key. File wins over env wins over default.
+
+    Matches the lookup order in the module docstring and ``get_list``:
+    config.json first, then the same-named environment variable, then
+    the hard-coded default.
+    """
+    raw: Any = _FILE_DATA.get(key.upper())
     if raw is None:
-        raw = _FILE_DATA.get(key.upper())
+        raw = os.environ.get(key, None)
     if raw is None:
         return default
     if cast is None or isinstance(raw, cast):

@@ -3,7 +3,7 @@
   "info": {
     "title": "PlantDiseases API",
     "description": "AI-powered plant disease detection — two-stage pipeline",
-    "version": "2.1"
+    "version": "2.2"
   },
   "paths": {
     "/api/health": {
@@ -104,7 +104,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "type": "string",
+                  "maxLength": 128
                 },
                 {
                   "type": "null"
@@ -119,6 +120,7 @@
             "required": false,
             "schema": {
               "type": "string",
+              "maxLength": 16,
               "default": "en",
               "title": "Locale"
             }
@@ -669,670 +671,6 @@
           }
         }
       }
-    },
-    "/api/v2/health": {
-      "get": {
-        "summary": "Health Check",
-        "description": "Health check — server status, uptime, request count.",
-        "operationId": "health_check_api_v2_health_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v2/version": {
-      "get": {
-        "summary": "Version",
-        "description": "Server version and model architecture.",
-        "operationId": "version_api_v2_version_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v2/classes": {
-      "get": {
-        "summary": "Classes",
-        "description": "List of known disease classes with bilingual names.",
-        "operationId": "classes_api_v2_classes_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v2/metrics": {
-      "get": {
-        "summary": "Metrics",
-        "description": "Operational metrics (JSON). Useful for dashboards and jury demos.",
-        "operationId": "metrics_api_v2_metrics_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v2/metrics/prometheus": {
-      "get": {
-        "summary": "Metrics Prometheus",
-        "description": "Prometheus text exposition (v0.0.4) of the same counters as /api/metrics.",
-        "operationId": "metrics_prometheus_api_v2_metrics_prometheus_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v2/analyze": {
-      "post": {
-        "summary": "Analyze Image",
-        "description": "Analyse a plant image for diseases (two-stage pipeline).\n\nAccepts JPEG, PNG, WebP, or BMP images up to 10 MB.\nReturns bilingual (EN/RU) disease diagnosis with treatment advice,\ndetected region (with severity score) and the top-k class\nprobabilities. ``locale`` (default \"en\") is forwarded to PlantNet\nso the species ``common_name`` is localised in the response.",
-        "operationId": "analyze_image_api_v2_analyze_post",
-        "parameters": [
-          {
-            "name": "species",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Species"
-            }
-          },
-          {
-            "name": "locale",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "default": "en",
-              "title": "Locale"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "multipart/form-data": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_analyze_image_api_v2_analyze_post"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v2/identify": {
-      "post": {
-        "summary": "Identify Endpoint",
-        "description": "PlantNet-backed plant species identification.\n\nReturns up to 5 candidate species with confidence scores. When the\nPlantNet API key is missing we still respond 200 OK with\n``available: false`` so the client can render a graceful state\ninstead of an error toast. Cached server-side by SHA-256(image) +\norgan + locale to keep the daily PlantNet quota intact.\n\n``locale`` is forwarded to PlantNet's ``lang`` query param so the\ncommon names come back localised (e.g. \"Каучуковое дерево\" on\nru-RU instead of \"Rubber tree\").",
-        "operationId": "identify_endpoint_api_v2_identify_post",
-        "parameters": [
-          {
-            "name": "organ",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "default": "leaf",
-              "title": "Organ"
-            }
-          },
-          {
-            "name": "locale",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "default": "en",
-              "title": "Locale"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "multipart/form-data": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_identify_endpoint_api_v2_identify_post"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v2/chat": {
-      "post": {
-        "summary": "Chat Endpoint",
-        "description": "AI Plant Doctor — OpenRouter chat completion (default model\n``openai/gpt-oss-120b``).\n\nPer-session turn + token caps prevent budget overrun. Per-IP rate\nlimiting from the global middleware still applies.",
-        "operationId": "chat_endpoint_api_v2_chat_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ChatRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v2/care-plan": {
-      "post": {
-        "summary": "Care Plan Endpoint",
-        "description": "Build a watering / fertilising / humidity schedule for a plant.\n\nAlways returns a usable rules-based plan; when an OpenRouter key\nis configured the response also includes a Markdown ``summary_md``\npolished by the LLM. Disease must be one of the known classifier\nclasses (``unknown`` is normalised to a generic monitoring plan).",
-        "operationId": "care_plan_endpoint_api_v2_care_plan_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CarePlanRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v2/progression": {
-      "post": {
-        "summary": "Progression Endpoint",
-        "description": "Disease-progression analysis. Returns a 5-point severity\nsparkline + a trend slope across the supplied history (oldest\nfirst). An empty list is allowed and yields a zero-padded\nbaseline so the client can render an \"awaiting data\" state\nwithout special-casing.",
-        "operationId": "progression_endpoint_api_v2_progression_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ProgressionRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v2/feedback": {
-      "post": {
-        "summary": "Feedback Endpoint",
-        "description": "Capture a thumbs-up / thumbs-down on a diagnosis, with full\ndiagnostic + client context.\n\nAppend-only — there is no update / delete path. The 1 req/s per-IP\nrate limit from the global middleware applies; the endpoint\nadditionally caps ``note`` length via the pydantic model so a\nmalicious client can't bloat the SQLite file with megabytes of\ntext.\n\nThe raw client IP is hashed (peppered SHA-256) before persistence\nso we never store PII at rest. The hash is stable across a single\ndeployment, which is enough for abuse-rate detection.",
-        "operationId": "feedback_endpoint_api_v2_feedback_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/FeedbackRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v2/feedback/image": {
-      "post": {
-        "summary": "Feedback Image Upload",
-        "description": "Persist the original image bytes for a negative-feedback row.\n\nCalled by the Android client immediately after a successful\n``correct=false`` ``/api/feedback`` submission. The image is\nwritten to ``FEEDBACK_IMG_DIR`` keyed by SHA-256 of the bytes,\nand the most recent feedback row for ``scan_id`` is updated\nin-place with ``image_path``. Same per-IP rate limit and\nscan-id-was-issued gate as ``/api/feedback`` so a hostile\nclient can't spray arbitrary bytes at the corpus.\n\nPrivacy note: this endpoint reverses the historical \"we never\nstore the photo\" promise, but only for ``correct=false`` rows\nwhere the training value is highest. The Android feedback sheet\ndiscloses this in its copy; if the user wants their image\npurged they can use the existing community delete-for-user path\n(which doesn't currently sweep this directory; a separate\ncleanup endpoint is owed but out of scope here).",
-        "operationId": "feedback_image_upload_api_v2_feedback_image_post",
-        "requestBody": {
-          "content": {
-            "multipart/form-data": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_feedback_image_upload_api_v2_feedback_image_post"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v2/community/scan": {
-      "post": {
-        "summary": "Community Scan Upload",
-        "description": "Append one community-shared scan to the corpus.\n\nHierarchy: ``country`` is the canonical top bucket (required),\n``region`` is the optional sub-country locality. The image is\noptional — when omitted we still store the row, just without a\nthumbnail.",
-        "operationId": "community_scan_upload_api_v2_community_scan_post",
-        "requestBody": {
-          "content": {
-            "multipart/form-data": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_community_scan_upload_api_v2_community_scan_post"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v2/community/nearby": {
-      "get": {
-        "summary": "Community Scan Nearby",
-        "description": "List the most recent community-shared scans within ``country``.\n\n``region`` narrows the result set to a sub-country locality\n(city / admin area) when supplied. ``species`` (scientific name,\nexact match) narrows further so the carousel only shows scans of\nthe same plant — without it, \"Ficus elastica with leaf spot\"\nappears next to \"Monstera with leaf spot\" and conflates two\ndifferent care routines.\n\nFall-through ordering inside ``nearby_scans`` is most-specific\nfirst: same disease+species+region → same disease+species → …\n→ same country (any disease). The carousel always fills up to\n``limit`` so a thin local bucket still surfaces something.",
-        "operationId": "community_scan_nearby_api_v2_community_nearby_get",
-        "parameters": [
-          {
-            "name": "country",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Country"
-            }
-          },
-          {
-            "name": "region",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Region"
-            }
-          },
-          {
-            "name": "disease",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Disease"
-            }
-          },
-          {
-            "name": "species",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Species"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "default": 20,
-              "title": "Limit"
-            }
-          },
-          {
-            "name": "user_pseudo_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "User Pseudo Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v2/community/thumb/{filename}": {
-      "get": {
-        "summary": "Community Scan Thumb",
-        "description": "Serve a community thumbnail by filename.\n\nThe corpus only ever stores filenames that ``community._save_thumbnail``\nminted, but we still hard-guard against path traversal: any\nfilename containing ``/`` or ``..`` is refused outright. Missing\nfiles return 404 instead of 500.",
-        "operationId": "community_scan_thumb_api_v2_community_thumb__filename__get",
-        "parameters": [
-          {
-            "name": "filename",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Filename"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v2/community/user/{user_pseudo_id}": {
-      "delete": {
-        "summary": "Community Scan Delete User",
-        "description": "Erase all rows + thumbnails attributed to one install. Used by\nthe Android \"delete my contributions\" affordance.",
-        "operationId": "community_scan_delete_user_api_v2_community_user__user_pseudo_id__delete",
-        "parameters": [
-          {
-            "name": "user_pseudo_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "User Pseudo Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v2/user/export/{user_pseudo_id}": {
-      "get": {
-        "summary": "Export User Data",
-        "description": "GDPR Data Portability: Export all data associated with the user_pseudo_id.",
-        "operationId": "export_user_data_api_v2_user_export__user_pseudo_id__get",
-        "parameters": [
-          {
-            "name": "user_pseudo_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "User Pseudo Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
     }
   },
   "components": {
@@ -1341,7 +679,7 @@
         "properties": {
           "image": {
             "type": "string",
-            "contentMediaType": "application/octet-stream",
+            "format": "binary",
             "title": "Image"
           }
         },
@@ -1350,20 +688,6 @@
           "image"
         ],
         "title": "Body_analyze_image_api_analyze_post"
-      },
-      "Body_analyze_image_api_v2_analyze_post": {
-        "properties": {
-          "image": {
-            "type": "string",
-            "contentMediaType": "application/octet-stream",
-            "title": "Image"
-          }
-        },
-        "type": "object",
-        "required": [
-          "image"
-        ],
-        "title": "Body_analyze_image_api_v2_analyze_post"
       },
       "Body_community_scan_upload_api_community_scan_post": {
         "properties": {
@@ -1436,7 +760,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "contentMediaType": "application/octet-stream"
+                "format": "binary"
               },
               {
                 "type": "null"
@@ -1454,95 +778,6 @@
         ],
         "title": "Body_community_scan_upload_api_community_scan_post"
       },
-      "Body_community_scan_upload_api_v2_community_scan_post": {
-        "properties": {
-          "scan_id": {
-            "type": "string",
-            "title": "Scan Id"
-          },
-          "user_pseudo_id": {
-            "type": "string",
-            "title": "User Pseudo Id"
-          },
-          "country": {
-            "type": "string",
-            "title": "Country"
-          },
-          "region": {
-            "type": "string",
-            "title": "Region",
-            "default": ""
-          },
-          "disease": {
-            "type": "string",
-            "title": "Disease"
-          },
-          "confidence": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Confidence"
-          },
-          "species": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Species"
-          },
-          "species_score": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Species Score"
-          },
-          "locale": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Locale"
-          },
-          "image": {
-            "anyOf": [
-              {
-                "type": "string",
-                "contentMediaType": "application/octet-stream"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Image"
-          }
-        },
-        "type": "object",
-        "required": [
-          "scan_id",
-          "user_pseudo_id",
-          "country",
-          "disease"
-        ],
-        "title": "Body_community_scan_upload_api_v2_community_scan_post"
-      },
       "Body_feedback_image_upload_api_feedback_image_post": {
         "properties": {
           "scan_id": {
@@ -1551,7 +786,7 @@
           },
           "image": {
             "type": "string",
-            "contentMediaType": "application/octet-stream",
+            "format": "binary",
             "title": "Image"
           }
         },
@@ -1562,30 +797,11 @@
         ],
         "title": "Body_feedback_image_upload_api_feedback_image_post"
       },
-      "Body_feedback_image_upload_api_v2_feedback_image_post": {
-        "properties": {
-          "scan_id": {
-            "type": "string",
-            "title": "Scan Id"
-          },
-          "image": {
-            "type": "string",
-            "contentMediaType": "application/octet-stream",
-            "title": "Image"
-          }
-        },
-        "type": "object",
-        "required": [
-          "scan_id",
-          "image"
-        ],
-        "title": "Body_feedback_image_upload_api_v2_feedback_image_post"
-      },
       "Body_identify_endpoint_api_identify_post": {
         "properties": {
           "image": {
             "type": "string",
-            "contentMediaType": "application/octet-stream",
+            "format": "binary",
             "title": "Image"
           }
         },
@@ -1594,20 +810,6 @@
           "image"
         ],
         "title": "Body_identify_endpoint_api_identify_post"
-      },
-      "Body_identify_endpoint_api_v2_identify_post": {
-        "properties": {
-          "image": {
-            "type": "string",
-            "contentMediaType": "application/octet-stream",
-            "title": "Image"
-          }
-        },
-        "type": "object",
-        "required": [
-          "image"
-        ],
-        "title": "Body_identify_endpoint_api_v2_identify_post"
       },
       "CarePlanRequest": {
         "properties": {
@@ -1980,13 +1182,6 @@
           "type": {
             "type": "string",
             "title": "Error Type"
-          },
-          "input": {
-            "title": "Input"
-          },
-          "ctx": {
-            "type": "object",
-            "title": "Context"
           }
         },
         "type": "object",

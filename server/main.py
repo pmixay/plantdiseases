@@ -29,15 +29,12 @@ from contextvars import ContextVar
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-import redis
-import sentry_sdk
 from fastapi import FastAPI, APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import BaseModel, Field, field_validator
-from sentry_sdk.integrations.fastapi import FastApiIntegration
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response as StarletteResponse
 
@@ -155,16 +152,6 @@ APP_VERSION = _resolve_app_version()
 # Limit Pillow decompression to prevent zip-bomb DoS
 Image.MAX_IMAGE_PIXELS = 20_000_000  # ~4500×4500
 
-# ── Telemetry & Telemetry ────────────────────────────────────────────
-sentry_dsn = get_str("SENTRY_DSN", "").strip()
-if sentry_dsn:
-    sentry_sdk.init(
-        dsn=sentry_dsn,
-        integrations=[FastApiIntegration()],
-        traces_sample_rate=get_float("SENTRY_TRACES_SAMPLE_RATE", 1.0),
-        profiles_sample_rate=get_float("SENTRY_PROFILES_SAMPLE_RATE", 1.0),
-    )
-
 request_id_var: ContextVar[str] = ContextVar("request_id", default="")
 
 class JSONFormatter(logging.Formatter):
@@ -239,30 +226,6 @@ INFERENCE_TIMEOUT = get_float("INFERENCE_TIMEOUT", 30.0)
 # client render a friendly "you saw this one earlier" banner. The
 # cache is intentionally in-memory only: it loses state on restart,
 # which is the right behaviour while the model itself is in flux.
-# Redis client initialization for multi-instance cache and quotas
-_redis_client = None
-_redis_available = False
-
-redis_url = get_str("REDIS_URL", "").strip()
-if not redis_url:
-    redis_host = get_str("REDIS_HOST", "").strip()
-    redis_port = get_int("REDIS_PORT", 6379)
-    redis_db = get_int("REDIS_DB", 0)
-    redis_password = get_str("REDIS_PASSWORD", "").strip()
-    if redis_host:
-        redis_url = f"redis://:{redis_password}@{redis_host}:{redis_port}/{redis_db}" if redis_password else f"redis://{redis_host}:{redis_port}/{redis_db}"
-
-if redis_url:
-    try:
-        _redis_client = redis.Redis.from_url(redis_url, socket_timeout=2.0)
-        _redis_client.ping()
-        _redis_available = True
-        logger.info("Connected to Redis cache at %s", redis_url)
-    except Exception as e:
-        logger.warning("Failed to connect to Redis, using in-memory fallback: %s", e)
-        _redis_client = None
-        _redis_available = False
-
 ANALYZE_CACHE_TTL_SECONDS = get_int("ANALYZE_CACHE_TTL_SECONDS", 3600)
 ANALYZE_CACHE_MAX_ENTRIES = get_int("ANALYZE_CACHE_MAX_ENTRIES", 512)
 _analyze_cache: "OrderedDict[str, tuple[float, dict]]" = OrderedDict()
@@ -272,16 +235,7 @@ def _analyze_cache_get(cache_key: str) -> dict | None:
     """Return a previously-stored analyse response keyed by
     ``<image_sha>:<plantnet_lang>``, or ``None`` if there's nothing
     fresh under that key. Updates LRU recency on hit so frequent
-    re-uploads stay warm. Resolves from Redis if available, with in-memory fallback."""
-    if _redis_available and _redis_client:
-        try:
-            val = _redis_client.get(f"plantvision:analyze:{cache_key}")
-            if val:
-                data = json.loads(val.decode("utf-8"))
-                return data
-        except Exception as e:
-            logger.warning("Redis cache get error: %s", e)
-
+    re-uploads stay warm."""
     now = time.time()
     with _analyze_cache_lock:
         item = _analyze_cache.get(cache_key)
@@ -296,18 +250,6 @@ def _analyze_cache_get(cache_key: str) -> dict | None:
 
 def _analyze_cache_put(cache_key: str, payload: dict) -> None:
     now = time.time()
-    if _redis_available and _redis_client:
-        try:
-            data = {"cached_at": now, "payload": payload}
-            _redis_client.setex(
-                f"plantvision:analyze:{cache_key}",
-                ANALYZE_CACHE_TTL_SECONDS,
-                json.dumps(data, ensure_ascii=False)
-            )
-            return
-        except Exception as e:
-            logger.warning("Redis cache put error: %s", e)
-
     with _analyze_cache_lock:
         _analyze_cache[cache_key] = (now, payload)
         _analyze_cache.move_to_end(cache_key)
@@ -386,21 +328,9 @@ def _check_and_increment_quota(api_key: str, daily_limit: int) -> bool:
     """
     if daily_limit <= 0:
         return True
-    
+
     current_day = time.strftime("%Y-%m-%d", time.gmtime())
-    
-    if _redis_available and _redis_client:
-        redis_key = f"plantvision:quota:{api_key}:{current_day}"
-        try:
-            val = _redis_client.incr(redis_key)
-            if val == 1:
-                _redis_client.expire(redis_key, 90000) # 25 hours
-            if val > daily_limit:
-                return False
-            return True
-        except Exception as e:
-            logger.warning("Redis quota error: %s, falling back to in-memory", e)
-            
+
     with _quota_lock:
         if api_key not in _in_memory_quotas:
             _in_memory_quotas[api_key] = {}
@@ -416,12 +346,6 @@ def _check_and_increment_quota(api_key: str, daily_limit: int) -> bool:
 
 def _is_banned(identifier: str) -> bool:
     now = time.time()
-    if _redis_available and _redis_client:
-        try:
-            return bool(_redis_client.exists(f"plantvision:ban:{identifier}"))
-        except Exception as e:
-            logger.warning("Redis ban check error: %s, falling back to in-memory", e)
-            
     with _abuse_lock:
         banned_until = _in_memory_bans.get(identifier, 0.0)
         if banned_until > now:
@@ -432,20 +356,6 @@ def _is_banned(identifier: str) -> bool:
 
 def _record_violation(identifier: str) -> None:
     now = time.time()
-    if _redis_available and _redis_client:
-        try:
-            abuse_key = f"plantvision:abuse:{identifier}"
-            ban_key = f"plantvision:ban:{identifier}"
-            val = _redis_client.incr(abuse_key)
-            if val == 1:
-                _redis_client.expire(abuse_key, int(VIOLATION_WINDOW))
-            if val >= VIOLATION_THRESHOLD:
-                _redis_client.setex(ban_key, int(BAN_DURATION), "1")
-                logger.warning("Temporary ban applied to identifier=%s (Redis)", identifier)
-            return
-        except Exception as e:
-            logger.warning("Redis abuse recording error: %s, falling back to in-memory", e)
-
     with _abuse_lock:
         reset_time, count = _in_memory_violations.get(identifier, (now + VIOLATION_WINDOW, 0))
         if now > reset_time:
@@ -455,7 +365,7 @@ def _record_violation(identifier: str) -> None:
         _in_memory_violations[identifier] = (reset_time, count)
         if count >= VIOLATION_THRESHOLD:
             _in_memory_bans[identifier] = now + BAN_DURATION
-            logger.warning("Temporary ban applied to identifier=%s (in-memory) until %s", identifier, now + BAN_DURATION)
+            logger.warning("Temporary ban applied to identifier=%s until %s", identifier, now + BAN_DURATION)
 
 def _extract_api_key(request: Request) -> str | None:
     key = request.headers.get("x-api-key")
@@ -657,15 +567,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             del self._buckets[ip]
 
     async def dispatch(self, request: Request, call_next):
-        # Remove version prefix if present to check for free endpoints
-        path = request.url.path
-        if path.startswith("/api/v2"):
-            normalized_path = "/api" + path[7:]
-        else:
-            normalized_path = path
-
         # Health, metadata and metrics endpoints are always free
-        if normalized_path in (
+        if request.url.path in (
             "/api/health",
             "/api/version",
             "/api/classes",
@@ -2414,7 +2317,6 @@ async def export_user_data(user_pseudo_id: str):
 
 
 app.include_router(api_router, prefix="/api")
-app.include_router(api_router, prefix="/api/v2")
 
 
 if __name__ == "__main__":
