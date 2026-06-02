@@ -7,3 +7,7 @@ pytest>=8.0
 # the pinned FastAPI 0.109 / Starlette stack.
 httpx>=0.27,<0.28
 ruff>=0.5
+# Used by tools/eval_bootstrap.py (paired-bootstrap eval) and its tests for
+# macro-F1; an eval/report-only dependency, deliberately kept out of the
+# runtime requirements.txt so it never lands in the production image.
+scikit-learn>=1.3
