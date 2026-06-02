@@ -167,74 +167,76 @@ def test_phash_cross_check_present():
     ), "audit fix #1 — pHash leakage check defined but not called"
 
 
-def test_head_phase_uses_flat_lr_with_early_stop():
-    """audit fix #7: phase-1 teacher must NOT cosine to ~0 in epoch 3.
-    Use cosine=False + early_stop=True."""
+def test_head_training_early_stops_and_restores_best():
+    """Report Stage 1: the production model is a frozen DINOv2 + trained
+    head. The head loop must early-stop on a plateau and restore the best
+    checkpoint (so a late-epoch overfit can't ship)."""
     src = _notebook_source()
-    # Look at the head-phase invocation specifically.
-    head_call = re.search(
-        r"_train_phase\(teacher,\s*opt,\s*3,\s*_make_sched\(opt,\s*3,\s*len\(train_dl\)[^)]*\)\s*,\s*'head'[^)]*\)",
-        src, re.DOTALL,
+    assert "HEAD_PATIENCE" in src, "head-training patience knob missing"
+    assert "plateau >= HEAD_PATIENCE" in src, (
+        "head training does not early-stop on a plateau"
     )
-    assert head_call, "head-phase call site missing"
-    block = head_call.group(0)
-    assert "cosine=False" in block, "audit fix #7 — head phase must use cosine=False"
-    assert "early_stop=True" in block, "audit fix #7 — head phase must early-stop+restore"
-
-
-def test_ema_floats_bn_buffers_with_decay():
-    """audit fix #8: EMA must apply exponential moving average to
-    floating-point BN buffers (running_mean / running_var), not blindly
-    copy them from the online model."""
-    src = _notebook_source()
-    # Look at the body of ema_update.
-    m = re.search(r"def ema_update\(.*?\n(?:.*?\n){1,40}", src)
-    assert m, "ema_update body not found"
-    body = m.group(0)
-    assert "is_floating_point" in body, (
-        "audit fix #8 — ema_update doesn't differentiate "
-        "floating buffers from int counters"
-    )
-    # And the float branch must use mul_/add_ pattern (proper EMA).
-    assert re.search(
-        r"b_ema\.mul_\(decay\)\.add_\(b_on(?:\.detach\(\))?,\s*alpha=1\.0?\s*-\s*decay\)",
-        body,
-    ), "audit fix #8 — float buffer EMA formula missing"
-
-
-def test_kd_keeps_topk_candidates():
-    """audit fix #9: KD loop must persist top-K (≥2) EMA snapshots so
-    §6 can pick the winner at INT8."""
-    src = _notebook_source()
-    assert "TOPK" in src and "candidate_results" in src
-    assert "classifier_candidates.pt" in src, (
-        "audit fix #9 — KD candidate file missing"
+    # The best checkpoint must be captured and restored before export.
+    assert "best_state" in src and "model.load_state_dict(best_state)" in src, (
+        "head training does not restore the best checkpoint before §6 export"
     )
 
 
-def test_int8_select_by_deployed_metric():
-    """§6 must evaluate every top-K candidate at INT8 and pick the
-    winner from the resulting metrics — not blindly export the FP32-
-    best candidate. The selection target was tightened: an earlier
-    version sorted by ``int8_realworld_f1``, which leaked the ship-
-    gate slice into the selector (val_realworld was both selector
-    and judge, a low-DoF but real source of optimism bias). The
-    winner is now picked by ``int8_indomain_f1`` so val_realworld
-    stays a clean ship gate; both indomain and realworld INT8 numbers
-    are still measured so the drift gate / NAP MaxLogit fit / ship
-    gate downstream have what they need.
-    """
+def test_backbone_is_frozen_and_only_head_is_optimised():
+    """Report Stage 1: the DINOv2 ViT-S/14 backbone must stay FROZEN — its
+    params requires_grad=False, it never leaves eval(), and the optimiser
+    only sees the head's params. This is what makes the ~0.91 linear-probe
+    ceiling reproducible and keeps the (LayerNorm-only) stats identical at
+    train / eval / export time. The old EMA-teacher machinery is gone."""
     src = _notebook_source()
-    assert "_export_and_eval_int8_candidate" in src, (
-        "INT8 candidate evaluator missing"
+    assert "DINOv2Classifier" in src, "frozen-DINOv2 model class missing"
+    assert "p.requires_grad_(False)" in src, "backbone params are not frozen"
+    assert "model.backbone.eval()" in src, (
+        "frozen backbone must stay in eval() during head training"
     )
-    assert re.search(
-        r"candidate_results\.sort\(key=lambda r: -r\['int8_indomain_f1'\]\)",
-        src,
-    ), "winner selection must sort by int8_indomain_f1 (val_realworld is the ship gate, not the selector)"
-    assert "int8_realworld_f1" in src, (
-        "realworld INT8 metric must still be computed — the drift gate, "
-        "NAP MaxLogit fit and ship gate downstream read it"
+    assert "torch.optim.AdamW(model.head.parameters()" in src, (
+        "optimiser must train the head ONLY (backbone frozen)"
+    )
+    # The removed EMA-teacher machinery must not creep back.
+    assert "ema_update" not in src, "EMA-teacher machinery should be gone (no KD)"
+
+
+def test_no_knowledge_distillation_in_pipeline():
+    """Report key finding: "Distillation is the wrong tool here." The
+    EfficientNetV2-S→MobileNetV3 KD chain must be gone — no teacher
+    forward, no KD loss term, no candidate-snapshot machinery. If a small
+    server model is ever needed the report says use DIST/DKD as a separate
+    effort, which §5 documents but does NOT run here."""
+    src = _notebook_source()
+    for gone in ("ema_update", "_train_phase(", "classifier_candidates",
+                 "candidate_results", "mobilenet_v3"):
+        assert gone not in src, (
+            f"distillation/student machinery {gone!r} is still present — "
+            f"the report says drop KD in favour of the frozen DINOv2 backbone"
+        )
+    # No live KD loss term (alpha*KD + (1-alpha)*CE). Mentions of "KD" are
+    # only allowed in prose explaining why it was removed.
+    assert not re.search(r"alpha\s*\*\s*kd", src, re.IGNORECASE), (
+        "a live KD loss term is still in the training loop"
+    )
+
+
+def test_int8_is_dynamic_with_drift_gate_and_paired_bootstrap():
+    """Report Stage 1 + Stage 0: a ViT must be quantised with DYNAMIC INT8
+    (ORT guidance: dynamic for transformers, static for CNNs), gated on a
+    measured FP32-vs-INT8 drift, and the int8-vs-fp32 ordering reported
+    with a PAIRED BOOTSTRAP CI (the "0.73 > 0.69 is noise" gate — a 0.04
+    gap at n≈450 is within sampling error)."""
+    src = _notebook_source()
+    assert "quantize_dynamic" in src and "QuantType.QInt8" in src, (
+        "ViT must use dynamic INT8 quantisation (ORT guidance for transformers)"
+    )
+    assert "FAIL_DRIFT" in src and re.search(r"drift\s*>\s*FAIL_DRIFT", src), (
+        "INT8 must be gated on a measured FP32-vs-INT8 drift with a fail threshold"
+    )
+    assert "_paired_bootstrap_f1" in src and "'paired_bootstrap'" in src, (
+        "the int8-vs-fp32 ordering must be reported with a paired-bootstrap CI "
+        "(report Stage 0 — point F1 alone is noise at this sample size)"
     )
 
 

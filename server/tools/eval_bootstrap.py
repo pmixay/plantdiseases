@@ -8,7 +8,7 @@ at n≈450 val_realworld samples the macro-F1 sampling error is wide
 almost certainly noise, not a real ordering. Point estimates alone are
 not a trustworthy ship/no-ship gate; CIs and a *paired* A/B test are.
 
-Two estimators are provided:
+Three estimators are provided:
 
 * :func:`bootstrap_macro_f1_ci` — percentile bootstrap CI for a single
   model's disease macro-F1 (resample the test set with replacement,
@@ -19,6 +19,14 @@ Two estimators are provided:
   distribution of the difference. This controls for which specific
   images are hard and is far more sensitive than comparing two
   independent CIs (Stage 0: "use the paired bootstrap").
+* :func:`bootstrap_per_class_recall_ci` / :func:`paired_per_class_recall`
+  — the same two estimators applied to **per-class recall**. The report
+  (Stage 0) asks for CIs on macro-F1 *and* per-class recall explicitly,
+  because macro-F1 is dominated by the smallest classes and the weak
+  classes it targets (``nutrient_deficiency``, ``leaf_scorch_*``,
+  ``gray_mold_*``) are tracked by recall: a class with ~30–50 samples has
+  a recall CI of ±0.10 or more, so a per-class recall delta is only real
+  when its paired CI excludes zero.
 
 The disease-macro-F1 definition mirrors the training notebook exactly
 (``sklearn.f1_score`` over the disease labels only — ``healthy`` and
@@ -75,6 +83,28 @@ def disease_macro_f1(
             y_true, y_pred, labels=disease_idx, average="macro", zero_division=0
         )
     )
+
+
+def per_class_recall(
+    y_true: np.ndarray, y_pred: np.ndarray, class_names: list[str]
+) -> dict[str, float]:
+    """Recall for every class, keyed by class name.
+
+    Mirrors ``training_metrics.json``'s ``per_class_recall``. A class with
+    no support in ``y_true`` reports ``nan`` (recall is undefined), which
+    the bootstrap below propagates so an absent class is never silently
+    scored as 0 or 1.
+    """
+    yt = np.asarray(y_true)
+    yp = np.asarray(y_pred)
+    out: dict[str, float] = {}
+    for idx, name in enumerate(class_names):
+        support = int(np.sum(yt == idx))
+        if support == 0:
+            out[name] = float("nan")
+        else:
+            out[name] = float(np.sum((yt == idx) & (yp == idx)) / support)
+    return out
 
 
 def _as_int_array(x) -> np.ndarray:
@@ -182,6 +212,142 @@ def paired_bootstrap(
     }
 
 
+def bootstrap_per_class_recall_ci(
+    y_true,
+    y_pred,
+    class_names: list[str],
+    *,
+    n_boot: int = 5000,
+    ci: float = 0.95,
+    seed: int = 0,
+) -> dict[str, dict]:
+    """Percentile-bootstrap recall CI for every class (Stage 0).
+
+    Returns ``{class_name: {point, ci_low, ci_high, ci_half_width,
+    support, ...}}``. A bootstrap replicate that happens to draw no
+    samples of a class yields ``nan`` for that replicate and is dropped
+    from that class's percentile computation (``np.nanpercentile``), so a
+    rare class still gets a CI from the replicates where it was present.
+    """
+    y_true = _as_int_array(y_true)
+    y_pred = _as_int_array(y_pred)
+    if y_true.shape != y_pred.shape:
+        raise ValueError("y_true and y_pred must have the same length")
+    n = y_true.shape[0]
+    if n == 0:
+        raise ValueError("empty prediction set")
+
+    point = per_class_recall(y_true, y_pred, class_names)
+    support = {c: int(np.sum(y_true == i)) for i, c in enumerate(class_names)}
+    rng = np.random.default_rng(seed)
+    boot = np.full((n_boot, len(class_names)), np.nan, dtype=np.float64)
+    for b in range(n_boot):
+        idx = rng.integers(0, n, size=n)
+        rec = per_class_recall(y_true[idx], y_pred[idx], class_names)
+        boot[b] = [rec[c] for c in class_names]
+
+    out: dict[str, dict] = {}
+    for i, c in enumerate(class_names):
+        col = boot[:, i]
+        valid = col[~np.isnan(col)]
+        if valid.size == 0:
+            out[c] = {
+                "point": point[c], "ci_low": float("nan"),
+                "ci_high": float("nan"), "ci_half_width": float("nan"),
+                "support": support[c], "n_boot_valid": 0,
+            }
+            continue
+        lo, hi = _percentile_ci(valid, ci)
+        out[c] = {
+            "point": point[c],
+            "ci_low": lo,
+            "ci_high": hi,
+            "ci_half_width": (hi - lo) / 2.0,
+            "support": support[c],
+            "n_boot_valid": int(valid.size),
+        }
+    return {
+        "metric": "per_class_recall",
+        "ci_level": ci,
+        "n": int(n),
+        "n_boot": int(n_boot),
+        "classes": out,
+    }
+
+
+def paired_per_class_recall(
+    y_true,
+    y_pred_a,
+    y_pred_b,
+    class_names: list[str],
+    *,
+    n_boot: int = 5000,
+    ci: float = 0.95,
+    seed: int = 0,
+) -> dict[str, dict]:
+    """Paired bootstrap for ``A − B`` per-class recall on a shared test set.
+
+    The honest test for a per-class improvement (e.g. ``nutrient_deficiency``
+    recall rising from 0.55 toward >0.75 after Stage 2): ``significant`` is
+    True for a class only when the CI of its recall difference excludes
+    zero. One resampled index vector per iteration is applied to BOTH
+    models so the difference reflects only the model gap.
+    """
+    y_true = _as_int_array(y_true)
+    y_pred_a = _as_int_array(y_pred_a)
+    y_pred_b = _as_int_array(y_pred_b)
+    if not (y_true.shape == y_pred_a.shape == y_pred_b.shape):
+        raise ValueError("y_true, y_pred_a and y_pred_b must have equal length")
+    n = y_true.shape[0]
+    if n == 0:
+        raise ValueError("empty prediction set")
+
+    rec_a = per_class_recall(y_true, y_pred_a, class_names)
+    rec_b = per_class_recall(y_true, y_pred_b, class_names)
+    support = {c: int(np.sum(y_true == i)) for i, c in enumerate(class_names)}
+    rng = np.random.default_rng(seed)
+    diffs = np.full((n_boot, len(class_names)), np.nan, dtype=np.float64)
+    for b in range(n_boot):
+        idx = rng.integers(0, n, size=n)
+        yt = y_true[idx]
+        ra = per_class_recall(yt, y_pred_a[idx], class_names)
+        rb = per_class_recall(yt, y_pred_b[idx], class_names)
+        diffs[b] = [ra[c] - rb[c] for c in class_names]
+
+    out: dict[str, dict] = {}
+    for i, c in enumerate(class_names):
+        col = diffs[:, i]
+        valid = col[~np.isnan(col)]
+        if valid.size == 0:
+            out[c] = {
+                "recall_a": rec_a[c], "recall_b": rec_b[c],
+                "diff_point": float("nan"), "diff_ci_low": float("nan"),
+                "diff_ci_high": float("nan"), "p_a_gt_b": float("nan"),
+                "significant": False, "support": support[c], "n_boot_valid": 0,
+            }
+            continue
+        lo, hi = _percentile_ci(valid, ci)
+        out[c] = {
+            "recall_a": rec_a[c],
+            "recall_b": rec_b[c],
+            "diff_point": rec_a[c] - rec_b[c],
+            "diff_ci_low": lo,
+            "diff_ci_high": hi,
+            "p_a_gt_b": float(np.mean(valid > 0.0)),
+            "significant": bool(lo > 0.0 or hi < 0.0),
+            "support": support[c],
+            "n_boot_valid": int(valid.size),
+        }
+    return {
+        "metric": "per_class_recall_diff",
+        "compared": "a_minus_b",
+        "ci_level": ci,
+        "n": int(n),
+        "n_boot": int(n_boot),
+        "classes": out,
+    }
+
+
 def _fmt(d: dict) -> str:
     return json.dumps(d, indent=2)
 
@@ -203,20 +369,39 @@ def main() -> None:
 
     report: dict = {
         "class_names": class_names,
-        label_a: bootstrap_macro_f1_ci(
-            y_true, y_pred_a, class_names, n_boot=args.n_boot, ci=args.ci, seed=args.seed
-        ),
+        label_a: {
+            "disease_macro_f1": bootstrap_macro_f1_ci(
+                y_true, y_pred_a, class_names,
+                n_boot=args.n_boot, ci=args.ci, seed=args.seed,
+            ),
+            "per_class_recall": bootstrap_per_class_recall_ci(
+                y_true, y_pred_a, class_names,
+                n_boot=args.n_boot, ci=args.ci, seed=args.seed,
+            ),
+        },
     }
     if data.get("y_pred_b") is not None:
         label_b = data.get("label_b", "model_b")
-        report[label_b] = bootstrap_macro_f1_ci(
-            y_true, data["y_pred_b"], class_names,
-            n_boot=args.n_boot, ci=args.ci, seed=args.seed,
-        )
-        report[f"{label_a}_vs_{label_b}"] = paired_bootstrap(
-            y_true, y_pred_a, data["y_pred_b"], class_names,
-            n_boot=args.n_boot, ci=args.ci, seed=args.seed,
-        )
+        report[label_b] = {
+            "disease_macro_f1": bootstrap_macro_f1_ci(
+                y_true, data["y_pred_b"], class_names,
+                n_boot=args.n_boot, ci=args.ci, seed=args.seed,
+            ),
+            "per_class_recall": bootstrap_per_class_recall_ci(
+                y_true, data["y_pred_b"], class_names,
+                n_boot=args.n_boot, ci=args.ci, seed=args.seed,
+            ),
+        }
+        report[f"{label_a}_vs_{label_b}"] = {
+            "disease_macro_f1": paired_bootstrap(
+                y_true, y_pred_a, data["y_pred_b"], class_names,
+                n_boot=args.n_boot, ci=args.ci, seed=args.seed,
+            ),
+            "per_class_recall": paired_per_class_recall(
+                y_true, y_pred_a, data["y_pred_b"], class_names,
+                n_boot=args.n_boot, ci=args.ci, seed=args.seed,
+            ),
+        }
 
     print(_fmt(report))
     if args.json_out:

@@ -32,6 +32,7 @@ recommended backbone.
 | **Stage 1 — frozen DINOv2 ViT-S/14 + trained head** as the production model (no KD) | Notebook rewritten (§4/§5/§6) | `train_notebook.ipynb` |
 | **Dynamic INT8** for the ViT (ORT guidance: dynamic for transformers, static for CNNs) | Implemented | notebook §6 `quantize_dynamic` |
 | **Stage 0 — paired-bootstrap macro-F1 CIs** ("0.73 > 0.69 is noise") | Implemented + unit-tested | `tools/eval_bootstrap.py`, `tests/test_eval_bootstrap.py`, notebook §6 |
+| **Stage 0 — per-class recall bootstrap CIs** (paired + single-model; the weak-class deltas the report tracks) | Implemented + unit-tested | `tools/eval_bootstrap.py` (`bootstrap_per_class_recall_ci` / `paired_per_class_recall`), notebook §6 model_card |
 | **Stage 3 — horizontal-flip TTA (2×)** | Implemented, **off by default** | `classifier.py` (`inference.tta`), notebook §6 (`USE_TTA_HFLIP`) |
 | Architecture-neutral serving (a DINOv2 ONNX is a drop-in) | Implemented | `classifier.py` `architecture` field + ONNX path |
 | Drop distillation; if a small model is ever needed use **DIST/DKD** not vanilla KD | Documented | notebook §5 |
