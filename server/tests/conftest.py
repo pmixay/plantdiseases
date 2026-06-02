@@ -57,6 +57,9 @@ def jpeg_bytes() -> bytes:
 class _FakeClassifier:
     backend = "fake"
     img_size = 256
+    # Mirror the real classifier's metadata-driven ``architecture`` attr
+    # (classes.json -> architecture) that the /version endpoint surfaces.
+    architecture = "mobilenet_v3_large"
 
     def __init__(self):
         from classifier import DEFAULT_CLASS_NAMES

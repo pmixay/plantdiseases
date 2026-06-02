@@ -406,8 +406,6 @@ DISEASES_DATABASE = {
 # ``species_list`` is the list of animal species for which the plant is
 # toxic. Empty list means safe; non-empty implies ``toxic_to_pets``.
 
-_TOXIC_SPECIES_DEFAULT_LIST = ["cats", "dogs"]
-
 
 def _toxic_entry(species_list: list[str]) -> dict:
     return {

@@ -691,7 +691,6 @@ class PlantDiseasePipeline:
         primary_box = self._select_primary_box(
             results=results,
             top1_class=top1_class,
-            downgraded=False,
         )
 
         aggregated_cls = {
@@ -730,7 +729,6 @@ class PlantDiseasePipeline:
         *,
         results: list[tuple[dict, dict]],
         top1_class: str,
-        downgraded: bool,
     ) -> dict:
         """Pick the bbox most worth highlighting on the result screen.
 
@@ -765,11 +763,10 @@ class PlantDiseasePipeline:
             key=lambda r: (disease_score(r[1]), top1_match(r[1]), area(r[0])),
             reverse=True,
         )
-        # ``downgraded`` is kept in the signature for call-site
-        # compatibility; the new ranking already does the right thing
-        # in the downgrade case (the most-diseased region still wins
-        # even when the aggregate flipped to healthy).
-        _ = downgraded
+        # The ranking already does the right thing when the aggregate
+        # verdict flipped to healthy: the most-diseased region still wins,
+        # so the result screen highlights the suspicious leaf, not a
+        # picture-perfect one beside it.
         return ranked[0][0]
 
     def _reroute_to_nap(self, classification: dict) -> dict:

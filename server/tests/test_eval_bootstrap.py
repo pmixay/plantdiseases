@@ -81,3 +81,65 @@ def test_paired_bootstrap_calls_noise_not_significant():
     assert out["diff_point"] == 0.0
     assert out["diff_ci_low"] <= 0.0 <= out["diff_ci_high"]
     assert out["significant"] is False
+
+
+def test_per_class_recall_matches_hand_computed_and_marks_absent_class():
+    # disease_a: 2 true, 1 hit → recall 0.5.  disease_b: 1 true, 1 hit → 1.0.
+    # healthy: 1 true, 0 hit → 0.0.  not_a_plant: 0 true → undefined (nan).
+    y_true = np.array([0, 0, 1, 2])
+    y_pred = np.array([0, 1, 1, 0])
+    rec = eb.per_class_recall(y_true, y_pred, CLASS_NAMES)
+    assert rec["disease_a"] == 0.5
+    assert rec["disease_b"] == 1.0
+    assert rec["healthy"] == 0.0
+    assert np.isnan(rec["not_a_plant"])  # no support → undefined, never 0/1
+
+
+def test_per_class_recall_ci_brackets_point_and_reports_support():
+    rng = np.random.default_rng(0)
+    n = 400
+    y_true = rng.integers(0, 4, size=n)
+    y_pred = y_true.copy()
+    flip = rng.random(n) < 0.2
+    y_pred[flip] = (y_true[flip] + rng.integers(1, 4, size=flip.sum())) % 4
+
+    out = eb.bootstrap_per_class_recall_ci(y_true, y_pred, CLASS_NAMES, n_boot=400, seed=1)
+    assert out["metric"] == "per_class_recall"
+    for c in CLASS_NAMES:
+        cls = out["classes"][c]
+        assert cls["ci_low"] <= cls["point"] <= cls["ci_high"]
+        assert cls["support"] == int(np.sum(y_true == CLASS_NAMES.index(c)))
+        # ~80% correct → recall well above zero, CI a sane width.
+        assert 0.0 < cls["ci_half_width"] < 0.25
+
+
+def test_paired_per_class_recall_flags_only_the_degraded_class():
+    rng = np.random.default_rng(7)
+    n = 600
+    y_true = rng.integers(0, 4, size=n)
+    # A near-perfect; B drops ~half of disease_a's true positives to a
+    # wrong class → only disease_a recall should be significantly worse.
+    y_a = y_true.copy()
+    y_b = y_true.copy()
+    corrupt = (rng.random(n) < 0.5) & (y_true == 0)
+    y_b[corrupt] = 2  # mispredict disease_a as healthy
+
+    out = eb.paired_per_class_recall(y_true, y_a, y_b, CLASS_NAMES, n_boot=400, seed=2)
+    a = out["classes"]["disease_a"]
+    assert a["diff_point"] > 0.0        # A recalls disease_a better
+    assert a["diff_ci_low"] > 0.0       # CI excludes zero
+    assert a["significant"] is True
+    # disease_b was untouched → not significant.
+    assert out["classes"]["disease_b"]["significant"] is False
+
+
+def test_per_class_recall_ci_handles_rare_class_without_crashing():
+    # A class with tiny support must still yield a CI from the replicates
+    # where it was drawn, never a divide-by-zero or all-nan crash.
+    y_true = np.array([0, 0, 0, 0, 0, 0, 0, 0, 1, 2])  # disease_b support=1
+    y_pred = y_true.copy()
+    out = eb.bootstrap_per_class_recall_ci(y_true, y_pred, CLASS_NAMES, n_boot=300, seed=5)
+    db = out["classes"]["disease_b"]
+    assert db["support"] == 1
+    assert db["n_boot_valid"] > 0
+    assert db["point"] == 1.0
