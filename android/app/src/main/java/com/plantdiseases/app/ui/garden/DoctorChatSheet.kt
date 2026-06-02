@@ -39,7 +39,6 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
     private val binding get() = _binding!!
 
     private lateinit var plant: PlantEntity
-    private var latestDisease: String? = null
 
     private lateinit var messagesLayout: LinearLayout
     private lateinit var scrollView: ScrollView
@@ -357,10 +356,9 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
     companion object {
         private const val TAG = "DoctorChatSheet"
 
-        fun show(fm: FragmentManager, plant: PlantEntity, latestDisease: String?) {
+        fun show(fm: FragmentManager, plant: PlantEntity) {
             val sheet = DoctorChatSheet().apply {
                 this.plant = plant
-                this.latestDisease = latestDisease
             }
             sheet.show(fm, TAG)
         }

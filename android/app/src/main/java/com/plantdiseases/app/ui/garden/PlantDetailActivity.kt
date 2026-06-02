@@ -973,11 +973,7 @@ class PlantDetailActivity : AppCompatActivity() {
             ).apply { topMargin = 10.dp() }
             setOnClickListener {
                 Haptics.tick(this@PlantDetailActivity)
-                DoctorChatSheet.show(
-                    supportFragmentManager,
-                    plant,
-                    scans.maxByOrNull { it.timestamp }?.diseaseName,
-                )
+                DoctorChatSheet.show(supportFragmentManager, plant)
             }
             addView(LinearLayout(this@PlantDetailActivity).apply {
                 orientation = LinearLayout.HORIZONTAL

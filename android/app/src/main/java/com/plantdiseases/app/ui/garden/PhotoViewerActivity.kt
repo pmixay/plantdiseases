@@ -6,6 +6,7 @@ import android.graphics.Matrix
 import android.os.Bundle
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
+import android.view.View
 import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -85,10 +86,11 @@ class PhotoViewerActivity : AppCompatActivity() {
     }
 
     private fun updateIndicator(position: Int) {
-        indicator.text = if (uris.size > 1) {
-            getString(R.string.photo_viewer_indicator, position + 1, uris.size)
+        if (uris.size > 1) {
+            indicator.visibility = View.VISIBLE
+            indicator.text = getString(R.string.photo_viewer_indicator, position + 1, uris.size)
         } else {
-            ""
+            indicator.visibility = View.GONE
         }
     }
 
