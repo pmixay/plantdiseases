@@ -25,7 +25,6 @@ import kotlinx.coroutines.withContext
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.resource.bitmap.CenterCrop
 import com.bumptech.glide.load.resource.bitmap.RoundedCorners
-import com.google.android.material.appbar.AppBarLayout
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -40,6 +39,7 @@ import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.ProgressionRequest
 import com.plantdiseases.app.data.repository.PlantRepository
+import com.plantdiseases.app.databinding.ActivityPlantDetailBinding
 import com.plantdiseases.app.util.ImageUtils.formatRelativeDate
 import com.plantdiseases.app.ui.common.CarePlanCardView
 import com.plantdiseases.app.ui.result.ResultActivity
@@ -51,6 +51,7 @@ import java.io.File
 
 class PlantDetailActivity : AppCompatActivity() {
 
+    private lateinit var binding: ActivityPlantDetailBinding
     private lateinit var content: LinearLayout
     private lateinit var timelineContainer: LinearLayout
     private lateinit var photosContainer: LinearLayout
@@ -119,37 +120,29 @@ class PlantDetailActivity : AppCompatActivity() {
     }
 
     private fun buildLayout() {
-        val root = androidx.coordinatorlayout.widget.CoordinatorLayout(this).apply {
-            setBackgroundColor(getColor(R.color.background))
+        binding = ActivityPlantDetailBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        content = binding.detailContent
+        toolbar = binding.detailToolbar
+        toolbarTitle = binding.detailToolbarTitle
+
+        // Extend the gradient app bar behind the status bar.
+        ViewCompat.setOnApplyWindowInsetsListener(binding.detailAppBar) { view, insets ->
+            val topInset = insets.getInsets(WindowInsetsCompat.Type.systemBars()).top
+            view.setPadding(0, topInset, 0, 0)
+            insets
         }
 
-        val appBar = AppBarLayout(this).apply {
-            layoutParams = androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams(
-                androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams.MATCH_PARENT,
-                androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams.WRAP_CONTENT,
-            )
-            setBackgroundResource(R.drawable.bg_toolbar_gradient)
-            elevation = 0f
-            ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets ->
-                val topInset = insets.getInsets(WindowInsetsCompat.Type.systemBars()).top
-                view.setPadding(0, topInset, 0, 0)
-                insets
-            }
-        }
-        toolbar = MaterialToolbar(this).apply {
-            layoutParams = AppBarLayout.LayoutParams(
-                AppBarLayout.LayoutParams.MATCH_PARENT,
-                64.dp(),
-            )
+        toolbar.apply {
+            // Cancel the default toolbar content insets so the custom
+            // title (declared in XML with a 48dp start margin to clear
+            // the nav icon) sits flush against the 16dp gutter.
             setContentInsetStartWithNavigation(0)
             setContentInsetsAbsolute(0, 0)
             setContentInsetsRelative(0, 0)
             setPadding(16.dp(), 0, 16.dp(), 0)
-            setNavigationIcon(R.drawable.ic_back)
             setNavigationIconTint(getColor(R.color.toolbar_title))
-            setTitleTextColor(getColor(R.color.toolbar_title))
-            setTitleTextAppearance(this@PlantDetailActivity, R.style.TextAppearance_App_Toolbar)
-            title = ""
             setNavigationOnClickListener { finish() }
             inflateMenu(R.menu.plant_detail_menu)
             setOnMenuItemClickListener { item ->
@@ -172,47 +165,7 @@ class PlantDetailActivity : AppCompatActivity() {
                     else -> false
                 }
             }
-            toolbarTitle = TextView(this@PlantDetailActivity).apply {
-                text = getString(R.string.plant_detail_title)
-                textSize = 22f
-                maxLines = 2
-                ellipsize = android.text.TextUtils.TruncateAt.END
-                setLineSpacing(1.dp().toFloat(), 1f)
-                setTextColor(getColor(R.color.toolbar_title))
-                typeface = android.graphics.Typeface.create(
-                    "sans-serif-medium",
-                    android.graphics.Typeface.NORMAL,
-                )
-                layoutParams = androidx.appcompat.widget.Toolbar.LayoutParams(
-                    androidx.appcompat.widget.Toolbar.LayoutParams.MATCH_PARENT,
-                    androidx.appcompat.widget.Toolbar.LayoutParams.WRAP_CONTENT,
-                    Gravity.CENTER_VERTICAL,
-                ).apply {
-                    marginStart = 48.dp()
-                    marginEnd = 0
-                }
-            }
-            addView(toolbarTitle)
         }
-        appBar.addView(toolbar)
-        root.addView(appBar)
-
-        val scroll = androidx.core.widget.NestedScrollView(this).apply {
-            layoutParams = androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams(
-                androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams.MATCH_PARENT,
-                androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams.MATCH_PARENT,
-            ).apply {
-                behavior = AppBarLayout.ScrollingViewBehavior()
-            }
-            clipToPadding = false
-        }
-        content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(16.dp(), 16.dp(), 16.dp(), 32.dp())
-        }
-        scroll.addView(content)
-        root.addView(scroll)
-        setContentView(root)
     }
 
     private var wateringSuggestion: PlantRepository.WateringSuggestion? = null
