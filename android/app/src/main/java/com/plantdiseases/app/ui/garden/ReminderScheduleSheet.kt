@@ -5,16 +5,9 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.util.TypedValue
-import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.FrameLayout
-import android.widget.ImageView
-import android.widget.LinearLayout
-import android.widget.NumberPicker
-import android.widget.Switch
-import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
@@ -22,22 +15,32 @@ import androidx.fragment.app.FragmentManager
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
-import com.google.android.material.button.MaterialButton
-import com.google.android.material.card.MaterialCardView
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.PlantEntity
 import com.plantdiseases.app.data.local.PlantReminderEntity
 import com.plantdiseases.app.data.model.CarePlanResponse
+import com.plantdiseases.app.databinding.ItemReminderRowBinding
+import com.plantdiseases.app.databinding.SheetReminderScheduleBinding
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ReminderManager
 import com.plantdiseases.app.worker.PlantReminderWorker
 import kotlinx.coroutines.launch
 
+/**
+ * Reminder schedule bottom sheet. The chrome (handle, header, three
+ * reminder rows, save button) lives in ``sheet_reminder_schedule.xml``
+ * with each row included from ``item_reminder_row.xml``. NumberPicker
+ * ranges / formatters and all the persistence logic stay in code.
+ */
 class ReminderScheduleSheet : BottomSheetDialogFragment() {
+
+    private var _binding: SheetReminderScheduleBinding? = null
+    private val binding get() = _binding!!
 
     private lateinit var plant: PlantEntity
     private var pendingSaveAfterPermission = false
+
     /**
      * Optional care-plan defaults supplied by the caller. Applied once,
      * after Room reminders load, only for rows the user hasn't already
@@ -61,24 +64,23 @@ class ReminderScheduleSheet : BottomSheetDialogFragment() {
         }
     }
 
-    // Row wrappers
-    private val waterRow = ReminderRow()
-    private val checkRow = ReminderRow()
-    private val fertilizeRow = ReminderRow()
+    // Row wrappers — assigned in onViewCreated once the binding exists.
+    private lateinit var waterRow: ReminderRow
+    private lateinit var checkRow: ReminderRow
+    private lateinit var fertilizeRow: ReminderRow
 
-    /** Holds the mutable state for one reminder row. */
-    private inner class ReminderRow {
-        lateinit var switch: Switch
-        lateinit var picker: NumberPicker
-        lateinit var hourPicker: NumberPicker
-        lateinit var minutePicker: NumberPicker
-        lateinit var intervalLabel: TextView
-        lateinit var timeLabel: TextView
-        lateinit var intervalRow: LinearLayout
+    /** Thin wrapper over an included row binding so the rest of the
+     *  sheet keeps reading rows by name. */
+    private inner class ReminderRow(private val b: ItemReminderRowBinding) {
+        val switch get() = b.reminderSwitch
+        val picker get() = b.reminderInterval
+        val hourPicker get() = b.reminderHour
+        val minutePicker get() = b.reminderMinute
+        val intervalRow get() = b.reminderIntervalRow
 
         fun refreshLabels() {
-            intervalLabel.text = getString(R.string.reminder_every_days, picker.value)
-            timeLabel.text = getString(
+            b.reminderIntervalLabel.text = getString(R.string.reminder_every_days, picker.value)
+            b.reminderTimeLabel.text = getString(
                 R.string.reminder_at_time,
                 hourPicker.value,
                 minutePicker.value * 15,
@@ -90,234 +92,65 @@ class ReminderScheduleSheet : BottomSheetDialogFragment() {
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?,
-    ): View = buildUI()
+    ): View {
+        _binding = SheetReminderScheduleBinding.inflate(inflater, container, false)
+        return binding.root
+    }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        binding.reminderPlantName.text = plant.name
+
+        waterRow = setupRow(binding.rowWater, R.drawable.ic_watering, R.string.reminder_watering)
+        checkRow = setupRow(binding.rowCheck, R.drawable.ic_care, R.string.reminder_check)
+        fertilizeRow = setupRow(binding.rowFertilize, R.drawable.ic_garden, R.string.reminder_fertilize)
+
+        binding.reminderSaveBtn.setOnClickListener {
+            Haptics.success(requireContext())
+            saveReminders()
+        }
+
         val behavior = BottomSheetBehavior.from(view.parent as View)
         behavior.state = BottomSheetBehavior.STATE_EXPANDED
         behavior.peekHeight = 600.dp()
         loadReminders()
     }
 
-    private fun buildUI(): View {
-        val root = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(requireContext().getColor(R.color.background))
-        }
-
-        // Drag handle
-        root.addView(View(requireContext()).apply {
-            setBackgroundResource(R.drawable.bg_handle)
-            layoutParams = LinearLayout.LayoutParams(40.dp(), 4.dp()).apply {
-                gravity = Gravity.CENTER_HORIZONTAL
-                topMargin = 8.dp()
-                bottomMargin = 4.dp()
-            }
-        })
-
-        // Header (green gradient)
-        root.addView(buildHeader())
-
-        // Subtitle
-        root.addView(TextView(requireContext()).apply {
-            text = getString(R.string.reminder_subtitle)
-            textSize = 13f
-            setTextColor(requireContext().getColor(R.color.on_surface_secondary))
-            setPadding(20.dp(), 14.dp(), 20.dp(), 2.dp())
-        })
-
-        // Three reminder rows
-        val rowsContainer = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(16.dp(), 8.dp(), 16.dp(), 0)
-        }
-        rowsContainer.addView(buildReminderRowView(R.drawable.ic_watering, R.string.reminder_watering, waterRow))
-        rowsContainer.addView(buildReminderRowView(R.drawable.ic_care, R.string.reminder_check, checkRow))
-        rowsContainer.addView(buildReminderRowView(R.drawable.ic_garden, R.string.reminder_fertilize, fertilizeRow))
-        root.addView(rowsContainer)
-
-        // Save button
-        root.addView(MaterialButton(requireContext()).apply {
-            text = getString(R.string.reminder_save)
-            cornerRadius = 20.dp()
-            setBackgroundColor(requireContext().getColor(R.color.primary))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                52.dp(),
-            ).apply { setMargins(16.dp(), 20.dp(), 16.dp(), 24.dp()) }
-            setOnClickListener {
-                Haptics.success(requireContext())
-                saveReminders()
-            }
-        })
-
-        return root
+    override fun onDestroyView() {
+        super.onDestroyView()
+        _binding = null
     }
 
-    private fun buildHeader(): View {
-        val header = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(20.dp(), 20.dp(), 20.dp(), 20.dp())
-            setBackgroundResource(R.drawable.bg_garden_hero)
-        }
-        header.addView(FrameLayout(requireContext()).apply {
-            setBackgroundResource(R.drawable.bg_icon_circle)
-            layoutParams = LinearLayout.LayoutParams(48.dp(), 48.dp())
-            addView(ImageView(requireContext()).apply {
-                setImageResource(R.drawable.ic_care)
-                setColorFilter(requireContext().getColor(R.color.primary))
-                layoutParams = FrameLayout.LayoutParams(26.dp(), 26.dp(), Gravity.CENTER)
-            })
-        })
-        val titles = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { marginStart = 14.dp() }
-        }
-        titles.addView(TextView(requireContext()).apply {
-            text = getString(R.string.reminders)
-            textSize = 20f
-            setTextColor(requireContext().getColor(R.color.on_primary))
-            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
-        })
-        titles.addView(TextView(requireContext()).apply {
-            text = plant.name
-            textSize = 14f
-            setTextColor(requireContext().getColor(android.R.color.white))
-            alpha = 0.8f
-        })
-        header.addView(titles)
-        return header
-    }
+    /** Configure one included row: icon, label, picker ranges, formatters
+     *  and the listeners that keep the labels + interval visibility live. */
+    private fun setupRow(b: ItemReminderRowBinding, iconRes: Int, labelRes: Int): ReminderRow {
+        b.reminderIcon.setImageResource(iconRes)
+        b.reminderLabel.setText(labelRes)
+        val row = ReminderRow(b)
 
-    private fun buildReminderRowView(
-        iconRes: Int,
-        labelRes: Int,
-        row: ReminderRow,
-    ): View {
-        val card = MaterialCardView(requireContext()).apply {
-            radius = 16.dp().toFloat()
-            cardElevation = 0f
-            strokeWidth = 1.dp()
-            strokeColor = requireContext().getColor(R.color.card_stroke)
-            setCardBackgroundColor(requireContext().getColor(R.color.surface))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { bottomMargin = 10.dp() }
-        }
-        val col = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(16.dp(), 14.dp(), 16.dp(), 14.dp())
-        }
-
-        // Icon + label + switch row
-        val topRow = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        topRow.addView(FrameLayout(requireContext()).apply {
-            setBackgroundResource(R.drawable.bg_icon_circle)
-            layoutParams = LinearLayout.LayoutParams(40.dp(), 40.dp())
-            addView(ImageView(requireContext()).apply {
-                setImageResource(iconRes)
-                setColorFilter(requireContext().getColor(R.color.primary))
-                layoutParams = FrameLayout.LayoutParams(22.dp(), 22.dp(), Gravity.CENTER)
-            })
-        })
-        topRow.addView(TextView(requireContext()).apply {
-            text = getString(labelRes)
-            textSize = 16f
-            setTextColor(requireContext().getColor(R.color.on_surface))
-            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                .apply { marginStart = 12.dp() }
-        })
-
-        row.switch = Switch(requireContext()).apply {
-            thumbTintList = android.content.res.ColorStateList.valueOf(
-                requireContext().getColor(R.color.primary)
-            )
-        }
-        topRow.addView(row.switch)
-        col.addView(topRow)
-
-        row.intervalRow = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            visibility = if (row.switch.isChecked) View.VISIBLE else View.GONE
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 8.dp() }
-        }
-        row.intervalLabel = TextView(requireContext()).apply {
-            textSize = 13f
-            setTextColor(requireContext().getColor(R.color.on_surface_secondary))
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        row.picker = NumberPicker(requireContext()).apply {
-            minValue = 1; maxValue = 30; value = 7
-            layoutParams = LinearLayout.LayoutParams(80.dp(), LinearLayout.LayoutParams.WRAP_CONTENT)
-        }
-        row.timeLabel = TextView(requireContext()).apply {
-            textSize = 13f
-            setTextColor(requireContext().getColor(R.color.on_surface_secondary))
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        row.hourPicker = NumberPicker(requireContext()).apply {
+        b.reminderInterval.apply { minValue = 1; maxValue = 30; value = 7 }
+        b.reminderHour.apply {
             minValue = 0
             maxValue = 23
             value = 9
-            setFormatter { value -> "%02d".format(value) }
-            layoutParams = LinearLayout.LayoutParams(70.dp(), LinearLayout.LayoutParams.WRAP_CONTENT)
+            setFormatter { v -> "%02d".format(v) }
         }
-        row.minutePicker = NumberPicker(requireContext()).apply {
+        b.reminderMinute.apply {
             minValue = 0
             maxValue = 3
             value = 0
             displayedValues = arrayOf("00", "15", "30", "45")
-            layoutParams = LinearLayout.LayoutParams(70.dp(), LinearLayout.LayoutParams.WRAP_CONTENT)
         }
-        val updateLabel = { row.refreshLabels() }
-        updateLabel()
-        row.picker.setOnValueChangedListener { _, _, _ -> updateLabel() }
-        row.hourPicker.setOnValueChangedListener { _, _, _ -> updateLabel() }
-        row.minutePicker.setOnValueChangedListener { _, _, _ -> updateLabel() }
+        row.refreshLabels()
 
-        row.intervalRow.addView(LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            addView(row.intervalLabel)
-            addView(row.picker)
-        })
-        row.intervalRow.addView(LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 6.dp() }
-            addView(row.timeLabel)
-            addView(row.hourPicker)
-            addView(TextView(requireContext()).apply {
-                text = ":"
-                textSize = 18f
-                setTextColor(requireContext().getColor(R.color.on_surface_secondary))
-            })
-            addView(row.minutePicker)
-        })
-        col.addView(row.intervalRow)
-
-        row.switch.setOnCheckedChangeListener { _, checked ->
-            row.intervalRow.visibility = if (checked) View.VISIBLE else View.GONE
+        val update = { row.refreshLabels() }
+        b.reminderInterval.setOnValueChangedListener { _, _, _ -> update() }
+        b.reminderHour.setOnValueChangedListener { _, _, _ -> update() }
+        b.reminderMinute.setOnValueChangedListener { _, _, _ -> update() }
+        b.reminderSwitch.setOnCheckedChangeListener { _, checked ->
+            b.reminderIntervalRow.visibility = if (checked) View.VISIBLE else View.GONE
         }
-
-        card.addView(col)
-        return card
+        return row
     }
 
     private fun loadReminders() {

@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    AI Plant Doctor chat bottom sheet. Drag handle, gradient header,
+    a weighted scrollable message column (bubbles are built in code),
+    a horizontally-scrolling suggestion-chip row, a clear button and the
+    input row. Replaces the fully programmatic DoctorChatSheet.buildUI.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/background">
+
+    <View
+        android:layout_width="40dp"
+        android:layout_height="4dp"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="@dimen/space_sm"
+        android:layout_marginBottom="@dimen/space_xs"
+        android:background="@drawable/bg_handle" />
+
+    <!-- Header -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@drawable/bg_garden_hero"
+        android:paddingHorizontal="@dimen/space_xl"
+        android:paddingVertical="@dimen/space_lg">
+
+        <FrameLayout
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="@drawable/bg_icon_circle">
+
+            <ImageView
+                android:layout_width="26dp"
+                android:layout_height="26dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_care"
+                android:contentDescription="@null"
+                app:tint="@color/primary" />
+
+        </FrameLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="@dimen/space_md"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/doctor_title"
+                android:textColor="@color/on_primary"
+                android:textSize="@dimen/text_title"
+                android:fontFamily="sans-serif-medium" />
+
+            <TextView
+                android:id="@+id/chat_plant_name"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@color/on_primary_secondary"
+                android:textSize="@dimen/text_body"
+                tools:text="Monstera" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <!-- Messages — weighted so the input row stays pinned. -->
+    <ScrollView
+        android:id="@+id/chat_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:clipToPadding="false"
+        android:paddingBottom="@dimen/space_sm">
+
+        <LinearLayout
+            android:id="@+id/chat_messages"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="@dimen/space_xl"
+            android:paddingVertical="@dimen/space_md" />
+
+    </ScrollView>
+
+    <!-- Suggestion chips. -->
+    <LinearLayout
+        android:id="@+id/chat_suggestions"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_marginHorizontal="@dimen/space_xl"
+        android:layout_marginTop="@dimen/space_xs"
+        android:layout_marginBottom="@dimen/space_sm">
+
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:scrollbars="none">
+
+            <com.google.android.material.chip.ChipGroup
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                app:singleLine="true"
+                app:chipSpacingHorizontal="@dimen/space_sm">
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chat_chip_1"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/doctor_q1" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chat_chip_2"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/doctor_q2" />
+
+                <com.google.android.material.chip.Chip
+                    android:id="@+id/chat_chip_3"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/doctor_q3" />
+
+            </com.google.android.material.chip.ChipGroup>
+
+        </HorizontalScrollView>
+
+    </LinearLayout>
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/chat_clear_btn"
+        style="@style/App.Button.Text"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginBottom="@dimen/space_xs"
+        android:text="@string/doctor_clear"
+        android:textSize="@dimen/text_body_sm" />
+
+    <!-- Input row — bottom inset is applied in code. -->
+    <LinearLayout
+        android:id="@+id/chat_input_row"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@color/surface"
+        android:paddingHorizontal="@dimen/space_xl"
+        android:paddingTop="@dimen/space_sm"
+        android:paddingBottom="@dimen/space_md">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/chat_input"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:hint="@string/doctor_hint"
+            android:inputType="textMultiLine|textCapSentences"
+            android:maxLines="3"
+            android:imeOptions="actionSend" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/chat_send_btn"
+            android:layout_width="wrap_content"
+            android:layout_height="48dp"
+            android:layout_marginStart="@dimen/space_sm"
+            android:text="@string/doctor_send" />
+
+    </LinearLayout>
+
+</LinearLayout>
