@@ -36,6 +36,8 @@ recommended backbone.
 | **Stage 3 — horizontal-flip TTA (2×)** | Implemented, **off by default** | `classifier.py` (`inference.tta`), notebook §6 (`USE_TTA_HFLIP`) |
 | Architecture-neutral serving (a DINOv2 ONNX is a drop-in) | Implemented | `classifier.py` `architecture` field + ONNX path |
 | Drop distillation; if a small model is ever needed use **DIST/DKD** not vanilla KD | Documented | notebook §5 |
+| **Stage 2 — supplement the weak `nutrient_deficiency` class** with a real abiotic-stress dataset (CoLeaf, Mendeley `brfgw46wzb`, CC BY 4.0) | Implemented (autonomous fetch, URLs verified live) + invariant-tested | notebook §2 `fetch_coleaf_nutrient_deficiency`, `tests/test_data_invariants.py` |
+| **Stage 2 — clean noisy iNaturalist free-text labels** (non-destructive): `iconic_taxa='Plantae'` filter on the physiological queries + operator review **blocklist** | Implemented + invariant-tested | notebook §2 (`_inat_physiological_blocklist`, `iconic_taxa`), `server/label_review/` |
 
 ### Design-fit notes (why these are safe)
 
@@ -60,11 +62,30 @@ recommended backbone.
 
 | Recommendation | Why deferred |
 |---|---|
-| Supplement weak classes with real abiotic-stress datasets (CoLeaf, banana/lettuce/maize NPK, OLID I, sugar-beet) | Requires data acquisition + retraining |
-| Clean noisy iNaturalist free-text labels (noise-robust loss / manual audit) | Data-labelling effort |
+| **`leaf_scorch_underwatering` curated supplement** | No permissive, autonomously-downloadable *leaf-scorch / drought / marginal-necrosis* dataset was found (the validated abiotic sets — CoLeaf, OLID I, MPLD, banana/sugar-beet — are all *nutrient-deficiency*). PlantVillage strawberry "leaf scorch" is botanically a **fungal** disease, so reusing it would corrupt the abiotic class. This class stays on the (now Plantae-filtered + blocklist-cleanable) iNat free-text supply until a real source surfaces. |
+| Add OLID I (Zenodo `8105154`) / MPLD (Zenodo `10279042`) as extra `nutrient_deficiency` sources | Optional: CoLeaf alone fills the class; the `_save_archive_member` helper makes these a small follow-up (OLID I is ~16 GB + needs the xlsx label map; MPLD is `.rar`). |
 | cRT/LWS classifier re-training (decoupling) beyond the frozen-backbone + LA-loss head | Marginal once on a frozen backbone; revisit if weak-class recall stalls |
 | Single-core ONNX latency / RAM benchmark on the target Ryzen 7950X3D | Must be measured on real hardware (`tools/benchmark_backends.py` is ready) |
 | LoRA fine-tune of the backbone for the last few points | Optional follow-up once the frozen-head ceiling is confirmed in prod |
+
+### Stage 2 design notes (why these don't corrupt data)
+
+* **CoLeaf is train-only.** It's a *crop* (coffee), so per the report it
+  supplies the deficiency *signal*, not in-domain samples. Its `coleaf`
+  source is excluded from every `make_*_split` eval/calibration slice
+  (scoped exactly like PlantVillage studio), so the houseplant eval
+  distribution is untouched. §4 down-weights `coleaf` (0.5) so the crop
+  domain can't pull the LA-loss prior off target. Only **single-nutrient**
+  zips are imported (no `healthy` / mixed `more-deficiencies`), so every
+  imported row is an unambiguous deficiency. The fetch fails **soft**
+  (`_try_fetch`), runs **before** the pre-split dedup, and the
+  per-class floor is still met by iNat alone — a Mendeley outage can
+  neither block the run nor mislabel a class.
+* **Label cleaning is non-destructive.** The `iconic_taxa='Plantae'`
+  filter and the `label_review/` blocklist *prevent* bad observations from
+  entering the pool; no image is ever deleted and a re-run reproduces the
+  cleaned set deterministically. The blocklist lives outside `data_v2/`
+  (survives a split rebuild) and in version control.
 
 ## How to ship the new model
 

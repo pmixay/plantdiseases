@@ -240,6 +240,89 @@ def test_int8_is_dynamic_with_drift_gate_and_paired_bootstrap():
     )
 
 
+def test_coleaf_supplements_nutrient_deficiency_train_only():
+    """Report Stage 2: supplement the weak nutrient_deficiency class with a
+    curated abiotic-stress dataset. CoLeaf must (a) be fetched into
+    nutrient_deficiency, (b) carry a HIGH label_confidence (it's expert-
+    labelled, unlike the noisy iNat free-text), and (c) be TRAIN-ONLY — its
+    'coleaf' source must NOT appear in any make_*_split allowed_sources, or
+    crop imagery would leak into the in-domain houseplant eval/cal splits
+    and corrupt the metrics."""
+    src = _notebook_source()
+    assert "fetch_coleaf_nutrient_deficiency" in src, "CoLeaf supplement missing"
+    assert "COLEAF_DEFICIENCY_ZIPS" in src and "brfgw46wzb" in src, (
+        "CoLeaf Mendeley source (dataset brfgw46wzb) not wired in"
+    )
+    # High-confidence curated labels (>= 0.85), not the iNat free-text 0.55.
+    m = re.search(r"def fetch_coleaf_nutrient_deficiency\([^)]*label_confidence=([0-9.]+)", src)
+    assert m and float(m.group(1)) >= 0.85, (
+        "CoLeaf should ship a high label_confidence (curated expert labels)"
+    )
+    # Train-only: 'coleaf' must never be an allowed source on any eval split.
+    for split_fn in ("make_val_realworld", "make_val_indomain",
+                     "make_temperature_cal", "make_conformal_cal"):
+        body = re.search(rf"def {split_fn}\(.*?\n(?:.*\n){{0,12}}", src)
+        assert body and "coleaf" not in body.group(0), (
+            f"{split_fn} must NOT allow the 'coleaf' source — CoLeaf is a crop "
+            f"supplement and would corrupt the in-domain houseplant eval slice"
+        )
+    # And it must run before the dedup/split so its rows are deduped + scoped.
+    coleaf_pos = src.find("_try_fetch('coleaf_nutrient_deficiency'")
+    dedup_pos = src.find("_dedup_train_in_place(TRAIN_ROOT")
+    assert 0 < coleaf_pos < dedup_pos, (
+        "CoLeaf fetch must run before the pre-split dedup"
+    )
+
+
+def test_coleaf_is_downweighted_and_excludes_healthy():
+    """CoLeaf is a CROP-domain supplement: it must be down-weighted in the
+    source-weighted sampler (< 1.0) so it doesn't pull the prior off the
+    houseplant target, and it must import only unambiguous single-nutrient
+    deficiency zips — never the 'healthy' or mixed 'more-deficiencies' zips
+    (which would mislabel the nutrient_deficiency class)."""
+    src = _notebook_source()
+    m = re.search(r"'coleaf'\s*:\s*([0-9.]+)", src)
+    assert m and float(m.group(1)) < 1.0, (
+        "'coleaf' must be down-weighted (<1.0) in SOURCE_WEIGHTS (crop domain gap)"
+    )
+    zips_block = re.search(r"COLEAF_DEFICIENCY_ZIPS\s*=\s*\{.*?\}", src, re.DOTALL)
+    assert zips_block, "COLEAF_DEFICIENCY_ZIPS table missing"
+    lowered = zips_block.group(0).lower()
+    assert "healthy" not in lowered and "more-deficiencies" not in lowered, (
+        "CoLeaf import must exclude healthy / mixed zips — every imported row "
+        "must be an unambiguous single-nutrient deficiency"
+    )
+
+
+def test_inat_physiological_label_noise_controls():
+    """Report Stage 2: clean the noisy iNat free-text labels without
+    corrupting data. Two non-destructive controls must be present: the
+    physiological queries are constrained to iconic_taxa='Plantae' (drops
+    non-plant matches), and an operator review-blocklist filters the fetch
+    pool. The gray-mold free-text path must NOT force Plantae (Botrytis is
+    legitimately filed under the fungus taxon)."""
+    src = _notebook_source()
+    assert "_inat_physiological_blocklist" in src, "manual review blocklist hook missing"
+    # The blocklist must actually filter the physiological pool.
+    assert re.search(
+        r"_inat_freetext_observations\([^)]*iconic_taxa='Plantae'\)", src
+    ), "physiological queries must restrict to iconic_taxa='Plantae'"
+    assert re.search(
+        r"if str\(ob\['id'\]\) not in blocked", src
+    ), "physiological pool must drop blocklisted observation ids"
+    # Gray-mold free-text must stay un-restricted (fungus iconic taxon):
+    # the gray-mold-serving _fetch_inat_freetext_class must call the search
+    # WITHOUT iconic_taxa (the plain 2-arg form).
+    gm_fn = src[src.find("def _fetch_inat_freetext_class"):]
+    gm_fn = gm_fn[: gm_fn.find("\ndef ", 1)]
+    assert "iconic_taxa" not in gm_fn, (
+        "gray-mold free-text must NOT force iconic_taxa=Plantae (Botrytis is a fungus)"
+    )
+    assert re.search(r"_inat_freetext_observations\(q, per_query\)", gm_fn), (
+        "gray-mold path should use the un-restricted 2-arg free-text search"
+    )
+
+
 def test_make_group_split_skips_empty_class_subdirs():
     """audit follow-up: temp_cal / conformal_cal restrict
     allowed_sources to {plantdoc, inat}, so `not_a_plant` (COCO-only)
