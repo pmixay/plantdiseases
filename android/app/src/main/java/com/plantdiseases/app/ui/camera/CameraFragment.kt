@@ -102,13 +102,18 @@ class CameraFragment : Fragment() {
                     navigateToAnalysis(path)
                 } else {
                     Toast.makeText(requireContext(), getString(R.string.crop_error), Toast.LENGTH_SHORT).show()
+                    discardPendingCrop()
                 }
             }
-            // result.error == null means the user simply backed out of the
-            // crop screen — stay on the camera silently.
             result.error != null -> {
                 Toast.makeText(requireContext(), getString(R.string.crop_error), Toast.LENGTH_SHORT).show()
+                discardPendingCrop()
             }
+            // result.error == null (and not successful) means the user simply
+            // backed out of the crop screen — stay on the camera silently and
+            // drop the staged crop so abandoned files don't pile up in
+            // filesDir/plant_images.
+            else -> discardPendingCrop()
         }
     }
 
@@ -449,6 +454,14 @@ class CameraFragment : Fragment() {
                 ),
             )
         )
+    }
+
+    /** Delete the staged crop the user abandoned (cancelled or errored) so
+     *  not-yet-analysed crops don't accumulate in filesDir/plant_images.
+     *  Successful crops are kept — they become the saved scan's imagePath. */
+    private fun discardPendingCrop() {
+        pendingCropFile?.let { f -> runCatching { if (f.exists()) f.delete() } }
+        pendingCropFile = null
     }
 
     private fun navigateToAnalysis(imagePath: String) {

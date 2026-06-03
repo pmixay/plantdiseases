@@ -14,6 +14,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.fragment.app.FragmentManager
+import androidx.core.os.bundleOf
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
@@ -61,7 +62,6 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
         scrollView = binding.chatScroll
         suggestionsContainer = binding.chatSuggestions
         inputField = binding.chatInput
-        binding.chatPlantName.text = plant.name
 
         // Suggestion chips — label comes from the layout; tapping one
         // sends it verbatim.
@@ -96,12 +96,42 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
         val behavior = BottomSheetBehavior.from(view.parent as View)
         behavior.state = BottomSheetBehavior.STATE_EXPANDED
         behavior.peekHeight = 600.dp()
-        loadMessages()
+
+        // Resolve the plant. Normal path: show() set it directly. After
+        // process death the system recreates the fragment WITHOUT calling
+        // show(), leaving `plant` uninitialised — fall back to the id
+        // stashed in arguments and reload from Room (chat history is
+        // persisted, so the session restores rather than crashing).
+        if (::plant.isInitialized) {
+            bindPlant()
+        } else {
+            val savedId = arguments?.getLong(ARG_PLANT_ID, -1L) ?: -1L
+            if (savedId <= 0L) {
+                dismissAllowingStateLoss()
+                return
+            }
+            lifecycleScope.launch {
+                val restored = (requireActivity().application as PlantDiseasesApp)
+                    .plantRepository.getPlant(savedId)
+                if (restored == null || _binding == null) {
+                    dismissAllowingStateLoss()
+                    return@launch
+                }
+                plant = restored
+                bindPlant()
+            }
+        }
     }
 
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
+    }
+
+    /** Bind plant-dependent views. Safe to call only once [plant] is set. */
+    private fun bindPlant() {
+        binding.chatPlantName.text = plant.name
+        loadMessages()
     }
 
     private fun loadMessages() {
@@ -117,6 +147,9 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
     }
 
     private fun sendMessage(text: String) {
+        // Guard the brief window during a process-death restore where the
+        // view exists but the plant hasn't finished reloading yet.
+        if (!::plant.isInitialized) return
         inputField.setText("")
         suggestionsContainer.visibility = View.GONE
 
@@ -334,6 +367,7 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
     }
 
     private fun clearChat() {
+        if (!::plant.isInitialized) return
         val repo = (requireActivity().application as PlantDiseasesApp).plantRepository
         lifecycleScope.launch {
             repo.clearChat(plant.id)
@@ -355,10 +389,13 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
 
     companion object {
         private const val TAG = "DoctorChatSheet"
+        private const val ARG_PLANT_ID = "arg_plant_id"
 
         fun show(fm: FragmentManager, plant: PlantEntity) {
             val sheet = DoctorChatSheet().apply {
                 this.plant = plant
+                // Stash the id so the sheet can self-heal after process death.
+                arguments = bundleOf(ARG_PLANT_ID to plant.id)
             }
             sheet.show(fm, TAG)
         }

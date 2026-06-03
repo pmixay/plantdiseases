@@ -982,8 +982,15 @@ class ResultActivity : AppCompatActivity() {
             val regions = repo.parseRegions(scan.regions)
             val primary = regions.getOrNull(scan.primaryRegionIndex ?: -1)
             if (primary != null) {
-                val scaleX = finalBitmap.width.toFloat() / rawW
-                val scaleY = finalBitmap.height.toFloat() / rawH
+                // Bbox coordinates live in the server's decoded image space
+                // (the <=1024 px upload the server echoes back), NOT the
+                // on-disk original — so scale against the detection dims to
+                // match the on-screen overlay. Fall back to the raw dims for
+                // legacy scans that predate detection-dimension persistence.
+                val detW = scan.detectionImageWidth.takeIf { it > 0 } ?: rawW
+                val detH = scan.detectionImageHeight.takeIf { it > 0 } ?: rawH
+                val scaleX = finalBitmap.width.toFloat() / detW
+                val scaleY = finalBitmap.height.toFloat() / detH
                 val canvas = Canvas(finalBitmap)
                 val cx = (primary.x + primary.width / 2f) * scaleX
                 val cy = (primary.y + primary.height / 2f) * scaleY
