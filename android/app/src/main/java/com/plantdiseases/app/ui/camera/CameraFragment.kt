@@ -274,6 +274,11 @@ class CameraFragment : Fragment() {
 
         val cameraProviderFuture = ProcessCameraProvider.getInstance(requireContext())
         cameraProviderFuture.addListener({
+            // The view may already be torn down if the user navigated away
+            // during the async provider init — every binding access below
+            // would NPE through the _binding!! getter. Bail out cleanly,
+            // mirroring the guards already used in the other callbacks here.
+            if (_binding == null || !isAdded) return@addListener
             cameraProvider = cameraProviderFuture.get()
 
             val preview = Preview.Builder()
@@ -347,8 +352,12 @@ class CameraFragment : Fragment() {
             ContextCompat.getMainExecutor(requireContext()),
             object : ImageCapture.OnImageSavedCallback {
                 override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                    binding.btnCapture.isEnabled = true
+                    // Always re-arm the shutter state, then bail if the view
+                    // is gone — touching `binding` or requireContext() after
+                    // onDestroyView would crash.
                     captureInFlight = false
+                    if (_binding == null || !isAdded) return
+                    binding.btnCapture.isEnabled = true
                     // Server-side blur gate now lives on /api/analyze
                     // (variance-of-Laplacian floor). We no longer
                     // double-gate on green-content here — false
@@ -358,8 +367,9 @@ class CameraFragment : Fragment() {
                 }
 
                 override fun onError(exception: ImageCaptureException) {
-                    binding.btnCapture.isEnabled = true
                     captureInFlight = false
+                    if (_binding == null || !isAdded) return
+                    binding.btnCapture.isEnabled = true
                     Toast.makeText(
                         requireContext(),
                         getString(R.string.capture_error),
