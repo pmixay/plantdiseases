@@ -7,7 +7,11 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./models:/app/models:ro
+      # Read-write: the server fetches the model bundle into this volume on
+      # first boot (MODEL_BUNDLE_URL) and caches it across restarts. Mount
+      # a pre-populated host ./models dir + set MODEL_AUTO_FETCH=false to
+      # skip the fetch and keep it effectively read-only.
+      - ./models:/app/models
       - ./logs:/app/logs
       # Persistent data volume — SQLite stores (feedback + community
       # corpus) and the community thumbnail directory live here.
@@ -37,7 +41,9 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-      # First /api/health probe after deploy used to fail on the
-      # cold model load (~18 s observed). 30 s leaves comfortable
-      # head-room without delaying restart-loop detection.
-      start_period: 30s
+      # First /api/health probe after deploy must clear the cold model
+      # load (~18 s observed) AND, on a fresh volume, the one-time model
+      # bundle download (hundreds of MB from MODEL_BUNDLE_URL). 300 s
+      # leaves head-room for the first-boot fetch; subsequent restarts
+      # hit the cached bundle and come up in ~18 s.
+      start_period: 300s

@@ -534,11 +534,16 @@ def test_ood_floor_is_calibrated_not_hardcoded():
 
 
 def test_shipped_classes_json_matches_head_taxonomy():
-    """Regression: the shipped ``classes.json`` class list MUST match the
+    """Regression: when a ``classes.json`` is present it MUST match the
     classifier's built-in head taxonomy (``DEFAULT_CLASS_NAMES``), in the
-    same order. A stale v2.1 (7-class) ``classes.json`` against the v2.2
+    same order. A stale v2.1 (7-class) ``classes.json`` against the v2.x
     (8-output) head silently mislabeled every prediction by index — this
-    invariant fails loudly on that drift at CI time."""
+    invariant fails loudly on that drift.
+
+    ``classes.json`` is no longer committed: the always-online server
+    fetches the model bundle on boot (``model_fetch.py``). The test
+    therefore skips when the artefact is absent (CI / a fresh clone) and
+    only asserts when one has been fetched / dropped in locally."""
     import sys
 
     server_dir = REPO_ROOT / "server"
@@ -547,16 +552,19 @@ def test_shipped_classes_json_matches_head_taxonomy():
     from classifier import DEFAULT_CLASS_NAMES
 
     classes_json = REPO_ROOT / "server" / "models" / "classes.json"
+    if not classes_json.exists():
+        pytest.skip("classes.json not present (fetched model bundle artefact)")
     meta = json.loads(classes_json.read_text(encoding="utf-8"))
     assert meta.get("class_names") == list(DEFAULT_CLASS_NAMES), (
         "models/classes.json class_names disagree with "
-        "classifier.DEFAULT_CLASS_NAMES — the shipped metadata is stale "
+        "classifier.DEFAULT_CLASS_NAMES — the fetched metadata is stale "
         "relative to the trained head."
     )
-    # Version metadata must also keep up with the taxonomy.
-    assert str(meta.get("model_version", "")).startswith("2.2"), (
+    # Version metadata must keep up with the shipped taxonomy (the
+    # 8-class v2.x line spans v2.2 MobileNetV3 and v2.3 DINOv2).
+    assert str(meta.get("model_version", "")).startswith("2."), (
         f"classes.json model_version={meta.get('model_version')} but the "
-        "shipped taxonomy is v2.2."
+        "shipped taxonomy is v2.x."
     )
 
 
