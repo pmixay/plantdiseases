@@ -52,6 +52,14 @@
     <color name="on_surface">#052E16</color>
     <color name="on_surface_secondary">#4B5563</color>
 
+    <!-- Card tonal ramp for App.GlassCard / *.Strong. Without these the
+         cards fall back to the Material3 baseline (lavender-tinted greys)
+         which clash with the white + leaf-green palette in light mode.
+         Kept as a subtle green-tinted off-white so panels lift off the
+         pure-white background without looking corporate-grey. -->
+    <color name="surface_container_low">#F4FBF6</color>
+    <color name="surface_container">#ECF7F0</color>
+
     <!-- ─── Soft-card tokens ───────────────────────────────────────
          Layer with android:elevation + the matching frosted background
          (bg_glass_card / bg_glass_card_strong). The "tint" colours are

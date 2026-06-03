@@ -75,14 +75,23 @@
                     android:textColor="@color/on_surface_secondary"
                     android:visibility="gone" />
 
-                <com.google.android.material.button.MaterialButton
+                <!-- Plain ImageView, not a MaterialButton: the icon button's
+                     min-width / insets were rendering the icon clipped and
+                     flush to the card edge. fitCenter inside 40dp with 8dp
+                     padding keeps the 24dp icon centered and clear. -->
+                <ImageView
                     android:id="@+id/btn_refresh_health"
-                    style="@style/Widget.Material3.Button.IconButton"
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
-                    android:contentDescription="@string/diagnostics_refresh"
-                    app:icon="@drawable/ic_refresh"
-                    app:iconTint="@color/primary" />
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:layout_marginStart="@dimen/space_xs"
+                    android:padding="8dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_refresh"
+                    app:tint="@color/primary"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:contentDescription="@string/diagnostics_refresh" />
 
             </LinearLayout>
 

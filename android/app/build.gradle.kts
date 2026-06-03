@@ -81,6 +81,16 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    testOptions {
+        unitTests {
+            // Robolectric needs the merged Android resources + a real
+            // android.jar rather than the all-throwing stub, so JVM unit
+            // tests can inflate views, read strings and run Room in-memory.
+            isIncludeAndroidResources = true
+            isReturnDefaultValues = true
+        }
+    }
 }
 
 dependencies {
@@ -96,6 +106,11 @@ dependencies {
 
     // Material Design 3
     implementation("com.google.android.material:material:1.11.0")
+
+    // Image cropper (vanniktech fork — on mavenCentral, classes live in
+    // package com.canhub.cropper). Lets the user crop a captured shot or
+    // gallery image before it is sent for analysis.
+    implementation("com.vanniktech:android-image-cropper:4.6.0")
 
     // Navigation
     implementation("androidx.navigation:navigation-fragment-ktx:2.7.6")
@@ -152,4 +167,39 @@ dependencies {
 
     // WorkManager (plant reminders)
     implementation("androidx.work:work-runtime-ktx:2.9.0")
+
+    // ─── Local JVM unit tests (./gradlew testDebugUnitTest) ───────────────
+    // Robolectric lets the image / ML-diagnosis pipeline run on the JVM
+    // (Bitmap, Room in-memory DB, resources) without a device, so the
+    // bulk of the pipeline is covered in CI-runnable unit tests.
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.11.1")
+    testImplementation("androidx.test:core:1.5.0")
+    testImplementation("androidx.test:core-ktx:1.5.0")
+    testImplementation("androidx.test.ext:junit:1.1.5")
+    testImplementation("androidx.test.ext:junit-ktx:1.1.5")
+    testImplementation("com.google.truth:truth:1.1.5")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
+    // MockWebServer stands in for the diagnosis server so Retrofit /
+    // OkHttp request building + the RetryInterceptor are exercised for real.
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    testImplementation("androidx.arch.core:core-testing:2.2.0")
+    testImplementation("androidx.room:room-testing:2.6.1")
+
+    // ─── Instrumented / Espresso UI tests (./gradlew connectedDebugAndroidTest,
+    //     device or emulator required) ──────────────────────────────────────
+    androidTestImplementation("androidx.test.ext:junit:1.1.5")
+    androidTestImplementation("androidx.test:core:1.5.0")
+    androidTestImplementation("androidx.test:core-ktx:1.5.0")
+    androidTestImplementation("androidx.test:runner:1.5.2")
+    androidTestImplementation("androidx.test:rules:1.5.0")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
+    androidTestImplementation("androidx.test.espresso:espresso-contrib:3.5.1")
+    androidTestImplementation("androidx.test.espresso:espresso-intents:3.5.1")
+    androidTestImplementation("androidx.fragment:fragment-testing:1.6.2")
+    androidTestImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
+    // Provides the empty host Activity that launchFragmentInContainer needs,
+    // merged into the debug app manifest.
+    debugImplementation("androidx.fragment:fragment-testing-manifest:1.6.2")
 }

@@ -10,6 +10,7 @@ import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.resource.bitmap.CenterCrop
 import com.bumptech.glide.load.resource.bitmap.RoundedCorners
+import com.bumptech.glide.signature.ObjectKey
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
@@ -46,9 +47,13 @@ class AnalysisActivity : AppCompatActivity() {
     }
 
     private fun setupUI() {
-        // Show the captured image
+        // Show the captured image. Key the cache on the file's modified
+        // time so a reused path (e.g. an overwritten crop) never serves a
+        // stale bitmap.
+        val imageFile = File(imagePath)
         Glide.with(this)
-            .load(File(imagePath))
+            .load(imageFile)
+            .signature(ObjectKey(imageFile.lastModified()))
             .transform(CenterCrop(), RoundedCorners(32))
             .into(binding.ivPreview)
 
