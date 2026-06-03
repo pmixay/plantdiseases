@@ -31,6 +31,12 @@ if str(SERVER_DIR) not in sys.path:
 # ``rate_limited_client`` fixture below.
 os.environ.setdefault("RATE_LIMIT_RPS", "1000")
 
+# Never let the test process reach out for the model bundle. The lifespan
+# would otherwise try to download it (the real weights aren't present in
+# CI) and the FakePipeline below makes weights unnecessary anyway. A test
+# that wants to exercise the fetcher calls model_fetch directly.
+os.environ.setdefault("MODEL_AUTO_FETCH", "false")
+
 
 def _encode_image(img: Image.Image, fmt: str) -> bytes:
     buf = io.BytesIO()

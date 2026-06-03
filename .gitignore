@@ -12,8 +12,13 @@ server/venv/
 server/__pycache__/
 server/*.pyc
 server/data/
-server/models/*.h5
-server/models/*.pth
+# Model weights + calibration artefacts are NOT committed — the
+# always-online server fetches the bundle on first boot from
+# MODEL_BUNDLE_URL (see server/model_fetch.py). Keep only the dir
+# placeholder and the human-authored MODEL_CARD.md under version control.
+server/models/*
+!server/models/.gitkeep
+!server/models/MODEL_CARD.md
 server/logs/
 server/feedback.db
 server/feedback.db-journal

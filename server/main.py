@@ -259,13 +259,30 @@ logging.basicConfig(level=logging.INFO, handlers=[console_handler, file_handler]
 logger = logging.getLogger("plantdiseases")
 
 # ── Configuration ────────────────────────────────────────────────────
-MODELS_DIR = Path("models")
+MODELS_DIR = Path(get_str("MODELS_DIR", "models"))
 DETECTOR_PATH = MODELS_DIR / "detector.pt"       # YOLOv8 weights (auto-prefers detector.onnx if present)
-# PlantVision classifier: distilled MobileNetV3-Large student (KD ←
-# EfficientNetV2-S teacher). classes.json carries the canonical
-# img_size. Production preference order:
-# classifier_int8.onnx → classifier.onnx → .pth.
+# PlantVision classifier. The ONNX graph is architecture-neutral — it
+# serves whatever backbone+head the shipped bundle declares (classes.json
+# carries the canonical architecture + img_size). Production preference
+# order: classifier_int8.onnx → classifier.onnx → .pth.
 CLASSIFIER_PATH = MODELS_DIR / "classifier.pth"
+
+# Model bundle auto-fetch. Weights + calibration artefacts are NOT
+# committed to the repo; the always-online server downloads them on first
+# boot from MODEL_BUNDLE_URL — a .tar/.tar.gz/.zip of the models/ dir
+# contents (Google Drive share links are handled). The fetch is
+# idempotent: a restart with the artefacts already on disk skips it.
+# Override the URL via config.json / env; set MODEL_AUTO_FETCH=false to
+# require the files be dropped into MODELS_DIR manually.
+DEFAULT_MODEL_BUNDLE_URL = (
+    "https://drive.google.com/file/d/1s10Lo_-xLiHLCIzYZqKAsprC78F-xJgh/view?usp=sharing"
+)
+MODEL_BUNDLE_URL = get_str("MODEL_BUNDLE_URL", DEFAULT_MODEL_BUNDLE_URL)
+MODEL_AUTO_FETCH = get("MODEL_AUTO_FETCH", True, cast=bool)
+# Optional cache-buster: when set, a cached bundle whose recorded version
+# differs is re-fetched (so shipping a new model is a version bump, not a
+# manual volume wipe). Empty = presence-based caching only.
+MODEL_BUNDLE_VERSION = get_str("MODEL_BUNDLE_VERSION", "")
 
 MAX_FILE_SIZE = get_int("MAX_FILE_SIZE", 10 * 1024 * 1024)  # 10 MB
 MAX_IMAGE_DIMENSION = get_int("MAX_IMAGE_DIMENSION", 4096)
@@ -789,6 +806,16 @@ async def lifespan(app: FastAPI):
     _inference_executor = _get_inference_executor()
     init_feedback_db()
     init_community_db()
+    # Self-provision the model bundle before constructing the pipeline.
+    # No-op when the artefacts are already on disk; raises (aborting boot)
+    # when auto-fetch is on but the bundle can't be retrieved — the same
+    # fail-fast contract as a missing local weight file.
+    if MODEL_AUTO_FETCH:
+        try:
+            from .model_fetch import ensure_models  # type: ignore[import-not-found]
+        except ImportError:
+            from model_fetch import ensure_models
+        ensure_models(MODELS_DIR, MODEL_BUNDLE_URL, version=MODEL_BUNDLE_VERSION)
     pipeline = PlantDiseasePipeline(
         detector_path=DETECTOR_PATH,
         classifier_path=CLASSIFIER_PATH,
@@ -1632,7 +1659,7 @@ _FEEDBACK_IN_HEAD_CLASSES: frozenset[str] = frozenset(_HEAD_CLASS_NAMES)
 # "your model can't say this") and tag each row with ``out_of_head=1``
 # so retraining can prioritise expanding the label set.
 # ``leaf_scorch_underwatering`` and ``nutrient_deficiency`` moved
-# into the head set in v2.2 (NOTEBOOK_AUDIT §6) and now arrive via
+# into the head set (train_notebook.ipynb §1) and now arrive via
 # ``_FEEDBACK_IN_HEAD_CLASSES`` instead.
 _FEEDBACK_OUT_OF_HEAD_CLASSES: frozenset[str] = frozenset({
     "edema",

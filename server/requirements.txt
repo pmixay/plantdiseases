@@ -3,7 +3,6 @@ uvicorn[standard]==0.30.6
 python-multipart==0.0.9
 Pillow==10.4.0
 numpy>=1.26.0,<2.0
-opencv-python-headless>=4.9.0
 onnxruntime>=1.17.0
 # Smart APIs (PlantNet identify, OpenRouter Plant Doctor, care plan
 # polish) are optional at runtime — the corresponding endpoints return

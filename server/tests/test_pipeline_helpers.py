@@ -10,10 +10,10 @@ via the ``FakePipeline`` injected by ``conftest.py``.
 
 from __future__ import annotations
 
-# Canonical alphabetical 8-class taxonomy (PlantVision 2.2);
+# Canonical alphabetical 8-class taxonomy (PlantVision 2.x);
 # leaf_spot = merged bacterial + fungal leaf spot.
 # leaf_scorch_underwatering and nutrient_deficiency joined the head
-# per NOTEBOOK_AUDIT §6; edema and sunburn_or_scorch stay deferred.
+# per train_notebook.ipynb §1; edema and sunburn_or_scorch stay deferred.
 EXPECTED_CLASSES = {
     "gray_mold_botrytis",
     "healthy",
