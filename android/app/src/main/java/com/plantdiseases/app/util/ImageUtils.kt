@@ -63,35 +63,44 @@ object ImageUtils {
         val original = BitmapFactory.decodeFile(imagePath, decodeOpts)
             ?: throw ImageDecodeException("Failed to decode image: $imagePath")
 
-        val rotated = try {
-            rotateIfNeeded(imagePath, original)
-        } catch (e: IOException) {
-            Log.w(TAG, "EXIF read failed, using unrotated bitmap", e)
-            original
-        }
-
-        val ratio = maxSize.toFloat() / maxOf(rotated.width, rotated.height)
-        val scaled = if (ratio < 1f) {
-            Bitmap.createScaledBitmap(
-                rotated,
-                (rotated.width * ratio).toInt().coerceAtLeast(1),
-                (rotated.height * ratio).toInt().coerceAtLeast(1),
-                true
-            )
-        } else rotated
-
-        val outputFile = File(context.cacheDir, "upload_${System.currentTimeMillis()}.jpg")
+        // Track every intermediate bitmap so the finally can recycle them
+        // even when rotation or scaling throws OutOfMemoryError partway
+        // through. The previous structure only armed the recycle guard
+        // *after* rotateIfNeeded(), so an OOM inside it leaked `original`.
+        // Nullable trackers used only by the finally block; the non-null
+        // `rot` / `out` locals below keep the hot path smart-cast clean.
+        var rotated: Bitmap? = null
+        var scaled: Bitmap? = null
         try {
-            FileOutputStream(outputFile).use { out ->
-                scaled.compress(Bitmap.CompressFormat.JPEG, 85, out)
+            val rot = try {
+                rotateIfNeeded(imagePath, original)
+            } catch (e: IOException) {
+                Log.w(TAG, "EXIF read failed, using unrotated bitmap", e)
+                original
             }
+            rotated = rot
+
+            val ratio = maxSize.toFloat() / maxOf(rot.width, rot.height)
+            val out = if (ratio < 1f) {
+                Bitmap.createScaledBitmap(
+                    rot,
+                    (rot.width * ratio).toInt().coerceAtLeast(1),
+                    (rot.height * ratio).toInt().coerceAtLeast(1),
+                    true
+                )
+            } else rot
+            scaled = out
+
+            val outputFile = File(context.cacheDir, "upload_${System.currentTimeMillis()}.jpg")
+            FileOutputStream(outputFile).use { stream ->
+                out.compress(Bitmap.CompressFormat.JPEG, 85, stream)
+            }
+            return outputFile
         } finally {
-            if (scaled !== rotated) scaled.recycle()
-            if (rotated !== original) rotated.recycle()
+            scaled?.let { if (it !== rotated) it.recycle() }
+            rotated?.let { if (it !== original) it.recycle() }
             original.recycle()
         }
-
-        return outputFile
     }
 
     /**

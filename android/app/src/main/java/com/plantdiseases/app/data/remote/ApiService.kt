@@ -201,8 +201,14 @@ class RetryInterceptor(
     }
 }
 
-/** Retrofit client using the build-time API base URL. */
-class PlantApiClient {
+/**
+ * Retrofit client. Defaults to the build-time API base URL; the
+ * constructor parameter is a test seam so unit/integration tests can
+ * point the whole stack at a local MockWebServer without a device.
+ */
+class PlantApiClient(
+    private val baseUrl: String = ServerConfig.baseUrl,
+) {
 
     private val client: OkHttpClient = run {
         val logging = HttpLoggingInterceptor().apply {
@@ -223,7 +229,7 @@ class PlantApiClient {
 
     val apiService: ApiService by lazy {
         Retrofit.Builder()
-            .baseUrl(ServerConfig.baseUrl)
+            .baseUrl(baseUrl)
             .client(client)
             .addConverterFactory(GsonConverterFactory.create())
             .build()

@@ -497,10 +497,12 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
         val peak = peakLux.toInt()
         if (plantId > 0 && peak > 0) {
             val app = applicationContext as com.plantdiseases.app.PlantDiseasesApp
-            // Fire-and-forget — by the time onPause returns the
-            // activity is gone, so we can't await without leaking
-            // a coroutine into a stopped lifecycle.
-            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            // Fire-and-forget on the application-scoped supervisor. The
+            // previous code spun up a brand-new CoroutineScope on every
+            // onPause() that was never cancelled — an unstructured Job leak
+            // if the DB write ever stalled. appScope already exists for
+            // exactly this "must outlive the Activity" work.
+            app.appScope.launch {
                 app.plantRepository.updateMeasuredLux(plantId, peak)
             }
         }

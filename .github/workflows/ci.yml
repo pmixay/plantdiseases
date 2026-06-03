@@ -68,6 +68,9 @@ jobs:
       - name: Run lintDebug
         run: ./gradlew lintDebug --stacktrace --no-daemon
 
+      - name: Run unit tests
+        run: ./gradlew testDebugUnitTest --stacktrace --no-daemon
+
       - name: Assemble debug APK
         run: ./gradlew assembleDebug --stacktrace --no-daemon
 
@@ -79,6 +82,16 @@ jobs:
           path: |
             android/app/build/reports/lint-results-*.html
             android/app/build/reports/lint-results-*.xml
+          if-no-files-found: ignore
+
+      - name: Upload unit test report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: unit-test-report
+          path: |
+            android/app/build/reports/tests/testDebugUnitTest/**
+            android/app/build/test-results/testDebugUnitTest/**
           if-no-files-found: ignore
 
       - name: Upload build reports on failure
