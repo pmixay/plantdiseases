@@ -425,13 +425,16 @@ class CameraFragment : Fragment() {
                     activityTitle = getString(R.string.crop_title),
                     cropMenuCropButtonTitle = getString(R.string.crop_action_done),
                     // The action bar sits on the app's green gradient
-                    // (see Theme.PlantDiseases.Crop), so force the Done /
-                    // cancel / title controls white for contrast. Canvas
-                    // backdrop follows the current day/night background.
+                    // (see Theme.PlantDiseases.Crop), so force the title,
+                    // back arrow and on-bar icons white for contrast.
+                    // NOTE: do NOT set activityMenuTextColor — it whitens
+                    // the flip submenu items too, which render in a white
+                    // popup (white-on-white). DarkActionBar already makes
+                    // the on-bar "Done" text white. Canvas backdrop follows
+                    // the current day/night background.
                     activityBackgroundColor = ContextCompat.getColor(requireContext(), R.color.background),
                     toolbarTitleColor = Color.WHITE,
                     toolbarBackButtonColor = Color.WHITE,
-                    activityMenuTextColor = Color.WHITE,
                     activityMenuIconColor = Color.WHITE,
                 ),
             )
