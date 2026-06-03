@@ -294,6 +294,63 @@ def test_coleaf_is_downweighted_and_excludes_healthy():
     )
 
 
+def test_mpld_supplements_nutrient_deficiency_train_only():
+    """Report Stage 2 (species diversity): a SECOND nutrient-deficiency
+    source so the signal isn't tied to coffee morphology. MPLD (maize
+    phosphorus, Zenodo 10041514, CC BY 4.0) must (a) be fetched into
+    nutrient_deficiency, (b) carry a HIGH label_confidence (expert-
+    controlled, unlike the noisy iNat free-text), and (c) be TRAIN-ONLY —
+    its 'mpld' source must NOT appear in any make_*_split allowed_sources,
+    or crop imagery would leak into the in-domain houseplant eval/cal
+    splits and corrupt the metrics."""
+    src = _notebook_source()
+    assert "fetch_mpld_phosphorus_deficiency" in src, "MPLD supplement missing"
+    assert "_MPLD_URL" in src and "10041514" in src, (
+        "MPLD Zenodo source (record 10041514) not wired in"
+    )
+    m = re.search(r"def fetch_mpld_phosphorus_deficiency\([^)]*label_confidence=([0-9.]+)", src)
+    assert m and float(m.group(1)) >= 0.85, (
+        "MPLD should ship a high label_confidence (curated expert labels)"
+    )
+    # Train-only: 'mpld' must never be an allowed source on any eval split.
+    for split_fn in ("make_val_realworld", "make_val_indomain",
+                     "make_temperature_cal", "make_conformal_cal"):
+        body = re.search(rf"def {split_fn}\(.*?\n(?:.*\n){{0,12}}", src)
+        assert body and "mpld" not in body.group(0), (
+            f"{split_fn} must NOT allow the 'mpld' source — MPLD is a crop "
+            f"supplement and would corrupt the in-domain houseplant eval slice"
+        )
+    # And it must run before the dedup/split so its rows are deduped + scoped.
+    mpld_pos = src.find("_try_fetch('mpld_phosphorus_deficiency'")
+    dedup_pos = src.find("_dedup_train_in_place(TRAIN_ROOT")
+    assert 0 < mpld_pos < dedup_pos, (
+        "MPLD fetch must run before the pre-split dedup"
+    )
+
+
+def test_mpld_excludes_control_and_is_downweighted():
+    """MPLD is a CROP-domain supplement: it must be down-weighted in the
+    source-weighted sampler (< 1.0), and it must import ONLY the phosphorus-
+    deficiency folders ('-P', '-P50') while EXCLUDING the '_C' control
+    (fully-fed = healthy) — importing control leaves would mislabel the
+    nutrient_deficiency class exactly like a CoLeaf 'healthy' zip would."""
+    src = _notebook_source()
+    m = re.search(r"'mpld'\s*:\s*([0-9.]+)", src)
+    assert m and float(m.group(1)) < 1.0, (
+        "'mpld' must be down-weighted (<1.0) in SOURCE_WEIGHTS (crop domain gap)"
+    )
+    dirs = re.search(r"MPLD_DEFICIENCY_DIRS\s*=\s*\(([^)]*)\)", src)
+    assert dirs, "MPLD_DEFICIENCY_DIRS table missing"
+    block = dirs.group(1)
+    assert "'-P'" in block and "'-P50'" in block, (
+        "MPLD must import the '-P' and '-P50' deficiency folders"
+    )
+    assert "'_C'" not in block, (
+        "MPLD must NOT list the '_C' control folder among deficiency dirs — "
+        "control leaves are healthy and would mislabel nutrient_deficiency"
+    )
+
+
 def test_inat_physiological_label_noise_controls():
     """Report Stage 2: clean the noisy iNat free-text labels without
     corrupting data. Two non-destructive controls must be present: the

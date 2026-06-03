@@ -36,7 +36,7 @@ recommended backbone.
 | **Stage 3 — horizontal-flip TTA (2×)** | Implemented, **off by default** | `classifier.py` (`inference.tta`), notebook §6 (`USE_TTA_HFLIP`) |
 | Architecture-neutral serving (a DINOv2 ONNX is a drop-in) | Implemented | `classifier.py` `architecture` field + ONNX path |
 | Drop distillation; if a small model is ever needed use **DIST/DKD** not vanilla KD | Documented | notebook §5 |
-| **Stage 2 — supplement the weak `nutrient_deficiency` class** with a real abiotic-stress dataset (CoLeaf, Mendeley `brfgw46wzb`, CC BY 4.0) | Implemented (autonomous fetch, URLs verified live) + invariant-tested | notebook §2 `fetch_coleaf_nutrient_deficiency`, `tests/test_data_invariants.py` |
+| **Stage 2 — supplement the weak `nutrient_deficiency` class** with real abiotic-stress datasets — CoLeaf (coffee, Mendeley `brfgw46wzb`, CC BY 4.0) **and MPLD** (maize phosphorus, Zenodo `10041514`, CC BY 4.0), two different species so the deficiency signal isn't tied to one crop morphology | Implemented (autonomous fetch, URLs verified live) + invariant-tested | notebook §2 `fetch_coleaf_nutrient_deficiency`, `fetch_mpld_phosphorus_deficiency`, `tests/test_data_invariants.py` |
 | **Stage 2 — clean noisy iNaturalist free-text labels** (non-destructive): `iconic_taxa='Plantae'` filter on the physiological queries + operator review **blocklist** | Implemented + invariant-tested | notebook §2 (`_inat_physiological_blocklist`, `iconic_taxa`), `server/label_review/` |
 
 ### Design-fit notes (why these are safe)
@@ -63,7 +63,7 @@ recommended backbone.
 | Recommendation | Why deferred |
 |---|---|
 | **`leaf_scorch_underwatering` curated supplement** | No permissive, autonomously-downloadable *leaf-scorch / drought / marginal-necrosis* dataset was found (the validated abiotic sets — CoLeaf, OLID I, MPLD, banana/sugar-beet — are all *nutrient-deficiency*). PlantVillage strawberry "leaf scorch" is botanically a **fungal** disease, so reusing it would corrupt the abiotic class. This class stays on the (now Plantae-filtered + blocklist-cleanable) iNat free-text supply until a real source surfaces. |
-| Add OLID I (Zenodo `8105154`) / MPLD (Zenodo `10279042`) as extra `nutrient_deficiency` sources | Optional: CoLeaf alone fills the class; the `_save_archive_member` helper makes these a small follow-up (OLID I is ~16 GB + needs the xlsx label map; MPLD is `.rar`). |
+| Add OLID I (Zenodo `8105154`) as an extra `nutrient_deficiency` source | OLID I is ~14 GB across per-crop zips and its labels live in a separate `class_distribution.xlsx` (multi-label, includes healthy + disease), so a clean deficiency-only mapping needs that xlsx parsed first — deferred to avoid mislabelling. The `_save_archive_member` helper makes it a small follow-up once the label map is wired. *(MPLD is now landed — see below — via Zenodo `10041514`, the clean 224×224 single-zip release, not the `.rar` record `10279042`.)* |
 | cRT/LWS classifier re-training (decoupling) beyond the frozen-backbone + LA-loss head | Marginal once on a frozen backbone; revisit if weak-class recall stalls |
 | Single-core ONNX latency / RAM benchmark on the target Ryzen 7950X3D | Must be measured on real hardware (`tools/benchmark_backends.py` is ready) |
 | LoRA fine-tune of the backbone for the last few points | Optional follow-up once the frozen-head ceiling is confirmed in prod |
@@ -81,6 +81,20 @@ recommended backbone.
   (`_try_fetch`), runs **before** the pre-split dedup, and the
   per-class floor is still met by iNat alone — a Mendeley outage can
   neither block the run nor mislabel a class.
+* **MPLD is train-only too, and species-diverse by design.** It's a
+  *crop* (maize), added specifically so the deficiency signal isn't tied
+  to coffee morphology alone — coffee (CoLeaf: Fe/N/Mg/B chlorosis &
+  necrosis) + maize (MPLD: phosphorus purpling & interveinal chlorosis)
+  teach two complementary signatures. Its `mpld` source is excluded from
+  every `make_*_split` slice and down-weighted (0.5) exactly like
+  `coleaf`. Only the **deficiency** folders are imported (`-P`, `-P50`);
+  the `_C` **control** (fully-fed = healthy) is dropped, so a healthy leaf
+  is never mislabelled deficient — the same rule CoLeaf applies to its
+  `healthy` zip. The import is shuffled across all five cameras + both
+  deficiency levels and **capped** (`cap=700` of ~13.4 k available) so the
+  crop set can't swamp the in-domain rows, and it fails **soft** before
+  dedup just like CoLeaf (verified live: Zenodo `10041514`, CC BY 4.0,
+  13 450 deficiency vs 7 442 control images, 224×224 RGB).
 * **Label cleaning is non-destructive.** The `iconic_taxa='Plantae'`
   filter and the `label_review/` blocklist *prevent* bad observations from
   entering the pool; no image is ever deleted and a re-run reproduces the
