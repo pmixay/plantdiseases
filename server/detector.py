@@ -1,13 +1,21 @@
 """
 Stage 1 — Plant-leaf detector.
 
-YOLOv8n trained on **indoor leaf bboxes** (300–800 hand-labelled
-indoor photos plus targeted Roboflow Universe houseplant slices, NOT
-PlantDoc — agricultural close-ups bias localisation toward field
-shots and mis-fire on wide indoor compositions).
+YOLOv8n single-class (``plant_leaf``) leaf-localisation model. Its
+training corpus is determined by ``train_notebook.ipynb`` §3:
 
-The detector is single-class (``plant_leaf``). The "is it diseased?"
-decision is delegated 100 % to Stage 2 (classifier).
+* **Default:** PlantDoc detection bboxes collapsed to one class
+  (``build_yolo_detection_dataset_from_plantdoc``), with ``not_a_plant``
+  frames added as explicit background negatives so the detector learns
+  "no leaf here" and doesn't fire on pure noise.
+* **Preferred for production:** drop a hand-labelled *indoor* YOLO
+  ``data.yaml`` under ``data_v2/`` (e.g. Roboflow Universe houseplant
+  slices) — §3 picks it up automatically. Indoor bboxes localise wide
+  indoor compositions better than agricultural close-ups, so an indoor
+  set is the recommended Stage-1 corpus when available.
+
+Either way the "is it diseased?" decision is delegated 100 % to Stage 2
+(classifier); Stage 1 only crops.
 
 Loading is fail-fast: if no usable artefact is found, ``__init__``
 raises ``DetectorLoadError`` so the API never boots in a half-broken

@@ -423,13 +423,18 @@ class DiseaseClassifier:
     # ── ONNX inference ───────────────────────────────────────────────
 
     def _onnx_logits(self, x: np.ndarray) -> np.ndarray:
-        logits = self._onnx_session.run(None, {self._onnx_input_name: x})[0]
         if self.tta == "hflip":
-            flipped = self._onnx_session.run(
-                None, {self._onnx_input_name: self._hflip(x)}
-            )[0]
-            logits = (logits + flipped) * 0.5
-        return logits
+            # Batch the original and its mirror into a single 2N forward
+            # instead of two N-sized sess.run calls. The result is
+            # byte-identical (same two sets of logits, averaged) but pays
+            # the ORT/Python dispatch + kernel-selection cost once, and
+            # lets ORT schedule both halves together — material on the
+            # single-intra-op-thread CPU sessions we run.
+            n = x.shape[0]
+            batched = np.concatenate([x, self._hflip(x)], axis=0)
+            out = self._onnx_session.run(None, {self._onnx_input_name: batched})[0]
+            return (out[:n] + out[n:]) * 0.5
+        return self._onnx_session.run(None, {self._onnx_input_name: x})[0]
 
     def _classify_onnx(self, img: Image.Image) -> dict:
         logits = self._onnx_logits(self._preprocess(img))
@@ -444,13 +449,14 @@ class DiseaseClassifier:
     def _torch_logits(self, x: np.ndarray) -> np.ndarray:
         import torch
         with torch.no_grad():
-            logits = self._torch_model(torch.from_numpy(x)).cpu().numpy()
             if self.tta == "hflip":
-                flipped = self._torch_model(
-                    torch.from_numpy(self._hflip(x))
-                ).cpu().numpy()
-                logits = (logits + flipped) * 0.5
-        return logits
+                # Single batched 2N forward (see _onnx_logits): identical
+                # averaged logits, one model call instead of two.
+                n = x.shape[0]
+                batched = np.concatenate([x, self._hflip(x)], axis=0)
+                out = self._torch_model(torch.from_numpy(batched)).cpu().numpy()
+                return (out[:n] + out[n:]) * 0.5
+            return self._torch_model(torch.from_numpy(x)).cpu().numpy()
 
     def _classify_torch(self, img: Image.Image) -> dict:
         logits = self._torch_logits(self._preprocess(img))

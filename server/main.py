@@ -1664,6 +1664,11 @@ _FEEDBACK_IN_HEAD_CLASSES: frozenset[str] = frozenset(_HEAD_CLASS_NAMES)
 _FEEDBACK_OUT_OF_HEAD_CLASSES: frozenset[str] = frozenset({
     "edema",
     "sunburn_or_scorch",
+    # Single combined sap-sucking-pest label (mealybugs + scale). The head
+    # doesn't carry it yet (INCLUDE_PEST_CLASSES off), but accepting it on
+    # /api/feedback lets users flag pests and seeds the retraining loop
+    # that turns the ``pests`` class on.
+    "pests",
     "other",
 })
 

@@ -4,8 +4,8 @@
 
 **AI-powered houseplant disease detection — on-device camera, cloud inference, bilingual care plans.**
 
-Two-stage ML pipeline (YOLOv8 leaf detector → MobileNetV3-Large classifier
-distilled from EfficientNetV2-S) hosted behind a hardened FastAPI
+Two-stage ML pipeline (YOLOv8 leaf detector → frozen DINOv2 ViT-S/14
+backbone + LoRA + MLP head classifier) hosted behind a hardened FastAPI
 service, paired with a Kotlin Android client that ships scan history,
 plant care reminders and an AI plant doctor.
 
@@ -42,8 +42,8 @@ plant care reminders and an AI plant doctor.
 │  • EN / RU strings   │         │              │                   │
 │  • Reminders worker  │         │   ┌──────────▼───────────────┐   │
 │  • Profile + stats   │         │   │ Stage 2 — classifier     │   │
-│                      │         │   │ MobileNetV3-Large (KD ←  │   │
-│                      │         │   │ EfficientNetV2-S teacher)│   │
+│                      │         │   │ frozen DINOv2 ViT-S/14    │   │
+│                      │         │   │ + LoRA + MLP head         │   │
 │                      │         │   │ 8 classes incl. NaP head │   │
 │                      │         │   │ + MaxLogit OOD gate      │   │
 │                      │         │   │ + blur (var-Laplacian)   │   │
@@ -82,10 +82,13 @@ leaf spot — the two are not reliably separable from a phone photo:
 | 6 | `powdery_mildew`             | Powdery Mildew                | Мучнистая роса            |
 | 7 | `viral_disease`              | Viral Disease                 | Вирусное заболевание      |
 
-The pipeline also emits two remaining **deferred** physiological
-classes (`edema`, `sunburn_or_scorch`) as feedback labels, even though
-the classifier head doesn't predict them yet — the retraining loop
-uses them to prioritise the next round of data collection.
+The pipeline also accepts **deferred** labels on `/api/feedback`
+(`edema`, `sunburn_or_scorch`, and a single combined `pests` class for
+mealybugs / scale) even though the classifier head doesn't predict them
+yet — the retraining loop uses them to prioritise the next round of data
+collection. The `pests` head is wired through `train_notebook.ipynb` §1
+(`INCLUDE_PEST_CLASSES`, off by default) and turns on with a retrain once
+iNat supply clears the per-class floor.
 
 Canonical list: [`server/models/classes.json`](server/models/classes.json).
 
@@ -182,7 +185,7 @@ plantdiseases/
 │   ├── main.py             HTTP layer, middleware, validation
 │   ├── pipeline.py         Two-stage pipeline + blur/OOD gates
 │   ├── detector.py         Stage 1 — YOLOv8n
-│   ├── classifier.py       Stage 2 — MobileNetV3-Large student
+│   ├── classifier.py       Stage 2 — frozen DINOv2 ViT-S/14 + head
 │   ├── ai_services.py      PlantNet, OpenRouter, care plan, progression
 │   ├── feedback.py         Append-only feedback store + metrics
 │   ├── conformal.py        RAPS prediction sets

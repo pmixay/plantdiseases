@@ -14,12 +14,14 @@ photo, so they share one content card.
 Authoritative list: ``server/models/classes.json``.
 
 Forward-compat entries for conditions not yet in the classifier head
-(``edema``, ``sunburn_or_scorch``, and the staged pest classes
-``mealybug`` / ``scale``) are kept in the database — production lookup is
-``DISEASES_DATABASE.get(cls, DISEASES_DATABASE['unknown'])`` so unknown
-labels are tolerated, and keeping the cards means enabling those classes
-later (``INCLUDE_PEST_CLASSES`` in ``train_notebook.ipynb`` §1 for the
-pests) is a training-time switch, not a content port.
+(``edema``, ``sunburn_or_scorch``, and the staged ``pests`` class — a
+single combined head for mealybugs + scale) are kept in the database —
+production lookup is ``DISEASES_DATABASE.get(cls, DISEASES_DATABASE['unknown'])``
+so unknown labels are tolerated, and keeping the cards means enabling
+those classes later (``INCLUDE_PEST_CLASSES`` in ``train_notebook.ipynb``
+§1 for the pests) is a training-time switch, not a content port. The
+per-pest ``mealybug`` / ``scale`` cards are retained for richer copy if
+the combined class is ever split back out.
 """
 
 import copy
@@ -323,6 +325,40 @@ DISEASES_DATABASE = {
             "Подкармливайте в активный сезон (весна-лето), зимой подкормки прекратите",
             "Используйте горшки с дренажными отверстиями; не оставляйте в поддоне с водой",
             "Меняйте субстрат каждые 1–2 года — даже хороший грунт истощается"
+        ],
+        "is_healthy": False,
+    },
+
+    "pests": {
+        "name_en": "Sap-sucking Pests (Mealybugs / Scale)",
+        "name_ru": "Сосущие вредители (червецы / щитовки)",
+        "description_en": "Sap-sucking insects on the leaves and stems. Mealybugs look like small tufts of white cotton wool in leaf axils and along veins; scale insects sit motionless under small brown, tan or waxy dome-shaped shells lined along stems and leaf undersides. Both excrete sticky honeydew that turns into black sooty mould, and both stunt growth and yellow the leaves. Common on ficus, citrus, succulents, orchids, hoya, ivy, ferns and palms — especially in warm, still indoor air.",
+        "description_ru": "Сосущие насекомые на листьях и стеблях. Мучнистые червецы похожи на комочки белой ваты в пазухах листьев и вдоль жилок; щитовки неподвижно сидят под мелкими коричневыми или восковыми щитками-куполами вдоль стеблей и на нижней стороне листьев. И те, и другие выделяют липкую медвяную росу, на которой развивается чёрный сажистый грибок, угнетают рост и вызывают пожелтение листьев. Часто поражают фикусы, цитрусовые, суккуленты, орхидеи, хойю, плющ, папоротники и пальмы — особенно в тёплом застойном воздухе.",
+        "treatment_en": [
+            "Isolate the plant immediately — both pests crawl/spread to neighbours",
+            "Dab visible clusters with a cotton swab dipped in 70 % isopropyl alcohol; scrape scale shells off with a soft toothbrush",
+            "Spray the whole plant with insecticidal soap, neem or horticultural oil to smother survivors; repeat weekly for 3–4 weeks",
+            "Prune and bin badly encrusted stems",
+            "For heavy or persistent infestations use a systemic houseplant insecticide per the label; check the root ball too — root mealybugs hide in the substrate"
+        ],
+        "treatment_ru": [
+            "Сразу изолируйте растение — оба вредителя переползают на соседние",
+            "Обработайте видимые скопления ватной палочкой с 70 % изопропиловым спиртом; щитки соскоблите мягкой зубной щёткой",
+            "Опрыскайте всё растение инсектицидным мылом, маслом нима или садовым маслом, чтобы задушить выживших; повторяйте раз в неделю 3–4 недели",
+            "Сильно облепленные стебли срежьте и выбросьте",
+            "При сильном или упорном заражении примените системный инсектицид по инструкции; проверьте корневой ком — корневые червецы прячутся в субстрате"
+        ],
+        "prevention_en": [
+            "Quarantine new plants for two weeks and inspect leaf axils, stems and leaf undersides before mixing them in",
+            "Wipe leaves and check hidden crevices during weekly care",
+            "Avoid over-fertilising — lush soft growth attracts both pests",
+            "Act at the first white speck or bump; small infestations are far easier to clear"
+        ],
+        "prevention_ru": [
+            "Держите новые растения 2 недели на карантине и осматривайте пазухи листьев, стебли и низ листьев",
+            "Протирайте листья и проверяйте скрытые места при еженедельном уходе",
+            "Не перекармливайте — мягкий жирующий прирост привлекает обоих вредителей",
+            "Реагируйте при первом белом комочке или щитке — мелкое заражение убрать намного легче"
         ],
         "is_healthy": False,
     },

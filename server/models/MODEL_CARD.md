@@ -29,12 +29,15 @@ The production artefact is an ONNX graph and the runtime is
 **architecture-neutral** — it serves whatever backbone+head the shipped
 bundle declares (`classes.json -> architecture`):
 
-- **v2.2 (last shipped):** MobileNetV3-Large student distilled from an
-  EfficientNetV2-S teacher.
-- **v2.3 (target — `train_notebook.ipynb`):** frozen **DINOv2 ViT-S/14**
-  backbone + LoRA on the later blocks + a small MLP head, **no
-  distillation**. Motivated by a frozen DINOv2-S linear probe reaching
-  ~0.91 top-1 on `val_realworld` — well above the distilled student.
+- **v2.3.x (current):** frozen **DINOv2 ViT-S/14** backbone + LoRA on the
+  later blocks + a small MLP head, **no distillation**. Motivated by a
+  frozen DINOv2-S linear probe reaching ~0.91 top-1 on `val_realworld`.
+  Shipped FP32 (`PREFER_FP32`) — dynamic-INT8 drift on `val_realworld`
+  was not statistically significant (paired bootstrap CI spans 0) and the
+  single-core CPU budget has the latency headroom.
+- **v2.2 (legacy):** MobileNetV3-Large student distilled from an
+  EfficientNetV2-S teacher. Retired in §4/§5; the `.pth` dev fallback in
+  `classifier.py` still loads it for backwards compatibility.
 
 ## Classes
 
@@ -45,8 +48,9 @@ phone photo), `not_a_plant`, `nutrient_deficiency`, `powdery_mildew`,
 `viral_disease`. The canonical list is the bundle's `classes.json`.
 
 Content cards exist (no classifier head yet) for deferred conditions
-`edema`, `sunburn_or_scorch`, and the staged pest classes `mealybug` /
-`scale` (head off by default — `INCLUDE_PEST_CLASSES` in
+`edema`, `sunburn_or_scorch`, and a single combined `pests` class
+(mealybugs + scale — the two most visually-separable houseplant pests,
+collapsed into one head; head off by default — `INCLUDE_PEST_CLASSES` in
 `train_notebook.ipynb` §1).
 
 ## Validation contract
