@@ -90,6 +90,16 @@
             android:exported="false"
             android:screenOrientation="portrait" />
 
+        <!-- Re-declare the cropper activity (merged with the library's
+             entry) purely to give it an action-bar theme styled with the
+             app gradient. Without an action-bar theme its Done/cancel
+             controls have nowhere to render. -->
+        <activity
+            android:name="com.canhub.cropper.CropImageActivity"
+            android:exported="false"
+            android:theme="@style/Theme.PlantDiseases.Crop"
+            tools:replace="android:exported" />
+
         <receiver
             android:name=".worker.ReminderActionReceiver"
             android:exported="false">

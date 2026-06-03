@@ -178,4 +178,26 @@
         <item name="android:letterSpacing">0.02</item>
     </style>
 
+    <!-- ─── Crop screen (vanniktech CropImageActivity) ──────────────
+         The cropper renders its confirm (Done) and cancel controls in
+         the support ActionBar. The app's main theme is *.NoActionBar,
+         which the crop activity would otherwise inherit — leaving no
+         action bar and therefore no visible Done/cancel buttons. This
+         theme keeps an action bar (DarkActionBar → white title + menu
+         items) and swaps its background for the botanical gradient so
+         the crop screen matches the app's header style. -->
+    <style name="Theme.PlantDiseases.Crop" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
+        <item name="colorPrimary">@color/primary</item>
+        <item name="colorPrimaryDark">@color/toolbar_top</item>
+        <item name="colorAccent">@color/primary</item>
+        <item name="actionBarStyle">@style/Widget.PlantDiseases.Crop.ActionBar</item>
+        <item name="android:statusBarColor">@color/toolbar_top</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+
+    <style name="Widget.PlantDiseases.Crop.ActionBar" parent="Widget.MaterialComponents.ActionBar.Solid">
+        <item name="background">@drawable/bg_toolbar_gradient</item>
+        <item name="elevation">0dp</item>
+    </style>
+
 </resources>

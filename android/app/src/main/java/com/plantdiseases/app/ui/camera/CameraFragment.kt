@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -404,6 +405,15 @@ class CameraFragment : Fragment() {
                     imageSourceIncludeCamera = false,
                     activityTitle = getString(R.string.crop_title),
                     cropMenuCropButtonTitle = getString(R.string.crop_action_done),
+                    // The action bar sits on the app's green gradient
+                    // (see Theme.PlantDiseases.Crop), so force the Done /
+                    // cancel / title controls white for contrast. Canvas
+                    // backdrop follows the current day/night background.
+                    activityBackgroundColor = ContextCompat.getColor(requireContext(), R.color.background),
+                    toolbarTitleColor = Color.WHITE,
+                    toolbarBackButtonColor = Color.WHITE,
+                    activityMenuTextColor = Color.WHITE,
+                    activityMenuIconColor = Color.WHITE,
                 ),
             )
         )
