@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
+import android.graphics.Bitmap
+import android.graphics.Color
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -24,6 +26,10 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
+import com.canhub.cropper.CropImageContract
+import com.canhub.cropper.CropImageContractOptions
+import com.canhub.cropper.CropImageOptions
+import com.canhub.cropper.CropImageView
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.databinding.FragmentCameraBinding
@@ -31,6 +37,7 @@ import com.plantdiseases.app.ui.analysis.AnalysisActivity
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
 import kotlinx.coroutines.launch
+import java.io.File
 import java.util.Locale
 
 class CameraFragment : Fragment() {
@@ -45,6 +52,11 @@ class CameraFragment : Fragment() {
     private lateinit var scaleGestureDetector: ScaleGestureDetector
 
     private var captureInFlight = false
+
+    /** Destination file for the in-flight crop. We give the cropper an
+     *  explicit unique output file so each scan produces a distinct path
+     *  — both for the preview (Glide caches by path) and analysis. */
+    private var pendingCropFile: File? = null
 
     private val PREFS_NAME = "plantdiseases_prefs"
     private val KEY_GRID_OVERLAY = "grid_overlay_enabled"
@@ -65,6 +77,39 @@ class CameraFragment : Fragment() {
         ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let { handleGalleryImage(it) }
+    }
+
+    /** Crop editor (vanniktech android-image-cropper). Both the camera
+     *  shutter and the gallery picker funnel their image through here
+     *  before it reaches analysis. The cropper writes the result to the
+     *  unique [pendingCropFile] we hand it; that exact path goes on to
+     *  AnalysisActivity for both the preview and the upload. */
+    private val cropLauncher = registerForActivityResult(CropImageContract()) { result ->
+        if (_binding == null) return@registerForActivityResult
+        // Returning from the crop activity re-arms the shutter regardless
+        // of outcome; navigateToAnalysis re-locks it on success.
+        captureInFlight = false
+        binding.btnCapture.isEnabled = true
+        when {
+            result.isSuccessful -> {
+                // We set customOutputUri to pendingCropFile, so the crop
+                // lands exactly there — use that path directly rather than
+                // getUriFilePath (which copies to a shared, stale-cached
+                // temp filename).
+                val path = pendingCropFile?.absolutePath
+                    ?: result.uriContent?.path
+                if (path != null) {
+                    navigateToAnalysis(path)
+                } else {
+                    Toast.makeText(requireContext(), getString(R.string.crop_error), Toast.LENGTH_SHORT).show()
+                }
+            }
+            // result.error == null means the user simply backed out of the
+            // crop screen — stay on the camera silently.
+            result.error != null -> {
+                Toast.makeText(requireContext(), getString(R.string.crop_error), Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     override fun onCreateView(
@@ -309,7 +354,7 @@ class CameraFragment : Fragment() {
                     // double-gate on green-content here — false
                     // positives on textured fabric hurt UX more than
                     // they help.
-                    navigateToAnalysis(photoFile.absolutePath)
+                    launchCrop(Uri.fromFile(photoFile))
                 }
 
                 override fun onError(exception: ImageCaptureException) {
@@ -344,12 +389,56 @@ class CameraFragment : Fragment() {
     }
 
     private fun handleGalleryImage(uri: Uri) {
+        // Copy into our own files dir first so the cropper reads a stable
+        // file:// uri rather than a transient content:// grant that may
+        // not survive the activity hop.
         val file = ImageUtils.copyUriToFile(requireContext(), uri)
         if (file != null) {
-            navigateToAnalysis(file.absolutePath)
+            launchCrop(Uri.fromFile(file))
         } else {
             Toast.makeText(requireContext(), getString(R.string.image_load_error), Toast.LENGTH_SHORT).show()
         }
+    }
+
+    /** Open the crop editor on [sourceUri]. Free-form crop (no fixed
+     *  aspect ratio); the result is written as a JPEG to a unique file we
+     *  own so the preview and analysis both read the cropped image. */
+    private fun launchCrop(sourceUri: Uri) {
+        val outFile = File(
+            File(requireContext().filesDir, "plant_images").apply { mkdirs() },
+            "CROP_${System.currentTimeMillis()}.jpg",
+        )
+        pendingCropFile = outFile
+        cropLauncher.launch(
+            CropImageContractOptions(
+                uri = sourceUri,
+                cropImageOptions = CropImageOptions(
+                    guidelines = CropImageView.Guidelines.ON,
+                    fixAspectRatio = false,
+                    customOutputUri = Uri.fromFile(outFile),
+                    outputCompressFormat = Bitmap.CompressFormat.JPEG,
+                    outputCompressQuality = 90,
+                    // We supply the image ourselves, so hide the library's
+                    // built-in source pickers.
+                    imageSourceIncludeGallery = false,
+                    imageSourceIncludeCamera = false,
+                    activityTitle = getString(R.string.crop_title),
+                    cropMenuCropButtonTitle = getString(R.string.crop_action_done),
+                    // The action bar sits on the app's green gradient
+                    // (see Theme.PlantDiseases.Crop), so force the title,
+                    // back arrow and on-bar icons white for contrast.
+                    // NOTE: do NOT set activityMenuTextColor — it whitens
+                    // the flip submenu items too, which render in a white
+                    // popup (white-on-white). DarkActionBar already makes
+                    // the on-bar "Done" text white. Canvas backdrop follows
+                    // the current day/night background.
+                    activityBackgroundColor = ContextCompat.getColor(requireContext(), R.color.background),
+                    toolbarTitleColor = Color.WHITE,
+                    toolbarBackButtonColor = Color.WHITE,
+                    activityMenuIconColor = Color.WHITE,
+                ),
+            )
+        )
     }
 
     private fun navigateToAnalysis(imagePath: String) {

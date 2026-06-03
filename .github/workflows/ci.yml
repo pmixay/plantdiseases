@@ -2,7 +2,9 @@ name: ci
 
 on:
   push:
-    branches: [main, master]
+    # main/master plus the claude/** working branches so CI runs on a
+    # plain push to a feature branch, before any PR exists.
+    branches: [main, master, "claude/**"]
   pull_request:
 
 concurrency:

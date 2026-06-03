@@ -97,6 +97,11 @@ dependencies {
     // Material Design 3
     implementation("com.google.android.material:material:1.11.0")
 
+    // Image cropper (vanniktech fork — on mavenCentral, classes live in
+    // package com.canhub.cropper). Lets the user crop a captured shot or
+    // gallery image before it is sent for analysis.
+    implementation("com.vanniktech:android-image-cropper:4.6.0")
+
     // Navigation
     implementation("androidx.navigation:navigation-fragment-ktx:2.7.6")
     implementation("androidx.navigation:navigation-ui-ktx:2.7.6")
