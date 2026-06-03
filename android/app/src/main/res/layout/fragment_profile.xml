@@ -87,7 +87,7 @@
                     android:padding="8dp"
                     android:scaleType="fitCenter"
                     android:src="@drawable/ic_refresh"
-                    android:tint="@color/primary"
+                    app:tint="@color/primary"
                     android:background="?attr/selectableItemBackgroundBorderless"
                     android:clickable="true"
                     android:focusable="true"
