@@ -3,7 +3,7 @@
 Loads a held-out set of ~500 real houseplant photos collected by
 ``server/tools/collect_smoke_set.py`` (gitignored; lives at
 ``data_v2/smoke/<class>/*.jpg|png``) and asserts that the deployed
-two-stage pipeline still meets the ROADMAP ship-gate floor of
+two-stage pipeline still meets the smoke ship-gate floor of
 **macro-F1 ≥ 0.65** on the smoke distribution. This is the honest
 field metric — distinct from ``val_realworld`` which leans on
 agricultural PlantDoc images.
@@ -30,7 +30,8 @@ MODELS_DIR = SERVER_DIR / "models"
 SMOKE_DIR = SERVER_DIR.parent / "data_v2" / "smoke"
 METRICS_OUT = MODELS_DIR / "smoke_metrics.json"
 
-# Floor matches ROADMAP.md "Accuracy smoke test in CI" — 0.65 macro-F1.
+# Smoke-set CI floor — 0.65 macro-F1 (distinct from the notebook §6
+# val_realworld ship gate, which leans on agricultural PlantDoc images).
 MACRO_F1_FLOOR = 0.65
 # Minimum class coverage. The collector ships 312 / 500 in the cloud
 # sandbox today (Cloudflare WAF blocks `viral_disease`); accept any

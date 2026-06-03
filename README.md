@@ -112,10 +112,16 @@ The script creates a virtual environment, installs CPU-only PyTorch
 plus `requirements.txt`, and launches FastAPI on
 `http://localhost:8000`.
 
-Model weights (`detector.{pt,onnx}`, `classifier.{pth,onnx,_int8.onnx}`
-and `classes.json`) must live under `server/models/` — the server is
-**fail-fast** and refuses to start without them. There is no demo
-fallback.
+Model weights + calibration artefacts are **not committed**. On first
+boot the server fetches the model bundle from `MODEL_BUNDLE_URL`
+(a `.tar` / `.tar.gz` / `.zip` of the `models/` dir contents — Google
+Drive share links are supported) and caches it under `server/models/`;
+subsequent restarts reuse the cache. Override the URL via
+`config.json` / env, or set `MODEL_AUTO_FETCH=false` and drop
+`detector.{pt,onnx}`, `classifier.{pth,onnx,_int8.onnx}` and
+`classes.json` in manually. Either way the server is **fail-fast** —
+it refuses to start if the bundle can't be provisioned. There is no
+demo fallback.
 
 ### Android client
 

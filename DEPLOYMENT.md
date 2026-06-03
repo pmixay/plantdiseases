@@ -91,11 +91,14 @@ export RATE_LIMIT_RPS=2.0
 docker compose up -d --build
 ```
 
-Model weights go under `server/models/` on the host; the container
-mounts it read-only (`./models:/app/models:ro`). The server is
-fail-fast — without `detector.{pt,onnx}` and
-`classifier.{pth,onnx,_int8.onnx}` it refuses to start and the
-container exits.
+Model weights + calibration artefacts are fetched on first boot from
+`MODEL_BUNDLE_URL` into the `./models:/app/models` volume (read-write so
+the bundle can be cached across restarts). To pin a pre-built model
+instead, populate the host `./models` dir and set
+`MODEL_AUTO_FETCH=false`. The server is fail-fast — if it can neither
+fetch nor find `detector.{pt,onnx}` and `classifier.{pth,onnx,_int8.onnx}`
+it refuses to start and the container exits. The first boot on a fresh
+volume downloads hundreds of MB, so the compose `start_period` is 300 s.
 
 Smoke test:
 
@@ -222,7 +225,7 @@ Before opening the service to the public:
 - [ ] `RATE_LIMIT_RPS` tuned for expected traffic (default `1.0` is per-IP).
 - [ ] `MAX_FILE_SIZE` aligned with nginx `client_max_body_size`.
 - [ ] `proxy_read_timeout` ≥ `INFERENCE_TIMEOUT`.
-- [ ] Model files (`detector.{pt,onnx}`, `classifier.{pth,onnx,_int8.onnx}`, `classes.json`) present under `server/models/` — otherwise the server fails to start. There is no demo fallback.
+- [ ] Model bundle reachable: `MODEL_BUNDLE_URL` resolves to the `.tar`/`.zip` of `detector.{pt,onnx}`, `classifier.{pth,onnx,_int8.onnx}`, `classes.json` (or those files are present under `server/models/` with `MODEL_AUTO_FETCH=false`) — otherwise the server fails to start. There is no demo fallback.
 - [ ] `/api/health` returns 200 with `status: "ok"`.
 - [ ] `classes.json` `num_classes` matches the classifier head size (the server logs a mismatch otherwise).
 - [ ] Logs are rotating (`LOG_DIR`) and being shipped off-box.

@@ -1,11 +1,15 @@
 name: ci
 
 on:
+  # Push-only. Work happens on claude/** branches, so a push already
+  # covers both the pre-PR window and every later PR update — the check
+  # runs attach to the commit and show on the PR. The pull_request
+  # trigger was dropped because it re-ran the whole suite for the same
+  # commit once a PR was open, doubling a commit's checks (push +
+  # pull_request). Re-add `pull_request:` only if you need CI on PRs from
+  # forks or branches that don't match the patterns below.
   push:
-    # main/master plus the claude/** working branches so CI runs on a
-    # plain push to a feature branch, before any PR exists.
     branches: [main, master, "claude/**"]
-  pull_request:
 
 concurrency:
   group: ci-${{ github.ref }}

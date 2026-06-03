@@ -45,10 +45,11 @@ DEFAULT_IMG_SIZE = 256
 DEFAULT_EVAL_RESIZE_RATIO = 1.05
 
 # Alphabetical — must match training-time ``sorted(ImageFolder.classes)``.
-# v2.2 trainable taxonomy. ``leaf_scorch_underwatering`` and
-# ``nutrient_deficiency`` were added per NOTEBOOK_AUDIT §6 — the two
-# remaining physiological classes (``edema``, ``sunburn_or_scorch``)
-# stay deferred until upstream supply justifies them.
+# v2.x trainable taxonomy. ``leaf_scorch_underwatering`` and
+# ``nutrient_deficiency`` were added per ``train_notebook.ipynb`` §1
+# (INCLUDE_PHYSIOLOGICAL_CLASSES) — the two remaining physiological
+# classes (``edema``, ``sunburn_or_scorch``) stay deferred until
+# upstream supply justifies them.
 # Production reads ``classes.json -> class_names`` first; this list is
 # only used as a fallback when the artefact is missing.
 # ``leaf_spot`` is the merged bacterial+fungal leaf-spot class (the
