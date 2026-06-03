@@ -324,6 +324,11 @@ data class CarePlanRequest(
     @SerializedName("locale") val locale: String = "en",
     /** Optional season override — `null` lets the server pick from today's date. */
     @SerializedName("season") val season: String? = null,
+    /** Optional caller location → live weather-aware care tweaks. Null on
+     *  either coordinate disables the weather fetch server-side, leaving the
+     *  plan unchanged. */
+    @SerializedName("latitude") val latitude: Double? = null,
+    @SerializedName("longitude") val longitude: Double? = null,
 )
 
 /**
@@ -364,6 +369,9 @@ data class CarePlanResponse(
     @SerializedName("checkpoints") val checkpoints: List<CarePlanCheckpoint>? = null,
     @SerializedName("season") val season: String? = null,
     @SerializedName("season_note") val seasonNote: String? = null,
+    /** Optional weather-aware care line; present only when the request
+     *  carried coordinates and the live weather fetch succeeded. */
+    @SerializedName("weather_note") val weatherNote: String? = null,
 ) {
     val wateringDaysInt: Int?
         get() = when (val v = wateringDaysRaw) {

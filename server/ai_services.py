@@ -1338,6 +1338,58 @@ def _humidity_habit(species: str | None) -> str | None:
     return None
 
 
+# Weather-aware care tweaks. Keyed by language then a coarse condition
+# bucket; ``{temp}`` / ``{hum}`` are filled with rounded current readings.
+_WEATHER_NOTE_TEXT = {
+    "en": {
+        "hot_dry": "Hot & dry near you ({temp}°C, {hum}% humidity) — check the soil a day early and mist humidity-loving leaves.",
+        "humid": "Humid near you ({temp}°C, {hum}% humidity) — let the topsoil dry between waterings and watch for fungal spots.",
+        "rain": "Rain in the forecast ({temp}°C) — if the plant is outdoors, skip the next watering and shelter it.",
+        "cold": "Cold near you ({temp}°C) — keep the plant off cold sills and ease back on watering.",
+        "mild": "Mild near you ({temp}°C, {hum}% humidity) — your normal schedule is fine.",
+    },
+    "ru": {
+        "hot_dry": "Жарко и сухо рядом с вами ({temp}°C, влажность {hum}%) — проверьте почву на день раньше и опрыскайте влаголюбивые листья.",
+        "humid": "Влажно рядом с вами ({temp}°C, влажность {hum}%) — дайте верхнему слою почвы просохнуть и следите за грибковыми пятнами.",
+        "rain": "Ожидается дождь ({temp}°C) — если растение на улице, пропустите следующий полив и укройте его.",
+        "cold": "Холодно рядом с вами ({temp}°C) — уберите растение с холодных подоконников и сократите полив.",
+        "mild": "Умеренная погода рядом с вами ({temp}°C, влажность {hum}%) — обычный график подойдёт.",
+    },
+}
+
+
+def _weather_care_note(weather: dict, lang: str) -> str | None:
+    """Reduce a weather payload to one localized, actionable care line.
+
+    Returns ``None`` if the payload is unusable, so the caller simply omits
+    the note rather than surfacing a half-formed string.
+    """
+    temp = weather.get("temp_c")
+    hum = weather.get("humidity")
+    if temp is None or hum is None:
+        return None
+    try:
+        temp = float(temp)
+        hum = float(hum)
+        precip_next = float(weather.get("precip_next") or 0.0)
+    except (TypeError, ValueError):
+        return None
+
+    if precip_next >= 5.0:
+        cond = "rain"
+    elif temp >= 28.0 and hum < 40.0:
+        cond = "hot_dry"
+    elif hum >= 80.0:
+        cond = "humid"
+    elif temp <= 5.0:
+        cond = "cold"
+    else:
+        cond = "mild"
+
+    table = _WEATHER_NOTE_TEXT["ru" if lang == "ru" else "en"]
+    return table[cond].format(temp=round(temp), hum=round(hum))
+
+
 def generate_care_plan(
     *,
     disease: str,
@@ -1346,6 +1398,7 @@ def generate_care_plan(
     locale: str = "en",
     season: str | None = None,
     today: _dt.date | None = None,
+    weather: dict | None = None,
 ) -> dict:
     """Build a full houseplant care plan for the (disease, light) tuple.
 
@@ -1498,6 +1551,13 @@ def generate_care_plan(
 
     season_key = season if season in ("growing", "dormant") else _current_growing_season(today)
     plan = _apply_season(plan, season_key, locale=locale)
+    # Additive weather note — only present when the caller supplied
+    # coordinates and the live fetch succeeded. Everything else about the
+    # plan is identical to the no-weather case.
+    if weather:
+        note = _weather_care_note(weather, lang)
+        if note:
+            plan["weather_note"] = note
     plan["summary_md"] = _build_markdown_summary(plan, locale=locale)
     return _polish_plan_with_llm(plan, locale=locale)
 

@@ -90,6 +90,20 @@ object RegionResolver {
         return region
     }
 
+    /**
+     * Best-effort coarse latitude/longitude for weather-aware care, or
+     * ``null`` when the permission is missing or no fix is cached. Rounded
+     * to ~2 decimals (~1 km) — fine for local weather, coarse enough to keep
+     * the request privacy-respecting (and to match the server's cache key).
+     */
+    @SuppressLint("MissingPermission")
+    fun coarseLatLon(context: Context): Pair<Double, Double>? {
+        if (!hasCoarsePermission(context)) return null
+        val loc = lastKnownCoarseLocation(context) ?: return null
+        return Math.round(loc.latitude * 100.0) / 100.0 to
+            Math.round(loc.longitude * 100.0) / 100.0
+    }
+
     @SuppressLint("MissingPermission")
     private fun lastKnownCoarseLocation(context: Context): Location? {
         val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager

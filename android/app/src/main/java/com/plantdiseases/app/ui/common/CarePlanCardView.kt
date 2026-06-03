@@ -40,6 +40,7 @@ class CarePlanCardView @JvmOverloads constructor(
     private val pillsRow: LinearLayout
     private val noteContainer: LinearLayout
     private val noteBody: TextView
+    private val weatherNoteView: TextView
     private val followUpView: TextView
     private val applyToRemindersBtn: MaterialButton
     private val detailsToggle: MaterialButton
@@ -223,6 +224,24 @@ class CarePlanCardView @JvmOverloads constructor(
         noteContainer.addView(noteBody)
         statusContainer.addView(noteContainer)
 
+        // Weather-aware care note — always visible (not buried in the
+        // expandable details) since it's a timely, actionable nudge. Only
+        // shown when the server returned one (request carried coords + the
+        // live weather fetch succeeded).
+        weatherNoteView = TextView(context).apply {
+            textSize = 12f
+            setTextColor(context.getColor(R.color.on_primary))
+            setBackgroundResource(R.drawable.bg_care_plan_pill)
+            setPadding(14.dp(), 10.dp(), 14.dp(), 10.dp())
+            setLineSpacing(2.dp().toFloat(), 1f)
+            visibility = View.GONE
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = 10.dp() }
+        }
+        statusContainer.addView(weatherNoteView)
+
         followUpView = TextView(context).apply {
             textSize = 12f
             setTextColor(context.getColor(R.color.on_primary_secondary))
@@ -316,6 +335,7 @@ class CarePlanCardView @JvmOverloads constructor(
         errorView.visibility = View.GONE
         pillsRow.visibility = View.GONE
         noteContainer.visibility = View.GONE
+        weatherNoteView.visibility = View.GONE
         followUpView.visibility = View.GONE
         applyToRemindersBtn.visibility = View.GONE
         detailsToggle.visibility = View.GONE
@@ -327,6 +347,7 @@ class CarePlanCardView @JvmOverloads constructor(
         loadingView.visibility = View.GONE
         pillsRow.visibility = View.GONE
         noteContainer.visibility = View.GONE
+        weatherNoteView.visibility = View.GONE
         followUpView.visibility = View.GONE
         applyToRemindersBtn.visibility = View.GONE
         detailsToggle.visibility = View.GONE
@@ -351,6 +372,7 @@ class CarePlanCardView @JvmOverloads constructor(
         loadingView.visibility = View.GONE
         pillsRow.visibility = View.GONE
         noteContainer.visibility = View.GONE
+        weatherNoteView.visibility = View.GONE
         followUpView.visibility = View.GONE
         applyToRemindersBtn.visibility = View.GONE
         detailsToggle.visibility = View.GONE
@@ -416,6 +438,14 @@ class CarePlanCardView @JvmOverloads constructor(
             noteContainer.visibility = View.VISIBLE
         } else {
             noteContainer.visibility = View.GONE
+        }
+
+        val weather = plan.weatherNote?.trim().orEmpty()
+        if (weather.isNotEmpty()) {
+            weatherNoteView.text = weather
+            weatherNoteView.visibility = View.VISIBLE
+        } else {
+            weatherNoteView.visibility = View.GONE
         }
 
         followUpView.text = context.resources.getString(

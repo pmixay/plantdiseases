@@ -84,6 +84,7 @@ try:
     )
     from .config import get, get_float, get_int, get_list, get_str
     from .diseases_data import DISEASES_DATABASE, lookup_pet_toxicity
+    from .weather import fetch_weather
     from .feedback import (
         attach_image_path as feedback_attach_image_path,
     )
@@ -151,6 +152,7 @@ except ImportError:
     )
     from config import get, get_float, get_int, get_list, get_str
     from diseases_data import DISEASES_DATABASE, lookup_pet_toxicity
+    from weather import fetch_weather
     from feedback import (
         attach_image_path as feedback_attach_image_path,
     )
@@ -1491,6 +1493,11 @@ class CarePlanRequest(BaseModel):
     # (northern-hemisphere default). Accepted values: ``"growing"``
     # or ``"dormant"``.
     season: str | None = Field(default=None, max_length=16)
+    # Optional caller location → live, weather-aware care tweaks. When either
+    # is omitted/null the weather fetch is skipped entirely and the plan is
+    # unchanged, so the feature is purely additive and safe offline.
+    latitude: float | None = Field(default=None, ge=-90.0, le=90.0)
+    longitude: float | None = Field(default=None, ge=-180.0, le=180.0)
 
 
 # ── Community scan corpus ───────────────────────────────────────────
@@ -1937,15 +1944,23 @@ async def care_plan_endpoint(payload: CarePlanRequest):
         # Don't reject — just normalise unknown to ``unknown``. Keeps the
         # endpoint forgiving while still producing a useful plan.
         disease = "unknown"
-    plan = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(),
-        lambda: generate_care_plan(
+    def _build_plan() -> dict:
+        # Weather fetch shares the inference threadpool so the blocking
+        # Open-Meteo call never touches the event loop; it returns None
+        # (and the plan is unchanged) when coords are absent or the
+        # network is slow/blocked.
+        weather = fetch_weather(payload.latitude, payload.longitude)
+        return generate_care_plan(
             disease=disease,
             species=payload.species,
             light=payload.light,
             locale=payload.locale,
             season=payload.season,
-        ),
+            weather=weather,
+        )
+
+    plan = await asyncio.get_running_loop().run_in_executor(
+        _get_inference_executor(), _build_plan,
     )
     toxicity = lookup_pet_toxicity(payload.species) if payload.species else {
         "toxic_to_pets": False, "species_list": [], "source": "unknown",
