@@ -68,10 +68,19 @@ try:
         init_db as init_community_db,
     )
     from .community import (
+        daily_opinion_count_for_ip_hash as community_daily_opinion_writes,
+    )
+    from .community import (
         nearby_scans as community_nearby_scans,
     )
     from .community import (
+        opinions_for as community_opinions_for,
+    )
+    from .community import (
         prune_older_than as community_prune_older_than,
+    )
+    from .community import (
+        record_opinion as community_record_opinion,
     )
     from .community import (
         record_scan as community_record_scan,
@@ -136,10 +145,19 @@ except ImportError:
         init_db as init_community_db,
     )
     from community import (
+        daily_opinion_count_for_ip_hash as community_daily_opinion_writes,
+    )
+    from community import (
         nearby_scans as community_nearby_scans,
     )
     from community import (
+        opinions_for as community_opinions_for,
+    )
+    from community import (
         prune_older_than as community_prune_older_than,
+    )
+    from community import (
+        record_opinion as community_record_opinion,
     )
     from community import (
         record_scan as community_record_scan,
@@ -445,6 +463,7 @@ def _extract_api_key(request: Request) -> str | None:
 # restarts unlike the in-memory rate bucket.
 FEEDBACK_DAILY_QUOTA = get_int("FEEDBACK_DAILY_QUOTA", 200)
 COMMUNITY_DAILY_QUOTA = get_int("COMMUNITY_DAILY_QUOTA", 50)
+COMMUNITY_OPINION_DAILY_QUOTA = get_int("COMMUNITY_OPINION_DAILY_QUOTA", 60)
 # Retention windows (days). Daily background task in the FastAPI
 # lifespan drops rows past this age.
 FEEDBACK_RETENTION_DAYS = get_int("FEEDBACK_RETENTION_DAYS", 180)
@@ -2278,6 +2297,70 @@ async def community_scan_upload(
         raise HTTPException(status_code=500, detail="Failed to record scan") from exc
 
     return JSONResponse(content={"ok": True, "id": row_id})
+
+
+class CommunityOpinionRequest(BaseModel):
+    scan_id: str = Field(..., min_length=1, max_length=128)
+    user_pseudo_id: str = Field(..., min_length=1, max_length=128)
+    suggested_disease: str = Field(..., min_length=1, max_length=64)
+    note: str | None = Field(default=None, max_length=500)
+
+
+@api_router.post("/community/opinion")
+async def community_opinion_submit(payload: CommunityOpinionRequest, request: Request):
+    """Record one community 'second opinion' on a shared scan.
+
+    The suggested disease must be a known classifier class so the consensus
+    tally stays clean; any free text lives only in the optional note.
+    """
+    disease = payload.suggested_disease.strip()
+    if disease not in DISEASES_DATABASE:
+        raise HTTPException(status_code=422, detail="Unknown suggested disease")
+
+    client_ip = _client_ip(request)
+    ip_hash = hash_client_ip(client_ip)
+    loop = asyncio.get_running_loop()
+    today = await loop.run_in_executor(
+        _get_inference_executor(),
+        lambda: community_daily_opinion_writes(ip_hash),
+    )
+    if today >= COMMUNITY_OPINION_DAILY_QUOTA:
+        raise HTTPException(status_code=429, detail="Daily opinion quota reached.")
+
+    sid = payload.scan_id.strip()
+    try:
+        await loop.run_in_executor(
+            _get_inference_executor(),
+            lambda: community_record_opinion(
+                scan_id=sid,
+                author_pseudo_id=payload.user_pseudo_id.strip(),
+                suggested_disease=disease,
+                note=payload.note,
+                client_ip=client_ip,
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Community opinion write failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to record opinion") from exc
+
+    result = await loop.run_in_executor(
+        _get_inference_executor(), lambda: community_opinions_for(sid),
+    )
+    return JSONResponse(
+        content={"ok": True, "count": len(result["opinions"]), **result}
+    )
+
+
+@api_router.get("/community/opinions/{scan_id}")
+async def community_opinions_list(scan_id: str):
+    """List community opinions + a consensus tally for one shared scan."""
+    sid = (scan_id or "").strip()
+    if not sid or len(sid) > 128:
+        raise HTTPException(status_code=422, detail="Invalid scan id")
+    result = await asyncio.get_running_loop().run_in_executor(
+        _get_inference_executor(), lambda: community_opinions_for(sid),
+    )
+    return JSONResponse(content={"scan_id": sid, **result})
 
 
 @api_router.get("/community/nearby")

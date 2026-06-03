@@ -77,6 +77,18 @@ CREATE INDEX IF NOT EXISTS ix_community_created         ON community_scans(creat
 CREATE INDEX IF NOT EXISTS ix_community_country         ON community_scans(country, created_at);
 CREATE INDEX IF NOT EXISTS ix_community_country_region  ON community_scans(country, region, created_at);
 CREATE INDEX IF NOT EXISTS ix_community_species_lower   ON community_scans(species_lower);
+
+CREATE TABLE IF NOT EXISTS community_opinions (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    scan_id           TEXT    NOT NULL,
+    author_pseudo_id  TEXT    NOT NULL,
+    suggested_disease TEXT    NOT NULL,
+    note              TEXT,
+    client_ip_hash    TEXT,
+    created_at        INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_opinions_scan   ON community_opinions(scan_id, created_at);
+CREATE INDEX IF NOT EXISTS ix_opinions_author ON community_opinions(author_pseudo_id);
 """
 
 _write_lock = threading.RLock()
@@ -219,6 +231,75 @@ def record_scan(
             ),
         )
         return int(cur.lastrowid or 0)
+
+
+def record_opinion(
+    *,
+    scan_id: str,
+    author_pseudo_id: str,
+    suggested_disease: str,
+    note: str | None = None,
+    client_ip: str | None = None,
+) -> int:
+    """Append one community 'second opinion' on a shared scan. Returns row id."""
+    init_db()
+    now = int(time.time())
+    ip_hash = hash_client_ip(client_ip)
+    note_clean = (note or "").strip()[:500] or None
+    with _write_lock, _connect() as conn:
+        cur = conn.execute(
+            "INSERT INTO community_opinions ("
+            "  scan_id, author_pseudo_id, suggested_disease, note, "
+            "  client_ip_hash, created_at"
+            ") VALUES (?, ?, ?, ?, ?, ?)",
+            (scan_id, author_pseudo_id, suggested_disease, note_clean, ip_hash, now),
+        )
+        return int(cur.lastrowid or 0)
+
+
+def opinions_for(scan_id: str, *, limit: int = 50) -> dict:
+    """Opinions for one scan plus a per-disease consensus tally.
+
+    Shape::
+
+        {"opinions":  [{"suggested_disease", "note", "created_at"}, ...],
+         "consensus": [{"disease", "count"}, ...]}   # most-voted first
+    """
+    init_db()
+    limit = max(1, min(int(limit), 100))
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT suggested_disease, note, created_at "
+            "FROM community_opinions WHERE scan_id = ? "
+            "ORDER BY created_at DESC LIMIT ?",
+            (scan_id, limit),
+        ).fetchall()
+        tally = conn.execute(
+            "SELECT suggested_disease, COUNT(*) AS n "
+            "FROM community_opinions WHERE scan_id = ? "
+            "GROUP BY suggested_disease ORDER BY n DESC",
+            (scan_id,),
+        ).fetchall()
+    opinions = [
+        {"suggested_disease": str(r[0]), "note": r[1] or "", "created_at": int(r[2])}
+        for r in rows
+    ]
+    consensus = [{"disease": str(t[0]), "count": int(t[1])} for t in tally]
+    return {"opinions": opinions, "consensus": consensus}
+
+
+def daily_opinion_count_for_ip_hash(ip_hash: str | None) -> int:
+    """Opinions submitted from one IP hash in the last 24h (abuse cap)."""
+    if not ip_hash:
+        return 0
+    init_db()
+    cutoff = int(time.time()) - 86_400
+    with _connect() as conn:
+        return int(conn.execute(
+            "SELECT COUNT(*) FROM community_opinions "
+            "WHERE client_ip_hash = ? AND created_at >= ?",
+            (ip_hash, cutoff),
+        ).fetchone()[0])
 
 
 def nearby_scans(
@@ -404,6 +485,11 @@ def delete_for_user(user_pseudo_id: str) -> int:
             "DELETE FROM community_scans WHERE user_pseudo_id = ?",
             (user_pseudo_id,),
         ).rowcount
+        # Opinions this install authored on *other* people's scans also go.
+        conn.execute(
+            "DELETE FROM community_opinions WHERE author_pseudo_id = ?",
+            (user_pseudo_id,),
+        )
     for row in rows:
         thumb = row[0]
         if not thumb:

@@ -439,6 +439,79 @@
         }
       }
     },
+    "/api/community/opinion": {
+      "post": {
+        "summary": "Community Opinion Submit",
+        "description": "Record one community 'second opinion' on a shared scan.",
+        "operationId": "community_opinion_submit_api_community_opinion_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/community/opinions/{scan_id}": {
+      "get": {
+        "summary": "Community Opinions List",
+        "description": "List community opinions + a consensus tally for one shared scan.",
+        "operationId": "community_opinions_list_api_community_opinions__scan_id__get",
+        "parameters": [
+          {
+            "name": "scan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Scan Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/community/nearby": {
       "get": {
         "summary": "Community Scan Nearby",
