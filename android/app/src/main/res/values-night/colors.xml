@@ -45,6 +45,8 @@
          the background. -->
     <color name="surface_container_low">#161E18</color>
     <color name="surface_container">#1C261E</color>
+    <!-- No card border in dark mode — the elevation shadow defines edges. -->
+    <color name="card_stroke">#00000000</color>
 
     <!-- ─── Soft-card tokens (dark) ────────────────────────────────
          On dark backgrounds we use a faint white sheen instead of an
