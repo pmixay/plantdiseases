@@ -37,6 +37,7 @@ import com.plantdiseases.app.ui.analysis.AnalysisActivity
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
 import kotlinx.coroutines.launch
+import java.io.File
 import java.util.Locale
 
 class CameraFragment : Fragment() {
@@ -51,6 +52,11 @@ class CameraFragment : Fragment() {
     private lateinit var scaleGestureDetector: ScaleGestureDetector
 
     private var captureInFlight = false
+
+    /** Destination file for the in-flight crop. We give the cropper an
+     *  explicit unique output file so each scan produces a distinct path
+     *  — both for the preview (Glide caches by path) and analysis. */
+    private var pendingCropFile: File? = null
 
     private val PREFS_NAME = "plantdiseases_prefs"
     private val KEY_GRID_OVERLAY = "grid_overlay_enabled"
@@ -75,8 +81,9 @@ class CameraFragment : Fragment() {
 
     /** Crop editor (vanniktech android-image-cropper). Both the camera
      *  shutter and the gallery picker funnel their image through here
-     *  before it reaches analysis. The cropper writes the result to its
-     *  own cache file; we hand that path straight to AnalysisActivity. */
+     *  before it reaches analysis. The cropper writes the result to the
+     *  unique [pendingCropFile] we hand it; that exact path goes on to
+     *  AnalysisActivity for both the preview and the upload. */
     private val cropLauncher = registerForActivityResult(CropImageContract()) { result ->
         if (_binding == null) return@registerForActivityResult
         // Returning from the crop activity re-arms the shutter regardless
@@ -85,7 +92,12 @@ class CameraFragment : Fragment() {
         binding.btnCapture.isEnabled = true
         when {
             result.isSuccessful -> {
-                val path = result.getUriFilePath(requireContext())
+                // We set customOutputUri to pendingCropFile, so the crop
+                // lands exactly there — use that path directly rather than
+                // getUriFilePath (which copies to a shared, stale-cached
+                // temp filename).
+                val path = pendingCropFile?.absolutePath
+                    ?: result.uriContent?.path
                 if (path != null) {
                     navigateToAnalysis(path)
                 } else {
@@ -389,14 +401,21 @@ class CameraFragment : Fragment() {
     }
 
     /** Open the crop editor on [sourceUri]. Free-form crop (no fixed
-     *  aspect ratio); the result is written as a JPEG the cropper owns. */
+     *  aspect ratio); the result is written as a JPEG to a unique file we
+     *  own so the preview and analysis both read the cropped image. */
     private fun launchCrop(sourceUri: Uri) {
+        val outFile = File(
+            File(requireContext().filesDir, "plant_images").apply { mkdirs() },
+            "CROP_${System.currentTimeMillis()}.jpg",
+        )
+        pendingCropFile = outFile
         cropLauncher.launch(
             CropImageContractOptions(
                 uri = sourceUri,
                 cropImageOptions = CropImageOptions(
                     guidelines = CropImageView.Guidelines.ON,
                     fixAspectRatio = false,
+                    customOutputUri = Uri.fromFile(outFile),
                     outputCompressFormat = Bitmap.CompressFormat.JPEG,
                     outputCompressQuality = 90,
                     // We supply the image ourselves, so hide the library's
