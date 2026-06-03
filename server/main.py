@@ -1655,7 +1655,7 @@ _FEEDBACK_IN_HEAD_CLASSES: frozenset[str] = frozenset(_HEAD_CLASS_NAMES)
 # "your model can't say this") and tag each row with ``out_of_head=1``
 # so retraining can prioritise expanding the label set.
 # ``leaf_scorch_underwatering`` and ``nutrient_deficiency`` moved
-# into the head set in v2.2 (NOTEBOOK_AUDIT §6) and now arrive via
+# into the head set (train_notebook.ipynb §1) and now arrive via
 # ``_FEEDBACK_IN_HEAD_CLASSES`` instead.
 _FEEDBACK_OUT_OF_HEAD_CLASSES: frozenset[str] = frozenset({
     "edema",
