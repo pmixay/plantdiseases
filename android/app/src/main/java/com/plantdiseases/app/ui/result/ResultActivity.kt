@@ -34,7 +34,6 @@ import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.FeedbackRequest
 import com.plantdiseases.app.data.model.TopProb
-import com.plantdiseases.app.util.RegionResolver
 import com.plantdiseases.app.util.TelemetryIds
 import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.data.repository.ScanRepository
@@ -1166,14 +1165,11 @@ class ResultActivity : AppCompatActivity() {
             }
             card.showLoading(plantSpecies)
 
-            val latLon = RegionResolver.coarseLatLon(this@ResultActivity)
             val request = CarePlanRequest(
                 disease = classKey,
                 species = plantSpecies,
                 light = "bright_indirect",
                 locale = if (isRu) "ru" else "en",
-                latitude = latLon?.first,
-                longitude = latLon?.second,
             )
             val result = app.scanRepository.fetchCarePlan(request)
             result.onSuccess { plan ->

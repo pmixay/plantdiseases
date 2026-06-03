@@ -44,7 +44,6 @@ import com.plantdiseases.app.util.ImageUtils.formatRelativeDate
 import com.plantdiseases.app.ui.common.CarePlanCardView
 import com.plantdiseases.app.ui.result.ResultActivity
 import com.plantdiseases.app.util.Haptics
-import com.plantdiseases.app.util.RegionResolver
 import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.launch
@@ -594,14 +593,11 @@ class PlantDetailActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             val app = application as PlantDiseasesApp
-            val latLon = RegionResolver.coarseLatLon(this@PlantDetailActivity)
             val request = CarePlanRequest(
                 disease = classKey,
                 species = speciesHint,
                 light = "bright_indirect",
                 locale = if (isRu) "ru" else "en",
-                latitude = latLon?.first,
-                longitude = latLon?.second,
             )
             val result = app.scanRepository.fetchCarePlan(request)
             result.onSuccess { plan ->
