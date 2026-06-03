@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
+import android.graphics.Bitmap
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -24,6 +25,10 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
+import com.canhub.cropper.CropImageContract
+import com.canhub.cropper.CropImageContractOptions
+import com.canhub.cropper.CropImageOptions
+import com.canhub.cropper.CropImageView
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.databinding.FragmentCameraBinding
@@ -65,6 +70,33 @@ class CameraFragment : Fragment() {
         ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let { handleGalleryImage(it) }
+    }
+
+    /** Crop editor (vanniktech android-image-cropper). Both the camera
+     *  shutter and the gallery picker funnel their image through here
+     *  before it reaches analysis. The cropper writes the result to its
+     *  own cache file; we hand that path straight to AnalysisActivity. */
+    private val cropLauncher = registerForActivityResult(CropImageContract()) { result ->
+        if (_binding == null) return@registerForActivityResult
+        // Returning from the crop activity re-arms the shutter regardless
+        // of outcome; navigateToAnalysis re-locks it on success.
+        captureInFlight = false
+        binding.btnCapture.isEnabled = true
+        when {
+            result.isSuccessful -> {
+                val path = result.getUriFilePath(requireContext())
+                if (path != null) {
+                    navigateToAnalysis(path)
+                } else {
+                    Toast.makeText(requireContext(), getString(R.string.crop_error), Toast.LENGTH_SHORT).show()
+                }
+            }
+            // result.error == null means the user simply backed out of the
+            // crop screen — stay on the camera silently.
+            result.error != null -> {
+                Toast.makeText(requireContext(), getString(R.string.crop_error), Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     override fun onCreateView(
@@ -309,7 +341,7 @@ class CameraFragment : Fragment() {
                     // double-gate on green-content here — false
                     // positives on textured fabric hurt UX more than
                     // they help.
-                    navigateToAnalysis(photoFile.absolutePath)
+                    launchCrop(Uri.fromFile(photoFile))
                 }
 
                 override fun onError(exception: ImageCaptureException) {
@@ -344,12 +376,37 @@ class CameraFragment : Fragment() {
     }
 
     private fun handleGalleryImage(uri: Uri) {
+        // Copy into our own files dir first so the cropper reads a stable
+        // file:// uri rather than a transient content:// grant that may
+        // not survive the activity hop.
         val file = ImageUtils.copyUriToFile(requireContext(), uri)
         if (file != null) {
-            navigateToAnalysis(file.absolutePath)
+            launchCrop(Uri.fromFile(file))
         } else {
             Toast.makeText(requireContext(), getString(R.string.image_load_error), Toast.LENGTH_SHORT).show()
         }
+    }
+
+    /** Open the crop editor on [sourceUri]. Free-form crop (no fixed
+     *  aspect ratio); the result is written as a JPEG the cropper owns. */
+    private fun launchCrop(sourceUri: Uri) {
+        cropLauncher.launch(
+            CropImageContractOptions(
+                uri = sourceUri,
+                cropImageOptions = CropImageOptions(
+                    guidelines = CropImageView.Guidelines.ON,
+                    fixAspectRatio = false,
+                    outputCompressFormat = Bitmap.CompressFormat.JPEG,
+                    outputCompressQuality = 90,
+                    // We supply the image ourselves, so hide the library's
+                    // built-in source pickers.
+                    imageSourceIncludeGallery = false,
+                    imageSourceIncludeCamera = false,
+                    activityTitle = getString(R.string.crop_title),
+                    cropMenuCropButtonTitle = getString(R.string.crop_action_done),
+                ),
+            )
+        )
     }
 
     private fun navigateToAnalysis(imagePath: String) {
