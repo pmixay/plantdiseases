@@ -279,6 +279,10 @@ DEFAULT_MODEL_BUNDLE_URL = (
 )
 MODEL_BUNDLE_URL = get_str("MODEL_BUNDLE_URL", DEFAULT_MODEL_BUNDLE_URL)
 MODEL_AUTO_FETCH = get("MODEL_AUTO_FETCH", True, cast=bool)
+# Optional cache-buster: when set, a cached bundle whose recorded version
+# differs is re-fetched (so shipping a new model is a version bump, not a
+# manual volume wipe). Empty = presence-based caching only.
+MODEL_BUNDLE_VERSION = get_str("MODEL_BUNDLE_VERSION", "")
 
 MAX_FILE_SIZE = get_int("MAX_FILE_SIZE", 10 * 1024 * 1024)  # 10 MB
 MAX_IMAGE_DIMENSION = get_int("MAX_IMAGE_DIMENSION", 4096)
@@ -811,7 +815,7 @@ async def lifespan(app: FastAPI):
             from .model_fetch import ensure_models  # type: ignore[import-not-found]
         except ImportError:
             from model_fetch import ensure_models
-        ensure_models(MODELS_DIR, MODEL_BUNDLE_URL)
+        ensure_models(MODELS_DIR, MODEL_BUNDLE_URL, version=MODEL_BUNDLE_VERSION)
     pipeline = PlantDiseasePipeline(
         detector_path=DETECTOR_PATH,
         classifier_path=CLASSIFIER_PATH,

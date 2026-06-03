@@ -68,6 +68,14 @@ _RETRY_STATUS = (429, 500, 502, 503, 504)
 _CHUNK = 1 << 20  # 1 MiB
 _PROGRESS_EVERY = 50 << 20  # log every 50 MiB
 
+# Marker recording which bundle version is currently extracted, so a new
+# model ships by bumping MODEL_BUNDLE_VERSION rather than wiping the
+# volume. Artefact files are replaced on every real fetch; these names
+# are never treated as model artefacts and survive the replace.
+_VERSION_MARKER = ".bundle_version"
+_ARTEFACT_SUFFIXES = (".onnx", ".pt", ".pth", ".json", ".jsonl")
+_KEEP_FILES = {".gitkeep", "MODEL_CARD.md", _VERSION_MARKER}
+
 
 class ModelFetchError(RuntimeError):
     """Raised when the model bundle cannot be fetched / is incomplete."""
@@ -261,19 +269,52 @@ def _flatten_into(staging: Path, models_dir: Path) -> None:
 # ── orchestrator ─────────────────────────────────────────────────────
 
 
-def ensure_models(models_dir: Path, url: str, *, force: bool = False) -> bool:
+def _bundle_version(models_dir: Path) -> str:
+    marker = models_dir / _VERSION_MARKER
+    try:
+        return marker.read_text(encoding="utf-8").strip() if marker.exists() else ""
+    except OSError:
+        return ""
+
+
+def _clear_artefacts(models_dir: Path) -> None:
+    """Remove previously-extracted model files before a re-fetch so a model
+    swap can't leave a stale artefact behind (e.g. a v2.2
+    ``classifier_int8.onnx`` shadowing a v2.3 FP32 export, which
+    ``classifier.py`` would still prefer). Keeps ``.gitkeep`` /
+    ``MODEL_CARD.md`` / the version marker."""
+    for p in models_dir.iterdir():
+        if p.is_file() and p.name not in _KEEP_FILES and p.suffix in _ARTEFACT_SUFFIXES:
+            p.unlink(missing_ok=True)
+
+
+def ensure_models(models_dir: Path, url: str, *, version: str = "", force: bool = False) -> bool:
     """Ensure the model bundle is present under ``models_dir``.
 
     Returns ``True`` when a download happened, ``False`` when the cache
-    was already complete. Raises :class:`ModelFetchError` if, after the
-    attempt, any required artefact group is still missing.
+    was already complete (and, if ``version`` is set, already at that
+    version). Raises :class:`ModelFetchError` if, after the attempt, any
+    required artefact group is still missing.
+
+    ``version`` enables cache-busting: when set, a cached bundle whose
+    ``.bundle_version`` marker differs is re-fetched even though the
+    files exist — so shipping a new model is a ``MODEL_BUNDLE_VERSION``
+    bump, not a manual volume wipe.
     """
     models_dir = Path(models_dir)
     models_dir.mkdir(parents=True, exist_ok=True)
 
-    if not force and models_present(models_dir):
-        logger.info("Model artefacts already present in %s — skipping fetch", models_dir)
+    have = models_present(models_dir)
+    version_ok = (not version) or (_bundle_version(models_dir) == version)
+    if not force and have and version_ok:
+        suffix = f" (version {version})" if version else ""
+        logger.info("Model artefacts already present in %s%s — skipping fetch", models_dir, suffix)
         return False
+    if have and version and not version_ok:
+        logger.info(
+            "Model bundle version changed (have=%r want=%r) — re-fetching",
+            _bundle_version(models_dir), version,
+        )
 
     if not url:
         raise ModelFetchError(
@@ -291,6 +332,9 @@ def ensure_models(models_dir: Path, url: str, *, force: bool = False) -> bool:
         staging = tmp_dir / "staging"
         staging.mkdir()
         _extract(archive, staging)
+        # Replace prior artefacts so a model swap is clean (no stale file
+        # surviving under a name the new bundle doesn't ship).
+        _clear_artefacts(models_dir)
         _flatten_into(staging, models_dir)
 
     still_missing = missing_groups(models_dir)
@@ -300,5 +344,7 @@ def ensure_models(models_dir: Path, url: str, *, force: bool = False) -> bool:
             f"{still_missing}. Re-check the bundle contents (expected one of "
             f"each: {[g[1] for g in REQUIRED_GROUPS]})."
         )
-    logger.info("Model bundle ready in %s", models_dir)
+    if version:
+        (models_dir / _VERSION_MARKER).write_text(version, encoding="utf-8")
+    logger.info("Model bundle ready in %s%s", models_dir, f" (version {version})" if version else "")
     return True

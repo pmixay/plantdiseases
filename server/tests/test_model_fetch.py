@@ -143,3 +143,37 @@ def test_ensure_models_force_with_no_url_fails_loud(tmp_path: Path):
         (tmp_path / n).write_bytes(b"x")
     with pytest.raises(mf.ModelFetchError):
         mf.ensure_models(tmp_path, "", force=True)
+
+
+def test_ensure_models_version_match_skips(tmp_path: Path):
+    for n in ("classifier.onnx", "detector.onnx", "classes.json"):
+        (tmp_path / n).write_bytes(b"x")
+    (tmp_path / mf._VERSION_MARKER).write_text("v2.3.1")
+    # Present AND version matches -> skip without touching the network.
+    assert mf.ensure_models(tmp_path, "https://unused.invalid/x.tar", version="v2.3.1") is False
+
+
+def test_ensure_models_version_mismatch_triggers_refetch(tmp_path: Path):
+    for n in ("classifier.onnx", "detector.onnx", "classes.json"):
+        (tmp_path / n).write_bytes(b"x")
+    (tmp_path / mf._VERSION_MARKER).write_text("v2.2.0")
+    # Version differs -> must attempt a fetch; with a blank URL that surfaces
+    # as the fail-loud branch (proves it did NOT take the idempotent skip).
+    with pytest.raises(mf.ModelFetchError):
+        mf.ensure_models(tmp_path, "", version="v2.3.1")
+
+
+def test_clear_artefacts_keeps_docs_and_marker(tmp_path: Path):
+    (tmp_path / "classifier_int8.onnx").write_bytes(b"x")
+    (tmp_path / "detector.pt").write_bytes(b"x")
+    (tmp_path / "classes.json").write_text("{}")
+    (tmp_path / "MODEL_CARD.md").write_text("# card")
+    (tmp_path / ".gitkeep").write_text("")
+    (tmp_path / mf._VERSION_MARKER).write_text("v1")
+    mf._clear_artefacts(tmp_path)
+    assert not (tmp_path / "classifier_int8.onnx").exists()
+    assert not (tmp_path / "detector.pt").exists()
+    assert not (tmp_path / "classes.json").exists()
+    assert (tmp_path / "MODEL_CARD.md").exists()
+    assert (tmp_path / ".gitkeep").exists()
+    assert (tmp_path / mf._VERSION_MARKER).exists()
