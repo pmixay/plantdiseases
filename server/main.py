@@ -56,6 +56,9 @@ try:
         COMMUNITY_THUMB_DIR,
     )
     from .community import (
+        daily_opinion_count_for_ip_hash as community_daily_opinion_writes,
+    )
+    from .community import (
         daily_write_count_for_ip_hash as community_daily_writes,
     )
     from .community import (
@@ -66,9 +69,6 @@ try:
     )
     from .community import (
         init_db as init_community_db,
-    )
-    from .community import (
-        daily_opinion_count_for_ip_hash as community_daily_opinion_writes,
     )
     from .community import (
         nearby_scans as community_nearby_scans,
@@ -93,7 +93,6 @@ try:
     )
     from .config import get, get_float, get_int, get_list, get_str
     from .diseases_data import DISEASES_DATABASE, lookup_pet_toxicity
-    from .weather import fetch_weather
     from .feedback import (
         attach_image_path as feedback_attach_image_path,
     )
@@ -121,6 +120,7 @@ try:
         prune_older_than as feedback_prune_older_than,
     )
     from .pipeline import PlantDiseasePipeline
+    from .weather import fetch_weather
 except ImportError:
     from ai_services import (
         chat_metrics_snapshot,
@@ -133,6 +133,9 @@ except ImportError:
         COMMUNITY_THUMB_DIR,
     )
     from community import (
+        daily_opinion_count_for_ip_hash as community_daily_opinion_writes,
+    )
+    from community import (
         daily_write_count_for_ip_hash as community_daily_writes,
     )
     from community import (
@@ -143,9 +146,6 @@ except ImportError:
     )
     from community import (
         init_db as init_community_db,
-    )
-    from community import (
-        daily_opinion_count_for_ip_hash as community_daily_opinion_writes,
     )
     from community import (
         nearby_scans as community_nearby_scans,
@@ -170,7 +170,6 @@ except ImportError:
     )
     from config import get, get_float, get_int, get_list, get_str
     from diseases_data import DISEASES_DATABASE, lookup_pet_toxicity
-    from weather import fetch_weather
     from feedback import (
         attach_image_path as feedback_attach_image_path,
     )
@@ -198,6 +197,7 @@ except ImportError:
         prune_older_than as feedback_prune_older_than,
     )
     from pipeline import PlantDiseasePipeline
+    from weather import fetch_weather
 
 def _resolve_app_version() -> str:
     """Resolve the served model/app version.
