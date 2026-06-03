@@ -351,6 +351,56 @@ def test_mpld_excludes_control_and_is_downweighted():
     )
 
 
+def test_crop_supplements_capped_to_bound_prior_inflation():
+    """v2.3.0 loaded ~1000 crop nutrient_deficiency rows, which inflated the
+    class's logit-adjustment prior to head-class level (0.1165) and tanked
+    in-domain recall (0.55->0.26). The crop caps at the fetch call sites must
+    stay LOW so the class doesn't dominate (which is what drives the count-
+    derived LA prior)."""
+    src = _notebook_source()
+    m = re.search(r"fetch_mpld_phosphorus_deficiency,\s*\n?\s*cap=(\d+)", src)
+    assert m and int(m.group(1)) <= 300, (
+        "MPLD cap must be reduced (<=300) to bound crop dominance of nutrient_deficiency"
+    )
+    c = re.search(r"fetch_coleaf_nutrient_deficiency,\s*\n?\s*per_zip_cap=(\d+)", src)
+    assert c and int(c.group(1)) <= 90, (
+        "CoLeaf per_zip_cap must be reduced (<=90) to bound crop dominance"
+    )
+
+
+def test_la_prior_decoupled_from_crop_sampler_weight():
+    """The logit-adjustment prior must track DEPLOYMENT frequency, not the
+    crop-inflated training count. Crop sources (coleaf, mpld) must enter the
+    LA prior at a SMALLER weight than their 0.5 sampler weight, and the LA
+    prior helper must be fed PRIOR_SOURCE_WEIGHTS (not the raw sampler
+    SOURCE_WEIGHTS) — otherwise nutrient_deficiency is treated as a head
+    class and suppressed at inference."""
+    src = _notebook_source()
+    assert "PRIOR_SOURCE_WEIGHTS" in src, "LA prior is not decoupled from the sampler"
+    assert re.search(
+        r"class_priors_from_source_weights\(\s*train_ds,\s*PRIOR_SOURCE_WEIGHTS", src), (
+        "the LA prior must be computed from PRIOR_SOURCE_WEIGHTS, not SOURCE_WEIGHTS"
+    )
+    for crop in ("coleaf", "mpld"):
+        m = re.search(rf"PRIOR_SOURCE_WEIGHTS\['{crop}'\]\s*=\s*([0-9.]+)", src)
+        assert m and float(m.group(1)) < 0.5, (
+            f"PRIOR_SOURCE_WEIGHTS['{crop}'] must be < its 0.5 sampler weight "
+            f"(de-inflate the deployment prior while still training on the signal)"
+        )
+
+
+def test_prefer_fp32_switch_ships_fp32_graph():
+    """This deployment has CPU latency headroom and v2.3.0's INT8 showed a
+    significant drift, so the export must support shipping FP32: a PREFER_FP32
+    switch that removes classifier_int8.onnx and ships the FP32 classifier.onnx
+    (which classifier.py then loads as the only ONNX artefact)."""
+    src = _notebook_source()
+    assert "PREFER_FP32" in src, "no PREFER_FP32 switch in the export"
+    assert re.search(r"_ship_fp32\s*=\s*PREFER_FP32\s*or\s*\(drift\s*>\s*FAIL_DRIFT\)", src), (
+        "the ship gate must honour PREFER_FP32 (OR the existing drift>FAIL gate)"
+    )
+
+
 def test_inat_physiological_label_noise_controls():
     """Report Stage 2: clean the noisy iNat free-text labels without
     corrupting data. Two non-destructive controls must be present: the
