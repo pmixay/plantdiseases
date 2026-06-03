@@ -182,23 +182,71 @@ def test_head_training_early_stops_and_restores_best():
     )
 
 
-def test_backbone_is_frozen_and_only_head_is_optimised():
-    """Report Stage 1: the DINOv2 ViT-S/14 backbone must stay FROZEN — its
-    params requires_grad=False, it never leaves eval(), and the optimiser
-    only sees the head's params. This is what makes the ~0.91 linear-probe
-    ceiling reproducible and keeps the (LayerNorm-only) stats identical at
-    train / eval / export time. The old EMA-teacher machinery is gone."""
+def test_backbone_base_frozen_head_and_optional_lora_trained():
+    """Report Stage 1: the DINOv2 ViT-S/14 BASE weights must stay FROZEN
+    (requires_grad=False) and the backbone never leaves eval(), so the
+    LayerNorm stats are identical at train / eval / export time. The head
+    always trains; the optional LoRA adapters (later blocks) may also train
+    at a lower LR. The old EMA-teacher machinery is gone."""
     src = _notebook_source()
     assert "DINOv2Classifier" in src, "frozen-DINOv2 model class missing"
-    assert "p.requires_grad_(False)" in src, "backbone params are not frozen"
+    assert "p.requires_grad_(False)" in src, "backbone base params are not frozen"
     assert "model.backbone.eval()" in src, (
-        "frozen backbone must stay in eval() during head training"
+        "backbone must stay in eval() during head/LoRA training"
     )
     assert "torch.optim.AdamW(model.head.parameters()" in src, (
-        "optimiser must train the head ONLY (backbone frozen)"
+        "the head must always be optimised"
     )
     # The removed EMA-teacher machinery must not creep back.
     assert "ema_update" not in src, "EMA-teacher machinery should be gone (no KD)"
+
+
+def test_lora_is_low_rank_later_blocks_and_merged_for_export():
+    """Report 'last few points': LoRA must (a) be toggleable, (b) adapt only
+    the LATER blocks (early frozen), (c) feed its params to the optimiser at
+    a lower LR than the head, and (d) be merged into the base Linears BEFORE
+    the ONNX export so the shipped graph stays a single self-contained file
+    (validated parity ~1e-6). The base stays frozen regardless."""
+    src = _notebook_source()
+    assert re.search(r"USE_LORA\s*=\s*(True|False)", src), "no USE_LORA toggle"
+    assert "get_peft_model(" in src and "LoraConfig(" in src, "peft LoRA not wired"
+    assert "LORA_LAST_K_BLOCKS" in src, "LoRA must restrict to the later blocks"
+    # lower LR for the adapters than the head
+    assert re.search(r"'params':\s*_lora_params,\s*'lr':\s*LORA_LR", src), (
+        "LoRA params must be a distinct optimiser group at LORA_LR"
+    )
+    # merged before export, in the USE_LORA branch, so the ONNX is one graph
+    assert "merge_and_unload()" in src, "LoRA must be merged before ONNX export"
+    mpos = src.find("merge_and_unload()")
+    epos = src.find("export_model = model.to('cpu').eval()")
+    assert 0 < mpos < epos, "merge_and_unload must run BEFORE the ONNX export"
+
+
+def test_hflip_tta_enabled_with_logit_averaging():
+    """Report Stage 3: hflip TTA is near-free given the CPU headroom and is
+    now ON. It must average LOGITS (so temperature/conformal/MaxLogit stay
+    valid) and the same mode is written to classes.json for the server."""
+    src = _notebook_source()
+    assert re.search(r"USE_TTA_HFLIP\s*=\s*True", src), "hflip TTA should be enabled"
+    assert "x_np[..., ::-1]" in src, "TTA must flip along the width axis"
+
+
+def test_stage0_weakclass_supply_broadened():
+    """Report Stage 0: the weak-class eval slices were too small to certify
+    (n~=19-28). The in-domain free-text query lists must be broadened (more
+    DISTINCT terms => more distinct observations => bigger train AND eval
+    slices) and the fetch target raised so the larger lists are drawn."""
+    src = _notebook_source()
+    block = re.search(r"INAT_PHYSIOLOGICAL_QUERIES\s*=\s*\{.*?\n\}", src, re.DOTALL)
+    assert block, "physiological query table missing"
+    for cls in ("leaf_scorch_underwatering", "nutrient_deficiency"):
+        seg = re.search(rf"'{cls}':\s*\[(.*?)\]", block.group(0), re.DOTALL)
+        assert seg and seg.group(1).count("',") + 1 >= 18, (
+            f"{cls} query list must be broadened to >=18 terms for Stage 0"
+        )
+    assert "fetch_inat_physiological, per_class=1000" in src, (
+        "per_class target must be raised so the broadened query set is drawn"
+    )
 
 
 def test_no_knowledge_distillation_in_pipeline():
@@ -291,6 +339,113 @@ def test_coleaf_is_downweighted_and_excludes_healthy():
     assert "healthy" not in lowered and "more-deficiencies" not in lowered, (
         "CoLeaf import must exclude healthy / mixed zips — every imported row "
         "must be an unambiguous single-nutrient deficiency"
+    )
+
+
+def test_mpld_supplements_nutrient_deficiency_train_only():
+    """Report Stage 2 (species diversity): a SECOND nutrient-deficiency
+    source so the signal isn't tied to coffee morphology. MPLD (maize
+    phosphorus, Zenodo 10041514, CC BY 4.0) must (a) be fetched into
+    nutrient_deficiency, (b) carry a HIGH label_confidence (expert-
+    controlled, unlike the noisy iNat free-text), and (c) be TRAIN-ONLY —
+    its 'mpld' source must NOT appear in any make_*_split allowed_sources,
+    or crop imagery would leak into the in-domain houseplant eval/cal
+    splits and corrupt the metrics."""
+    src = _notebook_source()
+    assert "fetch_mpld_phosphorus_deficiency" in src, "MPLD supplement missing"
+    assert "_MPLD_URL" in src and "10041514" in src, (
+        "MPLD Zenodo source (record 10041514) not wired in"
+    )
+    m = re.search(r"def fetch_mpld_phosphorus_deficiency\([^)]*label_confidence=([0-9.]+)", src)
+    assert m and float(m.group(1)) >= 0.85, (
+        "MPLD should ship a high label_confidence (curated expert labels)"
+    )
+    # Train-only: 'mpld' must never be an allowed source on any eval split.
+    for split_fn in ("make_val_realworld", "make_val_indomain",
+                     "make_temperature_cal", "make_conformal_cal"):
+        body = re.search(rf"def {split_fn}\(.*?\n(?:.*\n){{0,12}}", src)
+        assert body and "mpld" not in body.group(0), (
+            f"{split_fn} must NOT allow the 'mpld' source — MPLD is a crop "
+            f"supplement and would corrupt the in-domain houseplant eval slice"
+        )
+    # And it must run before the dedup/split so its rows are deduped + scoped.
+    mpld_pos = src.find("_try_fetch('mpld_phosphorus_deficiency'")
+    dedup_pos = src.find("_dedup_train_in_place(TRAIN_ROOT")
+    assert 0 < mpld_pos < dedup_pos, (
+        "MPLD fetch must run before the pre-split dedup"
+    )
+
+
+def test_mpld_excludes_control_and_is_downweighted():
+    """MPLD is a CROP-domain supplement: it must be down-weighted in the
+    source-weighted sampler (< 1.0), and it must import ONLY the phosphorus-
+    deficiency folders ('-P', '-P50') while EXCLUDING the '_C' control
+    (fully-fed = healthy) — importing control leaves would mislabel the
+    nutrient_deficiency class exactly like a CoLeaf 'healthy' zip would."""
+    src = _notebook_source()
+    m = re.search(r"'mpld'\s*:\s*([0-9.]+)", src)
+    assert m and float(m.group(1)) < 1.0, (
+        "'mpld' must be down-weighted (<1.0) in SOURCE_WEIGHTS (crop domain gap)"
+    )
+    dirs = re.search(r"MPLD_DEFICIENCY_DIRS\s*=\s*\(([^)]*)\)", src)
+    assert dirs, "MPLD_DEFICIENCY_DIRS table missing"
+    block = dirs.group(1)
+    assert "'-P'" in block and "'-P50'" in block, (
+        "MPLD must import the '-P' and '-P50' deficiency folders"
+    )
+    assert "'_C'" not in block, (
+        "MPLD must NOT list the '_C' control folder among deficiency dirs — "
+        "control leaves are healthy and would mislabel nutrient_deficiency"
+    )
+
+
+def test_crop_supplements_capped_to_bound_prior_inflation():
+    """v2.3.0 loaded ~1000 crop nutrient_deficiency rows, which inflated the
+    class's logit-adjustment prior to head-class level (0.1165) and tanked
+    in-domain recall (0.55->0.26). The crop caps at the fetch call sites must
+    stay LOW so the class doesn't dominate (which is what drives the count-
+    derived LA prior)."""
+    src = _notebook_source()
+    m = re.search(r"fetch_mpld_phosphorus_deficiency,\s*\n?\s*cap=(\d+)", src)
+    assert m and int(m.group(1)) <= 300, (
+        "MPLD cap must be reduced (<=300) to bound crop dominance of nutrient_deficiency"
+    )
+    c = re.search(r"fetch_coleaf_nutrient_deficiency,\s*\n?\s*per_zip_cap=(\d+)", src)
+    assert c and int(c.group(1)) <= 90, (
+        "CoLeaf per_zip_cap must be reduced (<=90) to bound crop dominance"
+    )
+
+
+def test_la_prior_decoupled_from_crop_sampler_weight():
+    """The logit-adjustment prior must track DEPLOYMENT frequency, not the
+    crop-inflated training count. Crop sources (coleaf, mpld) must enter the
+    LA prior at a SMALLER weight than their 0.5 sampler weight, and the LA
+    prior helper must be fed PRIOR_SOURCE_WEIGHTS (not the raw sampler
+    SOURCE_WEIGHTS) — otherwise nutrient_deficiency is treated as a head
+    class and suppressed at inference."""
+    src = _notebook_source()
+    assert "PRIOR_SOURCE_WEIGHTS" in src, "LA prior is not decoupled from the sampler"
+    assert re.search(
+        r"class_priors_from_source_weights\(\s*train_ds,\s*PRIOR_SOURCE_WEIGHTS", src), (
+        "the LA prior must be computed from PRIOR_SOURCE_WEIGHTS, not SOURCE_WEIGHTS"
+    )
+    for crop in ("coleaf", "mpld"):
+        m = re.search(rf"PRIOR_SOURCE_WEIGHTS\['{crop}'\]\s*=\s*([0-9.]+)", src)
+        assert m and float(m.group(1)) < 0.5, (
+            f"PRIOR_SOURCE_WEIGHTS['{crop}'] must be < its 0.5 sampler weight "
+            f"(de-inflate the deployment prior while still training on the signal)"
+        )
+
+
+def test_prefer_fp32_switch_ships_fp32_graph():
+    """This deployment has CPU latency headroom and v2.3.0's INT8 showed a
+    significant drift, so the export must support shipping FP32: a PREFER_FP32
+    switch that removes classifier_int8.onnx and ships the FP32 classifier.onnx
+    (which classifier.py then loads as the only ONNX artefact)."""
+    src = _notebook_source()
+    assert "PREFER_FP32" in src, "no PREFER_FP32 switch in the export"
+    assert re.search(r"_ship_fp32\s*=\s*PREFER_FP32\s*or\s*\(drift\s*>\s*FAIL_DRIFT\)", src), (
+        "the ship gate must honour PREFER_FP32 (OR the existing drift>FAIL gate)"
     )
 
 
