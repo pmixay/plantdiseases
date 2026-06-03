@@ -6,6 +6,8 @@ import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.CarePlanResponse
 import com.plantdiseases.app.data.model.ChatRequest
 import com.plantdiseases.app.data.model.ChatResponse
+import com.plantdiseases.app.data.model.CommunityOpinionRequest
+import com.plantdiseases.app.data.model.CommunityOpinionsResponse
 import com.plantdiseases.app.data.model.CommunityScansResponse
 import com.plantdiseases.app.data.model.CommunityScanUploadResponse
 import com.plantdiseases.app.data.model.FeedbackRequest
@@ -125,6 +127,18 @@ interface ApiService {
     suspend fun communityScanDeleteUser(
         @Path("user_pseudo_id") userPseudoId: String,
     ): retrofit2.Response<FeedbackResponse>
+
+    /** Submit a community "second opinion" on a shared scan. */
+    @POST("api/community/opinion")
+    suspend fun communitySubmitOpinion(
+        @Body request: CommunityOpinionRequest,
+    ): retrofit2.Response<CommunityOpinionsResponse>
+
+    /** List community opinions + consensus tally for a shared scan. */
+    @GET("api/community/opinions/{scan_id}")
+    suspend fun communityGetOpinions(
+        @Path("scan_id") scanId: String,
+    ): retrofit2.Response<CommunityOpinionsResponse>
 }
 
 /**

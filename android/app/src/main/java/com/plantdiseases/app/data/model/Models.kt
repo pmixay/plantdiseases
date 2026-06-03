@@ -197,6 +197,31 @@ data class CommunityScanUploadResponse(
     @SerializedName("id") val id: Long = 0,
 )
 
+/** /api/community/opinion request body. */
+data class CommunityOpinionRequest(
+    @SerializedName("scan_id") val scanId: String,
+    @SerializedName("user_pseudo_id") val userPseudoId: String,
+    @SerializedName("suggested_disease") val suggestedDisease: String,
+    @SerializedName("note") val note: String? = null,
+)
+
+/** One community 'second opinion' on a shared scan. */
+data class CommunityOpinion(
+    @SerializedName("suggested_disease") val suggestedDisease: String,
+    @SerializedName("note") val note: String = "",
+    @SerializedName("created_at") val createdAt: Long = 0L,
+)
+
+/** /api/community/opinions/{scan_id} response. POST /opinion returns the
+ *  same shape plus `ok` + `count`. */
+data class CommunityOpinionsResponse(
+    @SerializedName("scan_id") val scanId: String = "",
+    @SerializedName("opinions") val opinions: List<CommunityOpinion> = emptyList(),
+    @SerializedName("consensus") val consensus: List<CommunityTopDisease> = emptyList(),
+    @SerializedName("ok") val ok: Boolean = false,
+    @SerializedName("count") val count: Int = 0,
+)
+
 /** Guide article about plant care */
 data class GuideItem(
     val id: String,

@@ -172,6 +172,18 @@
     <string name="similar_scans_subtitle_region">Recent diagnoses near %1$s</string>
     <string name="similar_scans_subtitle_no_region">Enable approximate location to see scans near you.</string>
     <string name="similar_scans_empty">No nearby scans yet — your scan will be the first.</string>
+    <!-- Community second opinion -->
+    <string name="community_opinion_title">Get a second opinion</string>
+    <string name="community_opinion_subtitle">Ask the community what they think — and weigh in on others\' scans.</string>
+    <string name="community_opinion_diagnosis_label">Diagnosis</string>
+    <string name="community_opinion_pick_label">What do you think it is?</string>
+    <string name="community_opinion_note_hint">Add a note (optional)</string>
+    <string name="community_opinion_send">Post opinion</string>
+    <string name="community_opinion_consensus_prefix">Community so far: %1$s</string>
+    <string name="community_opinion_empty">No opinions yet — be the first to weigh in.</string>
+    <string name="community_opinion_thanks">Thanks for your opinion!</string>
+    <string name="community_opinion_error">Couldn\'t reach the community. Try again.</string>
+    <string name="result_get_second_opinion">Get a second opinion</string>
     <string name="similar_scans_chip_format">%1$s · %2$d</string>
 
     <!-- Community consent + Profile toggle -->

@@ -8,6 +8,8 @@ import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.CarePlanResponse
 import com.plantdiseases.app.data.model.ChatRequest
 import com.plantdiseases.app.data.model.ChatResponse
+import com.plantdiseases.app.data.model.CommunityOpinionRequest
+import com.plantdiseases.app.data.model.CommunityOpinionsResponse
 import com.plantdiseases.app.data.model.FeedbackRequest
 import com.plantdiseases.app.data.model.FeedbackResponse
 import com.plantdiseases.app.data.model.HealthResponse
@@ -130,6 +132,46 @@ class ScanRepository(
                     Result.success(response.body()!!)
                 } else if (response.code() == 503) {
                     Result.failure(ServerStartingException())
+                } else {
+                    Result.failure(Exception("Server error: ${response.code()}"))
+                }
+            } catch (e: SocketTimeoutException) {
+                Result.failure(ServerTimeoutException())
+            } catch (e: UnknownHostException) {
+                Result.failure(NoNetworkException())
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+    /** List community "second opinions" + consensus for a shared scan. */
+    suspend fun getCommunityOpinions(scanId: String): Result<CommunityOpinionsResponse> =
+        withContext(Dispatchers.IO) {
+            try {
+                val response = apiService.communityGetOpinions(scanId)
+                if (response.isSuccessful && response.body() != null) {
+                    Result.success(response.body()!!)
+                } else {
+                    Result.failure(Exception("Server error: ${response.code()}"))
+                }
+            } catch (e: SocketTimeoutException) {
+                Result.failure(ServerTimeoutException())
+            } catch (e: UnknownHostException) {
+                Result.failure(NoNetworkException())
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+    /** Submit one community "second opinion". Returns the refreshed list. */
+    suspend fun submitCommunityOpinion(
+        request: CommunityOpinionRequest,
+    ): Result<CommunityOpinionsResponse> =
+        withContext(Dispatchers.IO) {
+            try {
+                val response = apiService.communitySubmitOpinion(request)
+                if (response.isSuccessful && response.body() != null) {
+                    Result.success(response.body()!!)
                 } else {
                     Result.failure(Exception("Server error: ${response.code()}"))
                 }

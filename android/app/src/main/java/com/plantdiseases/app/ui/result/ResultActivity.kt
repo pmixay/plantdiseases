@@ -379,6 +379,16 @@ class ResultActivity : AppCompatActivity() {
                 finish()
             }
 
+            // When unsure, let the user crowd-source a verdict on their own
+            // (already community-shared) scan, keyed by its client scan id.
+            btnSecondOpinion.setOnClickListener {
+                CommunityOpinionSheet.show(
+                    supportFragmentManager,
+                    scan.clientScanId,
+                    classKeyDisplayName(repository.topClassKey(scan) ?: "", isRu),
+                )
+            }
+
             // Animate cards from bottom
             animateCardsIn()
 
@@ -613,7 +623,18 @@ class ResultActivity : AppCompatActivity() {
             ?: scan.diseaseName.lowercase().replace(' ', '_')
         val app = application as PlantDiseasesApp
         val pseudoId = com.plantdiseases.app.util.TelemetryIds.userPseudoId(this)
-        val adapter = SimilarScansAdapter { key -> classKeyDisplayName(key, isRu) ?: key }
+        val adapter = SimilarScansAdapter(
+            displayName = { key -> classKeyDisplayName(key, isRu) ?: key },
+            onClick = { item ->
+                // Tapping a "near you" scan lets the user weigh in with a
+                // second opinion on someone else's uncertain verdict.
+                CommunityOpinionSheet.show(
+                    supportFragmentManager,
+                    item.scanId,
+                    classKeyDisplayName(item.disease, isRu) ?: item.disease,
+                )
+            },
+        )
         rv.adapter = adapter
         rv.layoutManager = androidx.recyclerview.widget.LinearLayoutManager(
             this, androidx.recyclerview.widget.LinearLayoutManager.HORIZONTAL, false,

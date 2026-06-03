@@ -171,6 +171,18 @@
     <string name="similar_scans_subtitle_region">Недавние диагнозы рядом с %1$s</string>
     <string name="similar_scans_subtitle_no_region">Включите приблизительное местоположение, чтобы видеть сканы рядом.</string>
     <string name="similar_scans_empty">Похожих сканов пока нет — ваш будет первым.</string>
+    <!-- Community second opinion -->
+    <string name="community_opinion_title">Второе мнение</string>
+    <string name="community_opinion_subtitle">Спросите сообщество — и оцените чужие сканы.</string>
+    <string name="community_opinion_diagnosis_label">Диагноз</string>
+    <string name="community_opinion_pick_label">Что это, по-вашему?</string>
+    <string name="community_opinion_note_hint">Комментарий (необязательно)</string>
+    <string name="community_opinion_send">Отправить мнение</string>
+    <string name="community_opinion_consensus_prefix">Мнения сообщества: %1$s</string>
+    <string name="community_opinion_empty">Пока нет мнений — будьте первым.</string>
+    <string name="community_opinion_thanks">Спасибо за ваше мнение!</string>
+    <string name="community_opinion_error">Не удалось связаться с сообществом. Повторите.</string>
+    <string name="result_get_second_opinion">Получить второе мнение</string>
     <string name="similar_scans_chip_format">%1$s · %2$d</string>
     <string name="community_toggle_title">Делиться сканами с сообществом</string>
     <string name="community_toggle_subtitle">Регион + диагноз + миниатюра 512px. Можно выключить — всё останется на устройстве.</string>

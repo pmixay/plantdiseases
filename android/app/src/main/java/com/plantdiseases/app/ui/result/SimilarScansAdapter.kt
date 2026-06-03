@@ -22,6 +22,7 @@ import com.plantdiseases.app.util.ServerConfig
  */
 class SimilarScansAdapter(
     private val displayName: (String) -> String,
+    private val onClick: (CommunityScanItem) -> Unit = {},
 ) : RecyclerView.Adapter<SimilarScansAdapter.VH>() {
 
     private var items: List<CommunityScanItem> = emptyList()
@@ -50,6 +51,7 @@ class SimilarScansAdapter(
         private val time: TextView = itemView.findViewById(R.id.tv_similar_time)
 
         fun bind(item: CommunityScanItem) {
+            itemView.setOnClickListener { onClick(item) }
             label.text = displayName(item.disease)
             region.text = formatRegion(item.region, item.country)
             time.text = formatTimeAgo(item.createdAt)
