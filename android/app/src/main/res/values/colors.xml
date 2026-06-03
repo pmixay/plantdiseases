@@ -58,11 +58,6 @@
          Kept as a subtle green-tinted off-white so panels lift off the
          pure-white background without looking corporate-grey. -->
     <color name="surface_container_low">#F4FBF6</color>
-    <!-- Hairline border that defines card edges in light mode. Light cards
-         sit at 0dp elevation (no drop shadow), so without a border they
-         read as bleeding into the white page; this gives them a crisp
-         outline. Transparent in dark, where the shadow does the job. -->
-    <color name="card_stroke">#14052E16</color>
     <color name="surface_container">#ECF7F0</color>
 
     <!-- ─── Soft-card tokens ───────────────────────────────────────
