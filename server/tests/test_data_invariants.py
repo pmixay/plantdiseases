@@ -182,23 +182,71 @@ def test_head_training_early_stops_and_restores_best():
     )
 
 
-def test_backbone_is_frozen_and_only_head_is_optimised():
-    """Report Stage 1: the DINOv2 ViT-S/14 backbone must stay FROZEN — its
-    params requires_grad=False, it never leaves eval(), and the optimiser
-    only sees the head's params. This is what makes the ~0.91 linear-probe
-    ceiling reproducible and keeps the (LayerNorm-only) stats identical at
-    train / eval / export time. The old EMA-teacher machinery is gone."""
+def test_backbone_base_frozen_head_and_optional_lora_trained():
+    """Report Stage 1: the DINOv2 ViT-S/14 BASE weights must stay FROZEN
+    (requires_grad=False) and the backbone never leaves eval(), so the
+    LayerNorm stats are identical at train / eval / export time. The head
+    always trains; the optional LoRA adapters (later blocks) may also train
+    at a lower LR. The old EMA-teacher machinery is gone."""
     src = _notebook_source()
     assert "DINOv2Classifier" in src, "frozen-DINOv2 model class missing"
-    assert "p.requires_grad_(False)" in src, "backbone params are not frozen"
+    assert "p.requires_grad_(False)" in src, "backbone base params are not frozen"
     assert "model.backbone.eval()" in src, (
-        "frozen backbone must stay in eval() during head training"
+        "backbone must stay in eval() during head/LoRA training"
     )
     assert "torch.optim.AdamW(model.head.parameters()" in src, (
-        "optimiser must train the head ONLY (backbone frozen)"
+        "the head must always be optimised"
     )
     # The removed EMA-teacher machinery must not creep back.
     assert "ema_update" not in src, "EMA-teacher machinery should be gone (no KD)"
+
+
+def test_lora_is_low_rank_later_blocks_and_merged_for_export():
+    """Report 'last few points': LoRA must (a) be toggleable, (b) adapt only
+    the LATER blocks (early frozen), (c) feed its params to the optimiser at
+    a lower LR than the head, and (d) be merged into the base Linears BEFORE
+    the ONNX export so the shipped graph stays a single self-contained file
+    (validated parity ~1e-6). The base stays frozen regardless."""
+    src = _notebook_source()
+    assert re.search(r"USE_LORA\s*=\s*(True|False)", src), "no USE_LORA toggle"
+    assert "get_peft_model(" in src and "LoraConfig(" in src, "peft LoRA not wired"
+    assert "LORA_LAST_K_BLOCKS" in src, "LoRA must restrict to the later blocks"
+    # lower LR for the adapters than the head
+    assert re.search(r"'params':\s*_lora_params,\s*'lr':\s*LORA_LR", src), (
+        "LoRA params must be a distinct optimiser group at LORA_LR"
+    )
+    # merged before export, in the USE_LORA branch, so the ONNX is one graph
+    assert "merge_and_unload()" in src, "LoRA must be merged before ONNX export"
+    mpos = src.find("merge_and_unload()")
+    epos = src.find("export_model = model.to('cpu').eval()")
+    assert 0 < mpos < epos, "merge_and_unload must run BEFORE the ONNX export"
+
+
+def test_hflip_tta_enabled_with_logit_averaging():
+    """Report Stage 3: hflip TTA is near-free given the CPU headroom and is
+    now ON. It must average LOGITS (so temperature/conformal/MaxLogit stay
+    valid) and the same mode is written to classes.json for the server."""
+    src = _notebook_source()
+    assert re.search(r"USE_TTA_HFLIP\s*=\s*True", src), "hflip TTA should be enabled"
+    assert "x_np[..., ::-1]" in src, "TTA must flip along the width axis"
+
+
+def test_stage0_weakclass_supply_broadened():
+    """Report Stage 0: the weak-class eval slices were too small to certify
+    (n~=19-28). The in-domain free-text query lists must be broadened (more
+    DISTINCT terms => more distinct observations => bigger train AND eval
+    slices) and the fetch target raised so the larger lists are drawn."""
+    src = _notebook_source()
+    block = re.search(r"INAT_PHYSIOLOGICAL_QUERIES\s*=\s*\{.*?\n\}", src, re.DOTALL)
+    assert block, "physiological query table missing"
+    for cls in ("leaf_scorch_underwatering", "nutrient_deficiency"):
+        seg = re.search(rf"'{cls}':\s*\[(.*?)\]", block.group(0), re.DOTALL)
+        assert seg and seg.group(1).count("',") + 1 >= 18, (
+            f"{cls} query list must be broadened to >=18 terms for Stage 0"
+        )
+    assert "fetch_inat_physiological, per_class=1000" in src, (
+        "per_class target must be raised so the broadened query set is drawn"
+    )
 
 
 def test_no_knowledge_distillation_in_pipeline():
