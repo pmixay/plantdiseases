@@ -21,6 +21,7 @@ EXPECTED_CLASSES = {
     "leaf_spot",
     "not_a_plant",
     "nutrient_deficiency",
+    "pests",
     "powdery_mildew",
     "viral_disease",
 }
@@ -39,10 +40,11 @@ def test_not_a_plant_class_is_present():
     assert "not_a_plant" in DEFAULT_CLASS_NAMES
 
 
-def test_taxonomy_is_v22_disease_only():
-    """PlantVision 2.2 carries 9 trainable classes. The remaining two
-    physiological conditions (edema, sunburn_or_scorch) are deferred
-    until labelled real-world data is added."""
+def test_taxonomy_is_v2x_disease_only():
+    """PlantVision v2.x carries 9 trainable classes (incl. the combined
+    ``pests`` head). The remaining physiological conditions (edema,
+    sunburn_or_scorch) are deferred until labelled real-world data is
+    added."""
     from classifier import DEFAULT_CLASS_NAMES
 
     assert set(DEFAULT_CLASS_NAMES) == EXPECTED_CLASSES, (

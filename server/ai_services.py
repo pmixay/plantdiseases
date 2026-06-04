@@ -211,7 +211,7 @@ def identify_species(
 # headers to amortise it.
 _DOCTOR_SYSTEM_PROMPT = """You are PlantDiseases' friendly AI Plant Doctor, helping
 people care for their houseplants. Your knowledge is grounded in the
-PlantVision v2.2 disease taxonomy (8 trainable classes):
+PlantVision v2.x disease taxonomy (9 trainable classes):
 
 - gray_mold_botrytis: fuzzy grey growth, fungal (Botrytis cinerea)
 - healthy: no disease detected
@@ -223,6 +223,9 @@ PlantVision v2.2 disease taxonomy (8 trainable classes):
 - not_a_plant: image does not contain a plant
 - nutrient_deficiency: chlorosis / interveinal yellowing — iron,
   nitrogen, magnesium etc.
+- pests: sap-sucking pests — mealybugs (white cottony tufts in leaf
+  axils) and scale (waxy brown/tan bumps on stems and leaf undersides),
+  merged into one class as the care advice is nearly identical
 - powdery_mildew: white powdery coating, fungal
 - viral_disease: umbrella class for mosaic, leaf curl and ringspot;
   incurable

@@ -80,7 +80,6 @@ set DETECTOR_PRESENT=0
 set CLASSIFIER_PRESENT=0
 if exist "models\detector.pt"          set DETECTOR_PRESENT=1
 if exist "models\detector.onnx"        set DETECTOR_PRESENT=1
-if exist "models\classifier.pth"        set CLASSIFIER_PRESENT=1
 if exist "models\classifier.onnx"       set CLASSIFIER_PRESENT=1
 if exist "models\classifier_int8.onnx"  set CLASSIFIER_PRESENT=1
 if "%DETECTOR_PRESENT%"=="0" goto missing_models
@@ -89,7 +88,7 @@ goto start_server
 
 :missing_models
 echo [!] Trained model artefacts missing under server\models\.
-echo     Need detector.{pt,onnx} AND classifier.{pth,onnx,int8.onnx}.
+echo     Need detector.{pt,onnx} AND classifier.onnx (+ optional int8).
 echo     Train in Colab via train_notebook.ipynb, then copy them in.
 exit /b 1
 

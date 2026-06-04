@@ -13,9 +13,9 @@ import numpy as np
 import classifier as clf
 
 
-def test_architecture_defaults_to_mobilenet():
-    assert clf._resolve_architecture({}) == "mobilenet_v3_large"
-    assert clf._resolve_architecture({"training": {}}) == "mobilenet_v3_large"
+def test_architecture_defaults_to_dinov2():
+    assert clf._resolve_architecture({}) == "dinov2_vits14+mlp_head"
+    assert clf._resolve_architecture({"training": {}}) == "dinov2_vits14+mlp_head"
 
 
 def test_architecture_reads_top_level_and_training():
