@@ -521,10 +521,15 @@ def test_kaggle_houseplant_supplement_is_train_only_and_failsoft():
         "Kaggle helper must check for credentials and fail soft when absent"
     )
     assert re.search(r"return None", src), "Kaggle helper must return None on failure"
-    # Unmapped folders dropped, not guessed.
-    assert "KAGGLE_HOUSEPLANT_LABEL_MAP" in src and "DROP (unmapped)" in src, (
-        "Kaggle import must drop unmapped folders, never guess them into a class"
+    # Unmapped/ambiguous folders dropped, not guessed. Mapping is keyword-based
+    # on the <Species>_<Condition> folder names, with a DROP list checked first
+    # (rust morphology, nutrient toxicity != deficiency, vascular bacterial wilt).
+    assert "def _kaggle_map_folder" in src, "keyword-based Kaggle folder resolver missing"
+    assert "KAGGLE_DROP_KEYWORDS" in src and "KAGGLE_CONDITION_KEYWORDS" in src, (
+        "Kaggle mapping must use a drop-list + ordered condition keywords"
     )
+    for must_drop in ("'rust'", "'toxicity'", "'bacterial_wilt'"):
+        assert must_drop in src, f"Kaggle DROP list must contain {must_drop}"
     # Train-only: 'kaggle_houseplant' must never be an eval allowed source.
     for split_fn in ("make_val_realworld", "make_val_indomain",
                      "make_temperature_cal", "make_conformal_cal"):
