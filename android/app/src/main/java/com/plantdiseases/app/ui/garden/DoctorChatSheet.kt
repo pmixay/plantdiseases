@@ -2,7 +2,10 @@ package com.plantdiseases.app.ui.garden
 
 import android.os.Bundle
 import android.text.Spannable
-import android.text.SpannableString
+import android.text.SpannableStringBuilder
+import android.text.TextPaint
+import android.text.method.LinkMovementMethod
+import android.text.style.ClickableSpan
 import android.text.style.StyleSpan
 import android.util.TypedValue
 import android.view.Gravity
@@ -23,10 +26,12 @@ import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.textfield.TextInputEditText
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
+import com.plantdiseases.app.data.GuideDataProvider
 import com.plantdiseases.app.data.local.ChatMessageEntity
 import com.plantdiseases.app.data.local.PlantEntity
 import com.plantdiseases.app.data.model.ChatRequest
 import com.plantdiseases.app.databinding.SheetDoctorChatBinding
+import com.plantdiseases.app.ui.guide.GuideDetailSheet
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.launch
@@ -328,6 +333,8 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
             maxWidth = bubbleMaxWidth
             setTextColor(requireContext().getColor(R.color.chat_bubble_text))
             setLineSpacing(3.dp().toFloat(), 1f)
+            // Make [[doc:…]] citation links tappable.
+            movementMethod = LinkMovementMethod.getInstance()
         })
         bubble.addView(TextView(requireContext()).apply {
             text = formatTime(timestamp)
@@ -346,24 +353,58 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
     }
 
     private fun applyMarkdown(text: String): CharSequence {
-        val boldRegex = Regex("""\*\*(.+?)\*\*""")
-        val matches = boldRegex.findAll(text)
-        if (matches.none()) return text
+        // One pass over **bold** and the AI doctor's doc-citation tokens
+        // [[doc:<class_key>]]. A token renders as the matching guide article's
+        // title, tappable to open the offline guide; unknown keys are dropped.
+        val pattern = Regex("""\*\*(.+?)\*\*|\[\[doc:([a-z0-9_]+)]]""")
+        if (!pattern.containsMatchIn(text)) return text
 
-        val spannable = SpannableString(text.replace(boldRegex) { it.groupValues[1] })
-        var offset = 0
-        boldRegex.findAll(text).forEach { match ->
-            val inner = match.groupValues[1]
-            val start = match.range.first - offset
-            val end = start + inner.length
-            spannable.setSpan(
-                StyleSpan(android.graphics.Typeface.BOLD),
-                start, end,
-                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
-            )
-            offset += match.value.length - inner.length
+        val isRu = LocaleHelper.isRussian(requireContext())
+        val linkColor = requireContext().getColor(R.color.primary)
+        val sb = SpannableStringBuilder()
+        var last = 0
+        for (m in pattern.findAll(text)) {
+            sb.append(text.substring(last, m.range.first))
+            val bold = m.groupValues[1]
+            val docKey = m.groupValues[2]
+            when {
+                bold.isNotEmpty() -> {
+                    val start = sb.length
+                    sb.append(bold)
+                    sb.setSpan(
+                        StyleSpan(android.graphics.Typeface.BOLD),
+                        start, sb.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+                    )
+                }
+                docKey.isNotEmpty() -> {
+                    val guideId = GuideDataProvider.guideIdForDisease(docKey)
+                    val title = guideId?.let { id ->
+                        GuideDataProvider.getGuideItems().firstOrNull { it.id == id }
+                            ?.let { if (isRu) it.titleRu else it.titleEn }
+                    }
+                    if (guideId != null && title != null) {
+                        val start = sb.length
+                        sb.append(title)
+                        sb.setSpan(
+                            object : ClickableSpan() {
+                                override fun onClick(widget: View) {
+                                    GuideDetailSheet.newInstance(guideId)
+                                        .show(parentFragmentManager, "guide_detail")
+                                }
+                                override fun updateDrawState(ds: TextPaint) {
+                                    ds.color = linkColor
+                                    ds.isUnderlineText = true
+                                }
+                            },
+                            start, sb.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+                        )
+                    }
+                }
+            }
+            last = m.range.last + 1
         }
-        return spannable
+        sb.append(text.substring(last))
+        return sb
     }
 
     private fun clearChat() {

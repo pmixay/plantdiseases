@@ -62,6 +62,7 @@
     <string name="not_a_plant_diagnosis_name">В кадре нет растения</string>
     <string name="not_a_plant_result_body">Модель не нашла лист растения на фото. Попробуйте сделать снимок так, чтобы лист занимал большую часть кадра, при ровном освещении и без дрожания.</string>
     <string name="description_label">Описание</string>
+    <string name="result_learn_more">Открыть полное руководство</string>
     <string name="treatment_label">Лечение</string>
     <string name="prevention_label">Профилактика</string>
 
@@ -166,6 +167,9 @@
 
     <string name="species_card_title">Определённый вид</string>
     <string name="species_card_score">PlantNet — %1$d%%</string>
+    <string name="species_source_wikipedia">Источник: Wikipedia</string>
+    <string name="species_community_others">Другие сканы этого вида</string>
+    <string name="example_photos_label">Как это выглядит</string>
     <string name="similar_scans_title">Похожие сканы рядом</string>
     <string name="similar_scans_subtitle">%1$d сканов рядом с %2$s</string>
     <string name="similar_scans_subtitle_region">Недавние диагнозы рядом с %1$s</string>
@@ -182,6 +186,11 @@
     <string name="community_opinion_empty">Пока нет мнений — будьте первым.</string>
     <string name="community_opinion_thanks">Спасибо за ваше мнение!</string>
     <string name="community_opinion_error">Не удалось связаться с сообществом. Повторите.</string>
+    <string name="community_opinions_badge">Мнений: %1$d</string>
+    <string name="result_view_opinions">Мнений сообщества: %1$d</string>
+    <string name="community_my_opinions_title">Мои мнения</string>
+    <string name="community_my_opinions_subtitle">Диагнозы, которые вы оценили</string>
+    <string name="community_my_opinions_empty">Вы пока не отправляли мнений.</string>
     <string name="result_get_second_opinion">Получить второе мнение</string>
     <string name="similar_scans_chip_format">%1$s · %2$d</string>
     <string name="community_toggle_title">Делиться сканами с сообществом</string>
@@ -346,7 +355,7 @@
     <string name="doctor_clear">Очистить чат</string>
     <!-- Light Meter -->
     <string name="light_meter">Люксметр</string>
-    <string name="light_plant_type">Тип растения</string>
+    <string name="light_needs_header">Потребность в свете для этого растения</string>
     <string name="light_lux">лк</string>
     <string name="light_too_dark">Слишком темно</string>
     <string name="light_ideal">Хорошее освещение</string>

@@ -674,6 +674,53 @@
 
         </com.google.android.material.card.MaterialCardView>
 
+        <!-- My second opinions — what this install has contributed. -->
+        <com.google.android.material.card.MaterialCardView
+            style="@style/App.GlassCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_md">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/community_my_opinions_title"
+                    android:textAppearance="@style/TextAppearance.App.Title" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_xs"
+                    android:text="@string/community_my_opinions_subtitle"
+                    android:textSize="@dimen/text_body_sm"
+                    android:textColor="@color/on_surface_secondary" />
+
+                <LinearLayout
+                    android:id="@+id/ll_my_opinions"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:layout_marginTop="@dimen/space_sm" />
+
+                <TextView
+                    android:id="@+id/tv_my_opinions_empty"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_sm"
+                    android:text="@string/community_my_opinions_empty"
+                    android:textSize="@dimen/text_body_sm"
+                    android:textColor="@color/on_surface_secondary"
+                    android:visibility="gone" />
+
+            </LinearLayout>
+
+        </com.google.android.material.card.MaterialCardView>
+
         <!-- Footer: clear history + version -->
         <LinearLayout
             android:layout_width="match_parent"

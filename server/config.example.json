@@ -10,11 +10,7 @@
   },
   "models": {
     "models_dir": "models",
-    "_model_bundle_url_note": "Weights + calibration artefacts are NOT committed; the server fetches this bundle (.tar/.tar.gz/.zip of the models/ dir) on first boot. A blank value here falls back to the hard-coded default in main.py. Google Drive share links are supported.",
-    "model_bundle_url": "",
-    "model_auto_fetch": true,
-    "_model_bundle_version_note": "Optional cache-buster. Bump this string when you publish a new bundle to force the server to re-fetch over a cached models volume; blank keeps presence-based caching.",
-    "model_bundle_version": ""
+    "_models_note": "Weights + calibration artefacts are NOT committed and NOT auto-downloaded. Drop the trained files (detector.{pt,onnx}, classifier.onnx, classes.json, temperature.json, conformal.json, model_card.json) into this directory before starting the server. Boot is fail-fast if a required artefact is missing."
   },
   "limits": {
     "max_file_size": 10485760,

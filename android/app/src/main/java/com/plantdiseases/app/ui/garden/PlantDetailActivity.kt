@@ -17,7 +17,9 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updatePadding
 import androidx.core.view.setPadding
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
@@ -120,6 +122,8 @@ class PlantDetailActivity : AppCompatActivity() {
     }
 
     private fun buildLayout() {
+        // Edge-to-edge: let the gradient app bar fill the status-bar area.
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         binding = ActivityPlantDetailBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
@@ -127,10 +131,13 @@ class PlantDetailActivity : AppCompatActivity() {
         toolbar = binding.detailToolbar
         toolbarTitle = binding.detailToolbarTitle
 
-        // Extend the gradient app bar behind the status bar.
+        // Extend the gradient app bar behind the status bar, and keep the
+        // scrollable content clear of the navigation bar at the bottom.
+        binding.detailScroll.clipToPadding = false
         ViewCompat.setOnApplyWindowInsetsListener(binding.detailAppBar) { view, insets ->
-            val topInset = insets.getInsets(WindowInsetsCompat.Type.systemBars()).top
-            view.setPadding(0, topInset, 0, 0)
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.setPadding(0, bars.top, 0, 0)
+            binding.detailScroll.updatePadding(bottom = bars.bottom)
             insets
         }
 
@@ -887,6 +894,14 @@ class PlantDetailActivity : AppCompatActivity() {
                 plant.scientificName?.takeIf { it.isNotBlank() }?.let {
                     intent.putExtra(
                         com.plantdiseases.app.ui.camera.LightMeterActivity.EXTRA_SCIENTIFIC_NAME,
+                        it,
+                    )
+                }
+                // Common / free-text name as an auto-detection fallback when
+                // the scientific name is absent or its genus isn't mapped.
+                (plant.commonName ?: plant.species)?.takeIf { it.isNotBlank() }?.let {
+                    intent.putExtra(
+                        com.plantdiseases.app.ui.camera.LightMeterActivity.EXTRA_COMMON_NAME,
                         it,
                     )
                 }

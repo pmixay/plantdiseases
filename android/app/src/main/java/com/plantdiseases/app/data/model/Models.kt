@@ -170,6 +170,7 @@ data class CommunityScanItem(
     @SerializedName("thumb_path") val thumbPath: String? = null,
     @SerializedName("locale") val locale: String? = null,
     @SerializedName("created_at") val createdAt: Long = 0L,
+    @SerializedName("opinion_count") val opinionCount: Int = 0,
 )
 
 data class CommunityRegionSummary(
@@ -205,11 +206,13 @@ data class CommunityOpinionRequest(
     @SerializedName("note") val note: String? = null,
 )
 
-/** One community 'second opinion' on a shared scan. */
+/** One community 'second opinion' on a shared scan. `scanId` is only
+ *  populated by the /my-opinions endpoint (which scan the opinion was on). */
 data class CommunityOpinion(
     @SerializedName("suggested_disease") val suggestedDisease: String,
     @SerializedName("note") val note: String = "",
     @SerializedName("created_at") val createdAt: Long = 0L,
+    @SerializedName("scan_id") val scanId: String = "",
 )
 
 /** /api/community/opinions/{scan_id} response. POST /opinion returns the
@@ -339,6 +342,17 @@ data class IdentifyResponse(
      *  the UI — kept on the wire for future "served from cache"
      *  indicator next to species suggestions. */
     @SerializedName("cached") val cached: Boolean? = null,
+)
+
+/** /api/species-info response — localized Wikipedia blurb + lead photo. */
+data class SpeciesInfoResponse(
+    @SerializedName("available") val available: Boolean = false,
+    @SerializedName("title") val title: String? = null,
+    @SerializedName("extract") val extract: String? = null,
+    @SerializedName("image_url") val imageUrl: String? = null,
+    @SerializedName("images") val images: List<String> = emptyList(),
+    @SerializedName("page_url") val pageUrl: String? = null,
+    @SerializedName("source") val source: String? = null,
 )
 
 /** /api/care-plan request body. */

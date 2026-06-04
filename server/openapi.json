@@ -512,6 +512,86 @@
         }
       }
     },
+    "/api/community/my-opinions/{user_pseudo_id}": {
+      "get": {
+        "summary": "Community My Opinions",
+        "description": "List the second opinions one install has authored.",
+        "operationId": "community_my_opinions_api_community_my_opinions__user_pseudo_id__get",
+        "parameters": [
+          {
+            "name": "user_pseudo_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Pseudo Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/community/by-species": {
+      "get": {
+        "summary": "Community By Species",
+        "description": "Community scans of one species across all regions.",
+        "operationId": "community_by_species_api_community_by_species_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/species-info": {
+      "get": {
+        "summary": "Species Info Endpoint",
+        "description": "Localized Wikipedia summary + lead image for a scientific name.",
+        "operationId": "species_info_endpoint_api_species_info_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": { "application/json": { "schema": {} } }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/community/nearby": {
       "get": {
         "summary": "Community Scan Nearby",

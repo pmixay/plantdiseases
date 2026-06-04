@@ -74,6 +74,12 @@ try:
         nearby_scans as community_nearby_scans,
     )
     from .community import (
+        opinion_counts as community_opinion_counts,
+    )
+    from .community import (
+        opinions_by_author as community_opinions_by_author,
+    )
+    from .community import (
         opinions_for as community_opinions_for,
     )
     from .community import (
@@ -87,6 +93,9 @@ try:
     )
     from .community import (
         region_summary as community_region_summary,
+    )
+    from .community import (
+        scans_by_species as community_scans_by_species,
     )
     from .community import (
         stats_snapshot as community_stats_snapshot,
@@ -120,6 +129,7 @@ try:
         prune_older_than as feedback_prune_older_than,
     )
     from .pipeline import PlantDiseasePipeline
+    from .species_info import fetch_species_info
 except ImportError:
     from ai_services import (
         chat_metrics_snapshot,
@@ -150,6 +160,12 @@ except ImportError:
         nearby_scans as community_nearby_scans,
     )
     from community import (
+        opinion_counts as community_opinion_counts,
+    )
+    from community import (
+        opinions_by_author as community_opinions_by_author,
+    )
+    from community import (
         opinions_for as community_opinions_for,
     )
     from community import (
@@ -163,6 +179,9 @@ except ImportError:
     )
     from community import (
         region_summary as community_region_summary,
+    )
+    from community import (
+        scans_by_species as community_scans_by_species,
     )
     from community import (
         stats_snapshot as community_stats_snapshot,
@@ -196,6 +215,7 @@ except ImportError:
         prune_older_than as feedback_prune_older_than,
     )
     from pipeline import PlantDiseasePipeline
+    from species_info import fetch_species_info
 
 def _resolve_app_version() -> str:
     """Resolve the served model/app version.
@@ -279,29 +299,19 @@ logger = logging.getLogger("plantdiseases")
 # ── Configuration ────────────────────────────────────────────────────
 MODELS_DIR = Path(get_str("MODELS_DIR", "models"))
 DETECTOR_PATH = MODELS_DIR / "detector.pt"       # YOLOv8 weights (auto-prefers detector.onnx if present)
-# PlantVision classifier. The ONNX graph is architecture-neutral — it
-# serves whatever backbone+head the shipped bundle declares (classes.json
-# carries the canonical architecture + img_size). Production preference
-# order: classifier_int8.onnx → classifier.onnx → .pth.
-CLASSIFIER_PATH = MODELS_DIR / "classifier.pth"
+# PlantVision classifier. ONNX-only and architecture-neutral — it serves
+# whatever backbone+head the shipped artefact declares (classes.json
+# carries the canonical architecture + img_size). Preference order:
+# classifier_int8.onnx → classifier.onnx. This path is the anchor used to
+# locate those files + classes.json next to it (the .pth itself is not
+# loaded at serve time).
+CLASSIFIER_PATH = MODELS_DIR / "classifier.onnx"
 
-# Model bundle auto-fetch. Weights + calibration artefacts are NOT
-# committed to the repo; the always-online server downloads them on first
-# boot from MODEL_BUNDLE_URL — a .tar/.tar.gz/.zip of the models/ dir
-# contents (Google Drive share links are handled). The fetch is
-# idempotent: a restart with the artefacts already on disk skips it.
-# Override the URL via config.json / env; set MODEL_AUTO_FETCH=false to
-# require the files be dropped into MODELS_DIR manually.
-DEFAULT_MODEL_BUNDLE_URL = (
-    "https://drive.google.com/file/d/1s10Lo_-xLiHLCIzYZqKAsprC78F-xJgh/view?usp=sharing"
-)
-MODEL_BUNDLE_URL = get_str("MODEL_BUNDLE_URL", DEFAULT_MODEL_BUNDLE_URL)
-MODEL_AUTO_FETCH = get("MODEL_AUTO_FETCH", True, cast=bool)
-# Optional cache-buster: when set, a cached bundle whose recorded version
-# differs is re-fetched (so shipping a new model is a version bump, not a
-# manual volume wipe). Empty = presence-based caching only.
-MODEL_BUNDLE_VERSION = get_str("MODEL_BUNDLE_VERSION", "")
-
+# Model weights + calibration artefacts are NOT committed to the repo and
+# are NOT auto-downloaded. Provision them out of band: drop the trained
+# files (detector.{pt,onnx}, classifier.onnx, classes.json, ...) into
+# MODELS_DIR before starting the server. Boot is fail-fast — the pipeline
+# refuses to start if a required artefact is missing.
 MAX_FILE_SIZE = get_int("MAX_FILE_SIZE", 10 * 1024 * 1024)  # 10 MB
 MAX_IMAGE_DIMENSION = get_int("MAX_IMAGE_DIMENSION", 4096)
 # Reject degenerate thumbnails. A tiny upload (e.g. 8x8) carries no
@@ -825,16 +835,9 @@ async def lifespan(app: FastAPI):
     _inference_executor = _get_inference_executor()
     init_feedback_db()
     init_community_db()
-    # Self-provision the model bundle before constructing the pipeline.
-    # No-op when the artefacts are already on disk; raises (aborting boot)
-    # when auto-fetch is on but the bundle can't be retrieved — the same
-    # fail-fast contract as a missing local weight file.
-    if MODEL_AUTO_FETCH:
-        try:
-            from .model_fetch import ensure_models  # type: ignore[import-not-found]
-        except ImportError:
-            from model_fetch import ensure_models
-        ensure_models(MODELS_DIR, MODEL_BUNDLE_URL, version=MODEL_BUNDLE_VERSION)
+    # Model artefacts must already be present under MODELS_DIR (provisioned
+    # out of band). The pipeline constructor is fail-fast and aborts boot
+    # if a required weight / classes.json is missing.
     pipeline = PlantDiseasePipeline(
         detector_path=DETECTOR_PATH,
         classifier_path=CLASSIFIER_PATH,
@@ -2421,7 +2424,64 @@ async def community_scan_nearby(
         region_norm or None,
         exclude_user_pseudo_id=user_pseudo_id,
     )
+    # Annotate each cell with how many second opinions it has so the carousel
+    # can show a badge.
+    counts = community_opinion_counts([str(r.get("scan_id")) for r in rows if r.get("scan_id")])
+    for r in rows:
+        r["opinion_count"] = counts.get(str(r.get("scan_id")), 0)
     return JSONResponse(content={"items": rows, "summary": summary})
+
+
+@api_router.get("/community/my-opinions/{user_pseudo_id}")
+async def community_my_opinions(user_pseudo_id: str):
+    """List the second opinions one install has authored (newest first)."""
+    pid = (user_pseudo_id or "").strip()
+    if not pid or len(pid) > 128:
+        raise HTTPException(status_code=422, detail="Invalid id")
+    rows = await asyncio.get_running_loop().run_in_executor(
+        _get_inference_executor(), lambda: community_opinions_by_author(pid),
+    )
+    return JSONResponse(content={"opinions": rows})
+
+
+@api_router.get("/community/by-species")
+async def community_by_species(
+    species: str | None = None,
+    limit: int = 12,
+    user_pseudo_id: str | None = None,
+):
+    """Community scans of one species (by scientific name), across all
+    regions — the result screen's 'other <species> in the community' strip."""
+    sci = (species or "").strip()
+    if not sci:
+        raise HTTPException(status_code=422, detail="Invalid species")
+    rows = await asyncio.get_running_loop().run_in_executor(
+        _get_inference_executor(),
+        lambda: community_scans_by_species(
+            sci,
+            limit=max(1, min(int(limit), 50)),
+            exclude_user_pseudo_id=user_pseudo_id,
+        ),
+    )
+    counts = community_opinion_counts([str(r.get("scan_id")) for r in rows if r.get("scan_id")])
+    for r in rows:
+        r["opinion_count"] = counts.get(str(r.get("scan_id")), 0)
+    return JSONResponse(content={"items": rows})
+
+
+@api_router.get("/species-info")
+async def species_info_endpoint(name: str, locale: str = "en"):
+    """Localized Wikipedia summary + lead image for a scientific name."""
+    n = (name or "").strip()
+    if not n or len(n) > 128:
+        raise HTTPException(status_code=422, detail="Invalid species name")
+    lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
+    info = await asyncio.get_running_loop().run_in_executor(
+        _get_inference_executor(), lambda: fetch_species_info(n, lang),
+    )
+    if info is None:
+        return JSONResponse(content={"available": False})
+    return JSONResponse(content={"available": True, **info})
 
 
 @api_router.get("/community/thumb/{filename}")

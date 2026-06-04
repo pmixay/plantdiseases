@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
@@ -16,7 +17,10 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
+import com.plantdiseases.app.data.GuideDataProvider
+import com.plantdiseases.app.data.model.CommunityOpinion
 import com.plantdiseases.app.databinding.FragmentProfileBinding
+import com.plantdiseases.app.ui.result.CommunityOpinionSheet
 import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.TelemetryIds
@@ -113,6 +117,54 @@ class ProfileFragment : Fragment() {
                 R.string.community_delete_failed
             Toast.makeText(requireContext(), msg, Toast.LENGTH_SHORT).show()
         }
+    }
+
+    /** Load the second opinions this install has authored into the profile
+     *  card. Failure / empty both render the empty-state line. */
+    private fun loadMyOpinions() {
+        val app = requireActivity().application as PlantDiseasesApp
+        val pseudoId = TelemetryIds.userPseudoId(requireContext())
+        val isRu = LocaleHelper.isRussian(requireContext())
+        lifecycleScope.launch {
+            val result = app.scanRepository.getMyCommunityOpinions(pseudoId)
+            val b = _binding ?: return@launch
+            b.llMyOpinions.removeAllViews()
+            val opinions = result.getOrNull()?.opinions.orEmpty()
+            if (opinions.isEmpty()) {
+                b.tvMyOpinionsEmpty.visibility = View.VISIBLE
+            } else {
+                b.tvMyOpinionsEmpty.visibility = View.GONE
+                opinions.forEach { b.llMyOpinions.addView(opinionRow(it, isRu)) }
+            }
+        }
+    }
+
+    private fun opinionRow(op: CommunityOpinion, isRu: Boolean): View {
+        val ctx = requireContext()
+        val label = diseaseLabel(op.suggestedDisease, isRu)
+        val rowText = if (op.note.isBlank()) "•  $label" else "•  $label — ${op.note}"
+        return TextView(ctx).apply {
+            text = rowText
+            textSize = 14f
+            setTextColor(ContextCompat.getColor(ctx, R.color.on_surface))
+            val v = (6 * resources.displayMetrics.density).toInt()
+            setPadding(0, v, 0, v)
+            if (op.scanId.isNotBlank()) {
+                isClickable = true
+                setOnClickListener {
+                    CommunityOpinionSheet.show(parentFragmentManager, op.scanId, label)
+                }
+            }
+        }
+    }
+
+    /** Class key -> localized display name via the guide article title. */
+    private fun diseaseLabel(key: String, isRu: Boolean): String {
+        val guideId = GuideDataProvider.guideIdForDisease(key)
+        val item = guideId?.let { id ->
+            GuideDataProvider.getGuideItems().firstOrNull { it.id == id }
+        }
+        return item?.let { if (isRu) it.titleRu else it.titleEn } ?: key
     }
 
     private fun switchLanguage() {
@@ -297,6 +349,7 @@ class ProfileFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         loadStats()
+        loadMyOpinions()
         checkServerHealth()
     }
 

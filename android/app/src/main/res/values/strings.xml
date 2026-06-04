@@ -61,6 +61,7 @@
     <string name="not_a_plant_diagnosis_name">Not a plant in frame</string>
     <string name="not_a_plant_result_body">The model couldn\'t find a plant leaf in this photo. Try retaking the picture so the leaf fills most of the frame, with steady hands and good lighting.</string>
     <string name="description_label">Description</string>
+    <string name="result_learn_more">Read the full guide</string>
     <string name="treatment_label">Treatment</string>
     <string name="prevention_label">Prevention</string>
 
@@ -166,6 +167,9 @@
     <!-- Auto-detected species card -->
     <string name="species_card_title">Detected species</string>
     <string name="species_card_score">PlantNet match: %1$d%%</string>
+    <string name="species_source_wikipedia">Source: Wikipedia</string>
+    <string name="species_community_others">Other scans of this species</string>
+    <string name="example_photos_label">What it looks like</string>
     <!-- Similar scans (community corpus) -->
     <string name="similar_scans_title">Similar scans near you</string>
     <string name="similar_scans_subtitle">%1$d recent scans near %2$s</string>
@@ -183,6 +187,11 @@
     <string name="community_opinion_empty">No opinions yet — be the first to weigh in.</string>
     <string name="community_opinion_thanks">Thanks for your opinion!</string>
     <string name="community_opinion_error">Couldn\'t reach the community. Try again.</string>
+    <string name="community_opinions_badge">%1$d opinions</string>
+    <string name="result_view_opinions">%1$d community opinions</string>
+    <string name="community_my_opinions_title">My second opinions</string>
+    <string name="community_my_opinions_subtitle">Diagnoses you\'ve weighed in on</string>
+    <string name="community_my_opinions_empty">You haven\'t sent any opinions yet.</string>
     <string name="result_get_second_opinion">Get a second opinion</string>
     <string name="similar_scans_chip_format">%1$s · %2$d</string>
 
@@ -353,7 +362,7 @@
     <string name="doctor_clear">Clear chat</string>
     <!-- Light Meter -->
     <string name="light_meter">Light Meter</string>
-    <string name="light_plant_type">Plant type</string>
+    <string name="light_needs_header">Light needs for this plant</string>
     <string name="light_lux">lux</string>
     <string name="light_too_dark">Too dark</string>
     <string name="light_ideal">Good light</string>

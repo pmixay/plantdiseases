@@ -302,6 +302,80 @@ def daily_opinion_count_for_ip_hash(ip_hash: str | None) -> int:
         ).fetchone()[0])
 
 
+def opinion_counts(scan_ids: list[str]) -> dict[str, int]:
+    """Map each scan_id to its number of community opinions (zeros omitted)."""
+    ids = [s for s in scan_ids if s]
+    if not ids:
+        return {}
+    init_db()
+    placeholders = ",".join("?" * len(ids))
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT scan_id, COUNT(*) FROM community_opinions "
+            f"WHERE scan_id IN ({placeholders}) GROUP BY scan_id",
+            tuple(ids),
+        ).fetchall()
+    return {str(r[0]): int(r[1]) for r in rows}
+
+
+def opinions_by_author(author_pseudo_id: str, *, limit: int = 100) -> list[dict]:
+    """Opinions one install authored, newest first, each with its scan_id."""
+    init_db()
+    if not author_pseudo_id:
+        return []
+    limit = max(1, min(int(limit), 200))
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT scan_id, suggested_disease, note, created_at "
+            "FROM community_opinions WHERE author_pseudo_id = ? "
+            "ORDER BY created_at DESC LIMIT ?",
+            (author_pseudo_id, limit),
+        ).fetchall()
+    return [
+        {
+            "scan_id": str(r[0]),
+            "suggested_disease": str(r[1]),
+            "note": r[2] or "",
+            "created_at": int(r[3]),
+        }
+        for r in rows
+    ]
+
+
+def scans_by_species(
+    scientific: str,
+    *,
+    limit: int = 12,
+    exclude_user_pseudo_id: str | None = None,
+) -> list[dict]:
+    """Community scans of one species (by scientific name), newest first,
+    across all regions — for the result screen's 'other <species> in the
+    community' strip."""
+    init_db()
+    sci = (scientific or "").strip().lower()
+    if not sci:
+        return []
+    limit = max(1, min(int(limit), 50))
+    extra = ""
+    params: list = [sci]
+    if exclude_user_pseudo_id:
+        extra += " AND user_pseudo_id != ?"
+        params.append(exclude_user_pseudo_id)
+    if _HIDDEN_COMMUNITY_DISEASES:
+        extra += _hidden_clause()
+        params.extend(_HIDDEN_COMMUNITY_DISEASES)
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT scan_id, country, region, disease, confidence, species, "
+            "species_score, thumb_path, locale, created_at "
+            "FROM community_scans WHERE species_lower = ?"
+            + extra
+            + " ORDER BY created_at DESC LIMIT ?",
+            (*params, limit),
+        ).fetchall()
+    return [_row_to_dict(r) for r in rows]
+
+
 def nearby_scans(
     *,
     country: str,

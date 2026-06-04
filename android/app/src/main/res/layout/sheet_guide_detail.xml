@@ -61,12 +61,13 @@
         android:layout_height="wrap_content"
         android:maxHeight="500dp">
 
-        <TextView
-            android:id="@+id/tv_content"
+        <LinearLayout
+            android:id="@+id/ll_sections"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:orientation="vertical"
             android:paddingHorizontal="@dimen/space_xl"
-            android:textAppearance="@style/TextAppearance.App.Body" />
+            android:paddingBottom="@dimen/space_lg" />
 
     </androidx.core.widget.NestedScrollView>
 

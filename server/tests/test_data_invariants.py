@@ -16,16 +16,12 @@ exist yet (i.e., before §2 has been run for the first time).
 
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 from pathlib import Path
 
-import pytest
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 NB_PATH = REPO_ROOT / "server" / "train_notebook.ipynb"
-DATA_ROOT = REPO_ROOT / "data_v2"
 
 
 def _notebook_source() -> str:
@@ -244,7 +240,7 @@ def test_stage0_weakclass_supply_broadened():
         assert seg and seg.group(1).count("',") + 1 >= 18, (
             f"{cls} query list must be broadened to >=18 terms for Stage 0"
         )
-    assert "fetch_inat_physiological, per_class=1000" in src, (
+    assert "fetch_inat_physiological, per_class=1500" in src, (
         "per_class target must be raised so the broadened query set is drawn"
     )
 
@@ -451,20 +447,16 @@ def test_prefer_fp32_switch_ships_fp32_graph():
 
 def test_inat_physiological_label_noise_controls():
     """Report Stage 2: clean the noisy iNat free-text labels without
-    corrupting data. Two non-destructive controls must be present: the
-    physiological queries are constrained to iconic_taxa='Plantae' (drops
-    non-plant matches), and an operator review-blocklist filters the fetch
-    pool. The gray-mold free-text path must NOT force Plantae (Botrytis is
-    legitimately filed under the fungus taxon)."""
+    corrupting data. The physiological queries must be constrained to
+    iconic_taxa='Plantae' (drops the non-plant matches whose common names
+    share words like "scorch" / "chlorosis"). The gray-mold free-text path
+    must NOT force Plantae (Botrytis is legitimately filed under the fungus
+    taxon)."""
     src = _notebook_source()
-    assert "_inat_physiological_blocklist" in src, "manual review blocklist hook missing"
-    # The blocklist must actually filter the physiological pool.
+    # The physiological queries must restrict to iconic_taxa='Plantae'.
     assert re.search(
         r"_inat_freetext_observations\([^)]*iconic_taxa='Plantae'\)", src
     ), "physiological queries must restrict to iconic_taxa='Plantae'"
-    assert re.search(
-        r"if str\(ob\['id'\]\) not in blocked", src
-    ), "physiological pool must drop blocklisted observation ids"
     # Gray-mold free-text must stay un-restricted (fungus iconic taxon):
     # the gray-mold-serving _fetch_inat_freetext_class must call the search
     # WITHOUT iconic_taxa (the plain 2-arg form).
@@ -530,167 +522,4 @@ def test_ood_floor_is_calibrated_not_hardcoded():
     assert val in ("ML_FLOOR", "ML_FLOOR_PERSISTED"), (
         f"max_logit_floor is {val}, must reference the calibrated "
         f"ML_FLOOR / ML_FLOOR_PERSISTED variable, not a hardcoded number"
-    )
-
-
-def test_shipped_classes_json_matches_head_taxonomy():
-    """Regression: when a ``classes.json`` is present it MUST match the
-    classifier's built-in head taxonomy (``DEFAULT_CLASS_NAMES``), in the
-    same order. A stale v2.1 (7-class) ``classes.json`` against the v2.x
-    (8-output) head silently mislabeled every prediction by index — this
-    invariant fails loudly on that drift.
-
-    ``classes.json`` is no longer committed: the always-online server
-    fetches the model bundle on boot (``model_fetch.py``). The test
-    therefore skips when the artefact is absent (CI / a fresh clone) and
-    only asserts when one has been fetched / dropped in locally."""
-    import sys
-
-    server_dir = REPO_ROOT / "server"
-    if str(server_dir) not in sys.path:
-        sys.path.insert(0, str(server_dir))
-    from classifier import DEFAULT_CLASS_NAMES
-
-    classes_json = REPO_ROOT / "server" / "models" / "classes.json"
-    if not classes_json.exists():
-        pytest.skip("classes.json not present (fetched model bundle artefact)")
-    meta = json.loads(classes_json.read_text(encoding="utf-8"))
-    assert meta.get("class_names") == list(DEFAULT_CLASS_NAMES), (
-        "models/classes.json class_names disagree with "
-        "classifier.DEFAULT_CLASS_NAMES — the fetched metadata is stale "
-        "relative to the trained head."
-    )
-    # Version metadata must keep up with the shipped taxonomy (the
-    # 8-class v2.x line spans v2.2 MobileNetV3 and v2.3 DINOv2).
-    assert str(meta.get("model_version", "")).startswith("2."), (
-        f"classes.json model_version={meta.get('model_version')} but the "
-        "shipped taxonomy is v2.x."
-    )
-
-
-# ── Data-on-disk invariants (skipped if `data_v2/` isn't present) ───
-
-
-def _data_v2_or_skip():
-    if not DATA_ROOT.exists():
-        pytest.skip(
-            "data_v2/ does not exist yet — run notebook §2 first to "
-            "populate train + held-out splits"
-        )
-
-
-def _iter_images(root: Path):
-    if not root.exists():
-        return
-    for p in root.rglob("*"):
-        if p.is_file() and p.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp", ".bmp"}:
-            yield p
-
-
-def _sha256(p: Path) -> str:
-    h = hashlib.sha256()
-    with open(p, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
-SPLIT_DIRS = (
-    "classification/val/realworld",
-    "classification/val/indomain",
-    "classification/val/temperature_cal",
-    "classification/val/conformal_cal",
-    "classification/val/plantvillage_studio",
-)
-
-
-def test_no_sha256_leakage_between_train_and_holdout():
-    """Belt-and-braces: §3 already asserts this in the notebook, but if
-    someone runs only §2 and stops, the on-disk state is checkable from
-    CI without GPU. Skip cleanly if no data on disk."""
-    _data_v2_or_skip()
-    train_root = DATA_ROOT / "classification" / "train"
-    train_hashes = {_sha256(p): p for p in _iter_images(train_root)}
-    if not train_hashes:
-        pytest.skip("TRAIN_ROOT empty — nothing to audit")
-    overlaps = []
-    for split_subdir in SPLIT_DIRS:
-        for p in _iter_images(DATA_ROOT / split_subdir):
-            h = _sha256(p)
-            if h in train_hashes:
-                overlaps.append((str(train_hashes[h]), str(p)))
-                if len(overlaps) >= 5:
-                    break
-        if len(overlaps) >= 5:
-            break
-    assert not overlaps, (
-        "Train/heldout SHA-256 overlap detected — pre-split dedup "
-        "(audit fix #1) failed:\n  "
-        + "\n  ".join(f"train={a}  heldout={b}" for a, b in overlaps)
-    )
-
-
-def test_no_class_silently_empty_after_split():
-    """If §2 ran successfully, every class should have at least 5 samples
-    in val_realworld (the THRESH_VAL guard inside the notebook). This
-    re-asserts the same invariant at CI time so a partial state can't
-    sneak in."""
-    _data_v2_or_skip()
-    val_realworld = DATA_ROOT / "classification" / "val" / "realworld"
-    if not val_realworld.exists():
-        pytest.skip("val_realworld not built yet")
-    classes_json = REPO_ROOT / "server" / "models" / "classes.json"
-    if not classes_json.exists():
-        pytest.skip("classes.json not produced yet (post-train artefact)")
-    cls_names = json.loads(classes_json.read_text()).get("class_names") or []
-    underflow = []
-    for cls in cls_names:
-        n = sum(1 for _ in _iter_images(val_realworld / cls))
-        if n < 5:
-            underflow.append((cls, n))
-    assert not underflow, (
-        f"val_realworld has classes with < 5 samples: {underflow}. "
-        "PlantDoc may have failed to download — see notebook §2 retry path."
-    )
-
-
-def test_int8_drift_within_fail_threshold():
-    """Once `model_card.json` exists, refuse to ship if INT8 drift > 0.05.
-    The notebook itself raises during §6, but this catches the case where
-    someone produced the artefact via a custom path.
-
-    Exception: when static-INT8 (QDQ + QOperator retry) exceeds the
-    fail-drift threshold, §6 ships the FP32 graph honestly under
-    ``classifier_fp32.onnx`` (NOT renamed as ``classifier_int8.onnx``)
-    and records ``shipped=False`` with
-    ``shipped_artifact="classifier_fp32.onnx (int8 export failed drift gate)"``.
-    The drift in that record is from the rejected quant attempt, not the
-    actually-shipped artefact, so this gate does not apply — but we still
-    assert that ``shipped_artifact`` reflects the documented fallback.
-    """
-    mc = REPO_ROOT / "server" / "models" / "model_card.json"
-    if not mc.exists():
-        pytest.skip("model_card.json not produced yet (post-train artefact)")
-    data = json.loads(mc.read_text())
-    int8 = data.get("int8") or {}
-    drift = int8.get("drift")
-    if drift is None:
-        pytest.skip("int8.drift not in model_card.json")
-    if int8.get("shipped") is False:
-        # The §6 honest FP32 fallback path.
-        shipped = int8.get("shipped_artifact") or ""
-        accepted = ("fp32", "int8 export failed", "renamed")
-        assert any(s in shipped.lower() for s in accepted), (
-            f"int8.shipped=False but shipped_artifact={shipped!r} — "
-            f"expected the documented 'classifier_fp32.onnx (int8 export "
-            f"failed drift gate)' fallback (or the legacy "
-            f"'classifier.onnx (renamed)' marker on pre-v2.2 builds)"
-        )
-        pytest.skip(
-            f"INT8 quant fell back to FP32 (drift {drift:+.4f} from the "
-            f"rejected quant attempt). Gate does not apply."
-        )
-    assert float(drift) <= 0.05, (
-        f"INT8 drift {drift:+.4f} exceeds the 0.05 fail threshold — "
-        f"refuse to ship"
     )

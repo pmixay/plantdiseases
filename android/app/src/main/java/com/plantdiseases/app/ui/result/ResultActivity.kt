@@ -16,11 +16,16 @@ import android.view.View
 import android.view.ViewGroup
 import android.animation.ValueAnimator
 import android.view.animation.DecelerateInterpolator
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updatePadding
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.tabs.TabLayout
@@ -30,6 +35,7 @@ import com.bumptech.glide.load.resource.bitmap.CenterCrop
 import com.bumptech.glide.load.resource.bitmap.RoundedCorners
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
+import com.plantdiseases.app.data.GuideDataProvider
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.FeedbackRequest
@@ -40,6 +46,7 @@ import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.ui.analysis.AnalysisActivity
 import com.plantdiseases.app.ui.common.CarePlanCardView
+import com.plantdiseases.app.ui.guide.GuideDetailSheet
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.LocaleHelper
@@ -65,8 +72,19 @@ class ResultActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Edge-to-edge: let the gradient app bar fill the status-bar area.
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         binding = ActivityResultBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        // Extend the gradient app bar behind the status bar, and lift the
+        // bottom action bar above the navigation bar.
+        ViewCompat.setOnApplyWindowInsetsListener(binding.appBar) { view, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.updatePadding(top = bars.top)
+            binding.bottomActionBar.updatePadding(bottom = bars.bottom)
+            insets
+        }
 
         val scanId = intent.getLongExtra(EXTRA_SCAN_ID, -1)
         if (scanId == -1L) {
@@ -252,6 +270,49 @@ class ResultActivity : AppCompatActivity() {
 
             // Sticky header data
             tvStickyName.text = diseaseName
+
+            // "Read the full guide" — deep-link to the offline doc article for
+            // this verdict's class, when one exists (not_a_plant has none).
+            val guideId = GuideDataProvider.guideIdForDisease(repository.topClassKey(scan) ?: "")
+            if (guideId != null) {
+                btnOpenGuide.visibility = View.VISIBLE
+                btnOpenGuide.setOnClickListener {
+                    GuideDetailSheet.newInstance(guideId)
+                        .show(supportFragmentManager, "guide_detail")
+                }
+            } else {
+                btnOpenGuide.visibility = View.GONE
+            }
+
+            // Example photos of this diagnosis (Wikipedia), above the description.
+            binding.tvDiseasePhotosLabel.visibility = View.GONE
+            binding.hsvDiseasePhotos.visibility = View.GONE
+            GuideDataProvider.wikiQueryForDisease(repository.topClassKey(scan) ?: "")
+                ?.let { loadDiseasePhotos(it) }
+
+            // Community opinions others left on THIS (the user's own) scan.
+            // Loaded lazily; the button appears only if there are any.
+            btnViewOpinions.visibility = View.GONE
+            val ownScanId = scan.clientScanId
+            if (ownScanId.isNotBlank()) {
+                lifecycleScope.launch {
+                    repository.getCommunityOpinions(ownScanId).onSuccess { resp ->
+                        val n = resp.opinions.size
+                        if (n > 0) {
+                            binding.btnViewOpinions.text =
+                                getString(R.string.result_view_opinions, n)
+                            binding.btnViewOpinions.visibility = View.VISIBLE
+                            binding.btnViewOpinions.setOnClickListener {
+                                CommunityOpinionSheet.show(
+                                    supportFragmentManager,
+                                    ownScanId,
+                                    classKeyDisplayName(repository.topClassKey(scan) ?: "", isRu),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
 
             val confidencePercent = (scan.confidence * 100).toInt()
             // For NAP we don't expose a confidence bar — the "verdict" itself
@@ -601,6 +662,105 @@ class ResultActivity : AppCompatActivity() {
         // available on the live AnalysisResponse and could be wired
         // later if we add multi-pick UX.
         binding.speciesAltsLayout.removeAllViews()
+
+        // Enrich with a localized Wikipedia blurb + lead photo, and a strip of
+        // other community scans of this species — best-effort, both need the
+        // scientific name and stay hidden on failure.
+        binding.ivSpeciesPhoto.visibility = View.GONE
+        binding.tvSpeciesBlurb.visibility = View.GONE
+        binding.tvSpeciesSource.visibility = View.GONE
+        binding.tvSpeciesCommunityLabel.visibility = View.GONE
+        binding.rvSpeciesCommunity.visibility = View.GONE
+        if (sci != null) loadSpeciesEnrichment(sci)
+    }
+
+    /** Best-effort example photos of the diagnosed problem (Wikipedia),
+     *  shown above the description. Hidden unless images load. */
+    private fun loadDiseasePhotos(query: String) {
+        val repo = (application as PlantDiseasesApp).scanRepository
+        lifecycleScope.launch {
+            repo.getSpeciesInfo(query, "en").onSuccess { info ->
+                val urls = info.images.filter { it.isNotBlank() }
+                if (urls.isEmpty()) return@onSuccess
+                val row = binding.llDiseasePhotosRow
+                row.removeAllViews()
+                urls.take(4).forEach { url ->
+                    val iv = ImageView(this@ResultActivity).apply {
+                        layoutParams = LinearLayout.LayoutParams(dpPx(150), dpPx(110))
+                            .apply { marginEnd = dpPx(8) }
+                        scaleType = ImageView.ScaleType.CENTER_CROP
+                    }
+                    Glide.with(this@ResultActivity)
+                        .load(url)
+                        .transform(CenterCrop(), RoundedCorners(24))
+                        .into(iv)
+                    row.addView(iv)
+                }
+                binding.tvDiseasePhotosLabel.visibility = View.VISIBLE
+                binding.hsvDiseasePhotos.visibility = View.VISIBLE
+            }
+        }
+    }
+
+    private fun dpPx(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+
+    /** Best-effort species enrichment: a localized Wikipedia blurb + lead
+     *  photo, and a horizontal strip of other community scans of the species. */
+    private fun loadSpeciesEnrichment(scientific: String) {
+        val repo = (application as PlantDiseasesApp).scanRepository
+        val isRu = LocaleHelper.isRussian(this)
+        val pseudoId = TelemetryIds.userPseudoId(this)
+
+        lifecycleScope.launch {
+            repo.getSpeciesInfo(scientific, if (isRu) "ru" else "en").onSuccess { info ->
+                if (!info.available) return@onSuccess
+                info.extract?.takeIf { it.isNotBlank() }?.let {
+                    binding.tvSpeciesBlurb.text = it
+                    binding.tvSpeciesBlurb.visibility = View.VISIBLE
+                }
+                info.imageUrl?.takeIf { it.isNotBlank() }?.let { url ->
+                    Glide.with(this@ResultActivity)
+                        .load(url)
+                        .transform(CenterCrop(), RoundedCorners(24))
+                        .into(binding.ivSpeciesPhoto)
+                    binding.ivSpeciesPhoto.visibility = View.VISIBLE
+                }
+                val page = info.pageUrl
+                if (!page.isNullOrBlank()) {
+                    binding.tvSpeciesSource.visibility = View.VISIBLE
+                    binding.tvSpeciesSource.setOnClickListener {
+                        runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(page))) }
+                    }
+                }
+            }
+        }
+
+        val adapter = SimilarScansAdapter(
+            displayName = { key -> classKeyDisplayName(key, isRu) ?: key },
+            onClick = { item ->
+                CommunityOpinionSheet.show(
+                    supportFragmentManager,
+                    item.scanId,
+                    classKeyDisplayName(item.disease, isRu) ?: item.disease,
+                )
+            },
+        )
+        binding.rvSpeciesCommunity.layoutManager =
+            androidx.recyclerview.widget.LinearLayoutManager(
+                this, androidx.recyclerview.widget.LinearLayoutManager.HORIZONTAL, false,
+            )
+        binding.rvSpeciesCommunity.adapter = adapter
+        lifecycleScope.launch {
+            repo.communityScansBySpecies(scientific, pseudoId).onSuccess { resp ->
+                if (resp.items.isNotEmpty()) {
+                    adapter.submit(resp.items)
+                    binding.tvSpeciesCommunityLabel.text =
+                        getString(R.string.species_community_others)
+                    binding.tvSpeciesCommunityLabel.visibility = View.VISIBLE
+                    binding.rvSpeciesCommunity.visibility = View.VISIBLE
+                }
+            }
+        }
     }
 
     private fun buildSimilarScansCard(
