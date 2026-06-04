@@ -899,7 +899,7 @@ class PlantDetailActivity : AppCompatActivity() {
                 }
                 // Common / free-text name as an auto-detection fallback when
                 // the scientific name is absent or its genus isn't mapped.
-                (plant.commonName ?: plant.species).takeIf { it.isNotBlank() }?.let {
+                (plant.commonName ?: plant.species)?.takeIf { it.isNotBlank() }?.let {
                     intent.putExtra(
                         com.plantdiseases.app.ui.camera.LightMeterActivity.EXTRA_COMMON_NAME,
                         it,
