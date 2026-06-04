@@ -149,6 +149,12 @@ class DiseaseClassifier:
         self.backend = ""               # "onnx"
         self._onnx_session = None
         self._onnx_input_name: str = ""
+        # Set when the shipped graph exports the DINOv2 CLS embedding as a
+        # second output (``output_names=['logits','embedding']``). Drives
+        # the embedding-space OOD score in the pipeline; a legacy
+        # single-output graph leaves this False and OOD falls back to the
+        # MaxLogit floor.
+        self._has_embedding: bool = False
 
         meta = _load_metadata(model_path.parent) if model_path else {}
         self.meta = meta
@@ -207,7 +213,12 @@ class DiseaseClassifier:
             providers=["CPUExecutionProvider"],
         )
         inp = sess.get_inputs()[0]
-        out = sess.get_outputs()[0]
+        outputs = sess.get_outputs()
+        out = outputs[0]
+        # A 2-output graph ships the CLS embedding alongside the logits.
+        # Output[0] stays the logits so every existing ``run(...)[0]`` call
+        # site is unaffected; output[1], when present, is the embedding.
+        self._has_embedding = len(outputs) >= 2
 
         out_dim = next((d for d in out.shape if isinstance(d, int)), None)
         if out_dim is not None and out_dim != self.NUM_CLASSES:
@@ -238,8 +249,9 @@ class DiseaseClassifier:
 
         logger.info(
             "Classifier (ONNX) loaded from %s (%d classes, img_size=%d, "
-            "arch=%s, tta=%s)",
+            "arch=%s, tta=%s, embedding_output=%s)",
             path, self.NUM_CLASSES, self.img_size, self.architecture, self.tta,
+            self._has_embedding,
         )
 
     # ── public API ───────────────────────────────────────────────────
@@ -315,29 +327,51 @@ class DiseaseClassifier:
 
     # ── ONNX inference ───────────────────────────────────────────────
 
-    def _onnx_logits(self, x: np.ndarray) -> np.ndarray:
+    def _onnx_forward(self, x: np.ndarray) -> tuple[np.ndarray, np.ndarray | None]:
+        """Run the graph, returning ``(logits, embeddings_or_None)``.
+
+        ``embeddings`` is the second graph output (the DINOv2 CLS vector)
+        when the shipped bundle exports it, else ``None``. Under hflip TTA
+        both the logits *and* the embeddings are averaged over the image and
+        its mirror — the embedding then matches the (averaged) logits the
+        calibration was fit on, so the OOD score stays consistent with TTA.
+        """
+        sess, in_name = self._onnx_session, self._onnx_input_name
         if self.tta == "hflip":
             # Batch the original and its mirror into a single 2N forward
             # instead of two N-sized sess.run calls. The result is
-            # byte-identical (same two sets of logits, averaged) but pays
+            # byte-identical (same two sets of outputs, averaged) but pays
             # the ORT/Python dispatch + kernel-selection cost once, and
             # lets ORT schedule both halves together — material on the
             # single-intra-op-thread CPU sessions we run.
             n = x.shape[0]
             batched = np.concatenate([x, self._hflip(x)], axis=0)
-            out = self._onnx_session.run(None, {self._onnx_input_name: batched})[0]
-            return (out[:n] + out[n:]) * 0.5
-        return self._onnx_session.run(None, {self._onnx_input_name: x})[0]
+            outs = sess.run(None, {in_name: batched})
+            logits = (outs[0][:n] + outs[0][n:]) * 0.5
+            emb = ((outs[1][:n] + outs[1][n:]) * 0.5) if self._has_embedding else None
+            return logits, emb
+        outs = sess.run(None, {in_name: x})
+        emb = outs[1] if self._has_embedding else None
+        return outs[0], emb
 
     def _classify_onnx(self, img: Image.Image) -> dict:
-        logits = self._onnx_logits(self._preprocess(img))
-        return self._format_result_from_logits(logits[0])
+        logits, emb = self._onnx_forward(self._preprocess(img))
+        return self._format_result_from_logits(
+            logits[0], emb[0] if emb is not None else None,
+        )
 
     def _classify_onnx_batch(self, imgs: list[Image.Image]) -> list[dict]:
-        logits = self._onnx_logits(self._preprocess_batch(imgs))
-        return [self._format_result_from_logits(logits[i]) for i in range(logits.shape[0])]
+        logits, emb = self._onnx_forward(self._preprocess_batch(imgs))
+        return [
+            self._format_result_from_logits(
+                logits[i], emb[i] if emb is not None else None,
+            )
+            for i in range(logits.shape[0])
+        ]
 
-    def _format_result_from_logits(self, logits: np.ndarray) -> dict:
+    def _format_result_from_logits(
+        self, logits: np.ndarray, embedding: np.ndarray | None = None,
+    ) -> dict:
         # Numerically-stable softmax (max-shift) in float32. The
         # max-shift caps `exp` arguments at 0 so float32 doesn't
         # overflow; the smallest meaningful tail (`exp(-30)`) is well
@@ -357,7 +391,7 @@ class DiseaseClassifier:
         # ``low_confidence`` is set later, post-aggregation, by
         # ``pipeline._pick_primary`` against ``HEALTHY_MIN_CONFIDENCE``
         # — the per-crop value is not used anywhere downstream.
-        return {
+        result = {
             "class_name": self.CLASS_NAMES[top_idx],
             "confidence": round(top_conf, 4),
             "all_probs": {
@@ -366,3 +400,10 @@ class DiseaseClassifier:
             },
             "max_logit": max_logit,
         }
+        # The raw CLS embedding (when the graph exports it) rides along for
+        # the pipeline's embedding-space OOD score. It is an internal
+        # numpy array — the pipeline consumes it and never forwards it into
+        # the JSON response, so it doesn't touch the public API contract.
+        if embedding is not None:
+            result["embedding"] = np.asarray(embedding, dtype=np.float32)
+        return result

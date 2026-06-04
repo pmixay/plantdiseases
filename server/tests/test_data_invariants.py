@@ -505,6 +505,56 @@ def test_make_eval_loader_uses_allow_empty_when_supported():
     ), "make_eval_loader is not threading allow_empty into ImageFolder"
 
 
+def test_classifier_exports_embedding_as_second_output():
+    """Report P1 (embedding OOD): the classifier ONNX must export the DINOv2
+    CLS embedding as a SECOND output so the server can compute an
+    embedding-space k-NN OOD score without a second model. output[0] must
+    stay the logits so every existing run(...)[0] call site is unaffected."""
+    src = _notebook_source()
+    assert "_ExportWithEmbedding" in src, "embedding-export wrapper missing"
+    assert re.search(r"output_names\s*=\s*\[\s*'logits'\s*,\s*'embedding'\s*\]", src), (
+        "ONNX export must declare a 2nd 'embedding' output after 'logits'"
+    )
+    # The wrapper must return (head(feats), feats) — logits first, embedding
+    # second — so the order matches the output_names above.
+    assert re.search(r"return\s+self\.clf\.head\(feats\)\s*,\s*feats", src), (
+        "the export wrapper must return (logits, embedding) in that order"
+    )
+
+
+def test_embedding_ood_is_calibrated_and_shipped():
+    """Report P1: the embedding-space OOD bank + threshold must be calibrated
+    (bank from one split, threshold on a DISJOINT split at TARGET_PLANT_FPR),
+    shipped as ood_embedding.npz, and referenced from classes.json
+    ood.embedding so the runtime ood.py can load it."""
+    src = _notebook_source()
+    assert "Embedding-space OOD (k-NN) calibration" in src, "embedding OOD block missing"
+    # Bank from conformal_cal, threshold on temperature_cal (disjoint splits).
+    assert "_collect_embeddings(eval_sess, cal_dl)" in src, "OOD bank not built from conformal_cal"
+    assert "_collect_embeddings(eval_sess, temp_cal_dl)" in src, (
+        "OOD threshold not calibrated on the disjoint temperature_cal split"
+    )
+    assert re.search(r"np\.quantile\(_ps,\s*1\.0\s*-\s*TARGET_PLANT_FPR\)", src), (
+        "OOD threshold must be the (1 - TARGET_PLANT_FPR) quantile of in-dist scores"
+    )
+    # Shipped artefact + classes.json wiring.
+    assert "np.savez_compressed('models/ood_embedding.npz'" in src, "OOD bank not written"
+    assert "'embedding': EMBEDDING_OOD" in src, (
+        "classes.json ood section must carry the embedding OOD config"
+    )
+
+
+def test_detector_crop_diagnostic_reports_whole_frame_fold():
+    """Report P0 (detector-crop -0.093): the production-faithful diagnostic
+    must report the crop+whole-frame FOLD alongside crop-only and whole-image
+    so a Colab run directly verifies the pipeline arbitration recovers points."""
+    src = _notebook_source()
+    assert "crop+whole_fold" in src, "detector-crop diagnostic doesn't report the fold"
+    assert "_yp_fold" in src and "fold_disease_macro_f1" in src, (
+        "the folded prediction + its logged F1 must be present"
+    )
+
+
 def test_ood_floor_is_calibrated_not_hardcoded():
     """audit fix #2: classes.json max_logit_floor must be computed from
     the MaxLogit distribution on plants vs NAP, not hardcoded to 4.0."""
