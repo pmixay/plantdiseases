@@ -580,6 +580,13 @@ def test_kaggle_credentials_support_new_token_format_and_upload():
     assert re.search(r"KAGGLE_UPLOAD_CREDS\s*=\s*False", src), (
         "the upload trigger must default to False so Run-all never blocks on a dialog"
     )
+    # Colab secrets are not auto-exported as env vars, so a KAGGLE_API_TOKEN
+    # secret must be pulled in explicitly via google.colab.userdata before the
+    # credential check, or a set secret reads as "no credentials".
+    assert "def _kaggle_sync_colab_secrets" in src and "from google.colab import userdata" in src, (
+        "must bridge a Colab KAGGLE_API_TOKEN secret into the environment "
+        "(google.colab.userdata) — secrets are not auto-exported as env vars"
+    )
 
 
 def test_classifier_exports_embedding_as_second_output():
