@@ -10,6 +10,7 @@ import com.plantdiseases.app.data.model.CommunityOpinionRequest
 import com.plantdiseases.app.data.model.CommunityOpinionsResponse
 import com.plantdiseases.app.data.model.CommunityScansResponse
 import com.plantdiseases.app.data.model.CommunityScanUploadResponse
+import com.plantdiseases.app.data.model.SpeciesInfoResponse
 import com.plantdiseases.app.data.model.FeedbackRequest
 import com.plantdiseases.app.data.model.FeedbackResponse
 import com.plantdiseases.app.data.model.HealthResponse
@@ -145,6 +146,21 @@ interface ApiService {
     suspend fun communityMyOpinions(
         @Path("user_pseudo_id") userPseudoId: String,
     ): retrofit2.Response<CommunityOpinionsResponse>
+
+    /** Localized Wikipedia blurb + lead image for a scientific name. */
+    @GET("api/species-info")
+    suspend fun speciesInfo(
+        @Query("name") name: String,
+        @Query("locale") locale: String = "en",
+    ): retrofit2.Response<SpeciesInfoResponse>
+
+    /** Community scans of one species (scientific name), across regions. */
+    @GET("api/community/by-species")
+    suspend fun communityBySpecies(
+        @Query("species") species: String,
+        @Query("limit") limit: Int = 12,
+        @Query("user_pseudo_id") userPseudoId: String? = null,
+    ): retrofit2.Response<CommunityScansResponse>
 }
 
 /**

@@ -508,6 +508,55 @@
                         android:textSize="@dimen/text_body_sm"
                         android:textColor="@color/primary" />
 
+                    <!-- Reference photo + localized blurb (Wikipedia). -->
+                    <ImageView
+                        android:id="@+id/iv_species_photo"
+                        android:layout_width="match_parent"
+                        android:layout_height="160dp"
+                        android:layout_marginTop="@dimen/space_md"
+                        android:scaleType="centerCrop"
+                        android:visibility="gone"
+                        android:contentDescription="@null" />
+
+                    <TextView
+                        android:id="@+id/tv_species_blurb"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_sm"
+                        android:textAppearance="@style/TextAppearance.App.Body"
+                        android:maxLines="5"
+                        android:ellipsize="end"
+                        android:visibility="gone" />
+
+                    <TextView
+                        android:id="@+id/tv_species_source"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_xs"
+                        android:text="@string/species_source_wikipedia"
+                        android:textSize="@dimen/text_body_sm"
+                        android:textColor="@color/primary"
+                        android:visibility="gone" />
+
+                    <!-- Other community scans of this species. -->
+                    <TextView
+                        android:id="@+id/tv_species_community_label"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_md"
+                        android:textSize="@dimen/text_body_sm"
+                        android:textColor="@color/on_surface_secondary"
+                        android:fontFamily="sans-serif-medium"
+                        android:visibility="gone" />
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/rv_species_community"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_sm"
+                        android:clipToPadding="false"
+                        android:visibility="gone" />
+
                     <LinearLayout
                         android:id="@+id/species_alts_layout"
                         android:layout_width="match_parent"

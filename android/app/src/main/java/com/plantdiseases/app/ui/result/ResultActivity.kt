@@ -655,6 +655,75 @@ class ResultActivity : AppCompatActivity() {
         // available on the live AnalysisResponse and could be wired
         // later if we add multi-pick UX.
         binding.speciesAltsLayout.removeAllViews()
+
+        // Enrich with a localized Wikipedia blurb + lead photo, and a strip of
+        // other community scans of this species — best-effort, both need the
+        // scientific name and stay hidden on failure.
+        binding.ivSpeciesPhoto.visibility = View.GONE
+        binding.tvSpeciesBlurb.visibility = View.GONE
+        binding.tvSpeciesSource.visibility = View.GONE
+        binding.tvSpeciesCommunityLabel.visibility = View.GONE
+        binding.rvSpeciesCommunity.visibility = View.GONE
+        if (sci != null) loadSpeciesEnrichment(sci)
+    }
+
+    /** Best-effort species enrichment: a localized Wikipedia blurb + lead
+     *  photo, and a horizontal strip of other community scans of the species. */
+    private fun loadSpeciesEnrichment(scientific: String) {
+        val repo = (application as PlantDiseasesApp).scanRepository
+        val isRu = LocaleHelper.isRussian(this)
+        val pseudoId = TelemetryIds.userPseudoId(this)
+
+        lifecycleScope.launch {
+            repo.getSpeciesInfo(scientific, if (isRu) "ru" else "en").onSuccess { info ->
+                if (!info.available) return@onSuccess
+                info.extract?.takeIf { it.isNotBlank() }?.let {
+                    binding.tvSpeciesBlurb.text = it
+                    binding.tvSpeciesBlurb.visibility = View.VISIBLE
+                }
+                info.imageUrl?.takeIf { it.isNotBlank() }?.let { url ->
+                    Glide.with(this@ResultActivity)
+                        .load(url)
+                        .transform(CenterCrop(), RoundedCorners(24))
+                        .into(binding.ivSpeciesPhoto)
+                    binding.ivSpeciesPhoto.visibility = View.VISIBLE
+                }
+                val page = info.pageUrl
+                if (!page.isNullOrBlank()) {
+                    binding.tvSpeciesSource.visibility = View.VISIBLE
+                    binding.tvSpeciesSource.setOnClickListener {
+                        runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(page))) }
+                    }
+                }
+            }
+        }
+
+        val adapter = SimilarScansAdapter(
+            displayName = { key -> classKeyDisplayName(key, isRu) ?: key },
+            onClick = { item ->
+                CommunityOpinionSheet.show(
+                    supportFragmentManager,
+                    item.scanId,
+                    classKeyDisplayName(item.disease, isRu) ?: item.disease,
+                )
+            },
+        )
+        binding.rvSpeciesCommunity.layoutManager =
+            androidx.recyclerview.widget.LinearLayoutManager(
+                this, androidx.recyclerview.widget.LinearLayoutManager.HORIZONTAL, false,
+            )
+        binding.rvSpeciesCommunity.adapter = adapter
+        lifecycleScope.launch {
+            repo.communityScansBySpecies(scientific, pseudoId).onSuccess { resp ->
+                if (resp.items.isNotEmpty()) {
+                    adapter.submit(resp.items)
+                    binding.tvSpeciesCommunityLabel.text =
+                        getString(R.string.species_community_others)
+                    binding.tvSpeciesCommunityLabel.visibility = View.VISIBLE
+                    binding.rvSpeciesCommunity.visibility = View.VISIBLE
+                }
+            }
+        }
     }
 
     private fun buildSimilarScansCard(

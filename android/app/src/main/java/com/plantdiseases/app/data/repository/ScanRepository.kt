@@ -703,6 +703,47 @@ class ScanRepository(
             }
         }
 
+    /** Localized Wikipedia blurb + lead image for a scientific name. */
+    suspend fun getSpeciesInfo(
+        name: String,
+        locale: String,
+    ): Result<com.plantdiseases.app.data.model.SpeciesInfoResponse> =
+        withContext(Dispatchers.IO) {
+            try {
+                val response = apiService.speciesInfo(name, locale)
+                if (response.isSuccessful && response.body() != null) {
+                    Result.success(response.body()!!)
+                } else {
+                    Result.failure(Exception("species-info failed: ${response.code()}"))
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+    /** Community scans of one species (scientific name), across regions. */
+    suspend fun communityScansBySpecies(
+        species: String,
+        userPseudoId: String?,
+        limit: Int = 12,
+    ): Result<com.plantdiseases.app.data.model.CommunityScansResponse> =
+        withContext(Dispatchers.IO) {
+            try {
+                val response = apiService.communityBySpecies(
+                    species = species,
+                    limit = limit,
+                    userPseudoId = userPseudoId?.takeIf { it.isNotBlank() },
+                )
+                if (response.isSuccessful && response.body() != null) {
+                    Result.success(response.body()!!)
+                } else {
+                    Result.failure(Exception("by-species failed: ${response.code()}"))
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
     /** Erase every community-shared row for this install. */
     suspend fun deleteCommunityContributions(userPseudoId: String): Result<Unit> =
         withContext(Dispatchers.IO) {

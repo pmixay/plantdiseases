@@ -344,6 +344,16 @@ data class IdentifyResponse(
     @SerializedName("cached") val cached: Boolean? = null,
 )
 
+/** /api/species-info response — localized Wikipedia blurb + lead photo. */
+data class SpeciesInfoResponse(
+    @SerializedName("available") val available: Boolean = false,
+    @SerializedName("title") val title: String? = null,
+    @SerializedName("extract") val extract: String? = null,
+    @SerializedName("image_url") val imageUrl: String? = null,
+    @SerializedName("page_url") val pageUrl: String? = null,
+    @SerializedName("source") val source: String? = null,
+)
+
 /** /api/care-plan request body. */
 data class CarePlanRequest(
     @SerializedName("disease") val disease: String,
