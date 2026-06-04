@@ -68,7 +68,9 @@ class GalleryFragment : Fragment() {
         }
 
         setupFilterChips()
-        loadScans()
+        // Data loads in onResume() — which always fires right after this on
+        // first show, and again on every return. Loading here as well re-ran
+        // the grid's entry animation, so the photos appeared to load twice.
     }
 
     private fun setupStaggerAnimation() {

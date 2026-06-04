@@ -76,7 +76,8 @@ class GardenFragment : Fragment() {
             Haptics.medium(requireContext())
             showPlantDialog(null)
         }
-        loadPlants()
+        // Plants load in onResume() (fires on first show + every return).
+        // Loading here too re-ran the fade-in, so the plants appeared twice.
     }
 
     override fun onResume() {
