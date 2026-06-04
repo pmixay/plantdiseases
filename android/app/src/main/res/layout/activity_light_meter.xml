@@ -119,28 +119,14 @@
 
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- Species section -->
+            <!-- Light needs — auto-detected from the plant's species; the
+                 ideal-range card below names the detected type. -->
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginBottom="@dimen/space_sm"
-                android:text="@string/light_plant_type"
+                android:text="@string/light_needs_header"
                 android:textColor="@color/on_surface_secondary"
                 android:textSize="@dimen/text_body" />
-
-            <HorizontalScrollView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:scrollbars="none">
-
-                <com.google.android.material.chip.ChipGroup
-                    android:id="@+id/light_chip_group"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    app:singleLine="true"
-                    app:singleSelection="true" />
-
-            </HorizontalScrollView>
 
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"

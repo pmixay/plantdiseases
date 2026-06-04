@@ -39,6 +39,8 @@ import com.plantdiseases.app.util.ImageUtils
 import kotlinx.coroutines.launch
 import java.io.File
 import java.util.Locale
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 class CameraFragment : Fragment() {
 
@@ -46,6 +48,8 @@ class CameraFragment : Fragment() {
     private val binding get() = _binding!!
 
     private var imageCapture: ImageCapture? = null
+    private var imageAnalysis: ImageAnalysis? = null
+    private var analysisExecutor: ExecutorService? = null
     private var cameraProvider: ProcessCameraProvider? = null
     private var camera: Camera? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
@@ -102,13 +106,18 @@ class CameraFragment : Fragment() {
                     navigateToAnalysis(path)
                 } else {
                     Toast.makeText(requireContext(), getString(R.string.crop_error), Toast.LENGTH_SHORT).show()
+                    discardPendingCrop()
                 }
             }
-            // result.error == null means the user simply backed out of the
-            // crop screen — stay on the camera silently.
             result.error != null -> {
                 Toast.makeText(requireContext(), getString(R.string.crop_error), Toast.LENGTH_SHORT).show()
+                discardPendingCrop()
             }
+            // result.error == null (and not successful) means the user simply
+            // backed out of the crop screen — stay on the camera silently and
+            // drop the staged crop so abandoned files don't pile up in
+            // filesDir/plant_images.
+            else -> discardPendingCrop()
         }
     }
 
@@ -295,20 +304,50 @@ class CameraFragment : Fragment() {
                 .setTargetRotation(rotation)
                 .build()
 
+            // Real-time scan-quality coach. KEEP_ONLY_LATEST drops frames
+            // rather than queueing, so a slow grade never stalls the camera.
+            val executor = analysisExecutor
+                ?: Executors.newSingleThreadExecutor().also { analysisExecutor = it }
+            imageAnalysis = ImageAnalysis.Builder()
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .setTargetRotation(rotation)
+                .build()
+                .also { analysis ->
+                    analysis.setAnalyzer(executor, ScanQualityAnalyzer { quality ->
+                        // Analyzer runs off the main thread — hop back before
+                        // touching views, and no-op if the view is gone.
+                        _binding?.root?.post { updateScanCoach(quality) }
+                    })
+                }
+
             val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
 
             try {
                 cameraProvider?.unbindAll()
                 camera = cameraProvider?.bindToLifecycle(
                     viewLifecycleOwner, cameraSelector,
-                    preview, imageCapture,
+                    preview, imageCapture, imageAnalysis,
                 )
 
                 binding.btnFlash.visibility =
                     if (camera?.cameraInfo?.hasFlashUnit() == true) View.VISIBLE else View.GONE
 
             } catch (e: Exception) {
-                Toast.makeText(requireContext(), getString(R.string.camera_error), Toast.LENGTH_SHORT).show()
+                // Some constrained devices reject the 3-use-case combination
+                // (preview + capture + analysis). Drop the advisory analyzer
+                // and rebind so the core capture flow always works.
+                try {
+                    cameraProvider?.unbindAll()
+                    imageAnalysis = null
+                    camera = cameraProvider?.bindToLifecycle(
+                        viewLifecycleOwner, cameraSelector,
+                        preview, imageCapture,
+                    )
+                    binding.btnFlash.visibility =
+                        if (camera?.cameraInfo?.hasFlashUnit() == true) View.VISIBLE else View.GONE
+                } catch (e2: Exception) {
+                    Toast.makeText(requireContext(), getString(R.string.camera_error), Toast.LENGTH_SHORT).show()
+                }
             }
         }, ContextCompat.getMainExecutor(requireContext()))
     }
@@ -332,6 +371,28 @@ class CameraFragment : Fragment() {
      *  straight to capture. */
     private fun continueCaptureFlow() {
         takePhoto()
+    }
+
+    /** Reflect the on-device scan-quality grade in the coach pill. Advisory
+     *  only — the shutter stays enabled regardless of the verdict. */
+    private fun updateScanCoach(quality: ScanQualityAnalyzer.ScanQuality) {
+        val b = _binding ?: return
+        val (msg, ready) = when (quality) {
+            ScanQualityAnalyzer.ScanQuality.TOO_DARK ->
+                getString(R.string.coach_too_dark) to false
+            ScanQualityAnalyzer.ScanQuality.TOO_BRIGHT ->
+                getString(R.string.coach_too_bright) to false
+            ScanQualityAnalyzer.ScanQuality.BLURRY ->
+                getString(R.string.coach_blurry) to false
+            ScanQualityAnalyzer.ScanQuality.GOOD ->
+                getString(R.string.coach_good) to true
+        }
+        b.tvScanCoach.text = msg
+        b.tvScanCoach.visibility = View.VISIBLE
+        // Translucent green when the frame is good to shoot, neutral dark
+        // scrim while the user still needs to adjust.
+        val tint = if (ready) 0xCC2E7D32.toInt() else 0xB3000000.toInt()
+        b.tvScanCoach.backgroundTintList = ColorStateList.valueOf(tint)
     }
 
     private fun takePhoto() {
@@ -451,6 +512,14 @@ class CameraFragment : Fragment() {
         )
     }
 
+    /** Delete the staged crop the user abandoned (cancelled or errored) so
+     *  not-yet-analysed crops don't accumulate in filesDir/plant_images.
+     *  Successful crops are kept — they become the saved scan's imagePath. */
+    private fun discardPendingCrop() {
+        pendingCropFile?.let { f -> runCatching { if (f.exists()) f.delete() } }
+        pendingCropFile = null
+    }
+
     private fun navigateToAnalysis(imagePath: String) {
         captureInFlight = true
         val intent = Intent(requireContext(), AnalysisActivity::class.java).apply {
@@ -556,6 +625,10 @@ class CameraFragment : Fragment() {
             cm.unregisterNetworkCallback(it)
         }
         networkCallback = null
+        imageAnalysis?.clearAnalyzer()
+        imageAnalysis = null
+        analysisExecutor?.shutdown()
+        analysisExecutor = null
         _binding = null
     }
 

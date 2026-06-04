@@ -56,6 +56,9 @@ try:
         COMMUNITY_THUMB_DIR,
     )
     from .community import (
+        daily_opinion_count_for_ip_hash as community_daily_opinion_writes,
+    )
+    from .community import (
         daily_write_count_for_ip_hash as community_daily_writes,
     )
     from .community import (
@@ -71,13 +74,28 @@ try:
         nearby_scans as community_nearby_scans,
     )
     from .community import (
+        opinion_counts as community_opinion_counts,
+    )
+    from .community import (
+        opinions_by_author as community_opinions_by_author,
+    )
+    from .community import (
+        opinions_for as community_opinions_for,
+    )
+    from .community import (
         prune_older_than as community_prune_older_than,
+    )
+    from .community import (
+        record_opinion as community_record_opinion,
     )
     from .community import (
         record_scan as community_record_scan,
     )
     from .community import (
         region_summary as community_region_summary,
+    )
+    from .community import (
+        scans_by_species as community_scans_by_species,
     )
     from .community import (
         stats_snapshot as community_stats_snapshot,
@@ -111,6 +129,7 @@ try:
         prune_older_than as feedback_prune_older_than,
     )
     from .pipeline import PlantDiseasePipeline
+    from .species_info import fetch_species_info
 except ImportError:
     from ai_services import (
         chat_metrics_snapshot,
@@ -121,6 +140,9 @@ except ImportError:
     )
     from community import (
         COMMUNITY_THUMB_DIR,
+    )
+    from community import (
+        daily_opinion_count_for_ip_hash as community_daily_opinion_writes,
     )
     from community import (
         daily_write_count_for_ip_hash as community_daily_writes,
@@ -138,13 +160,28 @@ except ImportError:
         nearby_scans as community_nearby_scans,
     )
     from community import (
+        opinion_counts as community_opinion_counts,
+    )
+    from community import (
+        opinions_by_author as community_opinions_by_author,
+    )
+    from community import (
+        opinions_for as community_opinions_for,
+    )
+    from community import (
         prune_older_than as community_prune_older_than,
+    )
+    from community import (
+        record_opinion as community_record_opinion,
     )
     from community import (
         record_scan as community_record_scan,
     )
     from community import (
         region_summary as community_region_summary,
+    )
+    from community import (
+        scans_by_species as community_scans_by_species,
     )
     from community import (
         stats_snapshot as community_stats_snapshot,
@@ -178,6 +215,7 @@ except ImportError:
         prune_older_than as feedback_prune_older_than,
     )
     from pipeline import PlantDiseasePipeline
+    from species_info import fetch_species_info
 
 def _resolve_app_version() -> str:
     """Resolve the served model/app version.
@@ -450,6 +488,7 @@ def _extract_api_key(request: Request) -> str | None:
 # restarts unlike the in-memory rate bucket.
 FEEDBACK_DAILY_QUOTA = get_int("FEEDBACK_DAILY_QUOTA", 200)
 COMMUNITY_DAILY_QUOTA = get_int("COMMUNITY_DAILY_QUOTA", 50)
+COMMUNITY_OPINION_DAILY_QUOTA = get_int("COMMUNITY_OPINION_DAILY_QUOTA", 60)
 # Retention windows (days). Daily background task in the FastAPI
 # lifespan drops rows past this age.
 FEEDBACK_RETENTION_DAYS = get_int("FEEDBACK_RETENTION_DAYS", 180)
@@ -2275,6 +2314,70 @@ async def community_scan_upload(
     return JSONResponse(content={"ok": True, "id": row_id})
 
 
+class CommunityOpinionRequest(BaseModel):
+    scan_id: str = Field(..., min_length=1, max_length=128)
+    user_pseudo_id: str = Field(..., min_length=1, max_length=128)
+    suggested_disease: str = Field(..., min_length=1, max_length=64)
+    note: str | None = Field(default=None, max_length=500)
+
+
+@api_router.post("/community/opinion")
+async def community_opinion_submit(payload: CommunityOpinionRequest, request: Request):
+    """Record one community 'second opinion' on a shared scan.
+
+    The suggested disease must be a known classifier class so the consensus
+    tally stays clean; any free text lives only in the optional note.
+    """
+    disease = payload.suggested_disease.strip()
+    if disease not in DISEASES_DATABASE:
+        raise HTTPException(status_code=422, detail="Unknown suggested disease")
+
+    client_ip = _client_ip(request)
+    ip_hash = hash_client_ip(client_ip)
+    loop = asyncio.get_running_loop()
+    today = await loop.run_in_executor(
+        _get_inference_executor(),
+        lambda: community_daily_opinion_writes(ip_hash),
+    )
+    if today >= COMMUNITY_OPINION_DAILY_QUOTA:
+        raise HTTPException(status_code=429, detail="Daily opinion quota reached.")
+
+    sid = payload.scan_id.strip()
+    try:
+        await loop.run_in_executor(
+            _get_inference_executor(),
+            lambda: community_record_opinion(
+                scan_id=sid,
+                author_pseudo_id=payload.user_pseudo_id.strip(),
+                suggested_disease=disease,
+                note=payload.note,
+                client_ip=client_ip,
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Community opinion write failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to record opinion") from exc
+
+    result = await loop.run_in_executor(
+        _get_inference_executor(), lambda: community_opinions_for(sid),
+    )
+    return JSONResponse(
+        content={"ok": True, "count": len(result["opinions"]), **result}
+    )
+
+
+@api_router.get("/community/opinions/{scan_id}")
+async def community_opinions_list(scan_id: str):
+    """List community opinions + a consensus tally for one shared scan."""
+    sid = (scan_id or "").strip()
+    if not sid or len(sid) > 128:
+        raise HTTPException(status_code=422, detail="Invalid scan id")
+    result = await asyncio.get_running_loop().run_in_executor(
+        _get_inference_executor(), lambda: community_opinions_for(sid),
+    )
+    return JSONResponse(content={"scan_id": sid, **result})
+
+
 @api_router.get("/community/nearby")
 async def community_scan_nearby(
     country: str | None = None,
@@ -2321,7 +2424,64 @@ async def community_scan_nearby(
         region_norm or None,
         exclude_user_pseudo_id=user_pseudo_id,
     )
+    # Annotate each cell with how many second opinions it has so the carousel
+    # can show a badge.
+    counts = community_opinion_counts([str(r.get("scan_id")) for r in rows if r.get("scan_id")])
+    for r in rows:
+        r["opinion_count"] = counts.get(str(r.get("scan_id")), 0)
     return JSONResponse(content={"items": rows, "summary": summary})
+
+
+@api_router.get("/community/my-opinions/{user_pseudo_id}")
+async def community_my_opinions(user_pseudo_id: str):
+    """List the second opinions one install has authored (newest first)."""
+    pid = (user_pseudo_id or "").strip()
+    if not pid or len(pid) > 128:
+        raise HTTPException(status_code=422, detail="Invalid id")
+    rows = await asyncio.get_running_loop().run_in_executor(
+        _get_inference_executor(), lambda: community_opinions_by_author(pid),
+    )
+    return JSONResponse(content={"opinions": rows})
+
+
+@api_router.get("/community/by-species")
+async def community_by_species(
+    species: str | None = None,
+    limit: int = 12,
+    user_pseudo_id: str | None = None,
+):
+    """Community scans of one species (by scientific name), across all
+    regions — the result screen's 'other <species> in the community' strip."""
+    sci = (species or "").strip()
+    if not sci:
+        raise HTTPException(status_code=422, detail="Invalid species")
+    rows = await asyncio.get_running_loop().run_in_executor(
+        _get_inference_executor(),
+        lambda: community_scans_by_species(
+            sci,
+            limit=max(1, min(int(limit), 50)),
+            exclude_user_pseudo_id=user_pseudo_id,
+        ),
+    )
+    counts = community_opinion_counts([str(r.get("scan_id")) for r in rows if r.get("scan_id")])
+    for r in rows:
+        r["opinion_count"] = counts.get(str(r.get("scan_id")), 0)
+    return JSONResponse(content={"items": rows})
+
+
+@api_router.get("/species-info")
+async def species_info_endpoint(name: str, locale: str = "en"):
+    """Localized Wikipedia summary + lead image for a scientific name."""
+    n = (name or "").strip()
+    if not n or len(n) > 128:
+        raise HTTPException(status_code=422, detail="Invalid species name")
+    lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
+    info = await asyncio.get_running_loop().run_in_executor(
+        _get_inference_executor(), lambda: fetch_species_info(n, lang),
+    )
+    if info is None:
+        return JSONResponse(content={"available": False})
+    return JSONResponse(content={"available": True, **info})
 
 
 @api_router.get("/community/thumb/{filename}")

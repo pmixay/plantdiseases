@@ -29,6 +29,11 @@
     <string name="grant_permission">Allow Camera</string>
     <string name="camera_error">Failed to start camera</string>
     <string name="capture_error">Failed to capture photo</string>
+    <!-- Live scan-quality coach (on-device focus/exposure guidance). -->
+    <string name="coach_too_dark">Too dark — find better light</string>
+    <string name="coach_too_bright">Too bright — cut the glare</string>
+    <string name="coach_blurry">Hold steady — image is blurry</string>
+    <string name="coach_good">✓ Sharp — ready to scan</string>
     <string name="image_load_error">Failed to load image</string>
     <string name="crop_title">Crop photo</string>
     <string name="crop_action_done">Done</string>
@@ -56,6 +61,7 @@
     <string name="not_a_plant_diagnosis_name">Not a plant in frame</string>
     <string name="not_a_plant_result_body">The model couldn\'t find a plant leaf in this photo. Try retaking the picture so the leaf fills most of the frame, with steady hands and good lighting.</string>
     <string name="description_label">Description</string>
+    <string name="result_learn_more">Read the full guide</string>
     <string name="treatment_label">Treatment</string>
     <string name="prevention_label">Prevention</string>
 
@@ -161,12 +167,32 @@
     <!-- Auto-detected species card -->
     <string name="species_card_title">Detected species</string>
     <string name="species_card_score">PlantNet match: %1$d%%</string>
+    <string name="species_source_wikipedia">Source: Wikipedia</string>
+    <string name="species_community_others">Other scans of this species</string>
+    <string name="example_photos_label">What it looks like</string>
     <!-- Similar scans (community corpus) -->
     <string name="similar_scans_title">Similar scans near you</string>
     <string name="similar_scans_subtitle">%1$d recent scans near %2$s</string>
     <string name="similar_scans_subtitle_region">Recent diagnoses near %1$s</string>
     <string name="similar_scans_subtitle_no_region">Enable approximate location to see scans near you.</string>
     <string name="similar_scans_empty">No nearby scans yet — your scan will be the first.</string>
+    <!-- Community second opinion -->
+    <string name="community_opinion_title">Get a second opinion</string>
+    <string name="community_opinion_subtitle">Ask the community what they think — and weigh in on others\' scans.</string>
+    <string name="community_opinion_diagnosis_label">Diagnosis</string>
+    <string name="community_opinion_pick_label">What do you think it is?</string>
+    <string name="community_opinion_note_hint">Add a note (optional)</string>
+    <string name="community_opinion_send">Post opinion</string>
+    <string name="community_opinion_consensus_prefix">Community so far: %1$s</string>
+    <string name="community_opinion_empty">No opinions yet — be the first to weigh in.</string>
+    <string name="community_opinion_thanks">Thanks for your opinion!</string>
+    <string name="community_opinion_error">Couldn\'t reach the community. Try again.</string>
+    <string name="community_opinions_badge">%1$d opinions</string>
+    <string name="result_view_opinions">%1$d community opinions</string>
+    <string name="community_my_opinions_title">My second opinions</string>
+    <string name="community_my_opinions_subtitle">Diagnoses you\'ve weighed in on</string>
+    <string name="community_my_opinions_empty">You haven\'t sent any opinions yet.</string>
+    <string name="result_get_second_opinion">Get a second opinion</string>
     <string name="similar_scans_chip_format">%1$s · %2$d</string>
 
     <!-- Community consent + Profile toggle -->
@@ -336,7 +362,7 @@
     <string name="doctor_clear">Clear chat</string>
     <!-- Light Meter -->
     <string name="light_meter">Light Meter</string>
-    <string name="light_plant_type">Plant type</string>
+    <string name="light_needs_header">Light needs for this plant</string>
     <string name="light_lux">lux</string>
     <string name="light_too_dark">Too dark</string>
     <string name="light_ideal">Good light</string>

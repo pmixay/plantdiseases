@@ -22,6 +22,7 @@ import com.plantdiseases.app.util.ServerConfig
  */
 class SimilarScansAdapter(
     private val displayName: (String) -> String,
+    private val onClick: (CommunityScanItem) -> Unit = {},
 ) : RecyclerView.Adapter<SimilarScansAdapter.VH>() {
 
     private var items: List<CommunityScanItem> = emptyList()
@@ -48,11 +49,21 @@ class SimilarScansAdapter(
         private val label: TextView = itemView.findViewById(R.id.tv_similar_label)
         private val region: TextView = itemView.findViewById(R.id.tv_similar_region)
         private val time: TextView = itemView.findViewById(R.id.tv_similar_time)
+        private val opinions: TextView = itemView.findViewById(R.id.tv_similar_opinions)
 
         fun bind(item: CommunityScanItem) {
+            itemView.setOnClickListener { onClick(item) }
             label.text = displayName(item.disease)
             region.text = formatRegion(item.region, item.country)
             time.text = formatTimeAgo(item.createdAt)
+            if (item.opinionCount > 0) {
+                opinions.text = itemView.context.getString(
+                    R.string.community_opinions_badge, item.opinionCount,
+                )
+                opinions.visibility = View.VISIBLE
+            } else {
+                opinions.visibility = View.GONE
+            }
 
             val thumb = item.thumbPath
             if (thumb.isNullOrBlank()) {

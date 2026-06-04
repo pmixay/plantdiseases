@@ -1140,9 +1140,429 @@ WINTER (December-February):
             """.trimIndent(),
             iconRes = R.drawable.ic_care,
             category = GuideCategory.CARE_TIPS
+        ),
+
+        // --- Articles for the remaining diagnosis classes, so every scan
+        // verdict can deep-link to a real guide (see guideIdForDisease). ---
+
+        GuideItem(
+            id = "healthy",
+            titleEn = "Healthy Plant",
+            titleRu = "Здоровое растение",
+            descriptionEn = "What a thriving plant looks like — and how to keep it that way",
+            descriptionRu = "Как выглядит здоровое растение и как его таким сохранить",
+            contentEn = """
+A healthy houseplant is your baseline — knowing what "good" looks like makes problems easy to catch early.
+
+SIGNS OF A HEALTHY PLANT:
+• Firm, evenly coloured leaves with no spots or yellowing
+• Steady new growth during the growing season
+• Roots that are white or light tan, not mushy or brown
+• No pests on leaf undersides or stems
+
+KEEP IT THRIVING:
+• Water only when the top 2-3 cm of soil is dry
+• Give bright, indirect light (most foliage plants)
+• Feed lightly during spring and summer
+• Wipe dust off leaves so they can breathe
+• Re-pot every 1-2 years into fresh mix
+
+EARLY WARNING SIGNS:
+• New leaves smaller or paler than old ones
+• Sudden leaf drop or wilting
+• Sticky residue or fine webbing (pests)
+Catching these early is far easier than treating a full-blown problem.
+            """.trimIndent(),
+            contentRu = """
+Здоровое комнатное растение — это точка отсчёта: зная, как выглядит «норма», легко заметить проблемы на ранней стадии.
+
+ПРИЗНАКИ ЗДОРОВОГО РАСТЕНИЯ:
+• Плотные, равномерно окрашенные листья без пятен и пожелтения
+• Стабильный новый рост в период вегетации
+• Корни белые или светло-коричневые, не мягкие и не бурые
+• Нет вредителей на изнанке листьев и стеблях
+
+КАК ПОДДЕРЖАТЬ:
+• Поливайте, только когда верхние 2-3 см почвы просохли
+• Давайте яркий рассеянный свет (большинству лиственных)
+• Слегка подкармливайте весной и летом
+• Протирайте пыль с листьев, чтобы они «дышали»
+• Пересаживайте раз в 1-2 года в свежий грунт
+
+РАННИЕ ТРЕВОЖНЫЕ СИГНАЛЫ:
+• Новые листья мельче или бледнее старых
+• Внезапное опадение листьев или увядание
+• Липкий налёт или тонкая паутинка (вредители)
+Заметить это рано намного проще, чем лечить запущенную проблему.
+            """.trimIndent(),
+            iconRes = R.drawable.ic_healthy,
+            category = GuideCategory.CARE_TIPS
+        ),
+
+        GuideItem(
+            id = "leaf_scorch_underwatering",
+            titleEn = "Leaf Scorch (Under-watering)",
+            titleRu = "Краевой ожог (недолив)",
+            descriptionEn = "Crispy brown leaf edges from too little water",
+            descriptionRu = "Сухие коричневые края листьев от нехватки воды",
+            contentEn = """
+Leaf scorch from under-watering shows up as crispy, brown leaf edges and tips. It is a physiological stress, not an infection.
+
+SYMPTOMS:
+• Crispy brown or tan leaf margins and tips
+• Leaves feel dry and papery
+• Lower / older leaves affected first
+• Wilting that recovers after watering
+
+CAUSES:
+• Soil drying out completely between waterings
+• Low humidity and dry, warm air
+• Root-bound plants that can't hold enough water
+• Missed waterings during hot spells
+
+TREATMENT:
+1. Water thoroughly until it drains from the bottom
+2. For a bone-dry rootball, soak the pot in water for 20-30 minutes
+3. Trim badly scorched edges if you like (cosmetic only)
+4. Move away from heat sources and harsh direct sun
+
+PREVENTION:
+• Check soil moisture before it fully dries
+• Raise humidity for thirsty tropicals
+• Re-pot root-bound plants
+• Water more often in summer
+            """.trimIndent(),
+            contentRu = """
+Краевой ожог от недолива проявляется как сухие, коричневые края и кончики листьев. Это физиологический стресс, а не инфекция.
+
+СИМПТОМЫ:
+• Сухие коричневые края и кончики листьев
+• Листья сухие и «бумажные» на ощупь
+• Сначала страдают нижние / старые листья
+• Увядание, которое проходит после полива
+
+ПРИЧИНЫ:
+• Почва полностью пересыхает между поливами
+• Низкая влажность и сухой тёплый воздух
+• Тесный горшок — корни не удерживают воду
+• Пропущенные поливы в жару
+
+ЛЕЧЕНИЕ:
+1. Полейте обильно, пока вода не выйдет снизу
+2. Сухой земляной ком замочите в воде на 20-30 минут
+3. При желании обрежьте сильно засохшие края (косметика)
+4. Уберите от источников тепла и резкого прямого солнца
+
+ПРОФИЛАКТИКА:
+• Проверяйте влажность до полного пересыхания
+• Повышайте влажность для влаголюбивых тропиков
+• Пересаживайте растения из тесных горшков
+• Летом поливайте чаще
+            """.trimIndent(),
+            iconRes = R.drawable.ic_watering,
+            category = GuideCategory.COMMON_DISEASES
+        ),
+
+        GuideItem(
+            id = "nutrient_deficiency",
+            titleEn = "Nutrient Deficiency",
+            titleRu = "Дефицит питания",
+            descriptionEn = "Yellowing leaves from a lack of nutrients",
+            descriptionRu = "Пожелтение листьев из-за нехватки питания",
+            contentEn = """
+Nutrient deficiency appears as yellowing leaves (chlorosis), often in a tell-tale pattern, when the plant can't get enough of a key element.
+
+SYMPTOMS:
+• Yellowing between leaf veins while veins stay green
+• Pale or uniformly yellow new growth
+• Slow, weak growth
+• Older or younger leaves affected depending on the nutrient
+
+CAUSES:
+• Old, depleted potting soil
+• No feeding during active growth
+• Wrong soil pH locking out nutrients
+• Over-watering damaging the roots' ability to absorb
+
+TREATMENT:
+1. Feed with a balanced liquid fertiliser at half strength
+2. Re-pot into fresh, quality potting mix
+3. Correct watering so roots can absorb again
+4. For stubborn cases use a feed with micronutrients (iron, magnesium)
+
+PREVENTION:
+• Feed lightly through spring and summer
+• Refresh the topsoil or re-pot yearly
+• Don't over-water
+            """.trimIndent(),
+            contentRu = """
+Дефицит питания проявляется пожелтением листьев (хлороз), часто по характерному рисунку, когда растению не хватает ключевого элемента.
+
+СИМПТОМЫ:
+• Пожелтение между жилками, при этом жилки остаются зелёными
+• Бледный или равномерно жёлтый новый рост
+• Медленный, слабый рост
+• Страдают старые или молодые листья в зависимости от элемента
+
+ПРИЧИНЫ:
+• Старый, истощённый грунт
+• Отсутствие подкормок в период роста
+• Неподходящий pH почвы блокирует питание
+• Перелив повреждает способность корней усваивать
+
+ЛЕЧЕНИЕ:
+1. Подкормите сбалансированным жидким удобрением в половинной дозе
+2. Пересадите в свежий качественный грунт
+3. Наладьте полив, чтобы корни снова усваивали питание
+4. В упорных случаях используйте удобрение с микроэлементами (железо, магний)
+
+ПРОФИЛАКТИКА:
+• Слегка подкармливайте весной и летом
+• Обновляйте верхний слой почвы или пересаживайте ежегодно
+• Не переливайте
+            """.trimIndent(),
+            iconRes = R.drawable.ic_care,
+            category = GuideCategory.COMMON_DISEASES
+        ),
+
+        GuideItem(
+            id = "edema",
+            titleEn = "Edema",
+            titleRu = "Отёк (эдема)",
+            descriptionEn = "Corky bumps from a water imbalance — not an infection",
+            descriptionRu = "Пробковые бугорки от дисбаланса влаги — не инфекция",
+            contentEn = """
+Edema is a harmless physiological disorder — not a pest or infection. It happens when roots take up water faster than the leaves can release it, so cells burst and form bumps.
+
+SYMPTOMS:
+• Small water-blister bumps on leaf undersides
+• Bumps later turn corky, tan or rust-coloured
+• Common on peperomia, succulents, ivy and pelargonium
+• Affected leaves stay marked, but new growth is normal
+
+CAUSES:
+• Over-watering, especially in cool, dim, humid weather
+• Warm soil paired with cool, humid air
+• Poor air circulation
+
+TREATMENT:
+1. Water less, and only when the topsoil is dry
+2. Improve air flow and light
+3. Avoid watering on cool, cloudy days
+4. Don't remove healthy leaves — the damage is cosmetic
+
+PREVENTION:
+• Let soil dry slightly between waterings
+• Give brighter light and steady airflow
+• Avoid big swings between soil and air temperature
+            """.trimIndent(),
+            contentRu = """
+Отёк (эдема) — безвредное физиологическое нарушение, а не вредитель или инфекция. Возникает, когда корни поглощают воду быстрее, чем листья её испаряют, и клетки лопаются, образуя бугорки.
+
+СИМПТОМЫ:
+• Мелкие водянистые бугорки на изнанке листьев
+• Позже бугорки становятся пробковыми, бежевыми или ржавыми
+• Часто у пеперомии, суккулентов, плюща и пеларгонии
+• Поражённые листья остаются с отметинами, но новый рост нормальный
+
+ПРИЧИНЫ:
+• Перелив, особенно в прохладную, тёмную, влажную погоду
+• Тёплая почва при прохладном влажном воздухе
+• Плохая циркуляция воздуха
+
+ЛЕЧЕНИЕ:
+1. Поливайте реже и только когда верхний слой сухой
+2. Улучшите циркуляцию воздуха и освещение
+3. Не поливайте в прохладные пасмурные дни
+4. Не удаляйте здоровые листья — повреждение косметическое
+
+ПРОФИЛАКТИКА:
+• Давайте почве слегка просыхать между поливами
+• Обеспечьте более яркий свет и движение воздуха
+• Избегайте больших перепадов температуры почвы и воздуха
+            """.trimIndent(),
+            iconRes = R.drawable.ic_disease,
+            category = GuideCategory.COMMON_DISEASES
+        ),
+
+        GuideItem(
+            id = "sunburn_or_scorch",
+            titleEn = "Sunburn / Leaf Scorch",
+            titleRu = "Солнечный ожог",
+            descriptionEn = "Bleached or brown patches from too much direct light",
+            descriptionRu = "Выгоревшие или коричневые пятна от избытка прямого света",
+            contentEn = """
+Sunburn (leaf scorch from light) appears as bleached, brown or crispy patches where strong direct sun hits the leaves — most common after a plant is moved into brighter light too quickly.
+
+SYMPTOMS:
+• Bleached white, yellow or brown patches
+• Damage on the side facing the sun
+• Dry, crispy texture on affected spots
+• Sharp edges to the damaged area (unlike disease blotches)
+
+CAUSES:
+• Sudden move from low to direct light
+• Hot sun magnified through a window
+• Water droplets on leaves acting as lenses
+
+TREATMENT:
+1. Move the plant to bright, indirect light
+2. Trim badly damaged leaves if unsightly (cosmetic)
+3. Keep watering normal — don't overcompensate
+4. Let new growth come in adapted to the spot
+
+PREVENTION:
+• Acclimatise plants to brighter spots over 1-2 weeks
+• Diffuse harsh midday sun with a sheer curtain
+• Avoid watering leaves in strong sun
+            """.trimIndent(),
+            contentRu = """
+Солнечный ожог (от света) выглядит как выгоревшие, коричневые или сухие пятна там, где сильное прямое солнце попало на листья — чаще всего после слишком быстрого переноса на яркий свет.
+
+СИМПТОМЫ:
+• Выгоревшие белые, жёлтые или коричневые пятна
+• Повреждения со стороны, обращённой к солнцу
+• Сухая, хрустящая текстура на пятнах
+• Чёткие границы повреждения (в отличие от пятен болезней)
+
+ПРИЧИНЫ:
+• Резкий перенос из тени на прямой свет
+• Горячее солнце, усиленное стеклом окна
+• Капли воды на листьях работают как линзы
+
+ЛЕЧЕНИЕ:
+1. Переставьте растение на яркий рассеянный свет
+2. Обрежьте сильно повреждённые листья, если некрасиво (косметика)
+3. Поливайте как обычно — не переусердствуйте
+4. Дайте новому росту адаптироваться к месту
+
+ПРОФИЛАКТИКА:
+• Приучайте растения к яркому месту в течение 1-2 недель
+• Рассеивайте резкое полуденное солнце лёгкой занавеской
+• Не поливайте листья под сильным солнцем
+            """.trimIndent(),
+            iconRes = R.drawable.ic_light,
+            category = GuideCategory.COMMON_DISEASES
+        ),
+
+        GuideItem(
+            id = "pests",
+            titleEn = "Common Pests",
+            titleRu = "Распространённые вредители",
+            descriptionEn = "Spotting and treating sap-sucking houseplant pests",
+            descriptionRu = "Как распознать и вывести сосущих вредителей",
+            contentEn = """
+Most houseplant pests are tiny sap-suckers that weaken the plant and leave tell-tale signs. The combined "Pests" diagnosis covers the common indoor culprits.
+
+COMMON CULPRITS:
+• Mealybugs — white cottony fluff in leaf joints
+• Scale — small brown bumps on stems and leaf veins
+• Spider mites — fine webbing and pale stippling
+• Aphids — clusters of tiny green / black insects on new growth
+
+SYMPTOMS:
+• Sticky "honeydew" residue on leaves or nearby surfaces
+• Yellow stippling, curling or distorted new growth
+• Visible insects, webbing or cottony masses
+• Slowed growth and leaf drop
+
+TREATMENT:
+1. Isolate the plant from your others right away
+2. Wipe pests off with a cotton swab dipped in diluted alcohol
+3. Spray thoroughly with neem oil or insecticidal soap
+4. Repeat every 5-7 days for 3-4 weeks to catch hatchlings
+5. Rinse sturdy plants under the shower to dislodge mites
+
+PREVENTION:
+• Inspect new plants before bringing them home
+• Check leaf undersides during watering
+• Keep plants healthy — stressed plants attract pests
+• Wipe leaves and keep humidity up (mites love dry air)
+            """.trimIndent(),
+            contentRu = """
+Большинство вредителей комнатных растений — крошечные сосущие насекомые, которые ослабляют растение и оставляют характерные следы. Общий диагноз «Вредители» охватывает распространённых домашних виновников.
+
+ЧАСТЫЕ ВИНОВНИКИ:
+• Мучнистые червецы — белый ватный пушок в пазухах листьев
+• Щитовка — мелкие коричневые бугорки на стеблях и жилках
+• Паутинный клещ — тонкая паутинка и бледные точки
+• Тля — скопления мелких зелёных / чёрных насекомых на молодом росте
+
+СИМПТОМЫ:
+• Липкий налёт («медвяная роса») на листьях и рядом
+• Жёлтые точки, скручивание или искажение нового роста
+• Видимые насекомые, паутинка или ватные комочки
+• Замедление роста и опадение листьев
+
+ЛЕЧЕНИЕ:
+1. Сразу изолируйте растение от остальных
+2. Снимите вредителей ватной палочкой со спиртовым раствором
+3. Тщательно опрыскайте маслом нима или инсектицидным мылом
+4. Повторяйте каждые 5-7 дней в течение 3-4 недель
+5. Крепкие растения ополосните под душем, чтобы сбить клещей
+
+ПРОФИЛАКТИКА:
+• Осматривайте новые растения перед покупкой
+• Проверяйте изнанку листьев при поливе
+• Держите растения здоровыми — стресс привлекает вредителей
+• Протирайте листья и поддерживайте влажность (клещи любят сухой воздух)
+            """.trimIndent(),
+            iconRes = R.drawable.ic_pest,
+            category = GuideCategory.PESTS
         )
     )
 
     fun getByCategory(category: GuideCategory): List<GuideItem> =
         byCategory[category].orEmpty()
+
+    /**
+     * Map a classifier class key to a guide article id, or null when there's
+     * no article (e.g. not_a_plant). The guide ids were authored independently
+     * of the model taxonomy, so a few need translating (gray_mold_botrytis →
+     * botrytis, mealybug → mealybugs, scale → scale_insects).
+     */
+    fun guideIdForDisease(classKey: String): String? = when (classKey.trim().lowercase()) {
+        "powdery_mildew" -> "powdery_mildew"
+        "leaf_spot" -> "leaf_spot"
+        "viral_disease" -> "viral_disease"
+        "gray_mold_botrytis" -> "botrytis"
+        "mealybug" -> "mealybugs"
+        "scale" -> "scale_insects"
+        "pests" -> "pests"
+        "healthy" -> "healthy"
+        "leaf_scorch_underwatering" -> "leaf_scorch_underwatering"
+        "nutrient_deficiency" -> "nutrient_deficiency"
+        "edema" -> "edema"
+        "sunburn_or_scorch" -> "sunburn_or_scorch"
+        else -> null
+    }
+
+    /**
+     * English Wikipedia title for a guide article's example photos (fetched
+     * via /api/species-info). Null where example photos don't apply — pure
+     * care topics, the "healthy" article and the pests overview.
+     */
+    fun wikiQueryForGuideId(guideId: String): String? = when (guideId) {
+        "powdery_mildew" -> "Powdery mildew"
+        "leaf_spot" -> "Leaf spot"
+        "blight" -> "Blight"
+        "root_rot" -> "Root rot"
+        "leaf_mold" -> "Fulvia fulva"
+        "viral_disease" -> "Plant virus"
+        "rust" -> "Rust (fungus)"
+        "botrytis" -> "Botrytis cinerea"
+        "spider_mites" -> "Spider mite"
+        "aphids" -> "Aphid"
+        "mealybugs" -> "Mealybug"
+        "scale_insects" -> "Scale insect"
+        "leaf_scorch_underwatering" -> "Leaf scorch"
+        "nutrient_deficiency" -> "Chlorosis"
+        "edema" -> "Edema (plant disorder)"
+        "sunburn_or_scorch" -> "Sunscald"
+        else -> null
+    }
+
+    /** Wikipedia title for a classifier class's example photos. */
+    fun wikiQueryForDisease(classKey: String): String? =
+        guideIdForDisease(classKey)?.let { wikiQueryForGuideId(it) }
 }
