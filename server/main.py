@@ -74,6 +74,12 @@ try:
         nearby_scans as community_nearby_scans,
     )
     from .community import (
+        opinion_counts as community_opinion_counts,
+    )
+    from .community import (
+        opinions_by_author as community_opinions_by_author,
+    )
+    from .community import (
         opinions_for as community_opinions_for,
     )
     from .community import (
@@ -148,6 +154,12 @@ except ImportError:
     )
     from community import (
         nearby_scans as community_nearby_scans,
+    )
+    from community import (
+        opinion_counts as community_opinion_counts,
+    )
+    from community import (
+        opinions_by_author as community_opinions_by_author,
     )
     from community import (
         opinions_for as community_opinions_for,
@@ -2404,7 +2416,24 @@ async def community_scan_nearby(
         region_norm or None,
         exclude_user_pseudo_id=user_pseudo_id,
     )
+    # Annotate each cell with how many second opinions it has so the carousel
+    # can show a badge.
+    counts = community_opinion_counts([str(r.get("scan_id")) for r in rows if r.get("scan_id")])
+    for r in rows:
+        r["opinion_count"] = counts.get(str(r.get("scan_id")), 0)
     return JSONResponse(content={"items": rows, "summary": summary})
+
+
+@api_router.get("/community/my-opinions/{user_pseudo_id}")
+async def community_my_opinions(user_pseudo_id: str):
+    """List the second opinions one install has authored (newest first)."""
+    pid = (user_pseudo_id or "").strip()
+    if not pid or len(pid) > 128:
+        raise HTTPException(status_code=422, detail="Invalid id")
+    rows = await asyncio.get_running_loop().run_in_executor(
+        _get_inference_executor(), lambda: community_opinions_by_author(pid),
+    )
+    return JSONResponse(content={"opinions": rows})
 
 
 @api_router.get("/community/thumb/{filename}")

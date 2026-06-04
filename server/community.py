@@ -302,6 +302,46 @@ def daily_opinion_count_for_ip_hash(ip_hash: str | None) -> int:
         ).fetchone()[0])
 
 
+def opinion_counts(scan_ids: list[str]) -> dict[str, int]:
+    """Map each scan_id to its number of community opinions (zeros omitted)."""
+    ids = [s for s in scan_ids if s]
+    if not ids:
+        return {}
+    init_db()
+    placeholders = ",".join("?" * len(ids))
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT scan_id, COUNT(*) FROM community_opinions "
+            f"WHERE scan_id IN ({placeholders}) GROUP BY scan_id",
+            tuple(ids),
+        ).fetchall()
+    return {str(r[0]): int(r[1]) for r in rows}
+
+
+def opinions_by_author(author_pseudo_id: str, *, limit: int = 100) -> list[dict]:
+    """Opinions one install authored, newest first, each with its scan_id."""
+    init_db()
+    if not author_pseudo_id:
+        return []
+    limit = max(1, min(int(limit), 200))
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT scan_id, suggested_disease, note, created_at "
+            "FROM community_opinions WHERE author_pseudo_id = ? "
+            "ORDER BY created_at DESC LIMIT ?",
+            (author_pseudo_id, limit),
+        ).fetchall()
+    return [
+        {
+            "scan_id": str(r[0]),
+            "suggested_disease": str(r[1]),
+            "note": r[2] or "",
+            "created_at": int(r[3]),
+        }
+        for r in rows
+    ]
+
+
 def nearby_scans(
     *,
     country: str,

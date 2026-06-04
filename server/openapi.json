@@ -512,6 +512,44 @@
         }
       }
     },
+    "/api/community/my-opinions/{user_pseudo_id}": {
+      "get": {
+        "summary": "Community My Opinions",
+        "description": "List the second opinions one install has authored.",
+        "operationId": "community_my_opinions_api_community_my_opinions__user_pseudo_id__get",
+        "parameters": [
+          {
+            "name": "user_pseudo_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Pseudo Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/community/nearby": {
       "get": {
         "summary": "Community Scan Nearby",
