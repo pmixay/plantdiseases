@@ -342,6 +342,40 @@ def opinions_by_author(author_pseudo_id: str, *, limit: int = 100) -> list[dict]
     ]
 
 
+def scans_by_species(
+    scientific: str,
+    *,
+    limit: int = 12,
+    exclude_user_pseudo_id: str | None = None,
+) -> list[dict]:
+    """Community scans of one species (by scientific name), newest first,
+    across all regions — for the result screen's 'other <species> in the
+    community' strip."""
+    init_db()
+    sci = (scientific or "").strip().lower()
+    if not sci:
+        return []
+    limit = max(1, min(int(limit), 50))
+    extra = ""
+    params: list = [sci]
+    if exclude_user_pseudo_id:
+        extra += " AND user_pseudo_id != ?"
+        params.append(exclude_user_pseudo_id)
+    if _HIDDEN_COMMUNITY_DISEASES:
+        extra += _hidden_clause()
+        params.extend(_HIDDEN_COMMUNITY_DISEASES)
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT scan_id, country, region, disease, confidence, species, "
+            "species_score, thumb_path, locale, created_at "
+            "FROM community_scans WHERE species_lower = ?"
+            + extra
+            + " ORDER BY created_at DESC LIMIT ?",
+            (*params, limit),
+        ).fetchall()
+    return [_row_to_dict(r) for r in rows]
+
+
 def nearby_scans(
     *,
     country: str,

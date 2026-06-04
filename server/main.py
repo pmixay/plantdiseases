@@ -95,6 +95,9 @@ try:
         region_summary as community_region_summary,
     )
     from .community import (
+        scans_by_species as community_scans_by_species,
+    )
+    from .community import (
         stats_snapshot as community_stats_snapshot,
     )
     from .config import get, get_float, get_int, get_list, get_str
@@ -126,6 +129,7 @@ try:
         prune_older_than as feedback_prune_older_than,
     )
     from .pipeline import PlantDiseasePipeline
+    from .species_info import fetch_species_info
 except ImportError:
     from ai_services import (
         chat_metrics_snapshot,
@@ -177,6 +181,9 @@ except ImportError:
         region_summary as community_region_summary,
     )
     from community import (
+        scans_by_species as community_scans_by_species,
+    )
+    from community import (
         stats_snapshot as community_stats_snapshot,
     )
     from config import get, get_float, get_int, get_list, get_str
@@ -208,6 +215,7 @@ except ImportError:
         prune_older_than as feedback_prune_older_than,
     )
     from pipeline import PlantDiseasePipeline
+    from species_info import fetch_species_info
 
 def _resolve_app_version() -> str:
     """Resolve the served model/app version.
@@ -2434,6 +2442,46 @@ async def community_my_opinions(user_pseudo_id: str):
         _get_inference_executor(), lambda: community_opinions_by_author(pid),
     )
     return JSONResponse(content={"opinions": rows})
+
+
+@api_router.get("/community/by-species")
+async def community_by_species(
+    species: str | None = None,
+    limit: int = 12,
+    user_pseudo_id: str | None = None,
+):
+    """Community scans of one species (by scientific name), across all
+    regions — the result screen's 'other <species> in the community' strip."""
+    sci = (species or "").strip()
+    if not sci:
+        raise HTTPException(status_code=422, detail="Invalid species")
+    rows = await asyncio.get_running_loop().run_in_executor(
+        _get_inference_executor(),
+        lambda: community_scans_by_species(
+            sci,
+            limit=max(1, min(int(limit), 50)),
+            exclude_user_pseudo_id=user_pseudo_id,
+        ),
+    )
+    counts = community_opinion_counts([str(r.get("scan_id")) for r in rows if r.get("scan_id")])
+    for r in rows:
+        r["opinion_count"] = counts.get(str(r.get("scan_id")), 0)
+    return JSONResponse(content={"items": rows})
+
+
+@api_router.get("/species-info")
+async def species_info_endpoint(name: str, locale: str = "en"):
+    """Localized Wikipedia summary + lead image for a scientific name."""
+    n = (name or "").strip()
+    if not n or len(n) > 128:
+        raise HTTPException(status_code=422, detail="Invalid species name")
+    lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
+    info = await asyncio.get_running_loop().run_in_executor(
+        _get_inference_executor(), lambda: fetch_species_info(n, lang),
+    )
+    if info is None:
+        return JSONResponse(content={"available": False})
+    return JSONResponse(content={"available": True, **info})
 
 
 @api_router.get("/community/thumb/{filename}")
