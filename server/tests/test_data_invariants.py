@@ -557,6 +557,31 @@ def test_kaggle_houseplant_downweighted_and_prior_decoupled():
     )
 
 
+def test_kaggle_credentials_support_new_token_format_and_upload():
+    """Credentials must support Kaggle's NEW token format (KAGGLE_API_TOKEN env
+    / ~/.kaggle/access_token) in addition to the legacy username+key, and the
+    notebook must offer an upload helper that installs whichever file the user
+    provides (the new one-line token or a legacy kaggle.json)."""
+    src = _notebook_source()
+    # New-format detection in the downloader.
+    assert "KAGGLE_API_TOKEN" in src and "access_token" in src, (
+        "_kaggle_download must recognise the new-format token "
+        "(KAGGLE_API_TOKEN / access_token), not only legacy username+key"
+    )
+    # Upload helper exists and handles both formats.
+    assert "def kaggle_upload_credentials" in src, "creds upload helper missing"
+    assert "from google.colab import files" in src, (
+        "upload helper must use the Colab file uploader"
+    )
+    assert "kaggle.json" in src and "access_token" in src, (
+        "upload helper must install either the new access_token or legacy kaggle.json"
+    )
+    # An opt-in cell that doesn't block a plain Run-all by default.
+    assert re.search(r"KAGGLE_UPLOAD_CREDS\s*=\s*False", src), (
+        "the upload trigger must default to False so Run-all never blocks on a dialog"
+    )
+
+
 def test_classifier_exports_embedding_as_second_output():
     """Report P1 (embedding OOD): the classifier ONNX must export the DINOv2
     CLS embedding as a SECOND output so the server can compute an
