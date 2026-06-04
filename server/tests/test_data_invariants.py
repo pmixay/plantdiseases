@@ -674,6 +674,23 @@ def test_detector_crop_diagnostic_reports_whole_frame_fold():
     )
 
 
+def test_frontier_capacity_probe_is_diagnostic_and_off_by_default():
+    """The Frontier decision must be evidence-driven: a frozen linear probe on a
+    BIGGER DINOv2 over the same splits, compared to the ViT-S probe on the thin
+    classes. It must exist, default OFF (so normal runs aren't slowed), and stay
+    diagnostic (it must never become the shipped backbone)."""
+    src = _notebook_source()
+    assert re.search(r"FRONTIER_PROBE\s*=\s*False", src), (
+        "Frontier capacity probe must exist and default to False"
+    )
+    assert "FRONTIER_PROBE_BACKBONE" in src and "dinov2_vitl14" in src, (
+        "Frontier probe must run a larger DINOv2 backbone"
+    )
+    assert "mean thin-class gain" in src and "FRONTIER_THIN_GAIN_GATE" in src, (
+        "Frontier probe must weigh the THIN-class recall gain against a gate"
+    )
+
+
 def test_ood_floor_is_calibrated_not_hardcoded():
     """audit fix #2: classes.json max_logit_floor must be computed from
     the MaxLogit distribution on plants vs NAP, not hardcoded to 4.0."""
