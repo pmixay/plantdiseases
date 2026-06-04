@@ -176,6 +176,24 @@ SEVERITY_MARGIN_HIGH = 0.45
 
 TOP_K_ALTERNATIVES = 3
 
+# ── Whole-image-vs-crop arbitration ──────────────────────────────────
+# Stage 1 crops the leaf before Stage 2 classifies it. On a leaf-centric
+# input (a phone shot already framed on one leaf) that extra crop drops
+# context and costs disease macro-F1 — measured at -0.093 vs classifying
+# the whole frame on val_realworld, which is itself a leaf-centric slice.
+# But on a wide indoor shot the crop is exactly what rescues the leaf
+# from a room full of background, so we can't simply stop cropping.
+#
+# Arbitration: classify the WHOLE FRAME too and FOLD IT INTO THE MEAN
+# VOTE as one extra member (equal weight to a crop). On a leaf-centric
+# input the full-frame verdict reinforces the over-cropped crop and pulls
+# the aggregate toward the higher whole-image score; on a wide indoor
+# shot the single (mostly-background) full-frame vote is outweighed by
+# the leaf crops, so that case does not regress. Averaging probabilities
+# keeps temperature / conformal / OOD operating on the same quantity they
+# were calibrated on. Toggleable so the notebook can ablate the recovery.
+FOLD_WHOLE_FRAME_VOTE = True
+
 # ── Blur gate ─────────────────────────────────────────────────────────
 # Variance-of-Laplacian score below this number means the photo is too
 # unfocused to trust the classifier head on. Plant-coloured blur passes
@@ -654,23 +672,42 @@ class PlantDiseasePipeline:
         sized = self._size_filter(detections, img.size)
         ranked = sorted(sized, key=lambda d: -d["confidence"])[: self._MAX_RECLASSIFY]
         crops = [self._extract_crop(img, box) for box in ranked]
-        cls_results = self.classifier.classify_batch(crops)
+
+        # Whole-image-vs-crop arbitration (see FOLD_WHOLE_FRAME_VOTE): the
+        # full frame is classified alongside the crops and folded into the
+        # mean vote as one extra member. Batch it with the crops so it
+        # costs a single extra slot in the same forward, not a separate
+        # sess.run round-trip.
+        fold_whole = FOLD_WHOLE_FRAME_VOTE
+        batch = crops + ([img] if fold_whole else [])
+        cls_results = self.classifier.classify_batch(batch)
+        crop_results = cls_results[: len(crops)]
+        whole_result = cls_results[len(crops)] if fold_whole else None
 
         results: list[tuple[dict, dict]] = []
-        sum_probs: dict[str, float] = {n: 0.0 for n in self.classifier.CLASS_NAMES}
+        member_probs: list[dict[str, float]] = []
         max_logit_seen = -float("inf")
 
-        for box, cls_res in zip(ranked, cls_results, strict=True):
+        for box, cls_res in zip(ranked, crop_results, strict=True):
             calibrated = _apply_temperature(cls_res["all_probs"], self.temperature)
             results.append((box, {**cls_res, "all_probs": calibrated}))
-            for n, p in calibrated.items():
-                sum_probs[n] = sum_probs.get(n, 0.0) + float(p)
+            member_probs.append(calibrated)
             ml = float(cls_res.get("max_logit", 0.0))
             if ml > max_logit_seen:
                 max_logit_seen = ml
 
-        n_boxes = max(len(results), 1)
-        mean_probs = {name: total / n_boxes for name, total in sum_probs.items()}
+        # The whole frame votes on the verdict but never becomes the
+        # highlighted ``primary_box`` (it has no bbox); its OOD signal
+        # still counts toward the strongest in-frame MaxLogit.
+        if whole_result is not None:
+            whole_cal = _apply_temperature(whole_result["all_probs"], self.temperature)
+            member_probs.append(whole_cal)
+            ml = float(whole_result.get("max_logit", 0.0))
+            if ml > max_logit_seen:
+                max_logit_seen = ml
+
+        n_boxes = max(len(member_probs), 1)
+        mean_probs = _fold_votes(member_probs, self.classifier.CLASS_NAMES)
 
         top1_class = max(mean_probs, key=mean_probs.get)
         top1_conf = float(mean_probs[top1_class])
@@ -828,6 +865,29 @@ class PlantDiseasePipeline:
 
 
 # ── pure helpers (exposed for tests) ─────────────────────────────────
+
+
+def _fold_votes(
+    member_probs: list[dict[str, float]],
+    class_names: list[str],
+) -> dict[str, float]:
+    """Mean-average a list of per-member probability dicts into one vote.
+
+    Each member is an already-temperature-calibrated ``all_probs`` dict
+    (one per leaf crop, plus the whole frame when
+    ``FOLD_WHOLE_FRAME_VOTE`` is on). Averaging is over the union of
+    ``class_names`` so a member that somehow omitted a class contributes
+    0 mass for it rather than dropping the class from the vote. Exposed
+    for tests: it carries the whole-image-vs-crop arbitration math, so a
+    confident whole-frame vote folded into a weak crop vote must pull the
+    aggregate toward the whole-frame verdict (the -0.093 recovery).
+    """
+    sum_probs: dict[str, float] = {n: 0.0 for n in class_names}
+    for probs in member_probs:
+        for n, p in probs.items():
+            sum_probs[n] = sum_probs.get(n, 0.0) + float(p)
+    n = max(len(member_probs), 1)
+    return {name: total / n for name, total in sum_probs.items()}
 
 
 def compute_severity(

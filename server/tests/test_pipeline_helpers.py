@@ -10,6 +10,8 @@ via the ``FakePipeline`` injected by ``conftest.py``.
 
 from __future__ import annotations
 
+import pytest
+
 # Canonical alphabetical 8-class taxonomy (PlantVision 2.x);
 # leaf_spot = merged bacterial + fungal leaf spot.
 # leaf_scorch_underwatering and nutrient_deficiency joined the head
@@ -362,6 +364,72 @@ def test_weak_disease_verdict_stays_disease_not_synthesised_healthy():
     # The post-fallback "uncertain_healthy" branch must not fire on a
     # disease verdict either.
     assert "uncertain_healthy" not in out["warnings"]
+
+
+def test_fold_votes_averages_members_uniformly():
+    """The vote folder averages each member's mass equally and keeps the
+    full class set even when a member omits a class."""
+    from pipeline import _fold_votes
+
+    class_names = sorted(EXPECTED_CLASSES)
+    a = {n: 0.0 for n in class_names}
+    a["leaf_spot"] = 1.0
+    # Second member omits most classes entirely — missing keys count as 0.
+    b = {"healthy": 1.0}
+    out = _fold_votes([a, b], class_names)
+
+    assert set(out.keys()) == set(class_names)
+    assert out["leaf_spot"] == pytest.approx(0.5)
+    assert out["healthy"] == pytest.approx(0.5)
+    assert sum(out.values()) == pytest.approx(1.0)
+
+
+def test_fold_whole_frame_recovers_overcropped_leaf_verdict():
+    """Detector-crop arbitration: when the leaf crop is over-tight and
+    hedges (top-1 leaf_spot but only 0.40) while the WHOLE FRAME sees the
+    leaf clearly (leaf_spot 0.90), folding the full frame into the vote
+    must pull the aggregate's top-1 up toward the whole-frame verdict.
+    This is the -0.093 leaf-centric recovery in pure-helper form.
+    """
+    from pipeline import _fold_votes
+
+    class_names = sorted(EXPECTED_CLASSES)
+    crop = {n: 0.0 for n in class_names}
+    crop["leaf_spot"] = 0.40
+    crop["healthy"] = 0.45  # the over-cropped frame is nearly a coin flip
+    crop["powdery_mildew"] = 0.15
+    whole = {n: 0.0 for n in class_names}
+    whole["leaf_spot"] = 0.90
+    whole["healthy"] = 0.10
+
+    crop_only = _fold_votes([crop], class_names)
+    with_whole = _fold_votes([crop, whole], class_names)
+
+    # Crop alone would have called it healthy (0.45 > 0.40); folding the
+    # confident whole-frame leaf_spot vote flips the aggregate to leaf_spot.
+    assert max(crop_only, key=crop_only.get) == "healthy"
+    assert max(with_whole, key=with_whole.get) == "leaf_spot"
+    assert with_whole["leaf_spot"] > crop_only["leaf_spot"]
+
+
+def test_fold_whole_frame_does_not_override_a_strong_crop_majority():
+    """The wide-indoor guard: a single (background-ish) whole-frame vote
+    must NOT outvote several confident leaf crops. Three crops agreeing on
+    leaf_spot keep the verdict even when the full frame says healthy."""
+    from pipeline import _fold_votes
+
+    class_names = sorted(EXPECTED_CLASSES)
+
+    def one(cls, conf):
+        d = {n: 0.0 for n in class_names}
+        d[cls] = conf
+        d["healthy"] = 1.0 - conf
+        return d
+
+    crops = [one("leaf_spot", 0.80), one("leaf_spot", 0.78), one("leaf_spot", 0.82)]
+    whole = one("healthy", 0.70)
+    out = _fold_votes(crops + [whole], class_names)
+    assert max(out, key=out.get) == "leaf_spot"
 
 
 def test_postprocessor_emits_nap_ood_warning():
