@@ -1536,4 +1536,33 @@ PREVENTION:
         "sunburn_or_scorch" -> "sunburn_or_scorch"
         else -> null
     }
+
+    /**
+     * English Wikipedia title for a guide article's example photos (fetched
+     * via /api/species-info). Null where example photos don't apply — pure
+     * care topics, the "healthy" article and the pests overview.
+     */
+    fun wikiQueryForGuideId(guideId: String): String? = when (guideId) {
+        "powdery_mildew" -> "Powdery mildew"
+        "leaf_spot" -> "Leaf spot"
+        "blight" -> "Blight"
+        "root_rot" -> "Root rot"
+        "leaf_mold" -> "Fulvia fulva"
+        "viral_disease" -> "Plant virus"
+        "rust" -> "Rust (fungus)"
+        "botrytis" -> "Botrytis cinerea"
+        "spider_mites" -> "Spider mite"
+        "aphids" -> "Aphid"
+        "mealybugs" -> "Mealybug"
+        "scale_insects" -> "Scale insect"
+        "leaf_scorch_underwatering" -> "Leaf scorch"
+        "nutrient_deficiency" -> "Chlorosis"
+        "edema" -> "Edema (plant disorder)"
+        "sunburn_or_scorch" -> "Sunscald"
+        else -> null
+    }
+
+    /** Wikipedia title for a classifier class's example photos. */
+    fun wikiQueryForDisease(classKey: String): String? =
+        guideIdForDisease(classKey)?.let { wikiQueryForGuideId(it) }
 }

@@ -316,6 +316,35 @@
                     android:layout_height="wrap_content"
                     android:orientation="vertical">
 
+                    <!-- Example photos of this diagnosis (Wikipedia); populated
+                         in code, hidden until/unless images load. -->
+                    <TextView
+                        android:id="@+id/tv_disease_photos_label"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="@dimen/space_sm"
+                        android:text="@string/example_photos_label"
+                        android:textSize="@dimen/text_body_sm"
+                        android:textColor="@color/primary"
+                        android:fontFamily="sans-serif-medium"
+                        android:visibility="gone" />
+
+                    <HorizontalScrollView
+                        android:id="@+id/hsv_disease_photos"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="@dimen/space_md"
+                        android:scrollbars="none"
+                        android:visibility="gone">
+
+                        <LinearLayout
+                            android:id="@+id/ll_disease_photos_row"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal" />
+
+                    </HorizontalScrollView>
+
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"

@@ -16,6 +16,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.animation.ValueAnimator
 import android.view.animation.DecelerateInterpolator
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -282,6 +283,12 @@ class ResultActivity : AppCompatActivity() {
             } else {
                 btnOpenGuide.visibility = View.GONE
             }
+
+            // Example photos of this diagnosis (Wikipedia), above the description.
+            binding.tvDiseasePhotosLabel.visibility = View.GONE
+            binding.hsvDiseasePhotos.visibility = View.GONE
+            GuideDataProvider.wikiQueryForDisease(repository.topClassKey(scan) ?: "")
+                ?.let { loadDiseasePhotos(it) }
 
             // Community opinions others left on THIS (the user's own) scan.
             // Loaded lazily; the button appears only if there are any.
@@ -666,6 +673,36 @@ class ResultActivity : AppCompatActivity() {
         binding.rvSpeciesCommunity.visibility = View.GONE
         if (sci != null) loadSpeciesEnrichment(sci)
     }
+
+    /** Best-effort example photos of the diagnosed problem (Wikipedia),
+     *  shown above the description. Hidden unless images load. */
+    private fun loadDiseasePhotos(query: String) {
+        val repo = (application as PlantDiseasesApp).scanRepository
+        lifecycleScope.launch {
+            repo.getSpeciesInfo(query, "en").onSuccess { info ->
+                val urls = info.images.filter { it.isNotBlank() }
+                if (urls.isEmpty()) return@onSuccess
+                val row = binding.llDiseasePhotosRow
+                row.removeAllViews()
+                urls.take(4).forEach { url ->
+                    val iv = ImageView(this@ResultActivity).apply {
+                        layoutParams = LinearLayout.LayoutParams(dpPx(150), dpPx(110))
+                            .apply { marginEnd = dpPx(8) }
+                        scaleType = ImageView.ScaleType.CENTER_CROP
+                    }
+                    Glide.with(this@ResultActivity)
+                        .load(url)
+                        .transform(CenterCrop(), RoundedCorners(24))
+                        .into(iv)
+                    row.addView(iv)
+                }
+                binding.tvDiseasePhotosLabel.visibility = View.VISIBLE
+                binding.hsvDiseasePhotos.visibility = View.VISIBLE
+            }
+        }
+    }
+
+    private fun dpPx(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
     /** Best-effort species enrichment: a localized Wikipedia blurb + lead
      *  photo, and a horizontal strip of other community scans of the species. */

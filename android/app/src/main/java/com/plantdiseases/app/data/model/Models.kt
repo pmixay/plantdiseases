@@ -350,6 +350,7 @@ data class SpeciesInfoResponse(
     @SerializedName("title") val title: String? = null,
     @SerializedName("extract") val extract: String? = null,
     @SerializedName("image_url") val imageUrl: String? = null,
+    @SerializedName("images") val images: List<String> = emptyList(),
     @SerializedName("page_url") val pageUrl: String? = null,
     @SerializedName("source") val source: String? = null,
 )

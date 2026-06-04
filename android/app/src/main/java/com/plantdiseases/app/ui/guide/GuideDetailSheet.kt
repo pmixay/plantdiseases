@@ -6,15 +6,23 @@ import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.HorizontalScrollView
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
+import com.bumptech.glide.Glide
+import com.bumptech.glide.load.resource.bitmap.CenterCrop
+import com.bumptech.glide.load.resource.bitmap.RoundedCorners
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.card.MaterialCardView
+import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.GuideDataProvider
 import com.plantdiseases.app.databinding.SheetGuideDetailBinding
 import com.plantdiseases.app.util.LocaleHelper
+import kotlinx.coroutines.launch
 
 class GuideDetailSheet : BottomSheetDialogFragment() {
 
@@ -41,6 +49,62 @@ class GuideDetailSheet : BottomSheetDialogFragment() {
         binding.btnClose.setOnClickListener { dismiss() }
 
         renderSections(if (isRu) item.contentRu else item.contentEn)
+        loadExamplePhotos(item.id)
+    }
+
+    /** Fetch a few example photos for this topic (Wikipedia) and pin them as
+     *  a strip at the top of the article. Best-effort; absent on failure. */
+    private fun loadExamplePhotos(guideId: String) {
+        val query = GuideDataProvider.wikiQueryForGuideId(guideId) ?: return
+        val repo = (requireActivity().application as PlantDiseasesApp).scanRepository
+        viewLifecycleOwner.lifecycleScope.launch {
+            repo.getSpeciesInfo(query, "en").onSuccess { info ->
+                val urls = info.images.filter { it.isNotBlank() }
+                if (urls.isNotEmpty() && _binding != null) {
+                    binding.llSections.addView(buildPhotoStrip(urls), 0)
+                }
+            }
+        }
+    }
+
+    private fun buildPhotoStrip(urls: List<String>): View {
+        val ctx = requireContext()
+        val column = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { bottomMargin = dp(14) }
+        }
+        column.addView(TextView(ctx).apply {
+            text = getString(R.string.example_photos_label)
+            textSize = 12f
+            setTextColor(ContextCompat.getColor(ctx, R.color.primary))
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            letterSpacing = 0.06f
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { bottomMargin = dp(8) }
+        })
+        val row = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
+        urls.take(4).forEach { url ->
+            val iv = ImageView(ctx).apply {
+                layoutParams = LinearLayout.LayoutParams(dp(150), dp(110))
+                    .apply { marginEnd = dp(8) }
+                scaleType = ImageView.ScaleType.CENTER_CROP
+            }
+            Glide.with(this@GuideDetailSheet)
+                .load(url)
+                .transform(CenterCrop(), RoundedCorners(dp(12)))
+                .into(iv)
+            row.addView(iv)
+        }
+        column.addView(HorizontalScrollView(ctx).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(row)
+        })
+        return column
     }
 
     /** Split the article into its hand-typed sections (intro + SYMPTOMS: /

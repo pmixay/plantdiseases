@@ -95,11 +95,57 @@ def _fetch(name: str, lang: str) -> dict | None:
     page = ((data.get("content_urls") or {}).get("desktop") or {}).get("page")
     if not extract and not image:
         return None
+    images = _media_images(title, lang)
+    if not images and image:
+        images = [image]
     return {
         "title": data.get("title") or name,
         "extract": extract,
         "image_url": image,
+        "images": images,
         "page_url": page,
         "lang": lang,
         "source": "wikipedia",
     }
+
+
+def _media_images(quoted_title: str, lang: str, limit: int = 4) -> list[str]:
+    """A few example photos from the page's media-list (JPEG/PNG only),
+    for the 'example photos' strips. Best-effort — returns [] on any failure."""
+    try:
+        import requests  # lazy
+    except Exception:  # pragma: no cover
+        return []
+    url = f"https://{lang}.wikipedia.org/api/rest_v1/page/media-list/{quoted_title}"
+    try:
+        r = requests.get(
+            url,
+            headers={"User-Agent": _USER_AGENT, "Accept": "application/json"},
+            timeout=_TIMEOUT_S,
+        )
+        if not r.ok:
+            return []
+        items = r.json().get("items") or []
+    except Exception:
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        if item.get("type") != "image":
+            continue
+        srcset = item.get("srcset") or []
+        if not srcset:
+            continue
+        src = (srcset[-1].get("src") or "").strip()
+        if src.startswith("//"):
+            src = "https:" + src
+        base = src.lower().split("?")[0]
+        if not base.endswith((".jpg", ".jpeg", ".png")):
+            continue
+        if src in seen:
+            continue
+        seen.add(src)
+        out.append(src)
+        if len(out) >= limit:
+            break
+    return out

@@ -169,6 +169,7 @@
     <string name="species_card_score">PlantNet match: %1$d%%</string>
     <string name="species_source_wikipedia">Source: Wikipedia</string>
     <string name="species_community_others">Other scans of this species</string>
+    <string name="example_photos_label">What it looks like</string>
     <!-- Similar scans (community corpus) -->
     <string name="similar_scans_title">Similar scans near you</string>
     <string name="similar_scans_subtitle">%1$d recent scans near %2$s</string>
