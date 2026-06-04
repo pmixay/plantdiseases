@@ -341,6 +341,18 @@
                         app:icon="@drawable/ic_chevron_right"
                         app:iconGravity="textEnd" />
 
+                    <!-- Community opinions others left on THIS (the user's own)
+                         scan; shown only when there are any. -->
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_view_opinions"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="-8dp"
+                        android:visibility="gone"
+                        app:icon="@drawable/ic_garden"
+                        app:iconGravity="textStart" />
+
                 </LinearLayout>
 
             </com.google.android.material.card.MaterialCardView>

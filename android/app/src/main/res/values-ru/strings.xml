@@ -183,6 +183,11 @@
     <string name="community_opinion_empty">Пока нет мнений — будьте первым.</string>
     <string name="community_opinion_thanks">Спасибо за ваше мнение!</string>
     <string name="community_opinion_error">Не удалось связаться с сообществом. Повторите.</string>
+    <string name="community_opinions_badge">Мнений: %1$d</string>
+    <string name="result_view_opinions">Мнений сообщества: %1$d</string>
+    <string name="community_my_opinions_title">Мои мнения</string>
+    <string name="community_my_opinions_subtitle">Диагнозы, которые вы оценили</string>
+    <string name="community_my_opinions_empty">Вы пока не отправляли мнений.</string>
     <string name="result_get_second_opinion">Получить второе мнение</string>
     <string name="similar_scans_chip_format">%1$s · %2$d</string>
     <string name="community_toggle_title">Делиться сканами с сообществом</string>

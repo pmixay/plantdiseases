@@ -283,6 +283,30 @@ class ResultActivity : AppCompatActivity() {
                 btnOpenGuide.visibility = View.GONE
             }
 
+            // Community opinions others left on THIS (the user's own) scan.
+            // Loaded lazily; the button appears only if there are any.
+            btnViewOpinions.visibility = View.GONE
+            val ownScanId = scan.clientScanId
+            if (ownScanId.isNotBlank()) {
+                lifecycleScope.launch {
+                    repository.getCommunityOpinions(ownScanId).onSuccess { resp ->
+                        val n = resp.opinions.size
+                        if (n > 0) {
+                            binding.btnViewOpinions.text =
+                                getString(R.string.result_view_opinions, n)
+                            binding.btnViewOpinions.visibility = View.VISIBLE
+                            binding.btnViewOpinions.setOnClickListener {
+                                CommunityOpinionSheet.show(
+                                    supportFragmentManager,
+                                    ownScanId,
+                                    classKeyDisplayName(repository.topClassKey(scan) ?: "", isRu),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             val confidencePercent = (scan.confidence * 100).toInt()
             // For NAP we don't expose a confidence bar — the "verdict" itself
             // is "we can't classify this". Showing 100% confidence next to

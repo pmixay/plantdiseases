@@ -139,6 +139,12 @@ interface ApiService {
     suspend fun communityGetOpinions(
         @Path("scan_id") scanId: String,
     ): retrofit2.Response<CommunityOpinionsResponse>
+
+    /** List the second opinions this install has authored. */
+    @GET("api/community/my-opinions/{user_pseudo_id}")
+    suspend fun communityMyOpinions(
+        @Path("user_pseudo_id") userPseudoId: String,
+    ): retrofit2.Response<CommunityOpinionsResponse>
 }
 
 /**

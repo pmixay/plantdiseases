@@ -163,6 +163,25 @@ class ScanRepository(
             }
         }
 
+    /** List the second opinions this install has authored. */
+    suspend fun getMyCommunityOpinions(pseudoId: String): Result<CommunityOpinionsResponse> =
+        withContext(Dispatchers.IO) {
+            try {
+                val response = apiService.communityMyOpinions(pseudoId)
+                if (response.isSuccessful && response.body() != null) {
+                    Result.success(response.body()!!)
+                } else {
+                    Result.failure(Exception("Server error: ${response.code()}"))
+                }
+            } catch (e: SocketTimeoutException) {
+                Result.failure(ServerTimeoutException())
+            } catch (e: UnknownHostException) {
+                Result.failure(NoNetworkException())
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
     /** Submit one community "second opinion". Returns the refreshed list. */
     suspend fun submitCommunityOpinion(
         request: CommunityOpinionRequest,
