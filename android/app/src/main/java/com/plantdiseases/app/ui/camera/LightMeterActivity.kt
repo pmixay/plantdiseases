@@ -24,10 +24,10 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updatePadding
 import com.google.android.material.card.MaterialCardView
-import com.google.android.material.chip.Chip
-import com.google.android.material.chip.ChipGroup
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.plantdiseases.app.R
 import com.plantdiseases.app.databinding.ActivityLightMeterBinding
@@ -48,7 +48,6 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
     private lateinit var tvSpeciesStatus: TextView
     private lateinit var tipCard: MaterialCardView
     private lateinit var tvTip: TextView
-    private lateinit var chipGroup: ChipGroup
     private var previewView: PreviewView? = null
 
     private var sensorManager: SensorManager? = null
@@ -85,6 +84,10 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
          *  plants, wrong for succulents (need 5-15k) or ferns
          *  (need 200-1k). */
         const val EXTRA_SCIENTIFIC_NAME = "extra_scientific_name"
+        /** Optional common / free-text species name — a fallback for
+         *  auto-detection when the scientific name is missing or its genus
+         *  isn't in the table (e.g. "Aloe Vera"). */
+        const val EXTRA_COMMON_NAME = "extra_common_name"
         /** Pass the plant's row id (>0) so the session's peak lux
          *  gets recorded back onto the plant on close. Without it
          *  the meter behaves as a pure standalone tool — no
@@ -159,23 +162,30 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         cameraExecutor = Executors.newSingleThreadExecutor()
-        // Pre-select the species bucket based on the launching plant's
-        // scientific name. Without this, every plant lands on "general"
-        // (1000-5000 lux) which is wrong for both succulents (which
-        // want 5-15k) and ferns (which want 200-1000).
-        intent.getStringExtra(EXTRA_SCIENTIFIC_NAME)?.let { sci ->
-            val pick = pickSpeciesBucket(sci)
-            if (pick in SPECIES.indices) selectedSpecies = SPECIES[pick]
+        // Auto-detect the plant's light needs from its species — there is no
+        // manual picker. Prefer the scientific (Latin) name's genus; fall
+        // back to the common / free-text name, then to the General band.
+        val sci = intent.getStringExtra(EXTRA_SCIENTIFIC_NAME).orEmpty()
+        var pick = pickSpeciesBucket(sci)
+        if (pick == IDX_GENERAL) {
+            val common = intent.getStringExtra(EXTRA_COMMON_NAME).orEmpty()
+            if (common.isNotBlank()) pick = pickSpeciesBucket(common)
         }
+        selectedSpecies = SPECIES[pick]
         contextPlantId = intent.getLongExtra(EXTRA_PLANT_ID, -1L)
 
+        // Edge-to-edge: let the gradient app bar fill the status-bar area.
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         binding = ActivityLightMeterBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        // Extend the gradient app bar behind the status bar.
+        // Extend the gradient app bar behind the status bar, and keep the
+        // scrollable content clear of the navigation bar at the bottom.
+        binding.lightScroll.clipToPadding = false
         ViewCompat.setOnApplyWindowInsetsListener(binding.lightAppBar) { view, insets ->
-            val topInset = insets.getInsets(WindowInsetsCompat.Type.systemBars()).top
-            view.setPadding(0, topInset, 0, 0)
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.setPadding(0, bars.top, 0, 0)
+            binding.lightScroll.updatePadding(bottom = bars.bottom)
             insets
         }
         binding.lightToolbar.apply {
@@ -200,11 +210,9 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
         tvSpeciesStatus = binding.lightSpeciesStatus
         tipCard = binding.lightTipCard
         tvTip = binding.lightTip
-        chipGroup = binding.lightChipGroup
 
-        // Algorithmic bits: the log-scaled tick row + the species chips.
+        // Algorithmic bits: the log-scaled tick row.
         binding.lightScaleRow.addView(buildScaleBar())
-        buildSpeciesChips()
         tvSpeciesIdeal.text = getString(
             R.string.light_ideal_range,
             getString(selectedSpecies.labelRes),
@@ -257,27 +265,6 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
     private fun formatLuxLabel(lux: Int): String = when {
         lux >= 1000 -> "${lux / 1000}k"
         else -> lux.toString()
-    }
-
-    /** Build the species chips into the layout's ChipGroup. The chip
-     *  list is data-driven (SPECIES) so it stays in code; selecting one
-     *  re-runs the gauge display against that species' ideal band. */
-    private fun buildSpeciesChips() {
-        val initialIndex = SPECIES.indexOf(selectedSpecies).coerceAtLeast(0)
-        SPECIES.forEachIndexed { i, species ->
-            val chip = Chip(this).apply {
-                text = getString(species.labelRes)
-                isCheckable = true
-                isChecked = (i == initialIndex)
-                setOnCheckedChangeListener { _, checked ->
-                    if (checked) {
-                        selectedSpecies = species
-                        updateDisplay(smoothedLux)
-                    }
-                }
-            }
-            chipGroup.addView(chip)
-        }
     }
 
     private fun showNoSensorMessage(parent: LinearLayout) {

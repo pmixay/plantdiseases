@@ -21,6 +21,10 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updatePadding
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.tabs.TabLayout
@@ -65,8 +69,19 @@ class ResultActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Edge-to-edge: let the gradient app bar fill the status-bar area.
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         binding = ActivityResultBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        // Extend the gradient app bar behind the status bar, and lift the
+        // bottom action bar above the navigation bar.
+        ViewCompat.setOnApplyWindowInsetsListener(binding.appBar) { view, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.updatePadding(top = bars.top)
+            binding.bottomActionBar.updatePadding(bottom = bars.bottom)
+            insets
+        }
 
         val scanId = intent.getLongExtra(EXTRA_SCAN_ID, -1)
         if (scanId == -1L) {

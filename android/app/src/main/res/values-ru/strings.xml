@@ -346,7 +346,7 @@
     <string name="doctor_clear">Очистить чат</string>
     <!-- Light Meter -->
     <string name="light_meter">Люксметр</string>
-    <string name="light_plant_type">Тип растения</string>
+    <string name="light_needs_header">Потребность в свете для этого растения</string>
     <string name="light_lux">лк</string>
     <string name="light_too_dark">Слишком темно</string>
     <string name="light_ideal">Хорошее освещение</string>

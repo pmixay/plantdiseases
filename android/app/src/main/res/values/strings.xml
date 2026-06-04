@@ -353,7 +353,7 @@
     <string name="doctor_clear">Clear chat</string>
     <!-- Light Meter -->
     <string name="light_meter">Light Meter</string>
-    <string name="light_plant_type">Plant type</string>
+    <string name="light_needs_header">Light needs for this plant</string>
     <string name="light_lux">lux</string>
     <string name="light_too_dark">Too dark</string>
     <string name="light_ideal">Good light</string>
