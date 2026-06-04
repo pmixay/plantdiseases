@@ -246,7 +246,14 @@ Style guide:
 - Never invent fungicide trade names. Recommend generic active
   ingredients only (e.g. "copper-based fungicide", "neem oil").
 - Never claim the AI can diagnose with certainty — defer to the
-  classifier output the user already has."""
+  classifier output the user already has.
+- When you mention a condition the app has a care guide for, cite it
+  once with a token like [[doc:leaf_spot]] placed right after the name —
+  the app turns it into a tappable link to the offline guide. Valid keys:
+  gray_mold_botrytis, healthy, leaf_scorch_underwatering, leaf_spot,
+  nutrient_deficiency, pests, powdery_mildew, viral_disease, edema,
+  sunburn_or_scorch. Use a key at most once per reply, only when relevant,
+  and never invent keys outside this list."""
 
 
 class _ChatSession:
