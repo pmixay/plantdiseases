@@ -372,8 +372,8 @@ data class CarePlanRequest(
  * should prefer the `wateringDaysInt` / `wateringDaysIsAsNeeded` helpers.
  */
 data class CarePlanResponse(
-    @SerializedName("species") val species: String,
-    @SerializedName("disease") val disease: String,
+    @SerializedName("species") val species: String = "",
+    @SerializedName("disease") val disease: String = "",
     @SerializedName("light_tier") val lightTier: String,
     @SerializedName("watering_days") val wateringDaysRaw: Any? = null,
     @SerializedName("fertilise_weeks") val fertiliseWeeks: Int = 0,

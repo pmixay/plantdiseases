@@ -50,11 +50,9 @@ class PlantRepository(
         if (active.isEmpty()) return null
         return active.mapNotNull { reminder ->
             val journalType = reminderTypeToJournalType(reminder.type) ?: return@mapNotNull null
-            val lastFired = journal.firstOrNull { it.type == journalType.value }?.timestamp
-                ?: reminder.id // any constant — treat as "due now" via 0 fallback below
             val anchor = journal.firstOrNull { it.type == journalType.value }?.timestamp ?: 0L
             val dueAt = anchor + reminder.intervalDays.toLong() * 24L * 60L * 60L * 1000L
-            NextAction(reminder.type, dueAt, lastFired)
+            NextAction(reminder.type, dueAt)
         }.minByOrNull { it.dueAt }
     }
 
@@ -355,7 +353,6 @@ class PlantRepository(
     data class NextAction(
         val type: String,           // "watering" / "fertilize" / …
         val dueAt: Long,
-        val lastFiredAt: Long,
     )
 
     enum class JournalType(val value: String) {

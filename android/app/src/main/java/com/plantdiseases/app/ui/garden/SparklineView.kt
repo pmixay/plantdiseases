@@ -42,7 +42,6 @@ class SparklineView @JvmOverloads constructor(
         color = context.getColor(R.color.on_surface_secondary)
         alpha = 60
     }
-    private val fillPath = Path()
     private val linePath = Path()
 
     fun setData(points: List<Float>, trend: String) {
@@ -80,7 +79,6 @@ class SparklineView @JvmOverloads constructor(
         // canvas y grows downward and we want "worse" to render higher.
         val n = points.size
         linePath.reset()
-        fillPath.reset()
         val xs = FloatArray(n)
         val ys = FloatArray(n)
         for (i in 0 until n) {

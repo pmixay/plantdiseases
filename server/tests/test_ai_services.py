@@ -424,3 +424,39 @@ def test_diagnosis_context_sanitizer_keeps_valid_values():
         "severity": "high",
         "warnings": ["low_confidence"],
     }
+
+
+def test_enforce_canonical_dosages_accepts_template_incidental_numbers():
+    """A faithful summary must not be rejected by incidental, non-interval
+    numbers that merely sit near a watering keyword (e.g. the "2 cm" in the
+    deterministic template "Water every 7 days; let the top 2 cm dry…")."""
+    import ai_services as ai
+
+    plan = {"watering_days": 7, "fertilise_weeks": 2, "fertiliser_npk": ""}
+    text = "Water every 7 days; let the top 2 cm dry between waterings."
+    assert ai._enforce_canonical_dosages(text, plan) is True
+
+
+def test_enforce_canonical_dosages_rejects_wrong_watering_interval():
+    import ai_services as ai
+
+    plan = {"watering_days": 7, "fertilise_weeks": 2, "fertiliser_npk": ""}
+    # Claims a 5-day cadence bound to "days"; canonical is 7.
+    text = "Water every 5 days; keep the soil lightly moist."
+    assert ai._enforce_canonical_dosages(text, plan) is False
+
+
+def test_enforce_canonical_dosages_rejects_wrong_fertilise_interval():
+    import ai_services as ai
+
+    plan = {"watering_days": 7, "fertilise_weeks": 2, "fertiliser_npk": ""}
+    text = "Fertilise every 4 weeks with a balanced blend."
+    assert ai._enforce_canonical_dosages(text, plan) is False
+
+
+def test_enforce_canonical_dosages_rejects_npk_swap():
+    import ai_services as ai
+
+    plan = {"watering_days": 7, "fertilise_weeks": 2, "fertiliser_npk": "10-15-10"}
+    text = "Use a 20-20-20 fertiliser blend."
+    assert ai._enforce_canonical_dosages(text, plan) is False

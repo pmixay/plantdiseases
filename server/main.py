@@ -1400,7 +1400,7 @@ async def analyze_image(
     # `is_healthy` mirrors the displayed class name so the client's
     # status badge can never contradict the diagnosis text. Uncertainty
     # is conveyed by the `warnings` array (`uncertain_healthy`,
-    # `disease_uncertain:<class>`) and the top-k alternatives card,
+    # `disease_suspected:<class>`) and the top-k alternatives card,
     # not by silently flipping this boolean.
     is_healthy_effective = bool(disease_info.get("is_healthy", False))
 
