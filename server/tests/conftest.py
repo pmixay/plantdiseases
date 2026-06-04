@@ -31,12 +31,6 @@ if str(SERVER_DIR) not in sys.path:
 # ``rate_limited_client`` fixture below.
 os.environ.setdefault("RATE_LIMIT_RPS", "1000")
 
-# Never let the test process reach out for the model bundle. The lifespan
-# would otherwise try to download it (the real weights aren't present in
-# CI) and the FakePipeline below makes weights unnecessary anyway. A test
-# that wants to exercise the fetcher calls model_fetch directly.
-os.environ.setdefault("MODEL_AUTO_FETCH", "false")
-
 
 def _encode_image(img: Image.Image, fmt: str) -> bytes:
     buf = io.BytesIO()
@@ -62,10 +56,10 @@ def jpeg_bytes() -> bytes:
 
 class _FakeClassifier:
     backend = "fake"
-    img_size = 256
+    img_size = 224
     # Mirror the real classifier's metadata-driven ``architecture`` attr
     # (classes.json -> architecture) that the /version endpoint surfaces.
-    architecture = "mobilenet_v3_large"
+    architecture = "dinov2_vits14+mlp_head"
 
     def __init__(self):
         from classifier import DEFAULT_CLASS_NAMES

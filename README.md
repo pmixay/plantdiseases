@@ -4,8 +4,8 @@
 
 **AI-powered houseplant disease detection — on-device camera, cloud inference, bilingual care plans.**
 
-Two-stage ML pipeline (YOLOv8 leaf detector → MobileNetV3-Large classifier
-distilled from EfficientNetV2-S) hosted behind a hardened FastAPI
+Two-stage ML pipeline (YOLOv8 leaf detector → frozen DINOv2 ViT-S/14
+backbone + LoRA + MLP head classifier) hosted behind a hardened FastAPI
 service, paired with a Kotlin Android client that ships scan history,
 plant care reminders and an AI plant doctor.
 
@@ -42,8 +42,8 @@ plant care reminders and an AI plant doctor.
 │  • EN / RU strings   │         │              │                   │
 │  • Reminders worker  │         │   ┌──────────▼───────────────┐   │
 │  • Profile + stats   │         │   │ Stage 2 — classifier     │   │
-│                      │         │   │ MobileNetV3-Large (KD ←  │   │
-│                      │         │   │ EfficientNetV2-S teacher)│   │
+│                      │         │   │ frozen DINOv2 ViT-S/14    │   │
+│                      │         │   │ + LoRA + MLP head         │   │
 │                      │         │   │ 8 classes incl. NaP head │   │
 │                      │         │   │ + MaxLogit OOD gate      │   │
 │                      │         │   │ + blur (var-Laplacian)   │   │
@@ -67,9 +67,10 @@ Detailed training recipe lives in
 
 ## Classes
 
-The classifier head is **8 trainable classes** (alphabetical, matching
+The classifier head is **9 trainable classes** (alphabetical, matching
 `sorted(ImageFolder.classes)`). `leaf_spot` merges bacterial and fungal
-leaf spot — the two are not reliably separable from a phone photo:
+leaf spot, and `pests` merges mealybugs + scale — in each case the two
+are not reliably separable from a phone photo:
 
 | # | Class | EN name | RU name |
 |---|-------|---------|---------|
@@ -79,13 +80,14 @@ leaf spot — the two are not reliably separable from a phone photo:
 | 3 | `leaf_spot`                  | Leaf Spot (fungal + bacterial)| Пятнистость листьев       |
 | 4 | `not_a_plant`                | Not a Plant                   | Не растение               |
 | 5 | `nutrient_deficiency`        | Nutrient Deficiency           | Дефицит питания           |
-| 6 | `powdery_mildew`             | Powdery Mildew                | Мучнистая роса            |
-| 7 | `viral_disease`              | Viral Disease                 | Вирусное заболевание      |
+| 6 | `pests`                      | Sap-sucking Pests (mealybug + scale) | Сосущие вредители (червецы + щитовки) |
+| 7 | `powdery_mildew`             | Powdery Mildew                | Мучнистая роса            |
+| 8 | `viral_disease`              | Viral Disease                 | Вирусное заболевание      |
 
-The pipeline also emits two remaining **deferred** physiological
-classes (`edema`, `sunburn_or_scorch`) as feedback labels, even though
-the classifier head doesn't predict them yet — the retraining loop
-uses them to prioritise the next round of data collection.
+The pipeline also accepts **deferred** labels on `/api/feedback`
+(`edema`, `sunburn_or_scorch`) even though the classifier head doesn't
+predict them yet — the retraining loop uses them to prioritise the next
+round of data collection.
 
 Canonical list: [`server/models/classes.json`](server/models/classes.json).
 
@@ -112,16 +114,14 @@ The script creates a virtual environment, installs CPU-only PyTorch
 plus `requirements.txt`, and launches FastAPI on
 `http://localhost:8000`.
 
-Model weights + calibration artefacts are **not committed**. On first
-boot the server fetches the model bundle from `MODEL_BUNDLE_URL`
-(a `.tar` / `.tar.gz` / `.zip` of the `models/` dir contents — Google
-Drive share links are supported) and caches it under `server/models/`;
-subsequent restarts reuse the cache. Override the URL via
-`config.json` / env, or set `MODEL_AUTO_FETCH=false` and drop
-`detector.{pt,onnx}`, `classifier.{pth,onnx,_int8.onnx}` and
-`classes.json` in manually. Either way the server is **fail-fast** —
-it refuses to start if the bundle can't be provisioned. There is no
-demo fallback.
+Model weights + calibration artefacts are **not committed** and are
+**not auto-downloaded**. Provision them out of band: drop
+`detector.{pt,onnx}`, `classifier.onnx` (+ optional `classifier_int8.onnx`),
+`classes.json`, and the calibration files (`temperature.json`,
+`conformal.json`, `model_card.json`) into `server/models/` before
+starting. `train_notebook.ipynb` §6b tars these for you to copy across.
+The server is **fail-fast** — it refuses to start if a required artefact
+is missing. There is no demo fallback.
 
 ### Android client
 
@@ -182,7 +182,7 @@ plantdiseases/
 │   ├── main.py             HTTP layer, middleware, validation
 │   ├── pipeline.py         Two-stage pipeline + blur/OOD gates
 │   ├── detector.py         Stage 1 — YOLOv8n
-│   ├── classifier.py       Stage 2 — MobileNetV3-Large student
+│   ├── classifier.py       Stage 2 — frozen DINOv2 ViT-S/14 + head
 │   ├── ai_services.py      PlantNet, OpenRouter, care plan, progression
 │   ├── feedback.py         Append-only feedback store + metrics
 │   ├── conformal.py        RAPS prediction sets
