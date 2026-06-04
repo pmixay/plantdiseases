@@ -1,15 +1,16 @@
 """
 Bilingual disease information database for PlantVision.
 
-Stage 2 classifier outputs one of the 8 trainable v2.2 classes — the
+Stage 2 classifier outputs one of the 9 trainable v2.x classes — the
 bilingual content for each lives in ``DISEASES_DATABASE`` below.
 
-Trainable v2.2 classes (alphabetical): ``gray_mold_botrytis``,
+Trainable v2.x classes (alphabetical): ``gray_mold_botrytis``,
 ``healthy``, ``leaf_scorch_underwatering``, ``leaf_spot``,
-``not_a_plant``, ``nutrient_deficiency``, ``powdery_mildew``,
+``not_a_plant``, ``nutrient_deficiency``, ``pests``, ``powdery_mildew``,
 ``viral_disease``. ``leaf_spot`` is the merged bacterial+fungal
-leaf-spot class — the two are not reliably separable from a phone
-photo, so they share one content card.
+leaf-spot class and ``pests`` is the merged mealybug+scale class — in
+each case the two are not reliably separable from a phone photo, so they
+share one content card.
 
 Authoritative list: ``server/models/classes.json``.
 

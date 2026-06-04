@@ -10,12 +10,10 @@
 #     ./start.sh              # start server (default port 8000)
 #     ./start.sh --port 9000  # custom port
 #
-# Model weights + calibration artefacts are fetched on first boot from
-# MODEL_BUNDLE_URL (default baked into config; Google Drive supported) —
-# nothing to copy in for a default deploy. To pin a local model instead,
-# set MODEL_AUTO_FETCH=false and drop detector.{pt,onnx},
-# classifier.{pth,onnx} and classes.json into server/models/. The server
-# is fail-fast either way.
+# Model weights + calibration artefacts are NOT committed and NOT
+# auto-downloaded. Drop detector.{pt,onnx}, classifier.onnx (+ optional
+# classifier_int8.onnx) and classes.json into server/models/ before
+# starting. The server is fail-fast if a required artefact is missing.
 #
 set -euo pipefail
 
@@ -33,9 +31,8 @@ Usage: $0 [--port PORT]
 
   --port PORT   Server port (default: 8000)
 
-Models are fetched on first boot from MODEL_BUNDLE_URL (override via
-config.json / env). Set MODEL_AUTO_FETCH=false to require local files
-under server/models/ instead.
+Model artefacts are not auto-downloaded: drop detector.{pt,onnx},
+classifier.onnx and classes.json into server/models/ before starting.
 USAGE
             exit 0
             ;;
@@ -84,24 +81,20 @@ pip install --quiet -r requirements.txt
 
 mkdir -p models logs
 
-# Model artefacts (weights + calibration JSON) are NOT committed: the
-# server fetches the bundle on first boot from MODEL_BUNDLE_URL (see
-# server/model_fetch.py). Inform the operator when the local cache is
-# empty so the first-boot download isn't a surprise. The lifespan handler
-# is the authoritative fail-fast if the fetch (or a manual drop-in) fails.
+# Model artefacts (weights + calibration JSON) are NOT committed and are
+# NOT auto-downloaded — drop them into server/models/ before starting.
+# Fail early here with a clear message; the lifespan handler is the
+# authoritative fail-fast if a required artefact is still missing.
 detector_present=0
 classifier_present=0
-[[ -f models/detector.pt   || -f models/detector.onnx ]]                                       && detector_present=1
-[[ -f models/classifier.pth || -f models/classifier.onnx || -f models/classifier_int8.onnx ]] && classifier_present=1
+[[ -f models/detector.pt   || -f models/detector.onnx ]]                  && detector_present=1
+[[ -f models/classifier.onnx || -f models/classifier_int8.onnx ]]         && classifier_present=1
 if [[ $detector_present -eq 0 || $classifier_present -eq 0 ]]; then
-    if [[ "${MODEL_AUTO_FETCH:-true}" == "false" ]]; then
-        echo "[!] Model artefacts missing and MODEL_AUTO_FETCH=false." >&2
-        echo "    Drop detector.{pt,onnx} + classifier.{pth,onnx,int8.onnx} +" >&2
-        echo "    classes.json into server/models/, or unset MODEL_AUTO_FETCH." >&2
-        exit 1
-    fi
-    echo "[+] Model cache empty — the server will fetch the bundle on boot"
-    echo "    from MODEL_BUNDLE_URL (first start downloads ~hundreds of MB)."
+    echo "[!] Model artefacts missing under server/models/." >&2
+    echo "    Drop detector.{pt,onnx} + classifier.onnx (+ optional" >&2
+    echo "    classifier_int8.onnx) + classes.json into server/models/." >&2
+    echo "    Build them with train_notebook.ipynb (§6/§6b)." >&2
+    exit 1
 fi
 
 echo

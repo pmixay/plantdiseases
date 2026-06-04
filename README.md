@@ -67,9 +67,10 @@ Detailed training recipe lives in
 
 ## Classes
 
-The classifier head is **8 trainable classes** (alphabetical, matching
+The classifier head is **9 trainable classes** (alphabetical, matching
 `sorted(ImageFolder.classes)`). `leaf_spot` merges bacterial and fungal
-leaf spot — the two are not reliably separable from a phone photo:
+leaf spot, and `pests` merges mealybugs + scale — in each case the two
+are not reliably separable from a phone photo:
 
 | # | Class | EN name | RU name |
 |---|-------|---------|---------|
@@ -79,16 +80,14 @@ leaf spot — the two are not reliably separable from a phone photo:
 | 3 | `leaf_spot`                  | Leaf Spot (fungal + bacterial)| Пятнистость листьев       |
 | 4 | `not_a_plant`                | Not a Plant                   | Не растение               |
 | 5 | `nutrient_deficiency`        | Nutrient Deficiency           | Дефицит питания           |
-| 6 | `powdery_mildew`             | Powdery Mildew                | Мучнистая роса            |
-| 7 | `viral_disease`              | Viral Disease                 | Вирусное заболевание      |
+| 6 | `pests`                      | Sap-sucking Pests (mealybug + scale) | Сосущие вредители (червецы + щитовки) |
+| 7 | `powdery_mildew`             | Powdery Mildew                | Мучнистая роса            |
+| 8 | `viral_disease`              | Viral Disease                 | Вирусное заболевание      |
 
 The pipeline also accepts **deferred** labels on `/api/feedback`
-(`edema`, `sunburn_or_scorch`, and a single combined `pests` class for
-mealybugs / scale) even though the classifier head doesn't predict them
-yet — the retraining loop uses them to prioritise the next round of data
-collection. The `pests` head is wired through `train_notebook.ipynb` §1
-(`INCLUDE_PEST_CLASSES`, off by default) and turns on with a retrain once
-iNat supply clears the per-class floor.
+(`edema`, `sunburn_or_scorch`) even though the classifier head doesn't
+predict them yet — the retraining loop uses them to prioritise the next
+round of data collection.
 
 Canonical list: [`server/models/classes.json`](server/models/classes.json).
 
@@ -115,16 +114,14 @@ The script creates a virtual environment, installs CPU-only PyTorch
 plus `requirements.txt`, and launches FastAPI on
 `http://localhost:8000`.
 
-Model weights + calibration artefacts are **not committed**. On first
-boot the server fetches the model bundle from `MODEL_BUNDLE_URL`
-(a `.tar` / `.tar.gz` / `.zip` of the `models/` dir contents — Google
-Drive share links are supported) and caches it under `server/models/`;
-subsequent restarts reuse the cache. Override the URL via
-`config.json` / env, or set `MODEL_AUTO_FETCH=false` and drop
-`detector.{pt,onnx}`, `classifier.{pth,onnx,_int8.onnx}` and
-`classes.json` in manually. Either way the server is **fail-fast** —
-it refuses to start if the bundle can't be provisioned. There is no
-demo fallback.
+Model weights + calibration artefacts are **not committed** and are
+**not auto-downloaded**. Provision them out of band: drop
+`detector.{pt,onnx}`, `classifier.onnx` (+ optional `classifier_int8.onnx`),
+`classes.json`, and the calibration files (`temperature.json`,
+`conformal.json`, `model_card.json`) into `server/models/` before
+starting. `train_notebook.ipynb` §6b tars these for you to copy across.
+The server is **fail-fast** — it refuses to start if a required artefact
+is missing. There is no demo fallback.
 
 ### Android client
 

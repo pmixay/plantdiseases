@@ -5,22 +5,23 @@ Classifies a (preferably cropped) leaf region into one of the
 houseplant-relevant condition classes including the rejection class
 ``not_a_plant``. Class names + input resolution live in
 ``models/classes.json``; if the file is missing the built-in default
-matching the v2.2 taxonomy (8 trainable classes) is used.
+matching the current trainable taxonomy (9 classes) is used.
 
-The production artefact is an ONNX graph, and the ONNX path is
-architecture-neutral — it serves whatever backbone+head graph is shipped
-(the historical MobileNetV3-Large KD student, or a frozen-DINOv2 ViT-S/14
-+ trained head) with no code change; ``classes.json`` declares the
-``architecture`` (for the .pth dev fallback), ``img_size`` and any
-``inference.tta`` mode. Loading order:
+The production artefact is an ONNX graph and the runtime is
+**ONNX-only and architecture-neutral** — it serves whatever backbone+head
+graph is shipped (the current frozen-DINOv2 ViT-S/14 + LoRA + MLP head)
+with no code change. ``classes.json`` declares the ``architecture``
+(reported by ``/api/version``), ``img_size`` and any ``inference.tta``
+mode. Loading order:
 
 1. ``classifier_int8.onnx`` (quantized, smallest + fastest)
 2. ``classifier.onnx``      (FP32 ONNX)
-3. ``classifier.pth``       (PyTorch fallback — ``mobilenet_v3_large`` only)
 
-Loading is fail-fast: if no usable artefact is found, ``__init__``
+Loading is fail-fast: if no usable ONNX artefact is found, ``__init__``
 raises ``ClassifierLoadError`` so the API never boots in a half-broken
-state. There is no heuristic / demo fallback path.
+state. There is no PyTorch / heuristic / demo fallback path, and no
+class-count migration shim — ``classes.json`` must match the trained
+head exactly or boot aborts.
 """
 
 from __future__ import annotations
@@ -34,7 +35,7 @@ from PIL import Image
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_IMG_SIZE = 256
+DEFAULT_IMG_SIZE = 224
 # Train/serve crop parity: the notebook eval/calibration transform is
 # ``Resize(int(img_size * EVAL_RESIZE_RATIO)) -> CenterCrop(img_size)``
 # (a mild center zoom that trims the border). Conformal q_hat and the
@@ -45,15 +46,12 @@ DEFAULT_IMG_SIZE = 256
 DEFAULT_EVAL_RESIZE_RATIO = 1.05
 
 # Alphabetical — must match training-time ``sorted(ImageFolder.classes)``.
-# v2.x trainable taxonomy. ``leaf_scorch_underwatering`` and
-# ``nutrient_deficiency`` were added per ``train_notebook.ipynb`` §1
-# (INCLUDE_PHYSIOLOGICAL_CLASSES) — the two remaining physiological
-# classes (``edema``, ``sunburn_or_scorch``) stay deferred until
-# upstream supply justifies them.
-# Production reads ``classes.json -> class_names`` first; this list is
-# only used as a fallback when the artefact is missing.
-# ``leaf_spot`` is the merged bacterial+fungal leaf-spot class (the
-# distinction is not reliably separable from a phone photo).
+# Current trainable taxonomy (9 classes). ``leaf_spot`` is the merged
+# bacterial+fungal leaf-spot class (the distinction is not reliably
+# separable from a phone photo); ``pests`` is the combined sap-sucking
+# pest class (mealybugs + scale). Production reads
+# ``classes.json -> class_names`` first; this list is only used as a
+# fallback when the artefact is missing.
 DEFAULT_CLASS_NAMES = [
     "gray_mold_botrytis",
     "healthy",
@@ -61,6 +59,7 @@ DEFAULT_CLASS_NAMES = [
     "leaf_spot",
     "not_a_plant",
     "nutrient_deficiency",
+    "pests",
     "powdery_mildew",
     "viral_disease",
 ]
@@ -68,25 +67,19 @@ DEFAULT_CLASS_NAMES = [
 NORM_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 NORM_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
-# Backbone family of the trained checkpoint. Production loads ONNX (an
-# architecture-neutral graph), so this only steers the *.pth* PyTorch
-# fallback loader. ``classes.json -> architecture`` overrides it; the
-# default keeps the historical MobileNetV3-Large student working with
-# no metadata change. A frozen-DINOv2 model ships as ONNX only — see
-# ``_load_pytorch_model``.
-DEFAULT_ARCHITECTURE = "mobilenet_v3_large"
+# Backbone family of the trained checkpoint, reported by /api/version.
+# Production loads an architecture-neutral ONNX graph, so this is metadata
+# only. ``classes.json -> architecture`` overrides it.
+DEFAULT_ARCHITECTURE = "dinov2_vits14+mlp_head"
 
-# Test-time augmentation mode. ``none`` (default) is single-pass and
-# byte-for-byte the historical behaviour. ``hflip`` runs the image and
-# its horizontal mirror and AVERAGES THE LOGITS (not the softmax probs):
-# averaging logits keeps every downstream calibration step — temperature
-# scaling, the MaxLogit OOD score, conformal RAPS — operating on the same
-# kind of quantity it was fit on, so enabling TTA does not silently
+# Test-time augmentation mode. ``none`` (default) is single-pass. ``hflip``
+# runs the image and its horizontal mirror and AVERAGES THE LOGITS (not the
+# softmax probs): averaging logits keeps every downstream calibration step —
+# temperature scaling, the MaxLogit OOD score, conformal RAPS — operating on
+# the same kind of quantity it was fit on, so enabling TTA does not silently
 # decalibrate the model. The contract is therefore: temperature.json /
-# conformal.json / the OOD floor MUST be re-fit with the matching TTA
-# mode (the training notebook does this from ``classes.json -> inference``).
-# Turning ``hflip`` on at serve time against a model calibrated without it
-# would break train/serve parity, so the default stays ``none``.
+# conformal.json / the OOD floor MUST be re-fit with the matching TTA mode
+# (the training notebook does this from ``classes.json -> inference``).
 TTA_MODES = ("none", "hflip")
 
 
@@ -150,20 +143,18 @@ def _resolve_onnx_path(model_path: Path | None) -> Path | None:
 
 
 class DiseaseClassifier:
-    """Houseplant disease classifier (ONNX preferred, PyTorch fallback)."""
+    """Houseplant disease classifier (ONNX only)."""
 
     def __init__(self, model_path: Path | None = None):
-        self.backend = ""               # "onnx" | "torch"
+        self.backend = ""               # "onnx"
         self._onnx_session = None
         self._onnx_input_name: str = ""
-        self._torch_model = None
-        self._torch_device = None
 
         meta = _load_metadata(model_path.parent) if model_path else {}
         self.meta = meta
         # Track provenance: a class list that came from classes.json is a
         # hard contract (must match the checkpoint head exactly), whereas
-        # the built-in default is a best-effort fallback we may pad.
+        # the built-in default is a best-effort fallback for a fresh clone.
         self._class_names_from_meta = bool(meta.get("class_names"))
         self.eval_resize_ratio = _resolve_eval_resize_ratio(meta)
         self.architecture = _resolve_architecture(meta)
@@ -173,38 +164,27 @@ class DiseaseClassifier:
         self.img_size = _resolve_img_size(meta)
 
         onnx_path = _resolve_onnx_path(model_path)
-        load_errors: list[str] = []
-
-        if onnx_path is not None:
-            try:
-                self._load_onnx(onnx_path)
-            except Exception as e:
-                load_errors.append(f"ONNX {onnx_path}: {e}")
-                logger.error("ONNX classifier failed to load (%s): %s", onnx_path, e)
-
-        if not self.is_loaded and model_path and model_path.exists():
-            try:
-                self._load_pytorch_model(model_path)
-            except ImportError:
-                logger.info("PyTorch is not installed; skipping PyTorch classifier fallback")
-            except Exception as e:
-                load_errors.append(f"PyTorch {model_path}: {e}")
-                logger.error("Failed to load PyTorch classifier %s: %s", model_path, e)
-
-        if not self.is_loaded:
-            details = "; ".join(load_errors) if load_errors else (
-                "no classifier artefact (classifier_int8.onnx / classifier.onnx / "
-                "classifier.pth) found next to the configured model path"
-            )
+        if onnx_path is None:
             raise ClassifierLoadError(
-                f"Cannot start without a trained classifier. {details}"
+                "Cannot start without a trained classifier ONNX artefact "
+                "(classifier_int8.onnx / classifier.onnx) next to the "
+                f"configured model path {model_path}. Provision the model "
+                "files into the models directory before starting."
             )
+        try:
+            self._load_onnx(onnx_path)
+        except ClassifierLoadError:
+            raise
+        except Exception as e:
+            raise ClassifierLoadError(
+                f"Failed to load ONNX classifier {onnx_path}: {e}"
+            ) from e
 
     @property
     def is_loaded(self) -> bool:
         return bool(self.backend)
 
-    # ── loaders ──────────────────────────────────────────────────────
+    # ── loader ───────────────────────────────────────────────────────
 
     def _load_onnx(self, path: Path) -> None:
         import onnxruntime as ort
@@ -231,35 +211,25 @@ class DiseaseClassifier:
 
         out_dim = next((d for d in out.shape if isinstance(d, int)), None)
         if out_dim is not None and out_dim != self.NUM_CLASSES:
-            if self._class_names_from_meta:
-                # classes.json explicitly declared a class list that does
-                # not match the checkpoint head. Padding with ``class_N``
-                # would silently mislabel every prediction (the v2.1
-                # 7-class metadata against the v2.2 8-output head shipped
-                # exactly this corruption). Fail fast instead so a wrong
-                # classes.json can never boot serving mislabeled answers.
-                raise ClassifierLoadError(
-                    f"classes.json declares {self.NUM_CLASSES} classes "
-                    f"({self.CLASS_NAMES}) but the ONNX checkpoint at {path} "
-                    f"has {out_dim} outputs. Ship a classes.json whose "
-                    f"class_names match the trained head, in training order."
-                )
-            logger.warning(
-                "Classifier ONNX has %d outputs but only the built-in default "
-                "(%d) was available. Adjusting the fallback class list.",
-                out_dim, self.NUM_CLASSES,
+            # The class set MUST match the trained head exactly. We do not
+            # pad / truncate (the old ``_fit_class_names`` migration shim
+            # silently mislabelled every prediction when a stale classes.json
+            # met a newer head). Fail fast instead so a wrong class list can
+            # never boot serving mislabeled answers.
+            source = "classes.json" if self._class_names_from_meta else "built-in default"
+            raise ClassifierLoadError(
+                f"The {source} declares {self.NUM_CLASSES} classes "
+                f"({self.CLASS_NAMES}) but the ONNX checkpoint at {path} has "
+                f"{out_dim} outputs. Ship a classes.json whose class_names "
+                f"match the trained head, in training order."
             )
-            self.CLASS_NAMES = self._fit_class_names(self.CLASS_NAMES, out_dim)
-            self.NUM_CLASSES = out_dim
 
         self._onnx_session = sess
         self._onnx_input_name = inp.name
         self.backend = "onnx"
 
         # Warm the graph once at load so the first real request doesn't
-        # eat the one-off allocation / kernel-selection cost (the detector
-        # already warms up; the classifier previously did not, adding tens
-        # of ms of jitter to the first user's scan after a deploy).
+        # eat the one-off allocation / kernel-selection cost.
         try:
             warm = np.zeros((1, 3, self.img_size, self.img_size), dtype=np.float32)
             sess.run(None, {inp.name: warm})
@@ -272,92 +242,15 @@ class DiseaseClassifier:
             path, self.NUM_CLASSES, self.img_size, self.architecture, self.tta,
         )
 
-    def _load_pytorch_model(self, path: Path) -> None:
-        # The .pth path is a development fallback for the torchvision
-        # student only. A frozen-DINOv2 (or any non-torchvision) backbone
-        # would need its feature extractor rebuilt at boot (e.g. via
-        # torch.hub, which is a network call), so we refuse to guess and
-        # direct the operator to the ONNX artefact instead — exporting
-        # backbone+head into one graph is exactly what the notebook §6
-        # does. This keeps a wrong .pth from silently mislabelling.
-        if self.architecture != "mobilenet_v3_large":
-            raise ClassifierLoadError(
-                f"classes.json declares architecture={self.architecture!r}, which "
-                f"is only served from an ONNX graph (classifier_int8.onnx / "
-                f"classifier.onnx). The .pth fallback supports "
-                f"{DEFAULT_ARCHITECTURE!r} only. Export the ONNX artefact and ship "
-                f"it next to the configured model path."
-            )
-
-        import torch
-        import torch.nn as nn
-        from torchvision import models
-
-        state = torch.load(str(path), map_location="cpu", weights_only=True)
-
-        head_weight = next(
-            (
-                t for k, t in state.items()
-                if k.startswith("classifier.") and k.endswith(".weight") and t.ndim == 2
-            ),
-            None,
-        )
-        ckpt_classes = (
-            int(head_weight.shape[0]) if head_weight is not None else self.NUM_CLASSES
-        )
-        if ckpt_classes != self.NUM_CLASSES:
-            if self._class_names_from_meta:
-                raise ClassifierLoadError(
-                    f"classes.json declares {self.NUM_CLASSES} classes "
-                    f"({self.CLASS_NAMES}) but the .pth checkpoint at {path} "
-                    f"has {ckpt_classes} outputs. Ship a classes.json whose "
-                    f"class_names match the trained head, in training order."
-                )
-            logger.warning(
-                "Classifier .pth has %d outputs but only the built-in default "
-                "(%d) was available. Adjusting the fallback class list.",
-                ckpt_classes, self.NUM_CLASSES,
-            )
-            self.CLASS_NAMES = self._fit_class_names(self.CLASS_NAMES, ckpt_classes)
-            self.NUM_CLASSES = ckpt_classes
-
-        # Production student is MobileNetV3-Large (KD from EfficientNetV2-S).
-        # The torchvision factory matches the timm/torchvision head shape
-        # the training notebook saves.
-        net = models.mobilenet_v3_large(weights=None)
-        in_features = net.classifier[-1].in_features
-        net.classifier[-1] = nn.Linear(in_features, self.NUM_CLASSES)
-        net.load_state_dict(state)
-        net.eval()
-
-        self._torch_model = net
-        self._torch_device = torch.device("cpu")
-        self.backend = "torch"
-        logger.info(
-            "Classifier (PyTorch MobileNetV3-Large student) loaded from %s "
-            "(%d classes, img_size=%d)",
-            path, self.NUM_CLASSES, self.img_size,
-        )
-
-    @staticmethod
-    def _fit_class_names(names: list[str], n: int) -> list[str]:
-        if n <= len(names):
-            return names[:n]
-        return names + [f"class_{i}" for i in range(len(names), n)]
-
     # ── public API ───────────────────────────────────────────────────
 
     def classify(self, img: Image.Image) -> dict:
-        if self.backend == "onnx":
-            return self._classify_onnx(img)
-        return self._classify_torch(img)
+        return self._classify_onnx(img)
 
     def classify_batch(self, imgs: list[Image.Image]) -> list[dict]:
         if not imgs:
             return []
-        if self.backend == "onnx":
-            return self._classify_onnx_batch(imgs)
-        return self._classify_torch_batch(imgs)
+        return self._classify_onnx_batch(imgs)
 
     # ── preprocessing (NumPy) ────────────────────────────────────────
 
@@ -377,7 +270,7 @@ class DiseaseClassifier:
         ``Resize(int(side * eval_resize_ratio)) -> CenterCrop(side)``.
         torchvision ``Resize`` with a single int scales the SHORT side to
         that value (aspect preserved), so we resize the short side to
-        ``int(side * eval_resize_ratio)`` (268 px at side=256, ratio=1.05)
+        ``int(side * eval_resize_ratio)`` (235 px at side=224, ratio=1.05)
         and center-crop ``side``. The 1.05 oversize is the mild center
         zoom the conformal q_hat + temperature were calibrated against;
         dropping it (resizing the short side straight to ``side``) fed the
@@ -416,8 +309,8 @@ class DiseaseClassifier:
 
     @staticmethod
     def _hflip(x: np.ndarray) -> np.ndarray:
-        # Mirror a normalized NCHW batch along the width axis. ORT/torch
-        # both need a contiguous buffer, so materialise the reversed view.
+        # Mirror a normalized NCHW batch along the width axis. ORT needs a
+        # contiguous buffer, so materialise the reversed view.
         return np.ascontiguousarray(x[..., ::-1])
 
     # ── ONNX inference ───────────────────────────────────────────────
@@ -444,36 +337,11 @@ class DiseaseClassifier:
         logits = self._onnx_logits(self._preprocess_batch(imgs))
         return [self._format_result_from_logits(logits[i]) for i in range(logits.shape[0])]
 
-    # ── PyTorch inference ────────────────────────────────────────────
-
-    def _torch_logits(self, x: np.ndarray) -> np.ndarray:
-        import torch
-        with torch.no_grad():
-            if self.tta == "hflip":
-                # Single batched 2N forward (see _onnx_logits): identical
-                # averaged logits, one model call instead of two.
-                n = x.shape[0]
-                batched = np.concatenate([x, self._hflip(x)], axis=0)
-                out = self._torch_model(torch.from_numpy(batched)).cpu().numpy()
-                return (out[:n] + out[n:]) * 0.5
-            return self._torch_model(torch.from_numpy(x)).cpu().numpy()
-
-    def _classify_torch(self, img: Image.Image) -> dict:
-        logits = self._torch_logits(self._preprocess(img))
-        return self._format_result_from_logits(logits[0])
-
-    def _classify_torch_batch(self, imgs: list[Image.Image]) -> list[dict]:
-        logits = self._torch_logits(self._preprocess_batch(imgs))
-        return [self._format_result_from_logits(logits[i]) for i in range(logits.shape[0])]
-
     def _format_result_from_logits(self, logits: np.ndarray) -> dict:
         # Numerically-stable softmax (max-shift) in float32. The
         # max-shift caps `exp` arguments at 0 so float32 doesn't
         # overflow; the smallest meaningful tail (`exp(-30)`) is well
-        # within float32 range (~9.4e-14). float64 was a precaution
-        # that doubled the dict-construction allocation per call for
-        # no measurable accuracy delta on the head (7 classes in v2.1,
-        # 8 in v2.2).
+        # within float32 range (~9.4e-14).
         logits32 = logits.astype(np.float32, copy=False)
         max_logit = float(logits32.max())
         e = np.exp(logits32 - max_logit)
