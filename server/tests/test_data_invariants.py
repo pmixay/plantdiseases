@@ -674,6 +674,46 @@ def test_detector_crop_diagnostic_reports_whole_frame_fold():
     )
 
 
+def test_kaggle_nutrient_supplement_replaces_mendeley_coleaf():
+    """The Mendeley CoLeaf source is intermittently IP-blocked from Colab, so a
+    Colab-reachable Kaggle nutrient source must supplement nutrient_deficiency.
+    Must (a) exist with a concrete slug, (b) write into nutrient_deficiency,
+    (c) be TRAIN-ONLY, (d) be down-weighted with the LA prior decoupled."""
+    src = _notebook_source()
+    assert "def fetch_kaggle_nutrient_deficiency" in src, "Kaggle nutrient fetcher missing"
+    assert "KAGGLE_NUTRIENT_SLUG" in src and "nutrientdeficiencysymptomsinrice" in src, (
+        "must wire a concrete Colab-reachable Kaggle nutrient slug"
+    )
+    assert "'nutrient_deficiency'" in src
+    for split_fn in ("make_val_realworld", "make_val_indomain",
+                     "make_temperature_cal", "make_conformal_cal"):
+        body = re.search(rf"def {split_fn}\(.*?\n(?:.*\n){{0,14}}", src)
+        assert body and "kaggle_nutrient" not in body.group(0), (
+            f"{split_fn} must NOT allow 'kaggle_nutrient' — it is a TRAIN-ONLY proxy"
+        )
+    sw = re.search(r"'kaggle_nutrient'\s*:\s*([0-9.]+)", src)
+    assert sw and float(sw.group(1)) < 1.0, "'kaggle_nutrient' must be down-weighted (<1.0)"
+    pr = re.search(r"PRIOR_SOURCE_WEIGHTS\['kaggle_nutrient'\]\s*=\s*([0-9.]+)", src)
+    assert pr and float(pr.group(1)) < float(sw.group(1)), (
+        "PRIOR_SOURCE_WEIGHTS['kaggle_nutrient'] must be < its sampler weight"
+    )
+
+
+def test_coco_download_prefers_hf_mirror_first():
+    """images.cocodataset.org serves a broken cert; the fetch must try the HF
+    mirror FIRST (no wasted SSL retries / alarming log) and fall back to the
+    canonical host only if the mirror is down."""
+    src = _notebook_source()
+    m = re.search(r"def _coco_download\(.*?\n(?:.*\n){2,20}", src)
+    assert m, "_coco_download not found"
+    body = m.group(0)
+    hf_pos = body.find("hf_hub_download(_COCO_HF_MIRROR")
+    canon_pos = body.find("http_download(canonical_url")
+    assert 0 < hf_pos < canon_pos, (
+        "COCO must attempt the HF mirror before the canonical cocodataset.org URL"
+    )
+
+
 def test_frontier_capacity_probe_is_diagnostic_and_off_by_default():
     """The Frontier decision must be evidence-driven: a frozen linear probe on a
     BIGGER DINOv2 over the same splits, compared to the ViT-S probe on the thin
