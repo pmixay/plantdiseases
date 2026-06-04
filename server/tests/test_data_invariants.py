@@ -674,6 +674,27 @@ def test_detector_crop_diagnostic_reports_whole_frame_fold():
     )
 
 
+def test_deploy_bundle_includes_ood_npz_and_excludes_torch_checkpoints():
+    """The §6b deploy archive must include the embedding-OOD bank (.npz) that
+    classes.json -> ood.embedding references — omitting it silently disabled the
+    embedding OOD gate at serve time in v2.3.1. The ONNX-only runtime cannot load
+    the torch checkpoints (.pt/.pth), so those must NOT bloat the deploy bundle."""
+    src = _notebook_source()
+    m = re.search(r"_BUNDLE_SUFFIXES\s*=\s*\{([^}]*)\}", src)
+    assert m, "_BUNDLE_SUFFIXES not found"
+    suffixes = m.group(1)
+    assert "'.npz'" in suffixes, "deploy bundle MUST include .npz (the embedding-OOD bank)"
+    assert "'.onnx'" in suffixes and "'.json'" in suffixes
+    assert "'.pth'" not in suffixes and "'.pt'" not in suffixes, (
+        "torch checkpoints (.pt/.pth) are not loadable by the ONNX-only server "
+        "and must not bloat the deploy bundle"
+    )
+    # And a guard that fails loud if a declared OOD bank isn't bundled.
+    assert "references ood bank" in src and "embedding OOD will be DISABLED" in src, (
+        "§6b must warn when classes.json declares an OOD bank absent from the archive"
+    )
+
+
 def test_kaggle_nutrient_supplement_replaces_mendeley_coleaf():
     """The Mendeley CoLeaf source is intermittently IP-blocked from Colab, so a
     Colab-reachable Kaggle nutrient source must supplement nutrient_deficiency.
