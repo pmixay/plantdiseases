@@ -63,6 +63,13 @@ Detailed training recipe lives in
 [`server/train_notebook.ipynb`](server/train_notebook.ipynb) and the
 [`MODEL_CARD.md`](server/models/MODEL_CARD.md).
 
+> **Optional data supplement:** §2 can pull a real indoor-houseplant
+> disease set from Kaggle. It is **fail-soft** — set `KAGGLE_USERNAME`
+> and `KAGGLE_KEY` (or drop `~/.kaggle/kaggle.json`) before the run to
+> enable it, otherwise the notebook skips it cleanly. The source is
+> **train-only** and drops any folder it can't confidently map, and the
+> run prints every discovered folder so you can refine the label map.
+
 ---
 
 ## Classes

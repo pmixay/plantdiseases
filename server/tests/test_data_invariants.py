@@ -505,6 +505,58 @@ def test_make_eval_loader_uses_allow_empty_when_supported():
     ), "make_eval_loader is not threading allow_empty into ImageFolder"
 
 
+def test_kaggle_houseplant_supplement_is_train_only_and_failsoft():
+    """The Kaggle indoor-houseplant supplement must (a) exist, (b) be
+    fail-soft on missing credentials/package, (c) DROP unmapped folders so an
+    unexpected class can't corrupt the taxonomy, (d) be TRAIN-ONLY (its
+    'kaggle_houseplant' source in no make_*_split allowed_sources), and (e)
+    run before the pre-split dedup so its rows are deduped + scoped."""
+    src = _notebook_source()
+    assert "def fetch_kaggle_houseplant_disease" in src, "Kaggle fetcher missing"
+    assert "def _kaggle_download" in src and "kagglehub" in src, (
+        "Kaggle download helper (kagglehub) missing"
+    )
+    # Fail-soft on missing credentials.
+    assert "KAGGLE_USERNAME" in src and "KAGGLE_KEY" in src, (
+        "Kaggle helper must check for credentials and fail soft when absent"
+    )
+    assert re.search(r"return None", src), "Kaggle helper must return None on failure"
+    # Unmapped folders dropped, not guessed.
+    assert "KAGGLE_HOUSEPLANT_LABEL_MAP" in src and "DROP (unmapped)" in src, (
+        "Kaggle import must drop unmapped folders, never guess them into a class"
+    )
+    # Train-only: 'kaggle_houseplant' must never be an eval allowed source.
+    for split_fn in ("make_val_realworld", "make_val_indomain",
+                     "make_temperature_cal", "make_conformal_cal"):
+        body = re.search(rf"def {split_fn}\(.*?\n(?:.*\n){{0,14}}", src)
+        assert body and "kaggle" not in body.group(0), (
+            f"{split_fn} must NOT allow the 'kaggle_houseplant' source — it is a "
+            f"TRAIN-ONLY supplement until an operator confirms a real-photo slice"
+        )
+    # Runs before the pre-split dedup.
+    kaggle_pos = src.find("_try_fetch('kaggle_houseplant'")
+    dedup_pos = src.find("_dedup_train_in_place(TRAIN_ROOT")
+    assert 0 < kaggle_pos < dedup_pos, (
+        "Kaggle fetch must run before the pre-split dedup"
+    )
+
+
+def test_kaggle_houseplant_downweighted_and_prior_decoupled():
+    """Like the CoLeaf/MPLD crop supplements, the Kaggle source (unverified
+    studio-vs-real mix) must be down-weighted in the sampler (< 1.0) and enter
+    the LA prior at a SMALLER weight than its sampler weight so it teaches
+    signal without inflating the deployment prior."""
+    src = _notebook_source()
+    m = re.search(r"'kaggle_houseplant'\s*:\s*([0-9.]+)", src)
+    assert m and float(m.group(1)) < 1.0, (
+        "'kaggle_houseplant' must be down-weighted (<1.0) in SOURCE_WEIGHTS"
+    )
+    p = re.search(r"PRIOR_SOURCE_WEIGHTS\['kaggle_houseplant'\]\s*=\s*([0-9.]+)", src)
+    assert p and float(p.group(1)) < float(m.group(1)), (
+        "PRIOR_SOURCE_WEIGHTS['kaggle_houseplant'] must be < its sampler weight"
+    )
+
+
 def test_classifier_exports_embedding_as_second_output():
     """Report P1 (embedding OOD): the classifier ONNX must export the DINOv2
     CLS embedding as a SECOND output so the server can compute an
