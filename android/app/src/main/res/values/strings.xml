@@ -61,6 +61,7 @@
     <string name="not_a_plant_diagnosis_name">Not a plant in frame</string>
     <string name="not_a_plant_result_body">The model couldn\'t find a plant leaf in this photo. Try retaking the picture so the leaf fills most of the frame, with steady hands and good lighting.</string>
     <string name="description_label">Description</string>
+    <string name="result_learn_more">Read the full guide</string>
     <string name="treatment_label">Treatment</string>
     <string name="prevention_label">Prevention</string>
 

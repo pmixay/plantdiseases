@@ -34,6 +34,7 @@ import com.bumptech.glide.load.resource.bitmap.CenterCrop
 import com.bumptech.glide.load.resource.bitmap.RoundedCorners
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
+import com.plantdiseases.app.data.GuideDataProvider
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.FeedbackRequest
@@ -44,6 +45,7 @@ import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.ui.analysis.AnalysisActivity
 import com.plantdiseases.app.ui.common.CarePlanCardView
+import com.plantdiseases.app.ui.guide.GuideDetailSheet
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.LocaleHelper
@@ -267,6 +269,19 @@ class ResultActivity : AppCompatActivity() {
 
             // Sticky header data
             tvStickyName.text = diseaseName
+
+            // "Read the full guide" — deep-link to the offline doc article for
+            // this verdict's class, when one exists (not_a_plant has none).
+            val guideId = GuideDataProvider.guideIdForDisease(repository.topClassKey(scan) ?: "")
+            if (guideId != null) {
+                btnOpenGuide.visibility = View.VISIBLE
+                btnOpenGuide.setOnClickListener {
+                    GuideDetailSheet.newInstance(guideId)
+                        .show(supportFragmentManager, "guide_detail")
+                }
+            } else {
+                btnOpenGuide.visibility = View.GONE
+            }
 
             val confidencePercent = (scan.confidence * 100).toInt()
             // For NAP we don't expose a confidence bar — the "verdict" itself
