@@ -562,6 +562,36 @@ def test_kaggle_houseplant_downweighted_and_prior_decoupled():
     )
 
 
+def test_kaggle_strawberry_graymold_is_train_only_proxy():
+    """gray_mold_botrytis is supply-bound at the iNat ceiling, so a crop-domain
+    Botrytis proxy (the Kaggle strawberry COCO set) supplements it. Must (a)
+    parse the gray-mold category, (b) write into gray_mold_botrytis, (c) be
+    TRAIN-ONLY (no make_*_split allows 'kaggle_strawberry'), and (d) be
+    down-weighted with the LA prior decoupled below the sampler weight."""
+    src = _notebook_source()
+    assert "def fetch_kaggle_strawberry_graymold" in src, "strawberry gray-mold fetcher missing"
+    assert "_is_graymold_name" in src and "botrytis" in src.lower(), (
+        "must detect the gray-mold / Botrytis category"
+    )
+    assert "'gray_mold_botrytis'" in src, "must write into the gray_mold_botrytis class"
+    for split_fn in ("make_val_realworld", "make_val_indomain",
+                     "make_temperature_cal", "make_conformal_cal"):
+        body = re.search(rf"def {split_fn}\(.*?\n(?:.*\n){{0,14}}", src)
+        assert body and "kaggle_strawberry" not in body.group(0), (
+            f"{split_fn} must NOT allow 'kaggle_strawberry' — it is a TRAIN-ONLY proxy"
+        )
+    sw = re.search(r"'kaggle_strawberry'\s*:\s*([0-9.]+)", src)
+    assert sw and float(sw.group(1)) < 1.0, "'kaggle_strawberry' must be down-weighted (<1.0)"
+    pr = re.search(r"PRIOR_SOURCE_WEIGHTS\['kaggle_strawberry'\]\s*=\s*([0-9.]+)", src)
+    assert pr and float(pr.group(1)) < float(sw.group(1)), (
+        "PRIOR_SOURCE_WEIGHTS['kaggle_strawberry'] must be < its sampler weight"
+    )
+    # Runs before the pre-split dedup.
+    assert 0 < src.find("_try_fetch('kaggle_strawberry_graymold'") < src.find("_dedup_train_in_place(TRAIN_ROOT"), (
+        "strawberry fetch must run before the pre-split dedup"
+    )
+
+
 def test_kaggle_credentials_support_new_token_format_and_upload():
     """Credentials must support Kaggle's NEW token format (KAGGLE_API_TOKEN env
     / ~/.kaggle/access_token) in addition to the legacy username+key, and the
