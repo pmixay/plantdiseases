@@ -711,7 +711,7 @@
                         android:layout_width="24dp"
                         android:layout_height="24dp"
                         android:src="@drawable/ic_chevron_up"
-                        android:tint="@color/on_surface_secondary"
+                        app:tint="@color/on_surface_secondary"
                         android:contentDescription="@string/community_my_opinions_title" />
 
                 </LinearLayout>
