@@ -34,6 +34,7 @@ import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.databinding.FragmentCameraBinding
 import com.plantdiseases.app.ui.analysis.AnalysisActivity
+import com.plantdiseases.app.ui.community.NearbyScansActivity
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
 import kotlinx.coroutines.launch
@@ -146,6 +147,12 @@ class CameraFragment : Fragment() {
             galleryLauncher.launch("image/*")
         }
         binding.btnFlash.setOnClickListener { toggleFlash() }
+        binding.btnNearbyScans.setOnClickListener {
+            Haptics.tick(requireContext())
+            startActivity(
+                Intent(requireContext(), NearbyScansActivity::class.java),
+            )
+        }
         binding.btnGrantPermission.setOnClickListener {
             permissionLauncher.launch(Manifest.permission.CAMERA)
         }

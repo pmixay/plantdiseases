@@ -39,7 +39,8 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
     private var scanId: String = ""
     private var currentName: String? = null
 
-    private var consensusView: TextView? = null
+    private var votesHeader: TextView? = null
+    private var graphContainer: LinearLayout? = null
     private var listContainer: LinearLayout? = null
     private var emptyView: TextView? = null
     private var chipGroup: ChipGroup? = null
@@ -59,7 +60,8 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
             return
         }
 
-        consensusView = view.findViewById(R.id.tv_opinion_consensus)
+        votesHeader = view.findViewById(R.id.tv_opinion_votes_header)
+        graphContainer = view.findViewById(R.id.ll_opinion_graph)
         listContainer = view.findViewById(R.id.ll_opinion_list)
         emptyView = view.findViewById(R.id.tv_opinion_empty)
         chipGroup = view.findViewById(R.id.chip_group_opinion)
@@ -97,7 +99,8 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
 
     override fun onDestroyView() {
         super.onDestroyView()
-        consensusView = null
+        votesHeader = null
+        graphContainer = null
         listContainer = null
         emptyView = null
         chipGroup = null
@@ -146,17 +149,12 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
     }
 
     private fun render(consensus: List<CommunityTopDisease>, opinions: List<CommunityOpinion>) {
-        val consensusV = consensusView ?: return
+        val header = votesHeader ?: return
+        val graph = graphContainer ?: return
         val list = listContainer ?: return
         val empty = emptyView ?: return
 
-        if (consensus.isEmpty()) {
-            consensusV.visibility = View.GONE
-        } else {
-            val parts = consensus.joinToString(", ") { "${labelFor(it.disease)} ×${it.count}" }
-            consensusV.text = getString(R.string.community_opinion_consensus_prefix, parts)
-            consensusV.visibility = View.VISIBLE
-        }
+        renderGraph(header, graph, consensus)
 
         list.removeAllViews()
         if (opinions.isEmpty()) {
@@ -165,6 +163,92 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
             empty.visibility = View.GONE
             opinions.forEach { list.addView(opinionRow(it)) }
         }
+    }
+
+    /** Draw the vote graph: one horizontal percentage bar per disease,
+     *  sorted high-to-low. The leading disease is tinted with the brand
+     *  primary; the rest use a muted primary so the consensus reads at a
+     *  glance. Hidden entirely until at least one vote exists. */
+    private fun renderGraph(
+        header: TextView,
+        graph: LinearLayout,
+        consensus: List<CommunityTopDisease>,
+    ) {
+        graph.removeAllViews()
+        val total = consensus.sumOf { it.count }
+        if (consensus.isEmpty() || total <= 0) {
+            header.visibility = View.GONE
+            graph.visibility = View.GONE
+            return
+        }
+        header.visibility = View.VISIBLE
+        graph.visibility = View.VISIBLE
+        consensus
+            .sortedByDescending { it.count }
+            .forEachIndexed { index, entry ->
+                graph.addView(voteBar(entry, total, leading = index == 0))
+            }
+    }
+
+    private fun voteBar(entry: CommunityTopDisease, total: Int, leading: Boolean): View {
+        val ctx = requireContext()
+        val density = resources.displayMetrics.density
+        fun dp(v: Int) = (v * density).toInt()
+        val pct = Math.round(entry.count * 100f / total).coerceIn(0, 100)
+        val fillColor = ContextCompat.getColor(
+            ctx, if (leading) R.color.primary else R.color.primary_light,
+        )
+        val trackColor = ContextCompat.getColor(ctx, R.color.surface_variant)
+
+        val row = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(6), 0, dp(6))
+        }
+
+        // Label + percentage line.
+        val labelLine = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
+        labelLine.addView(TextView(ctx).apply {
+            text = labelFor(entry.disease)
+            textSize = 13f
+            setTextColor(ContextCompat.getColor(ctx, R.color.on_surface))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        labelLine.addView(TextView(ctx).apply {
+            text = getString(R.string.community_vote_percent, pct)
+            textSize = 13f
+            setTextColor(ContextCompat.getColor(ctx, R.color.on_surface_secondary))
+        })
+        row.addView(labelLine)
+
+        // Bar track with a weighted fill.
+        val radius = dp(4).toFloat()
+        val track = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            background = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = radius
+                setColor(trackColor)
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(8),
+            ).apply { topMargin = dp(4) }
+            weightSum = 100f
+        }
+        track.addView(View(ctx).apply {
+            background = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = radius
+                setColor(fillColor)
+            }
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, pct.toFloat())
+        })
+        if (pct < 100) {
+            track.addView(View(ctx).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.MATCH_PARENT, (100 - pct).toFloat(),
+                )
+            })
+        }
+        row.addView(track)
+        return row
     }
 
     private fun opinionRow(op: CommunityOpinion): TextView {
