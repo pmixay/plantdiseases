@@ -13,6 +13,7 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
@@ -24,6 +25,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import com.canhub.cropper.CropImageContract
@@ -62,6 +64,10 @@ class CameraFragment : Fragment() {
     private val PREFS_NAME = "plantdiseases_prefs"
     private val KEY_GRID_OVERLAY = "grid_overlay_enabled"
     private val KEY_TIPS_SEEN = "scan_tips_seen"
+
+    private companion object {
+        const val TAG = "CameraFragment"
+    }
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -102,11 +108,13 @@ class CameraFragment : Fragment() {
                 if (path != null) {
                     navigateToAnalysis(path)
                 } else {
+                    Log.w(TAG, "Crop succeeded but produced no output path (uri=${result.uriContent})")
                     Toast.makeText(requireContext(), getString(R.string.crop_error), Toast.LENGTH_SHORT).show()
                     discardPendingCrop()
                 }
             }
             result.error != null -> {
+                Log.w(TAG, "Crop failed", result.error)
                 Toast.makeText(requireContext(), getString(R.string.crop_error), Toast.LENGTH_SHORT).show()
                 discardPendingCrop()
             }
@@ -431,13 +439,24 @@ class CameraFragment : Fragment() {
             "CROP_${System.currentTimeMillis()}.jpg",
         )
         pendingCropFile = outFile
+        // Hand the cropper a content:// destination via our FileProvider, NOT
+        // a raw file:// Uri. On targetSdk 24+ the cropper can't write a
+        // file:// output (FileUriExposed / blocked stream), which surfaced as
+        // "Failed to crop image" on every scan. The provider maps
+        // filesDir/plant_images (see res/xml/file_paths.xml), so the bytes
+        // still land in outFile and we read outFile.absolutePath on success.
+        val outputUri = FileProvider.getUriForFile(
+            requireContext(),
+            "${requireContext().packageName}.fileprovider",
+            outFile,
+        )
         cropLauncher.launch(
             CropImageContractOptions(
                 uri = sourceUri,
                 cropImageOptions = CropImageOptions(
                     guidelines = CropImageView.Guidelines.ON,
                     fixAspectRatio = false,
-                    customOutputUri = Uri.fromFile(outFile),
+                    customOutputUri = outputUri,
                     outputCompressFormat = Bitmap.CompressFormat.JPEG,
                     outputCompressQuality = 90,
                     // We supply the image ourselves, so hide the library's
