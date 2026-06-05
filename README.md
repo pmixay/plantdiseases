@@ -63,6 +63,16 @@ Detailed training recipe lives in
 [`server/train_notebook.ipynb`](server/train_notebook.ipynb) and the
 [`MODEL_CARD.md`](server/models/MODEL_CARD.md).
 
+> **Optional data supplement:** §2 can pull a real indoor-houseplant
+> disease set from Kaggle. It is **fail-soft** — provide credentials to
+> enable it, otherwise the notebook skips it cleanly. Credentials can be
+> the **new-format API token** (a Colab secret or env var
+> `KAGGLE_API_TOKEN`, or `~/.kaggle/access_token`) or a legacy
+> `kaggle.json`; the §1 helper `kaggle_upload_credentials()` lets you
+> upload either file in Colab. The source is **train-only** and drops any
+> folder it can't confidently map, and the run prints every discovered
+> folder so you can refine the label map.
+
 ---
 
 ## Classes

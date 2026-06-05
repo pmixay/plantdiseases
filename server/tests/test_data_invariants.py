@@ -505,6 +505,258 @@ def test_make_eval_loader_uses_allow_empty_when_supported():
     ), "make_eval_loader is not threading allow_empty into ImageFolder"
 
 
+def test_kaggle_houseplant_supplement_is_train_only_and_failsoft():
+    """The Kaggle indoor-houseplant supplement must (a) exist, (b) be
+    fail-soft on missing credentials/package, (c) DROP unmapped folders so an
+    unexpected class can't corrupt the taxonomy, (d) be TRAIN-ONLY (its
+    'kaggle_houseplant' source in no make_*_split allowed_sources), and (e)
+    run before the pre-split dedup so its rows are deduped + scoped."""
+    src = _notebook_source()
+    assert "def fetch_kaggle_houseplant_disease" in src, "Kaggle fetcher missing"
+    assert "def _kaggle_download" in src and "kagglehub" in src, (
+        "Kaggle download helper (kagglehub) missing"
+    )
+    # Fail-soft on missing credentials.
+    assert "KAGGLE_USERNAME" in src and "KAGGLE_KEY" in src, (
+        "Kaggle helper must check for credentials and fail soft when absent"
+    )
+    assert re.search(r"return None", src), "Kaggle helper must return None on failure"
+    # Unmapped/ambiguous folders dropped, not guessed. Mapping is keyword-based
+    # on the <Species>_<Condition> folder names, with a DROP list checked first
+    # (rust morphology, nutrient toxicity != deficiency, vascular bacterial wilt).
+    assert "def _kaggle_map_folder" in src, "keyword-based Kaggle folder resolver missing"
+    assert "KAGGLE_DROP_KEYWORDS" in src and "KAGGLE_CONDITION_KEYWORDS" in src, (
+        "Kaggle mapping must use a drop-list + ordered condition keywords"
+    )
+    for must_drop in ("'rust'", "'toxicity'", "'bacterial_wilt'"):
+        assert must_drop in src, f"Kaggle DROP list must contain {must_drop}"
+    # Train-only: 'kaggle_houseplant' must never be an eval allowed source.
+    for split_fn in ("make_val_realworld", "make_val_indomain",
+                     "make_temperature_cal", "make_conformal_cal"):
+        body = re.search(rf"def {split_fn}\(.*?\n(?:.*\n){{0,14}}", src)
+        assert body and "kaggle" not in body.group(0), (
+            f"{split_fn} must NOT allow the 'kaggle_houseplant' source — it is a "
+            f"TRAIN-ONLY supplement until an operator confirms a real-photo slice"
+        )
+    # Runs before the pre-split dedup.
+    kaggle_pos = src.find("_try_fetch('kaggle_houseplant'")
+    dedup_pos = src.find("_dedup_train_in_place(TRAIN_ROOT")
+    assert 0 < kaggle_pos < dedup_pos, (
+        "Kaggle fetch must run before the pre-split dedup"
+    )
+
+
+def test_kaggle_houseplant_downweighted_and_prior_decoupled():
+    """Like the CoLeaf/MPLD crop supplements, the Kaggle source (unverified
+    studio-vs-real mix) must be down-weighted in the sampler (< 1.0) and enter
+    the LA prior at a SMALLER weight than its sampler weight so it teaches
+    signal without inflating the deployment prior."""
+    src = _notebook_source()
+    m = re.search(r"'kaggle_houseplant'\s*:\s*([0-9.]+)", src)
+    assert m and float(m.group(1)) < 1.0, (
+        "'kaggle_houseplant' must be down-weighted (<1.0) in SOURCE_WEIGHTS"
+    )
+    p = re.search(r"PRIOR_SOURCE_WEIGHTS\['kaggle_houseplant'\]\s*=\s*([0-9.]+)", src)
+    assert p and float(p.group(1)) < float(m.group(1)), (
+        "PRIOR_SOURCE_WEIGHTS['kaggle_houseplant'] must be < its sampler weight"
+    )
+
+
+def test_kaggle_strawberry_graymold_is_train_only_proxy():
+    """gray_mold_botrytis is supply-bound at the iNat ceiling, so a crop-domain
+    Botrytis proxy (the Kaggle strawberry COCO set) supplements it. Must (a)
+    parse the gray-mold category, (b) write into gray_mold_botrytis, (c) be
+    TRAIN-ONLY (no make_*_split allows 'kaggle_strawberry'), and (d) be
+    down-weighted with the LA prior decoupled below the sampler weight."""
+    src = _notebook_source()
+    assert "def fetch_kaggle_strawberry_graymold" in src, "strawberry gray-mold fetcher missing"
+    assert "_is_graymold_name" in src and "botrytis" in src.lower(), (
+        "must detect the gray-mold / Botrytis category"
+    )
+    # The real dataset ships LabelMe per-image JSON (shapes[].label), not a single
+    # COCO file — the fetcher must handle that schema (validated: 621 gray-mold imgs).
+    assert "shapes" in src and "imagePath" in src, (
+        "strawberry fetcher must parse the LabelMe per-image JSON schema (shapes[].label)"
+    )
+    assert "'gray_mold_botrytis'" in src, "must write into the gray_mold_botrytis class"
+    for split_fn in ("make_val_realworld", "make_val_indomain",
+                     "make_temperature_cal", "make_conformal_cal"):
+        body = re.search(rf"def {split_fn}\(.*?\n(?:.*\n){{0,14}}", src)
+        assert body and "kaggle_strawberry" not in body.group(0), (
+            f"{split_fn} must NOT allow 'kaggle_strawberry' — it is a TRAIN-ONLY proxy"
+        )
+    sw = re.search(r"'kaggle_strawberry'\s*:\s*([0-9.]+)", src)
+    assert sw and float(sw.group(1)) < 1.0, "'kaggle_strawberry' must be down-weighted (<1.0)"
+    pr = re.search(r"PRIOR_SOURCE_WEIGHTS\['kaggle_strawberry'\]\s*=\s*([0-9.]+)", src)
+    assert pr and float(pr.group(1)) < float(sw.group(1)), (
+        "PRIOR_SOURCE_WEIGHTS['kaggle_strawberry'] must be < its sampler weight"
+    )
+    # Runs before the pre-split dedup.
+    assert 0 < src.find("_try_fetch('kaggle_strawberry_graymold'") < src.find("_dedup_train_in_place(TRAIN_ROOT"), (
+        "strawberry fetch must run before the pre-split dedup"
+    )
+
+
+def test_kaggle_credentials_support_new_token_format_and_upload():
+    """Credentials must support Kaggle's NEW token format (KAGGLE_API_TOKEN env
+    / ~/.kaggle/access_token) in addition to the legacy username+key, and the
+    notebook must offer an upload helper that installs whichever file the user
+    provides (the new one-line token or a legacy kaggle.json)."""
+    src = _notebook_source()
+    # New-format detection in the downloader.
+    assert "KAGGLE_API_TOKEN" in src and "access_token" in src, (
+        "_kaggle_download must recognise the new-format token "
+        "(KAGGLE_API_TOKEN / access_token), not only legacy username+key"
+    )
+    # Upload helper exists and handles both formats.
+    assert "def kaggle_upload_credentials" in src, "creds upload helper missing"
+    assert "from google.colab import files" in src, (
+        "upload helper must use the Colab file uploader"
+    )
+    assert "kaggle.json" in src and "access_token" in src, (
+        "upload helper must install either the new access_token or legacy kaggle.json"
+    )
+    # An opt-in cell that doesn't block a plain Run-all by default.
+    assert re.search(r"KAGGLE_UPLOAD_CREDS\s*=\s*False", src), (
+        "the upload trigger must default to False so Run-all never blocks on a dialog"
+    )
+    # Colab secrets are not auto-exported as env vars, so a KAGGLE_API_TOKEN
+    # secret must be pulled in explicitly via google.colab.userdata before the
+    # credential check, or a set secret reads as "no credentials".
+    assert "def _kaggle_sync_colab_secrets" in src and "from google.colab import userdata" in src, (
+        "must bridge a Colab KAGGLE_API_TOKEN secret into the environment "
+        "(google.colab.userdata) — secrets are not auto-exported as env vars"
+    )
+
+
+def test_classifier_exports_embedding_as_second_output():
+    """Report P1 (embedding OOD): the classifier ONNX must export the DINOv2
+    CLS embedding as a SECOND output so the server can compute an
+    embedding-space k-NN OOD score without a second model. output[0] must
+    stay the logits so every existing run(...)[0] call site is unaffected."""
+    src = _notebook_source()
+    assert "_ExportWithEmbedding" in src, "embedding-export wrapper missing"
+    assert re.search(r"output_names\s*=\s*\[\s*'logits'\s*,\s*'embedding'\s*\]", src), (
+        "ONNX export must declare a 2nd 'embedding' output after 'logits'"
+    )
+    # The wrapper must return (head(feats), feats) — logits first, embedding
+    # second — so the order matches the output_names above.
+    assert re.search(r"return\s+self\.clf\.head\(feats\)\s*,\s*feats", src), (
+        "the export wrapper must return (logits, embedding) in that order"
+    )
+
+
+def test_embedding_ood_is_calibrated_and_shipped():
+    """Report P1: the embedding-space OOD bank + threshold must be calibrated
+    (bank from one split, threshold on a DISJOINT split at TARGET_PLANT_FPR),
+    shipped as ood_embedding.npz, and referenced from classes.json
+    ood.embedding so the runtime ood.py can load it."""
+    src = _notebook_source()
+    assert "Embedding-space OOD (k-NN) calibration" in src, "embedding OOD block missing"
+    # Bank from conformal_cal, threshold on temperature_cal (disjoint splits).
+    assert "_collect_embeddings(eval_sess, cal_dl)" in src, "OOD bank not built from conformal_cal"
+    assert "_collect_embeddings(eval_sess, temp_cal_dl)" in src, (
+        "OOD threshold not calibrated on the disjoint temperature_cal split"
+    )
+    assert re.search(r"np\.quantile\(_ps,\s*1\.0\s*-\s*TARGET_PLANT_FPR\)", src), (
+        "OOD threshold must be the (1 - TARGET_PLANT_FPR) quantile of in-dist scores"
+    )
+    # Shipped artefact + classes.json wiring.
+    assert "np.savez_compressed('models/ood_embedding.npz'" in src, "OOD bank not written"
+    assert "'embedding': EMBEDDING_OOD" in src, (
+        "classes.json ood section must carry the embedding OOD config"
+    )
+
+
+def test_detector_crop_diagnostic_reports_whole_frame_fold():
+    """Report P0 (detector-crop -0.093): the production-faithful diagnostic
+    must report the crop+whole-frame FOLD alongside crop-only and whole-image
+    so a Colab run directly verifies the pipeline arbitration recovers points."""
+    src = _notebook_source()
+    assert "crop+whole_fold" in src, "detector-crop diagnostic doesn't report the fold"
+    assert "_yp_fold" in src and "fold_disease_macro_f1" in src, (
+        "the folded prediction + its logged F1 must be present"
+    )
+
+
+def test_deploy_bundle_includes_ood_npz_and_excludes_torch_checkpoints():
+    """The §6b deploy archive must include the embedding-OOD bank (.npz) that
+    classes.json -> ood.embedding references — omitting it silently disabled the
+    embedding OOD gate at serve time in v2.3.1. The ONNX-only runtime cannot load
+    the torch checkpoints (.pt/.pth), so those must NOT bloat the deploy bundle."""
+    src = _notebook_source()
+    m = re.search(r"_BUNDLE_SUFFIXES\s*=\s*\{([^}]*)\}", src)
+    assert m, "_BUNDLE_SUFFIXES not found"
+    suffixes = m.group(1)
+    assert "'.npz'" in suffixes, "deploy bundle MUST include .npz (the embedding-OOD bank)"
+    assert "'.onnx'" in suffixes and "'.json'" in suffixes
+    assert "'.pth'" not in suffixes and "'.pt'" not in suffixes, (
+        "torch checkpoints (.pt/.pth) are not loadable by the ONNX-only server "
+        "and must not bloat the deploy bundle"
+    )
+    # And a guard that fails loud if a declared OOD bank isn't bundled.
+    assert "references ood bank" in src and "embedding OOD will be DISABLED" in src, (
+        "§6b must warn when classes.json declares an OOD bank absent from the archive"
+    )
+
+
+def test_kaggle_nutrient_supplement_replaces_mendeley_coleaf():
+    """The Mendeley CoLeaf source is intermittently IP-blocked from Colab, so a
+    Colab-reachable Kaggle nutrient source must supplement nutrient_deficiency.
+    Must (a) exist with a concrete slug, (b) write into nutrient_deficiency,
+    (c) be TRAIN-ONLY, (d) be down-weighted with the LA prior decoupled."""
+    src = _notebook_source()
+    assert "def fetch_kaggle_nutrient_deficiency" in src, "Kaggle nutrient fetcher missing"
+    assert "KAGGLE_NUTRIENT_SLUG" in src and "nutrientdeficiencysymptomsinrice" in src, (
+        "must wire a concrete Colab-reachable Kaggle nutrient slug"
+    )
+    assert "'nutrient_deficiency'" in src
+    for split_fn in ("make_val_realworld", "make_val_indomain",
+                     "make_temperature_cal", "make_conformal_cal"):
+        body = re.search(rf"def {split_fn}\(.*?\n(?:.*\n){{0,14}}", src)
+        assert body and "kaggle_nutrient" not in body.group(0), (
+            f"{split_fn} must NOT allow 'kaggle_nutrient' — it is a TRAIN-ONLY proxy"
+        )
+    sw = re.search(r"'kaggle_nutrient'\s*:\s*([0-9.]+)", src)
+    assert sw and float(sw.group(1)) < 1.0, "'kaggle_nutrient' must be down-weighted (<1.0)"
+    pr = re.search(r"PRIOR_SOURCE_WEIGHTS\['kaggle_nutrient'\]\s*=\s*([0-9.]+)", src)
+    assert pr and float(pr.group(1)) < float(sw.group(1)), (
+        "PRIOR_SOURCE_WEIGHTS['kaggle_nutrient'] must be < its sampler weight"
+    )
+
+
+def test_coco_download_prefers_hf_mirror_first():
+    """images.cocodataset.org serves a broken cert; the fetch must try the HF
+    mirror FIRST (no wasted SSL retries / alarming log) and fall back to the
+    canonical host only if the mirror is down."""
+    src = _notebook_source()
+    m = re.search(r"def _coco_download\(.*?\n(?:.*\n){2,20}", src)
+    assert m, "_coco_download not found"
+    body = m.group(0)
+    hf_pos = body.find("hf_hub_download(_COCO_HF_MIRROR")
+    canon_pos = body.find("http_download(canonical_url")
+    assert 0 < hf_pos < canon_pos, (
+        "COCO must attempt the HF mirror before the canonical cocodataset.org URL"
+    )
+
+
+def test_frontier_capacity_probe_is_diagnostic_and_off_by_default():
+    """The Frontier decision must be evidence-driven: a frozen linear probe on a
+    BIGGER DINOv2 over the same splits, compared to the ViT-S probe on the thin
+    classes. It must exist, default OFF (so normal runs aren't slowed), and stay
+    diagnostic (it must never become the shipped backbone)."""
+    src = _notebook_source()
+    assert re.search(r"FRONTIER_PROBE\s*=\s*False", src), (
+        "Frontier capacity probe must exist and default to False"
+    )
+    assert "FRONTIER_PROBE_BACKBONE" in src and "dinov2_vitl14" in src, (
+        "Frontier probe must run a larger DINOv2 backbone"
+    )
+    assert "mean thin-class gain" in src and "FRONTIER_THIN_GAIN_GATE" in src, (
+        "Frontier probe must weigh the THIN-class recall gain against a gate"
+    )
+
+
 def test_ood_floor_is_calibrated_not_hardcoded():
     """audit fix #2: classes.json max_logit_floor must be computed from
     the MaxLogit distribution on plants vs NAP, not hardcoded to 4.0."""

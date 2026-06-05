@@ -45,6 +45,27 @@ data class PredictionSetItem(
 )
 
 /**
+ * A full bilingual care card for one class of a *dual-care* prediction set.
+ *
+ * Emitted only when the conformal set can't separate the two
+ * physiological-stress classes — under-watering (`leaf_scorch_underwatering`)
+ * vs `nutrient_deficiency` — whose advice genuinely diverges ("water me" vs
+ * "feed me"). The result screen can then show both cards instead of forcing
+ * the user to guess which one to act on. Empty for every other set.
+ */
+data class PredictionSetCareCard(
+    @SerializedName("class") val className: String,
+    @SerializedName("name_en") val nameEn: String? = null,
+    @SerializedName("name_ru") val nameRu: String? = null,
+    @SerializedName("description") val description: String = "",
+    @SerializedName("description_ru") val descriptionRu: String = "",
+    @SerializedName("treatment") val treatment: List<String> = emptyList(),
+    @SerializedName("treatment_ru") val treatmentRu: List<String> = emptyList(),
+    @SerializedName("prevention") val prevention: List<String> = emptyList(),
+    @SerializedName("prevention_ru") val preventionRu: List<String> = emptyList(),
+)
+
+/**
  * Conformal prediction set — the classes the model can't rule out at
  * the configured coverage level (e.g. 90 %). Surfaced honestly when
  * calibration data is loaded server-side; the field is null otherwise.
@@ -61,6 +82,14 @@ data class PredictionSet(
      * consider" rather than claiming "<coverage>% guaranteed coverage".
      */
     @SerializedName("advisory") val advisory: Boolean = true,
+    /**
+     * True when the set is the ambiguous physiological-stress pair
+     * (under-watering vs nutrient deficiency) and `careCards` carries both
+     * full care cards so the UI can show "water me" AND "feed me" side by
+     * side instead of only the top-1's advice.
+     */
+    @SerializedName("dual_care") val dualCare: Boolean = false,
+    @SerializedName("care_cards") val careCards: List<PredictionSetCareCard> = emptyList(),
 )
 
 /** Response from the server after analyzing an image */

@@ -19,7 +19,10 @@ Two stages (`server/pipeline.py`):
    The "is it diseased / which disease" decision is 100 % Stage 2.
 
 Runtime guards: blur gate (variance-of-Laplacian), an OOD AND-gate
-(detector confidence **and** classifier MaxLogit, Hendrycks 2019),
+(detector confidence **and** a classifier-side OOD signal — embedding
+k-NN distance where a bank is shipped, else the legacy MaxLogit floor),
+**whole-image-vs-crop arbitration** (the full frame is folded into the
+mean vote to recover the detector-crop loss on leaf-centric inputs),
 weak-healthy reroute, temperature scaling, and RAPS conformal prediction
 sets.
 
@@ -69,10 +72,21 @@ the deployment distribution.
 
 Temperature scaling (Guo et al. 2017) + inductive RAPS conformal
 (Angelopoulos et al. 2021) are fit on the **shipped artefact's** logits
-so calibration matches what is served. OOD uses **MaxLogit** (robust
-under temperature scaling + label smoothing where MSP collapses),
-AND-gated with detector confidence; it auto-disables
-(`max_logit_floor: null`) when plant/NAP separation is non-positive.
+so calibration matches what is served. The conformal hyper-parameters
+(`alpha`, `lambda_reg`, `k_reg`) are grid-searched on a held-out audit
+split for the smallest set size that still clears the 0.90 coverage
+target (RAPS otherwise over-covers on this sharp classifier).
+
+**OOD** uses an **embedding-space k-NN distance** (Sun et al. 2022) on
+the DINOv2 CLS vector — the classifier ONNX exports the embedding as a
+second output, and a memory bank of in-distribution plant embeddings +
+a threshold (calibrated at a target plant false-positive rate on a
+disjoint split) ship in the bundle (`ood_embedding.npz` +
+`classes.json → ood.embedding`). It is AND-gated with detector
+confidence. This replaces **MaxLogit** (Hendrycks 2019), which goes dead
+once the `not_a_plant` head is confident enough that plant/NAP MaxLogit
+separation is non-positive; the MaxLogit floor remains as the fallback
+when no embedding bank is shipped (`max_logit_floor`).
 
 ## Known limitations
 
@@ -94,4 +108,5 @@ AND-gated with detector confidence; it auto-disables
 - Training recipe + dataset provenance + audited citations:
   [`server/train_notebook.ipynb`](../train_notebook.ipynb).
 - Runtime: `server/pipeline.py`, `server/classifier.py`,
-  `server/detector.py`, `server/conformal.py`.
+  `server/detector.py`, `server/conformal.py`, `server/ood.py`
+  (embedding-space OOD scorer).

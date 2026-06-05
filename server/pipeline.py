@@ -57,10 +57,12 @@ try:
     from .classifier import DiseaseClassifier  # type: ignore[import-not-found]
     from .conformal import ConformalConfig, load_conformal_config, prediction_set
     from .detector import LeafDetector
+    from .ood import EmbeddingOODScorer, load_embedding_ood
 except ImportError:
     from classifier import DiseaseClassifier
     from conformal import ConformalConfig, load_conformal_config, prediction_set
     from detector import LeafDetector
+    from ood import EmbeddingOODScorer, load_embedding_ood
 
 logger = logging.getLogger(__name__)
 
@@ -175,6 +177,24 @@ SEVERITY_MARGIN_LOW = 0.20
 SEVERITY_MARGIN_HIGH = 0.45
 
 TOP_K_ALTERNATIVES = 3
+
+# ── Whole-image-vs-crop arbitration ──────────────────────────────────
+# Stage 1 crops the leaf before Stage 2 classifies it. On a leaf-centric
+# input (a phone shot already framed on one leaf) that extra crop drops
+# context and costs disease macro-F1 — measured at -0.093 vs classifying
+# the whole frame on val_realworld, which is itself a leaf-centric slice.
+# But on a wide indoor shot the crop is exactly what rescues the leaf
+# from a room full of background, so we can't simply stop cropping.
+#
+# Arbitration: classify the WHOLE FRAME too and FOLD IT INTO THE MEAN
+# VOTE as one extra member (equal weight to a crop). On a leaf-centric
+# input the full-frame verdict reinforces the over-cropped crop and pulls
+# the aggregate toward the higher whole-image score; on a wide indoor
+# shot the single (mostly-background) full-frame vote is outweighed by
+# the leaf crops, so that case does not regress. Averaging probabilities
+# keeps temperature / conformal / OOD operating on the same quantity they
+# were calibrated on. Toggleable so the notebook can ablate the recovery.
+FOLD_WHOLE_FRAME_VOTE = True
 
 # ── Blur gate ─────────────────────────────────────────────────────────
 # Variance-of-Laplacian score below this number means the photo is too
@@ -336,7 +356,19 @@ class PlantDiseasePipeline:
         self.conformal: ConformalConfig | None = load_conformal_config(
             classifier_path.parent
         )
-        if self.nap_max_logit_floor <= 0:
+        # Embedding-space OOD (k-NN on the DINOv2 CLS vector). Replaces the
+        # MaxLogit term in the NAP AND-gate when the bundle ships a bank;
+        # ``None`` keeps the historical MaxLogit-floor behaviour.
+        self.embedding_ood: EmbeddingOODScorer | None = load_embedding_ood(
+            classifier_path.parent, meta
+        )
+        if self.embedding_ood is not None:
+            logger.info(
+                "OOD: embedding k-NN gate active (threshold=%.4f) — "
+                "supersedes the MaxLogit floor on the classifier side.",
+                self.embedding_ood.threshold,
+            )
+        if self.embedding_ood is None and self.nap_max_logit_floor <= 0:
             logger.warning(
                 "OOD MaxLogit gate is OFF on this model — separation_p50 in "
                 "classes.json showed NAP medians above plant medians, so the "
@@ -576,43 +608,36 @@ class PlantDiseasePipeline:
 
             det_conf < NAP_DETECTOR_CONF_FLOOR
             AND
-            (max_logit < ml_floor)   -- only when ml_floor > 0
+            classifier-side OOD signal fires
 
-        Both floors must independently fire. Either signal alone is too
-        noisy: a tight crop of an unfamiliar plant can have low
-        MaxLogit even when the detector is confident, and vice versa.
+        Both must independently fire. Either signal alone is too noisy: a
+        tight crop of an unfamiliar plant can look OOD to the classifier
+        even when the detector is confident, and vice versa.
 
-        The historical version short-circuited on detector confidence:
-        a single 0.41-confidence false positive bypassed the MaxLogit
-        check entirely. We now evaluate both gates explicitly and only
-        re-route when both fail.
+        The classifier-side signal is, in priority order:
+          1. **Embedding k-NN distance** (``ood.py``) when the bundle ships
+             a bank — ``ood_score > threshold``. This is the live
+             replacement for MaxLogit, which went dead once the NAP head
+             grew over-confident (plant/NAP MaxLogit separation ≤ 0).
+          2. **MaxLogit floor** (``max_logit < ml_floor``) when no bank is
+             shipped but ``ood.max_logit_floor`` is a positive number.
+          3. Otherwise no classifier signal — the gate degrades to
+             detector-confidence only (historical fallback).
         """
-        cls_name = classification["class_name"]
-        if cls_name in _NON_DISEASE:
-            return False
-        if "not_a_plant" not in self.classifier.CLASS_NAMES:
-            return False
-
-        detector_low = det_conf < NAP_DETECTOR_CONF_FLOOR
-        ml_floor = self.nap_max_logit_floor
-        max_logit = float(classification.get("max_logit", 0.0))
-        # MaxLogit gate is "off" when the floor is <= 0 (configurable
-        # via classes.json -> ood.max_logit_floor: null). When off, we
-        # require only the detector floor to fire — the historical
-        # behaviour for backwards compatibility.
-        max_logit_low = (ml_floor > 0) and (max_logit < ml_floor)
-
-        triggered = (
-            (detector_low and max_logit_low) if ml_floor > 0 else detector_low
+        ood_threshold = (
+            self.embedding_ood.threshold if self.embedding_ood is not None else None
         )
-
+        triggered, desc = _decide_nap_route(
+            class_name=classification["class_name"],
+            class_names=self.classifier.CLASS_NAMES,
+            det_conf=det_conf,
+            ood_score=classification.get("ood_score"),
+            ood_threshold=ood_threshold,
+            ml_floor=self.nap_max_logit_floor,
+            max_logit=float(classification.get("max_logit", 0.0)),
+        )
         if triggered:
-            logger.info(
-                "OOD gate triggered (det=%.3f<%.2f, max_logit=%.3f%s) → not_a_plant",
-                det_conf, NAP_DETECTOR_CONF_FLOOR,
-                max_logit,
-                f"<{ml_floor:.2f}" if ml_floor > 0 else " <off>",
-            )
+            logger.info("OOD gate triggered (%s) → not_a_plant", desc)
         return triggered
 
     def _build_prediction_set(
@@ -654,23 +679,52 @@ class PlantDiseasePipeline:
         sized = self._size_filter(detections, img.size)
         ranked = sorted(sized, key=lambda d: -d["confidence"])[: self._MAX_RECLASSIFY]
         crops = [self._extract_crop(img, box) for box in ranked]
-        cls_results = self.classifier.classify_batch(crops)
+
+        # Whole-image-vs-crop arbitration (see FOLD_WHOLE_FRAME_VOTE): the
+        # full frame is classified alongside the crops and folded into the
+        # mean vote as one extra member. Batch it with the crops so it
+        # costs a single extra slot in the same forward, not a separate
+        # sess.run round-trip.
+        fold_whole = FOLD_WHOLE_FRAME_VOTE
+        batch = crops + ([img] if fold_whole else [])
+        cls_results = self.classifier.classify_batch(batch)
+        crop_results = cls_results[: len(crops)]
+        whole_result = cls_results[len(crops)] if fold_whole else None
 
         results: list[tuple[dict, dict]] = []
-        sum_probs: dict[str, float] = {n: 0.0 for n in self.classifier.CLASS_NAMES}
+        member_probs: list[dict[str, float]] = []
+        embeddings: list = []
         max_logit_seen = -float("inf")
 
-        for box, cls_res in zip(ranked, cls_results, strict=True):
+        for box, cls_res in zip(ranked, crop_results, strict=True):
             calibrated = _apply_temperature(cls_res["all_probs"], self.temperature)
             results.append((box, {**cls_res, "all_probs": calibrated}))
-            for n, p in calibrated.items():
-                sum_probs[n] = sum_probs.get(n, 0.0) + float(p)
+            member_probs.append(calibrated)
+            if cls_res.get("embedding") is not None:
+                embeddings.append(cls_res["embedding"])
             ml = float(cls_res.get("max_logit", 0.0))
             if ml > max_logit_seen:
                 max_logit_seen = ml
 
-        n_boxes = max(len(results), 1)
-        mean_probs = {name: total / n_boxes for name, total in sum_probs.items()}
+        # The whole frame votes on the verdict but never becomes the
+        # highlighted ``primary_box`` (it has no bbox); its OOD signal
+        # still counts toward the strongest in-frame MaxLogit.
+        if whole_result is not None:
+            whole_cal = _apply_temperature(whole_result["all_probs"], self.temperature)
+            member_probs.append(whole_cal)
+            if whole_result.get("embedding") is not None:
+                embeddings.append(whole_result["embedding"])
+            ml = float(whole_result.get("max_logit", 0.0))
+            if ml > max_logit_seen:
+                max_logit_seen = ml
+
+        n_boxes = max(len(member_probs), 1)
+        mean_probs = _fold_votes(member_probs, self.classifier.CLASS_NAMES)
+        # Embedding-space OOD: take the MIN k-NN distance across the voted
+        # members (crops + whole frame) — the strongest in-distribution
+        # evidence we have. If even the closest member is far from the
+        # plant manifold, the crop is OOD. ``None`` when no bank is shipped.
+        ood_score = self._embedding_ood_score(embeddings)
 
         top1_class = max(mean_probs, key=mean_probs.get)
         top1_conf = float(mean_probs[top1_class])
@@ -701,10 +755,24 @@ class PlantDiseasePipeline:
             "confidence": top1_conf,
             "all_probs": mean_probs,
             "max_logit": max_logit_seen if max_logit_seen != -float("inf") else 0.0,
+            "ood_score": ood_score,
             "low_confidence": top1_conf < HEALTHY_MIN_CONFIDENCE,
             "_voted_over": n_boxes,
         }
         return primary_box, aggregated_cls
+
+    def _embedding_ood_score(self, embeddings: list) -> float | None:
+        """Min k-NN OOD distance over the member embeddings, or ``None``.
+
+        ``None`` when no embedding bank is shipped or no member carried an
+        embedding (legacy single-output graph). NaN per-member scores
+        (dim mismatch) are skipped; if all are NaN the result is ``None``.
+        """
+        if self.embedding_ood is None or not embeddings:
+            return None
+        scores = [self.embedding_ood.score(e) for e in embeddings]
+        finite = [s for s in scores if s == s]  # drop NaN
+        return min(finite) if finite else None
 
     @staticmethod
     def _size_filter(detections: list[dict], image_size: tuple[int, int]) -> list[dict]:
@@ -828,6 +896,73 @@ class PlantDiseasePipeline:
 
 
 # ── pure helpers (exposed for tests) ─────────────────────────────────
+
+
+def _decide_nap_route(
+    *,
+    class_name: str,
+    class_names: list[str],
+    det_conf: float,
+    ood_score: float | None,
+    ood_threshold: float | None,
+    ml_floor: float,
+    max_logit: float,
+) -> tuple[bool, str]:
+    """Pure NAP-gate decision (exposed for tests).
+
+    Returns ``(route_to_nap, reason)``. The gate is two-of-two: the
+    detector must be unsure (``det_conf < NAP_DETECTOR_CONF_FLOOR``) AND
+    the classifier-side OOD signal must fire. The classifier signal is, in
+    priority order: the embedding k-NN distance (``ood_score > ood_threshold``)
+    when a bank is shipped and an embedding was produced, else the MaxLogit
+    floor (``max_logit < ml_floor``) when that floor is positive, else no
+    signal at all — in which case the gate degrades to detector-only.
+    """
+    if class_name in _NON_DISEASE or "not_a_plant" not in class_names:
+        return False, "non-disease-or-no-nap-class"
+
+    detector_low = det_conf < NAP_DETECTOR_CONF_FLOOR
+
+    if ood_threshold is not None and ood_score is not None:
+        classifier_ood = ood_score > ood_threshold
+        has_signal = True
+        desc = f"ood_score={ood_score:.3f}>{ood_threshold:.3f}={classifier_ood}"
+    elif ml_floor > 0:
+        classifier_ood = max_logit < ml_floor
+        has_signal = True
+        desc = f"max_logit={max_logit:.3f}<{ml_floor:.2f}={classifier_ood}"
+    else:
+        classifier_ood = False
+        has_signal = False
+        desc = "no-classifier-signal"
+
+    triggered = (detector_low and classifier_ood) if has_signal else detector_low
+    return triggered, (
+        f"det={det_conf:.3f}<{NAP_DETECTOR_CONF_FLOOR:.2f}={detector_low}, {desc}"
+    )
+
+
+def _fold_votes(
+    member_probs: list[dict[str, float]],
+    class_names: list[str],
+) -> dict[str, float]:
+    """Mean-average a list of per-member probability dicts into one vote.
+
+    Each member is an already-temperature-calibrated ``all_probs`` dict
+    (one per leaf crop, plus the whole frame when
+    ``FOLD_WHOLE_FRAME_VOTE`` is on). Averaging is over the union of
+    ``class_names`` so a member that somehow omitted a class contributes
+    0 mass for it rather than dropping the class from the vote. Exposed
+    for tests: it carries the whole-image-vs-crop arbitration math, so a
+    confident whole-frame vote folded into a weak crop vote must pull the
+    aggregate toward the whole-frame verdict (the -0.093 recovery).
+    """
+    sum_probs: dict[str, float] = {n: 0.0 for n in class_names}
+    for probs in member_probs:
+        for n, p in probs.items():
+            sum_probs[n] = sum_probs.get(n, 0.0) + float(p)
+    n = max(len(member_probs), 1)
+    return {name: total / n for name, total in sum_probs.items()}
 
 
 def compute_severity(

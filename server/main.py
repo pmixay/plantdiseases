@@ -1061,6 +1061,53 @@ async def version():
     }
 
 
+# The two physiological-stress classes whose care advice genuinely
+# diverges — under-watering (``leaf_scorch_underwatering``) says "water me"
+# / fix humidity & salts, nutrient deficiency says "feed me". When the
+# conformal set can't separate them (the kept-both taxonomy decision), the
+# result screen shows BOTH care cards instead of forcing the user to guess.
+_PHYSIOLOGICAL_CARE_PAIR = frozenset(
+    {"leaf_scorch_underwatering", "nutrient_deficiency"}
+)
+
+
+def _compact_care_card(cls: str) -> dict:
+    """Bilingual care card for one class, used in the dual-care prediction
+    set so the client can render a second full care card without a second
+    round-trip."""
+    info = DISEASES_DATABASE.get(cls, DISEASES_DATABASE["unknown"])
+    return {
+        "class": cls,
+        "name_en": info.get("name_en", cls.replace("_", " ").title()),
+        "name_ru": info.get("name_ru", cls),
+        "description": info.get("description_en", ""),
+        "description_ru": info.get("description_ru", ""),
+        "treatment": info.get("treatment_en", []),
+        "treatment_ru": info.get("treatment_ru", []),
+        "prevention": info.get("prevention_en", []),
+        "prevention_ru": info.get("prevention_ru", []),
+    }
+
+
+def _attach_dual_care(prediction_set: dict) -> None:
+    """Attach both physiological care cards in-place (P0(b)).
+
+    No-op unless the conformal set contains BOTH ``leaf_scorch_underwatering``
+    and ``nutrient_deficiency`` — the one ambiguous pair whose care advice
+    diverges enough to warrant showing two cards. Scoped this tightly so
+    every other prediction set keeps a lean payload.
+    """
+    classes = prediction_set.get("classes") or []
+    if not _PHYSIOLOGICAL_CARE_PAIR.issubset(set(classes)):
+        return
+    prediction_set["dual_care"] = True
+    prediction_set["care_cards"] = [
+        _compact_care_card(cls)
+        for cls in classes
+        if cls in _PHYSIOLOGICAL_CARE_PAIR
+    ]
+
+
 @api_router.get("/classes")
 async def classes():
     """List of known disease classes with bilingual names."""
@@ -1435,6 +1482,11 @@ async def analyze_image(
                 for cls in prediction_set["classes"]
             ],
         }
+        # Dual care cards (P0(b), kept-both taxonomy): when the set can't
+        # separate the two physiological-stress classes, their care advice
+        # diverges enough ("water me" vs "feed me") that we surface BOTH
+        # full care cards rather than only the top-1's.
+        _attach_dual_care(prediction_set)
 
     # Resolve the species fan-out. We started it in parallel with the
     # disease pipeline so this normally returns immediately. If the
