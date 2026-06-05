@@ -53,7 +53,12 @@ bundle declares (`classes.json -> architecture`):
   probe reaching ~0.91 top-1 on `val_realworld`. v2.4 rebuilds the §2
   data supply for the weak classes (new ornamental/houseplant disease
   source; black-background segmented-Aloe and outdoor-cactus-as-pests
-  data removed; noisy generic-yellowing query dropped).
+  data removed; noisy generic-yellowing query dropped). v2.4 also adds
+  **DoctorP** — real plant-doctor app photos — which supplies the
+  starved `gray_mold_botrytis` / `pests` classes in their deployment
+  framing and is **eval-eligible**, so `val_realworld` (the ship gate)
+  now includes real gardener-view photos across the whole taxonomy
+  instead of only PlantDoc field crops.
   Shipped FP32 (`PREFER_FP32`) — dynamic-INT8 drift on `val_realworld`
   was not statistically significant (paired bootstrap CI spans 0) and the
   single-core CPU budget has the latency headroom.
