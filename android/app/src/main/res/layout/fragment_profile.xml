@@ -674,8 +674,10 @@
 
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- My second opinions — what this install has contributed. -->
+        <!-- My second opinions — what this install has contributed.
+             Collapsible: tap the header row to fold/unfold the list. -->
         <com.google.android.material.card.MaterialCardView
+            android:id="@+id/card_my_opinions"
             style="@style/App.GlassCard"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -686,36 +688,67 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical">
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/community_my_opinions_title"
-                    android:textAppearance="@style/TextAppearance.App.Title" />
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_xs"
-                    android:text="@string/community_my_opinions_subtitle"
-                    android:textSize="@dimen/text_body_sm"
-                    android:textColor="@color/on_surface_secondary" />
-
+                <!-- Header row — tappable to fold/unfold the content below. -->
                 <LinearLayout
-                    android:id="@+id/ll_my_opinions"
+                    android:id="@+id/header_my_opinions"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:layout_marginTop="@dimen/space_sm" />
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="?attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true">
 
-                <TextView
-                    android:id="@+id/tv_my_opinions_empty"
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/community_my_opinions_title"
+                        android:textAppearance="@style/TextAppearance.App.Title" />
+
+                    <ImageView
+                        android:id="@+id/iv_my_opinions_chevron"
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_chevron_up"
+                        app:tint="@color/on_surface_secondary"
+                        android:contentDescription="@string/community_my_opinions_title" />
+
+                </LinearLayout>
+
+                <!-- Collapsible content. -->
+                <LinearLayout
+                    android:id="@+id/ll_my_opinions_content"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_sm"
-                    android:text="@string/community_my_opinions_empty"
-                    android:textSize="@dimen/text_body_sm"
-                    android:textColor="@color/on_surface_secondary"
-                    android:visibility="gone" />
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_xs"
+                        android:text="@string/community_my_opinions_subtitle"
+                        android:textSize="@dimen/text_body_sm"
+                        android:textColor="@color/on_surface_secondary" />
+
+                    <LinearLayout
+                        android:id="@+id/ll_my_opinions"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:layout_marginTop="@dimen/space_sm" />
+
+                    <TextView
+                        android:id="@+id/tv_my_opinions_empty"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_sm"
+                        android:text="@string/community_my_opinions_empty"
+                        android:textSize="@dimen/text_body_sm"
+                        android:textColor="@color/on_surface_secondary"
+                        android:visibility="gone" />
+
+                </LinearLayout>
 
             </LinearLayout>
 

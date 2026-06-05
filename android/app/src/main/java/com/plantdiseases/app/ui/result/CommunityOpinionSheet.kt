@@ -274,9 +274,11 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         private const val ARG_CURRENT_NAME = "arg_current_name"
 
         /** Diagnosable classes a responder can pick. Keys must be present in
-         *  the server's DISEASES_DATABASE or the POST is rejected (422), so
-         *  we deliberately omit not_a_plant / the deferred physiological
-         *  classes here. Labels reuse the feedback-correction strings. */
+         *  the server's DISEASES_DATABASE or the POST is rejected (422).
+         *  ``not_a_plant`` is included so a responder can flag that the
+         *  shared photo isn't a plant at all — it's a valid class in both
+         *  the classifier head and the server database. Labels reuse the
+         *  feedback-correction strings. */
         private val CLASS_CATALOG: List<Pair<String, Int>> = listOf(
             "healthy" to R.string.feedback_class_healthy,
             "leaf_spot" to R.string.feedback_class_leaf_spot,
@@ -285,6 +287,7 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
             "leaf_scorch_underwatering" to R.string.feedback_class_leaf_scorch_underwatering,
             "nutrient_deficiency" to R.string.feedback_class_nutrient_deficiency,
             "viral_disease" to R.string.feedback_class_viral_disease,
+            "not_a_plant" to R.string.feedback_class_not_a_plant,
         )
 
         fun show(fm: FragmentManager, scanId: String, currentDisplayName: String?) {

@@ -6,9 +6,7 @@
     panel sits on ``surface`` with a soft top shadow, and on-preview
     controls (flash, focus, zoom badge) use plain dark scrims so they
     stay readable on bright leaves without competing with the live
-    image. The shutter stays the single capture trigger — the live
-    scan-quality coach (tv_scan_coach) is advisory only and never
-    auto-captures.
+    image. The shutter is the single capture trigger.
 -->
 <androidx.constraintlayout.widget.ConstraintLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
@@ -101,27 +99,6 @@
         app:layout_constraintBottom_toTopOf="@id/controls_panel"
         app:layout_constraintEnd_toEndOf="parent"
         tools:text="2.0×" />
-
-    <!-- Live scan-quality coach — on-device focus/exposure guidance.
-         Advisory only: nudges toward a frame the server's blur gate will
-         accept; it never auto-captures. -->
-    <TextView
-        android:id="@+id/tv_scan_coach"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginBottom="@dimen/space_xl"
-        android:background="@drawable/bg_camera_pill"
-        android:paddingHorizontal="@dimen/space_lg"
-        android:paddingVertical="@dimen/space_sm"
-        android:textColor="@android:color/white"
-        android:textSize="@dimen/text_body_sm"
-        android:fontFamily="sans-serif-medium"
-        android:elevation="10dp"
-        android:visibility="gone"
-        app:layout_constraintBottom_toTopOf="@id/controls_panel"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        tools:text="Hold steady — image is blurry" />
 
     <!-- Flash toggle. -->
     <com.google.android.material.button.MaterialButton

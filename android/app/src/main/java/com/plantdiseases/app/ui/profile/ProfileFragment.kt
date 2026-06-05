@@ -2,6 +2,7 @@ package com.plantdiseases.app.ui.profile
 
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.transition.TransitionManager
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -32,6 +33,7 @@ class ProfileFragment : Fragment() {
     private var _binding: FragmentProfileBinding? = null
     private val binding get() = _binding!!
     private var isFirstLoad = true
+    private var myOpinionsExpanded = true
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -79,8 +81,28 @@ class ProfileFragment : Fragment() {
 
         setupThemeChips()
         setupCommunityControls()
+        setupMyOpinionsFold()
         loadStats()
         checkServerHealth()
+    }
+
+    private fun setupMyOpinionsFold() {
+        applyMyOpinionsFold(animate = false)
+        binding.headerMyOpinions.setOnClickListener {
+            myOpinionsExpanded = !myOpinionsExpanded
+            applyMyOpinionsFold(animate = true)
+        }
+    }
+
+    /** Show/hide the "my second opinions" body and point the chevron up
+     *  (expanded) or down (collapsed). */
+    private fun applyMyOpinionsFold(animate: Boolean) {
+        val b = _binding ?: return
+        if (animate) {
+            TransitionManager.beginDelayedTransition(b.cardMyOpinions)
+        }
+        b.llMyOpinionsContent.visibility = if (myOpinionsExpanded) View.VISIBLE else View.GONE
+        b.ivMyOpinionsChevron.rotation = if (myOpinionsExpanded) 0f else 180f
     }
 
     private fun setupCommunityControls() {
@@ -170,44 +192,24 @@ class ProfileFragment : Fragment() {
     private fun switchLanguage() {
         // Two-step:
         //   1) Persist the new language for our own attachBaseContext
-        //      hook — that's what every activity reads on (re)create.
-        //   2) Hand the change to AppCompatDelegate so platform APIs
-        //      like LocaleManager (API 33+) and the AppCompat
-        //      backport (API <33) recreate the activity themselves.
+        //      hook — that's what every activity reads on (re)create and
+        //      stays the single source of truth for resource resolution.
+        //   2) Hand the change to AppCompatDelegate, which recreates the
+        //      activity itself via LocaleManager (API 33+) or the
+        //      AppCompat backport (API <33) — the same path the theme
+        //      switch relies on.
         //
-        // We deliberately do NOT include locale in MainActivity's
-        // configChanges. Doing so would make onConfigurationChanged
-        // fire while the activity's base context still pointed at
-        // the previous locale — the UI then half-updated and the
-        // toggle "did nothing". Letting the activity recreate keeps
-        // attachBaseContext as the single source of truth for which
-        // locale the resources resolve against.
+        // We deliberately do NOT add a manual fade + recreate() here.
+        // The old `decorView.animate().alpha(0f) { recreate() }` hack
+        // faded the window to black and then raced AppCompat's own
+        // recreate, which landed on a black / frozen screen on some OEM
+        // builds — exactly the freeze documented in applyTheme(). The
+        // resource swap is near-instant, so letting AppCompat drive the
+        // single recreate is what reads as "smooth", with no black flash.
         val newLang = LocaleHelper.toggleLanguage(requireContext())
         AppCompatDelegate.setApplicationLocales(
             LocaleListCompat.forLanguageTags(newLang),
         )
-        // Smooth the transition: quick fade-out on the current
-        // window, then recreate(). Activity.recreate itself does not
-        // animate; without this the screen blinks. The new activity
-        // starts opaque (theme default) so the visual is "fade to
-        // dark → cut to new language", which is what users read as
-        // "smooth".
-        val activity = requireActivity()
-        val decor = activity.window.decorView
-        decor.animate()
-            .alpha(0f)
-            .setDuration(160)
-            .withEndAction {
-                // Belt-and-braces: on some OEM builds
-                // setApplicationLocales does not trigger the
-                // recreate before the next frame, which shows up
-                // as "tapping the toggle did nothing". An explicit
-                // recreate() here is idempotent — if AppCompat
-                // already scheduled one we just race with it on
-                // the same activity.
-                activity.recreate()
-            }
-            .start()
     }
 
     private fun setupThemeChips() {
