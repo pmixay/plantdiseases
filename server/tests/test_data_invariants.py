@@ -573,6 +573,11 @@ def test_kaggle_strawberry_graymold_is_train_only_proxy():
     assert "_is_graymold_name" in src and "botrytis" in src.lower(), (
         "must detect the gray-mold / Botrytis category"
     )
+    # The real dataset ships LabelMe per-image JSON (shapes[].label), not a single
+    # COCO file — the fetcher must handle that schema (validated: 621 gray-mold imgs).
+    assert "shapes" in src and "imagePath" in src, (
+        "strawberry fetcher must parse the LabelMe per-image JSON schema (shapes[].label)"
+    )
     assert "'gray_mold_botrytis'" in src, "must write into the gray_mold_botrytis class"
     for split_fn in ("make_val_realworld", "make_val_indomain",
                      "make_temperature_cal", "make_conformal_cal"):
