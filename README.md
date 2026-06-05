@@ -63,8 +63,20 @@ Detailed training recipe lives in
 [`server/train_notebook.ipynb`](server/train_notebook.ipynb) and the
 [`MODEL_CARD.md`](server/models/MODEL_CARD.md).
 
-> **Optional data supplement:** §2 can pull a real indoor-houseplant
-> disease set from Kaggle. It is **fail-soft** — provide credentials to
+**Model families.** The classifier ships in one of three capacity tiers
+(declared in `classes.json -> model_family`, surfaced by `/api/version`),
+all sharing one training/eval/export recipe — only the backbone + input
+size change:
+
+| Family | Backbone | Input | Role |
+|---|---|---|---|
+| `aqua` | DINOv2 ViT-S/14 | 196 | light, on-device |
+| **`gamma`** | **DINOv2 ViT-S/14** | **224** | **current production — medium accuracy/latency** |
+| `frontier` | DINOv2 ViT-L/14 | 224 | future high-capacity (GPU inference) |
+
+> **Optional data supplement:** §2 can pull real indoor-houseplant /
+> ornamental disease sets from Kaggle (incl. money-plant / pothos disease
+> imagery). It is **fail-soft** — provide credentials to
 > enable it, otherwise the notebook skips it cleanly. Credentials can be
 > the **new-format API token** (a Colab secret or env var
 > `KAGGLE_API_TOKEN`, or `~/.kaggle/access_token`) or a legacy

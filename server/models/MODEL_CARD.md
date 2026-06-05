@@ -26,15 +26,34 @@ mean vote to recover the detector-crop loss on leaf-centric inputs),
 weak-healthy reroute, temperature scaling, and RAPS conformal prediction
 sets.
 
+## Model families (Aqua / Gamma / Frontier)
+
+The bundle declares its capacity tier in `classes.json -> model_family`,
+surfaced by `/api/version`. Three tiers share one training/eval/export
+recipe (`train_notebook.ipynb`, selected by `MODEL_FAMILY` in §1):
+
+| Family | Backbone | Input | Role |
+|---|---|---|---|
+| `aqua` | DINOv2 ViT-S/14 | 196 | light, on-device (fast, lower ceiling) |
+| **`gamma`** | **DINOv2 ViT-S/14** | **224** | **current production tier — medium accuracy/latency** |
+| `frontier` | DINOv2 ViT-L/14 | 224 | future high-capacity tier (GPU inference) |
+
+Bundles trained before the field existed report `model_family = "gamma"`.
+
 ## Classifier architecture
 
 The production artefact is an ONNX graph and the runtime is
 **architecture-neutral** — it serves whatever backbone+head the shipped
 bundle declares (`classes.json -> architecture`):
 
-- **v2.3.x (current):** frozen **DINOv2 ViT-S/14** backbone + LoRA on the
-  later blocks + a small MLP head, **no distillation**. Motivated by a
-  frozen DINOv2-S linear probe reaching ~0.91 top-1 on `val_realworld`.
+- **v2.4.x (current, `gamma`):** frozen **DINOv2 ViT-S/14** backbone +
+  LoRA on the later blocks (v2.4: rank 16 / last 8 blocks — the §3 probe
+  showed the *features*, not the head, cap weak-class recall) + a small
+  MLP head, **no distillation**. Motivated by a frozen DINOv2-S linear
+  probe reaching ~0.91 top-1 on `val_realworld`. v2.4 rebuilds the §2
+  data supply for the weak classes (new ornamental/houseplant disease
+  source; black-background segmented-Aloe and outdoor-cactus-as-pests
+  data removed; noisy generic-yellowing query dropped).
   Shipped FP32 (`PREFER_FP32`) — dynamic-INT8 drift on `val_realworld`
   was not statistically significant (paired bootstrap CI spans 0) and the
   single-core CPU budget has the latency headroom.

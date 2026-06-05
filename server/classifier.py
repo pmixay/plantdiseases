@@ -131,6 +131,17 @@ def _resolve_tta(meta: dict) -> str:
     return "none"
 
 
+def _resolve_model_family(meta: dict) -> str:
+    """Capacity tier declared by the bundle (classes.json -> model_family):
+    ``aqua`` (light/on-device), ``gamma`` (current medium), ``frontier``
+    (future high-capacity). Defaults to ``gamma`` for bundles trained before
+    the field existed — the runtime stays architecture-neutral either way."""
+    fam = meta.get("model_family")
+    if isinstance(fam, str) and fam:
+        return fam
+    return "gamma"
+
+
 def _resolve_onnx_path(model_path: Path | None) -> Path | None:
     if model_path is None:
         return None
@@ -164,6 +175,7 @@ class DiseaseClassifier:
         self._class_names_from_meta = bool(meta.get("class_names"))
         self.eval_resize_ratio = _resolve_eval_resize_ratio(meta)
         self.architecture = _resolve_architecture(meta)
+        self.model_family = _resolve_model_family(meta)
         self.tta = _resolve_tta(meta)
         self.CLASS_NAMES = _resolve_class_names(meta)
         self.NUM_CLASSES = len(self.CLASS_NAMES)

@@ -60,6 +60,8 @@ class _FakeClassifier:
     # Mirror the real classifier's metadata-driven ``architecture`` attr
     # (classes.json -> architecture) that the /version endpoint surfaces.
     architecture = "dinov2_vits14+mlp_head"
+    # Capacity tier (classes.json -> model_family), surfaced by /version.
+    model_family = "gamma"
 
     def __init__(self):
         from classifier import DEFAULT_CLASS_NAMES
