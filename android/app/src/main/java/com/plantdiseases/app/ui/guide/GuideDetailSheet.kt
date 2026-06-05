@@ -6,7 +6,6 @@ import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -52,29 +51,32 @@ class GuideDetailSheet : BottomSheetDialogFragment() {
         loadExamplePhotos(item.id)
     }
 
-    /** Fetch a few example photos for this topic (Wikipedia) and pin them as
-     *  a strip at the top of the article. Best-effort; absent on failure. */
+    /** Pin a single prominent example photo (Wikipedia) above the article
+     *  cards so the topic opens with "here's what it looks like". Prefers the
+     *  page's lead image, falling back to the first media image. Best-effort;
+     *  omitted entirely on failure. */
     private fun loadExamplePhotos(guideId: String) {
         val query = GuideDataProvider.wikiQueryForGuideId(guideId) ?: return
         val repo = (requireActivity().application as PlantDiseasesApp).scanRepository
         viewLifecycleOwner.lifecycleScope.launch {
             repo.getSpeciesInfo(query, "en").onSuccess { info ->
-                val urls = info.images.filter { it.isNotBlank() }
-                if (urls.isNotEmpty() && _binding != null) {
-                    binding.llSections.addView(buildPhotoStrip(urls), 0)
+                val url = info.imageUrl?.takeIf { it.isNotBlank() }
+                    ?: info.images.firstOrNull { it.isNotBlank() }
+                if (url != null && _binding != null) {
+                    binding.llSections.addView(buildHeroPhoto(url), 0)
                 }
             }
         }
     }
 
-    private fun buildPhotoStrip(urls: List<String>): View {
+    private fun buildHeroPhoto(url: String): View {
         val ctx = requireContext()
         val column = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { bottomMargin = dp(14) }
+            ).apply { bottomMargin = dp(16) }
         }
         column.addView(TextView(ctx).apply {
             text = getString(R.string.example_photos_label)
@@ -87,23 +89,19 @@ class GuideDetailSheet : BottomSheetDialogFragment() {
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             ).apply { bottomMargin = dp(8) }
         })
-        val row = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
-        urls.take(4).forEach { url ->
-            val iv = ImageView(ctx).apply {
-                layoutParams = LinearLayout.LayoutParams(dp(150), dp(110))
-                    .apply { marginEnd = dp(8) }
-                scaleType = ImageView.ScaleType.CENTER_CROP
-            }
-            Glide.with(this@GuideDetailSheet)
-                .load(url)
-                .transform(CenterCrop(), RoundedCorners(dp(12)))
-                .into(iv)
-            row.addView(iv)
+        val image = ImageView(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(190),
+            )
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            contentDescription = binding.tvTitle.text
         }
-        column.addView(HorizontalScrollView(ctx).apply {
-            isHorizontalScrollBarEnabled = false
-            addView(row)
-        })
+        Glide.with(this@GuideDetailSheet)
+            .load(url)
+            .transform(CenterCrop(), RoundedCorners(dp(16)))
+            .into(image)
+        column.addView(image)
         return column
     }
 

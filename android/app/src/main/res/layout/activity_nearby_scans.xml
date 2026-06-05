@@ -41,65 +41,15 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent">
 
-            <LinearLayout
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/rv_nearby"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:orientation="vertical">
-
-                <!-- Sort bar: order the feed by date (newest first) or
-                     group it by disease type. Hidden until a feed loads. -->
-                <HorizontalScrollView
-                    android:id="@+id/sort_bar"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:scrollbars="none"
-                    android:visibility="gone">
-
-                    <com.google.android.material.chip.ChipGroup
-                        android:id="@+id/chip_group_sort"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:padding="@dimen/space_md"
-                        app:singleLine="true"
-                        app:singleSelection="true"
-                        app:selectionRequired="true"
-                        app:chipSpacingHorizontal="@dimen/space_sm">
-
-                        <com.google.android.material.chip.Chip
-                            android:id="@+id/chip_sort_recent"
-                            style="@style/Widget.Material3.Chip.Filter"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:checked="true"
-                            android:text="@string/nearby_sort_recent"
-                            app:checkedIconEnabled="false"
-                            app:chipBackgroundColor="@color/chip_bg_color" />
-
-                        <com.google.android.material.chip.Chip
-                            android:id="@+id/chip_sort_type"
-                            style="@style/Widget.Material3.Chip.Filter"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/nearby_sort_type"
-                            app:checkedIconEnabled="false"
-                            app:chipBackgroundColor="@color/chip_bg_color" />
-
-                    </com.google.android.material.chip.ChipGroup>
-
-                </HorizontalScrollView>
-
-                <androidx.recyclerview.widget.RecyclerView
-                    android:id="@+id/rv_nearby"
-                    android:layout_width="match_parent"
-                    android:layout_height="0dp"
-                    android:layout_weight="1"
-                    android:clipToPadding="false"
-                    android:paddingTop="@dimen/space_sm"
-                    android:paddingBottom="@dimen/space_2xl"
-                    android:visibility="gone"
-                    app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
-
-            </LinearLayout>
+                android:clipToPadding="false"
+                android:paddingTop="@dimen/space_lg"
+                android:paddingBottom="@dimen/space_2xl"
+                android:visibility="gone"
+                app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
 
             <!-- Subtitle pinned at top while the feed scrolls underneath
                  would be nice, but a simple centered state keeps the

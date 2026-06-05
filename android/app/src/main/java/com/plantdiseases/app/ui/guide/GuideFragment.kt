@@ -12,7 +12,6 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.material.chip.Chip
 import com.google.android.material.tabs.TabLayout
-import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.GuideDataProvider
 import com.plantdiseases.app.data.model.GuideCategory
@@ -55,10 +54,7 @@ class GuideFragment : Fragment() {
                 }
                 GuideDetailSheet.newInstance(item.id).show(childFragmentManager, "guide_detail")
             },
-            searchQuery = "",
-            // Lets disease/pest rows load a real Wikipedia example photo.
-            scope = viewLifecycleOwner.lifecycleScope,
-            scanRepository = (requireActivity().application as PlantDiseasesApp).scanRepository,
+            searchQuery = ""
         )
 
         binding.rvGuide.layoutManager = LinearLayoutManager(requireContext())

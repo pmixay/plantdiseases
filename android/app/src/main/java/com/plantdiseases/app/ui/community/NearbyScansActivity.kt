@@ -2,7 +2,9 @@ package com.plantdiseases.app.ui.community
 
 import android.content.Context
 import android.os.Bundle
+import android.view.MenuItem
 import android.view.View
+import android.view.ViewGroup
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -10,10 +12,13 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
+import com.google.android.material.bottomsheet.BottomSheetDialog
+import com.google.android.material.chip.Chip
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.CommunityScanItem
 import com.plantdiseases.app.databinding.ActivityNearbyScansBinding
+import com.plantdiseases.app.databinding.SheetNearbyFilterBinding
 import com.plantdiseases.app.ui.result.CommunityOpinionSheet
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.LocaleHelper
@@ -30,9 +35,8 @@ import kotlinx.coroutines.withContext
  * its "Second opinion" action opens [CommunityOpinionSheet] — the vote
  * graph + opinions + the user's own vote.
  *
- * This is the prominent surface for the same corpus the result screen
- * shows as a compact carousel; here it gets full-width photos and room
- * to scroll.
+ * A toolbar filter action opens a bottom-sheet overlay to sort the feed
+ * by date (newest / oldest) and narrow it to a single disease type.
  */
 class NearbyScansActivity : AppCompatActivity() {
 
@@ -40,11 +44,12 @@ class NearbyScansActivity : AppCompatActivity() {
     private lateinit var adapter: NearbyScansAdapter
     private val isRu by lazy { LocaleHelper.isRussian(this) }
 
-    // Full feed as returned by the server; re-sorted client-side on demand.
+    // Full feed as returned by the server; filtered + sorted client-side
+    // whenever the user applies the overlay.
     private var allItems: List<CommunityScanItem> = emptyList()
-    private var currentSort = Sort.DATE
-
-    private enum class Sort { DATE, TYPE }
+    private var sortNewestFirst = true
+    private var typeFilter: String? = null
+    private var filterMenuItem: MenuItem? = null
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
@@ -65,6 +70,7 @@ class NearbyScansActivity : AppCompatActivity() {
         }
 
         binding.toolbar.setNavigationOnClickListener { finish() }
+        setupFilterMenu()
 
         adapter = NearbyScansAdapter(
             displayName = { key -> DiseaseLabels.displayName(key, isRu) ?: key },
@@ -82,17 +88,22 @@ class NearbyScansActivity : AppCompatActivity() {
         binding.swipeRefresh.setColorSchemeResources(R.color.primary)
         binding.swipeRefresh.setOnRefreshListener { load(isRefresh = true) }
 
-        // Sort controls: by date (newest first) or grouped by disease type.
-        binding.chipSortRecent.setOnClickListener {
-            currentSort = Sort.DATE
-            applySort()
-        }
-        binding.chipSortType.setOnClickListener {
-            currentSort = Sort.TYPE
-            applySort()
-        }
-
         load(isRefresh = false)
+    }
+
+    private fun setupFilterMenu() {
+        binding.toolbar.inflateMenu(R.menu.nearby_scans_menu)
+        filterMenuItem = binding.toolbar.menu.findItem(R.id.action_filter)
+        // Hidden until a feed loads — filtering an empty screen is a no-op.
+        filterMenuItem?.isVisible = false
+        binding.toolbar.setOnMenuItemClickListener { item ->
+            if (item.itemId == R.id.action_filter) {
+                showFilterSheet()
+                true
+            } else {
+                false
+            }
+        }
     }
 
     private fun load(isRefresh: Boolean) {
@@ -136,7 +147,7 @@ class NearbyScansActivity : AppCompatActivity() {
         binding.progress.visibility = View.VISIBLE
         binding.ivStateIcon.visibility = View.GONE
         binding.tvState.text = getString(R.string.nearby_scans_loading)
-        binding.sortBar.visibility = View.GONE
+        filterMenuItem?.isVisible = false
         binding.rvNearby.visibility = View.GONE
     }
 
@@ -145,30 +156,73 @@ class NearbyScansActivity : AppCompatActivity() {
         binding.progress.visibility = View.GONE
         binding.ivStateIcon.visibility = View.VISIBLE
         binding.tvState.text = message
-        binding.sortBar.visibility = View.GONE
+        filterMenuItem?.isVisible = false
         binding.rvNearby.visibility = View.GONE
     }
 
     private fun showFeed(items: List<CommunityScanItem>) {
-        binding.stateLayout.visibility = View.GONE
-        binding.sortBar.visibility = View.VISIBLE
-        binding.rvNearby.visibility = View.VISIBLE
         allItems = items
-        applySort()
+        filterMenuItem?.isVisible = true
+        applyFilterAndSort()
     }
 
-    /** Re-order the loaded feed by the active sort and hand it to the adapter. */
-    private fun applySort() {
-        val sorted = when (currentSort) {
-            Sort.DATE -> allItems.sortedByDescending { it.createdAt }
-            // Group by the localized disease label so same-type scans cluster;
-            // newest first within each type.
-            Sort.TYPE -> allItems.sortedWith(
-                compareBy<CommunityScanItem> { diseaseLabel(it.disease) }
-                    .thenByDescending { it.createdAt }
-            )
+    /** Apply the active type filter + date sort and hand the result to the adapter. */
+    private fun applyFilterAndSort() {
+        val filtered = typeFilter?.let { t -> allItems.filter { it.disease == t } } ?: allItems
+        val sorted = if (sortNewestFirst) {
+            filtered.sortedByDescending { it.createdAt }
+        } else {
+            filtered.sortedBy { it.createdAt }
         }
+        binding.stateLayout.visibility = View.GONE
+        binding.rvNearby.visibility = View.VISIBLE
         adapter.submit(sorted)
+    }
+
+    /**
+     * Overlay to sort by date and filter by disease type. The type chips are
+     * built from the diseases actually present in the loaded feed, so every
+     * option yields results; the current selections are pre-checked.
+     */
+    private fun showFilterSheet() {
+        if (allItems.isEmpty()) return
+        val sheet = SheetNearbyFilterBinding.inflate(layoutInflater)
+        val dialog = BottomSheetDialog(this)
+        dialog.setContentView(sheet.root)
+
+        sheet.cgDate.check(if (sortNewestFirst) R.id.chip_newest else R.id.chip_oldest)
+
+        // "All" + each distinct disease present, ordered by localized label.
+        val allChip = buildTypeChip(sheet.cgType, getString(R.string.filter_all), null)
+        sheet.cgType.addView(allChip)
+        var checkedTypeId = allChip.id
+        allItems.map { it.disease }.distinct()
+            .sortedBy { diseaseLabel(it) }
+            .forEach { key ->
+                val chip = buildTypeChip(
+                    sheet.cgType, DiseaseLabels.displayName(key, isRu) ?: key, key,
+                )
+                sheet.cgType.addView(chip)
+                if (key == typeFilter) checkedTypeId = chip.id
+            }
+        sheet.cgType.check(checkedTypeId)
+
+        sheet.btnApply.setOnClickListener {
+            sortNewestFirst = sheet.cgDate.checkedChipId != R.id.chip_oldest
+            typeFilter = sheet.cgType.findViewById<Chip>(sheet.cgType.checkedChipId)
+                ?.tag as? String
+            applyFilterAndSort()
+            dialog.dismiss()
+        }
+        dialog.show()
+    }
+
+    private fun buildTypeChip(parent: ViewGroup, label: String, key: String?): Chip {
+        val chip = layoutInflater.inflate(R.layout.item_filter_chip, parent, false) as Chip
+        chip.id = View.generateViewId()
+        chip.text = label
+        chip.tag = key
+        return chip
     }
 
     private fun diseaseLabel(key: String): String =

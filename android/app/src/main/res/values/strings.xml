@@ -195,9 +195,13 @@
     <string name="nearby_scans_cd">Scans near you</string>
     <string name="nearby_scans_loading">Finding scans near you…</string>
     <string name="nearby_scans_second_opinion">Second opinion</string>
-    <!-- Nearby scans sort bar -->
-    <string name="nearby_sort_recent">Recent</string>
-    <string name="nearby_sort_type">By type</string>
+    <!-- Nearby scans sort & filter overlay -->
+    <string name="nearby_filter_title">Sort &amp; filter</string>
+    <string name="nearby_filter_by_date">By date</string>
+    <string name="nearby_filter_date_newest">Newest first</string>
+    <string name="nearby_filter_date_oldest">Oldest first</string>
+    <string name="nearby_filter_by_type">By type</string>
+    <string name="nearby_filter_apply">Apply</string>
     <string name="community_votes_header">Community votes</string>
     <string name="community_vote_percent">%1$d%%</string>
 

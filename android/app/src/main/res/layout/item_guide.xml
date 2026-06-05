@@ -63,19 +63,6 @@
 
         </LinearLayout>
 
-        <!-- Real example photo (Wikipedia) for disease & pest entries. The
-             adapter loads it lazily and keeps it GONE for care topics or
-             until an image resolves. -->
-        <ImageView
-            android:id="@+id/iv_photo"
-            android:layout_width="56dp"
-            android:layout_height="56dp"
-            android:layout_marginStart="@dimen/space_sm"
-            android:scaleType="centerCrop"
-            android:visibility="gone"
-            android:contentDescription="@null"
-            android:importantForAccessibility="no" />
-
         <ImageView
             android:layout_width="24dp"
             android:layout_height="24dp"
