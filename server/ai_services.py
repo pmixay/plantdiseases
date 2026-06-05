@@ -1209,15 +1209,14 @@ def _enforce_canonical_dosages(text: str, plan: dict) -> bool:
     """Verify that the LLM-polished summary does not contradict the canonical dosages.
     Returns True if valid, False if it violates the canonical numbers.
     """
-    import re
     text_lower = text.lower()
-    
+
     # 1. Check NPK: if the canonical NPK has digits (like "10-15-10"), the polished text
     # should not contain a different NPK ratio pattern.
     canonical_npk = str(plan.get("fertiliser_npk", "")).lower()
     npk_pattern = re.compile(r"\b\d{1,2}[-:\s]+\d{1,2}[-:\s]+\d{1,2}\b")
     canonical_npk_nums = re.findall(r"\d+", canonical_npk)
-    
+
     for match in npk_pattern.finditer(text_lower):
         matched_str = match.group(0)
         matched_nums = re.findall(r"\d+", matched_str)
@@ -1228,18 +1227,26 @@ def _enforce_canonical_dosages(text: str, plan: dict) -> bool:
             )
             return False
 
-    # Helper to check numbers near keywords
-    def check_keyword_number(keywords: list[str], canonical_val: int, label: str) -> bool:
+    # Helper: reject only when an explicit *interval* (a number bound to a
+    # time unit, e.g. "7 days" / "2 weeks" / "5 дн.") near a watering or
+    # fertilising keyword contradicts the canonical cadence. Incidental
+    # numbers that are not intervals — "let the top 2 cm dry", a "70%"
+    # humidity band — must be ignored; otherwise the deterministic template
+    # itself ("Water every 7 days; let the top 2 cm dry…") would be
+    # rejected by its own unrelated "2 cm".
+    def check_keyword_number(
+        keywords: list[str], canonical_val: int, unit_pattern: str, label: str
+    ) -> bool:
+        interval_re = re.compile(rf"\b(\d+)\s*(?:{unit_pattern})")
         for kw in keywords:
-            # Search for keyword and check any numbers within 40 characters before or after
+            # Search for keyword and check interval numbers within 40 chars.
             for match in re.finditer(re.escape(kw), text_lower):
                 start = max(0, match.start() - 40)
                 end = min(len(text_lower), match.end() + 40)
                 window = text_lower[start:end]
-                # Find all numbers in this window
-                numbers = [int(n) for n in re.findall(r"\b\d+\b", window)]
-                for num in numbers:
-                    # Ignore common numbers like 1 (as in "1 time") or 0
+                for m in interval_re.finditer(window):
+                    num = int(m.group(1))
+                    # Ignore trivial values like "1 time" / "0 days".
                     if num in (0, 1):
                         continue
                     if num != canonical_val:
@@ -1250,18 +1257,18 @@ def _enforce_canonical_dosages(text: str, plan: dict) -> bool:
                         return False
         return True
 
-    # 2. Check watering days
+    # 2. Check watering days (interval unit: days / дн.)
     watering_val = plan.get("watering_days")
     if isinstance(watering_val, int):
         watering_kws = ["water", "watering", "полив"]
-        if not check_keyword_number(watering_kws, watering_val, "watering"):
+        if not check_keyword_number(watering_kws, watering_val, r"days?|дн", "watering"):
             return False
 
-    # 3. Check fertilising weeks
+    # 3. Check fertilising weeks (interval unit: weeks / нед.)
     fertilise_val = plan.get("fertilise_weeks")
     if isinstance(fertilise_val, int):
         fertilise_kws = ["fertiliz", "fertilise", "fertilising", "fertilizer", "удобр"]
-        if not check_keyword_number(fertilise_kws, fertilise_val, "fertilise"):
+        if not check_keyword_number(fertilise_kws, fertilise_val, r"weeks?|нед", "fertilise"):
             return False
 
     return True

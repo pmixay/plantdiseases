@@ -58,8 +58,6 @@ class PlantDetailActivity : AppCompatActivity() {
     private lateinit var timelineContainer: LinearLayout
     private lateinit var photosContainer: LinearLayout
     private lateinit var journalContainer: LinearLayout
-    private lateinit var emptyScans: LinearLayout
-    private lateinit var emptyJournal: LinearLayout
     private lateinit var tabLayout: TabLayout
     private lateinit var toolbar: MaterialToolbar
     private lateinit var toolbarTitle: TextView
@@ -1153,12 +1151,13 @@ class PlantDetailActivity : AppCompatActivity() {
     private fun renderTimeline(scans: List<ScanEntity>) {
         timelineContainer.removeAllViews()
         if (scans.isEmpty()) {
-            emptyScans = emptyState(
-                R.drawable.illustration_empty_scans,
-                getString(R.string.empty_plant_scans_title),
-                getString(R.string.empty_plant_scans_hint),
+            timelineContainer.addView(
+                emptyState(
+                    R.drawable.illustration_empty_scans,
+                    getString(R.string.empty_plant_scans_title),
+                    getString(R.string.empty_plant_scans_hint),
+                )
             )
-            timelineContainer.addView(emptyScans)
             return
         }
         scans.forEach { scan -> timelineContainer.addView(scanCard(scan)) }
@@ -1167,12 +1166,13 @@ class PlantDetailActivity : AppCompatActivity() {
     private fun renderJournal(entries: List<PlantJournalEntity>) {
         journalContainer.removeAllViews()
         if (entries.isEmpty()) {
-            emptyJournal = emptyState(
-                R.drawable.illustration_empty_reminders,
-                getString(R.string.empty_journal_title),
-                getString(R.string.empty_journal_hint),
+            journalContainer.addView(
+                emptyState(
+                    R.drawable.illustration_empty_reminders,
+                    getString(R.string.empty_journal_title),
+                    getString(R.string.empty_journal_hint),
+                )
             )
-            journalContainer.addView(emptyJournal)
             return
         }
         entries.forEach { entry -> journalContainer.addView(journalCard(entry)) }

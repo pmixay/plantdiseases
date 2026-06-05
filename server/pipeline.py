@@ -452,17 +452,17 @@ class PlantDiseasePipeline:
         instead of a generic NAP message.
         """
         probs = {n: 0.0 for n in self.classifier.CLASS_NAMES}
-        if "not_a_plant" in probs:
-            probs["not_a_plant"] = 1.0
-        else:
-            # Defensive: if the classifier was loaded with a class set
-            # that doesn't include not_a_plant (shouldn't happen in v2.x,
-            # but keep the gate safe), we still surface a low-confidence
-            # warning rather than silently classify a blurry crop.
-            probs[next(iter(probs))] = 1.0
+        # Assign the full mass to not_a_plant. Defensive: if the classifier
+        # was loaded with a class set that doesn't include not_a_plant
+        # (shouldn't happen in v2.x, but keep the gate safe), fall back to
+        # the first class so class_name and confidence stay consistent
+        # rather than reporting a 0.0 confidence for a class that holds all
+        # the mass.
+        chosen = "not_a_plant" if "not_a_plant" in probs else next(iter(probs))
+        probs[chosen] = 1.0
         final = {
-            "class_name": "not_a_plant" if "not_a_plant" in probs else next(iter(probs)),
-            "confidence": round(float(probs.get("not_a_plant", 0.0)), 4),
+            "class_name": chosen,
+            "confidence": round(float(probs[chosen]), 4),
             "all_probs": probs,
             "top_k": [
                 {"class": k, "confidence": round(float(v), 4)}

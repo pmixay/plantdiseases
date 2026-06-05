@@ -185,12 +185,8 @@ class RetryInterceptor(
         val isPost = request.method == "POST"
         val effectiveRetries = if (isPost) minOf(maxRetries, 1) else maxRetries
         var lastException: IOException? = null
-        var lastResponse: Response? = null
 
         for (attempt in 0..effectiveRetries) {
-            lastResponse?.close()
-            lastResponse = null
-
             try {
                 val response = chain.proceed(request)
                 if (response.code != 429 && response.code != 503) {
@@ -215,7 +211,6 @@ class RetryInterceptor(
                 sleepBackoff(attempt, null)
             }
         }
-        lastResponse?.let { return it }
         throw lastException ?: IOException("Retry loop exited without a response")
     }
 

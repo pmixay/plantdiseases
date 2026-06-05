@@ -93,7 +93,7 @@ def nms(boxes: np.ndarray, scores: np.ndarray, iou_threshold: float) -> list[int
     return keep
 
 
-def letterbox(img: Image.Image, target_size: int = 640) -> tuple[np.ndarray, float, tuple[float, float]]:
+def letterbox(img: Image.Image, target_size: int = 640) -> tuple[np.ndarray, float, tuple[int, int]]:
     """Resize keeping aspect ratio, and pad to target_size x target_size."""
     w, h = img.size
     scale = target_size / max(w, h)

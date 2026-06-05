@@ -48,7 +48,7 @@ def _load_file() -> dict[str, Any]:
         return {}
 
 
-def _flatten(data: dict[str, Any], prefix: str = "") -> dict[str, Any]:
+def _flatten(data: dict[str, Any]) -> dict[str, Any]:
     """Allow nested sections in JSON. ``server.port`` → ``PORT`` style.
 
     Top-level sections (``server``, ``ai``, ``plantnet``, ``chat``,
@@ -57,7 +57,7 @@ def _flatten(data: dict[str, Any], prefix: str = "") -> dict[str, Any]:
     flat: dict[str, Any] = {}
     for k, v in data.items():
         if isinstance(v, dict) and k.lower() != "api_keys":
-            flat.update(_flatten(v, prefix=""))
+            flat.update(_flatten(v))
         else:
             flat[k.upper()] = v
     return flat
