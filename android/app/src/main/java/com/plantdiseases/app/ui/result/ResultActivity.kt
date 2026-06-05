@@ -1601,24 +1601,8 @@ class ResultActivity : AppCompatActivity() {
         )
     }
 
-    private fun classKeyDisplayName(key: String, isRu: Boolean): String? = when (key) {
-        // PlantVision v2.2 — 8 in-head classes + 2 deferred
-        // (edema, sunburn_or_scorch) accepted on the feedback path.
-        "healthy" -> if (isRu) "Здоровое растение" else "Healthy Plant"
-        "powdery_mildew" -> if (isRu) "Мучнистая роса" else "Powdery Mildew"
-        "gray_mold_botrytis" -> if (isRu) "Серая гниль (ботритис)" else "Gray Mold (Botrytis)"
-        "leaf_spot" -> if (isRu) "Пятнистость листьев" else "Leaf Spot"
-        // legacy keys from pre-merge models / historical scans:
-        "leaf_spot_fungal" -> if (isRu) "Грибковая пятнистость" else "Fungal Leaf Spot"
-        "bacterial_leaf_spot" -> if (isRu) "Бактериальная пятнистость" else "Bacterial Leaf Spot"
-        "viral_disease" -> if (isRu) "Вирусное заболевание" else "Viral Disease"
-        "edema" -> if (isRu) "Эдема (отёчность)" else "Edema (Oedema)"
-        "sunburn_or_scorch" -> if (isRu) "Солнечный ожог" else "Sunburn / Light Scorch"
-        "leaf_scorch_underwatering" -> if (isRu) "Краевой ожог (недолив)" else "Leaf Scorch (Under-watering)"
-        "nutrient_deficiency" -> if (isRu) "Дефицит питания" else "Nutrient Deficiency"
-        "not_a_plant" -> if (isRu) "Не растение" else "Not a Plant"
-        else -> null
-    }
+    private fun classKeyDisplayName(key: String, isRu: Boolean): String? =
+        com.plantdiseases.app.util.DiseaseLabels.displayName(key, isRu)
 
     companion object {
         const val EXTRA_SCAN_ID = "extra_scan_id"

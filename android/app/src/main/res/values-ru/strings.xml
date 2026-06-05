@@ -193,6 +193,13 @@
     <string name="community_my_opinions_empty">Вы пока не отправляли мнений.</string>
     <string name="result_get_second_opinion">Получить второе мнение</string>
     <string name="similar_scans_chip_format">%1$s · %2$d</string>
+    <!-- Nearby scans feed (social-style, opened from the camera screen) -->
+    <string name="nearby_scans_title">Сканы рядом</string>
+    <string name="nearby_scans_cd">Сканы рядом</string>
+    <string name="nearby_scans_loading">Ищем сканы рядом…</string>
+    <string name="nearby_scans_second_opinion">Второе мнение</string>
+    <string name="community_votes_header">Голоса сообщества</string>
+    <string name="community_vote_percent">%1$d%%</string>
     <string name="community_toggle_title">Делиться сканами с сообществом</string>
     <string name="community_toggle_subtitle">Регион + диагноз + миниатюра 512px. Можно выключить — всё останется на устройстве.</string>
     <string name="community_delete_title">Удалить мои данные из сообщества</string>

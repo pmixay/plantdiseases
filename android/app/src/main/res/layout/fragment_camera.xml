@@ -141,6 +141,25 @@
         app:backgroundTint="@color/camera_control_scrim"
         app:cornerRadius="24dp"
         app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <!-- Scans near you — opens the social-style community feed. -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btn_nearby_scans"
+        style="@style/Widget.Material3.Button.IconButton.Filled.Tonal"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_margin="@dimen/space_lg"
+        android:insetTop="0dp"
+        android:insetBottom="0dp"
+        android:contentDescription="@string/nearby_scans_cd"
+        app:icon="@drawable/ic_community"
+        app:iconTint="@android:color/white"
+        app:iconGravity="textStart"
+        app:iconPadding="0dp"
+        app:backgroundTint="@color/camera_control_scrim"
+        app:cornerRadius="24dp"
+        app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
     <!-- Camera permission empty state. -->
