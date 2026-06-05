@@ -193,6 +193,9 @@
     <string name="nearby_scans_cd">Сканы рядом</string>
     <string name="nearby_scans_loading">Ищем сканы рядом…</string>
     <string name="nearby_scans_second_opinion">Второе мнение</string>
+    <!-- Nearby scans sort bar -->
+    <string name="nearby_sort_recent">Сначала новые</string>
+    <string name="nearby_sort_type">По типу</string>
     <string name="community_votes_header">Голоса сообщества</string>
     <string name="community_vote_percent">%1$d%%</string>
     <string name="community_toggle_title">Делиться сканами с сообществом</string>

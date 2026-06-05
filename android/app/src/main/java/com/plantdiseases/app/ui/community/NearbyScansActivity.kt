@@ -40,6 +40,12 @@ class NearbyScansActivity : AppCompatActivity() {
     private lateinit var adapter: NearbyScansAdapter
     private val isRu by lazy { LocaleHelper.isRussian(this) }
 
+    // Full feed as returned by the server; re-sorted client-side on demand.
+    private var allItems: List<CommunityScanItem> = emptyList()
+    private var currentSort = Sort.DATE
+
+    private enum class Sort { DATE, TYPE }
+
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
     }
@@ -75,6 +81,16 @@ class NearbyScansActivity : AppCompatActivity() {
 
         binding.swipeRefresh.setColorSchemeResources(R.color.primary)
         binding.swipeRefresh.setOnRefreshListener { load(isRefresh = true) }
+
+        // Sort controls: by date (newest first) or grouped by disease type.
+        binding.chipSortRecent.setOnClickListener {
+            currentSort = Sort.DATE
+            applySort()
+        }
+        binding.chipSortType.setOnClickListener {
+            currentSort = Sort.TYPE
+            applySort()
+        }
 
         load(isRefresh = false)
     }
@@ -120,6 +136,7 @@ class NearbyScansActivity : AppCompatActivity() {
         binding.progress.visibility = View.VISIBLE
         binding.ivStateIcon.visibility = View.GONE
         binding.tvState.text = getString(R.string.nearby_scans_loading)
+        binding.sortBar.visibility = View.GONE
         binding.rvNearby.visibility = View.GONE
     }
 
@@ -128,12 +145,32 @@ class NearbyScansActivity : AppCompatActivity() {
         binding.progress.visibility = View.GONE
         binding.ivStateIcon.visibility = View.VISIBLE
         binding.tvState.text = message
+        binding.sortBar.visibility = View.GONE
         binding.rvNearby.visibility = View.GONE
     }
 
     private fun showFeed(items: List<CommunityScanItem>) {
         binding.stateLayout.visibility = View.GONE
+        binding.sortBar.visibility = View.VISIBLE
         binding.rvNearby.visibility = View.VISIBLE
-        adapter.submit(items)
+        allItems = items
+        applySort()
     }
+
+    /** Re-order the loaded feed by the active sort and hand it to the adapter. */
+    private fun applySort() {
+        val sorted = when (currentSort) {
+            Sort.DATE -> allItems.sortedByDescending { it.createdAt }
+            // Group by the localized disease label so same-type scans cluster;
+            // newest first within each type.
+            Sort.TYPE -> allItems.sortedWith(
+                compareBy<CommunityScanItem> { diseaseLabel(it.disease) }
+                    .thenByDescending { it.createdAt }
+            )
+        }
+        adapter.submit(sorted)
+    }
+
+    private fun diseaseLabel(key: String): String =
+        (DiseaseLabels.displayName(key, isRu) ?: key).lowercase()
 }

@@ -495,6 +495,22 @@ class ScanRepository(
         parseAllProbs(scan.allProbs).entries.maxByOrNull { it.value }?.key
 
     /**
+     * The canonical verdict class key the user actually saw — the
+     * server-issued ``displayedClassKey`` (which already reflects the
+     * weak-healthy reroute / healthy-fallback / OOD gate), falling back
+     * to ``argmax(all_probs)`` for legacy scans saved before that column
+     * existed.
+     *
+     * Use this — NOT [topClassKey] — for any UI surface that asks "what
+     * is THIS scan's diagnosis" (guide deep-link, example photos, …).
+     * The raw argmax can disagree with the displayed verdict after a
+     * server reroute, which made the result screen's example photos
+     * appear for some scans and silently vanish for others.
+     */
+    fun verdictClassKey(scan: ScanEntity): String? =
+        scan.displayedClassKey?.takeIf { it.isNotBlank() } ?: topClassKey(scan)
+
+    /**
      * NAP detection: prefer the canonical class key from `all_probs`;
      * fall back to the localised display name (covers legacy scans
      * without `all_probs`).

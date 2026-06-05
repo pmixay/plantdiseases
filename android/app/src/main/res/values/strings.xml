@@ -195,6 +195,9 @@
     <string name="nearby_scans_cd">Scans near you</string>
     <string name="nearby_scans_loading">Finding scans near you…</string>
     <string name="nearby_scans_second_opinion">Second opinion</string>
+    <!-- Nearby scans sort bar -->
+    <string name="nearby_sort_recent">Recent</string>
+    <string name="nearby_sort_type">By type</string>
     <string name="community_votes_header">Community votes</string>
     <string name="community_vote_percent">%1$d%%</string>
 

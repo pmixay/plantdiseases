@@ -273,7 +273,7 @@ class ResultActivity : AppCompatActivity() {
 
             // "Read the full guide" — deep-link to the offline doc article for
             // this verdict's class, when one exists (not_a_plant has none).
-            val guideId = GuideDataProvider.guideIdForDisease(repository.topClassKey(scan) ?: "")
+            val guideId = GuideDataProvider.guideIdForDisease(repository.verdictClassKey(scan) ?: "")
             if (guideId != null) {
                 btnOpenGuide.visibility = View.VISIBLE
                 btnOpenGuide.setOnClickListener {
@@ -285,9 +285,13 @@ class ResultActivity : AppCompatActivity() {
             }
 
             // Example photos of this diagnosis (Wikipedia), above the description.
+            // Keyed off the DISPLAYED verdict (verdictClassKey), not the raw
+            // argmax — otherwise a server-rerouted scan (e.g. weak-healthy →
+            // leaf_spot) looks up photos for the wrong class and the strip
+            // silently disappears, which is why photos showed only sometimes.
             binding.tvDiseasePhotosLabel.visibility = View.GONE
             binding.hsvDiseasePhotos.visibility = View.GONE
-            GuideDataProvider.wikiQueryForDisease(repository.topClassKey(scan) ?: "")
+            GuideDataProvider.wikiQueryForDisease(repository.verdictClassKey(scan) ?: "")
                 ?.let { loadDiseasePhotos(it) }
 
             // Community opinions others left on THIS (the user's own) scan.

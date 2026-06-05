@@ -1555,6 +1555,10 @@ PREVENTION:
         "aphids" -> "Aphid"
         "mealybugs" -> "Mealybug"
         "scale_insects" -> "Scale insect"
+        // The classifier's generic "pests" verdict (and the Pests overview
+        // article) had no example photos — use the most distinctive common
+        // houseplant pest as a representative so the strip is never empty.
+        "pests" -> "Mealybug"
         "leaf_scorch_underwatering" -> "Leaf scorch"
         "nutrient_deficiency" -> "Chlorosis"
         "edema" -> "Edema (plant disorder)"
