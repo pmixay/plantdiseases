@@ -76,14 +76,25 @@
 
         </LinearLayout>
 
-        <!-- Scan photo -->
-        <ImageView
-            android:id="@+id/iv_nearby_photo"
+        <!-- Scan photo — shimmer skeleton while the thumbnail loads. -->
+        <com.facebook.shimmer.ShimmerFrameLayout
+            android:id="@+id/shimmer_nearby_photo"
             android:layout_width="match_parent"
             android:layout_height="280dp"
-            android:scaleType="centerCrop"
-            android:background="?attr/colorSurfaceVariant"
-            android:contentDescription="@null" />
+            app:shimmer_auto_start="false"
+            app:shimmer_base_color="@color/shimmer_base"
+            app:shimmer_duration="1000"
+            app:shimmer_highlight_color="@color/shimmer_highlight">
+
+            <ImageView
+                android:id="@+id/iv_nearby_photo"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="centerCrop"
+                android:background="?attr/colorSurfaceVariant"
+                android:contentDescription="@null" />
+
+        </com.facebook.shimmer.ShimmerFrameLayout>
 
         <!-- Footer: opinion count + second-opinion action -->
         <LinearLayout

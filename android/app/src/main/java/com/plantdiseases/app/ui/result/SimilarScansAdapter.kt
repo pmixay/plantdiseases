@@ -7,10 +7,11 @@ import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
-import com.bumptech.glide.Glide
+import com.facebook.shimmer.ShimmerFrameLayout
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.CommunityScanItem
 import com.plantdiseases.app.util.ServerConfig
+import com.plantdiseases.app.util.ThumbLoader
 
 /**
  * Horizontal carousel adapter for the "Similar scans near you" card.
@@ -45,6 +46,7 @@ class SimilarScansAdapter(
     override fun getItemCount(): Int = items.size
 
     inner class VH(itemView: View) : RecyclerView.ViewHolder(itemView) {
+        private val shimmer: ShimmerFrameLayout = itemView.findViewById(R.id.shimmer_similar_thumb)
         private val image: ImageView = itemView.findViewById(R.id.iv_similar_thumb)
         private val label: TextView = itemView.findViewById(R.id.tv_similar_label)
         private val region: TextView = itemView.findViewById(R.id.tv_similar_region)
@@ -65,20 +67,11 @@ class SimilarScansAdapter(
                 opinions.visibility = View.GONE
             }
 
+            // ServerConfig.baseUrl ends with `/`; relative path appended.
             val thumb = item.thumbPath
-            if (thumb.isNullOrBlank()) {
-                Glide.with(itemView).clear(image)
-                image.setImageResource(R.drawable.ic_disease)
-            } else {
-                // ServerConfig.baseUrl ends with `/`; relative path appended.
-                val url = "${ServerConfig.baseUrl}api/community/thumb/$thumb"
-                Glide.with(itemView)
-                    .load(url)
-                    .placeholder(R.drawable.ic_disease)
-                    .error(R.drawable.ic_disease)
-                    .centerCrop()
-                    .into(image)
-            }
+            val url = if (thumb.isNullOrBlank()) null
+                else "${ServerConfig.baseUrl}api/community/thumb/$thumb"
+            ThumbLoader.load(shimmer, image, url)
         }
 
         private fun formatRegion(region: String, country: String): String {

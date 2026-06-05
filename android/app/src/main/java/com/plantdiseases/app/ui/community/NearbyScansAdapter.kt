@@ -7,11 +7,12 @@ import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
-import com.bumptech.glide.Glide
+import com.facebook.shimmer.ShimmerFrameLayout
 import com.google.android.material.button.MaterialButton
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.CommunityScanItem
 import com.plantdiseases.app.util.ServerConfig
+import com.plantdiseases.app.util.ThumbLoader
 
 /**
  * Vertical, social-feed adapter for the "Scans near you" screen. Each
@@ -47,6 +48,7 @@ class NearbyScansAdapter(
     override fun getItemCount(): Int = items.size
 
     inner class VH(itemView: View) : RecyclerView.ViewHolder(itemView) {
+        private val shimmer: ShimmerFrameLayout = itemView.findViewById(R.id.shimmer_nearby_photo)
         private val photo: ImageView = itemView.findViewById(R.id.iv_nearby_photo)
         private val label: TextView = itemView.findViewById(R.id.tv_nearby_label)
         private val meta: TextView = itemView.findViewById(R.id.tv_nearby_meta)
@@ -70,20 +72,11 @@ class NearbyScansAdapter(
             opinionBtn.setOnClickListener(click)
             photo.setOnClickListener(click)
 
+            // ServerConfig.baseUrl ends with `/`; relative path appended.
             val thumb = item.thumbPath
-            if (thumb.isNullOrBlank()) {
-                Glide.with(itemView).clear(photo)
-                photo.setImageResource(R.drawable.ic_disease)
-            } else {
-                // ServerConfig.baseUrl ends with `/`; relative path appended.
-                val url = "${ServerConfig.baseUrl}api/community/thumb/$thumb"
-                Glide.with(itemView)
-                    .load(url)
-                    .placeholder(R.drawable.ic_disease)
-                    .error(R.drawable.ic_disease)
-                    .centerCrop()
-                    .into(photo)
-            }
+            val url = if (thumb.isNullOrBlank()) null
+                else "${ServerConfig.baseUrl}api/community/thumb/$thumb"
+            ThumbLoader.load(shimmer, photo, url)
         }
 
         /** "Region, Country · 2h ago" — drops missing pieces gracefully. */
