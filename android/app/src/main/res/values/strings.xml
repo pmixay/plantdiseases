@@ -24,7 +24,6 @@
     <string name="take_photo">Take Photo</string>
     <string name="gallery">Gallery</string>
     <string name="flash">Flash</string>
-    <string name="recent_scans">RECENT SCANS</string>
     <string name="camera_permission_needed">Camera access is needed</string>
     <string name="grant_permission">Allow Camera</string>
     <string name="camera_error">Failed to start camera</string>

@@ -25,7 +25,6 @@
     <string name="take_photo">Сфотографировать</string>
     <string name="gallery">Галерея</string>
     <string name="flash">Вспышка</string>
-    <string name="recent_scans">ПОСЛЕДНИЕ СКАНЫ</string>
     <string name="camera_permission_needed">Нужен доступ к камере</string>
     <string name="grant_permission">Разрешить камеру</string>
     <string name="camera_error">Не удалось запустить камеру</string>

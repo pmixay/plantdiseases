@@ -21,7 +21,7 @@
         android:layout_height="wrap_content"
         android:orientation="vertical"
         android:gravity="center_horizontal"
-        android:paddingHorizontal="@dimen/space_2xl"
+        android:paddingHorizontal="@dimen/space_4xl"
         android:paddingBottom="@dimen/space_4xl"
         android:fitsSystemWindows="true"
         app:layout_constraintBottom_toBottomOf="parent">

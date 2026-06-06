@@ -12,6 +12,10 @@
         <item name="colorSecondaryContainer">@color/primary_light</item>
         <item name="colorOnSecondaryContainer">@color/primary_dark</item>
         <item name="android:colorBackground">@color/background</item>
+        <!-- Explicit window background so any blank frame during an
+             activity recreate (theme / language switch) paints the app
+             background instead of defaulting to black. -->
+        <item name="android:windowBackground">@color/background</item>
         <item name="colorSurface">@color/surface</item>
         <item name="colorSurfaceVariant">@color/surface_variant</item>
         <item name="colorOnSurface">@color/on_surface</item>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Scan-tab toolbar actions. Added by CameraFragment via a MenuProvider
+     scoped to its view lifecycle (RESUMED), so the community button only
+     appears in the green top bar while the Scan tab is open. -->
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <item
+        android:id="@+id/action_nearby_scans"
+        android:icon="@drawable/ic_community"
+        android:title="@string/nearby_scans_cd"
+        app:showAsAction="always" />
+
+</menu>
