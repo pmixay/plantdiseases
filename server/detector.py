@@ -33,6 +33,11 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+try:
+    from .config import get_int
+except ImportError:  # pragma: no cover — flat layout (Docker copies files flat)
+    from config import get_int
+
 logger = logging.getLogger(__name__)
 
 DETECTOR_IMG_SIZE = 640
@@ -139,7 +144,11 @@ class LeafDetector:
         import onnxruntime as ort
 
         opts = ort.SessionOptions()
-        opts.intra_op_num_threads = 1
+        # Intra-op threads default to ORT's pick (= physical cores); see
+        # the matching note in classifier.py. ``ONNX_INTRA_OP_THREADS``
+        # overrides both sessions. Paired with INFER_WORKERS=1 so a single
+        # scan gets the whole CPU without oversubscribing.
+        opts.intra_op_num_threads = get_int("ONNX_INTRA_OP_THREADS", 0)
         opts.inter_op_num_threads = 1
         opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
 

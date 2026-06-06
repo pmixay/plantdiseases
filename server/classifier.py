@@ -33,7 +33,25 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+try:
+    from .config import get_int
+except ImportError:  # pragma: no cover — flat layout (Docker copies files flat)
+    from config import get_int
+
 logger = logging.getLogger(__name__)
+
+
+def _onnx_intra_op_threads() -> int:
+    """Intra-op thread count for ORT sessions.
+
+    Returns ``ONNX_INTRA_OP_THREADS`` (config/env), defaulting to ``0``
+    which tells ONNX Runtime to use its own default — the host's physical
+    core count. The DINOv2 ViT backbone is dominated by intra-op
+    parallelism, so giving a single inference all cores is the biggest
+    CPU-latency lever. Operators on a shared host can pin this lower.
+    """
+    return get_int("ONNX_INTRA_OP_THREADS", 0)
+
 
 DEFAULT_IMG_SIZE = 224
 # Train/serve crop parity: the notebook eval/calibration transform is
@@ -208,14 +226,14 @@ class DiseaseClassifier:
         import onnxruntime as ort
 
         opts = ort.SessionOptions()
-        # 1 intra-op thread per session — the FastAPI side runs
-        # `INFER_WORKERS` (default 2) parallel inferences in its
-        # ThreadPoolExecutor, and ORT spawning 2 internal threads
-        # *per* concurrent request would oversubscribe a 2-vCPU host
-        # (4 OS threads, two of them context-switching constantly).
-        # Single-thread-per-session keeps total OS threads ≈ vCPU and
-        # lets the executor's parallelism deliver the throughput.
-        opts.intra_op_num_threads = 1
+        # Intra-op threads default to ORT's own pick (= physical cores).
+        # The classifier now runs a DINOv2 ViT backbone whose latency is
+        # dominated by intra-op parallelism, so a single inference wants
+        # all the cores it can get. To avoid oversubscription this is
+        # paired with `INFER_WORKERS=1` on the FastAPI side (one inference
+        # at a time, each using the full CPU) — see main.py. Both are
+        # config-overridable for shared hosts.
+        opts.intra_op_num_threads = _onnx_intra_op_threads()
         opts.inter_op_num_threads = 1
         opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
 
