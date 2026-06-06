@@ -284,14 +284,14 @@ class ResultActivity : AppCompatActivity() {
                 btnOpenGuide.visibility = View.GONE
             }
 
-            // Example photos of this diagnosis (Wikipedia), above the description.
-            // Keyed off the DISPLAYED verdict (verdictClassKey), not the raw
-            // argmax — otherwise a server-rerouted scan (e.g. weak-healthy →
-            // leaf_spot) looks up photos for the wrong class and the strip
-            // silently disappears, which is why photos showed only sometimes.
+            // Bundled offline example photo of this diagnosis, above the
+            // description. Keyed off the DISPLAYED verdict (verdictClassKey),
+            // not the raw argmax — otherwise a server-rerouted scan (e.g.
+            // weak-healthy → leaf_spot) looks up the photo for the wrong class
+            // and the strip silently disappears.
             binding.tvDiseasePhotosLabel.visibility = View.GONE
             binding.hsvDiseasePhotos.visibility = View.GONE
-            GuideDataProvider.wikiQueryForDisease(repository.verdictClassKey(scan) ?: "")
+            GuideDataProvider.exampleImageResForDisease(repository.verdictClassKey(scan) ?: "")
                 ?.let { loadDiseasePhotos(it) }
 
             // Community opinions others left on THIS (the user's own) scan.
@@ -678,32 +678,23 @@ class ResultActivity : AppCompatActivity() {
         if (sci != null) loadSpeciesEnrichment(sci)
     }
 
-    /** Best-effort example photos of the diagnosed problem (Wikipedia),
-     *  shown above the description. Hidden unless images load. */
-    private fun loadDiseasePhotos(query: String) {
-        val repo = (application as PlantDiseasesApp).scanRepository
-        lifecycleScope.launch {
-            repo.getSpeciesInfo(query, "en").onSuccess { info ->
-                val urls = info.images.filter { it.isNotBlank() }
-                if (urls.isEmpty()) return@onSuccess
-                val row = binding.llDiseasePhotosRow
-                row.removeAllViews()
-                urls.take(4).forEach { url ->
-                    val iv = ImageView(this@ResultActivity).apply {
-                        layoutParams = LinearLayout.LayoutParams(dpPx(150), dpPx(110))
-                            .apply { marginEnd = dpPx(8) }
-                        scaleType = ImageView.ScaleType.CENTER_CROP
-                    }
-                    Glide.with(this@ResultActivity)
-                        .load(url)
-                        .transform(CenterCrop(), RoundedCorners(24))
-                        .into(iv)
-                    row.addView(iv)
-                }
-                binding.tvDiseasePhotosLabel.visibility = View.VISIBLE
-                binding.hsvDiseasePhotos.visibility = View.VISIBLE
-            }
+    /** Bundled offline example photo of the diagnosed problem, shown above
+     *  the description. No network — the asset ships with the app. */
+    private fun loadDiseasePhotos(imageRes: Int) {
+        val row = binding.llDiseasePhotosRow
+        row.removeAllViews()
+        val iv = ImageView(this@ResultActivity).apply {
+            layoutParams = LinearLayout.LayoutParams(dpPx(150), dpPx(110))
+                .apply { marginEnd = dpPx(8) }
+            scaleType = ImageView.ScaleType.CENTER_CROP
         }
+        Glide.with(this@ResultActivity)
+            .load(imageRes)
+            .transform(CenterCrop(), RoundedCorners(24))
+            .into(iv)
+        row.addView(iv)
+        binding.tvDiseasePhotosLabel.visibility = View.VISIBLE
+        binding.hsvDiseasePhotos.visibility = View.VISIBLE
     }
 
     private fun dpPx(v: Int): Int = (v * resources.displayMetrics.density).toInt()

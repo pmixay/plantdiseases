@@ -10,18 +10,15 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.resource.bitmap.CenterCrop
 import com.bumptech.glide.load.resource.bitmap.RoundedCorners
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.card.MaterialCardView
-import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.GuideDataProvider
 import com.plantdiseases.app.databinding.SheetGuideDetailBinding
 import com.plantdiseases.app.util.LocaleHelper
-import kotlinx.coroutines.launch
 
 class GuideDetailSheet : BottomSheetDialogFragment() {
 
@@ -51,25 +48,15 @@ class GuideDetailSheet : BottomSheetDialogFragment() {
         loadExamplePhotos(item.id)
     }
 
-    /** Pin a single prominent example photo (Wikipedia) above the article
-     *  cards so the topic opens with "here's what it looks like". Prefers the
-     *  page's lead image, falling back to the first media image. Best-effort;
-     *  omitted entirely on failure. */
+    /** Pin a single prominent example photo above the article cards so the
+     *  topic opens with "here's what it looks like". The photo is a bundled
+     *  offline drawable (no network), omitted for topics that ship none. */
     private fun loadExamplePhotos(guideId: String) {
-        val query = GuideDataProvider.wikiQueryForGuideId(guideId) ?: return
-        val repo = (requireActivity().application as PlantDiseasesApp).scanRepository
-        viewLifecycleOwner.lifecycleScope.launch {
-            repo.getSpeciesInfo(query, "en").onSuccess { info ->
-                val url = info.imageUrl?.takeIf { it.isNotBlank() }
-                    ?: info.images.firstOrNull { it.isNotBlank() }
-                if (url != null && _binding != null) {
-                    binding.llSections.addView(buildHeroPhoto(url), 0)
-                }
-            }
-        }
+        val imageRes = GuideDataProvider.exampleImageRes(guideId) ?: return
+        binding.llSections.addView(buildHeroPhoto(imageRes), 0)
     }
 
-    private fun buildHeroPhoto(url: String): View {
+    private fun buildHeroPhoto(imageRes: Int): View {
         val ctx = requireContext()
         val column = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
@@ -98,7 +85,7 @@ class GuideDetailSheet : BottomSheetDialogFragment() {
             contentDescription = binding.tvTitle.text
         }
         Glide.with(this@GuideDetailSheet)
-            .load(url)
+            .load(imageRes)
             .transform(CenterCrop(), RoundedCorners(dp(16)))
             .into(image)
         column.addView(image)
