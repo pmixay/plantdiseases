@@ -72,40 +72,57 @@
                     android:ellipsize="end"
                     tools:text="Berlin, Germany · 2h ago" />
 
+                <!-- Shown when the scanner is waiting on the community for a
+                     second opinion — a cue for viewers to weigh in. -->
+                <TextView
+                    android:id="@+id/tv_nearby_wants_opinion"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:drawablePadding="4dp"
+                    android:gravity="center_vertical"
+                    android:text="@string/community_wants_opinion_badge"
+                    android:textAppearance="@style/TextAppearance.App.Caption"
+                    android:textColor="@color/warning_amber"
+                    android:fontFamily="sans-serif-medium"
+                    app:drawableStartCompat="@drawable/ic_community"
+                    app:drawableTint="@color/warning_amber"
+                    android:visibility="gone"
+                    tools:visibility="visible" />
+
             </LinearLayout>
 
         </LinearLayout>
 
-        <!-- Scan photo -->
-        <ImageView
-            android:id="@+id/iv_nearby_photo"
+        <!-- Scan photo — shimmer skeleton while the thumbnail loads. -->
+        <com.facebook.shimmer.ShimmerFrameLayout
+            android:id="@+id/shimmer_nearby_photo"
             android:layout_width="match_parent"
             android:layout_height="280dp"
-            android:scaleType="centerCrop"
-            android:background="?attr/colorSurfaceVariant"
-            android:contentDescription="@null" />
+            app:shimmer_auto_start="false"
+            app:shimmer_base_color="@color/shimmer_base"
+            app:shimmer_duration="1000"
+            app:shimmer_highlight_color="@color/shimmer_highlight">
 
-        <!-- Footer: opinion count + second-opinion action -->
+            <ImageView
+                android:id="@+id/iv_nearby_photo"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="centerCrop"
+                android:background="?attr/colorSurfaceVariant"
+                android:contentDescription="@null" />
+
+        </com.facebook.shimmer.ShimmerFrameLayout>
+
+        <!-- Footer: second-opinion action (left) + opinion count (right) -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:paddingStart="@dimen/space_lg"
-            android:paddingEnd="@dimen/space_sm"
+            android:paddingStart="@dimen/space_sm"
+            android:paddingEnd="@dimen/space_lg"
             android:paddingVertical="@dimen/space_xs">
-
-            <TextView
-                android:id="@+id/tv_nearby_opinions"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:textAppearance="@style/TextAppearance.App.Caption"
-                android:textColor="@color/primary"
-                android:fontFamily="sans-serif-medium"
-                android:visibility="gone"
-                tools:text="3 opinions"
-                tools:visibility="visible" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_nearby_opinion"
@@ -115,6 +132,20 @@
                 android:text="@string/nearby_scans_second_opinion"
                 app:icon="@drawable/ic_comment"
                 app:iconGravity="textStart" />
+
+            <TextView
+                android:id="@+id/tv_nearby_opinions"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="@dimen/space_sm"
+                android:textAppearance="@style/TextAppearance.App.Caption"
+                android:textColor="@color/primary"
+                android:fontFamily="sans-serif-medium"
+                android:textAlignment="viewEnd"
+                android:visibility="gone"
+                tools:text="3 opinions"
+                tools:visibility="visible" />
 
         </LinearLayout>
 

@@ -8,6 +8,8 @@ import com.plantdiseases.app.data.model.ChatRequest
 import com.plantdiseases.app.data.model.ChatResponse
 import com.plantdiseases.app.data.model.CommunityOpinionRequest
 import com.plantdiseases.app.data.model.CommunityOpinionsResponse
+import com.plantdiseases.app.data.model.CommunityRequestOpinionRequest
+import com.plantdiseases.app.data.model.CommunityRequestOpinionResponse
 import com.plantdiseases.app.data.model.CommunityScansResponse
 import com.plantdiseases.app.data.model.CommunityScanUploadResponse
 import com.plantdiseases.app.data.model.SpeciesInfoResponse
@@ -134,6 +136,13 @@ interface ApiService {
     suspend fun communitySubmitOpinion(
         @Body request: CommunityOpinionRequest,
     ): retrofit2.Response<CommunityOpinionsResponse>
+
+    /** Flag the scanner's OWN scan as wanting a community second opinion.
+     *  The scanner doesn't suggest a diagnosis — they wait for others. */
+    @POST("api/community/request-opinion")
+    suspend fun communityRequestOpinion(
+        @Body request: CommunityRequestOpinionRequest,
+    ): retrofit2.Response<CommunityRequestOpinionResponse>
 
     /** List community opinions + consensus tally for a shared scan. */
     @GET("api/community/opinions/{scan_id}")

@@ -24,7 +24,6 @@
     <string name="take_photo">Take Photo</string>
     <string name="gallery">Gallery</string>
     <string name="flash">Flash</string>
-    <string name="recent_scans">RECENT SCANS</string>
     <string name="camera_permission_needed">Camera access is needed</string>
     <string name="grant_permission">Allow Camera</string>
     <string name="camera_error">Failed to start camera</string>
@@ -188,6 +187,14 @@
     <string name="community_my_opinions_subtitle">Diagnoses you\'ve weighed in on</string>
     <string name="community_my_opinions_empty">You haven\'t sent any opinions yet.</string>
     <string name="result_get_second_opinion">Get a second opinion</string>
+    <string name="result_second_opinion_waiting">Waiting for second opinions…</string>
+    <string name="result_second_opinion_view">View second opinions (%1$d)</string>
+    <string name="result_second_opinion_failed">Couldn\'t request a second opinion. Try again.</string>
+    <string name="result_second_opinion_no_region">Couldn\'t find your region, so this scan can\'t be shared for a second opinion.</string>
+    <string name="community_opinion_replies_title">Community second opinions</string>
+    <string name="community_opinion_replies_subtitle">What the community thinks about your scan.</string>
+    <string name="community_opinion_replies_empty">No second opinions yet. Check back soon.</string>
+    <string name="community_wants_opinion_badge">Wants a second opinion</string>
     <string name="similar_scans_chip_format">%1$s · %2$d</string>
 
     <!-- Nearby scans feed (social-style, opened from the camera screen) -->
@@ -195,6 +202,13 @@
     <string name="nearby_scans_cd">Scans near you</string>
     <string name="nearby_scans_loading">Finding scans near you…</string>
     <string name="nearby_scans_second_opinion">Second opinion</string>
+    <!-- Nearby scans sort & filter overlay -->
+    <string name="nearby_filter_title">Sort &amp; filter</string>
+    <string name="nearby_filter_by_date">By date</string>
+    <string name="nearby_filter_date_newest">Newest first</string>
+    <string name="nearby_filter_date_oldest">Oldest first</string>
+    <string name="nearby_filter_by_type">By type</string>
+    <string name="nearby_filter_apply">Apply</string>
     <string name="community_votes_header">Community votes</string>
     <string name="community_vote_percent">%1$d%%</string>
 

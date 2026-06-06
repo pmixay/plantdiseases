@@ -204,6 +204,41 @@ class ScanRepository(
         }
 
     /**
+     * Flag the scanner's OWN scan as wanting a community second opinion.
+     * The scanner doesn't suggest a diagnosis — they raise a hand and
+     * wait for others to weigh in. Returns `true` when the server
+     * actually flagged an owned community row; `false` (still a success)
+     * when no owned row exists yet — the community upload is
+     * fire-and-forget and the user may have opted out of sharing. The UI
+     * shows its local "waiting" state regardless.
+     */
+    suspend fun requestSecondOpinion(
+        scanId: String,
+        userPseudoId: String,
+    ): Result<Boolean> =
+        withContext(Dispatchers.IO) {
+            try {
+                val response = apiService.communityRequestOpinion(
+                    com.plantdiseases.app.data.model.CommunityRequestOpinionRequest(
+                        scanId = scanId,
+                        userPseudoId = userPseudoId,
+                    ),
+                )
+                if (response.isSuccessful && response.body() != null) {
+                    Result.success(response.body()!!.flagged)
+                } else {
+                    Result.failure(Exception("Server error: ${response.code()}"))
+                }
+            } catch (e: SocketTimeoutException) {
+                Result.failure(ServerTimeoutException())
+            } catch (e: UnknownHostException) {
+                Result.failure(NoNetworkException())
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+    /**
      * Send a single AI Plant Doctor turn. The server returns 200 OK
      * even when no API key is configured or the per-session budget is
      * exhausted; in that case the response carries `available=false`
@@ -493,6 +528,22 @@ class ScanRepository(
     /** Persisted top-class key from `all_probs`; null when not stored. */
     fun topClassKey(scan: ScanEntity): String? =
         parseAllProbs(scan.allProbs).entries.maxByOrNull { it.value }?.key
+
+    /**
+     * The canonical verdict class key the user actually saw — the
+     * server-issued ``displayedClassKey`` (which already reflects the
+     * weak-healthy reroute / healthy-fallback / OOD gate), falling back
+     * to ``argmax(all_probs)`` for legacy scans saved before that column
+     * existed.
+     *
+     * Use this — NOT [topClassKey] — for any UI surface that asks "what
+     * is THIS scan's diagnosis" (guide deep-link, example photos, …).
+     * The raw argmax can disagree with the displayed verdict after a
+     * server reroute, which made the result screen's example photos
+     * appear for some scans and silently vanish for others.
+     */
+    fun verdictClassKey(scan: ScanEntity): String? =
+        scan.displayedClassKey?.takeIf { it.isNotBlank() } ?: topClassKey(scan)
 
     /**
      * NAP detection: prefer the canonical class key from `all_probs`;

@@ -48,7 +48,23 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        installSplashScreen()
+        // Only show the splash on a genuine cold start. A language change
+        // calls AppCompatDelegate.setApplicationLocales(), which restarts
+        // this activity and re-enters onCreate with a non-null
+        // savedInstanceState. Re-running installSplashScreen() there
+        // re-displayed the splash window (an 800ms icon animation over the
+        // green/black splash background) on every toggle — the "app turns
+        // black" the user saw. Theme changes use an in-process recreate
+        // that never re-triggered the splash, which is why only language
+        // switching flashed. On a recreate we skip the splash but still
+        // swap the launch splash theme out for the real app theme — that
+        // is what installSplashScreen() normally does via
+        // postSplashScreenTheme.
+        if (savedInstanceState == null) {
+            installSplashScreen()
+        } else {
+            setTheme(R.style.Theme_PlantDiseases)
+        }
         super.onCreate(savedInstanceState)
 
         // Check onboarding

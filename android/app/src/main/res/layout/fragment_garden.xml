@@ -24,12 +24,15 @@
     android:layout_height="match_parent"
     android:background="@color/background">
 
+    <!-- Bottom padding clears the overlaid Add-plant FAB so the last plant
+         card is never hidden behind it (clipToPadding=false keeps the
+         scrollbar full-height). -->
     <androidx.core.widget.NestedScrollView
         android:id="@+id/garden_scroll"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:clipToPadding="false"
-        android:paddingBottom="@dimen/space_4xl"
+        android:paddingBottom="96dp"
         android:fillViewport="true">
 
         <LinearLayout

@@ -26,13 +26,24 @@
         android:layout_height="wrap_content"
         android:orientation="vertical">
 
-        <ImageView
-            android:id="@+id/iv_similar_thumb"
+        <com.facebook.shimmer.ShimmerFrameLayout
+            android:id="@+id/shimmer_similar_thumb"
             android:layout_width="match_parent"
             android:layout_height="96dp"
-            android:scaleType="centerCrop"
-            android:background="?attr/colorSurfaceVariant"
-            android:contentDescription="@null" />
+            app:shimmer_auto_start="false"
+            app:shimmer_base_color="@color/shimmer_base"
+            app:shimmer_duration="1000"
+            app:shimmer_highlight_color="@color/shimmer_highlight">
+
+            <ImageView
+                android:id="@+id/iv_similar_thumb"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="centerCrop"
+                android:background="?attr/colorSurfaceVariant"
+                android:contentDescription="@null" />
+
+        </com.facebook.shimmer.ShimmerFrameLayout>
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -77,6 +88,23 @@
                 android:textAppearance="@style/TextAppearance.App.Caption"
                 android:textColor="@color/primary"
                 android:fontFamily="sans-serif-medium"
+                android:visibility="gone" />
+
+            <!-- Shown when the scanner flagged this scan as wanting a
+                 community second opinion — taps open the opinion sheet. -->
+            <TextView
+                android:id="@+id/tv_similar_wants_opinion"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_xs"
+                android:drawablePadding="4dp"
+                android:gravity="center_vertical"
+                android:text="@string/community_wants_opinion_badge"
+                android:textAppearance="@style/TextAppearance.App.Caption"
+                android:textColor="@color/warning_amber"
+                android:fontFamily="sans-serif-medium"
+                app:drawableStartCompat="@drawable/ic_community"
+                app:drawableTint="@color/warning_amber"
                 android:visibility="gone" />
 
         </LinearLayout>

@@ -25,7 +25,6 @@
     <string name="take_photo">Сфотографировать</string>
     <string name="gallery">Галерея</string>
     <string name="flash">Вспышка</string>
-    <string name="recent_scans">ПОСЛЕДНИЕ СКАНЫ</string>
     <string name="camera_permission_needed">Нужен доступ к камере</string>
     <string name="grant_permission">Разрешить камеру</string>
     <string name="camera_error">Не удалось запустить камеру</string>
@@ -187,12 +186,27 @@
     <string name="community_my_opinions_subtitle">Диагнозы, которые вы оценили</string>
     <string name="community_my_opinions_empty">Вы пока не отправляли мнений.</string>
     <string name="result_get_second_opinion">Получить второе мнение</string>
+    <string name="result_second_opinion_waiting">Ждём второго мнения…</string>
+    <string name="result_second_opinion_view">Посмотреть мнения (%1$d)</string>
+    <string name="result_second_opinion_failed">Не удалось запросить второе мнение. Попробуйте ещё раз.</string>
+    <string name="result_second_opinion_no_region">Не удалось определить ваш регион, поэтому этот скан нельзя отправить на второе мнение.</string>
+    <string name="community_opinion_replies_title">Второе мнение сообщества</string>
+    <string name="community_opinion_replies_subtitle">Что сообщество думает о вашем скане.</string>
+    <string name="community_opinion_replies_empty">Пока нет второго мнения. Загляните позже.</string>
+    <string name="community_wants_opinion_badge">Ждёт второго мнения</string>
     <string name="similar_scans_chip_format">%1$s · %2$d</string>
     <!-- Nearby scans feed (social-style, opened from the camera screen) -->
     <string name="nearby_scans_title">Сканы рядом</string>
     <string name="nearby_scans_cd">Сканы рядом</string>
     <string name="nearby_scans_loading">Ищем сканы рядом…</string>
     <string name="nearby_scans_second_opinion">Второе мнение</string>
+    <!-- Nearby scans sort & filter overlay -->
+    <string name="nearby_filter_title">Сортировка и фильтр</string>
+    <string name="nearby_filter_by_date">По дате</string>
+    <string name="nearby_filter_date_newest">Сначала новые</string>
+    <string name="nearby_filter_date_oldest">Сначала старые</string>
+    <string name="nearby_filter_by_type">По типу</string>
+    <string name="nearby_filter_apply">Применить</string>
     <string name="community_votes_header">Голоса сообщества</string>
     <string name="community_vote_percent">%1$d%%</string>
     <string name="community_toggle_title">Делиться сканами с сообществом</string>

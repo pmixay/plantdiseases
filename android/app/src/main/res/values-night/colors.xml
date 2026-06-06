@@ -79,7 +79,6 @@
     <color name="search_highlight">#665C3A</color>
     <color name="shimmer_base">#192118</color>
     <color name="shimmer_highlight">#243023</color>
-    <color name="camera_scrim">#50000000</color>
 
     <!-- ─── AI Doctor chat bubbles (dark) ───────────────────────── -->
     <color name="chat_bubble_bot_bg">#1F2820</color>

@@ -76,6 +76,18 @@ class GardenFragment : Fragment() {
             Haptics.medium(requireContext())
             showPlantDialog(null)
         }
+        // Collapse the extended FAB to an icon while scrolling down so it
+        // stops sitting over plant-card text; re-extend at the top / on the
+        // way back up.
+        binding.gardenScroll.setOnScrollChangeListener { _, _, scrollY, _, oldScrollY ->
+            val fab = _binding?.gardenAddFab ?: return@setOnScrollChangeListener
+            if (fab.visibility != View.VISIBLE) return@setOnScrollChangeListener
+            when {
+                scrollY <= 0 && !fab.isExtended -> fab.extend()
+                scrollY > oldScrollY + 4 && fab.isExtended -> fab.shrink()
+                scrollY < oldScrollY - 4 && !fab.isExtended -> fab.extend()
+            }
+        }
         // Plants load in onResume() (fires on first show + every return).
         // Loading here too re-ran the fade-in, so the plants appeared twice.
     }
@@ -102,6 +114,15 @@ class GardenFragment : Fragment() {
         container.removeAllViews()
         binding.gardenEmptyState.visibility = if (plants.isEmpty()) View.VISIBLE else View.GONE
         container.visibility = if (plants.isEmpty()) View.GONE else View.VISIBLE
+        // When the garden is empty the centred "Add your first plant" CTA is
+        // the only call to action — hide the floating button so the two
+        // don't compete (and re-extend it for the populated state).
+        if (plants.isEmpty()) {
+            binding.gardenAddFab.visibility = View.GONE
+        } else {
+            binding.gardenAddFab.visibility = View.VISIBLE
+            binding.gardenAddFab.extend()
+        }
         binding.gardenSummaryBody.text = resources.getQuantityString(
             R.plurals.garden_summary,
             plants.size,

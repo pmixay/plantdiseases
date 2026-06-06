@@ -42,6 +42,7 @@ import com.plantdiseases.app.data.model.FeedbackRequest
 import com.plantdiseases.app.data.model.TopProb
 import com.plantdiseases.app.util.TelemetryIds
 import com.plantdiseases.app.BuildConfig
+import com.plantdiseases.app.data.repository.CommunityUploader
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.ui.analysis.AnalysisActivity
@@ -273,7 +274,7 @@ class ResultActivity : AppCompatActivity() {
 
             // "Read the full guide" — deep-link to the offline doc article for
             // this verdict's class, when one exists (not_a_plant has none).
-            val guideId = GuideDataProvider.guideIdForDisease(repository.topClassKey(scan) ?: "")
+            val guideId = GuideDataProvider.guideIdForDisease(repository.verdictClassKey(scan) ?: "")
             if (guideId != null) {
                 btnOpenGuide.visibility = View.VISIBLE
                 btnOpenGuide.setOnClickListener {
@@ -284,10 +285,14 @@ class ResultActivity : AppCompatActivity() {
                 btnOpenGuide.visibility = View.GONE
             }
 
-            // Example photos of this diagnosis (Wikipedia), above the description.
+            // Bundled offline example photo of this diagnosis, above the
+            // description. Keyed off the DISPLAYED verdict (verdictClassKey),
+            // not the raw argmax — otherwise a server-rerouted scan (e.g.
+            // weak-healthy → leaf_spot) looks up the photo for the wrong class
+            // and the strip silently disappears.
             binding.tvDiseasePhotosLabel.visibility = View.GONE
             binding.hsvDiseasePhotos.visibility = View.GONE
-            GuideDataProvider.wikiQueryForDisease(repository.topClassKey(scan) ?: "")
+            GuideDataProvider.exampleImageResForDisease(repository.verdictClassKey(scan) ?: "")
                 ?.let { loadDiseasePhotos(it) }
 
             // Community opinions others left on THIS (the user's own) scan.
@@ -439,21 +444,103 @@ class ResultActivity : AppCompatActivity() {
                 finish()
             }
 
-            // When unsure, let the user crowd-source a verdict on their own
-            // (already community-shared) scan, keyed by its client scan id.
-            btnSecondOpinion.setOnClickListener {
-                CommunityOpinionSheet.show(
-                    supportFragmentManager,
-                    scan.clientScanId,
-                    classKeyDisplayName(repository.topClassKey(scan) ?: "", isRu),
-                )
-            }
+            // When unsure, let the user raise a hand for a community second
+            // opinion on their OWN scan — or, once replies arrive, view
+            // them. Wired in setupSecondOpinion().
+            setupSecondOpinion(scan, repository, isRu)
 
             // Animate cards from bottom
             animateCardsIn()
 
             // Toolbar overflow menu owns the delete action.
             pendingScanForToolbar = scan
+        }
+    }
+
+    /**
+     * Wire the "second opinion" control. Two modes:
+     *
+     *  - **Ask** (default): the scanner raises a hand. Tapping shares this
+     *    scan to the community (the tap is consent — so it works even if
+     *    global sharing is off, and the server dedups by scan id), then
+     *    durably flags it as wanting a second opinion. Other users see a
+     *    badge in their "scans near you" feed and weigh in. The scanner
+     *    does NOT pick a diagnosis — they wait.
+     *  - **View**: once replies exist, the button switches to showing the
+     *    community's opinions (read-only sheet) for this scan.
+     *
+     * We probe for existing opinions on load so a returning user lands
+     * straight in the "view replies" state.
+     */
+    private fun setupSecondOpinion(
+        scan: ScanEntity,
+        repository: ScanRepository,
+        isRu: Boolean,
+    ) {
+        val btn = binding.btnSecondOpinion
+        val displayName = classKeyDisplayName(repository.verdictClassKey(scan) ?: "", isRu)
+
+        fun openReplies() {
+            CommunityOpinionSheet.showForOwner(
+                supportFragmentManager, scan.clientScanId, displayName,
+            )
+        }
+        fun showViewReplies(count: Int) {
+            btn.isEnabled = true
+            btn.text = getString(R.string.result_second_opinion_view, count)
+            btn.setOnClickListener { openReplies() }
+        }
+        fun showWaiting() {
+            // Truthful now: the request is durably recorded server-side,
+            // so "waiting" always means the community can see the ask.
+            // Tappable so the user can check back for replies.
+            btn.isEnabled = true
+            btn.setText(R.string.result_second_opinion_waiting)
+            btn.setOnClickListener { openReplies() }
+        }
+
+        fun showAsk() {
+            btn.isEnabled = true
+            btn.setText(R.string.result_get_second_opinion)
+            btn.setOnClickListener {
+                btn.isEnabled = false
+                btn.setText(R.string.result_second_opinion_waiting)
+                val app = application as PlantDiseasesApp
+                val pseudoId =
+                    com.plantdiseases.app.util.TelemetryIds.userPseudoId(this@ResultActivity)
+                lifecycleScope.launch {
+                    // Ensure the scan is in the community corpus so others
+                    // can actually see the ask (force = explicit consent).
+                    val outcome = app.communityUploader.uploadFromEntity(scan, force = true)
+                    if (outcome == CommunityUploader.UploadOutcome.NoRegion) {
+                        showAsk()
+                        Toast.makeText(
+                            this@ResultActivity,
+                            R.string.result_second_opinion_no_region,
+                            Toast.LENGTH_LONG,
+                        ).show()
+                        return@launch
+                    }
+                    app.scanRepository.requestSecondOpinion(scan.clientScanId, pseudoId)
+                        .onSuccess { showWaiting() }
+                        .onFailure {
+                            showAsk()
+                            Toast.makeText(
+                                this@ResultActivity,
+                                R.string.result_second_opinion_failed,
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                }
+            }
+        }
+
+        showAsk()
+        // Upgrade to "view replies" if the community already responded.
+        lifecycleScope.launch {
+            repository.getCommunityOpinions(scan.clientScanId).onSuccess { resp ->
+                if (resp.opinions.isNotEmpty()) showViewReplies(resp.opinions.size)
+            }
         }
     }
 
@@ -674,32 +761,23 @@ class ResultActivity : AppCompatActivity() {
         if (sci != null) loadSpeciesEnrichment(sci)
     }
 
-    /** Best-effort example photos of the diagnosed problem (Wikipedia),
-     *  shown above the description. Hidden unless images load. */
-    private fun loadDiseasePhotos(query: String) {
-        val repo = (application as PlantDiseasesApp).scanRepository
-        lifecycleScope.launch {
-            repo.getSpeciesInfo(query, "en").onSuccess { info ->
-                val urls = info.images.filter { it.isNotBlank() }
-                if (urls.isEmpty()) return@onSuccess
-                val row = binding.llDiseasePhotosRow
-                row.removeAllViews()
-                urls.take(4).forEach { url ->
-                    val iv = ImageView(this@ResultActivity).apply {
-                        layoutParams = LinearLayout.LayoutParams(dpPx(150), dpPx(110))
-                            .apply { marginEnd = dpPx(8) }
-                        scaleType = ImageView.ScaleType.CENTER_CROP
-                    }
-                    Glide.with(this@ResultActivity)
-                        .load(url)
-                        .transform(CenterCrop(), RoundedCorners(24))
-                        .into(iv)
-                    row.addView(iv)
-                }
-                binding.tvDiseasePhotosLabel.visibility = View.VISIBLE
-                binding.hsvDiseasePhotos.visibility = View.VISIBLE
-            }
+    /** Bundled offline example photo of the diagnosed problem, shown above
+     *  the description. No network — the asset ships with the app. */
+    private fun loadDiseasePhotos(imageRes: Int) {
+        val row = binding.llDiseasePhotosRow
+        row.removeAllViews()
+        val iv = ImageView(this@ResultActivity).apply {
+            layoutParams = LinearLayout.LayoutParams(dpPx(150), dpPx(110))
+                .apply { marginEnd = dpPx(8) }
+            scaleType = ImageView.ScaleType.CENTER_CROP
         }
+        Glide.with(this@ResultActivity)
+            .load(imageRes)
+            .transform(CenterCrop(), RoundedCorners(24))
+            .into(iv)
+        row.addView(iv)
+        binding.tvDiseasePhotosLabel.visibility = View.VISIBLE
+        binding.hsvDiseasePhotos.visibility = View.VISIBLE
     }
 
     private fun dpPx(v: Int): Int = (v * resources.displayMetrics.density).toInt()
@@ -778,7 +856,12 @@ class ResultActivity : AppCompatActivity() {
         empty.visibility = View.GONE
         chips.visibility = View.GONE
 
-        val diseaseKey = repository.topClassKey(scan)
+        // Scope the carousel by the verdict the user actually SAW — the
+        // server's reroute-aware displayed class — not the raw argmax.
+        // After a weak-healthy reroute the raw top is "healthy" while the
+        // user was shown a disease; querying by the raw top would surface
+        // "healthy" neighbours for a disease verdict (and vice-versa).
+        val diseaseKey = repository.verdictClassKey(scan)
             ?: scan.diseaseName.lowercase().replace(' ', '_')
         val app = application as PlantDiseasesApp
         val pseudoId = com.plantdiseases.app.util.TelemetryIds.userPseudoId(this)
@@ -874,16 +957,13 @@ class ResultActivity : AppCompatActivity() {
             result.onSuccess { response ->
                 card.visibility = View.VISIBLE
                 val label = resolved.displayLabel
-                // When the user filters by chip, restrict the carousel
-                // strictly — the server may return same-locality
-                // fillers of other diseases when the chip's bucket is
-                // sparse, and those would defeat the purpose of the
-                // filter.
-                val items = if (filterDisease != null) {
-                    response.items.filter { it.disease == filterDisease }
-                } else {
-                    response.items
-                }
+                // Always restrict the carousel to the effective disease —
+                // both on first render (the current scan's verdict) and on
+                // chip taps. The server now refuses to pad a disease-scoped
+                // query with other diseases, but we filter defensively too
+                // so a cached response from an older deployment can't leak
+                // unrelated verdicts into a "same disease near you" strip.
+                val items = response.items.filter { it.disease == effectiveDisease }
                 val total = response.summary?.last7d ?: items.size
 
                 if (items.isEmpty()) {

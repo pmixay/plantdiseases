@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS community_scans (
     thumb_path      TEXT,
     locale          TEXT,
     client_ip_hash  TEXT,
+    wants_opinion   INTEGER NOT NULL DEFAULT 0,
     created_at      INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_community_region          ON community_scans(region, created_at);
@@ -89,6 +90,13 @@ CREATE TABLE IF NOT EXISTS community_opinions (
 );
 CREATE INDEX IF NOT EXISTS ix_opinions_scan   ON community_opinions(scan_id, created_at);
 CREATE INDEX IF NOT EXISTS ix_opinions_author ON community_opinions(author_pseudo_id);
+
+CREATE TABLE IF NOT EXISTS community_opinion_requests (
+    scan_id        TEXT    PRIMARY KEY,
+    user_pseudo_id TEXT    NOT NULL,
+    created_at     INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_opinion_requests_user ON community_opinion_requests(user_pseudo_id);
 """
 
 _write_lock = threading.RLock()
@@ -153,6 +161,10 @@ def init_db() -> None:
             _add_column_if_missing(conn, "community_scans", "species_lower", "TEXT")
             conn.execute("CREATE INDEX IF NOT EXISTS ix_community_species_lower ON community_scans(species_lower)")
             conn.execute("UPDATE community_scans SET species_lower = LOWER(species) WHERE species IS NOT NULL AND species_lower IS NULL")
+            # "Wants a second opinion" flag — set after upload by the
+            # scanner via /api/community/request-opinion. Older rows
+            # default to 0 (no request).
+            _add_column_if_missing(conn, "community_scans", "wants_opinion", "INTEGER NOT NULL DEFAULT 0")
         _initialised = True
         logger.info("Community DB ready at %s", COMMUNITY_DB_PATH)
 
@@ -208,12 +220,31 @@ def record_scan(
     region_value = region or ""
     species_lower = species.lower() if species else None
     with _write_lock, _connect() as conn:
+        # Dedup by scan_id. The community upload is fire-and-forget and a
+        # "request a second opinion" tap can also trigger an on-demand
+        # upload, so the same scan can be offered twice; we never want
+        # two feed rows for one scan. (There's no UNIQUE constraint on
+        # scan_id for back-compat with legacy rows, so we guard here.)
+        existing = conn.execute(
+            "SELECT id FROM community_scans WHERE scan_id = ? LIMIT 1",
+            (scan_id,),
+        ).fetchone()
+        if existing:
+            return int(existing[0])
+        # Honour a second-opinion request that arrived BEFORE this upload
+        # landed (the durable request store decouples the two orderings).
+        pending = conn.execute(
+            "SELECT 1 FROM community_opinion_requests "
+            "WHERE scan_id = ? AND user_pseudo_id = ? LIMIT 1",
+            (scan_id, user_pseudo_id),
+        ).fetchone()
+        wants_opinion = 1 if pending else 0
         cur = conn.execute(
             "INSERT INTO community_scans ("
             "  scan_id, user_pseudo_id, country, region, disease, confidence, "
             "  species, species_lower, species_score, thumb_path, locale, "
-            "  client_ip_hash, created_at"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "  client_ip_hash, wants_opinion, created_at"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 scan_id,
                 user_pseudo_id,
@@ -227,10 +258,47 @@ def record_scan(
                 thumb_path,
                 locale,
                 ip_hash,
+                wants_opinion,
                 now,
             ),
         )
         return int(cur.lastrowid or 0)
+
+
+def set_wants_opinion(scan_id: str, user_pseudo_id: str) -> bool:
+    """Durably record that the scan's owner wants a community second opinion.
+
+    Owner-scoped: a user can only flag their own scan (the request is
+    keyed by ``user_pseudo_id`` and the scan-row update matches on it
+    too). The intent is written to ``community_opinion_requests`` FIRST,
+    so it survives even when the community upload hasn't landed yet — the
+    flag is then materialised onto the scan row either here (if it
+    already exists) or by :func:`record_scan` when the upload arrives.
+    This removes the upload/flag race that used to make the request a
+    silent no-op.
+
+    Returns ``True`` once the intent is recorded (i.e. for any non-blank
+    id pair). The caller can therefore trust the "waiting" state.
+    """
+    init_db()
+    if not scan_id or not user_pseudo_id:
+        return False
+    now = int(time.time())
+    with _write_lock, _connect() as conn:
+        # Durable record of intent (idempotent — one request per scan).
+        conn.execute(
+            "INSERT INTO community_opinion_requests "
+            "(scan_id, user_pseudo_id, created_at) VALUES (?, ?, ?) "
+            "ON CONFLICT(scan_id) DO UPDATE SET user_pseudo_id = excluded.user_pseudo_id",
+            (scan_id, user_pseudo_id, now),
+        )
+        # Materialise onto the scan row if the upload has already landed.
+        conn.execute(
+            "UPDATE community_scans SET wants_opinion = 1 "
+            "WHERE scan_id = ? AND user_pseudo_id = ?",
+            (scan_id, user_pseudo_id),
+        )
+        return True
 
 
 def record_opinion(
@@ -367,7 +435,7 @@ def scans_by_species(
     with _connect() as conn:
         rows = conn.execute(
             "SELECT scan_id, country, region, disease, confidence, species, "
-            "species_score, thumb_path, locale, created_at "
+            "species_score, thumb_path, locale, created_at, wants_opinion "
             "FROM community_scans WHERE species_lower = ?"
             + extra
             + " ORDER BY created_at DESC LIMIT ?",
@@ -397,7 +465,7 @@ def nearby_scans(
         def _query(where_extra: str, params: list, take: int) -> list[dict]:
             sql = (
                 "SELECT scan_id, country, region, disease, confidence, species, "
-                "species_score, thumb_path, locale, created_at "
+                "species_score, thumb_path, locale, created_at, wants_opinion "
                 "FROM community_scans WHERE country = ? "
                 + where_extra
                 + " ORDER BY created_at DESC LIMIT ?"
@@ -458,10 +526,17 @@ def nearby_scans(
                 base_params + [disease],
                 limit,
             ))
-        if len(out) < limit and region_clean:
-            _append_unique(_query(region_extra, region_params, limit))
-        if len(out) < limit:
-            _append_unique(_query(base_extra, base_params, limit))
+        # Disease-agnostic fallback buckets (region-only, then
+        # country-only). These pad the feed with *other* diseases, so we
+        # only reach for them when the caller did NOT scope to a disease.
+        # A disease-scoped "similar scans" request must never return rows
+        # of a different disease — better to return fewer (or none) than
+        # to mislead the user with unrelated verdicts.
+        if not disease:
+            if len(out) < limit and region_clean:
+                _append_unique(_query(region_extra, region_params, limit))
+            if len(out) < limit:
+                _append_unique(_query(base_extra, base_params, limit))
         return out[:limit]
 
 
@@ -564,6 +639,11 @@ def delete_for_user(user_pseudo_id: str) -> int:
             "DELETE FROM community_opinions WHERE author_pseudo_id = ?",
             (user_pseudo_id,),
         )
+        # Drop any pending second-opinion requests this install made.
+        conn.execute(
+            "DELETE FROM community_opinion_requests WHERE user_pseudo_id = ?",
+            (user_pseudo_id,),
+        )
     for row in rows:
         thumb = row[0]
         if not thumb:
@@ -609,6 +689,7 @@ def _row_to_dict(row: tuple) -> dict:
         "thumb_path": row[7],
         "locale": row[8],
         "created_at": int(row[9]),
+        "wants_opinion": bool(row[10]) if len(row) > 10 else False,
     }
 
 

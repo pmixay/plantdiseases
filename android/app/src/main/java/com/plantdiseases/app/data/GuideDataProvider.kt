@@ -1538,31 +1538,32 @@ PREVENTION:
     }
 
     /**
-     * English Wikipedia title for a guide article's example photos (fetched
-     * via /api/species-info). Null where example photos don't apply — pure
-     * care topics, the "healthy" article and the pests overview.
+     * Bundled offline example photo for a guide article (a real shot of the
+     * disease / pest), or null where no photo applies — pure care topics and
+     * the "healthy" article. Replaces the old Wikipedia fetch so the guide
+     * works fully offline.
      */
-    fun wikiQueryForGuideId(guideId: String): String? = when (guideId) {
-        "powdery_mildew" -> "Powdery mildew"
-        "leaf_spot" -> "Leaf spot"
-        "blight" -> "Blight"
-        "root_rot" -> "Root rot"
-        "leaf_mold" -> "Fulvia fulva"
-        "viral_disease" -> "Plant virus"
-        "rust" -> "Rust (fungus)"
-        "botrytis" -> "Botrytis cinerea"
-        "spider_mites" -> "Spider mite"
-        "aphids" -> "Aphid"
-        "mealybugs" -> "Mealybug"
-        "scale_insects" -> "Scale insect"
-        "leaf_scorch_underwatering" -> "Leaf scorch"
-        "nutrient_deficiency" -> "Chlorosis"
-        "edema" -> "Edema (plant disorder)"
-        "sunburn_or_scorch" -> "Sunscald"
+    fun exampleImageRes(guideId: String): Int? = when (guideId) {
+        "powdery_mildew" -> R.drawable.guide_photo_powdery_mildew
+        "leaf_spot" -> R.drawable.guide_photo_leaf_spot
+        "blight" -> R.drawable.guide_photo_blight
+        "root_rot" -> R.drawable.guide_photo_root_rot
+        "leaf_mold" -> R.drawable.guide_photo_leaf_mold
+        "viral_disease" -> R.drawable.guide_photo_viral_disease
+        "rust" -> R.drawable.guide_photo_rust
+        "botrytis" -> R.drawable.guide_photo_botrytis
+        "spider_mites" -> R.drawable.guide_photo_spider_mites
+        "aphids" -> R.drawable.guide_photo_aphids
+        "mealybugs" -> R.drawable.guide_photo_mealybugs
+        "scale_insects" -> R.drawable.guide_photo_scale_insects
+        "leaf_scorch_underwatering" -> R.drawable.guide_photo_leaf_scorch_underwatering
+        "nutrient_deficiency" -> R.drawable.guide_photo_nutrient_deficiency
+        "edema" -> R.drawable.guide_photo_edema
+        "sunburn_or_scorch" -> R.drawable.guide_photo_sunburn_or_scorch
         else -> null
     }
 
-    /** Wikipedia title for a classifier class's example photos. */
-    fun wikiQueryForDisease(classKey: String): String? =
-        guideIdForDisease(classKey)?.let { wikiQueryForGuideId(it) }
+    /** Bundled offline example photo for a classifier class, or null. */
+    fun exampleImageResForDisease(classKey: String): Int? =
+        guideIdForDisease(classKey)?.let { exampleImageRes(it) }
 }

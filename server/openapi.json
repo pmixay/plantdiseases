@@ -474,6 +474,41 @@
         }
       }
     },
+    "/api/community/request-opinion": {
+      "post": {
+        "summary": "Community Request Opinion",
+        "description": "Flag the scanner's own shared scan as wanting a second opinion.",
+        "operationId": "community_request_opinion_api_community_request_opinion_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/community/opinions/{scan_id}": {
       "get": {
         "summary": "Community Opinions List",

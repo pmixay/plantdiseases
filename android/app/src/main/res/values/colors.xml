@@ -99,7 +99,6 @@
     <color name="search_highlight">#FEF08A</color>
     <color name="shimmer_base">#E5E7EB</color>
     <color name="shimmer_highlight">#F9FAFB</color>
-    <color name="camera_scrim">#33000000</color>
     <color name="camera_control_scrim">#66000000</color>
 
     <!-- ─── AI Doctor chat bubbles ───────────────────────────────

@@ -200,6 +200,9 @@ data class CommunityScanItem(
     @SerializedName("locale") val locale: String? = null,
     @SerializedName("created_at") val createdAt: Long = 0L,
     @SerializedName("opinion_count") val opinionCount: Int = 0,
+    // The scanner flagged this scan as wanting a community second opinion
+    // (they were unsure and are waiting for others to weigh in).
+    @SerializedName("wants_opinion") val wantsOpinion: Boolean = false,
 )
 
 data class CommunityRegionSummary(
@@ -233,6 +236,20 @@ data class CommunityOpinionRequest(
     @SerializedName("user_pseudo_id") val userPseudoId: String,
     @SerializedName("suggested_disease") val suggestedDisease: String,
     @SerializedName("note") val note: String? = null,
+)
+
+/** /api/community/request-opinion request body. The scanner flags their
+ *  OWN scan as wanting a second opinion — they don't suggest a diagnosis. */
+data class CommunityRequestOpinionRequest(
+    @SerializedName("scan_id") val scanId: String,
+    @SerializedName("user_pseudo_id") val userPseudoId: String,
+)
+
+/** /api/community/request-opinion response. `flagged` is false when no
+ *  owned community row exists yet (upload pending / sharing opted out). */
+data class CommunityRequestOpinionResponse(
+    @SerializedName("ok") val ok: Boolean = false,
+    @SerializedName("flagged") val flagged: Boolean = false,
 )
 
 /** One community 'second opinion' on a shared scan. `scanId` is only
