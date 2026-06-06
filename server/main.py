@@ -1050,6 +1050,11 @@ async def version():
     return {
         "version": APP_VERSION,
         "classifier_name": "plantvision",
+        # Capacity tier the loaded bundle declares (classes.json ->
+        # model_family): aqua (light/on-device) | gamma (current medium) |
+        # frontier (future high-capacity). Defaults to "gamma" for bundles
+        # trained before the family field existed.
+        "model_family": pipeline.classifier.model_family,
         "detector_arch": "YOLOv8n (single-class plant_leaf, indoor-trained)",
         # Report the architecture the loaded model actually declares
         # (classes.json -> architecture, surfaced as classifier.architecture)

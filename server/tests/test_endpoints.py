@@ -24,6 +24,9 @@ def test_version_contract(client):
     assert body["classifier_name"] == "plantvision"
     assert body["stages"] == 2
     assert body["focus"] == "houseplants"
+    # Capacity tier (aqua/gamma/frontier) declared by the bundle; defaults
+    # to "gamma" for bundles trained before the family field existed.
+    assert body["model_family"] in {"aqua", "gamma", "frontier"}
 
 
 def test_classes_contract(client):
