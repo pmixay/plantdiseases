@@ -183,8 +183,16 @@
     <string name="community_opinions_badge">Мнений: %1$d</string>
     <string name="result_view_opinions">Мнений сообщества: %1$d</string>
     <string name="community_my_opinions_title">Мои мнения</string>
-    <string name="community_my_opinions_subtitle">Диагнозы, которые вы оценили</string>
     <string name="community_my_opinions_empty">Вы пока не отправляли мнений.</string>
+    <string name="community_my_opinions_count_label">диагнозов вы оценили</string>
+    <plurals name="community_my_opinions_count_label_plural">
+        <item quantity="one">диагноз вы оценили</item>
+        <item quantity="few">диагноза вы оценили</item>
+        <item quantity="many">диагнозов вы оценили</item>
+        <item quantity="other">диагнозов вы оценили</item>
+    </plurals>
+    <string name="community_my_opinions_breakdown">Что вы отмечаете чаще всего</string>
+    <string name="community_my_opinions_recent">Недавние</string>
     <string name="result_get_second_opinion">Получить второе мнение</string>
     <string name="result_second_opinion_waiting">Ждём второго мнения…</string>
     <string name="result_second_opinion_view">Посмотреть мнения (%1$d)</string>
