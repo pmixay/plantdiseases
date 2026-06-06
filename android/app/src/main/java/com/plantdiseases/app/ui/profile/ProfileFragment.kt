@@ -169,12 +169,10 @@ class ProfileFragment : Fragment() {
 
             b.tvMyOpinionsEmpty.visibility = View.GONE
 
-            // Headline stat — total diagnoses weighed in on.
+            // Headline stat — total diagnoses weighed in on. The label is a
+            // static string set in XML (matches the stats card convention of
+            // a big number + plain caption), so only the count is set here.
             b.tvMyOpinionsCount.text = opinions.size.toString()
-            b.tvMyOpinionsCountLabel.text = resources.getQuantityString(
-                R.plurals.community_my_opinions_count_label_plural,
-                opinions.size,
-            )
             b.llMyOpinionsStats.visibility = View.VISIBLE
 
             // "What you flag most" bar chart — opinion distribution by class,

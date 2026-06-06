@@ -186,10 +186,6 @@
     <string name="community_my_opinions_title">My second opinions</string>
     <string name="community_my_opinions_empty">You haven\'t sent any opinions yet.</string>
     <string name="community_my_opinions_count_label">diagnoses you\'ve weighed in on</string>
-    <plurals name="community_my_opinions_count_label_plural">
-        <item quantity="one">diagnosis you\'ve weighed in on</item>
-        <item quantity="other">diagnoses you\'ve weighed in on</item>
-    </plurals>
     <string name="community_my_opinions_breakdown">What you flag most</string>
     <string name="community_my_opinions_recent">Recent</string>
     <string name="result_get_second_opinion">Get a second opinion</string>
