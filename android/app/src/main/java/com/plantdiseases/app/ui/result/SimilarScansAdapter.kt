@@ -52,12 +52,14 @@ class SimilarScansAdapter(
         private val region: TextView = itemView.findViewById(R.id.tv_similar_region)
         private val time: TextView = itemView.findViewById(R.id.tv_similar_time)
         private val opinions: TextView = itemView.findViewById(R.id.tv_similar_opinions)
+        private val wantsOpinion: TextView = itemView.findViewById(R.id.tv_similar_wants_opinion)
 
         fun bind(item: CommunityScanItem) {
             itemView.setOnClickListener { onClick(item) }
             label.text = displayName(item.disease)
             region.text = formatRegion(item.region, item.country)
             time.text = formatTimeAgo(item.createdAt)
+            wantsOpinion.visibility = if (item.wantsOpinion) View.VISIBLE else View.GONE
             if (item.opinionCount > 0) {
                 opinions.text = itemView.context.getString(
                     R.string.community_opinions_badge, item.opinionCount,

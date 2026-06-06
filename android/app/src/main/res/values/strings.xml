@@ -187,6 +187,9 @@
     <string name="community_my_opinions_subtitle">Diagnoses you\'ve weighed in on</string>
     <string name="community_my_opinions_empty">You haven\'t sent any opinions yet.</string>
     <string name="result_get_second_opinion">Get a second opinion</string>
+    <string name="result_second_opinion_waiting">Waiting for second opinions…</string>
+    <string name="result_second_opinion_failed">Couldn\'t request a second opinion. Try again.</string>
+    <string name="community_wants_opinion_badge">Wants a second opinion</string>
     <string name="similar_scans_chip_format">%1$s · %2$d</string>
 
     <!-- Nearby scans feed (social-style, opened from the camera screen) -->

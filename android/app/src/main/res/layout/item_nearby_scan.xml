@@ -72,6 +72,24 @@
                     android:ellipsize="end"
                     tools:text="Berlin, Germany · 2h ago" />
 
+                <!-- Shown when the scanner is waiting on the community for a
+                     second opinion — a cue for viewers to weigh in. -->
+                <TextView
+                    android:id="@+id/tv_nearby_wants_opinion"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:drawablePadding="4dp"
+                    android:gravity="center_vertical"
+                    android:text="@string/community_wants_opinion_badge"
+                    android:textAppearance="@style/TextAppearance.App.Caption"
+                    android:textColor="@color/warning_amber"
+                    android:fontFamily="sans-serif-medium"
+                    app:drawableStartCompat="@drawable/ic_community"
+                    app:drawableTint="@color/warning_amber"
+                    android:visibility="gone"
+                    tools:visibility="visible" />
+
             </LinearLayout>
 
         </LinearLayout>

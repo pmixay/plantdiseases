@@ -204,6 +204,41 @@ class ScanRepository(
         }
 
     /**
+     * Flag the scanner's OWN scan as wanting a community second opinion.
+     * The scanner doesn't suggest a diagnosis — they raise a hand and
+     * wait for others to weigh in. Returns `true` when the server
+     * actually flagged an owned community row; `false` (still a success)
+     * when no owned row exists yet — the community upload is
+     * fire-and-forget and the user may have opted out of sharing. The UI
+     * shows its local "waiting" state regardless.
+     */
+    suspend fun requestSecondOpinion(
+        scanId: String,
+        userPseudoId: String,
+    ): Result<Boolean> =
+        withContext(Dispatchers.IO) {
+            try {
+                val response = apiService.communityRequestOpinion(
+                    com.plantdiseases.app.data.model.CommunityRequestOpinionRequest(
+                        scanId = scanId,
+                        userPseudoId = userPseudoId,
+                    ),
+                )
+                if (response.isSuccessful && response.body() != null) {
+                    Result.success(response.body()!!.flagged)
+                } else {
+                    Result.failure(Exception("Server error: ${response.code()}"))
+                }
+            } catch (e: SocketTimeoutException) {
+                Result.failure(ServerTimeoutException())
+            } catch (e: UnknownHostException) {
+                Result.failure(NoNetworkException())
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+    /**
      * Send a single AI Plant Doctor turn. The server returns 200 OK
      * even when no API key is configured or the per-session budget is
      * exhausted; in that case the response carries `available=false`

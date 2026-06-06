@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS community_scans (
     thumb_path      TEXT,
     locale          TEXT,
     client_ip_hash  TEXT,
+    wants_opinion   INTEGER NOT NULL DEFAULT 0,
     created_at      INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_community_region          ON community_scans(region, created_at);
@@ -153,6 +154,10 @@ def init_db() -> None:
             _add_column_if_missing(conn, "community_scans", "species_lower", "TEXT")
             conn.execute("CREATE INDEX IF NOT EXISTS ix_community_species_lower ON community_scans(species_lower)")
             conn.execute("UPDATE community_scans SET species_lower = LOWER(species) WHERE species IS NOT NULL AND species_lower IS NULL")
+            # "Wants a second opinion" flag — set after upload by the
+            # scanner via /api/community/request-opinion. Older rows
+            # default to 0 (no request).
+            _add_column_if_missing(conn, "community_scans", "wants_opinion", "INTEGER NOT NULL DEFAULT 0")
         _initialised = True
         logger.info("Community DB ready at %s", COMMUNITY_DB_PATH)
 
@@ -231,6 +236,28 @@ def record_scan(
             ),
         )
         return int(cur.lastrowid or 0)
+
+
+def set_wants_opinion(scan_id: str, user_pseudo_id: str) -> bool:
+    """Flag the owner's shared scan as wanting a community second opinion.
+
+    Owner-scoped: only updates a row matching BOTH ``scan_id`` and
+    ``user_pseudo_id``, so a user can never flag someone else's scan.
+    Returns ``True`` when a row was flagged, ``False`` when no owned row
+    exists yet — e.g. the fire-and-forget community upload hasn't landed,
+    or the user opted out of sharing. The caller degrades gracefully on
+    ``False`` (the scanner still sees the local "waiting" state).
+    """
+    init_db()
+    if not scan_id or not user_pseudo_id:
+        return False
+    with _write_lock, _connect() as conn:
+        cur = conn.execute(
+            "UPDATE community_scans SET wants_opinion = 1 "
+            "WHERE scan_id = ? AND user_pseudo_id = ?",
+            (scan_id, user_pseudo_id),
+        )
+        return int(cur.rowcount or 0) > 0
 
 
 def record_opinion(
@@ -367,7 +394,7 @@ def scans_by_species(
     with _connect() as conn:
         rows = conn.execute(
             "SELECT scan_id, country, region, disease, confidence, species, "
-            "species_score, thumb_path, locale, created_at "
+            "species_score, thumb_path, locale, created_at, wants_opinion "
             "FROM community_scans WHERE species_lower = ?"
             + extra
             + " ORDER BY created_at DESC LIMIT ?",
@@ -397,7 +424,7 @@ def nearby_scans(
         def _query(where_extra: str, params: list, take: int) -> list[dict]:
             sql = (
                 "SELECT scan_id, country, region, disease, confidence, species, "
-                "species_score, thumb_path, locale, created_at "
+                "species_score, thumb_path, locale, created_at, wants_opinion "
                 "FROM community_scans WHERE country = ? "
                 + where_extra
                 + " ORDER BY created_at DESC LIMIT ?"
@@ -458,10 +485,17 @@ def nearby_scans(
                 base_params + [disease],
                 limit,
             ))
-        if len(out) < limit and region_clean:
-            _append_unique(_query(region_extra, region_params, limit))
-        if len(out) < limit:
-            _append_unique(_query(base_extra, base_params, limit))
+        # Disease-agnostic fallback buckets (region-only, then
+        # country-only). These pad the feed with *other* diseases, so we
+        # only reach for them when the caller did NOT scope to a disease.
+        # A disease-scoped "similar scans" request must never return rows
+        # of a different disease — better to return fewer (or none) than
+        # to mislead the user with unrelated verdicts.
+        if not disease:
+            if len(out) < limit and region_clean:
+                _append_unique(_query(region_extra, region_params, limit))
+            if len(out) < limit:
+                _append_unique(_query(base_extra, base_params, limit))
         return out[:limit]
 
 
@@ -609,6 +643,7 @@ def _row_to_dict(row: tuple) -> dict:
         "thumb_path": row[7],
         "locale": row[8],
         "created_at": int(row[9]),
+        "wants_opinion": bool(row[10]) if len(row) > 10 else False,
     }
 
 

@@ -98,6 +98,9 @@ try:
         scans_by_species as community_scans_by_species,
     )
     from .community import (
+        set_wants_opinion as community_set_wants_opinion,
+    )
+    from .community import (
         stats_snapshot as community_stats_snapshot,
     )
     from .config import get, get_float, get_int, get_list, get_str
@@ -182,6 +185,9 @@ except ImportError:
     )
     from community import (
         scans_by_species as community_scans_by_species,
+    )
+    from community import (
+        set_wants_opinion as community_set_wants_opinion,
     )
     from community import (
         stats_snapshot as community_stats_snapshot,
@@ -2416,6 +2422,52 @@ async def community_opinion_submit(payload: CommunityOpinionRequest, request: Re
     return JSONResponse(
         content={"ok": True, "count": len(result["opinions"]), **result}
     )
+
+
+class CommunityRequestOpinionRequest(BaseModel):
+    scan_id: str = Field(..., min_length=1, max_length=128)
+    user_pseudo_id: str = Field(..., min_length=1, max_length=128)
+
+
+@api_router.post("/community/request-opinion")
+async def community_request_opinion(
+    payload: CommunityRequestOpinionRequest, request: Request,
+):
+    """Flag the scanner's own shared scan as wanting a second opinion.
+
+    Unlike ``/community/opinion`` (where a *viewer* suggests a diagnosis
+    for someone else's scan), this is the *scanner* raising their hand:
+    "I'm unsure — community, please weigh in." The flag is owner-scoped
+    (the update only matches a row owned by ``user_pseudo_id``) and
+    idempotent.
+
+    Degrades gracefully: the community upload is fire-and-forget and the
+    user may have opted out of sharing, so the owned row might not exist
+    yet. We still return 200 with ``flagged: false`` — the client shows
+    its local "waiting for the community" state regardless.
+    """
+    sid = payload.scan_id.strip()
+    pid = payload.user_pseudo_id.strip()
+    client_ip = _client_ip(request)
+    ip_hash = hash_client_ip(client_ip)
+    loop = asyncio.get_running_loop()
+    today = await loop.run_in_executor(
+        _get_inference_executor(),
+        lambda: community_daily_opinion_writes(ip_hash),
+    )
+    if today >= COMMUNITY_OPINION_DAILY_QUOTA:
+        raise HTTPException(status_code=429, detail="Daily opinion quota reached.")
+    try:
+        flagged = await loop.run_in_executor(
+            _get_inference_executor(),
+            lambda: community_set_wants_opinion(sid, pid),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Community request-opinion failed: %s", exc)
+        raise HTTPException(
+            status_code=500, detail="Failed to request opinion",
+        ) from exc
+    return JSONResponse(content={"ok": True, "flagged": bool(flagged)})
 
 
 @api_router.get("/community/opinions/{scan_id}")

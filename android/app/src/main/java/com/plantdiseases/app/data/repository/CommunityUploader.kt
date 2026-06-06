@@ -98,11 +98,20 @@ class CommunityUploader(
      * The server's CommunityScanRequest constrains ``disease`` to the
      * known class set (see ``_FEEDBACK_ALLOWED_CORRECTIONS`` in
      * main.py). The scan's stored ``diseaseName`` is a localised
-     * display string; we want the canonical key. Prefer the
-     * top-class key from ``all_probs``; fall back to a normalised
-     * version of the display name as a last resort.
+     * display string; we want the canonical key.
+     *
+     * Prefer the server's DISPLAYED verdict key (``classKey`` /
+     * ``class_name``) — it already reflects the weak-healthy reroute /
+     * healthy-fallback / OOD gate, so the community row carries the same
+     * disease the user actually saw. Using ``argmax(all_probs)`` here
+     * instead would store the RAW top class (e.g. "healthy") for a scan
+     * the user was shown as a disease, so "same disease near you" could
+     * never match it. Fall back to the raw argmax, then to a normalised
+     * display name, only when the verdict key is absent (legacy/partial
+     * responses).
      */
     private fun canonicalDiseaseKey(analysis: AnalysisResponse): String? {
+        analysis.classKey?.takeIf { it.isNotBlank() }?.let { return it }
         val byProbs = analysis.allProbs?.entries?.maxByOrNull { it.value }?.key
         if (!byProbs.isNullOrBlank()) return byProbs
         return analysis.diseaseName

@@ -443,14 +443,34 @@ class ResultActivity : AppCompatActivity() {
                 finish()
             }
 
-            // When unsure, let the user crowd-source a verdict on their own
-            // (already community-shared) scan, keyed by its client scan id.
+            // When unsure, let the user raise a hand for a community second
+            // opinion on their OWN scan. We flag the shared scan server-side
+            // (keyed by its client scan id); other users then weigh in from
+            // the "scans near you" feed, where flagged scans show a badge.
+            // The scanner does NOT pick a diagnosis — they wait for others —
+            // so we switch the button to a waiting state on tap.
             btnSecondOpinion.setOnClickListener {
-                CommunityOpinionSheet.show(
-                    supportFragmentManager,
-                    scan.clientScanId,
-                    classKeyDisplayName(repository.topClassKey(scan) ?: "", isRu),
-                )
+                val pseudoId =
+                    com.plantdiseases.app.util.TelemetryIds.userPseudoId(this@ResultActivity)
+                btnSecondOpinion.isEnabled = false
+                btnSecondOpinion.setText(R.string.result_second_opinion_waiting)
+                lifecycleScope.launch {
+                    repository.requestSecondOpinion(scan.clientScanId, pseudoId)
+                        .onFailure {
+                            // Transport failure — let the user try again.
+                            // (A `flagged = false` success still counts: the
+                            // community row may not have landed yet, but the
+                            // request was accepted, so we keep the waiting
+                            // state in that case.)
+                            btnSecondOpinion.isEnabled = true
+                            btnSecondOpinion.setText(R.string.result_get_second_opinion)
+                            android.widget.Toast.makeText(
+                                this@ResultActivity,
+                                R.string.result_second_opinion_failed,
+                                android.widget.Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                }
             }
 
             // Animate cards from bottom
@@ -773,7 +793,12 @@ class ResultActivity : AppCompatActivity() {
         empty.visibility = View.GONE
         chips.visibility = View.GONE
 
-        val diseaseKey = repository.topClassKey(scan)
+        // Scope the carousel by the verdict the user actually SAW — the
+        // server's reroute-aware displayed class — not the raw argmax.
+        // After a weak-healthy reroute the raw top is "healthy" while the
+        // user was shown a disease; querying by the raw top would surface
+        // "healthy" neighbours for a disease verdict (and vice-versa).
+        val diseaseKey = repository.verdictClassKey(scan)
             ?: scan.diseaseName.lowercase().replace(' ', '_')
         val app = application as PlantDiseasesApp
         val pseudoId = com.plantdiseases.app.util.TelemetryIds.userPseudoId(this)
@@ -869,16 +894,13 @@ class ResultActivity : AppCompatActivity() {
             result.onSuccess { response ->
                 card.visibility = View.VISIBLE
                 val label = resolved.displayLabel
-                // When the user filters by chip, restrict the carousel
-                // strictly — the server may return same-locality
-                // fillers of other diseases when the chip's bucket is
-                // sparse, and those would defeat the purpose of the
-                // filter.
-                val items = if (filterDisease != null) {
-                    response.items.filter { it.disease == filterDisease }
-                } else {
-                    response.items
-                }
+                // Always restrict the carousel to the effective disease —
+                // both on first render (the current scan's verdict) and on
+                // chip taps. The server now refuses to pad a disease-scoped
+                // query with other diseases, but we filter defensively too
+                // so a cached response from an older deployment can't leak
+                // unrelated verdicts into a "same disease near you" strip.
+                val items = response.items.filter { it.disease == effectiveDisease }
                 val total = response.summary?.last7d ?: items.size
 
                 if (items.isEmpty()) {

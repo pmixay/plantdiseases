@@ -30,6 +30,7 @@ def isolated_community(tmp_path, monkeypatch):
     server_main.community_region_summary = comm.region_summary
     server_main.community_stats_snapshot = comm.stats_snapshot
     server_main.community_delete_for_user = comm.delete_for_user
+    server_main.community_set_wants_opinion = comm.set_wants_opinion
     server_main.init_community_db = comm.init_db
     server_main.COMMUNITY_THUMB_DIR = comm.COMMUNITY_THUMB_DIR
     yield db_path, thumb_dir
@@ -259,6 +260,86 @@ def test_community_nearby_hides_not_a_plant(client, isolated_community):
         params={"region": "Berlin", "country": "DE", "disease": "not_a_plant"},
     )
     assert all(item["disease"] != "not_a_plant" for item in r2.json()["items"])
+
+
+def test_community_nearby_disease_filter_is_strict(client, isolated_community):
+    """A disease-scoped query must return ONLY that disease — never the
+    region/country fillers of other diseases. This is the "similar scans
+    near you" contract: same-disease or nothing, so the user is never
+    shown an unrelated verdict dressed up as a 'similar' scan.
+    """
+    for i, disease in enumerate([
+        "powdery_mildew", "gray_mold_botrytis", "healthy", "leaf_spot",
+    ]):
+        client.post(
+            "/api/community/scan",
+            data=_form(
+                scan_id=f"strict{i:05d}",
+                user_pseudo_id="pseudo-strict-x",
+                region="Lyon", country="FR",
+                disease=disease,
+            ),
+        )
+    r = client.get(
+        "/api/community/nearby",
+        params={"region": "Lyon", "country": "FR", "disease": "powdery_mildew", "limit": 10},
+    )
+    assert r.status_code == 200, r.text
+    items = r.json()["items"]
+    # Only the single powdery_mildew row — no gray_mold / healthy / leaf_spot
+    # fillers padding the carousel.
+    assert [item["disease"] for item in items] == ["powdery_mildew"]
+
+
+def test_community_request_opinion_flags_owner_scan(client, isolated_community):
+    """The scanner can flag THEIR OWN scan as wanting a second opinion;
+    the flag then surfaces on the nearby feed (``wants_opinion: true``)
+    for other users to act on. A non-owner can't flag the scan."""
+    client.post(
+        "/api/community/scan",
+        data=_form(
+            scan_id="wantsopinion1",
+            user_pseudo_id="pseudo-owner-x",
+            region="Oslo", country="NO",
+            disease="leaf_spot",
+        ),
+    )
+    # Wrong user can't flag someone else's scan → flagged false.
+    r_wrong = client.post(
+        "/api/community/request-opinion",
+        json={"scan_id": "wantsopinion1", "user_pseudo_id": "pseudo-not-owner"},
+    )
+    assert r_wrong.status_code == 200, r_wrong.text
+    assert r_wrong.json() == {"ok": True, "flagged": False}
+
+    # Owner flags it → flagged true.
+    r_owner = client.post(
+        "/api/community/request-opinion",
+        json={"scan_id": "wantsopinion1", "user_pseudo_id": "pseudo-owner-x"},
+    )
+    assert r_owner.status_code == 200, r_owner.text
+    assert r_owner.json() == {"ok": True, "flagged": True}
+
+    # The flag surfaces to another user browsing the feed.
+    r_feed = client.get(
+        "/api/community/nearby",
+        params={"region": "Oslo", "country": "NO", "user_pseudo_id": "pseudo-viewer-z"},
+    )
+    items = r_feed.json()["items"]
+    assert len(items) == 1
+    assert items[0]["scan_id"] == "wantsopinion1"
+    assert items[0]["wants_opinion"] is True
+
+
+def test_community_request_opinion_missing_row_degrades(client, isolated_community):
+    """Flagging a scan that never made it into the corpus (upload raced
+    or the user opted out of sharing) is a graceful no-op, not an error."""
+    r = client.post(
+        "/api/community/request-opinion",
+        json={"scan_id": "neveruploaded", "user_pseudo_id": "pseudo-owner-x"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json() == {"ok": True, "flagged": False}
 
 
 def test_community_nearby_handles_empty_region(client, isolated_community):

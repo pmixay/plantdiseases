@@ -53,11 +53,13 @@ class NearbyScansAdapter(
         private val label: TextView = itemView.findViewById(R.id.tv_nearby_label)
         private val meta: TextView = itemView.findViewById(R.id.tv_nearby_meta)
         private val opinions: TextView = itemView.findViewById(R.id.tv_nearby_opinions)
+        private val wantsOpinion: TextView = itemView.findViewById(R.id.tv_nearby_wants_opinion)
         private val opinionBtn: MaterialButton = itemView.findViewById(R.id.btn_nearby_opinion)
 
         fun bind(item: CommunityScanItem) {
             label.text = displayName(item.disease)
             meta.text = buildMeta(item)
+            wantsOpinion.visibility = if (item.wantsOpinion) View.VISIBLE else View.GONE
 
             if (item.opinionCount > 0) {
                 opinions.text = itemView.context.getString(
