@@ -8,9 +8,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
-import androidx.core.os.LocaleListCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
@@ -190,26 +188,21 @@ class ProfileFragment : Fragment() {
     }
 
     private fun switchLanguage() {
-        // Two-step:
-        //   1) Persist the new language for our own attachBaseContext
-        //      hook — that's what every activity reads on (re)create and
-        //      stays the single source of truth for resource resolution.
-        //   2) Hand the change to AppCompatDelegate, which recreates the
-        //      activity itself via LocaleManager (API 33+) or the
-        //      AppCompat backport (API <33) — the same path the theme
-        //      switch relies on.
+        // Locale is owned entirely by LocaleHelper: every activity's
+        // attachBaseContext re-reads the saved language and wraps its
+        // context (see MainActivity / ResultActivity / …), so persisting
+        // the new value and recreating the host is all that's needed —
+        // the rebuilt activity resolves every resource in the new locale.
         //
-        // We deliberately do NOT add a manual fade + recreate() here.
-        // The old `decorView.animate().alpha(0f) { recreate() }` hack
-        // faded the window to black and then raced AppCompat's own
-        // recreate, which landed on a black / frozen screen on some OEM
-        // builds — exactly the freeze documented in applyTheme(). The
-        // resource swap is near-instant, so letting AppCompat drive the
-        // single recreate is what reads as "smooth", with no black flash.
-        val newLang = LocaleHelper.toggleLanguage(requireContext())
-        AppCompatDelegate.setApplicationLocales(
-            LocaleListCompat.forLanguageTags(newLang),
-        )
+        // We must NOT also call AppCompatDelegate.setApplicationLocales()
+        // here. That spins up a *second*, framework-level locale change
+        // (LocaleManager on API 33+, the AppCompat backport below it) that
+        // raced our own attachBaseContext locale wrapping and left the
+        // window stuck on a black frame — the "app turns black" bug. One
+        // mechanism, one recreate. Theme switching stays smooth for the
+        // same reason: it only flips night-mode, never the locale.
+        LocaleHelper.toggleLanguage(requireContext())
+        requireActivity().recreate()
     }
 
     private fun setupThemeChips() {
