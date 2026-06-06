@@ -1539,9 +1539,9 @@ PREVENTION:
 
     /**
      * Bundled offline example photo for a guide article (a real shot of the
-     * disease / pest), or null where no photo applies — pure care topics, the
-     * "healthy" article, and scale insects (no asset shipped). Replaces the
-     * old Wikipedia fetch so the guide works fully offline.
+     * disease / pest), or null where no photo applies — pure care topics and
+     * the "healthy" article. Replaces the old Wikipedia fetch so the guide
+     * works fully offline.
      */
     fun exampleImageRes(guideId: String): Int? = when (guideId) {
         "powdery_mildew" -> R.drawable.guide_photo_powdery_mildew
@@ -1555,11 +1555,7 @@ PREVENTION:
         "spider_mites" -> R.drawable.guide_photo_spider_mites
         "aphids" -> R.drawable.guide_photo_aphids
         "mealybugs" -> R.drawable.guide_photo_mealybugs
-        // The classifier's generic "pests" verdict (and the Pests overview
-        // article) ship no dedicated photo — reuse the mealybug shot as a
-        // representative so the strip is never empty (matches the old
-        // "Mealybug" Wikipedia fallback).
-        "pests" -> R.drawable.guide_photo_mealybugs
+        "scale_insects" -> R.drawable.guide_photo_scale_insects
         "leaf_scorch_underwatering" -> R.drawable.guide_photo_leaf_scorch_underwatering
         "nutrient_deficiency" -> R.drawable.guide_photo_nutrient_deficiency
         "edema" -> R.drawable.guide_photo_edema
