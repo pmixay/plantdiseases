@@ -31,12 +31,14 @@
             android:background="@drawable/bg_handle" />
 
         <TextView
+            android:id="@+id/tv_opinion_title"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/community_opinion_title"
             android:textAppearance="@style/TextAppearance.App.Headline" />
 
         <TextView
+            android:id="@+id/tv_opinion_subtitle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/space_xs"
@@ -130,6 +132,7 @@
 
         <!-- Class picker -->
         <TextView
+            android:id="@+id/tv_opinion_pick_label"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/space_lg"

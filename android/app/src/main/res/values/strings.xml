@@ -188,7 +188,12 @@
     <string name="community_my_opinions_empty">You haven\'t sent any opinions yet.</string>
     <string name="result_get_second_opinion">Get a second opinion</string>
     <string name="result_second_opinion_waiting">Waiting for second opinions…</string>
+    <string name="result_second_opinion_view">View second opinions (%1$d)</string>
     <string name="result_second_opinion_failed">Couldn\'t request a second opinion. Try again.</string>
+    <string name="result_second_opinion_no_region">Couldn\'t find your region, so this scan can\'t be shared for a second opinion.</string>
+    <string name="community_opinion_replies_title">Community second opinions</string>
+    <string name="community_opinion_replies_subtitle">What the community thinks about your scan.</string>
+    <string name="community_opinion_replies_empty">No second opinions yet. Check back soon.</string>
     <string name="community_wants_opinion_badge">Wants a second opinion</string>
     <string name="similar_scans_chip_format">%1$s · %2$d</string>
 

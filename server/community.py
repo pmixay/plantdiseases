@@ -90,6 +90,13 @@ CREATE TABLE IF NOT EXISTS community_opinions (
 );
 CREATE INDEX IF NOT EXISTS ix_opinions_scan   ON community_opinions(scan_id, created_at);
 CREATE INDEX IF NOT EXISTS ix_opinions_author ON community_opinions(author_pseudo_id);
+
+CREATE TABLE IF NOT EXISTS community_opinion_requests (
+    scan_id        TEXT    PRIMARY KEY,
+    user_pseudo_id TEXT    NOT NULL,
+    created_at     INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_opinion_requests_user ON community_opinion_requests(user_pseudo_id);
 """
 
 _write_lock = threading.RLock()
@@ -213,12 +220,31 @@ def record_scan(
     region_value = region or ""
     species_lower = species.lower() if species else None
     with _write_lock, _connect() as conn:
+        # Dedup by scan_id. The community upload is fire-and-forget and a
+        # "request a second opinion" tap can also trigger an on-demand
+        # upload, so the same scan can be offered twice; we never want
+        # two feed rows for one scan. (There's no UNIQUE constraint on
+        # scan_id for back-compat with legacy rows, so we guard here.)
+        existing = conn.execute(
+            "SELECT id FROM community_scans WHERE scan_id = ? LIMIT 1",
+            (scan_id,),
+        ).fetchone()
+        if existing:
+            return int(existing[0])
+        # Honour a second-opinion request that arrived BEFORE this upload
+        # landed (the durable request store decouples the two orderings).
+        pending = conn.execute(
+            "SELECT 1 FROM community_opinion_requests "
+            "WHERE scan_id = ? AND user_pseudo_id = ? LIMIT 1",
+            (scan_id, user_pseudo_id),
+        ).fetchone()
+        wants_opinion = 1 if pending else 0
         cur = conn.execute(
             "INSERT INTO community_scans ("
             "  scan_id, user_pseudo_id, country, region, disease, confidence, "
             "  species, species_lower, species_score, thumb_path, locale, "
-            "  client_ip_hash, created_at"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "  client_ip_hash, wants_opinion, created_at"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 scan_id,
                 user_pseudo_id,
@@ -232,6 +258,7 @@ def record_scan(
                 thumb_path,
                 locale,
                 ip_hash,
+                wants_opinion,
                 now,
             ),
         )
@@ -239,25 +266,39 @@ def record_scan(
 
 
 def set_wants_opinion(scan_id: str, user_pseudo_id: str) -> bool:
-    """Flag the owner's shared scan as wanting a community second opinion.
+    """Durably record that the scan's owner wants a community second opinion.
 
-    Owner-scoped: only updates a row matching BOTH ``scan_id`` and
-    ``user_pseudo_id``, so a user can never flag someone else's scan.
-    Returns ``True`` when a row was flagged, ``False`` when no owned row
-    exists yet — e.g. the fire-and-forget community upload hasn't landed,
-    or the user opted out of sharing. The caller degrades gracefully on
-    ``False`` (the scanner still sees the local "waiting" state).
+    Owner-scoped: a user can only flag their own scan (the request is
+    keyed by ``user_pseudo_id`` and the scan-row update matches on it
+    too). The intent is written to ``community_opinion_requests`` FIRST,
+    so it survives even when the community upload hasn't landed yet — the
+    flag is then materialised onto the scan row either here (if it
+    already exists) or by :func:`record_scan` when the upload arrives.
+    This removes the upload/flag race that used to make the request a
+    silent no-op.
+
+    Returns ``True`` once the intent is recorded (i.e. for any non-blank
+    id pair). The caller can therefore trust the "waiting" state.
     """
     init_db()
     if not scan_id or not user_pseudo_id:
         return False
+    now = int(time.time())
     with _write_lock, _connect() as conn:
-        cur = conn.execute(
+        # Durable record of intent (idempotent — one request per scan).
+        conn.execute(
+            "INSERT INTO community_opinion_requests "
+            "(scan_id, user_pseudo_id, created_at) VALUES (?, ?, ?) "
+            "ON CONFLICT(scan_id) DO UPDATE SET user_pseudo_id = excluded.user_pseudo_id",
+            (scan_id, user_pseudo_id, now),
+        )
+        # Materialise onto the scan row if the upload has already landed.
+        conn.execute(
             "UPDATE community_scans SET wants_opinion = 1 "
             "WHERE scan_id = ? AND user_pseudo_id = ?",
             (scan_id, user_pseudo_id),
         )
-        return int(cur.rowcount or 0) > 0
+        return True
 
 
 def record_opinion(
@@ -596,6 +637,11 @@ def delete_for_user(user_pseudo_id: str) -> int:
         # Opinions this install authored on *other* people's scans also go.
         conn.execute(
             "DELETE FROM community_opinions WHERE author_pseudo_id = ?",
+            (user_pseudo_id,),
+        )
+        # Drop any pending second-opinion requests this install made.
+        conn.execute(
+            "DELETE FROM community_opinion_requests WHERE user_pseudo_id = ?",
             (user_pseudo_id,),
         )
     for row in rows:

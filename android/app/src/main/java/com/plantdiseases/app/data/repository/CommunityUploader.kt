@@ -88,6 +88,58 @@ class CommunityUploader(
         )
     }
 
+    /**
+     * Upload one already-saved scan on demand, deriving everything from
+     * the persisted [ScanEntity] (no live [AnalysisResponse] needed).
+     *
+     * Used when the scanner explicitly asks for a second opinion: that
+     * tap is consent to share THIS scan, so [force] bypasses the global
+     * uploads-enabled toggle. The disease key is the displayed verdict
+     * ([ScanEntity.displayedClassKey]) — the same reroute-aware key the
+     * normal upload path uses — so the shared row matches what the user
+     * saw. The server dedups by scan_id, so calling this for a scan that
+     * already uploaded is a harmless no-op.
+     */
+    suspend fun uploadFromEntity(
+        scan: ScanEntity,
+        force: Boolean = false,
+    ): UploadOutcome = withContext(Dispatchers.IO) {
+        if (!force && !CommunityPrefs.uploadsEnabled(context)) {
+            return@withContext UploadOutcome.OptedOut
+        }
+        val resolved = RegionResolver.resolveRegion(context)
+            ?: return@withContext UploadOutcome.NoRegion
+        val disease = scan.displayedClassKey?.takeIf { it.isNotBlank() }
+            ?: scan.diseaseName
+        if (disease in HIDDEN_COMMUNITY_DISEASES) {
+            return@withContext UploadOutcome.HiddenDisease
+        }
+        val scanId = scan.clientScanId.ifBlank { return@withContext UploadOutcome.MissingScanId }
+        val thumb = makeThumbnail(scan)
+        val locale = if (LocaleHelper.isRussian(context)) "ru" else "en"
+        val pseudoId = TelemetryIds.userPseudoId(context)
+        val result = scanRepository.uploadCommunityScan(
+            scanId = scanId,
+            userPseudoId = pseudoId,
+            country = resolved.country,
+            region = resolved.locality.orEmpty(),
+            disease = disease,
+            confidence = scan.confidence,
+            species = scan.speciesScientific,
+            speciesScore = scan.speciesScore,
+            locale = locale,
+            thumbnail = thumb,
+        )
+        thumb?.let { runCatching { it.delete() } }
+        result.fold(
+            onSuccess = { UploadOutcome.Uploaded },
+            onFailure = { exc ->
+                Log.i(TAG, "Community on-demand upload skipped: ${exc.message}")
+                UploadOutcome.Failed
+            },
+        )
+    }
+
     /** Outcome of one upload attempt — surfaced to callers only for
      *  logging; never user-visible. */
     enum class UploadOutcome {

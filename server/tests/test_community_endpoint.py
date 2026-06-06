@@ -304,42 +304,63 @@ def test_community_request_opinion_flags_owner_scan(client, isolated_community):
             disease="leaf_spot",
         ),
     )
-    # Wrong user can't flag someone else's scan → flagged false.
+    def feed_wants_opinion() -> bool:
+        items = client.get(
+            "/api/community/nearby",
+            params={"region": "Oslo", "country": "NO",
+                    "user_pseudo_id": "pseudo-viewer-z"},
+        ).json()["items"]
+        assert len(items) == 1 and items[0]["scan_id"] == "wantsopinion1"
+        return items[0]["wants_opinion"]
+
+    # A non-owner's request is recorded (the endpoint never errors), but
+    # owner-scoping means it is NEVER applied to the scan — the feed flag
+    # stays false.
     r_wrong = client.post(
         "/api/community/request-opinion",
         json={"scan_id": "wantsopinion1", "user_pseudo_id": "pseudo-not-owner"},
     )
     assert r_wrong.status_code == 200, r_wrong.text
-    assert r_wrong.json() == {"ok": True, "flagged": False}
+    assert r_wrong.json() == {"ok": True, "flagged": True}
+    assert feed_wants_opinion() is False
 
-    # Owner flags it → flagged true.
+    # The owner flags it → the flag surfaces to other users on the feed.
     r_owner = client.post(
         "/api/community/request-opinion",
         json={"scan_id": "wantsopinion1", "user_pseudo_id": "pseudo-owner-x"},
     )
     assert r_owner.status_code == 200, r_owner.text
     assert r_owner.json() == {"ok": True, "flagged": True}
-
-    # The flag surfaces to another user browsing the feed.
-    r_feed = client.get(
-        "/api/community/nearby",
-        params={"region": "Oslo", "country": "NO", "user_pseudo_id": "pseudo-viewer-z"},
-    )
-    items = r_feed.json()["items"]
-    assert len(items) == 1
-    assert items[0]["scan_id"] == "wantsopinion1"
-    assert items[0]["wants_opinion"] is True
+    assert feed_wants_opinion() is True
 
 
-def test_community_request_opinion_missing_row_degrades(client, isolated_community):
-    """Flagging a scan that never made it into the corpus (upload raced
-    or the user opted out of sharing) is a graceful no-op, not an error."""
+def test_community_request_opinion_missing_row_records_intent(client, isolated_community):
+    """Flagging a scan that hasn't made it into the corpus yet (the upload
+    raced behind the tap) is recorded durably — ``flagged: true`` — and
+    applied when the scan later lands, instead of being a silent no-op."""
     r = client.post(
         "/api/community/request-opinion",
-        json={"scan_id": "neveruploaded", "user_pseudo_id": "pseudo-owner-x"},
+        json={"scan_id": "racedupload", "user_pseudo_id": "pseudo-owner-x"},
     )
     assert r.status_code == 200, r.text
-    assert r.json() == {"ok": True, "flagged": False}
+    assert r.json() == {"ok": True, "flagged": True}
+
+    # When the upload finally arrives, the pending request materialises.
+    client.post(
+        "/api/community/scan",
+        data=_form(
+            scan_id="racedupload",
+            user_pseudo_id="pseudo-owner-x",
+            region="Oslo", country="NO",
+            disease="leaf_spot",
+        ),
+    )
+    items = client.get(
+        "/api/community/nearby",
+        params={"region": "Oslo", "country": "NO", "user_pseudo_id": "pseudo-viewer-z"},
+    ).json()["items"]
+    assert len(items) == 1 and items[0]["scan_id"] == "racedupload"
+    assert items[0]["wants_opinion"] is True
 
 
 def test_community_nearby_handles_empty_region(client, isolated_community):

@@ -55,6 +55,10 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         super.onViewCreated(view, savedInstanceState)
         scanId = arguments?.getString(ARG_SCAN_ID).orEmpty()
         currentName = arguments?.getString(ARG_CURRENT_NAME)
+        // View-only mode: the scan's OWNER is reading the second opinions
+        // they asked for — no class picker / note / send, just the
+        // consensus + replies.
+        val viewOnly = arguments?.getBoolean(ARG_VIEW_ONLY, false) ?: false
         if (scanId.isBlank()) {
             dismissAllowingStateLoss()
             return
@@ -75,6 +79,26 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
             ?: run { currentCard.visibility = View.GONE }
 
         val ctx = requireContext()
+        val cancelBtn = view.findViewById<MaterialButton>(R.id.btn_opinion_cancel)
+
+        if (viewOnly) {
+            // Reframe as "here's what the community thinks" and strip the
+            // input controls — the owner doesn't vote on their own scan.
+            view.findViewById<TextView>(R.id.tv_opinion_title)
+                .setText(R.string.community_opinion_replies_title)
+            view.findViewById<TextView>(R.id.tv_opinion_subtitle)
+                .setText(R.string.community_opinion_replies_subtitle)
+            view.findViewById<View>(R.id.tv_opinion_pick_label).visibility = View.GONE
+            chipGroup?.visibility = View.GONE
+            view.findViewById<View>(R.id.til_opinion_note).visibility = View.GONE
+            sendBtn?.visibility = View.GONE
+            emptyView?.setText(R.string.community_opinion_replies_empty)
+            cancelBtn.setText(R.string.close)
+            cancelBtn.setOnClickListener { dismiss() }
+            loadOpinions()
+            return
+        }
+
         CLASS_CATALOG.forEach { (key, labelRes) ->
             chipGroup?.addView(Chip(ctx).apply {
                 id = View.generateViewId()
@@ -90,8 +114,7 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
             sendBtn?.isEnabled = group.checkedChipId != View.NO_ID
         }
 
-        view.findViewById<MaterialButton>(R.id.btn_opinion_cancel)
-            .setOnClickListener { dismiss() }
+        cancelBtn.setOnClickListener { dismiss() }
         sendBtn?.setOnClickListener { submit() }
 
         loadOpinions()
@@ -272,6 +295,7 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         private const val TAG = "community-opinion-sheet"
         private const val ARG_SCAN_ID = "arg_scan_id"
         private const val ARG_CURRENT_NAME = "arg_current_name"
+        private const val ARG_VIEW_ONLY = "arg_view_only"
 
         /** Diagnosable classes a responder can pick. Keys must be present in
          *  the server's DISEASES_DATABASE or the POST is rejected (422).
@@ -295,6 +319,18 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
                 arguments = bundleOf(
                     ARG_SCAN_ID to scanId,
                     ARG_CURRENT_NAME to currentDisplayName,
+                )
+            }.show(fm, TAG)
+        }
+
+        /** Read-only variant for the scan's OWNER to view the second
+         *  opinions they requested — no class picker / note / send. */
+        fun showForOwner(fm: FragmentManager, scanId: String, currentDisplayName: String?) {
+            CommunityOpinionSheet().apply {
+                arguments = bundleOf(
+                    ARG_SCAN_ID to scanId,
+                    ARG_CURRENT_NAME to currentDisplayName,
+                    ARG_VIEW_ONLY to true,
                 )
             }.show(fm, TAG)
         }

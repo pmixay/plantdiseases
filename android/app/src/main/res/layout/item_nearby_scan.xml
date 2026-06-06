@@ -114,27 +114,15 @@
 
         </com.facebook.shimmer.ShimmerFrameLayout>
 
-        <!-- Footer: opinion count + second-opinion action -->
+        <!-- Footer: second-opinion action (left) + opinion count (right) -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:paddingStart="@dimen/space_lg"
-            android:paddingEnd="@dimen/space_sm"
+            android:paddingStart="@dimen/space_sm"
+            android:paddingEnd="@dimen/space_lg"
             android:paddingVertical="@dimen/space_xs">
-
-            <TextView
-                android:id="@+id/tv_nearby_opinions"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:textAppearance="@style/TextAppearance.App.Caption"
-                android:textColor="@color/primary"
-                android:fontFamily="sans-serif-medium"
-                android:visibility="gone"
-                tools:text="3 opinions"
-                tools:visibility="visible" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_nearby_opinion"
@@ -144,6 +132,20 @@
                 android:text="@string/nearby_scans_second_opinion"
                 app:icon="@drawable/ic_comment"
                 app:iconGravity="textStart" />
+
+            <TextView
+                android:id="@+id/tv_nearby_opinions"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="@dimen/space_sm"
+                android:textAppearance="@style/TextAppearance.App.Caption"
+                android:textColor="@color/primary"
+                android:fontFamily="sans-serif-medium"
+                android:textAlignment="viewEnd"
+                android:visibility="gone"
+                tools:text="3 opinions"
+                tools:visibility="visible" />
 
         </LinearLayout>
 

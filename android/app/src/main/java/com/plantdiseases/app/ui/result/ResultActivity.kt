@@ -42,6 +42,7 @@ import com.plantdiseases.app.data.model.FeedbackRequest
 import com.plantdiseases.app.data.model.TopProb
 import com.plantdiseases.app.util.TelemetryIds
 import com.plantdiseases.app.BuildConfig
+import com.plantdiseases.app.data.repository.CommunityUploader
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.ui.analysis.AnalysisActivity
@@ -444,40 +445,102 @@ class ResultActivity : AppCompatActivity() {
             }
 
             // When unsure, let the user raise a hand for a community second
-            // opinion on their OWN scan. We flag the shared scan server-side
-            // (keyed by its client scan id); other users then weigh in from
-            // the "scans near you" feed, where flagged scans show a badge.
-            // The scanner does NOT pick a diagnosis — they wait for others —
-            // so we switch the button to a waiting state on tap.
-            btnSecondOpinion.setOnClickListener {
-                val pseudoId =
-                    com.plantdiseases.app.util.TelemetryIds.userPseudoId(this@ResultActivity)
-                btnSecondOpinion.isEnabled = false
-                btnSecondOpinion.setText(R.string.result_second_opinion_waiting)
-                lifecycleScope.launch {
-                    repository.requestSecondOpinion(scan.clientScanId, pseudoId)
-                        .onFailure {
-                            // Transport failure — let the user try again.
-                            // (A `flagged = false` success still counts: the
-                            // community row may not have landed yet, but the
-                            // request was accepted, so we keep the waiting
-                            // state in that case.)
-                            btnSecondOpinion.isEnabled = true
-                            btnSecondOpinion.setText(R.string.result_get_second_opinion)
-                            android.widget.Toast.makeText(
-                                this@ResultActivity,
-                                R.string.result_second_opinion_failed,
-                                android.widget.Toast.LENGTH_SHORT,
-                            ).show()
-                        }
-                }
-            }
+            // opinion on their OWN scan — or, once replies arrive, view
+            // them. Wired in setupSecondOpinion().
+            setupSecondOpinion(scan, repository, isRu)
 
             // Animate cards from bottom
             animateCardsIn()
 
             // Toolbar overflow menu owns the delete action.
             pendingScanForToolbar = scan
+        }
+    }
+
+    /**
+     * Wire the "second opinion" control. Two modes:
+     *
+     *  - **Ask** (default): the scanner raises a hand. Tapping shares this
+     *    scan to the community (the tap is consent — so it works even if
+     *    global sharing is off, and the server dedups by scan id), then
+     *    durably flags it as wanting a second opinion. Other users see a
+     *    badge in their "scans near you" feed and weigh in. The scanner
+     *    does NOT pick a diagnosis — they wait.
+     *  - **View**: once replies exist, the button switches to showing the
+     *    community's opinions (read-only sheet) for this scan.
+     *
+     * We probe for existing opinions on load so a returning user lands
+     * straight in the "view replies" state.
+     */
+    private fun setupSecondOpinion(
+        scan: ScanEntity,
+        repository: ScanRepository,
+        isRu: Boolean,
+    ) {
+        val btn = binding.btnSecondOpinion
+        val displayName = classKeyDisplayName(repository.verdictClassKey(scan) ?: "", isRu)
+
+        fun openReplies() {
+            CommunityOpinionSheet.showForOwner(
+                supportFragmentManager, scan.clientScanId, displayName,
+            )
+        }
+        fun showViewReplies(count: Int) {
+            btn.isEnabled = true
+            btn.text = getString(R.string.result_second_opinion_view, count)
+            btn.setOnClickListener { openReplies() }
+        }
+        fun showWaiting() {
+            // Truthful now: the request is durably recorded server-side,
+            // so "waiting" always means the community can see the ask.
+            // Tappable so the user can check back for replies.
+            btn.isEnabled = true
+            btn.setText(R.string.result_second_opinion_waiting)
+            btn.setOnClickListener { openReplies() }
+        }
+
+        fun showAsk() {
+            btn.isEnabled = true
+            btn.setText(R.string.result_get_second_opinion)
+            btn.setOnClickListener {
+                btn.isEnabled = false
+                btn.setText(R.string.result_second_opinion_waiting)
+                val app = application as PlantDiseasesApp
+                val pseudoId =
+                    com.plantdiseases.app.util.TelemetryIds.userPseudoId(this@ResultActivity)
+                lifecycleScope.launch {
+                    // Ensure the scan is in the community corpus so others
+                    // can actually see the ask (force = explicit consent).
+                    val outcome = app.communityUploader.uploadFromEntity(scan, force = true)
+                    if (outcome == CommunityUploader.UploadOutcome.NoRegion) {
+                        showAsk()
+                        Toast.makeText(
+                            this@ResultActivity,
+                            R.string.result_second_opinion_no_region,
+                            Toast.LENGTH_LONG,
+                        ).show()
+                        return@launch
+                    }
+                    app.scanRepository.requestSecondOpinion(scan.clientScanId, pseudoId)
+                        .onSuccess { showWaiting() }
+                        .onFailure {
+                            showAsk()
+                            Toast.makeText(
+                                this@ResultActivity,
+                                R.string.result_second_opinion_failed,
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                }
+            }
+        }
+
+        showAsk()
+        // Upgrade to "view replies" if the community already responded.
+        lifecycleScope.launch {
+            repository.getCommunityOpinions(scan.clientScanId).onSuccess { resp ->
+                if (resp.opinions.isNotEmpty()) showViewReplies(resp.opinions.size)
+            }
         }
     }
 
