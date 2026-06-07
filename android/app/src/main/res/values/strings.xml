@@ -184,8 +184,10 @@
     <string name="community_opinions_badge">%1$d opinions</string>
     <string name="result_view_opinions">%1$d community opinions</string>
     <string name="community_my_opinions_title">My second opinions</string>
-    <string name="community_my_opinions_subtitle">Diagnoses you\'ve weighed in on</string>
     <string name="community_my_opinions_empty">You haven\'t sent any opinions yet.</string>
+    <string name="community_my_opinions_count_label">diagnoses you\'ve weighed in on</string>
+    <string name="community_my_opinions_breakdown">What you flag most</string>
+    <string name="community_my_opinions_recent">Recent</string>
     <string name="result_get_second_opinion">Get a second opinion</string>
     <string name="result_second_opinion_waiting">Waiting for second opinions…</string>
     <string name="result_second_opinion_view">View second opinions (%1$d)</string>

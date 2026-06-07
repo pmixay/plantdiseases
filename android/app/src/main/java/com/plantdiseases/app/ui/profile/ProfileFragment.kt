@@ -1,11 +1,15 @@
 package com.plantdiseases.app.ui.profile
 
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.text.TextUtils
 import android.transition.TransitionManager
+import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.content.ContextCompat
@@ -140,7 +144,9 @@ class ProfileFragment : Fragment() {
     }
 
     /** Load the second opinions this install has authored into the profile
-     *  card. Failure / empty both render the empty-state line. */
+     *  card: a headline count, a "what you flag most" mini bar chart, and a
+     *  styled list of recent opinions. Failure / empty both collapse to the
+     *  empty-state line. */
     private fun loadMyOpinions() {
         val app = requireActivity().application as PlantDiseasesApp
         val pseudoId = TelemetryIds.userPseudoId(requireContext())
@@ -149,34 +155,179 @@ class ProfileFragment : Fragment() {
             val result = app.scanRepository.getMyCommunityOpinions(pseudoId)
             val b = _binding ?: return@launch
             b.llMyOpinions.removeAllViews()
+            b.llMyOpinionsChart.removeAllViews()
             val opinions = result.getOrNull()?.opinions.orEmpty()
+
             if (opinions.isEmpty()) {
                 b.tvMyOpinionsEmpty.visibility = View.VISIBLE
-            } else {
-                b.tvMyOpinionsEmpty.visibility = View.GONE
-                opinions.forEach { b.llMyOpinions.addView(opinionRow(it, isRu)) }
+                b.llMyOpinionsStats.visibility = View.GONE
+                b.tvMyOpinionsBreakdownLabel.visibility = View.GONE
+                b.llMyOpinionsChart.visibility = View.GONE
+                b.tvMyOpinionsRecentLabel.visibility = View.GONE
+                return@launch
             }
+
+            b.tvMyOpinionsEmpty.visibility = View.GONE
+
+            // Headline stat — total diagnoses weighed in on. The label is a
+            // static string set in XML (matches the stats card convention of
+            // a big number + plain caption), so only the count is set here.
+            b.tvMyOpinionsCount.text = opinions.size.toString()
+            b.llMyOpinionsStats.visibility = View.VISIBLE
+
+            // "What you flag most" bar chart — opinion distribution by class,
+            // top 4. Only worth showing once there's more than one opinion.
+            val byDisease = opinions
+                .groupingBy { it.suggestedDisease }
+                .eachCount()
+                .entries
+                .sortedByDescending { it.value }
+                .take(4)
+            if (opinions.size >= 2 && byDisease.isNotEmpty()) {
+                val maxCount = byDisease.first().value
+                byDisease.forEach { (key, count) ->
+                    b.llMyOpinionsChart.addView(
+                        chartRow(diseaseLabel(key, isRu), count, maxCount),
+                    )
+                }
+                b.tvMyOpinionsBreakdownLabel.visibility = View.VISIBLE
+                b.llMyOpinionsChart.visibility = View.VISIBLE
+            } else {
+                b.tvMyOpinionsBreakdownLabel.visibility = View.GONE
+                b.llMyOpinionsChart.visibility = View.GONE
+            }
+
+            // Recent list (most recent first, capped so the card stays tidy).
+            val recent = opinions.sortedByDescending { it.createdAt }.take(8)
+            recent.forEach { b.llMyOpinions.addView(opinionRow(it, isRu)) }
+            b.tvMyOpinionsRecentLabel.visibility = View.VISIBLE
         }
     }
 
+    /** One bar in the "what you flag most" chart: a label + count above a
+     *  proportional fill bar. The fill/remainder split uses layout weights so
+     *  no post-measure pass is needed. */
+    private fun chartRow(label: String, count: Int, maxCount: Int): View {
+        val ctx = requireContext()
+        val root = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { bottomMargin = 10.dp() }
+        }
+
+        val head = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        head.addView(TextView(ctx).apply {
+            text = label
+            textSize = 13f
+            setTextColor(color(R.color.on_surface))
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        head.addView(TextView(ctx).apply {
+            text = count.toString()
+            textSize = 13f
+            setTextColor(color(R.color.on_surface_secondary))
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { marginStart = 8.dp() }
+        })
+
+        val track = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 8.dp(),
+            ).apply { topMargin = 5.dp() }
+            background = pill(color(R.color.divider))
+        }
+        val fillWeight = count.toFloat().coerceAtLeast(0.0001f)
+        val restWeight = (maxCount - count).toFloat().coerceAtLeast(0f)
+        track.addView(View(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, fillWeight)
+            background = pill(color(R.color.primary))
+        })
+        if (restWeight > 0f) {
+            track.addView(View(ctx).apply {
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, restWeight)
+            })
+        }
+
+        root.addView(head)
+        root.addView(track)
+        return root
+    }
+
+    /** A recent-opinion row: a primary dot, the disease label, and the note
+     *  underneath. Tapping opens the community sheet for that scan. */
     private fun opinionRow(op: CommunityOpinion, isRu: Boolean): View {
         val ctx = requireContext()
         val label = diseaseLabel(op.suggestedDisease, isRu)
-        val rowText = if (op.note.isBlank()) "•  $label" else "•  $label — ${op.note}"
-        return TextView(ctx).apply {
-            text = rowText
-            textSize = 14f
-            setTextColor(ContextCompat.getColor(ctx, R.color.on_surface))
-            val v = (6 * resources.displayMetrics.density).toInt()
+        val row = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            val v = 8.dp()
             setPadding(0, v, 0, v)
-            if (op.scanId.isNotBlank()) {
-                isClickable = true
-                setOnClickListener {
-                    CommunityOpinionSheet.show(parentFragmentManager, op.scanId, label)
-                }
+        }
+
+        row.addView(View(ctx).apply {
+            layoutParams = LinearLayout.LayoutParams(8.dp(), 8.dp()).apply {
+                topMargin = 6.dp()
+                marginEnd = 10.dp()
+            }
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(color(R.color.primary))
+            }
+        })
+
+        val col = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        col.addView(TextView(ctx).apply {
+            text = label
+            textSize = 14f
+            setTextColor(color(R.color.on_surface))
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        })
+        if (op.note.isNotBlank()) {
+            col.addView(TextView(ctx).apply {
+                text = op.note
+                textSize = 13f
+                setTextColor(color(R.color.on_surface_secondary))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = 2.dp() }
+            })
+        }
+        row.addView(col)
+
+        if (op.scanId.isNotBlank()) {
+            row.isClickable = true
+            row.setOnClickListener {
+                CommunityOpinionSheet.show(parentFragmentManager, op.scanId, label)
             }
         }
+        return row
     }
+
+    private fun color(res: Int): Int = ContextCompat.getColor(requireContext(), res)
+
+    private fun pill(fill: Int): GradientDrawable = GradientDrawable().apply {
+        shape = GradientDrawable.RECTANGLE
+        cornerRadius = 999f
+        setColor(fill)
+    }
+
+    private fun Int.dp(): Int =
+        (this * resources.displayMetrics.density).toInt()
 
     /** Class key -> localized display name via the guide article title. */
     private fun diseaseLabel(key: String, isRu: Boolean): String {

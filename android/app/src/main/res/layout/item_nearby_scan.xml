@@ -129,6 +129,11 @@
                 style="@style/Widget.Material3.Button.TextButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:paddingStart="@dimen/space_sm"
+                android:paddingEnd="@dimen/space_sm"
                 android:text="@string/nearby_scans_second_opinion"
                 app:icon="@drawable/ic_comment"
                 app:iconGravity="textStart" />

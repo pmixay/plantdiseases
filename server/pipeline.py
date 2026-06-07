@@ -338,9 +338,14 @@ def _apply_temperature(probs: dict[str, float], T: float) -> dict[str, float]:
 class PlantDiseasePipeline:
     """Orchestrates the two-stage detection → classification pipeline."""
 
-    # Cap the number of bboxes we re-classify per request. Distilled
-    # MobileNetV3-L on CPU costs ~10-15 ms per crop in INT8 ONNX, so
-    # 4 boxes adds ~40-60 ms — well within the 150 ms budget.
+    # Cap the number of bboxes we re-classify per request. NOTE: the
+    # backbone is now a frozen DINOv2 ViT-S/14, which is markedly heavier
+    # per crop on CPU than the retired MobileNetV3-L this cap was first
+    # tuned for — every crop here is a full ViT forward (they are batched
+    # into one sess.run, but the FLOPs add up). Crops + the folded
+    # whole-frame vote are the dominant cost of a scan, so lower this (or
+    # FOLD_WHOLE_FRAME_VOTE) before anything else if latency must drop
+    # further. Inference now uses all CPU cores (ONNX_INTRA_OP_THREADS=0).
     _MAX_RECLASSIFY = 4
 
     def __init__(

@@ -160,6 +160,11 @@
 
     </androidx.core.widget.NestedScrollView>
 
+    <!-- Starts invisible: the FAB's final visibility (shown for a populated
+         garden, hidden behind the empty-state CTA otherwise) isn't known
+         until plants load. Revealing it only after the first render avoids
+         the "Add plant" button flashing for a frame before the real state
+         is committed. -->
     <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
         android:id="@+id/garden_add_fab"
         android:layout_width="wrap_content"
@@ -168,6 +173,7 @@
         android:layout_marginEnd="@dimen/space_lg"
         android:layout_marginBottom="@dimen/space_xl"
         android:text="@string/add_plant"
+        android:visibility="invisible"
         app:icon="@drawable/ic_garden" />
 
 </FrameLayout>

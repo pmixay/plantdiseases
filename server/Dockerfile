@@ -26,10 +26,13 @@ FROM python:3.11.9-slim AS runtime
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    # Cap ONNX Runtime + OpenMP thread pools so they line up with the
-    # FastAPI inference executor (INFER_WORKERS) instead of fighting
-    # for cores. The classifier session also pins intra_op=1; this is
-    # the belt-and-braces for any other ORT-using code path.
+    # Cap NumPy/MKL's OpenMP pools to 1 — the heavy lifting is ONNX
+    # Runtime's own intra-op threadpool (driven by ONNX_INTRA_OP_THREADS,
+    # default = all physical cores), which is independent of these vars on
+    # the standard non-OpenMP ORT wheel. Pinning NumPy/MKL keeps the small
+    # pre/post-processing ops from spawning competing pools while a scan's
+    # ViT forward is using the cores. With INFER_WORKERS=1 (one inference
+    # at a time) that single scan gets the whole CPU.
     OMP_NUM_THREADS=1 \
     MKL_NUM_THREADS=1
 
@@ -67,9 +70,9 @@ HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD \
 
 # `--limit-concurrency 64` caps simultaneously-accepted connections —
 # beyond that uvicorn returns 503 instead of queueing unboundedly. With
-# INFER_WORKERS=2 and ~150 ms per analysis we'd never serve more than
-# ~13 req/s anyway; a 64-deep accept queue tolerates short bursts
-# without letting a slowloris-style flood exhaust the event loop.
+# INFER_WORKERS=1 a scan's heavy work is serialised through one executor
+# slot anyway; a 64-deep accept queue tolerates short bursts without
+# letting a slowloris-style flood exhaust the event loop.
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", \
      "--forwarded-allow-ips", "127.0.0.1", "--proxy-headers", \
      "--limit-concurrency", "64", "--timeout-keep-alive", "5"]

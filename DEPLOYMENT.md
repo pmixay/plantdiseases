@@ -33,7 +33,8 @@ as the legacy environment variable.
 | `max_file_size` | `10485760` (10 MB) | Hard cap on uploaded bytes. |
 | `max_image_dimension` | `4096` | Pixel limit per side, in addition to Pillow decompression-bomb guard. |
 | `inference_timeout` | `30` | Seconds before `/api/analyze` returns `504`. |
-| `infer_workers` | `2` | ThreadPoolExecutor workers for model inference. |
+| `infer_workers` | `1` | ThreadPoolExecutor workers for model inference. With `onnx_intra_op_threads=0` a single scan uses all cores, so one worker avoids CPU oversubscription. Raise it only if you also pin `onnx_intra_op_threads` low for real concurrency on a many-core host. |
+| `onnx_intra_op_threads` | `0` | Intra-op threads per ONNX session. `0` lets ONNX Runtime use all physical cores — the biggest CPU-latency lever for the DINOv2 ViT classifier. Pin lower on a shared host. |
 | `log_dir` | `logs` | Rotating file logs (5 MB × 5 backups). |
 | `host` / `port` | `0.0.0.0` / `8000` | Uvicorn bind. |
 | `openrouter_api_key` | *(empty)* | OpenRouter key. Without it the chat and care-plan polish return an offline fallback. |

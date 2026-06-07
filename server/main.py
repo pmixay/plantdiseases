@@ -506,7 +506,14 @@ PRUNE_INTERVAL_SECONDS = get_int("PRUNE_INTERVAL_SECONDS", 24 * 60 * 60)
 # that a leaked id can't be reused indefinitely.
 ISSUED_SCAN_ID_TTL_DAYS = get_int("ISSUED_SCAN_ID_TTL_DAYS", 30)
 
-INFER_WORKERS = get_int("INFER_WORKERS", 2)
+# One inference at a time by default. Each ONNX session now uses all
+# physical cores (ONNX_INTRA_OP_THREADS=0, see classifier.py/detector.py),
+# so running two concurrent inferences would oversubscribe the CPU and make
+# *both* slower. With the heavy DINOv2 ViT backbone, finishing one scan fast
+# beats interleaving two — single-user latency is what matters for this
+# rate-limited (1 RPS) workload. Operators expecting real concurrency on a
+# many-core host can raise this and lower ONNX_INTRA_OP_THREADS to match.
+INFER_WORKERS = get_int("INFER_WORKERS", 1)
 _inference_executor: ThreadPoolExecutor | None = None
 _executor_lock = threading.Lock()
 
@@ -576,17 +583,15 @@ pipeline: PlantDiseasePipeline | None = None
 _RATE_LIMIT_CLEANUP_INTERVAL = 300
 
 
-def _issue_scan_id() -> str:
-    """Mint a fresh URL-safe scan_id, persist it in the issued log,
-    and return it for the /analyze response. Run inside the request
-    handler so callers don't need to think about the DB hop.
+def _persist_issued_scan_id(scan_id: str) -> None:
+    """Persist an issued scan_id in the issued log. Best-effort: a failed
+    write must never break analyse — and, since this runs fire-and-forget on
+    the executor, swallowing here also avoids an unretrieved-future warning.
     """
-    scan_id = uuid.uuid4().hex
     try:
         record_issued_scan_id(scan_id)
     except Exception as exc:  # noqa: BLE001 — never fail analyse on the log write
         logger.warning("Failed to persist issued scan_id: %s", exc)
-    return scan_id
 
 
 def _client_ip(request: Request) -> str:
@@ -1006,6 +1011,13 @@ def _open_image(contents: bytes) -> Image.Image:
         raise HTTPException(status_code=400, detail="Cannot read image file") from exc
 
 
+def _sha256_hex(data: bytes) -> str:
+    """SHA-256 hex digest. Pulled out so the analyze handler can run it in
+    a thread — hashing up to MAX_UPLOAD_BYTES on the event loop would stall
+    every other request for the duration."""
+    return hashlib.sha256(data).hexdigest()
+
+
 # ── Endpoints ────────────────────────────────────────────────────────
 
 api_router = APIRouter()
@@ -1304,9 +1316,14 @@ async def analyze_image(
         logger.warning("Failed to read upload stream from %s: %s", fname, exc)
         raise HTTPException(status_code=400, detail="Could not read uploaded file") from exc
 
+    loop = asyncio.get_running_loop()
     try:
         _validate_image_bytes(contents)
-        img = _open_image(contents)
+        # Decode off the event loop. A large JPEG decode (img.load()) can
+        # block the loop for tens of ms — long enough to stall every other
+        # in-flight request — so it runs on the default threadpool. The
+        # cheap magic-byte check stays inline.
+        img = await loop.run_in_executor(None, _open_image, contents)
     except HTTPException:
         _record_error()
         raise
@@ -1357,7 +1374,7 @@ async def analyze_image(
     # with Russian names for every later English-locale viewer of the
     # same image (and vice versa).
     plantnet_lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
-    image_sha = hashlib.sha256(contents).hexdigest()
+    image_sha = await loop.run_in_executor(None, _sha256_hex, contents)
     cache_key = f"{image_sha}:{plantnet_lang}"
     cache_hit = _analyze_cache_get(cache_key)
     if cache_hit is not None:
@@ -1378,7 +1395,6 @@ async def analyze_image(
             cached_payload["toxicity_source"] = overridden["source"]
         return JSONResponse(content=cached_payload)
 
-    loop = asyncio.get_running_loop()
     # Fire the PlantNet species identify in parallel with the disease
     # pipeline. PlantNet is best-effort: if the call fails / times out
     # / the API key isn't configured, we still return a complete
@@ -1535,6 +1551,14 @@ async def analyze_image(
         "toxic_to_pets": False, "species_list": [], "source": "unknown",
     }
 
+    # Mint the scan_id synchronously (it must ride in the response) but
+    # persist it to the issued-ids log off the response path. The feedback
+    # gate only needs the row by the time the user submits feedback — long
+    # after they've viewed this result — so the SQLite write happens in the
+    # background instead of adding a DB round-trip to every analyse.
+    scan_id = uuid.uuid4().hex
+    loop.run_in_executor(None, _persist_issued_scan_id, scan_id)
+
     response_payload = {
         # Canonical class key the pipeline landed on AFTER all
         # post-processing (weak-healthy reroute, OOD gate, etc.).
@@ -1575,7 +1599,7 @@ async def analyze_image(
         # in main.py can confirm the feedback ties to a real scan
         # we ran. Stored in the issued_scan_ids table; expires after
         # ISSUED_SCAN_ID_TTL_DAYS.
-        "scan_id": _issue_scan_id(),
+        "scan_id": scan_id,
     }
     # Stash the freshly-built response under its (image_hash,
     # plantnet_lang) key so the NEXT identical upload from the same
