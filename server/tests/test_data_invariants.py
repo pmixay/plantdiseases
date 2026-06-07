@@ -245,23 +245,33 @@ def test_stage0_weakclass_supply_broadened():
     )
 
 
-def test_no_knowledge_distillation_in_pipeline():
-    """Report key finding: "Distillation is the wrong tool here." The
-    EfficientNetV2-S→MobileNetV3 KD chain must be gone — no teacher
-    forward, no KD loss term, no candidate-snapshot machinery. If a small
-    server model is ever needed the report says use DIST/DKD as a separate
-    effort, which §5 documents but does NOT run here."""
+def test_knowledge_distillation_scoped_to_aqua_only():
+    """Design invariant: the SERVER-served gamma/frontier model is the frozen
+    DINOv2 + MLP head — no distillation in that path. KD was deliberately
+    re-introduced ONLY to produce the **Aqua** on-device student
+    (MobileNetV3-Small, §5), gated behind the aqua family so it never touches
+    the gamma/frontier pipeline. The earlier EfficientNetV2-S→MobileNetV3
+    multi-candidate teacher-snapshot machinery (the genuinely wrong tool) must
+    stay gone."""
     src = _notebook_source()
+    # Legacy multi-candidate teacher/snapshot machinery must stay removed.
     for gone in ("ema_update", "_train_phase(", "classifier_candidates",
-                 "candidate_results", "mobilenet_v3"):
+                 "candidate_results"):
         assert gone not in src, (
-            f"distillation/student machinery {gone!r} is still present — "
-            f"the report says drop KD in favour of the frozen DINOv2 backbone"
+            f"legacy distillation machinery {gone!r} is back — only the scoped "
+            f"Aqua MobileNetV3 student KD should exist"
         )
-    # No live KD loss term (alpha*KD + (1-alpha)*CE). Mentions of "KD" are
-    # only allowed in prose explaining why it was removed.
-    assert not re.search(r"alpha\s*\*\s*kd", src, re.IGNORECASE), (
-        "a live KD loss term is still in the training loop"
+    # KD is gated behind the aqua family's distill flag, not run unconditionally.
+    assert "FAMILY_CONFIG.get('distill')" in src, (
+        "Aqua KD must be gated behind the aqua family's distill flag"
+    )
+    # The Aqua student is a MobileNetV3-Small distilled from the gamma teacher.
+    assert "mobilenet_v3_small" in src, (
+        "the Aqua student should be a MobileNetV3-Small distilled from gamma"
+    )
+    # The gamma/frontier production model stays the frozen DINOv2 + head.
+    assert "DINOv2Classifier" in src, (
+        "gamma/frontier production model must remain the frozen DINOv2 + head"
     )
 
 
