@@ -30,6 +30,20 @@ android {
             .replace("\\", "\\\\")
             .replace("\"", "\\\"")
         buildConfigField("String", "API_BASE_URL", "\"$configuredApiBaseUrl\"")
+
+        // The Aqua family runs a TFLite model on-device. Limit the bundled
+        // native .so libs to the ABIs real devices use — dropping x86/mips
+        // keeps the APK from carrying interpreter libs no phone will load.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+        }
+    }
+
+    // The .tflite model is already compressed internally; letting aapt
+    // re-deflate it bloats the APK and forces a slow inflate on load. Keep
+    // it stored so the interpreter can mmap it directly from assets.
+    androidResources {
+        noCompress += "tflite"
     }
 
     signingConfigs {
@@ -167,6 +181,12 @@ dependencies {
 
     // WorkManager (plant reminders)
     implementation("androidx.work:work-runtime-ktx:2.10.0")
+
+    // TensorFlow Lite — on-device inference for the Aqua model family.
+    // The model artefact (assets/models/aqua_classifier.tflite) is provisioned
+    // out of band like the server weights, never committed; AquaClassifier
+    // gates on its presence and the app degrades to the server when absent.
+    implementation("org.tensorflow:tensorflow-lite:2.16.1")
 
     // ─── Local JVM unit tests (./gradlew testDebugUnitTest) ───────────────
     // Robolectric lets the image / ML-diagnosis pipeline run on the JVM

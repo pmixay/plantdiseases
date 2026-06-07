@@ -16,8 +16,12 @@ import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.databinding.ActivityAnalysisBinding
 import com.plantdiseases.app.ui.result.ResultActivity
+import android.widget.Toast
+import com.plantdiseases.app.util.AquaClassifier
+import com.plantdiseases.app.util.AquaInference
 import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.ModelFamily
 import com.plantdiseases.app.util.ModelFamilyPrefs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -128,34 +132,35 @@ class AnalysisActivity : AppCompatActivity() {
 
             try {
                 val locale = if (LocaleHelper.isRussian(this@AnalysisActivity)) "ru" else "en"
-                // The tier the user picked on the scan screen. Aqua is an
-                // on-device family; until the offline engine is installed we
-                // fall back to the server (served as gamma-parity), tagging
-                // the request as aqua so the server still records the choice.
                 val family = ModelFamilyPrefs.selected(this@AnalysisActivity)
+
+                // Aqua runs fully on-device when its TFLite model is installed.
+                // This path needs no network and produces a (minimal) result
+                // directly. If the offline model isn't bundled, we hint that
+                // and fall back to the server (tagged family=aqua).
+                if (family == ModelFamily.AQUA) {
+                    if (AquaClassifier.isAvailable(this@AnalysisActivity)) {
+                        val response = runAquaOnDevice(imagePath)
+                        if (response != null) {
+                            proceedWithResult(imagePath, response)
+                            return@launch
+                        }
+                        // Inference failed — fall through to the server.
+                    } else {
+                        Toast.makeText(
+                            this@AnalysisActivity,
+                            getString(R.string.model_family_aqua_not_installed),
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                }
+
                 val result = app.scanRepository.analyzeImage(
                     uploadFile, locale = locale, family = family.id,
                 )
 
                 result.onSuccess { response ->
-                    val scanId = app.scanRepository.saveScan(imagePath, response)
-
-                    getSharedPreferences("plantdiseases_prefs", MODE_PRIVATE)
-                        .edit().putBoolean("new_scan_result", true).apply()
-
-                    // Fire-and-forget community upload — runs on the
-                    // application-scoped supervisor so it survives
-                    // this activity finish()ing to the result screen.
-                    val savedScan = app.scanRepository.getScanById(scanId)
-                    if (savedScan != null) {
-                        app.launchCommunityUpload(savedScan, response)
-                    }
-
-                    val intent = Intent(this@AnalysisActivity, ResultActivity::class.java).apply {
-                        putExtra(ResultActivity.EXTRA_SCAN_ID, scanId)
-                    }
-                    startActivity(intent)
-                    finish()
+                    proceedWithResult(imagePath, response)
                 }.onFailure { error ->
                     when (error) {
                         is com.plantdiseases.app.data.repository.ScanRepository.ServerTimeoutException ->
@@ -194,6 +199,52 @@ class AnalysisActivity : AppCompatActivity() {
             }
         }
     }
+
+    /** Persist a result (from server OR on-device Aqua), fire the community
+     *  upload, and navigate to the result screen. Shared by both paths. */
+    private suspend fun proceedWithResult(
+        imagePath: String,
+        response: com.plantdiseases.app.data.model.AnalysisResponse,
+    ) {
+        val app = application as PlantDiseasesApp
+        val scanId = app.scanRepository.saveScan(imagePath, response)
+
+        getSharedPreferences("plantdiseases_prefs", MODE_PRIVATE)
+            .edit().putBoolean("new_scan_result", true).apply()
+
+        // Fire-and-forget community upload — runs on the application-scoped
+        // supervisor so it survives this activity finish()ing to the result
+        // screen.
+        val savedScan = app.scanRepository.getScanById(scanId)
+        if (savedScan != null) {
+            app.launchCommunityUpload(savedScan, response)
+        }
+
+        val intent = Intent(this@AnalysisActivity, ResultActivity::class.java).apply {
+            putExtra(ResultActivity.EXTRA_SCAN_ID, scanId)
+        }
+        startActivity(intent)
+        finish()
+    }
+
+    /** Run the Aqua TFLite model on-device, off the main thread. Returns a
+     *  minimal AnalysisResponse, or null if decode/inference failed (caller
+     *  then falls back to the server). */
+    private suspend fun runAquaOnDevice(imagePath: String): com.plantdiseases.app.data.model.AnalysisResponse? =
+        withContext(Dispatchers.Default) {
+            val classifier = AquaClassifier.create(this@AnalysisActivity) ?: return@withContext null
+            try {
+                val bitmap = AquaClassifier.decodeForInference(imagePath) ?: return@withContext null
+                val probs = classifier.classify(bitmap)
+                bitmap.recycle()
+                AquaInference.buildResponse(probs)
+            } catch (e: Exception) {
+                Log.w(TAG, "Aqua on-device inference failed", e)
+                null
+            } finally {
+                classifier.close()
+            }
+        }
 
     private fun showError(title: String, detail: String) {
         binding.loadingLayout.visibility = View.GONE
