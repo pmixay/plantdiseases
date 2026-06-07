@@ -6,6 +6,10 @@ import android.os.Bundle
 import android.util.Log
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.resource.bitmap.CenterCrop
@@ -41,6 +45,17 @@ class AnalysisActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityAnalysisBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        // Edge-to-edge (enforced on Android 15 / targetSdk 35): inset the
+        // content region so the top preview clears the status bar and the
+        // bottom Cancel button clears the gesture / nav bar instead of sitting
+        // under it. Padding the root shifts both anchored edges inward.
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { v, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            v.updatePadding(top = bars.top, bottom = bars.bottom, left = bars.left, right = bars.right)
+            insets
+        }
 
         imagePath = intent.getStringExtra(EXTRA_IMAGE_PATH) ?: run {
             finish()

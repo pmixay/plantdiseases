@@ -84,7 +84,13 @@ class ResultActivity : AppCompatActivity() {
         ViewCompat.setOnApplyWindowInsetsListener(binding.appBar) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             view.updatePadding(top = bars.top)
-            binding.bottomActionBar.updatePadding(bottom = bars.bottom)
+            // Lift the bottom action bar above the gesture / nav bar. It's a
+            // MaterialCardView, whose setPadding() is a no-op (CardView manages
+            // its own padding) — so updatePadding() here did nothing and the
+            // buttons sat under the nav bar. setContentPadding() is the inset
+            // CardView actually honours; the frosted-glass background still
+            // fills down behind the bar while the buttons clear it.
+            binding.bottomActionBar.setContentPadding(0, 0, 0, bars.bottom)
             insets
         }
 
