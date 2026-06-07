@@ -34,16 +34,11 @@ android {
         // The Aqua family runs a TFLite model on-device. Limit the bundled
         // native .so libs to the ABIs real devices use — dropping x86/mips
         // keeps the APK from carrying interpreter libs no phone will load.
+        // (The model itself is downloaded from the server into filesDir, not
+        // bundled in the APK — see AquaModelManager.)
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
         }
-    }
-
-    // The .tflite model is already compressed internally; letting aapt
-    // re-deflate it bloats the APK and forces a slow inflate on load. Keep
-    // it stored so the interpreter can mmap it directly from assets.
-    androidResources {
-        noCompress += "tflite"
     }
 
     signingConfigs {

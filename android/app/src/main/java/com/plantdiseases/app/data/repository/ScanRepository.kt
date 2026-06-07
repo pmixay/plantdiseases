@@ -20,6 +20,7 @@ import com.plantdiseases.app.data.model.ProgressionResponse
 import com.plantdiseases.app.data.model.ScanHistoryItem
 import com.plantdiseases.app.data.remote.ApiService
 import com.plantdiseases.app.data.remote.PlantApiClient
+import com.plantdiseases.app.util.AquaModelManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -97,6 +98,45 @@ class ScanRepository(
                 } else {
                     Result.failure(Exception("Server error: ${response.code()}"))
                 }
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+    /**
+     * Download/update the Aqua on-device model from the server if needed.
+     * Best-effort: returns success(false) when there's nothing to do (no
+     * server model, or already up to date) and success(true) when a new model
+     * was installed. The model is fetched only when its sha differs from the
+     * installed one, so repeated calls are cheap (one manifest GET).
+     */
+    suspend fun syncAquaModel(context: android.content.Context): Result<Boolean> =
+        withContext(Dispatchers.IO) {
+            try {
+                val manifestResp = apiService.aquaManifest()
+                val manifest = manifestResp.body()
+                if (!manifestResp.isSuccessful || manifest == null || !manifest.available) {
+                    return@withContext Result.success(false)
+                }
+                val sha = manifest.sha256
+                val classes = manifest.classes
+                if (sha.isNullOrBlank() || classes == null) {
+                    return@withContext Result.success(false)
+                }
+                if (AquaModelManager.isUpToDate(context, sha)) {
+                    return@withContext Result.success(false)
+                }
+                val modelResp = apiService.aquaModel()
+                val body = modelResp.body()
+                if (!modelResp.isSuccessful || body == null) {
+                    return@withContext Result.failure(
+                        Exception("Aqua model download failed: ${modelResp.code()}")
+                    )
+                }
+                val installed = body.byteStream().use { stream ->
+                    AquaModelManager.install(context, stream, sha, manifest.version, classes)
+                }
+                Result.success(installed)
             } catch (e: Exception) {
                 Result.failure(e)
             }

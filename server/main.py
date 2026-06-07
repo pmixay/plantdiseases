@@ -346,6 +346,16 @@ FRONTIER_CLASSIFIER_PATH = FRONTIER_MODELS_DIR / "classifier.onnx"
 GUIDE_STATIC_DIR = Path(get_str(
     "GUIDE_STATIC_DIR", str(Path(__file__).resolve().parent / "static" / "guide")))
 
+# ── Aqua on-device model hosting ─────────────────────────────────────
+# The Aqua TFLite student is served to the app so it can download + cache it
+# (and pick up updates) instead of bundling it in the APK — same rationale as
+# the guide photos. The artefact is provisioned OUT OF BAND (a trained
+# .tflite, never committed, like the server weights); when absent the manifest
+# reports available:false and the app simply falls back to the server model.
+# Drop ``aqua_classifier.tflite`` + ``classes.json`` (from notebook §5) here.
+AQUA_STATIC_DIR = Path(get_str(
+    "AQUA_STATIC_DIR", str(Path(__file__).resolve().parent / "static" / "aqua")))
+
 # Model weights + calibration artefacts are NOT committed to the repo and
 # are NOT auto-downloaded. Provision them out of band: drop the trained
 # files (detector.{pt,onnx}, classifier.onnx, classes.json, ...) into
@@ -2842,6 +2852,66 @@ async def guide_photo(key: str):
         path,
         media_type="image/png",
         headers={"Cache-Control": "public, max-age=604800"},
+    )
+
+
+# Cache the model digest by (mtime, size) so we hash the (multi-MB) tflite
+# once per provisioned file instead of on every manifest poll.
+_aqua_sha_cache: dict[tuple, str] = {}
+
+
+def _aqua_model_sha256(path: Path, mtime: float, size: int) -> str:
+    key = (str(path), mtime, size)
+    cached = _aqua_sha_cache.get(key)
+    if cached is not None:
+        return cached
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    digest = h.hexdigest()
+    _aqua_sha_cache.clear()  # only ever one current model
+    _aqua_sha_cache[key] = digest
+    return digest
+
+
+@api_router.get("/aqua/manifest")
+async def aqua_manifest():
+    """Describe the hosted Aqua on-device model so the app can decide whether
+    to (re)download it. ``available:false`` when the artefact isn't provisioned
+    — the app then just uses the server model. ``sha256`` lets the client skip
+    a re-download when it already has the current bytes; ``classes`` is the
+    sidecar metadata (class order, input size, normalisation) the app needs to
+    run the model."""
+    model_path = AQUA_STATIC_DIR / "aqua_classifier.tflite"
+    meta_path = AQUA_STATIC_DIR / "classes.json"
+    if not model_path.is_file() or not meta_path.is_file():
+        return {"available": False}
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"available": False}
+    st = model_path.stat()
+    return {
+        "available": True,
+        "version": meta.get("model_version", "unknown"),
+        "sha256": _aqua_model_sha256(model_path, st.st_mtime, st.st_size),
+        "size_bytes": st.st_size,
+        "classes": meta,
+    }
+
+
+@api_router.get("/aqua/model")
+async def aqua_model():
+    """Serve the Aqua TFLite model bytes. 404 when not provisioned."""
+    model_path = AQUA_STATIC_DIR / "aqua_classifier.tflite"
+    if not model_path.is_file():
+        raise HTTPException(status_code=404, detail="Aqua model not provisioned")
+    return FileResponse(
+        model_path,
+        media_type="application/octet-stream",
+        filename="aqua_classifier.tflite",
+        headers={"Cache-Control": "no-cache"},
     )
 
 

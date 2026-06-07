@@ -212,8 +212,10 @@ class CameraFragment : Fragment() {
     }
 
     /** Refresh per-family availability from the server so the picker can grey
-     *  out frontier when it isn't enabled. Best-effort: failures keep the
-     *  last-known flags (frontier stays disabled). */
+     *  out frontier when it isn't enabled, and download/update the Aqua
+     *  on-device model when the server has one. Best-effort: failures keep the
+     *  last-known state (frontier stays disabled; the existing Aqua model, if
+     *  any, is untouched). */
     private fun syncModelCapabilities() {
         val app = requireActivity().application as PlantDiseasesApp
         viewLifecycleOwner.lifecycleScope.launch {
@@ -224,6 +226,12 @@ class CameraFragment : Fragment() {
                 // If frontier was selected but is no longer offered, the chip
                 // must reflect the fallback selection.
                 refreshModelFamilyChip()
+            }
+            // Pull the Aqua on-device model when the server hosts a new build.
+            // Runs on the app scope so a tab switch mid-download doesn't cancel
+            // it, and only transfers bytes when the sha actually changed.
+            app.appScope.launch {
+                app.scanRepository.syncAquaModel(requireContext().applicationContext)
             }
         }
     }

@@ -6,7 +6,7 @@ import android.graphics.BitmapFactory
 import android.util.Log
 import org.json.JSONObject
 import org.tensorflow.lite.Interpreter
-import java.io.FileInputStream
+import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.MappedByteBuffer
@@ -68,23 +68,19 @@ class AquaClassifier private constructor(
 
     companion object {
         private const val TAG = "AquaClassifier"
-        private const val MODEL_ASSET = "models/aqua_classifier.tflite"
-        private const val META_ASSET = "models/aqua_classes.json"
 
-        /** Whether the on-device Aqua model is installed in this build. */
-        fun isAvailable(context: Context): Boolean = try {
-            context.assets.open(MODEL_ASSET).use { true }
-        } catch (_: Exception) {
-            false
-        }
+        /** Whether the on-device Aqua model has been downloaded (see
+         *  [AquaModelManager]). The model is fetched from the server, not
+         *  bundled in the APK. */
+        fun isAvailable(context: Context): Boolean = AquaModelManager.isInstalled(context)
 
-        /** Build a classifier, or null if the asset is missing / unreadable. */
+        /** Build a classifier from the downloaded model, or null if it isn't
+         *  installed / is unreadable. */
         fun create(context: Context): AquaClassifier? {
+            if (!AquaModelManager.isInstalled(context)) return null
             return try {
                 val model = loadModelFile(context)
-                val meta = JSONObject(
-                    context.assets.open(META_ASSET).bufferedReader().use { it.readText() }
-                )
+                val meta = JSONObject(AquaModelManager.classesFile(context).readText())
                 val classes = meta.getJSONArray("class_names")
                     .let { arr -> (0 until arr.length()).map { arr.getString(it) } }
                 val size = meta.optJSONObject("training")?.optInt("img_size", 224) ?: 224
@@ -100,11 +96,9 @@ class AquaClassifier private constructor(
         }
 
         private fun loadModelFile(context: Context): MappedByteBuffer {
-            val fd = context.assets.openFd(MODEL_ASSET)
-            FileInputStream(fd.fileDescriptor).use { fis ->
-                return fis.channel.map(
-                    FileChannel.MapMode.READ_ONLY, fd.startOffset, fd.declaredLength,
-                )
+            val file = AquaModelManager.modelFile(context)
+            RandomAccessFile(file, "r").use { raf ->
+                return raf.channel.map(FileChannel.MapMode.READ_ONLY, 0, raf.length())
             }
         }
 

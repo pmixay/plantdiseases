@@ -948,6 +948,40 @@
         }
       }
     },
+    "/api/aqua/manifest": {
+      "get": {
+        "summary": "Aqua Manifest",
+        "description": "Describe the hosted Aqua on-device model so the app can decide whether\nto (re)download it. ``available:false`` when the artefact isn't provisioned\n— the app then just uses the server model. ``sha256`` lets the client skip\na re-download when it already has the current bytes; ``classes`` is the\nsidecar metadata (class order, input size, normalisation) the app needs to\nrun the model.",
+        "operationId": "aqua_manifest_api_aqua_manifest_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/aqua/model": {
+      "get": {
+        "summary": "Aqua Model",
+        "description": "Serve the Aqua TFLite model bytes. 404 when not provisioned.",
+        "operationId": "aqua_model_api_aqua_model_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/community/user/{user_pseudo_id}": {
       "delete": {
         "summary": "Community Scan Delete User",

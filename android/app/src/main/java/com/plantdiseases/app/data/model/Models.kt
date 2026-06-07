@@ -181,6 +181,19 @@ data class FamilyCapability(
     @SerializedName("model_family") val modelFamily: String? = null,
 )
 
+/** Describes the server-hosted Aqua on-device model (GET /api/aqua/manifest)
+ *  so the app can download it once and re-download only when it changes. */
+data class AquaManifestResponse(
+    @SerializedName("available") val available: Boolean = false,
+    @SerializedName("version") val version: String? = null,
+    @SerializedName("sha256") val sha256: String? = null,
+    @SerializedName("size_bytes") val sizeBytes: Long = 0,
+    // The classes.json sidecar passed through verbatim — persisted next to the
+    // downloaded .tflite so AquaClassifier reads the same metadata the server
+    // shipped (class order, input size, normalisation).
+    @SerializedName("classes") val classes: com.google.gson.JsonObject? = null,
+)
+
 /** Species block carried inside AnalysisResponse. */
 data class SpeciesBlock(
     @SerializedName("available") val available: Boolean = false,
