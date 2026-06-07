@@ -20,7 +20,8 @@ plant care reminders and an AI plant doctor.
 
 | | |
 |---|---|
-| 📷 | **Snap a leaf, get a diagnosis** — 8-class classifier including a real `not_a_plant` rejection head plus a blur gate so unfocused shots don't get fake confidence. |
+| 📷 | **Snap a leaf, get a diagnosis** — 9-class classifier including a real `not_a_plant` rejection head plus a blur gate so unfocused shots don't get fake confidence. |
+| 📴 | **Offline scanning (Aqua)** — pick the on-device `aqua` model on the scan screen for a fully offline diagnosis (TFLite, no server round-trip); the model is downloaded from the server and cached. |
 | 🌍 | **Bilingual care plans** — every diagnosis ships with EN + RU description, treatment checklist, prevention tips, watering / feeding / humidity schedule, and red-flag escalation list. |
 | 🪴 | **Personal garden** — Room-backed scan history, multi-plant tracking, watering / fertilising reminders via WorkManager. |
 | 🤖 | **AI plant doctor** — opt-in OpenRouter chat scoped to your scan's diagnosis for follow-up questions. |
@@ -44,7 +45,7 @@ plant care reminders and an AI plant doctor.
 │  • Profile + stats   │         │   │ Stage 2 — classifier     │   │
 │                      │         │   │ frozen DINOv2 ViT-S/14    │   │
 │                      │         │   │ + LoRA + MLP head         │   │
-│                      │         │   │ 8 classes incl. NaP head │   │
+│                      │         │   │ 9 classes incl. NaP head │   │
 │                      │         │   │ + MaxLogit OOD gate      │   │
 │                      │         │   │ + blur (var-Laplacian)   │   │
 │                      │         │   └──────────────────────────┘   │
@@ -63,16 +64,19 @@ Detailed training recipe lives in
 [`server/train_notebook.ipynb`](server/train_notebook.ipynb) and the
 [`MODEL_CARD.md`](server/models/MODEL_CARD.md).
 
-**Model families.** The classifier ships in one of three capacity tiers
-(declared in `classes.json -> model_family`, surfaced by `/api/version`),
-all sharing one training/eval/export recipe — only the backbone + input
-size change:
+**Model families.** Three capacity tiers (declared in
+`classes.json -> model_family`, surfaced by `/api/version`; the client picks
+one per scan and `/api/capabilities` reports which the server offers):
 
-| Family | Backbone | Input | Role |
+| Family | Backbone | Input | Where it runs |
 |---|---|---|---|
-| `aqua` | DINOv2 ViT-S/14 | 196 | light, on-device |
-| **`gamma`** | **DINOv2 ViT-S/14** | **224** | **current production — medium accuracy/latency** |
-| `frontier` | DINOv2 ViT-L/14 | 224 | future high-capacity (GPU inference) |
+| `aqua` | MobileNetV3-Small (distilled from `gamma`) → TFLite INT8 | 224 | **on-device, fully offline** (downloaded from the server, cached) |
+| **`gamma`** | **frozen DINOv2 ViT-S/14 + MLP head** | **224** | **server — current production, balance of cost/accuracy** |
+| `frontier` | frozen DINOv2 ViT-B/14 (~86M) + MLP head | 224 | server — high-capacity; **inference gated OFF by default** (needs a GPU host), the app shows it "unavailable" until enabled |
+
+`gamma` and `frontier` share one frozen-DINOv2 recipe (only the backbone +
+input size differ); `aqua` is a knowledge-distilled mobile student
+(`train_notebook.ipynb` §5) exported to TFLite.
 
 > **Optional data supplement:** §2 can pull real indoor-houseplant /
 > ornamental disease sets from Kaggle (incl. money-plant / pothos disease
@@ -179,11 +183,14 @@ the user knows the feature is configurable, not broken.
 | Method | Path | Description |
 |---|---|---|
 | `GET`  | `/api/health`              | Liveness + uptime + class count |
-| `GET`  | `/api/version`             | Server version + model architecture |
+| `GET`  | `/api/version`             | Server version + model architecture + family |
 | `GET`  | `/api/classes`             | Trainable classes with bilingual names |
+| `GET`  | `/api/capabilities`        | Per-family availability (aqua / gamma / frontier) for the scan-screen picker |
 | `GET`  | `/api/metrics`             | JSON counters (requests, errors, latency, feedback per-class accuracy) |
 | `GET`  | `/api/metrics/prometheus`  | Prometheus text exposition (v0.0.4) |
-| `POST` | `/api/analyze`             | Upload image → bilingual diagnosis |
+| `POST` | `/api/analyze`             | Upload image → bilingual diagnosis (`?family=aqua\|gamma\|frontier`, default `gamma`) |
+| `GET`  | `/api/guide/manifest` · `/api/guide/photo/{key}` | Disease/pest example photos (served by the server, cached by the app) |
+| `GET`  | `/api/aqua/manifest` · `/api/aqua/model` | On-device Aqua TFLite model manifest + bytes (the app downloads/updates it) |
 | `POST` | `/api/identify`            | PlantNet species identification (graceful when unconfigured) |
 | `POST` | `/api/chat`                | AI plant doctor (OpenRouter; graceful when unconfigured) |
 | `POST` | `/api/care-plan`           | Watering / light / humidity / feeding schedule + treatment checklist |
@@ -226,7 +233,10 @@ plantdiseases/
   classifier architecture, training data, calibration, intended use,
   known limitations.
 - [`server/train_notebook.ipynb`](server/train_notebook.ipynb) — full
-  v2.2 training recipe, data hygiene, KD setup, calibration export.
+  training recipe (group-aware splits + leakage guard, the three model
+  families, Aqua knowledge-distillation → TFLite, calibration + ONNX export).
+- [`server/DATA_SOURCES_VERIFICATION.md`](server/DATA_SOURCES_VERIFICATION.md) —
+  live verification of every `§2` data source (real counts + quality).
 
 ---
 
