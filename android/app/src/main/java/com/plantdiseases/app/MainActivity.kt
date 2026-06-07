@@ -121,6 +121,10 @@ class MainActivity : AppCompatActivity() {
         setSupportActionBar(binding.toolbar)
         supportActionBar?.setDisplayShowTitleEnabled(true)
 
+        // Kick off the periodic second-opinion poll from a UI context (not
+        // Application.onCreate, which would touch WorkManager too early).
+        (application as PlantDiseasesApp).scheduleOpinionChecks()
+
         val navHostFragment = supportFragmentManager
             .findFragmentById(R.id.nav_host_fragment) as NavHostFragment
         val navController = navHostFragment.navController

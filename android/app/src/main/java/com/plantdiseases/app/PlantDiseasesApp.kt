@@ -66,7 +66,11 @@ class PlantDiseasesApp : Application() {
         LocaleHelper.applyLocale(this)
         ThemeHelper.applySavedTheme(this)
         createNotificationChannels()
-        scheduleOpinionChecks()
+        // NB: do NOT touch WorkManager here. The app disables the default
+        // WorkManagerInitializer, so WorkManager.getInstance() in
+        // Application.onCreate throws (and breaks every Robolectric test that
+        // instantiates the app). Scheduling is kicked off from MainActivity
+        // instead — the same on-demand pattern ReminderManager uses.
     }
 
     private fun createNotificationChannels() {
@@ -87,10 +91,11 @@ class PlantDiseasesApp : Application() {
         }
     }
 
-    /** Poll for new second opinions on shared scans a few times a day. Only
-     *  transfers on an unmetered/any connection; cheap (one GET) and quiet
-     *  (notifies only on a genuinely new opinion — see OpinionCheckWorker). */
-    private fun scheduleOpinionChecks() {
+    /** Poll for new second opinions on shared scans a few times a day. Called
+     *  from MainActivity (not Application.onCreate — see note there). Idempotent
+     *  via enqueueUniquePeriodicWork(KEEP). Quiet: notifies only on a genuinely
+     *  new opinion — see OpinionCheckWorker. */
+    fun scheduleOpinionChecks() {
         val request = androidx.work.PeriodicWorkRequestBuilder<
             com.plantdiseases.app.worker.OpinionCheckWorker>(6, java.util.concurrent.TimeUnit.HOURS)
             .setConstraints(
