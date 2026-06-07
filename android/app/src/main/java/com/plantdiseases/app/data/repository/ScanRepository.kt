@@ -582,6 +582,15 @@ class ScanRepository(
             scanDao.getScanByClientScanId(clientScanId)
         }
 
+    /** Every local scan's client id — used to filter the user's OWN scans out
+     *  of the community feed (scan_ids are globally unique, so a match is
+     *  definitely this device's own scan, even if the server-side pseudo-id
+     *  exclusion missed it after a reinstall). */
+    suspend fun localClientScanIds(): Set<String> =
+        withContext(Dispatchers.IO) {
+            scanDao.allClientScanIds().toHashSet()
+        }
+
     /** Opinion counts on this install's OWN shared scans (for the
      *  second-opinion notification poll). Best-effort. */
     suspend fun fetchMyScanOpinions(pseudoId: String): Result<MyScanOpinionsResponse> =

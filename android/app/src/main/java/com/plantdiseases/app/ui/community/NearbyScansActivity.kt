@@ -132,10 +132,17 @@ class NearbyScansActivity : AppCompatActivity() {
             )
             binding.swipeRefresh.isRefreshing = false
             result.onSuccess { response ->
-                if (response.items.isEmpty()) {
+                // Belt-and-braces: also drop the user's OWN scans client-side.
+                // The server already excludes by pseudo-id, but a scan uploaded
+                // under a previous install's pseudo-id (after a reinstall) would
+                // slip through — so we additionally hide any item whose globally
+                // unique scan_id matches one in this device's local history.
+                val mine = app.scanRepository.localClientScanIds()
+                val others = response.items.filter { it.scanId !in mine }
+                if (others.isEmpty()) {
                     showState(getString(R.string.similar_scans_empty))
                 } else {
-                    showFeed(response.items)
+                    showFeed(others)
                 }
             }.onFailure {
                 showState(getString(R.string.community_opinion_error))

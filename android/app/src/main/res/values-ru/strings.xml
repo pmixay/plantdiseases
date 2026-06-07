@@ -260,12 +260,6 @@
     <string name="warning_disease_suspected_title">Замечена возможная проблема</string>
     <string name="warning_disease_suspected">Растение выглядит в основном здоровым, но модель также заметила признаки: %1$s. Понаблюдайте и переснимите, если симптомы усилятся.</string>
 
-    <!-- How to use (onboarding from profile) -->
-    <string name="how_to_use_title">Как пользоваться</string>
-    <string name="how_to_use_step_scan">Поднесите камеру к листу — автоснимок сработает на зелёной рамке.</string>
-    <string name="how_to_use_step_diagnose">PlantVision покажет топ-3 диагнозов с уверенностью модели.</string>
-    <string name="how_to_use_step_care">Откройте результат — лечение и план полива уже внутри.</string>
-
     <!-- Empty states -->
     <string name="first_scan_cta">Сделать первый скан</string>
     <string name="filter_empty_hint">Пока нет ничего в этой категории. Продолжайте сканировать — ваша зелёная полка растёт!</string>
@@ -341,7 +335,6 @@
     <string name="added_to_garden">В саду</string>
     <string name="create_new_plant">Создать растение</string>
     <string name="scan_added_to_garden">Скан добавлен в сад</string>
-    <string name="change_language">Сменить</string>
     <string name="delete_plant">Удалить растение</string>
     <string name="delete_plant_confirm">Удалить это растение? Записи журнала также будут удалены. Сканы останутся, но будут отвязаны.</string>
     <string name="plant_deleted">Растение удалено</string>

@@ -1,14 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Profile screen.
+    Profile screen — single, minimal style throughout.
 
-    Refactor notes:
-      • All cards now share App.GlassCard / App.GlassCard.Strong so
-        radii, padding and translucency are uniform.
-      • Spacing is on the @dimen/space_* grid — no more 4/6/10/14dp
-        magic numbers.
-      • The header gets a slim gradient hero so the page has a real
-        starting point instead of dropping straight into a stat card.
+      • One header: a small avatar + title/subtitle, no gradient hero.
+      • Every section is the same App.GlassCard so radii, padding and
+        translucency are uniform; sections are separated only by the
+        @dimen/space_* grid (no 4/6/10/14dp magic numbers).
+      • Section titles all use TextAppearance.App.Title.
 -->
 <androidx.core.widget.NestedScrollView
     xmlns:android="http://schemas.android.com/apk/res/android"
@@ -26,53 +24,50 @@
         android:orientation="vertical"
         android:padding="@dimen/space_lg">
 
-        <!-- Hero: leaf-green gradient block (bg_garden_hero), matching the
-             Garden tab so the Profile no longer drops straight into a plain
-             stat card. Gives the page a real starting point. -->
+        <!-- Header: minimal, no gradient — clean avatar + title. -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="@dimen/space_md"
-            android:orientation="vertical"
-            android:background="@drawable/bg_garden_hero"
-            android:paddingHorizontal="@dimen/space_xl"
-            android:paddingTop="@dimen/space_2xl"
-            android:paddingBottom="@dimen/space_xl">
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingVertical="@dimen/space_sm"
+            android:paddingBottom="@dimen/space_md">
 
             <FrameLayout
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:background="@drawable/bg_circle_semi">
+                android:layout_width="52dp"
+                android:layout_height="52dp"
+                android:background="@drawable/bg_circle_surface_variant">
 
                 <ImageView
-                    android:layout_width="26dp"
-                    android:layout_height="26dp"
+                    android:layout_width="28dp"
+                    android:layout_height="28dp"
                     android:layout_gravity="center"
                     android:src="@drawable/ic_profile"
-                    android:contentDescription="@null"
-                    app:tint="@color/on_primary" />
-
+                    app:tint="@color/primary"
+                    android:contentDescription="@null" />
             </FrameLayout>
 
-            <TextView
-                android:layout_width="match_parent"
+            <LinearLayout
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_md"
-                android:text="@string/tab_profile"
-                android:textColor="@color/on_primary"
-                android:textSize="28sp"
-                android:fontFamily="sans-serif-black"
-                android:letterSpacing="-0.02" />
+                android:layout_weight="1"
+                android:layout_marginStart="@dimen/space_md"
+                android:orientation="vertical">
 
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_xs"
-                android:text="@string/profile_subtitle"
-                android:textColor="@color/on_primary_secondary"
-                android:textSize="@dimen/text_body"
-                android:lineSpacingExtra="3dp" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/tab_profile"
+                    android:textAppearance="@style/TextAppearance.App.Headline" />
 
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="@string/profile_subtitle"
+                    android:textSize="@dimen/text_body_sm"
+                    android:textColor="@color/on_surface_secondary" />
+            </LinearLayout>
         </LinearLayout>
 
         <!-- Server status (compact one-line glass pill row) -->
@@ -469,222 +464,18 @@
 
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Tools: light meter + how-to-use -->
+
+        <!-- Community contributions: share toggle + delete-my-data. -->
         <com.google.android.material.card.MaterialCardView
             style="@style/App.GlassCard"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_md"
-            app:contentPadding="0dp">
+            android:layout_marginTop="@dimen/space_md">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical">
-
-                <!-- Light Meter card used to live here. It moved into
-                     per-plant context on the plant-detail screen
-                     (where the meter pre-selects the right species
-                     bucket and persists the session peak back onto
-                     the plant) and was deleted from this surface as
-                     part of the production-polish pass. -->
-
-                <!-- Inline "how to use" mini-guide: replaces the old
-                     full-screen onboarding re-open button with a quick
-                     three-step strip so the user can refresh memory
-                     without leaving the profile screen. Each column is
-                     a tappable shortcut into the relevant tab. -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:paddingHorizontal="@dimen/space_lg"
-                    android:paddingVertical="@dimen/space_md">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/how_to_use_title"
-                        android:textAppearance="@style/TextAppearance.App.Title" />
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_sm"
-                        android:orientation="horizontal"
-                        android:gravity="top">
-
-                        <LinearLayout
-                            android:id="@+id/step_scan"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:orientation="vertical"
-                            android:gravity="center_horizontal"
-                            android:paddingHorizontal="@dimen/space_xs"
-                            android:clickable="false"
-                            android:focusable="false">
-
-                            <FrameLayout
-                                android:layout_width="44dp"
-                                android:layout_height="44dp"
-                                android:background="@drawable/bg_icon_circle">
-
-                                <ImageView
-                                    android:layout_width="22dp"
-                                    android:layout_height="22dp"
-                                    android:layout_gravity="center"
-                                    android:contentDescription="@null"
-                                    android:src="@drawable/ic_scan"
-                                    app:tint="@color/primary" />
-
-                            </FrameLayout>
-
-                            <TextView
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="@dimen/space_xs"
-                                android:gravity="center"
-                                android:text="@string/tab_scan"
-                                android:textSize="@dimen/text_body_sm"
-                                android:textColor="@color/on_surface"
-                                android:fontFamily="sans-serif-medium" />
-
-                            <TextView
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="2dp"
-                                android:gravity="center"
-                                android:text="@string/how_to_use_step_scan"
-                                android:textSize="@dimen/text_caption"
-                                android:textColor="@color/on_surface_secondary"
-                                android:lineSpacingExtra="1dp" />
-
-                        </LinearLayout>
-
-                        <LinearLayout
-                            android:id="@+id/step_diagnose"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:orientation="vertical"
-                            android:gravity="center_horizontal"
-                            android:paddingHorizontal="@dimen/space_xs"
-                            android:clickable="false"
-                            android:focusable="false">
-
-                            <FrameLayout
-                                android:layout_width="44dp"
-                                android:layout_height="44dp"
-                                android:background="@drawable/bg_icon_circle">
-
-                                <ImageView
-                                    android:layout_width="22dp"
-                                    android:layout_height="22dp"
-                                    android:layout_gravity="center"
-                                    android:contentDescription="@null"
-                                    android:src="@drawable/ic_disease"
-                                    app:tint="@color/primary" />
-
-                            </FrameLayout>
-
-                            <TextView
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="@dimen/space_xs"
-                                android:gravity="center"
-                                android:text="@string/onboarding_diagnose_title"
-                                android:textSize="@dimen/text_body_sm"
-                                android:textColor="@color/on_surface"
-                                android:fontFamily="sans-serif-medium" />
-
-                            <TextView
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="2dp"
-                                android:gravity="center"
-                                android:text="@string/how_to_use_step_diagnose"
-                                android:textSize="@dimen/text_caption"
-                                android:textColor="@color/on_surface_secondary"
-                                android:lineSpacingExtra="1dp" />
-
-                        </LinearLayout>
-
-                        <LinearLayout
-                            android:id="@+id/step_care"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:orientation="vertical"
-                            android:gravity="center_horizontal"
-                            android:paddingHorizontal="@dimen/space_xs"
-                            android:clickable="false"
-                            android:focusable="false">
-
-                            <FrameLayout
-                                android:layout_width="44dp"
-                                android:layout_height="44dp"
-                                android:background="@drawable/bg_icon_circle">
-
-                                <ImageView
-                                    android:layout_width="22dp"
-                                    android:layout_height="22dp"
-                                    android:layout_gravity="center"
-                                    android:contentDescription="@null"
-                                    android:src="@drawable/ic_care"
-                                    app:tint="@color/primary" />
-
-                            </FrameLayout>
-
-                            <TextView
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="@dimen/space_xs"
-                                android:gravity="center"
-                                android:text="@string/onboarding_care_title"
-                                android:textSize="@dimen/text_body_sm"
-                                android:textColor="@color/on_surface"
-                                android:fontFamily="sans-serif-medium" />
-
-                            <TextView
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="2dp"
-                                android:gravity="center"
-                                android:text="@string/how_to_use_step_care"
-                                android:textSize="@dimen/text_caption"
-                                android:textColor="@color/on_surface_secondary"
-                                android:lineSpacingExtra="1dp" />
-
-                        </LinearLayout>
-
-                    </LinearLayout>
-
-                </LinearLayout>
-
-            </LinearLayout>
-
-        </com.google.android.material.card.MaterialCardView>
-
-        <!-- Community contributions: toggle + clear-my-contributions
-             button. The toggle reflects CommunityPrefs.uploadsEnabled
-             and the delete button hits /api/community/user/{id}. -->
-        <!-- Community: gradient social card -->
-        <com.google.android.material.card.MaterialCardView
-            style="@style/App.GlassCard"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_md"
-            app:contentPadding="0dp"
-            app:strokeWidth="0dp"
-            app:cardBackgroundColor="@android:color/transparent">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:background="@drawable/bg_community_card"
-                android:orientation="vertical"
-                android:padding="@dimen/space_lg">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -692,34 +483,18 @@
                     android:orientation="horizontal"
                     android:gravity="center_vertical">
 
-                    <FrameLayout
-                        android:layout_width="46dp"
-                        android:layout_height="46dp"
-                        android:background="@drawable/bg_circle_on_primary">
-
-                        <ImageView
-                            android:layout_width="24dp"
-                            android:layout_height="24dp"
-                            android:layout_gravity="center"
-                            android:src="@drawable/ic_community"
-                            app:tint="@color/on_primary"
-                            tools:ignore="ContentDescription" />
-                    </FrameLayout>
-
                     <LinearLayout
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:layout_marginHorizontal="@dimen/space_md"
+                        android:layout_marginEnd="@dimen/space_md"
                         android:orientation="vertical">
 
                         <TextView
-                            android:layout_width="match_parent"
+                            android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="@string/community_toggle_title"
-                            android:textSize="@dimen/text_title_sm"
-                            android:textColor="@color/on_primary"
-                            android:fontFamily="sans-serif-medium" />
+                            android:textAppearance="@style/TextAppearance.App.Title" />
 
                         <TextView
                             android:layout_width="match_parent"
@@ -727,17 +502,14 @@
                             android:layout_marginTop="@dimen/space_xxs"
                             android:text="@string/community_toggle_subtitle"
                             android:textSize="@dimen/text_body_sm"
-                            android:textColor="@color/on_primary_secondary"
+                            android:textColor="@color/on_surface_secondary"
                             android:lineSpacingExtra="1dp" />
                     </LinearLayout>
 
                     <com.google.android.material.materialswitch.MaterialSwitch
                         android:id="@+id/switch_community"
                         android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        app:thumbTint="@color/on_primary"
-                        app:trackTint="#44FFFFFF"
-                        app:trackDecorationTint="#66FFFFFF" />
+                        android:layout_height="wrap_content" />
                 </LinearLayout>
 
                 <com.google.android.material.button.MaterialButton
@@ -746,10 +518,11 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_sm"
+                    android:layout_marginStart="-8dp"
                     android:text="@string/community_delete_title"
-                    android:textColor="@color/on_primary"
+                    android:textColor="@color/disease_red"
                     app:icon="@drawable/ic_delete"
-                    app:iconTint="@color/on_primary" />
+                    app:iconTint="@color/disease_red" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 

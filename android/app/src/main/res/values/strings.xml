@@ -264,16 +264,6 @@
     <string name="warning_disease_suspected_title">Possible problem spotted</string>
     <string name="warning_disease_suspected">The plant looks mostly healthy, but the model also picked up signs of %1$s. Keep an eye on it and re-scan if it spreads.</string>
 
-    <!-- How to use (onboarding from profile) -->
-    <string name="how_to_use_title">How to Use</string>
-    <!-- Three-step inline mini-guide on the profile screen. The
-         titles map 1:1 to the onboarding flow so re-opening that flow
-         feels familiar; the bodies are tight enough to fit in the
-         narrow step columns without wrapping past two lines. -->
-    <string name="how_to_use_step_scan">Frame a single leaf — auto-capture fires when the frame turns green.</string>
-    <string name="how_to_use_step_diagnose">PlantVision shows the top-3 disease candidates with confidence.</string>
-    <string name="how_to_use_step_care">Tap a result for treatment + a tailored watering plan.</string>
-
     <!-- Empty states -->
     <string name="first_scan_cta">Take First Scan</string>
     <string name="filter_empty_hint">Nothing in this category yet. Keep scanning — your green shelf is growing!</string>
@@ -349,7 +339,6 @@
     <string name="added_to_garden">In garden</string>
     <string name="create_new_plant">Create new plant</string>
     <string name="scan_added_to_garden">Scan added to garden</string>
-    <string name="change_language">Change</string>
     <string name="delete_plant">Delete plant</string>
     <string name="delete_plant_confirm">Delete this plant? Journal entries will be removed too. Scans will be unlinked.</string>
     <string name="plant_deleted">Plant deleted</string>
