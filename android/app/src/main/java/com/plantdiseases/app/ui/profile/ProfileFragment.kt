@@ -426,19 +426,35 @@ class ProfileFragment : Fragment() {
             // The "Total Scans" card surfaces the full recorded count so
             // it matches the gallery row count; NAP filtering only affects
             // health-rate and most-common-disease semantics.
-            binding.tvTotalScans.text = totalRecorded.toString()
-            binding.tvHealthyCount.text = stats.healthyCount.toString()
-            binding.tvDiseasedCount.text = stats.diseasedCount.toString()
+            animateCount(binding.tvTotalScans, totalRecorded)
+            animateCount(binding.tvHealthyCount, stats.healthyCount)
+            animateCount(binding.tvDiseasedCount, stats.diseasedCount)
 
-            // Health rate is over plant scans only — NAP rows don't fail
-            // a plant health check, they're a UX retake prompt.
-            val healthRate = if (stats.totalScans > 0) {
-                "${(stats.healthyCount * 100 / stats.totalScans)}%"
-            } else "—"
-            binding.tvHealthRate.text = healthRate
+            // Health rate is over plant scans only — NAP rows don't fail a
+            // plant health check, they're a UX retake prompt. The ring and the
+            // centre % animate up together.
+            val ratePct = if (stats.totalScans > 0) {
+                stats.healthyCount * 100 / stats.totalScans
+            } else 0
+            binding.tvHealthRate.text = if (stats.totalScans > 0) "$ratePct%" else "—"
+            binding.progressHealthRing.max = 100
+            binding.progressHealthRing.setProgressCompat(ratePct, true)
 
             val commonDisease = if (isRu) stats.mostCommonDiseaseRu else stats.mostCommonDisease
             binding.tvCommonDisease.text = commonDisease ?: getString(R.string.none_yet)
+        }
+    }
+
+    /** Count-up animation for a stat number (0 → target over ~0.6s). */
+    private fun animateCount(tv: android.widget.TextView, target: Int) {
+        if (target <= 0) {
+            tv.text = "0"
+            return
+        }
+        android.animation.ValueAnimator.ofInt(0, target).apply {
+            duration = 600L
+            addUpdateListener { tv.text = (it.animatedValue as Int).toString() }
+            start()
         }
     }
 
