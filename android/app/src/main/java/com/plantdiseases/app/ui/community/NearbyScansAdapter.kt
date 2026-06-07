@@ -11,6 +11,7 @@ import com.facebook.shimmer.ShimmerFrameLayout
 import com.google.android.material.button.MaterialButton
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.CommunityScanItem
+import com.plantdiseases.app.util.Avatars
 import com.plantdiseases.app.util.ServerConfig
 import com.plantdiseases.app.util.ThumbLoader
 
@@ -55,10 +56,16 @@ class NearbyScansAdapter(
         private val opinions: TextView = itemView.findViewById(R.id.tv_nearby_opinions)
         private val wantsOpinion: TextView = itemView.findViewById(R.id.tv_nearby_wants_opinion)
         private val opinionBtn: MaterialButton = itemView.findViewById(R.id.btn_nearby_opinion)
+        private val avatar: TextView = itemView.findViewById(R.id.tv_nearby_avatar)
 
         fun bind(item: CommunityScanItem) {
             label.text = displayName(item.disease)
             meta.text = buildMeta(item)
+            // Anonymous, deterministic author avatar — same author ⇒ same
+            // colour + monogram across the feed.
+            avatar.text = Avatars.monogramFor(item.authorToken)
+            avatar.backgroundTintList =
+                android.content.res.ColorStateList.valueOf(Avatars.colorFor(item.authorToken))
             wantsOpinion.visibility = if (item.wantsOpinion) View.VISIBLE else View.GONE
 
             if (item.opinionCount > 0) {

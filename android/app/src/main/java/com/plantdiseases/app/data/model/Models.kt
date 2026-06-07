@@ -254,6 +254,9 @@ data class CommunityScanItem(
     // The scanner flagged this scan as wanting a community second opinion
     // (they were unsure and are waiting for others to weigh in).
     @SerializedName("wants_opinion") val wantsOpinion: Boolean = false,
+    // Stable, anonymous per-author token (a sha256 prefix of the pseudo id —
+    // never the id itself). Same author ⇒ same token ⇒ same generated avatar.
+    @SerializedName("author_token") val authorToken: String? = null,
 )
 
 data class CommunityRegionSummary(

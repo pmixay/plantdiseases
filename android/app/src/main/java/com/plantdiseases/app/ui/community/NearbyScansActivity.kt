@@ -11,7 +11,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
-import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.StaggeredGridLayoutManager
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.chip.Chip
 import com.plantdiseases.app.PlantDiseasesApp
@@ -82,7 +82,8 @@ class NearbyScansActivity : AppCompatActivity() {
                 )
             },
         )
-        binding.rvNearby.layoutManager = LinearLayoutManager(this)
+        binding.rvNearby.layoutManager =
+            StaggeredGridLayoutManager(2, StaggeredGridLayoutManager.VERTICAL)
         binding.rvNearby.adapter = adapter
 
         binding.swipeRefresh.setColorSchemeResources(R.color.primary)

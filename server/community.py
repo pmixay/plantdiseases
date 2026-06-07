@@ -502,7 +502,8 @@ def nearby_scans(
         def _query(where_extra: str, params: list, take: int) -> list[dict]:
             sql = (
                 "SELECT scan_id, country, region, disease, confidence, species, "
-                "species_score, thumb_path, locale, created_at, wants_opinion "
+                "species_score, thumb_path, locale, created_at, wants_opinion, "
+                "user_pseudo_id "
                 "FROM community_scans WHERE country = ? "
                 + where_extra
                 + " ORDER BY created_at DESC LIMIT ?"
@@ -714,6 +715,15 @@ def prune_older_than(days: int) -> int:
     return int(deleted or 0)
 
 
+def _author_token(user_pseudo_id: str | None) -> str | None:
+    """Stable, non-reversible per-author token for anonymous avatars.
+    A short sha256 prefix of the pseudo id — same user => same token,
+    but the pseudo id can't be recovered from it."""
+    if not user_pseudo_id:
+        return None
+    return hashlib.sha256(str(user_pseudo_id).encode("utf-8")).hexdigest()[:12]
+
+
 def _row_to_dict(row: tuple) -> dict:
     return {
         "scan_id": row[0],
@@ -727,6 +737,9 @@ def _row_to_dict(row: tuple) -> dict:
         "locale": row[8],
         "created_at": int(row[9]),
         "wants_opinion": bool(row[10]) if len(row) > 10 else False,
+        # One-way, stable per author so the client can show a
+        # consistent (but anonymous) avatar — never the raw pseudo id.
+        "author_token": _author_token(row[11]) if len(row) > 11 else None,
     }
 
 

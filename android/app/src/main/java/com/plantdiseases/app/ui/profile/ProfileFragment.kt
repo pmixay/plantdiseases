@@ -67,9 +67,9 @@ class ProfileFragment : Fragment() {
             findNavController().navigate(R.id.cameraFragment)
         }
 
-        binding.btnLanguage.setOnClickListener {
-            switchLanguage()
-        }
+        binding.langEn.setOnClickListener { setLanguage("en") }
+        binding.langRu.setOnClickListener { setLanguage("ru") }
+        highlightActiveLanguage()
 
         binding.btnRefreshHealth.setOnClickListener {
             checkServerHealth()
@@ -332,21 +332,35 @@ class ProfileFragment : Fragment() {
         return item?.let { if (isRu) it.titleRu else it.titleEn } ?: key
     }
 
-    private fun switchLanguage() {
+    /** Highlight the active flag segment (filled green + white text); the
+     *  other stays flat with secondary text. */
+    private fun highlightActiveLanguage() {
+        val isRu = LocaleHelper.isRussian(requireContext())
+        styleLanguageSegment(binding.langEn, binding.tvLangEn, active = !isRu)
+        styleLanguageSegment(binding.langRu, binding.tvLangRu, active = isRu)
+    }
+
+    private fun styleLanguageSegment(pill: android.view.View, label: android.widget.TextView, active: Boolean) {
+        pill.setBackgroundResource(if (active) R.drawable.bg_segment_active else 0)
+        label.setTextColor(
+            androidx.core.content.ContextCompat.getColor(
+                requireContext(),
+                if (active) R.color.on_primary else R.color.on_surface_secondary,
+            ),
+        )
+    }
+
+    private fun setLanguage(lang: String) {
+        if (LocaleHelper.getSavedLanguage(requireContext()) == lang) return
         // Locale is owned entirely by LocaleHelper: every activity's
-        // attachBaseContext re-reads the saved language and wraps its
-        // context (see MainActivity / ResultActivity / …), so persisting
-        // the new value and recreating the host is all that's needed —
-        // the rebuilt activity resolves every resource in the new locale.
-        //
-        // We must NOT also call AppCompatDelegate.setApplicationLocales()
-        // here. That spins up a *second*, framework-level locale change
-        // (LocaleManager on API 33+, the AppCompat backport below it) that
-        // raced our own attachBaseContext locale wrapping and left the
-        // window stuck on a black frame — the "app turns black" bug. One
-        // mechanism, one recreate. Theme switching stays smooth for the
-        // same reason: it only flips night-mode, never the locale.
-        LocaleHelper.toggleLanguage(requireContext())
+        // attachBaseContext re-reads the saved language and wraps its context,
+        // so persisting the new value (setLocale saves it) and recreating the
+        // host is all that's needed. We must NOT also call
+        // AppCompatDelegate.setApplicationLocales() — a second, framework-level
+        // locale change raced our attachBaseContext wrapping and left the
+        // window on a black frame (the "app turns black" bug). One mechanism,
+        // one recreate.
+        LocaleHelper.setLocale(requireContext(), lang)
         requireActivity().recreate()
     }
 
