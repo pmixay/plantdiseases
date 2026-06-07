@@ -181,6 +181,21 @@ data class FamilyCapability(
     @SerializedName("model_family") val modelFamily: String? = null,
 )
 
+/** Opinion counts on the user's OWN shared scans (GET /api/community/
+ *  my-scan-opinions/{id}). Polled by OpinionCheckWorker to notify the user
+ *  when someone leaves a second opinion. */
+data class MyScanOpinionsResponse(
+    @SerializedName("scans") val scans: List<ScanOpinionItem> = emptyList(),
+    @SerializedName("total_opinions") val totalOpinions: Int = 0,
+)
+
+data class ScanOpinionItem(
+    @SerializedName("scan_id") val scanId: String = "",
+    @SerializedName("disease") val disease: String = "",
+    @SerializedName("opinion_count") val opinionCount: Int = 0,
+    @SerializedName("latest_at") val latestAt: Long = 0,
+)
+
 /** Describes the server-hosted Aqua on-device model (GET /api/aqua/manifest)
  *  so the app can download it once and re-download only when it changes. */
 data class AquaManifestResponse(

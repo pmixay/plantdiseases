@@ -13,6 +13,7 @@ import com.plantdiseases.app.data.model.CommunityRequestOpinionResponse
 import com.plantdiseases.app.data.model.AquaManifestResponse
 import com.plantdiseases.app.data.model.CapabilitiesResponse
 import com.plantdiseases.app.data.model.CommunityScansResponse
+import com.plantdiseases.app.data.model.MyScanOpinionsResponse
 import com.plantdiseases.app.data.model.CommunityScanUploadResponse
 import com.plantdiseases.app.data.model.SpeciesInfoResponse
 import com.plantdiseases.app.data.model.FeedbackRequest
@@ -178,6 +179,13 @@ interface ApiService {
     suspend fun communityMyOpinions(
         @Path("user_pseudo_id") userPseudoId: String,
     ): retrofit2.Response<CommunityOpinionsResponse>
+
+    /** Opinion counts on the user's OWN shared scans — polled to notify when
+     *  someone leaves a second opinion on a scan they shared. */
+    @GET("api/community/my-scan-opinions/{user_pseudo_id}")
+    suspend fun communityMyScanOpinions(
+        @Path("user_pseudo_id") userPseudoId: String,
+    ): retrofit2.Response<MyScanOpinionsResponse>
 
     /** Localized Wikipedia blurb + lead image for a scientific name. */
     @GET("api/species-info")

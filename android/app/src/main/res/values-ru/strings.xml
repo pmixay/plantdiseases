@@ -214,6 +214,8 @@
     <string name="community_toggle_title">Делиться сканами с сообществом</string>
     <string name="community_toggle_subtitle">Регион + диагноз + миниатюра 512px. Можно выключить — всё останется на устройстве.</string>
     <string name="community_delete_title">Удалить мои данные из сообщества</string>
+    <string name="opinion_notif_title">Новое второе мнение</string>
+    <string name="opinion_notif_body">Кто-то оставил мнение о вашем скане: %1$s</string>
     <string name="community_delete_body">Все сообщения сканов будут удалены из общего корпуса. Продолжить?</string>
     <string name="community_delete_done">Ваши данные удалены из сообщества.</string>
     <string name="community_delete_failed">Не удалось связаться с сервером. Попробуйте позже.</string>

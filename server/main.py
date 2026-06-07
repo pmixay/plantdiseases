@@ -77,6 +77,9 @@ try:
         opinion_counts as community_opinion_counts,
     )
     from .community import (
+        opinion_counts_for_user as community_opinion_counts_for_user,
+    )
+    from .community import (
         opinions_by_author as community_opinions_by_author,
     )
     from .community import (
@@ -164,6 +167,9 @@ except ImportError:
     )
     from community import (
         opinion_counts as community_opinion_counts,
+    )
+    from community import (
+        opinion_counts_for_user as community_opinion_counts_for_user,
     )
     from community import (
         opinions_by_author as community_opinions_by_author,
@@ -2699,6 +2705,20 @@ async def community_opinions_list(scan_id: str):
         _get_inference_executor(), lambda: community_opinions_for(sid),
     )
     return JSONResponse(content={"scan_id": sid, **result})
+
+
+@api_router.get("/community/my-scan-opinions/{user_pseudo_id}")
+async def community_my_scan_opinions(user_pseudo_id: str):
+    """Opinion counts on the caller's OWN shared scans. The client polls this
+    on a schedule to notify the user when someone leaves a second opinion on a
+    scan they shared (the per-scan view already exists via /opinions/{scan_id})."""
+    uid = (user_pseudo_id or "").strip()
+    if not uid or any(ch not in _SCAN_ID_ALLOWED for ch in uid):
+        raise HTTPException(status_code=422, detail="Invalid user id")
+    result = await asyncio.get_running_loop().run_in_executor(
+        _get_inference_executor(), lambda: community_opinion_counts_for_user(uid),
+    )
+    return JSONResponse(content=result)
 
 
 @api_router.get("/community/nearby")

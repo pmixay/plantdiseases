@@ -66,23 +66,48 @@ class PlantDiseasesApp : Application() {
         LocaleHelper.applyLocale(this)
         ThemeHelper.applySavedTheme(this)
         createNotificationChannels()
+        scheduleOpinionChecks()
     }
 
     private fun createNotificationChannels() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_PLANT_REMINDERS,
-                "Plant Reminders",
-                NotificationManager.IMPORTANCE_HIGH,
-            ).apply {
-                description = "Care schedule reminders for your plants"
-            }
-            getSystemService(NotificationManager::class.java)
-                .createNotificationChannel(channel)
+            val nm = getSystemService(NotificationManager::class.java)
+            nm.createNotificationChannel(
+                NotificationChannel(
+                    CHANNEL_PLANT_REMINDERS, "Plant Reminders",
+                    NotificationManager.IMPORTANCE_HIGH,
+                ).apply { description = "Care schedule reminders for your plants" },
+            )
+            nm.createNotificationChannel(
+                NotificationChannel(
+                    CHANNEL_COMMUNITY, "Community",
+                    NotificationManager.IMPORTANCE_DEFAULT,
+                ).apply { description = "Second opinions on scans you shared" },
+            )
         }
+    }
+
+    /** Poll for new second opinions on shared scans a few times a day. Only
+     *  transfers on an unmetered/any connection; cheap (one GET) and quiet
+     *  (notifies only on a genuinely new opinion — see OpinionCheckWorker). */
+    private fun scheduleOpinionChecks() {
+        val request = androidx.work.PeriodicWorkRequestBuilder<
+            com.plantdiseases.app.worker.OpinionCheckWorker>(6, java.util.concurrent.TimeUnit.HOURS)
+            .setConstraints(
+                androidx.work.Constraints.Builder()
+                    .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)
+                    .build(),
+            )
+            .build()
+        androidx.work.WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            "opinion_check",
+            androidx.work.ExistingPeriodicWorkPolicy.KEEP,
+            request,
+        )
     }
 
     companion object {
         const val CHANNEL_PLANT_REMINDERS = "plant_reminders"
+        const val CHANNEL_COMMUNITY = "community"
     }
 }

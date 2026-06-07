@@ -218,6 +218,8 @@
     <string name="community_toggle_title">Share scans with the community</string>
     <string name="community_toggle_subtitle">Region + diagnosis + 512px thumbnail. Off keeps everything on-device.</string>
     <string name="community_delete_title">Delete my contributions</string>
+    <string name="opinion_notif_title">New second opinion</string>
+    <string name="opinion_notif_body">Someone weighed in on your %1$s scan</string>
     <string name="community_delete_body">This removes every scan you\'ve shared so far from the community corpus. Continue?</string>
     <string name="community_delete_done">Your community contributions were removed.</string>
     <string name="community_delete_failed">Couldn\'t reach the server. Try again later.</string>

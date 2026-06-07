@@ -15,6 +15,7 @@ import com.plantdiseases.app.data.model.FeedbackRequest
 import com.plantdiseases.app.data.model.FeedbackResponse
 import com.plantdiseases.app.data.model.HealthResponse
 import com.plantdiseases.app.data.model.IdentifyResponse
+import com.plantdiseases.app.data.model.MyScanOpinionsResponse
 import com.plantdiseases.app.data.model.ProgressionRequest
 import com.plantdiseases.app.data.model.ProgressionResponse
 import com.plantdiseases.app.data.model.ScanHistoryItem
@@ -572,6 +573,26 @@ class ScanRepository(
     suspend fun getScanById(id: Long): ScanEntity? =
         withContext(Dispatchers.IO) {
             scanDao.getScanById(id)
+        }
+
+    /** Find the local scan a community scan_id maps to (community scan_id ==
+     *  the local scan's clientScanId), so a notification can open it. */
+    suspend fun getScanByClientScanId(clientScanId: String): ScanEntity? =
+        withContext(Dispatchers.IO) {
+            scanDao.getScanByClientScanId(clientScanId)
+        }
+
+    /** Opinion counts on this install's OWN shared scans (for the
+     *  second-opinion notification poll). Best-effort. */
+    suspend fun fetchMyScanOpinions(pseudoId: String): Result<MyScanOpinionsResponse> =
+        withContext(Dispatchers.IO) {
+            try {
+                val r = apiService.communityMyScanOpinions(pseudoId)
+                if (r.isSuccessful && r.body() != null) Result.success(r.body()!!)
+                else Result.failure(Exception("Server error: ${r.code()}"))
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
         }
 
     /** Delete a scan */

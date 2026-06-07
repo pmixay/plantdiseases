@@ -579,6 +579,44 @@
         }
       }
     },
+    "/api/community/my-scan-opinions/{user_pseudo_id}": {
+      "get": {
+        "summary": "Community My Scan Opinions",
+        "description": "Opinion counts on the caller's OWN shared scans. The client polls this\non a schedule to notify the user when someone leaves a second opinion on a\nscan they shared (the per-scan view already exists via /opinions/{scan_id}).",
+        "operationId": "community_my_scan_opinions_api_community_my_scan_opinions__user_pseudo_id__get",
+        "parameters": [
+          {
+            "name": "user_pseudo_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Pseudo Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/community/nearby": {
       "get": {
         "summary": "Community Scan Nearby",
