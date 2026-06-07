@@ -443,14 +443,15 @@ def _safe_filename(name: str | None, *, max_len: int = 80) -> str:
     return cleaned or "<empty-filename>"
 
 
-RATE_LIMIT_RPS = get_float("RATE_LIMIT_RPS", 1.0)
-# Burst capacity on top of the steady-state rate. A burst of 5 lets
-# the client pop off 5 requests back-to-back (e.g. nav + analyze +
-# care-plan + identify + feedback fan-out) before the token bucket
-# stops refilling — without that the analyze flow used to slam into
-# the limiter on every cold open. Default chosen to absorb a single
-# scan + its post-result side calls.
-RATE_LIMIT_BURST = get_float("RATE_LIMIT_BURST", 5.0)
+RATE_LIMIT_RPS = get_float("RATE_LIMIT_RPS", 2.0)
+# Burst capacity on top of the steady-state rate. One user SCAN fans out into
+# many requests — analyze + identify + capabilities + aqua/manifest + care-plan
+# + species-info + community/nearby + community/by-species + opinions — so a
+# burst of 5 was far too small: a single scan overflowed the bucket, each
+# overflow was a 429, and 5 of those tripped the abuse auto-ban below (the
+# "Server error: 403 for no reason" users saw). 20 absorbs a couple of scans'
+# fan-out back-to-back before the steady rate takes over.
+RATE_LIMIT_BURST = get_float("RATE_LIMIT_BURST", 20.0)
 TRUSTED_PROXIES = set(get_list("TRUSTED_PROXIES", []))
 
 # API Keys configuration
@@ -472,9 +473,15 @@ _abuse_lock = threading.Lock()
 _in_memory_violations: dict[str, tuple[float, int]] = {} # identifier -> (reset_time, count)
 _in_memory_bans: dict[str, float] = {} # identifier -> banned_until
 
-VIOLATION_THRESHOLD = 5
-VIOLATION_WINDOW = 60.0
-BAN_DURATION = 300.0
+# Abuse auto-ban (temporary). Targets SUSTAINED floods, not a normal client
+# that occasionally clips the rate limiter — the old threshold of 5 banned
+# real users whose per-scan request fan-out briefly exceeded the burst, turning
+# a transient 429 into a 5-minute 403. You now need ~40 over-limit requests in
+# a minute (well beyond any legitimate UI) to earn a ban. Configurable so
+# operators can tighten/loosen without a code change.
+VIOLATION_THRESHOLD = get_int("VIOLATION_THRESHOLD", 40)
+VIOLATION_WINDOW = get_float("VIOLATION_WINDOW", 60.0)
+BAN_DURATION = get_float("BAN_DURATION", 300.0)
 
 def _check_and_increment_quota(api_key: str, daily_limit: int) -> bool:
     """Check if the daily quota is exceeded, and if not, increment it.

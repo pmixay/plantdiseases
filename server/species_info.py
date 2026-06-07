@@ -54,6 +54,14 @@ def fetch_species_info(scientific_name: str | None, lang: str = "en") -> dict | 
 
     payload = _fetch(name, lang)
     if payload is None and lang != "en":
+        # The localized wiki often lacks a SPECIES page for an obscure plant
+        # (e.g. ru has no "Didymochlaena truncatula") but DOES have the GENUS
+        # article — which still gives a useful localized blurb. Try the genus
+        # in the user's language before giving up to English.
+        genus = name.split()[0] if name.split() else ""
+        if genus and genus.lower() != name.lower():
+            payload = _fetch(genus, lang)
+    if payload is None and lang != "en":
         payload = _fetch(name, "en")
 
     with _lock:
