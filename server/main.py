@@ -103,7 +103,7 @@ try:
     from .community import (
         stats_snapshot as community_stats_snapshot,
     )
-    from .config import get, get_float, get_int, get_list, get_str
+    from .config import get, get_bool, get_float, get_int, get_list, get_str
     from .diseases_data import DISEASES_DATABASE, lookup_pet_toxicity
     from .feedback import (
         attach_image_path as feedback_attach_image_path,
@@ -192,7 +192,7 @@ except ImportError:
     from community import (
         stats_snapshot as community_stats_snapshot,
     )
-    from config import get, get_float, get_int, get_list, get_str
+    from config import get, get_bool, get_float, get_int, get_list, get_str
     from diseases_data import DISEASES_DATABASE, lookup_pet_toxicity
     from feedback import (
         attach_image_path as feedback_attach_image_path,
@@ -312,6 +312,30 @@ DETECTOR_PATH = MODELS_DIR / "detector.pt"       # YOLOv8 weights (auto-prefers 
 # locate those files + classes.json next to it (the .pth itself is not
 # loaded at serve time).
 CLASSIFIER_PATH = MODELS_DIR / "classifier.onnx"
+
+# ── Model families ───────────────────────────────────────────────────
+# Three capacity tiers share one runtime + one class set (classes.json ->
+# model_family). The client picks one per scan:
+#   • aqua     — light on-device TFLite student; runs entirely in the app,
+#                so the server normally never sees an ``aqua`` request. If
+#                one does arrive (e.g. an online client falling back) we
+#                serve it with the gamma pipeline for parity.
+#   • gamma    — the current medium model; the default and always loaded.
+#   • frontier — a high-capacity (ViT-B/14, ~86M param) model. Its server
+#                inference is GATED OFF by default: we have no GPU host, so
+#                operators must explicitly enable it AND provision its
+#                artefacts. When disabled, /api/analyze?family=frontier
+#                returns a graceful ``available:false`` payload (never 500)
+#                and /api/capabilities reports it unavailable so the app can
+#                grey it out in the model picker.
+KNOWN_FAMILIES = ("aqua", "gamma", "frontier")
+DEFAULT_FAMILY = "gamma"
+FRONTIER_ENABLED = get_bool("FRONTIER_ENABLED", False)
+# Frontier classifier lives in its own dir so its classes.json /
+# temperature.json / conformal.json never collide with gamma's. The
+# detector is shared (the gamma YOLOv8n crops are family-agnostic).
+FRONTIER_MODELS_DIR = Path(get_str("FRONTIER_MODELS_DIR", str(MODELS_DIR / "frontier")))
+FRONTIER_CLASSIFIER_PATH = FRONTIER_MODELS_DIR / "classifier.onnx"
 
 # Model weights + calibration artefacts are NOT committed to the repo and
 # are NOT auto-downloaded. Provision them out of band: drop the trained
@@ -578,6 +602,41 @@ def _snapshot_metrics() -> dict:
 
 
 pipeline: PlantDiseasePipeline | None = None
+# Optional second pipeline for the frontier family. Stays ``None`` unless
+# FRONTIER_ENABLED is set AND the frontier artefacts load cleanly at boot.
+pipeline_frontier: PlantDiseasePipeline | None = None
+
+
+def _normalise_family(family: str | None) -> str:
+    """Map a requested family string to a known tier, defaulting to gamma.
+
+    Unknown values fall back to the default rather than erroring — a
+    forward-compatible client sending a future family name still gets a
+    usable diagnosis instead of a 400.
+    """
+    fam = (family or "").strip().lower()
+    return fam if fam in KNOWN_FAMILIES else DEFAULT_FAMILY
+
+
+def _family_available(family: str) -> bool:
+    """Whether the server can answer a request for this family.
+
+    ``gamma`` is available whenever the base pipeline loaded. ``aqua`` is an
+    on-device family but the server can stand in with gamma, so it tracks
+    gamma's availability. ``frontier`` requires its own pipeline to be loaded.
+    """
+    if family == "frontier":
+        return pipeline_frontier is not None
+    return pipeline is not None
+
+
+def _pipeline_for_family(family: str) -> PlantDiseasePipeline | None:
+    """Resolve the pipeline instance that should serve this family."""
+    if family == "frontier":
+        return pipeline_frontier
+    # gamma + aqua (server stand-in) both run on the base pipeline.
+    return pipeline
+
 
 # ── Rate limiter cleanup interval (seconds) ─────────────────────────
 _RATE_LIMIT_CLEANUP_INTERVAL = 300
@@ -841,7 +900,7 @@ async def lifespan(app: FastAPI):
     server because clients can't tell the difference until users
     notice bad diagnoses.
     """
-    global pipeline, SERVER_START_TIME, _inference_executor
+    global pipeline, pipeline_frontier, SERVER_START_TIME, _inference_executor
     SERVER_START_TIME = time.time()
     _inference_executor = _get_inference_executor()
     init_feedback_db()
@@ -854,10 +913,37 @@ async def lifespan(app: FastAPI):
         classifier_path=CLASSIFIER_PATH,
     )
     logger.info(
-        "Pipeline initialised (classifier=%s, %d classes)",
+        "Pipeline initialised (classifier=%s, %d classes, family=%s)",
         pipeline.classifier.backend,
         pipeline.classifier.NUM_CLASSES,
+        pipeline.classifier.model_family,
     )
+    # Frontier is opt-in. Unlike gamma, a missing/broken frontier bundle is
+    # NOT fail-fast: we log and leave ``pipeline_frontier=None`` so the
+    # always-on gamma path still serves. The picker / analyze gate then
+    # report frontier unavailable. This keeps "enabled in config but
+    # artefacts not provisioned yet" from taking the whole server down.
+    if FRONTIER_ENABLED:
+        try:
+            pipeline_frontier = PlantDiseasePipeline(
+                detector_path=DETECTOR_PATH,
+                classifier_path=FRONTIER_CLASSIFIER_PATH,
+            )
+            logger.info(
+                "Frontier pipeline initialised (classifier=%s, %d classes, family=%s)",
+                pipeline_frontier.classifier.backend,
+                pipeline_frontier.classifier.NUM_CLASSES,
+                pipeline_frontier.classifier.model_family,
+            )
+        except Exception as exc:  # noqa: BLE001 — frontier must degrade, not abort boot
+            pipeline_frontier = None
+            logger.error(
+                "FRONTIER_ENABLED but frontier pipeline failed to load from %s: %s "
+                "— frontier will report unavailable.",
+                FRONTIER_CLASSIFIER_PATH, exc,
+            )
+    else:
+        logger.info("Frontier family disabled (FRONTIER_ENABLED=false)")
     # Daily prune task. Runs in the event loop because the work is
     # I/O-bound (a single DELETE per table); no thread pool needed.
     # Cancelled cleanly on shutdown so the lifespan exit doesn't
@@ -1148,6 +1234,48 @@ async def classes():
     return {"count": len(items), "classes": items}
 
 
+@api_router.get("/capabilities")
+async def capabilities():
+    """Model-family availability for the scan-screen picker.
+
+    The client calls this once when opening the picker to decide which
+    tiers to offer. It greys out / blocks any family reported unavailable —
+    notably ``frontier`` when ``FRONTIER_ENABLED`` is false or its bundle
+    failed to load. ``aqua`` is always offered because it runs on-device
+    (its real capability depends on the app shipping the tflite student).
+    Tolerates a not-yet-ready pipeline so the app can call it during boot.
+    """
+    base_ready = pipeline is not None
+    families = [
+        {
+            "id": "aqua",
+            "available": True,
+            "location": "on_device",
+            "model_family": "aqua",
+        },
+        {
+            "id": "gamma",
+            "available": base_ready,
+            "location": "server",
+            "model_family": pipeline.classifier.model_family if base_ready else "gamma",
+        },
+        {
+            "id": "frontier",
+            "available": _family_available("frontier"),
+            "location": "server",
+            "model_family": (
+                pipeline_frontier.classifier.model_family
+                if pipeline_frontier is not None else "frontier"
+            ),
+        },
+    ]
+    return {
+        "default": DEFAULT_FAMILY,
+        "families": families,
+        "server_version": APP_VERSION,
+    }
+
+
 @api_router.get("/metrics")
 async def metrics():
     """Operational metrics (JSON). Useful for dashboards and jury demos."""
@@ -1282,6 +1410,7 @@ async def analyze_image(
     image: UploadFile = File(...),
     species: str | None = Query(default=None, max_length=128),
     locale: str = Query(default="en", max_length=16),
+    family: str = Query(default=DEFAULT_FAMILY, max_length=16),
 ):
     """Analyse a plant image for diseases (two-stage pipeline).
 
@@ -1290,10 +1419,35 @@ async def analyze_image(
     detected region (with severity score) and the top-k class
     probabilities. ``locale`` (default "en") is forwarded to PlantNet
     so the species ``common_name`` is localised in the response.
+
+    ``family`` selects the model tier (aqua | gamma | frontier). ``gamma``
+    is the default; ``aqua`` is normally answered on-device but is served
+    by gamma here for online parity; ``frontier`` requires the operator to
+    have enabled and provisioned it (otherwise a graceful ``available:false``
+    payload is returned, never a 5xx).
     """
     if pipeline is None:
         _record_error()
         raise HTTPException(status_code=503, detail="Server starting up, try again shortly")
+
+    family = _normalise_family(family)
+    # Frontier gate: short-circuit BEFORE doing any decode/inference work
+    # when the family isn't available on this server. Mirrors the optional-
+    # feature pattern (PlantNet / chat): HTTP 200 with ``available:false``
+    # so the client renders "unavailable" instead of treating it as a hard
+    # error. The app additionally checks /api/capabilities up front to grey
+    # the option out, so this is the defensive backstop.
+    if family == "frontier" and not _family_available("frontier"):
+        return JSONResponse(content={
+            "available": False,
+            "family": "frontier",
+            "reason": "frontier_disabled",
+            "message": (
+                "Frontier inference is not enabled on this server. "
+                "Pick Gamma for an online diagnosis, or Aqua for offline."
+            ),
+        })
+    serving_pipeline = _pipeline_for_family(family) or pipeline
 
     start_time = time.time()
 
@@ -1375,7 +1529,10 @@ async def analyze_image(
     # same image (and vice versa).
     plantnet_lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
     image_sha = await loop.run_in_executor(None, _sha256_hex, contents)
-    cache_key = f"{image_sha}:{plantnet_lang}"
+    # Family is part of the cache key: gamma and frontier are different
+    # models and can land on different verdicts for the same bytes, so a
+    # gamma cache hit must never be replayed for a frontier request.
+    cache_key = f"{image_sha}:{plantnet_lang}:{family}"
     cache_hit = _analyze_cache_get(cache_key)
     if cache_hit is not None:
         # Deep-copy so the toxicity-override patch below (and any
@@ -1408,7 +1565,7 @@ async def analyze_image(
     )
     try:
         result = await asyncio.wait_for(
-            loop.run_in_executor(_get_inference_executor(), pipeline.analyze, img),
+            loop.run_in_executor(_get_inference_executor(), serving_pipeline.analyze, img),
             timeout=INFERENCE_TIMEOUT,
         )
     except TimeoutError as exc:
@@ -1551,13 +1708,16 @@ async def analyze_image(
         "toxic_to_pets": False, "species_list": [], "source": "unknown",
     }
 
-    # Mint the scan_id synchronously (it must ride in the response) but
-    # persist it to the issued-ids log off the response path. The feedback
-    # gate only needs the row by the time the user submits feedback — long
-    # after they've viewed this result — so the SQLite write happens in the
-    # background instead of adding a DB round-trip to every analyse.
+    # Mint the scan_id (it must ride in the response) and persist it to the
+    # issued-ids log BEFORE returning. This previously ran fire-and-forget on
+    # the executor to shave a SQLite round-trip off the response path, but
+    # that raced the feedback gate: a client that POSTs feedback right after
+    # the result lands could reach /api/feedback before the row was written,
+    # and the gate would reject a legitimate scan_id. The write is a single
+    # indexed INSERT executed off the event loop, so awaiting it costs ~ms
+    # while removing the race entirely.
     scan_id = uuid.uuid4().hex
-    loop.run_in_executor(None, _persist_issued_scan_id, scan_id)
+    await loop.run_in_executor(None, _persist_issued_scan_id, scan_id)
 
     response_payload = {
         # Canonical class key the pipeline landed on AFTER all
@@ -1568,6 +1728,10 @@ async def analyze_image(
         # — argmax(all_probs) is the PRE-reroute class and would
         # poison per-class accuracy metrics if used instead.
         "class_name": class_name,
+        # Which model tier actually produced this verdict. Lets the client
+        # confirm it got the family it asked for (and fall back gracefully if
+        # a future server downgrades the request).
+        "family": family,
         "disease_name": disease_info["name_en"],
         "disease_name_ru": disease_info["name_ru"],
         "confidence": round(confidence, 3),

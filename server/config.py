@@ -108,6 +108,18 @@ def get_float(key: str, default: float) -> float:
     return float(get(key, default, cast=float))
 
 
+def get_bool(key: str, default: bool) -> bool:
+    """Read a boolean. JSON ``true``/``false`` pass through; string values
+    (env vars are always strings) are parsed permissively
+    (``1/true/yes/on`` → True). Anything else falls back to ``default``."""
+    raw = get(key, None)
+    if raw is None:
+        return default
+    if isinstance(raw, bool):
+        return raw
+    return str(raw).strip().lower() in ("1", "true", "yes", "on")
+
+
 def get_list(key: str, default: list[str] | None = None, sep: str = ",") -> list[str]:
     """Parse a list. JSON arrays are returned as-is; strings are split on ``sep``."""
     raw = _FILE_DATA.get(key.upper())

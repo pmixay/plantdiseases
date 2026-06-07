@@ -35,6 +35,8 @@ as the legacy environment variable.
 | `inference_timeout` | `30` | Seconds before `/api/analyze` returns `504`. |
 | `infer_workers` | `1` | ThreadPoolExecutor workers for model inference. With `onnx_intra_op_threads=0` a single scan uses all cores, so one worker avoids CPU oversubscription. Raise it only if you also pin `onnx_intra_op_threads` low for real concurrency on a many-core host. |
 | `onnx_intra_op_threads` | `0` | Intra-op threads per ONNX session. `0` lets ONNX Runtime use all physical cores — the biggest CPU-latency lever for the DINOv2 ViT classifier. Pin lower on a shared host. |
+| `frontier_enabled` | `false` | Enable server inference for the high-capacity **frontier** family (ViT-B/14, ~86M param). Off by default because it expects a GPU host. When off (or the bundle fails to load), `/api/analyze?family=frontier` returns a graceful `available:false` payload and `/api/capabilities` reports it unavailable so the app greys it out. A broken frontier bundle never blocks gamma boot. |
+| `frontier_models_dir` | `models/frontier` | Where the frontier bundle (`classifier.onnx`, `classes.json`, `temperature.json`, `conformal.json`) lives when `frontier_enabled=true`. The YOLOv8n detector is shared with gamma. |
 | `log_dir` | `logs` | Rotating file logs (5 MB × 5 backups). |
 | `host` / `port` | `0.0.0.0` / `8000` | Uvicorn bind. |
 | `openrouter_api_key` | *(empty)* | OpenRouter key. Without it the chat and care-plan polish return an offline fallback. |
