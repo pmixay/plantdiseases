@@ -49,6 +49,9 @@ COPY --from=builder /install /usr/local
 # Application code — flat copy keeps `from main import …` working.
 COPY *.py ./
 COPY tools ./tools
+# Guide example photos served by /api/guide/photo/<key> (moved out of the APK
+# to shrink the app; the client downloads + disk-caches them).
+COPY static ./static
 
 # Logs + models live on bind mounts; create dirs for the volume targets.
 # /app/data is the SQLite + thumbnail bind-mount target — declared here

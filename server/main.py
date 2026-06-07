@@ -337,6 +337,15 @@ FRONTIER_ENABLED = get_bool("FRONTIER_ENABLED", False)
 FRONTIER_MODELS_DIR = Path(get_str("FRONTIER_MODELS_DIR", str(MODELS_DIR / "frontier")))
 FRONTIER_CLASSIFIER_PATH = FRONTIER_MODELS_DIR / "classifier.onnx"
 
+# ── Guide example photos ─────────────────────────────────────────────
+# Disease/pest example photos used by the app's guide + after-scan strip.
+# They live with the SERVER (server/static/guide/<key>.png) rather than the
+# APK so the app stays small; the client downloads + disk-caches them, so
+# once seen they remain available offline. Path is resolved relative to this
+# module so it works whether uvicorn runs from server/ or the repo root.
+GUIDE_STATIC_DIR = Path(get_str(
+    "GUIDE_STATIC_DIR", str(Path(__file__).resolve().parent / "static" / "guide")))
+
 # Model weights + calibration artefacts are NOT committed to the repo and
 # are NOT auto-downloaded. Provision them out of band: drop the trained
 # files (detector.{pt,onnx}, classifier.onnx, classes.json, ...) into
@@ -2802,6 +2811,37 @@ async def community_scan_thumb(filename: str):
         path,
         media_type="image/jpeg",
         headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
+@api_router.get("/guide/manifest")
+async def guide_manifest():
+    """Keys that have an example photo, so the client can hide the photo strip
+    for topics that ship none — preserving the old bundled-drawable behaviour
+    (null ⇒ no strip) without probing each key with a 404."""
+    keys = (
+        sorted(p.stem for p in GUIDE_STATIC_DIR.glob("*.png"))
+        if GUIDE_STATIC_DIR.is_dir() else []
+    )
+    return {"count": len(keys), "keys": keys}
+
+
+@api_router.get("/guide/photo/{key}")
+async def guide_photo(key: str):
+    """Serve a guide example photo by key (e.g. ``powdery_mildew``).
+
+    Path-traversal guarded like the community-thumb route; missing keys 404.
+    Long-cached because the photos are immutable per release.
+    """
+    if "/" in key or "\\" in key or ".." in key:
+        raise HTTPException(status_code=400, detail="Invalid guide photo key")
+    path = GUIDE_STATIC_DIR / f"{key}.png"
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Guide photo not found")
+    return FileResponse(
+        path,
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=604800"},
     )
 
 

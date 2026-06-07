@@ -31,6 +31,7 @@ import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.tabs.TabLayout
 import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
+import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.bumptech.glide.load.resource.bitmap.CenterCrop
 import com.bumptech.glide.load.resource.bitmap.RoundedCorners
 import com.plantdiseases.app.PlantDiseasesApp
@@ -292,7 +293,7 @@ class ResultActivity : AppCompatActivity() {
             // and the strip silently disappears.
             binding.tvDiseasePhotosLabel.visibility = View.GONE
             binding.hsvDiseasePhotos.visibility = View.GONE
-            GuideDataProvider.exampleImageResForDisease(repository.verdictClassKey(scan) ?: "")
+            GuideDataProvider.exampleImageUrlForDisease(repository.verdictClassKey(scan) ?: "")
                 ?.let { loadDiseasePhotos(it) }
 
             // Community opinions others left on THIS (the user's own) scan.
@@ -763,7 +764,7 @@ class ResultActivity : AppCompatActivity() {
 
     /** Bundled offline example photo of the diagnosed problem, shown above
      *  the description. No network — the asset ships with the app. */
-    private fun loadDiseasePhotos(imageRes: Int) {
+    private fun loadDiseasePhotos(imageUrl: String) {
         val row = binding.llDiseasePhotosRow
         row.removeAllViews()
         val iv = ImageView(this@ResultActivity).apply {
@@ -771,8 +772,14 @@ class ResultActivity : AppCompatActivity() {
                 .apply { marginEnd = dpPx(8) }
             scaleType = ImageView.ScaleType.CENTER_CROP
         }
+        // Server-hosted example photo (moved out of the APK). Disk-cached so it
+        // stays available offline after the first view; a placeholder shows
+        // while it loads / if the device is offline before it was ever cached.
         Glide.with(this@ResultActivity)
-            .load(imageRes)
+            .load(imageUrl)
+            .diskCacheStrategy(DiskCacheStrategy.ALL)
+            .placeholder(R.drawable.ic_plant_placeholder)
+            .error(R.drawable.ic_plant_placeholder)
             .transform(CenterCrop(), RoundedCorners(24))
             .into(iv)
         row.addView(iv)

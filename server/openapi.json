@@ -893,6 +893,61 @@
         }
       }
     },
+    "/api/guide/manifest": {
+      "get": {
+        "summary": "Guide Manifest",
+        "description": "Keys that have an example photo, so the client can hide the photo strip\nfor topics that ship none — preserving the old bundled-drawable behaviour\n(null ⇒ no strip) without probing each key with a 404.",
+        "operationId": "guide_manifest_api_guide_manifest_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/guide/photo/{key}": {
+      "get": {
+        "summary": "Guide Photo",
+        "description": "Serve a guide example photo by key (e.g. ``powdery_mildew``).\n\nPath-traversal guarded like the community-thumb route; missing keys 404.\nLong-cached because the photos are immutable per release.",
+        "operationId": "guide_photo_api_guide_photo__key__get",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/community/user/{user_pseudo_id}": {
       "delete": {
         "summary": "Community Scan Delete User",

@@ -11,6 +11,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import com.bumptech.glide.Glide
+import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.bumptech.glide.load.resource.bitmap.CenterCrop
 import com.bumptech.glide.load.resource.bitmap.RoundedCorners
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
@@ -50,13 +51,13 @@ class GuideDetailSheet : BottomSheetDialogFragment() {
 
     /** Pin a single prominent example photo above the article cards so the
      *  topic opens with "here's what it looks like". The photo is a bundled
-     *  offline drawable (no network), omitted for topics that ship none. */
+     *  server-hosted photo (disk-cached for offline), omitted where none. */
     private fun loadExamplePhotos(guideId: String) {
-        val imageRes = GuideDataProvider.exampleImageRes(guideId) ?: return
-        binding.llSections.addView(buildHeroPhoto(imageRes), 0)
+        val imageUrl = GuideDataProvider.exampleImageUrl(guideId) ?: return
+        binding.llSections.addView(buildHeroPhoto(imageUrl), 0)
     }
 
-    private fun buildHeroPhoto(imageRes: Int): View {
+    private fun buildHeroPhoto(imageUrl: String): View {
         val ctx = requireContext()
         val column = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
@@ -85,7 +86,10 @@ class GuideDetailSheet : BottomSheetDialogFragment() {
             contentDescription = binding.tvTitle.text
         }
         Glide.with(this@GuideDetailSheet)
-            .load(imageRes)
+            .load(imageUrl)
+            .diskCacheStrategy(DiskCacheStrategy.ALL)
+            .placeholder(R.drawable.ic_plant_placeholder)
+            .error(R.drawable.ic_plant_placeholder)
             .transform(CenterCrop(), RoundedCorners(dp(16)))
             .into(image)
         column.addView(image)
