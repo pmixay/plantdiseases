@@ -282,6 +282,7 @@
     <string name="tab_garden">Garden</string>
     <string name="garden_title">My Garden</string>
     <string name="garden_subtitle">Track every plant, scan timeline, notes, photos and watering in one calm green place.</string>
+    <string name="profile_subtitle">Your scan stats, server health, theme, language and community settings.</string>
     <string name="add_plant">Add plant</string>
     <string name="edit_plant">Edit plant</string>
     <string name="plant_name">Plant name</string>

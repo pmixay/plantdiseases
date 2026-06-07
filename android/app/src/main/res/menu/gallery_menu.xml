@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Gallery-tab toolbar actions. Added by GalleryFragment via a
+     MenuProvider scoped to its view lifecycle (RESUMED), so the
+     clear-history basket only appears in the green top bar while the
+     Gallery tab is open. It replaces the old footer button that used
+     to live at the bottom of the Profile screen. -->
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <item
+        android:id="@+id/action_clear_history"
+        android:icon="@drawable/ic_delete"
+        android:title="@string/clear_history"
+        app:showAsAction="always" />
+
+</menu>
