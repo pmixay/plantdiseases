@@ -125,7 +125,38 @@ class MainActivity : AppCompatActivity() {
             .findFragmentById(R.id.nav_host_fragment) as NavHostFragment
         val navController = navHostFragment.navController
 
+        // setupWithNavController wires both the tab→destination navigation
+        // and the destination→tab selection sync. We keep it for the latter,
+        // then override the item-selected listener so tab switches get the
+        // slide-in/fade transition (R.anim.frag_*) the sibling MetalRestrict
+        // app uses. The destination-changed listener it installs is separate
+        // and survives this override, so the checked tab still stays in sync
+        // with programmatic navigations (e.g. the profile/gallery CTAs).
         binding.bottomNavigation.setupWithNavController(navController)
+        binding.bottomNavigation.setOnItemSelectedListener { item ->
+            val navOptions = androidx.navigation.NavOptions.Builder()
+                .setLaunchSingleTop(true)
+                .setRestoreState(true)
+                .setEnterAnim(R.anim.frag_enter)
+                .setExitAnim(R.anim.frag_exit)
+                .setPopEnterAnim(R.anim.frag_pop_enter)
+                .setPopExitAnim(R.anim.frag_pop_exit)
+                // Pop back to the start destination, saving state, so the
+                // back stack and per-tab scroll state behave exactly as they
+                // did under setupWithNavController.
+                .setPopUpTo(
+                    navController.graph.startDestinationId,
+                    inclusive = false,
+                    saveState = true,
+                )
+                .build()
+            try {
+                navController.navigate(item.itemId, null, navOptions)
+                true
+            } catch (e: IllegalArgumentException) {
+                false
+            }
+        }
 
         navController.addOnDestinationChangedListener { _, destination, _ ->
             when (destination.id) {

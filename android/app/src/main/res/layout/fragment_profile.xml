@@ -26,6 +26,55 @@
         android:orientation="vertical"
         android:padding="@dimen/space_lg">
 
+        <!-- Hero: leaf-green gradient block (bg_garden_hero), matching the
+             Garden tab so the Profile no longer drops straight into a plain
+             stat card. Gives the page a real starting point. -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="@dimen/space_md"
+            android:orientation="vertical"
+            android:background="@drawable/bg_garden_hero"
+            android:paddingHorizontal="@dimen/space_xl"
+            android:paddingTop="@dimen/space_2xl"
+            android:paddingBottom="@dimen/space_xl">
+
+            <FrameLayout
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:background="@drawable/bg_circle_semi">
+
+                <ImageView
+                    android:layout_width="26dp"
+                    android:layout_height="26dp"
+                    android:layout_gravity="center"
+                    android:src="@drawable/ic_profile"
+                    android:contentDescription="@null"
+                    app:tint="@color/on_primary" />
+
+            </FrameLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md"
+                android:text="@string/tab_profile"
+                android:textColor="@color/on_primary"
+                android:textSize="28sp"
+                android:fontFamily="sans-serif-black"
+                android:letterSpacing="-0.02" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_xs"
+                android:text="@string/profile_subtitle"
+                android:textColor="@color/on_primary_secondary"
+                android:textSize="@dimen/text_body"
+                android:lineSpacingExtra="3dp" />
+
+        </LinearLayout>
+
         <!-- Server status (compact one-line glass pill row) -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/server_status_card"
@@ -822,23 +871,14 @@
 
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Footer: clear history + version -->
+        <!-- Footer: version. The "clear all history" action moved to the
+             Gallery tab's top-app-bar basket, next to the scans it wipes. -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/space_xl"
             android:orientation="vertical"
             android:gravity="center_horizontal">
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_clear_history"
-                style="@style/Widget.Material3.Button.TextButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/clear_history"
-                android:textColor="@color/disease_red"
-                app:icon="@drawable/ic_delete"
-                app:iconTint="@color/disease_red" />
 
             <TextView
                 android:id="@+id/tv_app_version"

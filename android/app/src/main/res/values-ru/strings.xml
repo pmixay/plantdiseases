@@ -274,6 +274,7 @@
     <string name="tab_garden">Сад</string>
     <string name="garden_title">Мой сад</string>
     <string name="garden_subtitle">Все растения, история сканов, заметки, фото и полив в одном зелёном месте.</string>
+    <string name="profile_subtitle">Статистика сканов, состояние сервера, тема, язык и настройки сообщества.</string>
     <string name="add_plant">Добавить</string>
     <string name="edit_plant">Редактировать</string>
     <string name="plant_name">Название растения</string>

@@ -50,14 +50,8 @@ class ProfileFragment : Fragment() {
 
         binding.tvAppVersion.text = "v${BuildConfig.VERSION_NAME}"
 
-        binding.btnClearHistory.setOnClickListener {
-            MaterialAlertDialogBuilder(requireContext())
-                .setTitle(R.string.clear_history)
-                .setMessage(R.string.clear_history_confirm)
-                .setPositiveButton(R.string.clear_all) { _, _ -> clearHistory() }
-                .setNegativeButton(R.string.cancel, null)
-                .show()
-        }
+        // "Clear all history" now lives on the Gallery tab's top-app-bar
+        // basket, next to the scans it actually wipes.
 
         // Inline "how to use" mini-guide — three step columns, each
         // tappable as a soft shortcut into the relevant tab.
@@ -423,13 +417,11 @@ class ProfileFragment : Fragment() {
             if (totalRecorded == 0) {
                 binding.statsLayout.visibility = View.GONE
                 binding.emptyState.visibility = View.VISIBLE
-                binding.btnClearHistory.visibility = View.GONE
                 return@launch
             }
 
             binding.statsLayout.visibility = View.VISIBLE
             binding.emptyState.visibility = View.GONE
-            binding.btnClearHistory.visibility = View.VISIBLE
 
             // The "Total Scans" card surfaces the full recorded count so
             // it matches the gallery row count; NAP filtering only affects
@@ -447,15 +439,6 @@ class ProfileFragment : Fragment() {
 
             val commonDisease = if (isRu) stats.mostCommonDiseaseRu else stats.mostCommonDisease
             binding.tvCommonDisease.text = commonDisease ?: getString(R.string.none_yet)
-        }
-    }
-
-    private fun clearHistory() {
-        val app = requireActivity().application as PlantDiseasesApp
-        lifecycleScope.launch {
-            app.scanRepository.clearAll()
-            Toast.makeText(requireContext(), R.string.history_cleared, Toast.LENGTH_SHORT).show()
-            loadStats()
         }
     }
 
