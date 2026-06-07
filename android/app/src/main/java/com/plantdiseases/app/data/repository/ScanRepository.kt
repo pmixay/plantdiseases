@@ -64,7 +64,11 @@ class ScanRepository(
                 )
                 if (response.isSuccessful && response.body() != null) {
                     Result.success(response.body()!!)
-                } else if (response.code() == 429) {
+                } else if (response.code() == 429 || response.code() == 403) {
+                    // 403 = a temporary abuse-control cooldown (the server bans
+                    // an IP that briefly burst past the rate limit). Treat it
+                    // like 429: show the "server busy, retry shortly" card
+                    // instead of a scary "Server error: 403".
                     Result.failure(RateLimitException())
                 } else if (response.code() == 503) {
                     Result.failure(ServerStartingException())

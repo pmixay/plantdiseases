@@ -564,6 +564,7 @@
     <string name="model_family_frontier_desc">Самая большая и точная облачная модель.</string>
     <string name="model_family_unavailable">Недоступна на этом сервере</string>
     <string name="model_family_offline_badge">Офлайн</string>
+    <string name="model_family_aqua_downloading">Загрузка…</string>
     <string name="model_family_chip">Модель: %1$s</string>
     <string name="model_family_aqua_not_installed">Офлайн-модель ещё не установлена — пока используется облачная.</string>
     <string name="model_family_cd">Выбрать модель диагностики</string>

@@ -69,10 +69,13 @@ object ModelFamilyPrefs {
 
     fun selected(context: Context): ModelFamily {
         val chosen = ModelFamily.fromId(prefs(context).getString(KEY_SELECTED, null))
-        // Never hand back a family the server can't serve. If frontier was
-        // selected and is no longer available, fall back to the default so a
-        // scan can't silently fail.
+        // Never hand back a family that can't actually serve. Frontier needs
+        // the server to enable it; Aqua needs its on-device model downloaded.
+        // Fall back to the default so a scan can't silently fail.
         if (chosen == ModelFamily.FRONTIER && !frontierAvailable(context)) {
+            return ModelFamily.DEFAULT
+        }
+        if (chosen == ModelFamily.AQUA && !AquaModelManager.isInstalled(context)) {
             return ModelFamily.DEFAULT
         }
         return chosen

@@ -579,6 +579,7 @@
     <string name="model_family_frontier_desc">Largest, most accurate cloud model.</string>
     <string name="model_family_unavailable">Unavailable on this server</string>
     <string name="model_family_offline_badge">Offline</string>
+    <string name="model_family_aqua_downloading">Downloading…</string>
     <string name="model_family_chip">Model: %1$s</string>
     <string name="model_family_aqua_not_installed">Offline model isn\'t installed yet — using the cloud model for now.</string>
     <string name="model_family_cd">Choose diagnosis model</string>

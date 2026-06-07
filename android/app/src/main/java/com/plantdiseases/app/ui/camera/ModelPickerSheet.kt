@@ -10,6 +10,7 @@ import android.widget.TextView
 import androidx.fragment.app.FragmentManager
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.plantdiseases.app.R
+import com.plantdiseases.app.util.AquaModelManager
 import com.plantdiseases.app.util.ModelFamily
 import com.plantdiseases.app.util.ModelFamilyPrefs
 
@@ -37,9 +38,17 @@ class ModelPickerSheet : BottomSheetDialogFragment() {
         val container = view.findViewById<LinearLayout>(R.id.model_family_container)
         val selected = ModelFamilyPrefs.selected(ctx)
         val frontierAvailable = ModelFamilyPrefs.frontierAvailable(ctx)
+        val aquaInstalled = AquaModelManager.isInstalled(ctx)
 
         for (family in ModelFamily.entries) {
-            val available = family != ModelFamily.FRONTIER || frontierAvailable
+            // Aqua is pickable only once its on-device model has downloaded;
+            // until then it's greyed out like an unavailable frontier (no point
+            // offering "offline" with no offline model).
+            val available = when (family) {
+                ModelFamily.FRONTIER -> frontierAvailable
+                ModelFamily.AQUA -> aquaInstalled
+                else -> true
+            }
             val row = layoutInflater.inflate(R.layout.item_model_family, container, false)
 
             row.findViewById<ImageView>(R.id.family_icon).setImageResource(family.iconRes)
@@ -48,6 +57,10 @@ class ModelPickerSheet : BottomSheetDialogFragment() {
 
             val badge = row.findViewById<TextView>(R.id.family_badge)
             when {
+                family == ModelFamily.AQUA && !available -> {
+                    badge.setText(R.string.model_family_aqua_downloading)
+                    badge.visibility = View.VISIBLE
+                }
                 !available -> {
                     badge.setText(R.string.model_family_unavailable)
                     badge.visibility = View.VISIBLE
