@@ -227,21 +227,35 @@ def test_hflip_tta_enabled_with_logit_averaging():
     assert "x_np[..., ::-1]" in src, "TTA must flip along the width axis"
 
 
-def test_stage0_weakclass_supply_broadened():
-    """Report Stage 0: the weak-class eval slices were too small to certify
-    (n~=19-28). The in-domain free-text query lists must be broadened (more
-    DISTINCT terms => more distinct observations => bigger train AND eval
-    slices) and the fetch target raised so the larger lists are drawn."""
+def test_stage0_weakclass_supply_productive():
+    """Weak-class free-text breadth. This originally required >=18 terms per
+    physiological class as a proxy for "enough supply". Live source verification
+    (2026-06, see server/DATA_SOURCES_VERIFICATION.md) showed many of those
+    terms returned ZERO research-grade+photo observations — fake breadth that
+    only spent API calls — so the dead queries were pruned. The real guards for
+    weak-class supply are now (a) a non-gutted list of PRODUCTIVE terms, (b) the
+    per-class count floor (raises if a class is starved), and (c) DoctorP, the
+    eval-eligible real-photo source that actually seeds the weak-class eval
+    slices. Assert the productive lists stay reasonably broad + the target is
+    raised so they're fully drawn."""
     src = _notebook_source()
     block = re.search(r"INAT_PHYSIOLOGICAL_QUERIES\s*=\s*\{.*?\n\}", src, re.DOTALL)
     assert block, "physiological query table missing"
     for cls in ("leaf_scorch_underwatering", "nutrient_deficiency"):
         seg = re.search(rf"'{cls}':\s*\[(.*?)\]", block.group(0), re.DOTALL)
-        assert seg and seg.group(1).count("',") + 1 >= 18, (
-            f"{cls} query list must be broadened to >=18 terms for Stage 0"
+        assert seg, f"{cls} query list missing"
+        # Count quoted strings on the CODE portion of each line only — a comment
+        # may quote a pruned term for documentation, which must not be counted.
+        terms = sum(
+            len(re.findall(r"'[^']+'", line.split("#", 1)[0]))
+            for line in seg.group(1).splitlines()
+        )
+        assert terms >= 10, (
+            f"{cls} productive query list too thin ({terms} terms) — weak-class "
+            f"supply breadth must not be gutted"
         )
     assert "fetch_inat_physiological, per_class=1500" in src, (
-        "per_class target must be raised so the broadened query set is drawn"
+        "per_class target must be raised so the query set is fully drawn"
     )
 
 

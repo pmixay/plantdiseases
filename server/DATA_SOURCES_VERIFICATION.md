@@ -64,16 +64,23 @@ contributes almost nothing; the Kaggle supplements carry the class.
 
 COCO val2017 = 5000 imgs → not_a_plant targets (1500 + 600) easily met.
 
-## Recommendations (not yet applied — curated config)
+## Actions taken
 
-1. **Prune dead iNat free-text queries** (0-yield): 6 in `leaf_scorch`, ~10 in
-   `nutrient_deficiency`, and **most of `GRAY_MOLD_FREETEXT_QUERIES`** (yields ~4 total).
-   They only spend API calls. Safe to remove (they return nothing).
-2. **`nutrient_deficiency` free-text is dominated (92%) by `marginal leaf yellowing`** —
-   the same generic-yellowing noise class the notebook already pruned once. Consider
-   dropping it and leaning on MPLD/Kaggle for the deficiency signal, OR keep it but verify
-   the green/leaf filter + LA-prior decoupling adequately suppress the noise (recall-sensitive
-   — measure before removing).
-3. **gray_mold + the physiological classes are structurally supply-limited at iNat** — the
-   Kaggle (strawberry, DoctorP) + MPLD supplements are load-bearing, not optional, for these
-   classes. The leakage guard + per-class count floors already protect against silent starvation.
+1. **APPLIED — pruned the dead iNat free-text queries** (re-confirmed 0-yield on two
+   live checks): **6** removed from `leaf_scorch_underwatering` (22→16), **10** from
+   `nutrient_deficiency` (21→11), **9** from `GRAY_MOLD_FREETEXT_QUERIES` (12→3). These
+   returned zero research-grade+photo observations, so removal loses **no images** — it
+   only drops wasted API calls. The `test_stage0_weakclass_supply_productive` invariant was
+   updated to count productive (non-comment) terms with a >=10 floor.
+2. **NOT applied (recall-sensitive) — `marginal leaf yellowing`** remains: it's ~92% of
+   `nutrient_deficiency`'s free-text yield and is generic-yellowing-noisy, but removing it
+   would gut the class's iNat supply. It's documented inline as a "reassess against recall
+   on a real run" item; the deficiency *signal* still comes from MPLD + the Kaggle nutrient
+   sets, and the green/leaf filter + LA-prior decoupling suppress the noise.
+
+## Standing note
+
+**gray_mold + the physiological classes are structurally supply-limited at iNat** — the
+Kaggle (strawberry, DoctorP) + MPLD supplements are load-bearing, not optional. The leakage
+guard + per-class count floors protect against silent starvation, and DoctorP (eval-eligible)
+supplies the real-photo eval slices for these classes.
