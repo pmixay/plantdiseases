@@ -10,6 +10,7 @@ import com.plantdiseases.app.data.model.CommunityOpinionRequest
 import com.plantdiseases.app.data.model.CommunityOpinionsResponse
 import com.plantdiseases.app.data.model.CommunityRequestOpinionRequest
 import com.plantdiseases.app.data.model.CommunityRequestOpinionResponse
+import com.plantdiseases.app.data.model.CapabilitiesResponse
 import com.plantdiseases.app.data.model.CommunityScansResponse
 import com.plantdiseases.app.data.model.CommunityScanUploadResponse
 import com.plantdiseases.app.data.model.SpeciesInfoResponse
@@ -48,7 +49,16 @@ interface ApiService {
         @Part image: MultipartBody.Part,
         @Query("species") species: String? = null,
         @Query("locale") locale: String = "en",
+        // Model tier (aqua | gamma | frontier). Aqua normally never reaches
+        // here (it runs on-device); gamma is the default; frontier is only
+        // served when the operator enabled it (see /api/capabilities).
+        @Query("family") family: String = "gamma",
     ): retrofit2.Response<AnalysisResponse>
+
+    /** Per-family availability so the scan-screen picker can grey out a
+     *  tier the server doesn't serve (notably frontier when disabled). */
+    @GET("api/capabilities")
+    suspend fun capabilities(): retrofit2.Response<CapabilitiesResponse>
 
     @GET("api/health")
     suspend fun healthCheck(): retrofit2.Response<HealthResponse>

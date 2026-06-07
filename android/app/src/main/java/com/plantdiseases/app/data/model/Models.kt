@@ -156,6 +156,29 @@ data class AnalysisResponse(
     // pretending the diagnosis is fresh.
     @SerializedName("is_repeat") val isRepeat: Boolean = false,
     @SerializedName("cached_at") val cachedAt: Double? = null,
+    // Model tier that produced this verdict (aqua | gamma | frontier).
+    // Echoed back by the server so the client can confirm which family
+    // answered (and detect a server-side downgrade). On-device Aqua
+    // results set this locally. Defaults to gamma for older responses.
+    @SerializedName("family") val family: String = "gamma",
+)
+
+/** Per-family availability advertised by GET /api/capabilities. The
+ *  scan-screen model picker reads this to decide which tiers to offer:
+ *  a family with ``available=false`` (typically frontier when the server
+ *  hasn't enabled it) is shown disabled. */
+data class CapabilitiesResponse(
+    @SerializedName("default") val default: String = "gamma",
+    @SerializedName("families") val families: List<FamilyCapability> = emptyList(),
+    @SerializedName("server_version") val serverVersion: String? = null,
+)
+
+data class FamilyCapability(
+    @SerializedName("id") val id: String = "",
+    @SerializedName("available") val available: Boolean = false,
+    // "server" or "on_device".
+    @SerializedName("location") val location: String = "server",
+    @SerializedName("model_family") val modelFamily: String? = null,
 )
 
 /** Species block carried inside AnalysisResponse. */

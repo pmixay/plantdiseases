@@ -566,4 +566,19 @@
     <string name="light_meter_entry_title">Measure light here</string>
     <string name="light_meter_entry_subtitle">Use your phone\'s light sensor to check the lux level at this plant\'s spot.</string>
     <string name="light_meter_entry_subtitle_recorded">Last measured here: %1$d lx · %2$s</string>
+
+    <!-- Scan screen → model-family picker -->
+    <string name="model_family_title">Diagnosis model</string>
+    <string name="model_family_subtitle">Pick how this scan is analysed</string>
+    <string name="model_family_aqua">Aqua</string>
+    <string name="model_family_aqua_desc">Runs offline on your phone. Fast, works with no connection.</string>
+    <string name="model_family_gamma">Gamma</string>
+    <string name="model_family_gamma_desc">Balanced cloud model. Recommended for most scans.</string>
+    <string name="model_family_frontier">Frontier</string>
+    <string name="model_family_frontier_desc">Largest, most accurate cloud model.</string>
+    <string name="model_family_unavailable">Unavailable on this server</string>
+    <string name="model_family_offline_badge">Offline</string>
+    <string name="model_family_chip">Model: %1$s</string>
+    <string name="model_family_aqua_not_installed">Offline model isn\'t installed yet — using the cloud model for now.</string>
+    <string name="model_family_cd">Choose diagnosis model</string>
 </resources>

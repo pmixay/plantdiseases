@@ -18,6 +18,7 @@ import com.plantdiseases.app.databinding.ActivityAnalysisBinding
 import com.plantdiseases.app.ui.result.ResultActivity
 import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.ModelFamilyPrefs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -127,7 +128,14 @@ class AnalysisActivity : AppCompatActivity() {
 
             try {
                 val locale = if (LocaleHelper.isRussian(this@AnalysisActivity)) "ru" else "en"
-                val result = app.scanRepository.analyzeImage(uploadFile, locale = locale)
+                // The tier the user picked on the scan screen. Aqua is an
+                // on-device family; until the offline engine is installed we
+                // fall back to the server (served as gamma-parity), tagging
+                // the request as aqua so the server still records the choice.
+                val family = ModelFamilyPrefs.selected(this@AnalysisActivity)
+                val result = app.scanRepository.analyzeImage(
+                    uploadFile, locale = locale, family = family.id,
+                )
 
                 result.onSuccess { response ->
                     val scanId = app.scanRepository.saveScan(imagePath, response)

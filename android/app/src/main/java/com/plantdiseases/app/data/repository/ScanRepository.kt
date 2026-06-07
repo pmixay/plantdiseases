@@ -4,6 +4,7 @@ import com.google.gson.Gson
 import com.plantdiseases.app.data.local.ScanDao
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.AnalysisResponse
+import com.plantdiseases.app.data.model.CapabilitiesResponse
 import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.CarePlanResponse
 import com.plantdiseases.app.data.model.ChatRequest
@@ -48,6 +49,7 @@ class ScanRepository(
         imageFile: File,
         speciesHint: String? = null,
         locale: String = "en",
+        family: String = "gamma",
     ): Result<AnalysisResponse> =
         withContext(Dispatchers.IO) {
             try {
@@ -57,6 +59,7 @@ class ScanRepository(
                     part,
                     speciesHint?.takeIf { it.isNotBlank() },
                     locale,
+                    family,
                 )
                 if (response.isSuccessful && response.body() != null) {
                     Result.success(response.body()!!)
@@ -75,6 +78,25 @@ class ScanRepository(
                 Result.failure(NoNetworkException())
             } catch (e: java.net.ConnectException) {
                 Result.failure(ServerTimeoutException())
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+    /**
+     * Fetch per-family availability for the scan-screen model picker.
+     * Best-effort: on any failure the caller keeps its last-known state
+     * (frontier stays disabled, aqua/gamma stay available).
+     */
+    suspend fun fetchCapabilities(): Result<CapabilitiesResponse> =
+        withContext(Dispatchers.IO) {
+            try {
+                val response = apiService.capabilities()
+                if (response.isSuccessful && response.body() != null) {
+                    Result.success(response.body()!!)
+                } else {
+                    Result.failure(Exception("Server error: ${response.code()}"))
+                }
             } catch (e: Exception) {
                 Result.failure(e)
             }

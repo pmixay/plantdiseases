@@ -551,4 +551,19 @@
     <string name="light_meter_entry_title">Измерить освещение</string>
     <string name="light_meter_entry_subtitle">С помощью датчика телефона проверьте уровень освещения у этого растения.</string>
     <string name="light_meter_entry_subtitle_recorded">Последнее измерение здесь: %1$d лк · %2$s</string>
+
+    <!-- Экран сканирования → выбор модели -->
+    <string name="model_family_title">Модель диагностики</string>
+    <string name="model_family_subtitle">Выберите, как анализировать снимок</string>
+    <string name="model_family_aqua">Aqua</string>
+    <string name="model_family_aqua_desc">Работает офлайн на телефоне. Быстро, без подключения.</string>
+    <string name="model_family_gamma">Gamma</string>
+    <string name="model_family_gamma_desc">Сбалансированная облачная модель. Рекомендуется по умолчанию.</string>
+    <string name="model_family_frontier">Frontier</string>
+    <string name="model_family_frontier_desc">Самая большая и точная облачная модель.</string>
+    <string name="model_family_unavailable">Недоступна на этом сервере</string>
+    <string name="model_family_offline_badge">Офлайн</string>
+    <string name="model_family_chip">Модель: %1$s</string>
+    <string name="model_family_aqua_not_installed">Офлайн-модель ещё не установлена — пока используется облачная.</string>
+    <string name="model_family_cd">Выбрать модель диагностики</string>
 </resources>

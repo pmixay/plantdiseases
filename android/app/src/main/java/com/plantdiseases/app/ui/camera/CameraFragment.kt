@@ -44,6 +44,7 @@ import com.plantdiseases.app.ui.analysis.AnalysisActivity
 import com.plantdiseases.app.ui.community.NearbyScansActivity
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
+import com.plantdiseases.app.util.ModelFamilyPrefs
 import kotlinx.coroutines.launch
 import java.io.File
 import java.util.Locale
@@ -187,12 +188,43 @@ class CameraFragment : Fragment() {
             permissionLauncher.launch(Manifest.permission.CAMERA)
         }
 
+        refreshModelFamilyChip()
+        binding.btnModelFamily.setOnClickListener {
+            Haptics.tick(requireContext())
+            ModelPickerSheet.show(childFragmentManager) { refreshModelFamilyChip() }
+        }
+        syncModelCapabilities()
+
         binding.cameraPreview.setOnTouchListener { _, event ->
             scaleGestureDetector.onTouchEvent(event)
             if (event.action == MotionEvent.ACTION_DOWN && !scaleGestureDetector.isInProgress) {
                 handleTapToFocus(event.x, event.y)
             }
             true
+        }
+    }
+
+    /** Update the picker chip to show the currently-selected family. */
+    private fun refreshModelFamilyChip() {
+        val family = ModelFamilyPrefs.selected(requireContext())
+        binding.btnModelFamily.setText(family.labelRes)
+        binding.btnModelFamily.setIconResource(family.iconRes)
+    }
+
+    /** Refresh per-family availability from the server so the picker can grey
+     *  out frontier when it isn't enabled. Best-effort: failures keep the
+     *  last-known flags (frontier stays disabled). */
+    private fun syncModelCapabilities() {
+        val app = requireActivity().application as PlantDiseasesApp
+        viewLifecycleOwner.lifecycleScope.launch {
+            app.scanRepository.fetchCapabilities().onSuccess { caps ->
+                if (!isAdded) return@onSuccess
+                val frontier = caps.families.firstOrNull { it.id == "frontier" }?.available ?: false
+                ModelFamilyPrefs.setFrontierAvailable(requireContext(), frontier)
+                // If frontier was selected but is no longer offered, the chip
+                // must reflect the fallback selection.
+                refreshModelFamilyChip()
+            }
         }
     }
 
