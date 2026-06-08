@@ -162,6 +162,16 @@ _NON_DISEASE = {"healthy", "not_a_plant"}
 # so any high-confidence viral verdict deserves the bump.
 _DEGENERATIVE_DISEASES = {"viral_disease"}
 
+# Viral-mosaic false-positive guard (see ``_postprocess``). Naturally
+# variegated / vividly patterned ornamental foliage (Calathea, Maranta,
+# Caladium, Coleus, Croton, Aglaonema, Stromanthe…) reads as viral *mosaic*
+# to the classifier — the single biggest source of viral false positives.
+# We can't fix that without retraining on such cultivars as negatives, so we
+# hedge: a caveat warning at any confidence, plus a low-confidence demotion
+# when a viral verdict lands below this stricter floor (mid-confidence viral
+# calls are mostly variegation, like the 53 % Calathea screenshot).
+VIRAL_MIN_CONFIDENCE = 0.65
+
 # Severity thresholds (relative bbox area). Calibrated against typical
 # indoor phone shots: a single leaf at arm's length covers roughly
 # 5–15% of the frame; a "the whole plant looks bad" full-frame shot
@@ -1133,6 +1143,18 @@ def _apply_postprocessing_rules(
 
     if classification.get("low_confidence"):
         warnings.append("low_confidence")
+
+    # Viral-mosaic guard — see VIRAL_MIN_CONFIDENCE. Naturally variegated
+    # ornamentals are the dominant viral false positive, so always attach a
+    # caveat on a viral verdict, and demote mid-confidence viral calls.
+    if classification["class_name"] == "viral_disease":
+        if "viral_variegation_caveat" not in warnings:
+            warnings.append("viral_variegation_caveat")
+        if (
+            float(classification["confidence"]) < VIRAL_MIN_CONFIDENCE
+            and "low_confidence" not in warnings
+        ):
+            warnings.append("low_confidence")
 
     # Very-low-confidence floor — purely a UI hint, no class swap.
     # The post-reroute confidence is what the user sees, so we check

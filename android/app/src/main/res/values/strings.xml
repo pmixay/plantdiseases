@@ -260,6 +260,8 @@
     <string name="warning_very_low_confidence">The model isn\'t confident in this verdict — please retake the photo with the leaf filling most of the frame, in good even light, and on a plain background.</string>
     <string name="warning_uncertain_healthy_title">Could be disease</string>
     <string name="warning_uncertain_healthy">The model is not confident that the plant is healthy. Please check the alternative diagnoses below — they may apply.</string>
+    <string name="warning_viral_variegation_title">Could be natural variegation</string>
+    <string name="warning_viral_variegation">Colorful or mottled patterns on ornamental foliage (Calathea, Caladium, Coleus, Croton, Aglaonema…) can closely resemble viral mosaic. If this is a variegated cultivar, the pattern may be perfectly normal — compare with a healthy leaf of the same plant and consider a second opinion before treating.</string>
     <string name="warning_detector_mismatch_title">Detector sees damage</string>
     <string name="warning_detector_mismatch">The detector spotted leaf damage, but the classifier decided the plant is healthy. Try re-scanning from a closer, better-lit angle.</string>
     <string name="warning_blurry_image_title">Photo is too blurry</string>

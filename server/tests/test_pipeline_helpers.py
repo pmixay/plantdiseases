@@ -570,3 +570,45 @@ def test_blur_gate_accepts_textured_image():
     rng = np.random.default_rng(seed=42)
     noisy = Image.fromarray(rng.integers(0, 255, (480, 640, 3), dtype=np.uint8))
     assert _variance_of_laplacian(noisy) > BLUR_LAPLACIAN_FLOOR * 10
+
+
+def test_viral_low_confidence_gets_caveat_and_demotion():
+    """A mid-confidence viral verdict (the variegated-ornamental false
+    positive) earns a natural-variegation caveat AND a low-confidence
+    demotion so the UI presents it tentatively."""
+    from pipeline import VIRAL_MIN_CONFIDENCE, _apply_postprocessing_rules
+
+    probs = {n: 0.01 for n in EXPECTED_CLASSES}
+    probs["viral_disease"] = 0.53
+    probs["healthy"] = 0.21
+    classification = {
+        "class_name": "viral_disease",
+        "confidence": 0.53,
+        "all_probs": probs,
+        "low_confidence": False,
+    }
+    assert 0.53 < VIRAL_MIN_CONFIDENCE
+    out = _apply_postprocessing_rules(classification, list(probs.keys()))
+
+    assert out["class_name"] == "viral_disease"  # verdict unchanged
+    assert "viral_variegation_caveat" in out["warnings"]
+    assert "low_confidence" in out["warnings"]
+
+
+def test_viral_high_confidence_keeps_caveat_without_demotion():
+    """A confident viral verdict still carries the caveat (mosaic ↔
+    variegation is inherently confusable) but is NOT demoted."""
+    from pipeline import _apply_postprocessing_rules
+
+    probs = {n: 0.01 for n in EXPECTED_CLASSES}
+    probs["viral_disease"] = 0.85
+    classification = {
+        "class_name": "viral_disease",
+        "confidence": 0.85,
+        "all_probs": probs,
+        "low_confidence": False,
+    }
+    out = _apply_postprocessing_rules(classification, list(probs.keys()))
+
+    assert "viral_variegation_caveat" in out["warnings"]
+    assert "low_confidence" not in out["warnings"]

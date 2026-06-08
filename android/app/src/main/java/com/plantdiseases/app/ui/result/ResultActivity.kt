@@ -809,6 +809,10 @@ class ResultActivity : AppCompatActivity() {
                 binding.tvPipelineWarningTitle.setText(R.string.warning_uncertain_healthy_title)
                 binding.tvPipelineWarningBody.setText(R.string.warning_uncertain_healthy)
             }
+            "viral_variegation_caveat" in warnings -> {
+                binding.tvPipelineWarningTitle.setText(R.string.warning_viral_variegation_title)
+                binding.tvPipelineWarningBody.setText(R.string.warning_viral_variegation)
+            }
             "low_confidence" in warnings -> {
                 binding.tvPipelineWarningTitle.setText(R.string.warning_low_confidence_title)
                 binding.tvPipelineWarningBody.setText(R.string.warning_low_confidence)
