@@ -68,6 +68,54 @@ class ResultActivity : AppCompatActivity() {
 
     private var carePlanCard: CarePlanCardView? = null
 
+    // In-context community opt-in: tapping "Enable" on the similar-scans card
+    // requests coarse location (+ notifications on 13+) and, whatever the
+    // outcome, re-renders the gated section via this stored lambda.
+    private var pendingCommunityRerun: (() -> Unit)? = null
+    private val communityPermissionLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions(),
+    ) { _ ->
+        // Just opted in — register for push so replies reach a closed device.
+        com.plantdiseases.app.push.PushManager.registerIfEnabled(this)
+        pendingCommunityRerun?.invoke()
+        pendingCommunityRerun = null
+    }
+
+    private fun requestCommunityPermissions() {
+        val perms = mutableListOf(android.Manifest.permission.ACCESS_COARSE_LOCATION)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            // So the OpinionCheckWorker can later notify the owner when someone
+            // weighs in on a scan they shared.
+            perms += android.Manifest.permission.POST_NOTIFICATIONS
+        }
+        communityPermissionLauncher.launch(perms.toTypedArray())
+    }
+
+    // Notifications-only prompt, fired when the user asks for a second opinion
+    // so the reply can actually reach them. nm.notify() no-ops if denied.
+    private val notifPermissionLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+    ) { /* no-op: a denied grant just means no notification later */ }
+
+    private fun ensureNotificationPermission() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                this, android.Manifest.permission.POST_NOTIFICATIONS,
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            notifPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
+    /** Fire-and-forget: record that this install opened someone else's shared
+     *  scan. The repository swallows failures and the server dedups per
+     *  viewer + ignores owner self-views, so this is safe to call on any tap. */
+    private fun recordCommunityView(scanId: String, viewerPseudoId: String) {
+        if (scanId.isBlank() || viewerPseudoId.isBlank()) return
+        val repo = (application as PlantDiseasesApp).scanRepository
+        lifecycleScope.launch { repo.recordCommunityView(scanId, viewerPseudoId) }
+    }
+
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
     }
@@ -92,6 +140,19 @@ class ResultActivity : AppCompatActivity() {
             // fills down behind the bar while the buttons clear it.
             binding.bottomActionBar.setContentPadding(0, 0, 0, bars.bottom)
             insets
+        }
+
+        // Keep the scroll content clear of the floating bottom bar. The bar's
+        // height is content + the nav-bar inset applied above, and isn't known
+        // until layout — a static paddingBottom (it was 80dp) left the last
+        // card (feedback) partly hidden behind the buttons. Match it to the
+        // bar's actual measured height instead.
+        binding.bottomActionBar.addOnLayoutChangeListener {
+            _, _, _, _, _, _, _, _, _ ->
+            val h = binding.bottomActionBar.height
+            if (h > 0 && binding.scrollView.paddingBottom != h) {
+                binding.scrollView.updatePadding(bottom = h)
+            }
         }
 
         val scanId = intent.getLongExtra(EXTRA_SCAN_ID, -1)
@@ -317,16 +378,49 @@ class ResultActivity : AppCompatActivity() {
                 lifecycleScope.launch {
                     repository.getCommunityOpinions(ownScanId).onSuccess { resp ->
                         val n = resp.opinions.size
-                        if (n > 0) {
-                            binding.btnViewOpinions.text =
+                        val v = resp.views
+                        // Opening the scan's result counts as viewing its
+                        // activity — advance the viewed baseline so the Gallery
+                        // clears its "+N new opinions" badge for this scan.
+                        com.plantdiseases.app.util.OpinionPrefs
+                            .markViewedOpinions(this@ResultActivity, ownScanId, n)
+                        // Show activity on the user's OWN shared scan whenever
+                        // there is any — opinions and/or views — not only when
+                        // they explicitly asked for a second opinion. The view
+                        // count is deduped per viewer server-side.
+                        if (n > 0 || v > 0) {
+                            binding.btnViewOpinions.text = if (v > 0) {
+                                getString(R.string.result_view_activity, n, v)
+                            } else {
                                 getString(R.string.result_view_opinions, n)
+                            }
                             binding.btnViewOpinions.visibility = View.VISIBLE
+                            val opinionName =
+                                classKeyDisplayName(repository.topClassKey(scan) ?: "", isRu)
                             binding.btnViewOpinions.setOnClickListener {
-                                CommunityOpinionSheet.show(
-                                    supportFragmentManager,
-                                    ownScanId,
-                                    classKeyDisplayName(repository.topClassKey(scan) ?: "", isRu),
+                                // Owner viewing their OWN scan — read-only, you
+                                // don't leave a second opinion on your own scan.
+                                CommunityOpinionSheet.showForOwner(
+                                    supportFragmentManager, ownScanId, opinionName,
                                 )
+                            }
+                            // Arrived from a notification / a Gallery row with
+                            // new opinions → jump straight to them (scroll the
+                            // button into view, then open the sheet).
+                            if (n > 0 && intent.getBooleanExtra(EXTRA_OPEN_OPINIONS, false)) {
+                                intent.removeExtra(EXTRA_OPEN_OPINIONS)
+                                binding.scrollView.post {
+                                    binding.btnViewOpinions.requestRectangleOnScreen(
+                                        android.graphics.Rect(
+                                            0, 0,
+                                            binding.btnViewOpinions.width,
+                                            binding.btnViewOpinions.height,
+                                        ), false,
+                                    )
+                                    CommunityOpinionSheet.showForOwner(
+                                        supportFragmentManager, ownScanId, opinionName,
+                                    )
+                                }
                             }
                         }
                     }
@@ -519,6 +613,8 @@ class ResultActivity : AppCompatActivity() {
             btn.setOnClickListener {
                 btn.isEnabled = false
                 btn.setText(R.string.result_second_opinion_waiting)
+                // They're asking for replies — make sure we can notify them.
+                ensureNotificationPermission()
                 val app = application as PlantDiseasesApp
                 val pseudoId =
                     com.plantdiseases.app.util.TelemetryIds.userPseudoId(this@ResultActivity)
@@ -536,7 +632,17 @@ class ResultActivity : AppCompatActivity() {
                         return@launch
                     }
                     app.scanRepository.requestSecondOpinion(scan.clientScanId, pseudoId)
-                        .onSuccess { showWaiting() }
+                        .onSuccess {
+                            showWaiting()
+                            // Seed the notify baseline at 0 so the very next
+                            // reply counts as new (and isn't swallowed as a
+                            // "first poll" pre-existing opinion), and flip the
+                            // global init flag for the same reason.
+                            com.plantdiseases.app.util.OpinionPrefs
+                                .markInitialized(this@ResultActivity)
+                            com.plantdiseases.app.util.OpinionPrefs
+                                .setSeen(this@ResultActivity, scan.clientScanId, 0)
+                        }
                         .onFailure {
                             showAsk()
                             Toast.makeText(
@@ -721,6 +827,10 @@ class ResultActivity : AppCompatActivity() {
                 binding.tvPipelineWarningTitle.setText(R.string.warning_uncertain_healthy_title)
                 binding.tvPipelineWarningBody.setText(R.string.warning_uncertain_healthy)
             }
+            "viral_variegation_caveat" in warnings -> {
+                binding.tvPipelineWarningTitle.setText(R.string.warning_viral_variegation_title)
+                binding.tvPipelineWarningBody.setText(R.string.warning_viral_variegation)
+            }
             "low_confidence" in warnings -> {
                 binding.tvPipelineWarningTitle.setText(R.string.warning_low_confidence_title)
                 binding.tvPipelineWarningBody.setText(R.string.warning_low_confidence)
@@ -819,6 +929,7 @@ class ResultActivity : AppCompatActivity() {
                 info.imageUrl?.takeIf { it.isNotBlank() }?.let { url ->
                     Glide.with(this@ResultActivity)
                         .load(url)
+                        .diskCacheStrategy(DiskCacheStrategy.ALL)
                         .transform(CenterCrop(), RoundedCorners(24))
                         .into(binding.ivSpeciesPhoto)
                     binding.ivSpeciesPhoto.visibility = View.VISIBLE
@@ -836,6 +947,7 @@ class ResultActivity : AppCompatActivity() {
         val adapter = SimilarScansAdapter(
             displayName = { key -> classKeyDisplayName(key, isRu) ?: key },
             onClick = { item ->
+                recordCommunityView(item.scanId, pseudoId)
                 CommunityOpinionSheet.show(
                     supportFragmentManager,
                     item.scanId,
@@ -869,10 +981,28 @@ class ResultActivity : AppCompatActivity() {
         val card = binding.cardSimilarScans
         val rv = binding.rvSimilarScans
         val empty = binding.tvSimilarEmpty
+        val enableBtn = binding.btnEnableSimilar
         // Default state: hidden until the network call returns.
         card.visibility = View.GONE
         rv.visibility = View.GONE
         empty.visibility = View.GONE
+        enableBtn.visibility = View.GONE
+
+        // Community is opt-in. Until the user opts in, show the card as an
+        // in-context Enable prompt instead of reading their location / hitting
+        // the network. Tapping Enable flips the pref, asks for coarse location
+        // (+ notifications), and re-renders this card to populate it.
+        if (!com.plantdiseases.app.util.CommunityPrefs.uploadsEnabled(this)) {
+            card.visibility = View.VISIBLE
+            binding.tvSimilarSubtitle.text = getString(R.string.similar_scans_enable_prompt)
+            enableBtn.visibility = View.VISIBLE
+            enableBtn.setOnClickListener {
+                com.plantdiseases.app.util.CommunityPrefs.enable(this)
+                pendingCommunityRerun = { buildSimilarScansCard(scan, repository, isRu) }
+                requestCommunityPermissions()
+            }
+            return
+        }
 
         // Scope the carousel by the verdict the user actually SAW — the
         // server's reroute-aware displayed class — not the raw argmax.
@@ -886,8 +1016,10 @@ class ResultActivity : AppCompatActivity() {
         val adapter = SimilarScansAdapter(
             displayName = { key -> classKeyDisplayName(key, isRu) ?: key },
             onClick = { item ->
-                // Tapping a "near you" scan lets the user weigh in with a
-                // second opinion on someone else's uncertain verdict.
+                // Opening someone else's scan counts as a view (deduped per
+                // viewer server-side) and lets the user weigh in with a second
+                // opinion on their uncertain verdict.
+                recordCommunityView(item.scanId, pseudoId)
                 CommunityOpinionSheet.show(
                     supportFragmentManager,
                     item.scanId,
@@ -1627,6 +1759,10 @@ class ResultActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_SCAN_ID = "extra_scan_id"
+        /** When true, auto-open the community opinions for this scan once it
+         *  loads — set from an opinion notification tap and from tapping a
+         *  Gallery row that has new opinions. */
+        const val EXTRA_OPEN_OPINIONS = "extra_open_opinions"
         private const val TAG = "ResultActivity"
         private const val FEEDBACK_PREFS = "plantdiseases_feedback_prefs"
         private const val FEEDBACK_KEY_PREFIX = "scan_"

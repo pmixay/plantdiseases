@@ -74,6 +74,29 @@ class GalleryAdapter(
                 .placeholder(R.drawable.ic_plant_placeholder)
                 .into(ivPlant)
 
+            // Opinion-count badge on the user's own shared scans. View counts
+            // live on the result screen's community activity line, not here.
+            if (item.communityOpinions > 0) {
+                tvCommunityBadge.text = context.getString(
+                    R.string.gallery_community_badge, item.communityOpinions,
+                )
+                tvCommunityBadge.visibility = android.view.View.VISIBLE
+            } else {
+                tvCommunityBadge.visibility = android.view.View.GONE
+            }
+
+            // Red "+N" badge + accent stroke when there are opinions the user
+            // hasn't opened this scan to see yet. Cleared once they view it.
+            if (item.newOpinions > 0) {
+                tvNewOpinions.text = "+${item.newOpinions}"
+                tvNewOpinions.visibility = android.view.View.VISIBLE
+                root.strokeColor = context.getColor(R.color.disease_red)
+                root.strokeWidth = (2 * context.resources.displayMetrics.density).toInt()
+            } else {
+                tvNewOpinions.visibility = android.view.View.GONE
+                root.strokeWidth = 0
+            }
+
             root.setOnClickListener { onClick(item) }
             root.setOnLongClickListener {
                 MaterialAlertDialogBuilder(context)

@@ -124,5 +124,27 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
+        <!-- Firebase Cloud Messaging. We initialise Firebase manually from
+             BuildConfig.FCM_* (no google-services.json), so the auto-init
+             provider is removed — otherwise it logs a noisy failure when the
+             FCM resources aren't present. -->
+        <provider
+            android:name="com.google.firebase.provider.FirebaseInitProvider"
+            android:authorities="${applicationId}.firebaseinitprovider"
+            tools:node="remove" />
+
+        <service
+            android:name=".push.PlantMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
+        <!-- Post FCM notifications on the existing community channel. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="community" />
+
     </application>
 </manifest>

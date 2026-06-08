@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Small red pill for the Gallery "+N new opinions" badge. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/disease_red" />
+    <corners android:radius="999dp" />
+</shape>

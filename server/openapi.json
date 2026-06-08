@@ -617,6 +617,117 @@
         }
       }
     },
+    "/api/push/register": {
+      "post": {
+        "summary": "Push Register Endpoint",
+        "description": "Register this install's FCM token under its pseudo-id so the server can\npush opinion notifications to a closed / idle device. Upserts by token.",
+        "operationId": "push_register_endpoint_api_push_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PushRegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/community/view": {
+      "post": {
+        "summary": "Community Record Scan View",
+        "description": "Record that the caller opened someone else's shared scan. Deduped per\nviewer server-side; a scan owner viewing their own scan and views of an\nunknown scan never count, so this is safe to fire on every open.",
+        "operationId": "community_record_scan_view_api_community_view_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommunityViewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/community/scan-counts": {
+      "post": {
+        "summary": "Community Scan Counts Endpoint",
+        "description": "Batched ``{opinions, views}`` per scan_id so the Gallery can badge the\ncaller's own rows in one round-trip. Unknown/zero scans are omitted.",
+        "operationId": "community_scan_counts_endpoint_api_community_scan_counts_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommunityScanCountsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/community/nearby": {
       "get": {
         "summary": "Community Scan Nearby",
@@ -1389,6 +1500,45 @@
         ],
         "title": "CommunityRequestOpinionRequest"
       },
+      "CommunityScanCountsRequest": {
+        "properties": {
+          "scan_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 500,
+            "title": "Scan Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scan_ids"
+        ],
+        "title": "CommunityScanCountsRequest"
+      },
+      "CommunityViewRequest": {
+        "properties": {
+          "scan_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Scan Id"
+          },
+          "user_pseudo_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "User Pseudo Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scan_id",
+          "user_pseudo_id"
+        ],
+        "title": "CommunityViewRequest"
+      },
       "FeedbackRequest": {
         "properties": {
           "scan_id": {
@@ -1645,6 +1795,34 @@
         ],
         "title": "ProgressionRequest",
         "description": "Time-ordered list of scans (oldest first) for the disease-\nprogression sparkline + trend the plant-detail screen renders."
+      },
+      "PushRegisterRequest": {
+        "properties": {
+          "user_pseudo_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "User Pseudo Id"
+          },
+          "token": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Token"
+          },
+          "platform": {
+            "type": "string",
+            "maxLength": 16,
+            "title": "Platform",
+            "default": "android"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_pseudo_id",
+          "token"
+        ],
+        "title": "PushRegisterRequest"
       },
       "ValidationError": {
         "properties": {

@@ -31,6 +31,36 @@ android {
             .replace("\"", "\\\"")
         buildConfigField("String", "API_BASE_URL", "\"$configuredApiBaseUrl\"")
 
+        // Firebase Cloud Messaging config. Defaults below are the public
+        // client identifiers of the "plantdiseases-8ffeb" Firebase project
+        // (from its google-services.json) — these are the same values shipped
+        // inside every APK and are safe to commit; access is gated by app
+        // signing + the server's service-account key, not their secrecy.
+        // Override per-build with -PFCM_APP_ID=... (gradle property) or the
+        // same-named env var to point at a different Firebase project.
+        // We init Firebase MANUALLY from these (no google-services plugin), so
+        // the build never hard-requires a google-services.json file.
+        fun fcmProp(name: String, default: String): String =
+            (providers.gradleProperty(name).orNull ?: System.getenv(name) ?: default)
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+        buildConfigField(
+            "String", "FCM_APP_ID",
+            "\"${fcmProp("FCM_APP_ID", "1:477261694434:android:ab17ca7387d4e5a390e5bb")}\"",
+        )
+        buildConfigField(
+            "String", "FCM_API_KEY",
+            "\"${fcmProp("FCM_API_KEY", "AIzaSyCaHSEXJDiEvPbh_O-T9GqhTg_9_E7oeqc")}\"",
+        )
+        buildConfigField(
+            "String", "FCM_PROJECT_ID",
+            "\"${fcmProp("FCM_PROJECT_ID", "plantdiseases-8ffeb")}\"",
+        )
+        buildConfigField(
+            "String", "FCM_SENDER_ID",
+            "\"${fcmProp("FCM_SENDER_ID", "477261694434")}\"",
+        )
+
         // The Aqua family runs a TFLite model on-device. Limit the bundled
         // native .so libs to the ABIs real devices use — dropping x86/mips
         // keeps the APK from carrying interpreter libs no phone will load.
@@ -62,8 +92,17 @@ android {
                 "proguard-rules.pro"
             )
             val releaseConfig = signingConfigs.findByName("release")
-            if (releaseConfig?.storeFile != null) {
-                signingConfig = releaseConfig
+            // Always sign the release APK so it is INSTALLABLE. A real
+            // keystore (pass -PRELEASE_STORE_FILE=… for a store build) is used
+            // when present; otherwise (CI, local sideload) fall back to the
+            // auto-provisioned debug key. An UNSIGNED release APK fails to
+            // install with "App not installed as package appears to be
+            // invalid" — which is what packaging only the release variant in
+            // CI (no keystore) exposed.
+            signingConfig = if (releaseConfig?.storeFile != null) {
+                releaseConfig
+            } else {
+                signingConfigs.getByName("debug")
             }
         }
     }
@@ -160,6 +199,12 @@ dependencies {
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
+
+    // Firebase Cloud Messaging (push). No google-services plugin / json:
+    // Firebase is initialised manually from BuildConfig.FCM_* at runtime, so
+    // the build works with or without credentials.
+    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
+    implementation("com.google.firebase:firebase-messaging")
 
     // Gson
     implementation("com.google.code.gson:gson:2.11.0")

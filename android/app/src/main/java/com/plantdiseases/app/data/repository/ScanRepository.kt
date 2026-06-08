@@ -193,9 +193,21 @@ class ScanRepository(
      */
     suspend fun fetchCarePlan(request: CarePlanRequest): Result<CarePlanResponse> =
         withContext(Dispatchers.IO) {
+            // Care plans are deterministic per (disease, species, light, locale)
+            // and expensive to generate, so serve from the persistent cache once
+            // fetched — reopening a result no longer re-hits the LLM.
+            val cacheKey = "careplan:v1:${request.disease}|${request.species}" +
+                "|${request.light}|${request.locale}"
+            com.plantdiseases.app.util.ResponseCache
+                .get(cacheKey, CarePlanResponse::class.java)
+                ?.let { return@withContext Result.success(it) }
             try {
                 val response = apiService.carePlan(request)
                 if (response.isSuccessful && response.body() != null) {
+                    com.plantdiseases.app.util.ResponseCache.put(
+                        cacheKey, response.body()!!,
+                        com.plantdiseases.app.util.ResponseCache.TTL_CARE_PLAN_MS,
+                    )
                     Result.success(response.body()!!)
                 } else if (response.code() == 503) {
                     Result.failure(ServerStartingException())
@@ -604,6 +616,59 @@ class ScanRepository(
             }
         }
 
+    /** Register this install's FCM token with the server (best-effort,
+     *  fire-and-forget) so opinion notifications can be pushed to a closed
+     *  device. The server upserts by token. */
+    suspend fun registerPushToken(pseudoId: String, token: String) {
+        withContext(Dispatchers.IO) {
+            try {
+                apiService.registerPushToken(
+                    com.plantdiseases.app.data.model.PushRegisterRequest(
+                        userPseudoId = pseudoId,
+                        token = token,
+                    ),
+                )
+            } catch (_: Exception) {
+                // best-effort; the poll fallback still covers delivery
+            }
+        }
+    }
+
+    /** Record that this install opened someone else's shared scan. Best-effort
+     *  and fire-and-forget — the server dedups per viewer and ignores
+     *  owner/self + unknown scans, so failures are swallowed silently. */
+    suspend fun recordCommunityView(scanId: String, viewerPseudoId: String) {
+        withContext(Dispatchers.IO) {
+            try {
+                apiService.communityRecordView(
+                    com.plantdiseases.app.data.model.CommunityViewRequest(
+                        scanId = scanId,
+                        userPseudoId = viewerPseudoId,
+                    ),
+                )
+            } catch (_: Exception) {
+                // best-effort telemetry; never surface to the user
+            }
+        }
+    }
+
+    /** Batched {opinions, views} per scan_id for the Gallery badges. Returns
+     *  an empty map on failure so the UI just shows no badges. */
+    suspend fun getCommunityScanCounts(
+        scanIds: List<String>,
+    ): Map<String, com.plantdiseases.app.data.model.CommunityScanCount> =
+        withContext(Dispatchers.IO) {
+            if (scanIds.isEmpty()) return@withContext emptyMap()
+            try {
+                val r = apiService.communityScanCounts(
+                    com.plantdiseases.app.data.model.CommunityScanCountsRequest(scanIds),
+                )
+                if (r.isSuccessful && r.body() != null) r.body()!!.counts else emptyMap()
+            } catch (e: Exception) {
+                emptyMap()
+            }
+        }
+
     /** Delete a scan */
     suspend fun deleteScan(id: Long) = withContext(Dispatchers.IO) {
         scanDao.deleteById(id)
@@ -618,7 +683,8 @@ class ScanRepository(
         confidence = confidence,
         isHealthy = isHealthy,
         isNotAPlant = isNotAPlantScan(this),
-        timestamp = timestamp
+        timestamp = timestamp,
+        clientScanId = clientScanId,
     )
 
     /** Persisted top-class key from `all_probs`; null when not stored. */
@@ -856,10 +922,25 @@ class ScanRepository(
         locale: String,
     ): Result<com.plantdiseases.app.data.model.SpeciesInfoResponse> =
         withContext(Dispatchers.IO) {
+            // Wikipedia blurb + lead image are stable per (name, locale) — cache
+            // once available so the result screen doesn't re-fetch every open.
+            val cacheKey = "species:v1:${name.trim().lowercase()}|$locale"
+            com.plantdiseases.app.util.ResponseCache
+                .get(cacheKey, com.plantdiseases.app.data.model.SpeciesInfoResponse::class.java)
+                ?.let { return@withContext Result.success(it) }
             try {
                 val response = apiService.speciesInfo(name, locale)
                 if (response.isSuccessful && response.body() != null) {
-                    Result.success(response.body()!!)
+                    val body = response.body()!!
+                    // Don't cache a transient "unavailable" (e.g. Wikipedia
+                    // miss / rate-limit) — only a real hit is worth keeping.
+                    if (body.available) {
+                        com.plantdiseases.app.util.ResponseCache.put(
+                            cacheKey, body,
+                            com.plantdiseases.app.util.ResponseCache.TTL_SPECIES_MS,
+                        )
+                    }
+                    Result.success(body)
                 } else {
                     Result.failure(Exception("species-info failed: ${response.code()}"))
                 }

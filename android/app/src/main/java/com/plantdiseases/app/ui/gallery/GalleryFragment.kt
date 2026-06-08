@@ -61,6 +61,10 @@ class GalleryFragment : Fragment() {
             onClick = { item ->
                 val intent = Intent(requireContext(), ResultActivity::class.java).apply {
                     putExtra(ResultActivity.EXTRA_SCAN_ID, item.id)
+                    // Tapping a row with unseen opinions jumps straight to them.
+                    if (item.newOpinions > 0) {
+                        putExtra(ResultActivity.EXTRA_OPEN_OPINIONS, true)
+                    }
                 }
                 startActivity(intent)
             },
@@ -97,9 +101,8 @@ class GalleryFragment : Fragment() {
                 override fun onCreateMenu(menu: Menu, menuInflater: MenuInflater) {
                     menuInflater.inflate(R.menu.gallery_menu, menu)
                     clearHistoryItem = menu.findItem(R.id.action_clear_history)
-                    // Tint to match the white toolbar title over the green
-                    // hero gradient — menu icons otherwise fall back to the
-                    // dark default control colour (same as the Scan tab).
+                    // Tint to match the toolbar title (theme-aware white/light); menu
+                    // icons otherwise fall back to a default control colour.
                     clearHistoryItem?.icon
                         ?.setTint(ContextCompat.getColor(requireContext(), R.color.toolbar_title))
                     // Nothing to clear on an empty gallery.
@@ -214,6 +217,40 @@ class GalleryFragment : Fragment() {
             }
 
             binding.swipeRefresh.isRefreshing = false
+            applyFilter()
+            loadCommunityBadges(app)
+        }
+    }
+
+    /**
+     * Lazily fetch community activity (opinions + per-viewer-deduped views) for
+     * this install's shared scans and re-render with badges. Best-effort: when
+     * community is off, nothing was shared, or the call fails, the list simply
+     * stays unbadged.
+     */
+    private fun loadCommunityBadges(app: PlantDiseasesApp) {
+        if (!com.plantdiseases.app.util.CommunityPrefs.uploadsEnabled(requireContext())) return
+        val ids = allScans.map { it.clientScanId }.filter { it.isNotBlank() }
+        if (ids.isEmpty()) return
+        lifecycleScope.launch {
+            val counts = app.scanRepository.getCommunityScanCounts(ids)
+            if (counts.isEmpty() || _binding == null) return@launch
+            val ctx = requireContext()
+            allScans = allScans.map { item ->
+                val c = counts[item.clientScanId]
+                if (c != null) {
+                    // "New" = opinions the user hasn't opened this scan to see.
+                    val viewed = com.plantdiseases.app.util.OpinionPrefs
+                        .viewedOpinions(ctx, item.clientScanId)
+                    item.copy(
+                        communityOpinions = c.opinions,
+                        communityViews = c.views,
+                        newOpinions = (c.opinions - viewed).coerceAtLeast(0),
+                    )
+                } else {
+                    item
+                }
+            }
             applyFilter()
         }
     }

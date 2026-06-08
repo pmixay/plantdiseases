@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Profile screen — single, minimal style throughout.
+    Profile screen — minimal, sharing the Garden tab's visual language.
 
-      • One header: a small avatar + title/subtitle, no gradient hero.
+      • Header is the same leaf-green gradient hero as the Garden tab
+        (bg_garden_hero + bg_circle_semi icon chip + on_primary type),
+        so the two tabs read as one production design.
       • Every section is the same App.GlassCard so radii, padding and
         translucency are uniform; sections are separated only by the
         @dimen/space_* grid (no 4/6/10/14dp magic numbers).
@@ -24,50 +26,50 @@
         android:orientation="vertical"
         android:padding="@dimen/space_lg">
 
-        <!-- Header: minimal, no gradient — clean avatar + title. -->
+        <!-- Hero: leaf-green gradient header, mirroring the Garden tab so
+             the two tabs share one production look (same bg_garden_hero,
+             bg_circle_semi, type ramp and on_primary palette). -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:paddingVertical="@dimen/space_sm"
-            android:paddingBottom="@dimen/space_md">
+            android:orientation="vertical"
+            android:background="@drawable/bg_garden_hero"
+            android:paddingHorizontal="@dimen/space_xl"
+            android:paddingTop="@dimen/space_2xl"
+            android:paddingBottom="@dimen/space_xl">
 
             <FrameLayout
-                android:layout_width="52dp"
-                android:layout_height="52dp"
-                android:background="@drawable/bg_circle_surface_variant">
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:background="@drawable/bg_circle_semi">
 
                 <ImageView
-                    android:layout_width="28dp"
-                    android:layout_height="28dp"
+                    android:layout_width="26dp"
+                    android:layout_height="26dp"
                     android:layout_gravity="center"
                     android:src="@drawable/ic_profile"
-                    app:tint="@color/primary"
-                    android:contentDescription="@null" />
+                    android:contentDescription="@null"
+                    app:tint="@color/on_primary" />
             </FrameLayout>
 
-            <LinearLayout
-                android:layout_width="0dp"
+            <TextView
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="@dimen/space_md"
-                android:orientation="vertical">
+                android:layout_marginTop="@dimen/space_md"
+                android:text="@string/tab_profile"
+                android:textColor="@color/on_primary"
+                android:textSize="28sp"
+                android:fontFamily="sans-serif-black"
+                android:letterSpacing="-0.02" />
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/tab_profile"
-                    android:textAppearance="@style/TextAppearance.App.Headline" />
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:text="@string/profile_subtitle"
-                    android:textSize="@dimen/text_body_sm"
-                    android:textColor="@color/on_surface_secondary" />
-            </LinearLayout>
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_xs"
+                android:text="@string/profile_subtitle"
+                android:textColor="@color/on_primary_secondary"
+                android:textSize="@dimen/text_body"
+                android:lineSpacingExtra="3dp" />
         </LinearLayout>
 
         <!-- Server status (compact one-line glass pill row) -->
@@ -76,6 +78,7 @@
             style="@style/App.GlassCard"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_lg"
             app:contentPadding="0dp">
 
             <LinearLayout
@@ -259,23 +262,27 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
+                    android:baselineAligned="false"
                     android:gravity="center_vertical">
 
                     <TextView
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
+                        android:layout_marginEnd="@dimen/space_md"
                         android:text="@string/most_common_disease"
                         android:textSize="@dimen/text_body_sm"
                         android:textColor="@color/on_surface_secondary" />
 
                     <TextView
                         android:id="@+id/tv_common_disease"
-                        android:layout_width="wrap_content"
+                        android:layout_width="0dp"
                         android:layout_height="wrap_content"
+                        android:layout_weight="1.4"
                         android:text="@string/none_yet"
                         android:textSize="@dimen/text_body_sm"
                         android:textColor="@color/on_surface"
+                        android:textAlignment="viewEnd"
                         android:fontFamily="sans-serif-medium" />
                 </LinearLayout>
             </LinearLayout>
@@ -479,40 +486,24 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical">
 
-                <LinearLayout
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/community_toggle_title"
+                    android:textAppearance="@style/TextAppearance.App.Title" />
+
+                <!-- No toggle here: community is opt-in IN CONTEXT (the
+                     "similar scans near you" card on a result, or the Nearby
+                     screen). This card just explains that + keeps the
+                     delete-my-shared-data control. -->
+                <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical">
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginEnd="@dimen/space_md"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/community_toggle_title"
-                            android:textAppearance="@style/TextAppearance.App.Title" />
-
-                        <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/space_xxs"
-                            android:text="@string/community_toggle_subtitle"
-                            android:textSize="@dimen/text_body_sm"
-                            android:textColor="@color/on_surface_secondary"
-                            android:lineSpacingExtra="1dp" />
-                    </LinearLayout>
-
-                    <com.google.android.material.materialswitch.MaterialSwitch
-                        android:id="@+id/switch_community"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content" />
-                </LinearLayout>
+                    android:layout_marginTop="@dimen/space_xxs"
+                    android:text="@string/community_profile_subtitle"
+                    android:textSize="@dimen/text_body_sm"
+                    android:textColor="@color/on_surface_secondary"
+                    android:lineSpacingExtra="1dp" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_delete_community"

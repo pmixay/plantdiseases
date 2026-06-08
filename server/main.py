@@ -86,6 +86,9 @@ try:
         opinions_for as community_opinions_for,
     )
     from .community import (
+        owner_of as community_owner_of,
+    )
+    from .community import (
         prune_older_than as community_prune_older_than,
     )
     from .community import (
@@ -95,7 +98,13 @@ try:
         record_scan as community_record_scan,
     )
     from .community import (
+        record_view as community_record_view,
+    )
+    from .community import (
         region_summary as community_region_summary,
+    )
+    from .community import (
+        scan_counts as community_scan_counts,
     )
     from .community import (
         scans_by_species as community_scans_by_species,
@@ -135,6 +144,12 @@ try:
         prune_older_than as feedback_prune_older_than,
     )
     from .pipeline import PlantDiseasePipeline
+    from .push import (
+        register as push_register,
+    )
+    from .push import (
+        send_opinion_push as push_send_opinion,
+    )
     from .species_info import fetch_species_info
 except ImportError:
     from ai_services import (
@@ -178,6 +193,9 @@ except ImportError:
         opinions_for as community_opinions_for,
     )
     from community import (
+        owner_of as community_owner_of,
+    )
+    from community import (
         prune_older_than as community_prune_older_than,
     )
     from community import (
@@ -187,7 +205,13 @@ except ImportError:
         record_scan as community_record_scan,
     )
     from community import (
+        record_view as community_record_view,
+    )
+    from community import (
         region_summary as community_region_summary,
+    )
+    from community import (
+        scan_counts as community_scan_counts,
     )
     from community import (
         scans_by_species as community_scans_by_species,
@@ -227,6 +251,12 @@ except ImportError:
         prune_older_than as feedback_prune_older_than,
     )
     from pipeline import PlantDiseasePipeline
+    from push import (
+        register as push_register,
+    )
+    from push import (
+        send_opinion_push as push_send_opinion,
+    )
     from species_info import fetch_species_info
 
 def _resolve_app_version() -> str:
@@ -2641,6 +2671,20 @@ async def community_opinion_submit(payload: CommunityOpinionRequest, request: Re
         logger.exception("Community opinion write failed: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to record opinion") from exc
 
+    # Push the scan's owner a notification (best-effort; no-op when push isn't
+    # configured). Skip self-opinions — you don't get pinged for your own note.
+    author = payload.user_pseudo_id.strip()
+
+    def _push_owner() -> None:
+        try:
+            owner = community_owner_of(sid)
+            if owner and owner != author:
+                push_send_opinion(owner, sid, disease, payload.note)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Opinion push failed: %s", exc)
+
+    await loop.run_in_executor(_get_inference_executor(), _push_owner)
+
     result = await loop.run_in_executor(
         _get_inference_executor(), lambda: community_opinions_for(sid),
     )
@@ -2719,6 +2763,64 @@ async def community_my_scan_opinions(user_pseudo_id: str):
         _get_inference_executor(), lambda: community_opinion_counts_for_user(uid),
     )
     return JSONResponse(content=result)
+
+
+class PushRegisterRequest(BaseModel):
+    user_pseudo_id: str = Field(..., min_length=1, max_length=128)
+    token: str = Field(..., min_length=1, max_length=512)
+    platform: str = Field(default="android", max_length=16)
+
+
+@api_router.post("/push/register")
+async def push_register_endpoint(payload: PushRegisterRequest):
+    """Register this install's FCM token under its pseudo-id so the server can
+    push opinion notifications to a closed / idle device. Upserts by token."""
+    await asyncio.get_running_loop().run_in_executor(
+        _get_inference_executor(),
+        lambda: push_register(
+            payload.user_pseudo_id.strip(),
+            payload.token.strip(),
+            payload.platform.strip() or "android",
+        ),
+    )
+    return JSONResponse(content={"ok": True})
+
+
+class CommunityViewRequest(BaseModel):
+    scan_id: str = Field(..., min_length=1, max_length=128)
+    user_pseudo_id: str = Field(..., min_length=1, max_length=128)
+
+
+@api_router.post("/community/view")
+async def community_record_scan_view(payload: CommunityViewRequest):
+    """Record that the caller opened someone else's shared scan. Deduped per
+    viewer server-side; a scan owner viewing their own scan and views of an
+    unknown scan never count, so this is safe to fire on every open."""
+    counted = await asyncio.get_running_loop().run_in_executor(
+        _get_inference_executor(),
+        lambda: community_record_view(
+            payload.scan_id.strip(), payload.user_pseudo_id.strip(),
+        ),
+    )
+    return JSONResponse(content={"ok": True, "counted": bool(counted)})
+
+
+class CommunityScanCountsRequest(BaseModel):
+    scan_ids: list[str] = Field(..., max_length=500)
+
+
+@api_router.post("/community/scan-counts")
+async def community_scan_counts_endpoint(payload: CommunityScanCountsRequest):
+    """Batched ``{opinions, views}`` per scan_id so the Gallery can badge the
+    caller's own rows in one round-trip. Unknown/zero scans are omitted."""
+    ids = [s.strip() for s in payload.scan_ids if s and s.strip()][:500]
+    counts = (
+        await asyncio.get_running_loop().run_in_executor(
+            _get_inference_executor(), lambda: community_scan_counts(ids),
+        )
+        if ids else {}
+    )
+    return JSONResponse(content={"counts": counts})
 
 
 @api_router.get("/community/nearby")

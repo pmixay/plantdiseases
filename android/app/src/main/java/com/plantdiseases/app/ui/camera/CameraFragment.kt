@@ -109,32 +109,20 @@ class CameraFragment : Fragment() {
         // of outcome; navigateToAnalysis re-locks it on success.
         captureInFlight = false
         binding.btnCapture.isEnabled = true
-        when {
-            result.isSuccessful -> {
-                // We set customOutputUri to pendingCropFile, so the crop
-                // lands exactly there — use that path directly rather than
-                // getUriFilePath (which copies to a shared, stale-cached
-                // temp filename).
-                val path = pendingCropFile?.absolutePath
-                    ?: result.uriContent?.path
-                if (path != null) {
-                    navigateToAnalysis(path)
-                } else {
-                    Log.w(TAG, "Crop succeeded but produced no output path (uri=${result.uriContent})")
-                    Toast.makeText(requireContext(), getString(R.string.crop_error), Toast.LENGTH_SHORT).show()
-                    discardPendingCrop()
-                }
-            }
-            result.error != null -> {
-                Log.w(TAG, "Crop failed", result.error)
-                Toast.makeText(requireContext(), getString(R.string.crop_error), Toast.LENGTH_SHORT).show()
-                discardPendingCrop()
-            }
-            // result.error == null (and not successful) means the user simply
-            // backed out of the crop screen — stay on the camera silently and
-            // drop the staged crop so abandoned files don't pile up in
-            // filesDir/plant_images.
-            else -> discardPendingCrop()
+        // Success is defined by BYTES ON DISK, not the library's result flag.
+        // The cropper writes to our customOutputUri (pendingCropFile); a
+        // back-press out of the crop screen returns either a null error or a
+        // cancellation error depending on the cropper version, and the old
+        // `result.error != null` branch toasted "Failed to crop" on that
+        // ordinary cancel. Treat "no non-empty output file" as a benign cancel:
+        // stay on the camera silently and drop the staged file. Only a genuine
+        // crop with bytes on disk advances to analysis.
+        val cropped = pendingCropFile
+        if (result.isSuccessful && cropped != null && cropped.exists() && cropped.length() > 0L) {
+            navigateToAnalysis(cropped.absolutePath)
+        } else {
+            if (result.error != null) Log.w(TAG, "Crop not completed", result.error)
+            discardPendingCrop()
         }
     }
 
@@ -165,9 +153,9 @@ class CameraFragment : Fragment() {
             object : MenuProvider {
                 override fun onCreateMenu(menu: Menu, menuInflater: MenuInflater) {
                     menuInflater.inflate(R.menu.camera_menu, menu)
-                    // Tint the icon to match the white toolbar title over
-                    // the green hero gradient (menu icons otherwise fall
-                    // back to the dark default control colour).
+                    // Tint to match the toolbar title (theme-aware: white on the light
+                    // gradient, light on the dark surface bar). Menu icons
+                    // otherwise fall back to a default control colour.
                     menu.findItem(R.id.action_nearby_scans)?.icon
                         ?.setTint(ContextCompat.getColor(requireContext(), R.color.toolbar_title))
                 }

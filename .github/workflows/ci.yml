@@ -80,10 +80,12 @@ jobs:
       # build worth validating end-to-end. R8 is the only build that can break
       # on a bad ProGuard rule — e.g. a stripped Gson/Retrofit reflection
       # class — so packaging debug would just cost minutes without catching
-      # anything the release build doesn't. No keystore in CI, so this
-      # produces an unsigned-but-minified APK, which is exactly what validates
-      # the R8 config. (lintDebug + testDebugUnitTest above already compile the
-      # debug sources, so debug compilation is still covered.)
+      # anything the release build doesn't. No keystore in CI, so the build
+      # falls back to the debug signing key (see app/build.gradle.kts) —
+      # producing a debug-SIGNED, R8-minified APK that both validates the R8
+      # config AND is installable for sideload testing. (lintDebug +
+      # testDebugUnitTest above already compile the debug sources, so debug
+      # compilation is still covered.)
       - name: Assemble release APK (R8 minification)
         run: ./gradlew assembleRelease --stacktrace --no-daemon
 

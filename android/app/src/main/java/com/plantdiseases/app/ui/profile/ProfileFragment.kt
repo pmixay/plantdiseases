@@ -24,7 +24,6 @@ import com.plantdiseases.app.data.GuideDataProvider
 import com.plantdiseases.app.data.model.CommunityOpinion
 import com.plantdiseases.app.databinding.FragmentProfileBinding
 import com.plantdiseases.app.ui.result.CommunityOpinionSheet
-import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.TelemetryIds
 import com.plantdiseases.app.util.ThemeHelper
@@ -99,15 +98,9 @@ class ProfileFragment : Fragment() {
 
     private fun setupCommunityControls() {
         val ctx = requireContext()
-        // Community uploads default to ON; the switch only ever
-        // turns them off. The first time a brand-new install reads
-        // CommunityPrefs.uploadsEnabled(...) the underlying pref is
-        // missing and the default branch returns true, so the toggle
-        // renders checked even before any scan.
-        binding.switchCommunity.isChecked = CommunityPrefs.uploadsEnabled(ctx)
-        binding.switchCommunity.setOnCheckedChangeListener { _, isChecked ->
-            CommunityPrefs.setUploadsEnabled(ctx, isChecked)
-        }
+        // Community is opt-in IN CONTEXT now (the "similar scans near you"
+        // card on a result, or the Nearby screen) — there is no toggle on this
+        // screen. We keep only the delete-my-shared-data control here.
         binding.btnDeleteCommunity.setOnClickListener {
             MaterialAlertDialogBuilder(ctx)
                 .setTitle(R.string.community_delete_title)

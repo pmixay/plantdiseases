@@ -15,6 +15,10 @@ import com.plantdiseases.app.data.model.CapabilitiesResponse
 import com.plantdiseases.app.data.model.CommunityScansResponse
 import com.plantdiseases.app.data.model.MyScanOpinionsResponse
 import com.plantdiseases.app.data.model.CommunityScanUploadResponse
+import com.plantdiseases.app.data.model.CommunityViewRequest
+import com.plantdiseases.app.data.model.PushRegisterRequest
+import com.plantdiseases.app.data.model.CommunityScanCountsRequest
+import com.plantdiseases.app.data.model.CommunityScanCountsResponse
 import com.plantdiseases.app.data.model.SpeciesInfoResponse
 import com.plantdiseases.app.data.model.FeedbackRequest
 import com.plantdiseases.app.data.model.FeedbackResponse
@@ -186,6 +190,27 @@ interface ApiService {
     suspend fun communityMyScanOpinions(
         @Path("user_pseudo_id") userPseudoId: String,
     ): retrofit2.Response<MyScanOpinionsResponse>
+
+    /** Register this install's FCM token so the server can push opinion
+     *  notifications to a closed / idle device. */
+    @POST("api/push/register")
+    suspend fun registerPushToken(
+        @Body request: PushRegisterRequest,
+    ): retrofit2.Response<ResponseBody>
+
+    /** Record that the caller opened someone else's shared scan. Deduped per
+     *  viewer server-side, so it's safe to fire on every open. */
+    @POST("api/community/view")
+    suspend fun communityRecordView(
+        @Body request: CommunityViewRequest,
+    ): retrofit2.Response<ResponseBody>
+
+    /** Batched {opinions, views} per scan_id — used to badge the caller's own
+     *  rows in the Gallery in a single round-trip. */
+    @POST("api/community/scan-counts")
+    suspend fun communityScanCounts(
+        @Body request: CommunityScanCountsRequest,
+    ): retrofit2.Response<CommunityScanCountsResponse>
 
     /** Localized Wikipedia blurb + lead image for a scientific name. */
     @GET("api/species-info")

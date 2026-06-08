@@ -169,6 +169,8 @@
     <string name="similar_scans_subtitle_region">Недавние диагнозы рядом с %1$s</string>
     <string name="similar_scans_subtitle_no_region">Включите приблизительное местоположение, чтобы видеть сканы рядом.</string>
     <string name="similar_scans_empty">Похожих сканов пока нет — ваш будет первым.</string>
+    <string name="similar_scans_enable_prompt">Смотрите сканы рядом и делитесь своими. Используется только приблизительное местоположение.</string>
+    <string name="community_enable_cta">Включить сообщество</string>
     <!-- Community second opinion -->
     <string name="community_opinion_title">Второе мнение</string>
     <string name="community_opinion_subtitle">Спросите сообщество — и оцените чужие сканы.</string>
@@ -182,6 +184,8 @@
     <string name="community_opinion_error">Не удалось связаться с сообществом. Повторите.</string>
     <string name="community_opinions_badge">Мнений: %1$d</string>
     <string name="result_view_opinions">Мнений сообщества: %1$d</string>
+    <string name="result_view_activity">Мнений: %1$d · просмотров: %2$d</string>
+    <string name="gallery_community_badge">💬 %1$d</string>
     <string name="community_my_opinions_title">Мои мнения</string>
     <string name="community_my_opinions_empty">Вы пока не отправляли мнений.</string>
     <string name="community_my_opinions_count_label">диагнозов вы оценили</string>
@@ -194,6 +198,7 @@
     <string name="result_second_opinion_no_region">Не удалось определить ваш регион, поэтому этот скан нельзя отправить на второе мнение.</string>
     <string name="community_opinion_replies_title">Второе мнение сообщества</string>
     <string name="community_opinion_replies_subtitle">Что сообщество думает о вашем скане.</string>
+    <string name="community_opinion_locked">Вы уже оставили своё второе мнение по этому скану.</string>
     <string name="community_opinion_replies_empty">Пока нет второго мнения. Загляните позже.</string>
     <string name="community_wants_opinion_badge">Ждёт второго мнения</string>
     <!-- Nearby scans feed (social-style, opened from the camera screen) -->
@@ -212,9 +217,11 @@
     <string name="community_vote_percent">%1$d%%</string>
     <string name="community_toggle_title">Делиться сканами с сообществом</string>
     <string name="community_toggle_subtitle">Регион + диагноз + миниатюра 512px. Можно выключить — всё останется на устройстве.</string>
+    <string name="community_profile_subtitle">Включается в контексте — в блоке «Похожие сканы рядом» на результате или на экране «Рядом». Кнопка ниже удаляет всё, чем вы уже поделились.</string>
     <string name="community_delete_title">Удалить мои данные из сообщества</string>
     <string name="opinion_notif_title">Новое второе мнение</string>
     <string name="opinion_notif_body">Кто-то оставил мнение о вашем скане: %1$s</string>
+    <string name="opinion_notif_with_note">Предложенный диагноз: %1$s\n\n«%2$s»</string>
     <string name="channel_plant_reminders_name">Напоминания о растениях</string>
     <string name="channel_plant_reminders_desc">Напоминания по графику ухода за вашими растениями</string>
     <string name="channel_community_name">Сообщество</string>
@@ -250,6 +257,8 @@
     <string name="warning_very_low_confidence">Модель не уверена в результате — переснимите фото так, чтобы лист занимал большую часть кадра, при ровном освещении и на однотонном фоне.</string>
     <string name="warning_uncertain_healthy_title">Возможно, болезнь</string>
     <string name="warning_uncertain_healthy">Модель не уверена, что растение здорово. Проверьте альтернативные диагнозы ниже — один из них может подойти.</string>
+    <string name="warning_viral_variegation_title">Возможно, это естественная пёстрость</string>
+    <string name="warning_viral_variegation">Яркие или пятнистые узоры на декоративной листве (калатея, каладиум, колеус, кротон, аглаонема…) легко спутать с вирусной мозаикой. Если это пёстрый сорт, рисунок может быть нормой — сравните со здоровым листом того же растения и спросите второе мнение, прежде чем лечить.</string>
     <string name="warning_detector_mismatch_title">Детектор видит повреждения</string>
     <string name="warning_detector_mismatch">Детектор нашёл признаки повреждения, но классификатор определил растение как здоровое. Рекомендуем повторить скан с ближнего ракурса при хорошем освещении.</string>
     <string name="warning_blurry_image_title">Снимок размытый</string>
