@@ -7,7 +7,6 @@ extend-exclude = [
     "venv",
     "logs",
     "models",
-    "reports",
 ]
 
 [tool.ruff.lint]
