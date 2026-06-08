@@ -74,6 +74,18 @@ class GalleryAdapter(
                 .placeholder(R.drawable.ic_plant_placeholder)
                 .into(ivPlant)
 
+            // Community activity badge — only on the user's shared scans that
+            // actually have opinions and/or views (deduped per viewer).
+            if (item.communityOpinions > 0 || item.communityViews > 0) {
+                tvCommunityBadge.text = context.getString(
+                    R.string.gallery_community_badge,
+                    item.communityOpinions, item.communityViews,
+                )
+                tvCommunityBadge.visibility = android.view.View.VISIBLE
+            } else {
+                tvCommunityBadge.visibility = android.view.View.GONE
+            }
+
             root.setOnClickListener { onClick(item) }
             root.setOnLongClickListener {
                 MaterialAlertDialogBuilder(context)

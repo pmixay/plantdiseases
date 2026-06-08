@@ -215,6 +215,32 @@ class GalleryFragment : Fragment() {
 
             binding.swipeRefresh.isRefreshing = false
             applyFilter()
+            loadCommunityBadges(app)
+        }
+    }
+
+    /**
+     * Lazily fetch community activity (opinions + per-viewer-deduped views) for
+     * this install's shared scans and re-render with badges. Best-effort: when
+     * community is off, nothing was shared, or the call fails, the list simply
+     * stays unbadged.
+     */
+    private fun loadCommunityBadges(app: PlantDiseasesApp) {
+        if (!com.plantdiseases.app.util.CommunityPrefs.uploadsEnabled(requireContext())) return
+        val ids = allScans.map { it.clientScanId }.filter { it.isNotBlank() }
+        if (ids.isEmpty()) return
+        lifecycleScope.launch {
+            val counts = app.scanRepository.getCommunityScanCounts(ids)
+            if (counts.isEmpty() || _binding == null) return@launch
+            allScans = allScans.map { item ->
+                val c = counts[item.clientScanId]
+                if (c != null) {
+                    item.copy(communityOpinions = c.opinions, communityViews = c.views)
+                } else {
+                    item
+                }
+            }
+            applyFilter()
         }
     }
 

@@ -185,6 +185,7 @@
     <string name="community_opinions_badge">Мнений: %1$d</string>
     <string name="result_view_opinions">Мнений сообщества: %1$d</string>
     <string name="result_view_activity">Мнений: %1$d · просмотров: %2$d</string>
+    <string name="gallery_community_badge">💬 %1$d · 👁 %2$d</string>
     <string name="community_my_opinions_title">Мои мнения</string>
     <string name="community_my_opinions_empty">Вы пока не отправляли мнений.</string>
     <string name="community_my_opinions_count_label">диагнозов вы оценили</string>

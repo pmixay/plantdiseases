@@ -653,7 +653,8 @@ class ScanRepository(
         confidence = confidence,
         isHealthy = isHealthy,
         isNotAPlant = isNotAPlantScan(this),
-        timestamp = timestamp
+        timestamp = timestamp,
+        clientScanId = clientScanId,
     )
 
     /** Persisted top-class key from `all_probs`; null when not stored. */

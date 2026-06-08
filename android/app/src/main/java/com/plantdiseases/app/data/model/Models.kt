@@ -386,7 +386,14 @@ data class ScanHistoryItem(
      * means a real disease was diagnosed.
      */
     val isNotAPlant: Boolean,
-    val timestamp: Long
+    val timestamp: Long,
+    /** Globally-unique community scan id (empty for legacy rows). Used to
+     *  fetch community activity counts for the Gallery badge. */
+    val clientScanId: String = "",
+    /** Community activity on this scan, filled in lazily by the Gallery after
+     *  a batched /community/scan-counts call (0 when none / not shared). */
+    val communityOpinions: Int = 0,
+    val communityViews: Int = 0,
 )
 
 /**
