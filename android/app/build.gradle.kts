@@ -62,8 +62,17 @@ android {
                 "proguard-rules.pro"
             )
             val releaseConfig = signingConfigs.findByName("release")
-            if (releaseConfig?.storeFile != null) {
-                signingConfig = releaseConfig
+            // Always sign the release APK so it is INSTALLABLE. A real
+            // keystore (pass -PRELEASE_STORE_FILE=… for a store build) is used
+            // when present; otherwise (CI, local sideload) fall back to the
+            // auto-provisioned debug key. An UNSIGNED release APK fails to
+            // install with "App not installed as package appears to be
+            // invalid" — which is what packaging only the release variant in
+            // CI (no keystore) exposed.
+            signingConfig = if (releaseConfig?.storeFile != null) {
+                releaseConfig
+            } else {
+                signingConfigs.getByName("debug")
             }
         }
     }
