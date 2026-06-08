@@ -133,13 +133,15 @@ _CLASS_NAMES = [
 
 
 def _route(*, det_conf, ood_score=None, ood_threshold=None,
-           ml_floor=0.0, max_logit=0.0, class_name="leaf_spot"):
+           ml_floor=0.0, max_logit=0.0, class_name="leaf_spot",
+           require_classifier_signal=False):
     from pipeline import _decide_nap_route
 
     triggered, _ = _decide_nap_route(
         class_name=class_name, class_names=_CLASS_NAMES, det_conf=det_conf,
         ood_score=ood_score, ood_threshold=ood_threshold,
         ml_floor=ml_floor, max_logit=max_logit,
+        require_classifier_signal=require_classifier_signal,
     )
     return triggered
 
@@ -184,3 +186,43 @@ def test_gate_never_reroutes_non_disease_classes():
         assert _route(
             det_conf=0.0, ood_score=0.99, ood_threshold=0.5, class_name=cls,
         ) is False
+
+
+# ── No-detection path: require_classifier_signal guard ───────────────
+# On the no-detection path det_conf is a synthetic 0, so detector_low is always
+# True. Without the guard the detector-only degradation would route EVERY
+# no-detection input to NAP. These pin the safe behaviour.
+
+def test_no_detection_keeps_verdict_when_no_classifier_signal():
+    # det_conf=0 (no detection), no embedding bank, MaxLogit floor off. The
+    # detection path degrades to detector-only (→ NAP), but the no-detection
+    # path must NOT: with no classifier signal it keeps the verdict.
+    assert _route(det_conf=0.0, ood_score=None, ml_floor=0.0) is True
+    assert _route(
+        det_conf=0.0, ood_score=None, ml_floor=0.0, require_classifier_signal=True,
+    ) is False
+
+
+def test_no_detection_reroutes_only_when_embedding_signal_fires():
+    # Embedding OOD fires (far from manifold) → NAP even on the guarded path.
+    assert _route(
+        det_conf=0.0, ood_score=0.9, ood_threshold=0.5,
+        require_classifier_signal=True,
+    ) is True
+    # In-distribution embedding (wide plant shot YOLO missed) → keep verdict.
+    assert _route(
+        det_conf=0.0, ood_score=0.1, ood_threshold=0.5,
+        require_classifier_signal=True,
+    ) is False
+
+
+def test_no_detection_uses_maxlogit_floor_when_that_is_the_signal():
+    # No bank but a positive MaxLogit floor counts as a real classifier signal.
+    assert _route(
+        det_conf=0.0, ood_score=None, ml_floor=4.0, max_logit=1.0,
+        require_classifier_signal=True,
+    ) is True
+    assert _route(
+        det_conf=0.0, ood_score=None, ml_floor=4.0, max_logit=9.0,
+        require_classifier_signal=True,
+    ) is False

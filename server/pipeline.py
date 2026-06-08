@@ -543,12 +543,30 @@ class PlantDiseasePipeline:
     def _analyze_no_detection(self, img: Image.Image, t0: float) -> dict:
         cls_full = self.classifier.classify(img)
         calibrated = _apply_temperature(cls_full["all_probs"], self.temperature)
+        # Score the whole-frame embedding for OOD too, so a non-leaf image that
+        # Stage 1 missed entirely (no bbox) still gets the classifier-side OOD
+        # check — not just the not_a_plant head. The k-NN bank includes
+        # whole-frame plant images, so a genuine wide plant shot scores
+        # in-distribution and keeps its verdict.
+        embedding = cls_full.get("embedding")
+        ood_score = self._embedding_ood_score(
+            [embedding] if embedding is not None else []
+        )
         classification = {
             **cls_full,
             "all_probs": calibrated,
+            "ood_score": ood_score,
             "_voted_over": 0,
             "_no_detection": True,
         }
+        # Secondary NAP gate on the no-detection path. det_conf is 0 here (Stage
+        # 1 found nothing leaf-like), so we require a real classifier-side OOD
+        # signal — without it the gate would route every no-detection input to
+        # NAP, including wide real-plant shots YOLO simply failed to box.
+        if self._should_route_to_nap(
+            classification, det_conf=0.0, require_classifier_signal=True
+        ):
+            classification = self._reroute_to_nap(classification)
         final = _apply_postprocessing_rules(classification, self.classifier.CLASS_NAMES)
         is_diseased = self._is_diseased(final)
         severity = compute_severity(
@@ -617,7 +635,13 @@ class PlantDiseasePipeline:
             and classification["confidence"] >= DISEASE_MIN_CONFIDENCE
         )
 
-    def _should_route_to_nap(self, classification: dict, det_conf: float) -> bool:
+    def _should_route_to_nap(
+        self,
+        classification: dict,
+        det_conf: float,
+        *,
+        require_classifier_signal: bool = False,
+    ) -> bool:
         """Two-of-two OOD gate. We re-route to ``not_a_plant`` when the
         detector AND the classifier both signal "this is not a leaf":
 
@@ -638,6 +662,10 @@ class PlantDiseasePipeline:
              shipped but ``ood.max_logit_floor`` is a positive number.
           3. Otherwise no classifier signal — the gate degrades to
              detector-confidence only (historical fallback).
+
+        ``require_classifier_signal`` is forwarded by the no-detection caller
+        (where ``det_conf`` is a synthetic 0) so the gate cannot blanket-route
+        on detector confidence alone — see ``_decide_nap_route``.
         """
         ood_threshold = (
             self.embedding_ood.threshold if self.embedding_ood is not None else None
@@ -650,6 +678,7 @@ class PlantDiseasePipeline:
             ood_threshold=ood_threshold,
             ml_floor=self.nap_max_logit_floor,
             max_logit=float(classification.get("max_logit", 0.0)),
+            require_classifier_signal=require_classifier_signal,
         )
         if triggered:
             logger.info("OOD gate triggered (%s) → not_a_plant", desc)
@@ -922,6 +951,7 @@ def _decide_nap_route(
     ood_threshold: float | None,
     ml_floor: float,
     max_logit: float,
+    require_classifier_signal: bool = False,
 ) -> tuple[bool, str]:
     """Pure NAP-gate decision (exposed for tests).
 
@@ -932,6 +962,15 @@ def _decide_nap_route(
     when a bank is shipped and an embedding was produced, else the MaxLogit
     floor (``max_logit < ml_floor``) when that floor is positive, else no
     signal at all — in which case the gate degrades to detector-only.
+
+    ``require_classifier_signal`` is set by the **no-detection** caller. There
+    ``det_conf`` is a synthetic ``0.0`` (Stage 1 returned nothing), so
+    ``detector_low`` is *always* True and the detector-only degradation would
+    route EVERY no-detection input — including wide real-plant shots YOLO
+    simply failed to box — to ``not_a_plant``. With the flag set we refuse to
+    fire unless a real classifier-side OOD signal is present AND positive, so a
+    bundle without an OOD signal keeps the classifier's own verdict instead of
+    blanket-rejecting.
     """
     if class_name in _NON_DISEASE or "not_a_plant" not in class_names:
         return False, "non-disease-or-no-nap-class"
@@ -950,6 +989,14 @@ def _decide_nap_route(
         classifier_ood = False
         has_signal = False
         desc = "no-classifier-signal"
+
+    if require_classifier_signal and not has_signal:
+        # No-detection path with no usable classifier-side OOD signal: keep the
+        # classifier verdict rather than blanket-route to NAP on det_conf=0.
+        return False, (
+            f"det={det_conf:.3f}<{NAP_DETECTOR_CONF_FLOOR:.2f}={detector_low}, "
+            f"{desc} (classifier signal required but absent → keep verdict)"
+        )
 
     triggered = (detector_low and classifier_ood) if has_signal else detector_low
     return triggered, (
