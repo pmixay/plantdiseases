@@ -862,12 +862,10 @@ class ResultActivity : AppCompatActivity() {
         val card = binding.cardSimilarScans
         val rv = binding.rvSimilarScans
         val empty = binding.tvSimilarEmpty
-        val chips = binding.chipGroupTopDiseases
         // Default state: hidden until the network call returns.
         card.visibility = View.GONE
         rv.visibility = View.GONE
         empty.visibility = View.GONE
-        chips.visibility = View.GONE
 
         // Scope the carousel by the verdict the user actually SAW — the
         // server's reroute-aware displayed class — not the raw argmax.
@@ -918,46 +916,36 @@ class ResultActivity : AppCompatActivity() {
                 adapter = adapter,
                 resolved = resolved,
                 pseudoId = pseudoId,
-                initialDisease = diseaseKey,
-                filterDisease = null,
+                disease = diseaseKey,
                 speciesScientific = scan.speciesScientific,
-                isRu = isRu,
             )
         }
     }
 
     /**
-     * Fetch + render the carousel for one disease filter. ``filterDisease``
-     * being non-null means the user tapped a chip; otherwise we use
-     * ``initialDisease`` (the current scan's diagnosis) so the server
-     * surfaces same-diagnosis rows first. Called both on first render
-     * and on every chip tap.
-     *
-     * The chip row itself is only built on the first call (when
-     * ``filterDisease`` is ``null``) — subsequent chip-tap re-fetches
-     * leave the chip view tree alone so the user's selection state
-     * survives and the row doesn't flicker.
+     * Fetch + render the "similar scans near you" carousel: other people's
+     * scans of the SAME problem (the current scan's verdict disease) on the
+     * SAME species where known. There is intentionally no disease switcher —
+     * the strip is "scans similar to this one", so letting the user pivot to
+     * an unrelated disease (when only one matching photo was shown) was
+     * confusing. Similarity is enforced by [SimilarScans.filterSimilar].
      */
     private fun fetchAndRenderSimilarScans(
         adapter: SimilarScansAdapter,
         resolved: com.plantdiseases.app.util.ResolvedRegion,
         pseudoId: String,
-        initialDisease: String,
-        filterDisease: String?,
+        disease: String,
         speciesScientific: String?,
-        isRu: Boolean,
     ) {
         val card = binding.cardSimilarScans
         val rv = binding.rvSimilarScans
         val empty = binding.tvSimilarEmpty
-        val chips = binding.chipGroupTopDiseases
         val app = application as PlantDiseasesApp
-        val effectiveDisease = filterDisease ?: initialDisease
         lifecycleScope.launch {
             val result = app.scanRepository.communityNearby(
                 country = resolved.country,
                 region = resolved.locality,
-                disease = effectiveDisease,
+                disease = disease,
                 // Narrow by detected scientific name so a "Powdery
                 // mildew on Monstera" scan doesn't render "Powdery
                 // mildew on Ficus" thumbnails — different species,
@@ -970,13 +958,14 @@ class ResultActivity : AppCompatActivity() {
             result.onSuccess { response ->
                 card.visibility = View.VISIBLE
                 val label = resolved.displayLabel
-                // Always restrict the carousel to the effective disease —
-                // both on first render (the current scan's verdict) and on
-                // chip taps. The server now refuses to pad a disease-scoped
-                // query with other diseases, but we filter defensively too
+                // Restrict the carousel to genuinely similar scans (same
+                // disease, same species where both are known). The server
+                // already scopes the query, but we filter client-side too
                 // so a cached response from an older deployment can't leak
-                // unrelated verdicts into a "same disease near you" strip.
-                val items = response.items.filter { it.disease == effectiveDisease }
+                // unrelated verdicts/species into a "similar to this" strip.
+                val items = com.plantdiseases.app.util.SimilarScans.filterSimilar(
+                    response.items, disease, speciesScientific,
+                )
                 val total = response.summary?.last7d ?: items.size
 
                 if (items.isEmpty()) {
@@ -994,79 +983,11 @@ class ResultActivity : AppCompatActivity() {
                     empty.visibility = View.GONE
                     adapter.submit(items)
                 }
-                // Build the chip row only once, on the initial fetch.
-                // Chip-tap re-fetches keep the existing chips so the
-                // user's selection persists visually.
-                if (filterDisease == null && chips.childCount == 0) {
-                    renderTopDiseaseChips(
-                        chips = chips,
-                        top = response.summary?.topDiseases.orEmpty(),
-                        isRu = isRu,
-                        onChipToggled = { selectedDisease ->
-                            fetchAndRenderSimilarScans(
-                                adapter = adapter,
-                                resolved = resolved,
-                                pseudoId = pseudoId,
-                                initialDisease = initialDisease,
-                                filterDisease = selectedDisease,
-                                speciesScientific = speciesScientific,
-                                isRu = isRu,
-                            )
-                        },
-                    )
-                }
             }.onFailure {
                 // Stay hidden on error — never surface a broken card.
-                if (filterDisease == null) card.visibility = View.GONE
+                card.visibility = View.GONE
             }
         }
-    }
-
-    /**
-     * Render the regional top-diseases chip row. Each chip shows the
-     * localised disease label and the number of recent scans for it.
-     * Caps at 4 chips so the row stays readable on narrow phones.
-     *
-     * Chips are checkable; tapping one calls ``onChipToggled`` with
-     * the disease key, tapping the same chip again calls it with
-     * ``null`` (the "clear filter" signal). ``not_a_plant`` is
-     * stripped defensively — the server already drops it, but cached
-     * responses from older deployments shouldn't surface a chip
-     * for it.
-     */
-    private fun renderTopDiseaseChips(
-        chips: com.google.android.material.chip.ChipGroup,
-        top: List<com.plantdiseases.app.data.model.CommunityTopDisease>,
-        isRu: Boolean,
-        onChipToggled: (String?) -> Unit,
-    ) {
-        chips.removeAllViews()
-        val visible = top
-            .asSequence()
-            .filter { it.disease != "not_a_plant" }
-            .take(4)
-            .toList()
-        if (visible.size < 2) {
-            // One-chip filter is useless — collapse the row entirely
-            // so the user isn't presented with a no-op control.
-            chips.visibility = View.GONE
-            return
-        }
-        for (entry in visible) {
-            val label = classKeyDisplayName(entry.disease, isRu) ?: entry.disease
-            val chip = com.google.android.material.chip.Chip(this).apply {
-                text = getString(R.string.similar_scans_chip_format, label, entry.count)
-                isCheckable = true
-                isClickable = true
-                tag = entry.disease
-                setOnClickListener {
-                    val newFilter = if (isChecked) entry.disease else null
-                    onChipToggled(newFilter)
-                }
-            }
-            chips.addView(chip)
-        }
-        chips.visibility = View.VISIBLE
     }
 
     private fun buildAlternativeDiagnoses(scan: ScanEntity, repository: ScanRepository, isRu: Boolean) {

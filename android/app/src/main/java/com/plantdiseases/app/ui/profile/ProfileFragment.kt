@@ -53,10 +53,6 @@ class ProfileFragment : Fragment() {
         // "Clear all history" now lives on the Gallery tab's top-app-bar
         // basket, next to the scans it actually wipes.
 
-        // Inline "how to use" mini-guide — three step columns, each
-        // tappable as a soft shortcut into the relevant tab.
-        setupHowToSteps()
-
         // Light Meter was removed from this screen — it now lives
         // on the plant detail with per-plant context. The
         // corresponding cardLightMeter view was deleted from the
@@ -390,15 +386,6 @@ class ProfileFragment : Fragment() {
         // racing against AppCompat's own dispatch landed the window
         // on a black-screen / unresponsive state on some devices.
         ThemeHelper.saveTheme(requireContext(), mode)
-    }
-
-    private fun setupHowToSteps() {
-        // The three step columns are read-only — they were tappable
-        // shortcuts in v1, but users reported that intercepted
-        // bottom-nav swipes and made it hard to switch tabs after
-        // scrolling the profile screen. We now leave them as plain
-        // informational cards; the bottom nav is the canonical way
-        // to switch tabs.
     }
 
     private fun loadStats() {

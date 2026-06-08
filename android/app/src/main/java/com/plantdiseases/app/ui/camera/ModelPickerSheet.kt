@@ -41,9 +41,12 @@ class ModelPickerSheet : BottomSheetDialogFragment() {
         val aquaInstalled = AquaModelManager.isInstalled(ctx)
 
         for (family in ModelFamily.entries) {
-            // Aqua is pickable only once its on-device model has downloaded;
-            // until then it's greyed out like an unavailable frontier (no point
-            // offering "offline" with no offline model).
+            // Aqua is pickable only once its on-device model has downloaded.
+            // Until then it's treated exactly like an unavailable frontier:
+            // greyed out with an "Unavailable" badge. We deliberately do NOT
+            // show a "Downloading…" badge — the fetch is best-effort and may
+            // never complete (no server model, offline, etc.), so a perpetual
+            // "Downloading…" would just confuse the user into waiting forever.
             val available = when (family) {
                 ModelFamily.FRONTIER -> frontierAvailable
                 ModelFamily.AQUA -> aquaInstalled
@@ -57,10 +60,6 @@ class ModelPickerSheet : BottomSheetDialogFragment() {
 
             val badge = row.findViewById<TextView>(R.id.family_badge)
             when {
-                family == ModelFamily.AQUA && !available -> {
-                    badge.setText(R.string.model_family_aqua_downloading)
-                    badge.visibility = View.VISIBLE
-                }
                 !available -> {
                     badge.setText(R.string.model_family_unavailable)
                     badge.visibility = View.VISIBLE

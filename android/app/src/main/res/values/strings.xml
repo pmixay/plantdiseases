@@ -197,7 +197,6 @@
     <string name="community_opinion_replies_subtitle">What the community thinks about your scan.</string>
     <string name="community_opinion_replies_empty">No second opinions yet. Check back soon.</string>
     <string name="community_wants_opinion_badge">Wants a second opinion</string>
-    <string name="similar_scans_chip_format">%1$s · %2$d</string>
 
     <!-- Nearby scans feed (social-style, opened from the camera screen) -->
     <string name="nearby_scans_title">Scans near you</string>
@@ -570,7 +569,6 @@
     <string name="model_family_frontier_desc">Largest, most accurate cloud model.</string>
     <string name="model_family_unavailable">Unavailable on this server</string>
     <string name="model_family_offline_badge">Offline</string>
-    <string name="model_family_aqua_downloading">Downloading…</string>
     <string name="model_family_chip">Model: %1$s</string>
     <string name="model_family_aqua_not_installed">Offline model isn\'t installed yet — using the cloud model for now.</string>
     <string name="model_family_cd">Choose diagnosis model</string>
