@@ -11,12 +11,16 @@ A standalone, responsive, bilingual (RU / EN) one-page site that presents the
 - **`css/styles.css`** — the design system (brand greens, Onest / Manrope /
   JetBrains Mono, dark "under the hood" bands, responsive down to mobile).
 - **`js/main.js`** — sticky nav, mobile menu, language toggle (persisted to
-  `localStorage`), scroll-reveal animations, and a chart lightbox.
-- **`assets/screens/`** — real in-app screenshots (Scanner, Result, Garden,
-  Gallery, Guide, Community "Scans near you").
-- **`assets/charts/`** — benchmark figures from the evaluation report
-  (confusion matrix, per-class metrics, recall CIs, in-domain vs real,
-  conformal coverage, quality summary, model families).
+  `localStorage`), scroll-reveal animations, and an image lightbox.
+- **`js/charts.js`** — all benchmark visualisations, hand-built in native
+  SVG / CSS (no image assets, no libraries): an interactive confusion-matrix
+  heatmap, per-class precision/recall/F1 bars, recall dot-and-whisker with
+  95% CIs, in-domain vs real-world paired bars, and a conformal-coverage
+  gauge. Every element has a hover tooltip with exact values, the charts
+  animate in on scroll, and they re-render live when the language is toggled.
+  Data comes straight from the PlantVision 2.4.0 · gamma evaluation report.
+- **`assets/screens/`** — the only raster assets: real in-app screenshots
+  (Scanner, Result, Garden, Gallery, Guide, Community "Scans near you").
 
 ## Sections
 

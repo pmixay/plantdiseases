@@ -39,6 +39,7 @@
       b.classList.toggle('active', b.getAttribute('data-lang') === lang);
     });
     try { localStorage.setItem('pd-lang', lang); } catch (e) {}
+    document.dispatchEvent(new CustomEvent('pd:lang', { detail: { lang: lang } }));
   }
 
   buttons.forEach(function (b) {
