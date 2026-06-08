@@ -24,7 +24,6 @@ import com.plantdiseases.app.data.GuideDataProvider
 import com.plantdiseases.app.data.model.CommunityOpinion
 import com.plantdiseases.app.databinding.FragmentProfileBinding
 import com.plantdiseases.app.ui.result.CommunityOpinionSheet
-import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.TelemetryIds
 import com.plantdiseases.app.util.ThemeHelper
