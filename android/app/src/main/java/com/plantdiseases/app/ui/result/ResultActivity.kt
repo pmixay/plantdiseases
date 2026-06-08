@@ -257,10 +257,17 @@ class ResultActivity : AppCompatActivity() {
             if (!isNotAPlant && !isHealthyVerdict && regions.isNotEmpty()) {
                 val origBounds = Pair(scan.detectionImageWidth, scan.detectionImageHeight)
                 val primaryIdx = scan.primaryRegionIndex ?: -1
+                // Stage 1 is a single-class leaf detector: every box is just a
+                // detected leaf, and "diseased" is one whole-image verdict
+                // (we only reach this branch on a disease verdict). So mark
+                // EVERY detected leaf as diseased/red — not just the primary
+                // crop — otherwise a plant with several affected leaves shows
+                // one red leaf and the rest green, as if they were healthy.
+                // The primary box stays emphasised with a thicker stroke.
                 val overlayBoxes = regions.mapIndexed { i, r ->
                     HeatmapOverlayView.Box(
                         x = r.x, y = r.y, width = r.width, height = r.height,
-                        diseased = (i == primaryIdx),
+                        diseased = true,
                         primary = i == primaryIdx,
                     )
                 }
