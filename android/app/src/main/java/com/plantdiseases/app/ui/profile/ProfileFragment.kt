@@ -50,18 +50,8 @@ class ProfileFragment : Fragment() {
 
         binding.tvAppVersion.text = "v${BuildConfig.VERSION_NAME}"
 
-        binding.btnClearHistory.setOnClickListener {
-            MaterialAlertDialogBuilder(requireContext())
-                .setTitle(R.string.clear_history)
-                .setMessage(R.string.clear_history_confirm)
-                .setPositiveButton(R.string.clear_all) { _, _ -> clearHistory() }
-                .setNegativeButton(R.string.cancel, null)
-                .show()
-        }
-
-        // Inline "how to use" mini-guide — three step columns, each
-        // tappable as a soft shortcut into the relevant tab.
-        setupHowToSteps()
+        // "Clear all history" now lives on the Gallery tab's top-app-bar
+        // basket, next to the scans it actually wipes.
 
         // Light Meter was removed from this screen — it now lives
         // on the plant detail with per-plant context. The
@@ -73,9 +63,9 @@ class ProfileFragment : Fragment() {
             findNavController().navigate(R.id.cameraFragment)
         }
 
-        binding.btnLanguage.setOnClickListener {
-            switchLanguage()
-        }
+        binding.langEn.setOnClickListener { setLanguage("en") }
+        binding.langRu.setOnClickListener { setLanguage("ru") }
+        highlightActiveLanguage()
 
         binding.btnRefreshHealth.setOnClickListener {
             checkServerHealth()
@@ -338,21 +328,35 @@ class ProfileFragment : Fragment() {
         return item?.let { if (isRu) it.titleRu else it.titleEn } ?: key
     }
 
-    private fun switchLanguage() {
+    /** Highlight the active flag segment (filled green + white text); the
+     *  other stays flat with secondary text. */
+    private fun highlightActiveLanguage() {
+        val isRu = LocaleHelper.isRussian(requireContext())
+        styleLanguageSegment(binding.langEn, binding.tvLangEn, active = !isRu)
+        styleLanguageSegment(binding.langRu, binding.tvLangRu, active = isRu)
+    }
+
+    private fun styleLanguageSegment(pill: android.view.View, label: android.widget.TextView, active: Boolean) {
+        pill.setBackgroundResource(if (active) R.drawable.bg_segment_active else 0)
+        label.setTextColor(
+            androidx.core.content.ContextCompat.getColor(
+                requireContext(),
+                if (active) R.color.on_primary else R.color.on_surface_secondary,
+            ),
+        )
+    }
+
+    private fun setLanguage(lang: String) {
+        if (LocaleHelper.getSavedLanguage(requireContext()) == lang) return
         // Locale is owned entirely by LocaleHelper: every activity's
-        // attachBaseContext re-reads the saved language and wraps its
-        // context (see MainActivity / ResultActivity / …), so persisting
-        // the new value and recreating the host is all that's needed —
-        // the rebuilt activity resolves every resource in the new locale.
-        //
-        // We must NOT also call AppCompatDelegate.setApplicationLocales()
-        // here. That spins up a *second*, framework-level locale change
-        // (LocaleManager on API 33+, the AppCompat backport below it) that
-        // raced our own attachBaseContext locale wrapping and left the
-        // window stuck on a black frame — the "app turns black" bug. One
-        // mechanism, one recreate. Theme switching stays smooth for the
-        // same reason: it only flips night-mode, never the locale.
-        LocaleHelper.toggleLanguage(requireContext())
+        // attachBaseContext re-reads the saved language and wraps its context,
+        // so persisting the new value (setLocale saves it) and recreating the
+        // host is all that's needed. We must NOT also call
+        // AppCompatDelegate.setApplicationLocales() — a second, framework-level
+        // locale change raced our attachBaseContext wrapping and left the
+        // window on a black frame (the "app turns black" bug). One mechanism,
+        // one recreate.
+        LocaleHelper.setLocale(requireContext(), lang)
         requireActivity().recreate()
     }
 
@@ -382,15 +386,6 @@ class ProfileFragment : Fragment() {
         // racing against AppCompat's own dispatch landed the window
         // on a black-screen / unresponsive state on some devices.
         ThemeHelper.saveTheme(requireContext(), mode)
-    }
-
-    private fun setupHowToSteps() {
-        // The three step columns are read-only — they were tappable
-        // shortcuts in v1, but users reported that intercepted
-        // bottom-nav swipes and made it hard to switch tabs after
-        // scrolling the profile screen. We now leave them as plain
-        // informational cards; the bottom nav is the canonical way
-        // to switch tabs.
     }
 
     private fun loadStats() {
@@ -423,39 +418,44 @@ class ProfileFragment : Fragment() {
             if (totalRecorded == 0) {
                 binding.statsLayout.visibility = View.GONE
                 binding.emptyState.visibility = View.VISIBLE
-                binding.btnClearHistory.visibility = View.GONE
                 return@launch
             }
 
             binding.statsLayout.visibility = View.VISIBLE
             binding.emptyState.visibility = View.GONE
-            binding.btnClearHistory.visibility = View.VISIBLE
 
             // The "Total Scans" card surfaces the full recorded count so
             // it matches the gallery row count; NAP filtering only affects
             // health-rate and most-common-disease semantics.
-            binding.tvTotalScans.text = totalRecorded.toString()
-            binding.tvHealthyCount.text = stats.healthyCount.toString()
-            binding.tvDiseasedCount.text = stats.diseasedCount.toString()
+            animateCount(binding.tvTotalScans, totalRecorded)
+            animateCount(binding.tvHealthyCount, stats.healthyCount)
+            animateCount(binding.tvDiseasedCount, stats.diseasedCount)
 
-            // Health rate is over plant scans only — NAP rows don't fail
-            // a plant health check, they're a UX retake prompt.
-            val healthRate = if (stats.totalScans > 0) {
-                "${(stats.healthyCount * 100 / stats.totalScans)}%"
-            } else "—"
-            binding.tvHealthRate.text = healthRate
+            // Health rate is over plant scans only — NAP rows don't fail a
+            // plant health check, they're a UX retake prompt. The ring and the
+            // centre % animate up together.
+            val ratePct = if (stats.totalScans > 0) {
+                stats.healthyCount * 100 / stats.totalScans
+            } else 0
+            binding.tvHealthRate.text = if (stats.totalScans > 0) "$ratePct%" else "—"
+            binding.progressHealthRing.max = 100
+            binding.progressHealthRing.setProgressCompat(ratePct, true)
 
             val commonDisease = if (isRu) stats.mostCommonDiseaseRu else stats.mostCommonDisease
             binding.tvCommonDisease.text = commonDisease ?: getString(R.string.none_yet)
         }
     }
 
-    private fun clearHistory() {
-        val app = requireActivity().application as PlantDiseasesApp
-        lifecycleScope.launch {
-            app.scanRepository.clearAll()
-            Toast.makeText(requireContext(), R.string.history_cleared, Toast.LENGTH_SHORT).show()
-            loadStats()
+    /** Count-up animation for a stat number (0 → target over ~0.6s). */
+    private fun animateCount(tv: android.widget.TextView, target: Int) {
+        if (target <= 0) {
+            tv.text = "0"
+            return
+        }
+        android.animation.ValueAnimator.ofInt(0, target).apply {
+            duration = 600L
+            addUpdateListener { tv.text = (it.animatedValue as Int).toString() }
+            start()
         }
     }
 

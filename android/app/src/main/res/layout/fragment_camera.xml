@@ -51,6 +51,26 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
+    <!-- Model-family picker chip. Shows the active diagnosis model and
+         opens the picker bottom sheet. -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btn_model_family"
+        style="@style/Widget.Material3.Button.TonalButton.Icon"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_margin="@dimen/space_md"
+        android:contentDescription="@string/model_family_cd"
+        android:text="@string/model_family_gamma"
+        android:textSize="@dimen/text_body_sm"
+        app:icon="@drawable/ic_family_gamma"
+        app:iconSize="18dp"
+        android:minHeight="0dp"
+        android:insetTop="0dp"
+        android:insetBottom="0dp"
+        android:elevation="10dp"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
     <!-- Shutter flash overlay. -->
     <View
         android:id="@+id/shutter_flash"

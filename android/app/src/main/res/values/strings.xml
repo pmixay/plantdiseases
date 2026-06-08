@@ -197,7 +197,6 @@
     <string name="community_opinion_replies_subtitle">What the community thinks about your scan.</string>
     <string name="community_opinion_replies_empty">No second opinions yet. Check back soon.</string>
     <string name="community_wants_opinion_badge">Wants a second opinion</string>
-    <string name="similar_scans_chip_format">%1$s · %2$d</string>
 
     <!-- Nearby scans feed (social-style, opened from the camera screen) -->
     <string name="nearby_scans_title">Scans near you</string>
@@ -218,6 +217,8 @@
     <string name="community_toggle_title">Share scans with the community</string>
     <string name="community_toggle_subtitle">Region + diagnosis + 512px thumbnail. Off keeps everything on-device.</string>
     <string name="community_delete_title">Delete my contributions</string>
+    <string name="opinion_notif_title">New second opinion</string>
+    <string name="opinion_notif_body">Someone weighed in on your %1$s scan</string>
     <string name="community_delete_body">This removes every scan you\'ve shared so far from the community corpus. Continue?</string>
     <string name="community_delete_done">Your community contributions were removed.</string>
     <string name="community_delete_failed">Couldn\'t reach the server. Try again later.</string>
@@ -262,16 +263,6 @@
     <string name="warning_disease_suspected_title">Possible problem spotted</string>
     <string name="warning_disease_suspected">The plant looks mostly healthy, but the model also picked up signs of %1$s. Keep an eye on it and re-scan if it spreads.</string>
 
-    <!-- How to use (onboarding from profile) -->
-    <string name="how_to_use_title">How to Use</string>
-    <!-- Three-step inline mini-guide on the profile screen. The
-         titles map 1:1 to the onboarding flow so re-opening that flow
-         feels familiar; the bodies are tight enough to fit in the
-         narrow step columns without wrapping past two lines. -->
-    <string name="how_to_use_step_scan">Frame a single leaf — auto-capture fires when the frame turns green.</string>
-    <string name="how_to_use_step_diagnose">PlantVision shows the top-3 disease candidates with confidence.</string>
-    <string name="how_to_use_step_care">Tap a result for treatment + a tailored watering plan.</string>
-
     <!-- Empty states -->
     <string name="first_scan_cta">Take First Scan</string>
     <string name="filter_empty_hint">Nothing in this category yet. Keep scanning — your green shelf is growing!</string>
@@ -282,6 +273,7 @@
     <string name="tab_garden">Garden</string>
     <string name="garden_title">My Garden</string>
     <string name="garden_subtitle">Track every plant, scan timeline, notes, photos and watering in one calm green place.</string>
+    <string name="profile_subtitle">Your scan stats, server health, theme, language and community settings.</string>
     <string name="add_plant">Add plant</string>
     <string name="edit_plant">Edit plant</string>
     <string name="plant_name">Plant name</string>
@@ -346,7 +338,6 @@
     <string name="added_to_garden">In garden</string>
     <string name="create_new_plant">Create new plant</string>
     <string name="scan_added_to_garden">Scan added to garden</string>
-    <string name="change_language">Change</string>
     <string name="delete_plant">Delete plant</string>
     <string name="delete_plant_confirm">Delete this plant? Journal entries will be removed too. Scans will be unlinked.</string>
     <string name="plant_deleted">Plant deleted</string>
@@ -566,4 +557,19 @@
     <string name="light_meter_entry_title">Measure light here</string>
     <string name="light_meter_entry_subtitle">Use your phone\'s light sensor to check the lux level at this plant\'s spot.</string>
     <string name="light_meter_entry_subtitle_recorded">Last measured here: %1$d lx · %2$s</string>
+
+    <!-- Scan screen → model-family picker -->
+    <string name="model_family_title">Diagnosis model</string>
+    <string name="model_family_subtitle">Pick how this scan is analysed</string>
+    <string name="model_family_aqua">Aqua</string>
+    <string name="model_family_aqua_desc">Runs offline on your phone. Fast, works with no connection.</string>
+    <string name="model_family_gamma">Gamma</string>
+    <string name="model_family_gamma_desc">Balanced cloud model. Recommended for most scans.</string>
+    <string name="model_family_frontier">Frontier</string>
+    <string name="model_family_frontier_desc">Largest, most accurate cloud model.</string>
+    <string name="model_family_unavailable">Unavailable on this server</string>
+    <string name="model_family_offline_badge">Offline</string>
+    <string name="model_family_chip">Model: %1$s</string>
+    <string name="model_family_aqua_not_installed">Offline model isn\'t installed yet — using the cloud model for now.</string>
+    <string name="model_family_cd">Choose diagnosis model</string>
 </resources>

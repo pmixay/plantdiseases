@@ -66,23 +66,53 @@ class PlantDiseasesApp : Application() {
         LocaleHelper.applyLocale(this)
         ThemeHelper.applySavedTheme(this)
         createNotificationChannels()
+        // NB: do NOT touch WorkManager here. The app disables the default
+        // WorkManagerInitializer, so WorkManager.getInstance() in
+        // Application.onCreate throws (and breaks every Robolectric test that
+        // instantiates the app). Scheduling is kicked off from MainActivity
+        // instead — the same on-demand pattern ReminderManager uses.
     }
 
     private fun createNotificationChannels() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_PLANT_REMINDERS,
-                "Plant Reminders",
-                NotificationManager.IMPORTANCE_HIGH,
-            ).apply {
-                description = "Care schedule reminders for your plants"
-            }
-            getSystemService(NotificationManager::class.java)
-                .createNotificationChannel(channel)
+            val nm = getSystemService(NotificationManager::class.java)
+            nm.createNotificationChannel(
+                NotificationChannel(
+                    CHANNEL_PLANT_REMINDERS, "Plant Reminders",
+                    NotificationManager.IMPORTANCE_HIGH,
+                ).apply { description = "Care schedule reminders for your plants" },
+            )
+            nm.createNotificationChannel(
+                NotificationChannel(
+                    CHANNEL_COMMUNITY, "Community",
+                    NotificationManager.IMPORTANCE_DEFAULT,
+                ).apply { description = "Second opinions on scans you shared" },
+            )
         }
+    }
+
+    /** Poll for new second opinions on shared scans a few times a day. Called
+     *  from MainActivity (not Application.onCreate — see note there). Idempotent
+     *  via enqueueUniquePeriodicWork(KEEP). Quiet: notifies only on a genuinely
+     *  new opinion — see OpinionCheckWorker. */
+    fun scheduleOpinionChecks() {
+        val request = androidx.work.PeriodicWorkRequestBuilder<
+            com.plantdiseases.app.worker.OpinionCheckWorker>(6, java.util.concurrent.TimeUnit.HOURS)
+            .setConstraints(
+                androidx.work.Constraints.Builder()
+                    .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)
+                    .build(),
+            )
+            .build()
+        androidx.work.WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            "opinion_check",
+            androidx.work.ExistingPeriodicWorkPolicy.KEEP,
+            request,
+        )
     }
 
     companion object {
         const val CHANNEL_PLANT_REMINDERS = "plant_reminders"
+        const val CHANNEL_COMMUNITY = "community"
     }
 }

@@ -1,11 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    One post in the social-style "Scans near you" feed.
-
-    Layout mirrors a familiar photo-feed card: a header (diagnosis +
-    region/time), the scan photo, then a footer with the running
-    opinion count and a "Second opinion" action that opens the
-    community sheet (vote graph + opinions + your own vote).
+    One post in the 2-column "Scans near you" feed. Compact card: photo on
+    top, then a tight footer with an anonymous author avatar, the diagnosis +
+    region/time, and a compact second-opinion action.
 -->
 <com.google.android.material.card.MaterialCardView
     xmlns:android="http://schemas.android.com/apk/res/android"
@@ -13,8 +10,7 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginHorizontal="@dimen/space_lg"
-    android:layout_marginBottom="@dimen/space_lg"
+    android:layout_margin="@dimen/space_xs"
     app:cardCornerRadius="@dimen/radius_md"
     app:cardElevation="0dp"
     app:cardBackgroundColor="?attr/colorSurfaceContainer"
@@ -25,80 +21,11 @@
         android:layout_height="wrap_content"
         android:orientation="vertical">
 
-        <!-- Header: diagnosis + region/time -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:paddingHorizontal="@dimen/space_lg"
-            android:paddingVertical="@dimen/space_md">
-
-            <ImageView
-                android:layout_width="32dp"
-                android:layout_height="32dp"
-                android:padding="6dp"
-                android:background="@drawable/bg_camera_pill"
-                android:backgroundTint="@color/primary_light"
-                android:src="@drawable/ic_disease"
-                android:contentDescription="@null"
-                app:tint="@color/primary" />
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="@dimen/space_md"
-                android:orientation="vertical">
-
-                <TextView
-                    android:id="@+id/tv_nearby_label"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:textAppearance="@style/TextAppearance.App.Body"
-                    android:textColor="?attr/colorOnSurface"
-                    android:fontFamily="sans-serif-medium"
-                    android:maxLines="1"
-                    android:ellipsize="end"
-                    tools:text="Powdery Mildew" />
-
-                <TextView
-                    android:id="@+id/tv_nearby_meta"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:textAppearance="@style/TextAppearance.App.Caption"
-                    android:textColor="?attr/colorOnSurfaceVariant"
-                    android:maxLines="1"
-                    android:ellipsize="end"
-                    tools:text="Berlin, Germany · 2h ago" />
-
-                <!-- Shown when the scanner is waiting on the community for a
-                     second opinion — a cue for viewers to weigh in. -->
-                <TextView
-                    android:id="@+id/tv_nearby_wants_opinion"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:drawablePadding="4dp"
-                    android:gravity="center_vertical"
-                    android:text="@string/community_wants_opinion_badge"
-                    android:textAppearance="@style/TextAppearance.App.Caption"
-                    android:textColor="@color/warning_amber"
-                    android:fontFamily="sans-serif-medium"
-                    app:drawableStartCompat="@drawable/ic_community"
-                    app:drawableTint="@color/warning_amber"
-                    android:visibility="gone"
-                    tools:visibility="visible" />
-
-            </LinearLayout>
-
-        </LinearLayout>
-
         <!-- Scan photo — shimmer skeleton while the thumbnail loads. -->
         <com.facebook.shimmer.ShimmerFrameLayout
             android:id="@+id/shimmer_nearby_photo"
             android:layout_width="match_parent"
-            android:layout_height="280dp"
+            android:layout_height="150dp"
             app:shimmer_auto_start="false"
             app:shimmer_base_color="@color/shimmer_base"
             app:shimmer_duration="1000"
@@ -114,46 +41,119 @@
 
         </com.facebook.shimmer.ShimmerFrameLayout>
 
-        <!-- Footer: second-opinion action (left) + opinion count (right) -->
+        <!-- Footer -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:paddingStart="@dimen/space_sm"
-            android:paddingEnd="@dimen/space_lg"
-            android:paddingVertical="@dimen/space_xs">
+            android:orientation="vertical"
+            android:padding="@dimen/space_md">
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_nearby_opinion"
-                style="@style/Widget.Material3.Button.TextButton"
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <!-- Anonymous author avatar (deterministic colour + monogram). -->
+                <TextView
+                    android:id="@+id/tv_nearby_avatar"
+                    android:layout_width="28dp"
+                    android:layout_height="28dp"
+                    android:gravity="center"
+                    android:background="@drawable/bg_circle_surface_variant"
+                    android:backgroundTint="@color/primary"
+                    android:textColor="@android:color/white"
+                    android:textSize="11sp"
+                    android:fontFamily="sans-serif-medium"
+                    tools:text="KX" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="@dimen/space_sm"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/tv_nearby_label"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:textSize="@dimen/text_body_sm"
+                        android:textColor="?attr/colorOnSurface"
+                        android:fontFamily="sans-serif-medium"
+                        android:maxLines="1"
+                        android:ellipsize="end"
+                        tools:text="Powdery Mildew" />
+
+                    <TextView
+                        android:id="@+id/tv_nearby_meta"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:textSize="@dimen/text_caption"
+                        android:textColor="?attr/colorOnSurfaceVariant"
+                        android:maxLines="1"
+                        android:ellipsize="end"
+                        tools:text="Berlin · 2h" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Scanner is waiting on the community for a second opinion. -->
+            <TextView
+                android:id="@+id/tv_nearby_wants_opinion"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:insetLeft="0dp"
-                android:insetRight="0dp"
-                android:minWidth="0dp"
-                android:paddingStart="@dimen/space_sm"
-                android:paddingEnd="@dimen/space_sm"
-                android:text="@string/nearby_scans_second_opinion"
-                app:icon="@drawable/ic_comment"
-                app:iconGravity="textStart" />
-
-            <TextView
-                android:id="@+id/tv_nearby_opinions"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="@dimen/space_sm"
+                android:layout_marginTop="@dimen/space_xs"
+                android:drawablePadding="4dp"
+                android:gravity="center_vertical"
+                android:text="@string/community_wants_opinion_badge"
                 android:textAppearance="@style/TextAppearance.App.Caption"
-                android:textColor="@color/primary"
+                android:textColor="@color/warning_amber"
                 android:fontFamily="sans-serif-medium"
-                android:textAlignment="viewEnd"
+                app:drawableStartCompat="@drawable/ic_community"
+                app:drawableTint="@color/warning_amber"
                 android:visibility="gone"
-                tools:text="3 opinions"
                 tools:visibility="visible" />
 
-        </LinearLayout>
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_xs"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
 
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_nearby_opinion"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:insetLeft="0dp"
+                    android:insetRight="0dp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:minWidth="0dp"
+                    android:minHeight="0dp"
+                    android:paddingHorizontal="@dimen/space_sm"
+                    android:paddingVertical="6dp"
+                    android:textSize="@dimen/text_body_sm"
+                    android:text="@string/nearby_scans_second_opinion"
+                    app:icon="@drawable/ic_comment"
+                    app:iconSize="16dp"
+                    app:iconGravity="textStart" />
+
+                <TextView
+                    android:id="@+id/tv_nearby_opinions"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="@dimen/space_xs"
+                    android:textSize="@dimen/text_caption"
+                    android:textColor="@color/primary"
+                    android:fontFamily="sans-serif-medium"
+                    android:visibility="gone"
+                    tools:text="3"
+                    tools:visibility="visible" />
+            </LinearLayout>
+        </LinearLayout>
     </LinearLayout>
 
 </com.google.android.material.card.MaterialCardView>

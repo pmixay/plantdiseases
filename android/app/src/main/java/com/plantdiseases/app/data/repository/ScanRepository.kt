@@ -4,6 +4,7 @@ import com.google.gson.Gson
 import com.plantdiseases.app.data.local.ScanDao
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.AnalysisResponse
+import com.plantdiseases.app.data.model.CapabilitiesResponse
 import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.CarePlanResponse
 import com.plantdiseases.app.data.model.ChatRequest
@@ -14,11 +15,13 @@ import com.plantdiseases.app.data.model.FeedbackRequest
 import com.plantdiseases.app.data.model.FeedbackResponse
 import com.plantdiseases.app.data.model.HealthResponse
 import com.plantdiseases.app.data.model.IdentifyResponse
+import com.plantdiseases.app.data.model.MyScanOpinionsResponse
 import com.plantdiseases.app.data.model.ProgressionRequest
 import com.plantdiseases.app.data.model.ProgressionResponse
 import com.plantdiseases.app.data.model.ScanHistoryItem
 import com.plantdiseases.app.data.remote.ApiService
 import com.plantdiseases.app.data.remote.PlantApiClient
+import com.plantdiseases.app.util.AquaModelManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -48,6 +51,7 @@ class ScanRepository(
         imageFile: File,
         speciesHint: String? = null,
         locale: String = "en",
+        family: String = "gamma",
     ): Result<AnalysisResponse> =
         withContext(Dispatchers.IO) {
             try {
@@ -57,10 +61,15 @@ class ScanRepository(
                     part,
                     speciesHint?.takeIf { it.isNotBlank() },
                     locale,
+                    family,
                 )
                 if (response.isSuccessful && response.body() != null) {
                     Result.success(response.body()!!)
-                } else if (response.code() == 429) {
+                } else if (response.code() == 429 || response.code() == 403) {
+                    // 403 = a temporary abuse-control cooldown (the server bans
+                    // an IP that briefly burst past the rate limit). Treat it
+                    // like 429: show the "server busy, retry shortly" card
+                    // instead of a scary "Server error: 403".
                     Result.failure(RateLimitException())
                 } else if (response.code() == 503) {
                     Result.failure(ServerStartingException())
@@ -75,6 +84,64 @@ class ScanRepository(
                 Result.failure(NoNetworkException())
             } catch (e: java.net.ConnectException) {
                 Result.failure(ServerTimeoutException())
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+    /**
+     * Fetch per-family availability for the scan-screen model picker.
+     * Best-effort: on any failure the caller keeps its last-known state
+     * (frontier stays disabled, aqua/gamma stay available).
+     */
+    suspend fun fetchCapabilities(): Result<CapabilitiesResponse> =
+        withContext(Dispatchers.IO) {
+            try {
+                val response = apiService.capabilities()
+                if (response.isSuccessful && response.body() != null) {
+                    Result.success(response.body()!!)
+                } else {
+                    Result.failure(Exception("Server error: ${response.code()}"))
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+    /**
+     * Download/update the Aqua on-device model from the server if needed.
+     * Best-effort: returns success(false) when there's nothing to do (no
+     * server model, or already up to date) and success(true) when a new model
+     * was installed. The model is fetched only when its sha differs from the
+     * installed one, so repeated calls are cheap (one manifest GET).
+     */
+    suspend fun syncAquaModel(context: android.content.Context): Result<Boolean> =
+        withContext(Dispatchers.IO) {
+            try {
+                val manifestResp = apiService.aquaManifest()
+                val manifest = manifestResp.body()
+                if (!manifestResp.isSuccessful || manifest == null || !manifest.available) {
+                    return@withContext Result.success(false)
+                }
+                val sha = manifest.sha256
+                val classes = manifest.classes
+                if (sha.isNullOrBlank() || classes == null) {
+                    return@withContext Result.success(false)
+                }
+                if (AquaModelManager.isUpToDate(context, sha)) {
+                    return@withContext Result.success(false)
+                }
+                val modelResp = apiService.aquaModel()
+                val body = modelResp.body()
+                if (!modelResp.isSuccessful || body == null) {
+                    return@withContext Result.failure(
+                        Exception("Aqua model download failed: ${modelResp.code()}")
+                    )
+                }
+                val installed = body.byteStream().use { stream ->
+                    AquaModelManager.install(context, stream, sha, manifest.version, classes)
+                }
+                Result.success(installed)
             } catch (e: Exception) {
                 Result.failure(e)
             }
@@ -506,6 +573,35 @@ class ScanRepository(
     suspend fun getScanById(id: Long): ScanEntity? =
         withContext(Dispatchers.IO) {
             scanDao.getScanById(id)
+        }
+
+    /** Find the local scan a community scan_id maps to (community scan_id ==
+     *  the local scan's clientScanId), so a notification can open it. */
+    suspend fun getScanByClientScanId(clientScanId: String): ScanEntity? =
+        withContext(Dispatchers.IO) {
+            scanDao.getScanByClientScanId(clientScanId)
+        }
+
+    /** Every local scan's client id — used to filter the user's OWN scans out
+     *  of the community feed (scan_ids are globally unique, so a match is
+     *  definitely this device's own scan, even if the server-side pseudo-id
+     *  exclusion missed it after a reinstall). */
+    suspend fun localClientScanIds(): Set<String> =
+        withContext(Dispatchers.IO) {
+            scanDao.allClientScanIds().toHashSet()
+        }
+
+    /** Opinion counts on this install's OWN shared scans (for the
+     *  second-opinion notification poll). Best-effort. */
+    suspend fun fetchMyScanOpinions(pseudoId: String): Result<MyScanOpinionsResponse> =
+        withContext(Dispatchers.IO) {
+            try {
+                val r = apiService.communityMyScanOpinions(pseudoId)
+                if (r.isSuccessful && r.body() != null) Result.success(r.body()!!)
+                else Result.failure(Exception("Server error: ${r.code()}"))
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
         }
 
     /** Delete a scan */

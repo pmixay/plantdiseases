@@ -3,6 +3,7 @@ package com.plantdiseases.app.data
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.GuideCategory
 import com.plantdiseases.app.data.model.GuideItem
+import com.plantdiseases.app.util.ServerConfig
 
 object GuideDataProvider {
 
@@ -1538,32 +1539,34 @@ PREVENTION:
     }
 
     /**
-     * Bundled offline example photo for a guide article (a real shot of the
-     * disease / pest), or null where no photo applies — pure care topics and
-     * the "healthy" article. Replaces the old Wikipedia fetch so the guide
-     * works fully offline.
+     * Guide IDs that have a server-hosted example photo. These photos moved out
+     * of the APK (server/static/guide/<key>.png, served by /api/guide/photo/)
+     * to shrink the app; the client downloads + disk-caches them so they stay
+     * available offline after first view. Pure care topics and "healthy" ship
+     * none. Keep this set in sync with server/static/guide/.
      */
-    fun exampleImageRes(guideId: String): Int? = when (guideId) {
-        "powdery_mildew" -> R.drawable.guide_photo_powdery_mildew
-        "leaf_spot" -> R.drawable.guide_photo_leaf_spot
-        "blight" -> R.drawable.guide_photo_blight
-        "root_rot" -> R.drawable.guide_photo_root_rot
-        "leaf_mold" -> R.drawable.guide_photo_leaf_mold
-        "viral_disease" -> R.drawable.guide_photo_viral_disease
-        "rust" -> R.drawable.guide_photo_rust
-        "botrytis" -> R.drawable.guide_photo_botrytis
-        "spider_mites" -> R.drawable.guide_photo_spider_mites
-        "aphids" -> R.drawable.guide_photo_aphids
-        "mealybugs" -> R.drawable.guide_photo_mealybugs
-        "scale_insects" -> R.drawable.guide_photo_scale_insects
-        "leaf_scorch_underwatering" -> R.drawable.guide_photo_leaf_scorch_underwatering
-        "nutrient_deficiency" -> R.drawable.guide_photo_nutrient_deficiency
-        "edema" -> R.drawable.guide_photo_edema
-        "sunburn_or_scorch" -> R.drawable.guide_photo_sunburn_or_scorch
-        else -> null
-    }
+    private val EXAMPLE_PHOTO_KEYS = setOf(
+        "powdery_mildew", "leaf_spot", "blight", "root_rot", "leaf_mold",
+        "viral_disease", "rust", "botrytis", "spider_mites", "aphids",
+        "mealybugs", "scale_insects", "leaf_scorch_underwatering",
+        "nutrient_deficiency", "edema", "sunburn_or_scorch",
+    )
 
-    /** Bundled offline example photo for a classifier class, or null. */
-    fun exampleImageResForDisease(classKey: String): Int? =
-        guideIdForDisease(classKey)?.let { exampleImageRes(it) }
+    /** The example-photo key for a guide article, or null where none applies.
+     *  The key doubles as the server path segment (/api/guide/photo/<key>). */
+    fun exampleImageKey(guideId: String): String? =
+        guideId.takeIf { it in EXAMPLE_PHOTO_KEYS }
+
+    /** The example-photo key for a classifier class, or null. */
+    fun exampleImageKeyForDisease(classKey: String): String? =
+        guideIdForDisease(classKey)?.let { exampleImageKey(it) }
+
+    /** Absolute URL of the server-hosted example photo for a guide id, or null
+     *  where no photo applies. Loaded via Glide (disk-cached for offline). */
+    fun exampleImageUrl(guideId: String): String? =
+        exampleImageKey(guideId)?.let { "${ServerConfig.baseUrl}api/guide/photo/$it" }
+
+    /** Absolute URL of the server-hosted example photo for a classifier class. */
+    fun exampleImageUrlForDisease(classKey: String): String? =
+        exampleImageKeyForDisease(classKey)?.let { "${ServerConfig.baseUrl}api/guide/photo/$it" }
 }

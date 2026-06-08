@@ -118,12 +118,6 @@ class ScanRepositoryTest {
     }
 
     @Test
-    fun isHealthyVerdict_trustsServerFlag() {
-        assertThat(repo.isHealthyVerdict(scan(isHealthy = true))).isTrue()
-        assertThat(repo.isHealthyVerdict(scan(isHealthy = false))).isFalse()
-    }
-
-    @Test
     fun scanToProgressionPayload_buildsServerShape() {
         val payload = repo.scanToProgressionPayload(
             scan(

@@ -304,6 +304,12 @@ interface ScanDao {
     @Query("SELECT * FROM scans WHERE id = :id")
     suspend fun getScanById(id: Long): ScanEntity?
 
+    @Query("SELECT * FROM scans WHERE client_scan_id = :clientScanId LIMIT 1")
+    suspend fun getScanByClientScanId(clientScanId: String): ScanEntity?
+
+    @Query("SELECT client_scan_id FROM scans WHERE client_scan_id != ''")
+    suspend fun allClientScanIds(): List<String>
+
     @Query("SELECT * FROM scans WHERE plant_id = :plantId ORDER BY timestamp DESC")
     suspend fun getScansForPlant(plantId: Long): List<ScanEntity>
 

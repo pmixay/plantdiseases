@@ -227,41 +227,65 @@ def test_hflip_tta_enabled_with_logit_averaging():
     assert "x_np[..., ::-1]" in src, "TTA must flip along the width axis"
 
 
-def test_stage0_weakclass_supply_broadened():
-    """Report Stage 0: the weak-class eval slices were too small to certify
-    (n~=19-28). The in-domain free-text query lists must be broadened (more
-    DISTINCT terms => more distinct observations => bigger train AND eval
-    slices) and the fetch target raised so the larger lists are drawn."""
+def test_stage0_weakclass_supply_productive():
+    """Weak-class free-text breadth. This originally required >=18 terms per
+    physiological class as a proxy for "enough supply". Live source verification
+    (2026-06, see server/DATA_SOURCES_VERIFICATION.md) showed many of those
+    terms returned ZERO research-grade+photo observations — fake breadth that
+    only spent API calls — so the dead queries were pruned. The real guards for
+    weak-class supply are now (a) a non-gutted list of PRODUCTIVE terms, (b) the
+    per-class count floor (raises if a class is starved), and (c) DoctorP, the
+    eval-eligible real-photo source that actually seeds the weak-class eval
+    slices. Assert the productive lists stay reasonably broad + the target is
+    raised so they're fully drawn."""
     src = _notebook_source()
     block = re.search(r"INAT_PHYSIOLOGICAL_QUERIES\s*=\s*\{.*?\n\}", src, re.DOTALL)
     assert block, "physiological query table missing"
     for cls in ("leaf_scorch_underwatering", "nutrient_deficiency"):
         seg = re.search(rf"'{cls}':\s*\[(.*?)\]", block.group(0), re.DOTALL)
-        assert seg and seg.group(1).count("',") + 1 >= 18, (
-            f"{cls} query list must be broadened to >=18 terms for Stage 0"
+        assert seg, f"{cls} query list missing"
+        # Count quoted strings on the CODE portion of each line only — a comment
+        # may quote a pruned term for documentation, which must not be counted.
+        terms = sum(
+            len(re.findall(r"'[^']+'", line.split("#", 1)[0]))
+            for line in seg.group(1).splitlines()
+        )
+        assert terms >= 10, (
+            f"{cls} productive query list too thin ({terms} terms) — weak-class "
+            f"supply breadth must not be gutted"
         )
     assert "fetch_inat_physiological, per_class=1500" in src, (
-        "per_class target must be raised so the broadened query set is drawn"
+        "per_class target must be raised so the query set is fully drawn"
     )
 
 
-def test_no_knowledge_distillation_in_pipeline():
-    """Report key finding: "Distillation is the wrong tool here." The
-    EfficientNetV2-S→MobileNetV3 KD chain must be gone — no teacher
-    forward, no KD loss term, no candidate-snapshot machinery. If a small
-    server model is ever needed the report says use DIST/DKD as a separate
-    effort, which §5 documents but does NOT run here."""
+def test_knowledge_distillation_scoped_to_aqua_only():
+    """Design invariant: the SERVER-served gamma/frontier model is the frozen
+    DINOv2 + MLP head — no distillation in that path. KD was deliberately
+    re-introduced ONLY to produce the **Aqua** on-device student
+    (MobileNetV3-Small, §5), gated behind the aqua family so it never touches
+    the gamma/frontier pipeline. The earlier EfficientNetV2-S→MobileNetV3
+    multi-candidate teacher-snapshot machinery (the genuinely wrong tool) must
+    stay gone."""
     src = _notebook_source()
+    # Legacy multi-candidate teacher/snapshot machinery must stay removed.
     for gone in ("ema_update", "_train_phase(", "classifier_candidates",
-                 "candidate_results", "mobilenet_v3"):
+                 "candidate_results"):
         assert gone not in src, (
-            f"distillation/student machinery {gone!r} is still present — "
-            f"the report says drop KD in favour of the frozen DINOv2 backbone"
+            f"legacy distillation machinery {gone!r} is back — only the scoped "
+            f"Aqua MobileNetV3 student KD should exist"
         )
-    # No live KD loss term (alpha*KD + (1-alpha)*CE). Mentions of "KD" are
-    # only allowed in prose explaining why it was removed.
-    assert not re.search(r"alpha\s*\*\s*kd", src, re.IGNORECASE), (
-        "a live KD loss term is still in the training loop"
+    # KD is gated behind the aqua family's distill flag, not run unconditionally.
+    assert "FAMILY_CONFIG.get('distill')" in src, (
+        "Aqua KD must be gated behind the aqua family's distill flag"
+    )
+    # The Aqua student is a MobileNetV3-Small distilled from the gamma teacher.
+    assert "mobilenet_v3_small" in src, (
+        "the Aqua student should be a MobileNetV3-Small distilled from gamma"
+    )
+    # The gamma/frontier production model stays the frozen DINOv2 + head.
+    assert "DINOv2Classifier" in src, (
+        "gamma/frontier production model must remain the frozen DINOv2 + head"
     )
 
 
@@ -284,38 +308,41 @@ def test_int8_is_dynamic_with_drift_gate_and_paired_bootstrap():
     )
 
 
-def test_coleaf_supplements_nutrient_deficiency_train_only():
-    """Report Stage 2: supplement the weak nutrient_deficiency class with a
-    curated abiotic-stress dataset. CoLeaf must (a) be fetched into
-    nutrient_deficiency, (b) carry a HIGH label_confidence (it's expert-
-    labelled, unlike the noisy iNat free-text), and (c) be TRAIN-ONLY — its
-    'coleaf' source must NOT appear in any make_*_split allowed_sources, or
-    crop imagery would leak into the in-domain houseplant eval/cal splits
-    and corrupt the metrics."""
+def test_crop_nutrient_supplement_train_only():
+    """The weak nutrient_deficiency class is supplemented with a curated
+    crop-domain abiotic-stress dataset. CoLeaf (Mendeley) is no longer fetched
+    — Mendeley/Cloudflare 403s datacenter IPs (incl. Colab), so it always
+    failed; MPLD (Zenodo) is the surviving crop supplement. The supplement must
+    (a) be fetched into nutrient_deficiency before the pre-split dedup, (b)
+    carry a HIGH label_confidence (curated, unlike the noisy iNat free-text),
+    and (c) be TRAIN-ONLY — neither 'mpld' nor 'coleaf' may appear in any
+    make_*_split allowed_sources, or crop imagery would leak into the in-domain
+    houseplant eval/cal splits and corrupt the metrics."""
     src = _notebook_source()
-    assert "fetch_coleaf_nutrient_deficiency" in src, "CoLeaf supplement missing"
-    assert "COLEAF_DEFICIENCY_ZIPS" in src and "brfgw46wzb" in src, (
-        "CoLeaf Mendeley source (dataset brfgw46wzb) not wired in"
+    # CoLeaf is intentionally NOT actively fetched (Mendeley unreachable). The
+    # function may remain as a documented restore-path, but the call is gone so
+    # it can't 403-spam every run.
+    assert "_try_fetch('coleaf_nutrient_deficiency'" not in src, (
+        "CoLeaf must NOT be fetched — Mendeley 403s from Colab; mirror it to "
+        "Kaggle to restore"
     )
-    # High-confidence curated labels (>= 0.85), not the iNat free-text 0.55.
-    m = re.search(r"def fetch_coleaf_nutrient_deficiency\([^)]*label_confidence=([0-9.]+)", src)
+    # MPLD is the active crop-nutrient supplement, fetched before dedup.
+    assert "fetch_mpld_phosphorus_deficiency" in src, "MPLD supplement missing"
+    m = re.search(r"def fetch_mpld_phosphorus_deficiency\([^)]*label_confidence=([0-9.]+)", src)
     assert m and float(m.group(1)) >= 0.85, (
-        "CoLeaf should ship a high label_confidence (curated expert labels)"
+        "MPLD should ship a high label_confidence (curated labels)"
     )
-    # Train-only: 'coleaf' must never be an allowed source on any eval split.
+    mpld_pos = src.find("_try_fetch('mpld_phosphorus_deficiency'")
+    dedup_pos = src.find("_dedup_train_in_place(TRAIN_ROOT")
+    assert 0 < mpld_pos < dedup_pos, "MPLD fetch must run before the pre-split dedup"
+    # Train-only: neither crop source may be an allowed source on any eval split.
     for split_fn in ("make_val_realworld", "make_val_indomain",
                      "make_temperature_cal", "make_conformal_cal"):
         body = re.search(rf"def {split_fn}\(.*?\n(?:.*\n){{0,12}}", src)
-        assert body and "coleaf" not in body.group(0), (
-            f"{split_fn} must NOT allow the 'coleaf' source — CoLeaf is a crop "
-            f"supplement and would corrupt the in-domain houseplant eval slice"
+        assert body and "coleaf" not in body.group(0) and "mpld" not in body.group(0), (
+            f"{split_fn} must NOT allow crop sources (coleaf/mpld) — they would "
+            f"corrupt the in-domain houseplant eval slice"
         )
-    # And it must run before the dedup/split so its rows are deduped + scoped.
-    coleaf_pos = src.find("_try_fetch('coleaf_nutrient_deficiency'")
-    dedup_pos = src.find("_dedup_train_in_place(TRAIN_ROOT")
-    assert 0 < coleaf_pos < dedup_pos, (
-        "CoLeaf fetch must run before the pre-split dedup"
-    )
 
 
 def test_coleaf_is_downweighted_and_excludes_healthy():
@@ -406,10 +433,8 @@ def test_crop_supplements_capped_to_bound_prior_inflation():
     assert m and int(m.group(1)) <= 300, (
         "MPLD cap must be reduced (<=300) to bound crop dominance of nutrient_deficiency"
     )
-    c = re.search(r"fetch_coleaf_nutrient_deficiency,\s*\n?\s*per_zip_cap=(\d+)", src)
-    assert c and int(c.group(1)) <= 90, (
-        "CoLeaf per_zip_cap must be reduced (<=90) to bound crop dominance"
-    )
+    # CoLeaf is no longer fetched (Mendeley 403s from Colab), so there is no
+    # CoLeaf cap to bound — MPLD is the only active crop-nutrient supplement.
 
 
 def test_la_prior_decoupled_from_crop_sampler_weight():

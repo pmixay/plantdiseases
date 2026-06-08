@@ -35,6 +35,10 @@ as the legacy environment variable.
 | `inference_timeout` | `30` | Seconds before `/api/analyze` returns `504`. |
 | `infer_workers` | `1` | ThreadPoolExecutor workers for model inference. With `onnx_intra_op_threads=0` a single scan uses all cores, so one worker avoids CPU oversubscription. Raise it only if you also pin `onnx_intra_op_threads` low for real concurrency on a many-core host. |
 | `onnx_intra_op_threads` | `0` | Intra-op threads per ONNX session. `0` lets ONNX Runtime use all physical cores — the biggest CPU-latency lever for the DINOv2 ViT classifier. Pin lower on a shared host. |
+| `frontier_enabled` | `false` | Enable server inference for the high-capacity **frontier** family (ViT-B/14, ~86M param). Off by default because it expects a GPU host. When off (or the bundle fails to load), `/api/analyze?family=frontier` returns a graceful `available:false` payload and `/api/capabilities` reports it unavailable so the app greys it out. A broken frontier bundle never blocks gamma boot. |
+| `frontier_models_dir` | `models/frontier` | Where the frontier bundle (`classifier.onnx`, `classes.json`, `temperature.json`, `conformal.json`) lives when `frontier_enabled=true`. The YOLOv8n detector is shared with gamma. |
+| `guide_static_dir` | `<server>/static/guide` | Directory of disease/pest example photos served by `GET /api/guide/photo/<key>` (+ `GET /api/guide/manifest`). Moved out of the Android APK to shrink the app; committed to the repo and copied into the Docker image. The client disk-caches them for offline use. |
+| `aqua_static_dir` | `<server>/static/aqua` | Directory hosting the on-device **Aqua** TFLite model (`aqua_classifier.tflite` + `classes.json`), served by `GET /api/aqua/model` (+ `GET /api/aqua/manifest`). Provisioned out of band (not committed, like the weights); when absent the manifest reports `available:false` and the app uses the server model. The app downloads + caches it and re-downloads only when the sha changes. |
 | `log_dir` | `logs` | Rotating file logs (5 MB × 5 backups). |
 | `host` / `port` | `0.0.0.0` / `8000` | Uvicorn bind. |
 | `openrouter_api_key` | *(empty)* | OpenRouter key. Without it the chat and care-plan polish return an offline fallback. |
@@ -251,6 +255,13 @@ Run this on a real device with the production URL configured. Target: under 5 mi
 - [ ] Take a clear photo of a healthy leaf → diagnosis screen shows `Healthy` with confidence ≥ 70 %.
 - [ ] Take a photo of a known-diseased leaf → correct disease label, treatment + prevention lists are non-empty in both EN and RU (toggle via `Profile → Language`).
 - [ ] Scan appears in `Gallery` and `Profile` stats increment (`Total Scans`, healthy/diseased counts).
+
+**Model families & offline (scan-screen model picker)**
+- [ ] `curl https://.../api/capabilities` lists `aqua`, `gamma`, `frontier` with `available` flags; `gamma` true, `frontier` matches `frontier_enabled`.
+- [ ] Scan-screen model chip opens the picker; `gamma` selectable, `aqua` shows an **Offline** badge, `frontier` is greyed **Unavailable** unless the server enables it.
+- [ ] With `frontier_enabled=false`, `curl -F "image=@leaf.jpg" "https://.../api/analyze?family=frontier"` returns `{"available": false, ...}` (HTTP 200, no diagnosis).
+- [ ] **Aqua offline**: if `static/aqua/` is provisioned, open the scan screen once online (model downloads), then enable airplane mode and scan with `aqua` selected → a diagnosis appears with **no network**. If not provisioned, picking `aqua` toasts "offline model isn't installed" and falls back to the server.
+- [ ] Disease example photos still render on the result/guide screens (served by `/api/guide/photo/<key>`, disk-cached) — `curl -o /dev/null -w "%{http_code}" https://.../api/guide/photo/powdery_mildew` returns 200.
 
 **Error states (each must show a clear card with a one-tap Retry that re-uses the same photo)**
 - [ ] **Timeout**: throttle network or stop the API container mid-request → `Server Not Responding` card; image preview still shown above the error.

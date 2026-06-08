@@ -1,14 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Profile screen.
+    Profile screen — single, minimal style throughout.
 
-    Refactor notes:
-      • All cards now share App.GlassCard / App.GlassCard.Strong so
-        radii, padding and translucency are uniform.
-      • Spacing is on the @dimen/space_* grid — no more 4/6/10/14dp
-        magic numbers.
-      • The header gets a slim gradient hero so the page has a real
-        starting point instead of dropping straight into a stat card.
+      • One header: a small avatar + title/subtitle, no gradient hero.
+      • Every section is the same App.GlassCard so radii, padding and
+        translucency are uniform; sections are separated only by the
+        @dimen/space_* grid (no 4/6/10/14dp magic numbers).
+      • Section titles all use TextAppearance.App.Title.
 -->
 <androidx.core.widget.NestedScrollView
     xmlns:android="http://schemas.android.com/apk/res/android"
@@ -25,6 +23,52 @@
         android:layout_height="wrap_content"
         android:orientation="vertical"
         android:padding="@dimen/space_lg">
+
+        <!-- Header: minimal, no gradient — clean avatar + title. -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingVertical="@dimen/space_sm"
+            android:paddingBottom="@dimen/space_md">
+
+            <FrameLayout
+                android:layout_width="52dp"
+                android:layout_height="52dp"
+                android:background="@drawable/bg_circle_surface_variant">
+
+                <ImageView
+                    android:layout_width="28dp"
+                    android:layout_height="28dp"
+                    android:layout_gravity="center"
+                    android:src="@drawable/ic_profile"
+                    app:tint="@color/primary"
+                    android:contentDescription="@null" />
+            </FrameLayout>
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="@dimen/space_md"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/tab_profile"
+                    android:textAppearance="@style/TextAppearance.App.Headline" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="@string/profile_subtitle"
+                    android:textSize="@dimen/text_body_sm"
+                    android:textColor="@color/on_surface_secondary" />
+            </LinearLayout>
+        </LinearLayout>
 
         <!-- Server status (compact one-line glass pill row) -->
         <com.google.android.material.card.MaterialCardView
@@ -117,6 +161,7 @@
         </com.facebook.shimmer.ShimmerFrameLayout>
 
         <!-- Stats: a single glass card with a stat row + summary lines -->
+        <!-- Stats: health-rate ring + animated count tiles -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/stats_layout"
             style="@style/App.GlassCard"
@@ -133,87 +178,75 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
-                    android:weightSum="3">
+                    android:gravity="center_vertical">
+
+                    <FrameLayout
+                        android:layout_width="116dp"
+                        android:layout_height="116dp">
+
+                        <com.google.android.material.progressindicator.CircularProgressIndicator
+                            android:id="@+id/progress_health_ring"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_gravity="center"
+                            android:progress="0"
+                            app:indicatorSize="116dp"
+                            app:trackThickness="10dp"
+                            app:trackCornerRadius="6dp"
+                            app:indicatorColor="@color/healthy_green"
+                            app:trackColor="@color/divider" />
+
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_gravity="center"
+                            android:orientation="vertical"
+                            android:gravity="center">
+
+                            <TextView
+                                android:id="@+id/tv_health_rate"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="—"
+                                android:textSize="26sp"
+                                android:textColor="@color/on_surface"
+                                android:fontFamily="sans-serif-medium"
+                                tools:text="100%" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="@string/accuracy_rate"
+                                android:textSize="@dimen/text_caption"
+                                android:textColor="@color/on_surface_secondary" />
+                        </LinearLayout>
+                    </FrameLayout>
 
                     <LinearLayout
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:orientation="vertical"
-                        android:gravity="center">
+                        android:layout_marginStart="@dimen/space_md"
+                        android:orientation="vertical">
 
-                        <TextView
-                            android:id="@+id/tv_total_scans"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="0"
-                            android:textSize="26sp"
-                            android:textColor="@color/primary"
-                            android:fontFamily="sans-serif-medium"
-                            tools:text="42" />
+                        <LinearLayout style="@style/Profile.StatTile">
+                            <TextView android:id="@+id/tv_total_scans" style="@style/Profile.StatNum"
+                                android:textColor="@color/primary" tools:text="42" />
+                            <TextView style="@style/Profile.StatLabel" android:text="@string/total_scans" />
+                        </LinearLayout>
 
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
-                            android:text="@string/total_scans"
-                            android:textSize="@dimen/text_caption"
-                            android:textColor="@color/on_surface_secondary" />
+                        <LinearLayout style="@style/Profile.StatTile" android:layout_marginTop="@dimen/space_sm">
+                            <TextView android:id="@+id/tv_healthy_count" style="@style/Profile.StatNum"
+                                android:textColor="@color/healthy_green" tools:text="40" />
+                            <TextView style="@style/Profile.StatLabel" android:text="@string/healthy_plants" />
+                        </LinearLayout>
 
+                        <LinearLayout style="@style/Profile.StatTile" android:layout_marginTop="@dimen/space_sm">
+                            <TextView android:id="@+id/tv_diseased_count" style="@style/Profile.StatNum"
+                                android:textColor="@color/disease_red" tools:text="2" />
+                            <TextView style="@style/Profile.StatLabel" android:text="@string/diseased_plants" />
+                        </LinearLayout>
                     </LinearLayout>
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical"
-                        android:gravity="center">
-
-                        <TextView
-                            android:id="@+id/tv_healthy_count"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="0"
-                            android:textSize="26sp"
-                            android:textColor="@color/healthy_green"
-                            android:fontFamily="sans-serif-medium" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
-                            android:text="@string/healthy_plants"
-                            android:textSize="@dimen/text_caption"
-                            android:textColor="@color/on_surface_secondary" />
-
-                    </LinearLayout>
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical"
-                        android:gravity="center">
-
-                        <TextView
-                            android:id="@+id/tv_diseased_count"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="0"
-                            android:textSize="26sp"
-                            android:textColor="@color/disease_red"
-                            android:fontFamily="sans-serif-medium" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="2dp"
-                            android:text="@string/diseased_plants"
-                            android:textSize="@dimen/text_caption"
-                            android:textColor="@color/on_surface_secondary" />
-
-                    </LinearLayout>
-
                 </LinearLayout>
 
                 <View
@@ -225,32 +258,8 @@
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal">
-
-                    <TextView
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="@string/accuracy_rate"
-                        android:textSize="@dimen/text_body_sm"
-                        android:textColor="@color/on_surface_secondary" />
-
-                    <TextView
-                        android:id="@+id/tv_health_rate"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="—"
-                        android:textSize="@dimen/text_body_sm"
-                        android:textColor="@color/on_surface"
-                        android:fontFamily="sans-serif-medium" />
-
-                </LinearLayout>
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_xs"
-                    android:orientation="horizontal">
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
 
                     <TextView
                         android:layout_width="0dp"
@@ -268,11 +277,8 @@
                         android:textSize="@dimen/text_body_sm"
                         android:textColor="@color/on_surface"
                         android:fontFamily="sans-serif-medium" />
-
                 </LinearLayout>
-
             </LinearLayout>
-
         </com.google.android.material.card.MaterialCardView>
 
         <!-- Empty state -->
@@ -334,27 +340,76 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical">
 
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/language"
+                    android:textAppearance="@style/TextAppearance.App.Title"
+                    android:layout_marginBottom="@dimen/space_sm" />
+
+                <!-- Flag-segmented language switch (replaces the plain button). -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
-                    android:gravity="center_vertical">
+                    android:background="@drawable/bg_segmented_container"
+                    android:padding="3dp">
 
-                    <TextView
+                    <LinearLayout
+                        android:id="@+id/lang_en"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="@string/language"
-                        android:textAppearance="@style/TextAppearance.App.Title" />
+                        android:orientation="horizontal"
+                        android:gravity="center"
+                        android:paddingVertical="11dp"
+                        android:clickable="true"
+                        android:focusable="true">
 
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_language"
-                        style="@style/Widget.Material3.Button.TextButton"
-                        android:layout_width="wrap_content"
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="🇺🇸"
+                            android:textSize="20sp"
+                            android:includeFontPadding="false" />
+
+                        <TextView
+                            android:id="@+id/tv_lang_en"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="@dimen/space_sm"
+                            android:text="English"
+                            android:textSize="@dimen/text_body"
+                            android:fontFamily="sans-serif-medium" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/lang_ru"
+                        android:layout_width="0dp"
                         android:layout_height="wrap_content"
-                        android:text="@string/change_language"
-                        app:cornerRadius="@dimen/radius_md" />
+                        android:layout_weight="1"
+                        android:orientation="horizontal"
+                        android:gravity="center"
+                        android:paddingVertical="11dp"
+                        android:clickable="true"
+                        android:focusable="true">
 
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="🇷🇺"
+                            android:textSize="20sp"
+                            android:includeFontPadding="false" />
+
+                        <TextView
+                            android:id="@+id/tv_lang_ru"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="@dimen/space_sm"
+                            android:text="Русский"
+                            android:textSize="@dimen/text_body"
+                            android:fontFamily="sans-serif-medium" />
+                    </LinearLayout>
                 </LinearLayout>
 
                 <View
@@ -411,206 +466,8 @@
 
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Tools: light meter + how-to-use -->
-        <com.google.android.material.card.MaterialCardView
-            style="@style/App.GlassCard"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_md"
-            app:contentPadding="0dp">
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
-
-                <!-- Light Meter card used to live here. It moved into
-                     per-plant context on the plant-detail screen
-                     (where the meter pre-selects the right species
-                     bucket and persists the session peak back onto
-                     the plant) and was deleted from this surface as
-                     part of the production-polish pass. -->
-
-                <!-- Inline "how to use" mini-guide: replaces the old
-                     full-screen onboarding re-open button with a quick
-                     three-step strip so the user can refresh memory
-                     without leaving the profile screen. Each column is
-                     a tappable shortcut into the relevant tab. -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:paddingHorizontal="@dimen/space_lg"
-                    android:paddingVertical="@dimen/space_md">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/how_to_use_title"
-                        android:textAppearance="@style/TextAppearance.App.Title" />
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_sm"
-                        android:orientation="horizontal"
-                        android:gravity="top">
-
-                        <LinearLayout
-                            android:id="@+id/step_scan"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:orientation="vertical"
-                            android:gravity="center_horizontal"
-                            android:paddingHorizontal="@dimen/space_xs"
-                            android:clickable="false"
-                            android:focusable="false">
-
-                            <FrameLayout
-                                android:layout_width="44dp"
-                                android:layout_height="44dp"
-                                android:background="@drawable/bg_icon_circle">
-
-                                <ImageView
-                                    android:layout_width="22dp"
-                                    android:layout_height="22dp"
-                                    android:layout_gravity="center"
-                                    android:contentDescription="@null"
-                                    android:src="@drawable/ic_scan"
-                                    app:tint="@color/primary" />
-
-                            </FrameLayout>
-
-                            <TextView
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="@dimen/space_xs"
-                                android:gravity="center"
-                                android:text="@string/tab_scan"
-                                android:textSize="@dimen/text_body_sm"
-                                android:textColor="@color/on_surface"
-                                android:fontFamily="sans-serif-medium" />
-
-                            <TextView
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="2dp"
-                                android:gravity="center"
-                                android:text="@string/how_to_use_step_scan"
-                                android:textSize="@dimen/text_caption"
-                                android:textColor="@color/on_surface_secondary"
-                                android:lineSpacingExtra="1dp" />
-
-                        </LinearLayout>
-
-                        <LinearLayout
-                            android:id="@+id/step_diagnose"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:orientation="vertical"
-                            android:gravity="center_horizontal"
-                            android:paddingHorizontal="@dimen/space_xs"
-                            android:clickable="false"
-                            android:focusable="false">
-
-                            <FrameLayout
-                                android:layout_width="44dp"
-                                android:layout_height="44dp"
-                                android:background="@drawable/bg_icon_circle">
-
-                                <ImageView
-                                    android:layout_width="22dp"
-                                    android:layout_height="22dp"
-                                    android:layout_gravity="center"
-                                    android:contentDescription="@null"
-                                    android:src="@drawable/ic_disease"
-                                    app:tint="@color/primary" />
-
-                            </FrameLayout>
-
-                            <TextView
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="@dimen/space_xs"
-                                android:gravity="center"
-                                android:text="@string/onboarding_diagnose_title"
-                                android:textSize="@dimen/text_body_sm"
-                                android:textColor="@color/on_surface"
-                                android:fontFamily="sans-serif-medium" />
-
-                            <TextView
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="2dp"
-                                android:gravity="center"
-                                android:text="@string/how_to_use_step_diagnose"
-                                android:textSize="@dimen/text_caption"
-                                android:textColor="@color/on_surface_secondary"
-                                android:lineSpacingExtra="1dp" />
-
-                        </LinearLayout>
-
-                        <LinearLayout
-                            android:id="@+id/step_care"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:orientation="vertical"
-                            android:gravity="center_horizontal"
-                            android:paddingHorizontal="@dimen/space_xs"
-                            android:clickable="false"
-                            android:focusable="false">
-
-                            <FrameLayout
-                                android:layout_width="44dp"
-                                android:layout_height="44dp"
-                                android:background="@drawable/bg_icon_circle">
-
-                                <ImageView
-                                    android:layout_width="22dp"
-                                    android:layout_height="22dp"
-                                    android:layout_gravity="center"
-                                    android:contentDescription="@null"
-                                    android:src="@drawable/ic_care"
-                                    app:tint="@color/primary" />
-
-                            </FrameLayout>
-
-                            <TextView
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="@dimen/space_xs"
-                                android:gravity="center"
-                                android:text="@string/onboarding_care_title"
-                                android:textSize="@dimen/text_body_sm"
-                                android:textColor="@color/on_surface"
-                                android:fontFamily="sans-serif-medium" />
-
-                            <TextView
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="2dp"
-                                android:gravity="center"
-                                android:text="@string/how_to_use_step_care"
-                                android:textSize="@dimen/text_caption"
-                                android:textColor="@color/on_surface_secondary"
-                                android:lineSpacingExtra="1dp" />
-
-                        </LinearLayout>
-
-                    </LinearLayout>
-
-                </LinearLayout>
-
-            </LinearLayout>
-
-        </com.google.android.material.card.MaterialCardView>
-
-        <!-- Community contributions: toggle + clear-my-contributions
-             button. The toggle reflects CommunityPrefs.uploadsEnabled
-             and the delete button hits /api/community/user/{id}. -->
+        <!-- Community contributions: share toggle + delete-my-data. -->
         <com.google.android.material.card.MaterialCardView
             style="@style/App.GlassCard"
             android:layout_width="match_parent"
@@ -632,8 +489,8 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:orientation="vertical"
-                        android:layout_marginEnd="@dimen/space_md">
+                        android:layout_marginEnd="@dimen/space_md"
+                        android:orientation="vertical">
 
                         <TextView
                             android:layout_width="wrap_content"
@@ -649,14 +506,12 @@
                             android:textSize="@dimen/text_body_sm"
                             android:textColor="@color/on_surface_secondary"
                             android:lineSpacingExtra="1dp" />
-
                     </LinearLayout>
 
                     <com.google.android.material.materialswitch.MaterialSwitch
                         android:id="@+id/switch_community"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content" />
-
                 </LinearLayout>
 
                 <com.google.android.material.button.MaterialButton
@@ -665,13 +520,12 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_sm"
+                    android:layout_marginStart="-8dp"
                     android:text="@string/community_delete_title"
                     android:textColor="@color/disease_red"
                     app:icon="@drawable/ic_delete"
                     app:iconTint="@color/disease_red" />
-
             </LinearLayout>
-
         </com.google.android.material.card.MaterialCardView>
 
         <!-- My second opinions — what this install has contributed.
@@ -822,23 +676,14 @@
 
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Footer: clear history + version -->
+        <!-- Footer: version. The "clear all history" action moved to the
+             Gallery tab's top-app-bar basket, next to the scans it wipes. -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/space_xl"
             android:orientation="vertical"
             android:gravity="center_horizontal">
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_clear_history"
-                style="@style/Widget.Material3.Button.TextButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/clear_history"
-                android:textColor="@color/disease_red"
-                app:icon="@drawable/ic_delete"
-                app:iconTint="@color/disease_red" />
 
             <TextView
                 android:id="@+id/tv_app_version"

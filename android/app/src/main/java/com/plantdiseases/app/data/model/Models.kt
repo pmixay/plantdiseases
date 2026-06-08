@@ -156,6 +156,57 @@ data class AnalysisResponse(
     // pretending the diagnosis is fresh.
     @SerializedName("is_repeat") val isRepeat: Boolean = false,
     @SerializedName("cached_at") val cachedAt: Double? = null,
+    // Model tier that produced this verdict (aqua | gamma | frontier).
+    // Echoed back by the server so the client can confirm which family
+    // answered (and detect a server-side downgrade). On-device Aqua
+    // results set this locally. Defaults to gamma for older responses.
+    @SerializedName("family") val family: String = "gamma",
+)
+
+/** Per-family availability advertised by GET /api/capabilities. The
+ *  scan-screen model picker reads this to decide which tiers to offer:
+ *  a family with ``available=false`` (typically frontier when the server
+ *  hasn't enabled it) is shown disabled. */
+data class CapabilitiesResponse(
+    @SerializedName("default") val default: String = "gamma",
+    @SerializedName("families") val families: List<FamilyCapability> = emptyList(),
+    @SerializedName("server_version") val serverVersion: String? = null,
+)
+
+data class FamilyCapability(
+    @SerializedName("id") val id: String = "",
+    @SerializedName("available") val available: Boolean = false,
+    // "server" or "on_device".
+    @SerializedName("location") val location: String = "server",
+    @SerializedName("model_family") val modelFamily: String? = null,
+)
+
+/** Opinion counts on the user's OWN shared scans (GET /api/community/
+ *  my-scan-opinions/{id}). Polled by OpinionCheckWorker to notify the user
+ *  when someone leaves a second opinion. */
+data class MyScanOpinionsResponse(
+    @SerializedName("scans") val scans: List<ScanOpinionItem> = emptyList(),
+    @SerializedName("total_opinions") val totalOpinions: Int = 0,
+)
+
+data class ScanOpinionItem(
+    @SerializedName("scan_id") val scanId: String = "",
+    @SerializedName("disease") val disease: String = "",
+    @SerializedName("opinion_count") val opinionCount: Int = 0,
+    @SerializedName("latest_at") val latestAt: Long = 0,
+)
+
+/** Describes the server-hosted Aqua on-device model (GET /api/aqua/manifest)
+ *  so the app can download it once and re-download only when it changes. */
+data class AquaManifestResponse(
+    @SerializedName("available") val available: Boolean = false,
+    @SerializedName("version") val version: String? = null,
+    @SerializedName("sha256") val sha256: String? = null,
+    @SerializedName("size_bytes") val sizeBytes: Long = 0,
+    // The classes.json sidecar passed through verbatim — persisted next to the
+    // downloaded .tflite so AquaClassifier reads the same metadata the server
+    // shipped (class order, input size, normalisation).
+    @SerializedName("classes") val classes: com.google.gson.JsonObject? = null,
 )
 
 /** Species block carried inside AnalysisResponse. */
@@ -203,6 +254,9 @@ data class CommunityScanItem(
     // The scanner flagged this scan as wanting a community second opinion
     // (they were unsure and are waiting for others to weigh in).
     @SerializedName("wants_opinion") val wantsOpinion: Boolean = false,
+    // Stable, anonymous per-author token (a sha256 prefix of the pseudo id —
+    // never the id itself). Same author ⇒ same token ⇒ same generated avatar.
+    @SerializedName("author_token") val authorToken: String? = null,
 )
 
 data class CommunityRegionSummary(

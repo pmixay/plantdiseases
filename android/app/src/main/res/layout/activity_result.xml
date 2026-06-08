@@ -648,21 +648,6 @@
                         android:textSize="@dimen/text_body_sm"
                         android:textColor="?attr/colorOnSurfaceVariant" />
 
-                    <!-- Top diseases in the region — empty when summary
-                         arrives with no entries (rare for non-empty
-                         corpora). -->
-                    <com.google.android.material.chip.ChipGroup
-                        android:id="@+id/chip_group_top_diseases"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_md"
-                        app:singleLine="false"
-                        app:selectionRequired="false"
-                        app:singleSelection="true"
-                        app:chipSpacingHorizontal="@dimen/space_xs"
-                        app:chipSpacingVertical="@dimen/space_xs"
-                        android:visibility="gone" />
-
                     <!-- Empty state shown when the region has no recent
                          scans yet. Keeps the card on screen so the user
                          understands the feature exists. -->

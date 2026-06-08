@@ -10,7 +10,10 @@ import com.plantdiseases.app.data.model.CommunityOpinionRequest
 import com.plantdiseases.app.data.model.CommunityOpinionsResponse
 import com.plantdiseases.app.data.model.CommunityRequestOpinionRequest
 import com.plantdiseases.app.data.model.CommunityRequestOpinionResponse
+import com.plantdiseases.app.data.model.AquaManifestResponse
+import com.plantdiseases.app.data.model.CapabilitiesResponse
 import com.plantdiseases.app.data.model.CommunityScansResponse
+import com.plantdiseases.app.data.model.MyScanOpinionsResponse
 import com.plantdiseases.app.data.model.CommunityScanUploadResponse
 import com.plantdiseases.app.data.model.SpeciesInfoResponse
 import com.plantdiseases.app.data.model.FeedbackRequest
@@ -34,6 +37,7 @@ import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.Multipart
 import retrofit2.http.POST
+import retrofit2.http.Streaming
 import retrofit2.http.Part
 import retrofit2.http.Path
 import retrofit2.http.Query
@@ -48,7 +52,27 @@ interface ApiService {
         @Part image: MultipartBody.Part,
         @Query("species") species: String? = null,
         @Query("locale") locale: String = "en",
+        // Model tier (aqua | gamma | frontier). Aqua normally never reaches
+        // here (it runs on-device); gamma is the default; frontier is only
+        // served when the operator enabled it (see /api/capabilities).
+        @Query("family") family: String = "gamma",
     ): retrofit2.Response<AnalysisResponse>
+
+    /** Per-family availability so the scan-screen picker can grey out a
+     *  tier the server doesn't serve (notably frontier when disabled). */
+    @GET("api/capabilities")
+    suspend fun capabilities(): retrofit2.Response<CapabilitiesResponse>
+
+    /** Manifest for the hosted Aqua on-device model (version + sha + sidecar),
+     *  so the app downloads/updates it only when the bytes change. */
+    @GET("api/aqua/manifest")
+    suspend fun aquaManifest(): retrofit2.Response<AquaManifestResponse>
+
+    /** Stream the Aqua TFLite model bytes (multi-MB — @Streaming avoids
+     *  buffering the whole body in memory). */
+    @Streaming
+    @GET("api/aqua/model")
+    suspend fun aquaModel(): retrofit2.Response<ResponseBody>
 
     @GET("api/health")
     suspend fun healthCheck(): retrofit2.Response<HealthResponse>
@@ -155,6 +179,13 @@ interface ApiService {
     suspend fun communityMyOpinions(
         @Path("user_pseudo_id") userPseudoId: String,
     ): retrofit2.Response<CommunityOpinionsResponse>
+
+    /** Opinion counts on the user's OWN shared scans — polled to notify when
+     *  someone leaves a second opinion on a scan they shared. */
+    @GET("api/community/my-scan-opinions/{user_pseudo_id}")
+    suspend fun communityMyScanOpinions(
+        @Path("user_pseudo_id") userPseudoId: String,
+    ): retrofit2.Response<MyScanOpinionsResponse>
 
     /** Localized Wikipedia blurb + lead image for a scientific name. */
     @GET("api/species-info")

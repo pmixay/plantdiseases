@@ -105,6 +105,33 @@
         <item name="cardBackgroundColor">?attr/colorSurfaceContainer</item>
     </style>
 
+    <!-- Profile stat tiles (the count rows beside the health-rate ring). -->
+    <style name="Profile.StatTile" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:orientation">horizontal</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:background">@drawable/bg_stat_pill</item>
+        <item name="android:paddingHorizontal">@dimen/space_md</item>
+        <item name="android:paddingVertical">10dp</item>
+    </style>
+    <style name="Profile.StatNum" parent="">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:minWidth">36dp</item>
+        <item name="android:gravity">center</item>
+        <item name="android:textSize">22sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:text">0</item>
+    </style>
+    <style name="Profile.StatLabel" parent="">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginStart">@dimen/space_md</item>
+        <item name="android:textSize">@dimen/text_body_sm</item>
+        <item name="android:textColor">@color/on_surface_secondary</item>
+    </style>
+
     <!-- Compact pill chip for status / count badges. -->
     <style name="App.GlassPill" parent="">
         <item name="android:background">@drawable/bg_glass_pill</item>

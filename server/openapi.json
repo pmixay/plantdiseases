@@ -57,6 +57,23 @@
         }
       }
     },
+    "/api/capabilities": {
+      "get": {
+        "summary": "Capabilities",
+        "description": "Model-family availability for the scan-screen picker.\n\nThe client calls this once when opening the picker to decide which\ntiers to offer. It greys out / blocks any family reported unavailable —\nnotably ``frontier`` when ``FRONTIER_ENABLED`` is false or its bundle\nfailed to load. ``aqua`` is always offered because it runs on-device\n(its real capability depends on the app shipping the tflite student).\nTolerates a not-yet-ready pipeline so the app can call it during boot.",
+        "operationId": "capabilities_api_capabilities_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/metrics": {
       "get": {
         "summary": "Metrics",
@@ -94,7 +111,7 @@
     "/api/analyze": {
       "post": {
         "summary": "Analyze Image",
-        "description": "Analyse a plant image for diseases (two-stage pipeline).\n\nAccepts JPEG, PNG, WebP, or BMP images up to 10 MB.\nReturns bilingual (EN/RU) disease diagnosis with treatment advice,\ndetected region (with severity score) and the top-k class\nprobabilities. ``locale`` (default \"en\") is forwarded to PlantNet\nso the species ``common_name`` is localised in the response.",
+        "description": "Analyse a plant image for diseases (two-stage pipeline).\n\nAccepts JPEG, PNG, WebP, or BMP images up to 10 MB.\nReturns bilingual (EN/RU) disease diagnosis with treatment advice,\ndetected region (with severity score) and the top-k class\nprobabilities. ``locale`` (default \"en\") is forwarded to PlantNet\nso the species ``common_name`` is localised in the response.\n\n``family`` selects the model tier (aqua | gamma | frontier). ``gamma``\nis the default; ``aqua`` is normally answered on-device but is served\nby gamma here for online parity; ``frontier`` requires the operator to\nhave enabled and provisioned it (otherwise a graceful ``available:false``\npayload is returned, never a 5xx).",
         "operationId": "analyze_image_api_analyze_post",
         "parameters": [
           {
@@ -123,6 +140,17 @@
               "maxLength": 16,
               "default": "en",
               "title": "Locale"
+            }
+          },
+          {
+            "name": "family",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 16,
+              "default": "gamma",
+              "title": "Family"
             }
           }
         ],
@@ -442,12 +470,14 @@
     "/api/community/opinion": {
       "post": {
         "summary": "Community Opinion Submit",
-        "description": "Record one community 'second opinion' on a shared scan.",
+        "description": "Record one community 'second opinion' on a shared scan.\n\nThe suggested disease must be a known classifier class so the consensus\ntally stays clean; any free text lives only in the optional note.",
         "operationId": "community_opinion_submit_api_community_opinion_post",
         "requestBody": {
           "content": {
             "application/json": {
-              "schema": {}
+              "schema": {
+                "$ref": "#/components/schemas/CommunityOpinionRequest"
+              }
             }
           },
           "required": true
@@ -477,12 +507,14 @@
     "/api/community/request-opinion": {
       "post": {
         "summary": "Community Request Opinion",
-        "description": "Flag the scanner's own shared scan as wanting a second opinion.",
+        "description": "Flag the scanner's own shared scan as wanting a second opinion.\n\nUnlike ``/community/opinion`` (where a *viewer* suggests a diagnosis\nfor someone else's scan), this is the *scanner* raising their hand:\n\"I'm unsure — community, please weigh in.\" The flag is owner-scoped\n(the update only matches a row owned by ``user_pseudo_id``) and\nidempotent.\n\nDegrades gracefully: the community upload is fire-and-forget and the\nuser may have opted out of sharing, so the owned row might not exist\nyet. We still return 200 with ``flagged: false`` — the client shows\nits local \"waiting for the community\" state regardless.",
         "operationId": "community_request_opinion_api_community_request_opinion_post",
         "requestBody": {
           "content": {
             "application/json": {
-              "schema": {}
+              "schema": {
+                "$ref": "#/components/schemas/CommunityRequestOpinionRequest"
+              }
             }
           },
           "required": true
@@ -547,11 +579,11 @@
         }
       }
     },
-    "/api/community/my-opinions/{user_pseudo_id}": {
+    "/api/community/my-scan-opinions/{user_pseudo_id}": {
       "get": {
-        "summary": "Community My Opinions",
-        "description": "List the second opinions one install has authored.",
-        "operationId": "community_my_opinions_api_community_my_opinions__user_pseudo_id__get",
+        "summary": "Community My Scan Opinions",
+        "description": "Opinion counts on the caller's OWN shared scans. The client polls this\non a schedule to notify the user when someone leaves a second opinion on a\nscan they shared (the per-scan view already exists via /opinions/{scan_id}).",
+        "operationId": "community_my_scan_opinions_api_community_my_scan_opinions__user_pseudo_id__get",
         "parameters": [
           {
             "name": "user_pseudo_id",
@@ -579,48 +611,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
                 }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/community/by-species": {
-      "get": {
-        "summary": "Community By Species",
-        "description": "Community scans of one species across all regions.",
-        "operationId": "community_by_species_api_community_by_species_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": { "application/json": { "schema": {} } }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/species-info": {
-      "get": {
-        "summary": "Species Info Endpoint",
-        "description": "Localized Wikipedia summary + lead image for a scientific name.",
-        "operationId": "species_info_endpoint_api_species_info_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": { "application/json": { "schema": {} } }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
               }
             }
           }
@@ -746,6 +736,163 @@
         }
       }
     },
+    "/api/community/my-opinions/{user_pseudo_id}": {
+      "get": {
+        "summary": "Community My Opinions",
+        "description": "List the second opinions one install has authored (newest first).",
+        "operationId": "community_my_opinions_api_community_my_opinions__user_pseudo_id__get",
+        "parameters": [
+          {
+            "name": "user_pseudo_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Pseudo Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/community/by-species": {
+      "get": {
+        "summary": "Community By Species",
+        "description": "Community scans of one species (by scientific name), across all\nregions — the result screen's 'other <species> in the community' strip.",
+        "operationId": "community_by_species_api_community_by_species_get",
+        "parameters": [
+          {
+            "name": "species",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Species"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 12,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "user_pseudo_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Pseudo Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/species-info": {
+      "get": {
+        "summary": "Species Info Endpoint",
+        "description": "Localized Wikipedia summary + lead image for a scientific name.",
+        "operationId": "species_info_endpoint_api_species_info_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "locale",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "en",
+              "title": "Locale"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/community/thumb/{filename}": {
       "get": {
         "summary": "Community Scan Thumb",
@@ -778,6 +925,95 @@
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
                 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/guide/manifest": {
+      "get": {
+        "summary": "Guide Manifest",
+        "description": "Keys that have an example photo, so the client can hide the photo strip\nfor topics that ship none — preserving the old bundled-drawable behaviour\n(null ⇒ no strip) without probing each key with a 404.",
+        "operationId": "guide_manifest_api_guide_manifest_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/guide/photo/{key}": {
+      "get": {
+        "summary": "Guide Photo",
+        "description": "Serve a guide example photo by key (e.g. ``powdery_mildew``).\n\nPath-traversal guarded like the community-thumb route; missing keys 404.\nLong-cached because the photos are immutable per release.",
+        "operationId": "guide_photo_api_guide_photo__key__get",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/aqua/manifest": {
+      "get": {
+        "summary": "Aqua Manifest",
+        "description": "Describe the hosted Aqua on-device model so the app can decide whether\nto (re)download it. ``available:false`` when the artefact isn't provisioned\n— the app then just uses the server model. ``sha256`` lets the client skip\na re-download when it already has the current bytes; ``classes`` is the\nsidecar metadata (class order, input size, normalisation) the app needs to\nrun the model.",
+        "operationId": "aqua_manifest_api_aqua_manifest_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/aqua/model": {
+      "get": {
+        "summary": "Aqua Model",
+        "description": "Serve the Aqua TFLite model bytes. 404 when not provisioned.",
+        "operationId": "aqua_model_api_aqua_model_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           }
@@ -867,7 +1103,7 @@
         "properties": {
           "image": {
             "type": "string",
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "Image"
           }
         },
@@ -948,7 +1184,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "format": "binary"
+                "contentMediaType": "application/octet-stream"
               },
               {
                 "type": "null"
@@ -974,7 +1210,7 @@
           },
           "image": {
             "type": "string",
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "Image"
           }
         },
@@ -989,7 +1225,7 @@
         "properties": {
           "image": {
             "type": "string",
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "Image"
           }
         },
@@ -1089,6 +1325,69 @@
           "message"
         ],
         "title": "ChatRequest"
+      },
+      "CommunityOpinionRequest": {
+        "properties": {
+          "scan_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Scan Id"
+          },
+          "user_pseudo_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "User Pseudo Id"
+          },
+          "suggested_disease": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Suggested Disease"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scan_id",
+          "user_pseudo_id",
+          "suggested_disease"
+        ],
+        "title": "CommunityOpinionRequest"
+      },
+      "CommunityRequestOpinionRequest": {
+        "properties": {
+          "scan_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Scan Id"
+          },
+          "user_pseudo_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "User Pseudo Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scan_id",
+          "user_pseudo_id"
+        ],
+        "title": "CommunityRequestOpinionRequest"
       },
       "FeedbackRequest": {
         "properties": {
@@ -1370,6 +1669,13 @@
           "type": {
             "type": "string",
             "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
           }
         },
         "type": "object",

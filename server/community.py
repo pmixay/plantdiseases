@@ -356,6 +356,43 @@ def opinions_for(scan_id: str, *, limit: int = 50) -> dict:
     return {"opinions": opinions, "consensus": consensus}
 
 
+def opinion_counts_for_user(user_pseudo_id: str, *, limit: int = 200) -> dict:
+    """Opinion counts on a user's OWN shared scans — drives the client's
+    "someone left a second opinion" notification poll.
+
+    Each of the caller's scans that has at least one opinion FROM SOMEONE ELSE
+    (your own opinions on your scan don't notify you), with the count, the
+    latest opinion timestamp, and the scan's disease so the client can say
+    "someone weighed in on your <disease> scan".
+
+    Shape::
+        {"scans": [{"scan_id", "disease", "opinion_count", "latest_at"}, ...],
+         "total_opinions": N}
+    """
+    init_db()
+    uid = (user_pseudo_id or "").strip()
+    if not uid:
+        return {"scans": [], "total_opinions": 0}
+    limit = max(1, min(int(limit), 500))
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT s.scan_id, s.disease, COUNT(o.id) AS n, MAX(o.created_at) AS latest "
+            "FROM community_scans s "
+            "JOIN community_opinions o "
+            "  ON o.scan_id = s.scan_id AND o.author_pseudo_id != s.user_pseudo_id "
+            "WHERE s.user_pseudo_id = ? "
+            "GROUP BY s.scan_id, s.disease "
+            "ORDER BY latest DESC LIMIT ?",
+            (uid, limit),
+        ).fetchall()
+    scans = [
+        {"scan_id": str(r[0]), "disease": str(r[1]),
+         "opinion_count": int(r[2]), "latest_at": int(r[3])}
+        for r in rows
+    ]
+    return {"scans": scans, "total_opinions": sum(s["opinion_count"] for s in scans)}
+
+
 def daily_opinion_count_for_ip_hash(ip_hash: str | None) -> int:
     """Opinions submitted from one IP hash in the last 24h (abuse cap)."""
     if not ip_hash:
@@ -465,7 +502,8 @@ def nearby_scans(
         def _query(where_extra: str, params: list, take: int) -> list[dict]:
             sql = (
                 "SELECT scan_id, country, region, disease, confidence, species, "
-                "species_score, thumb_path, locale, created_at, wants_opinion "
+                "species_score, thumb_path, locale, created_at, wants_opinion, "
+                "user_pseudo_id "
                 "FROM community_scans WHERE country = ? "
                 + where_extra
                 + " ORDER BY created_at DESC LIMIT ?"
@@ -677,6 +715,15 @@ def prune_older_than(days: int) -> int:
     return int(deleted or 0)
 
 
+def _author_token(user_pseudo_id: str | None) -> str | None:
+    """Stable, non-reversible per-author token for anonymous avatars.
+    A short sha256 prefix of the pseudo id — same user => same token,
+    but the pseudo id can't be recovered from it."""
+    if not user_pseudo_id:
+        return None
+    return hashlib.sha256(str(user_pseudo_id).encode("utf-8")).hexdigest()[:12]
+
+
 def _row_to_dict(row: tuple) -> dict:
     return {
         "scan_id": row[0],
@@ -690,6 +737,9 @@ def _row_to_dict(row: tuple) -> dict:
         "locale": row[8],
         "created_at": int(row[9]),
         "wants_opinion": bool(row[10]) if len(row) > 10 else False,
+        # One-way, stable per author so the client can show a
+        # consistent (but anonymous) avatar — never the raw pseudo id.
+        "author_token": _author_token(row[11]) if len(row) > 11 else None,
     }
 
 

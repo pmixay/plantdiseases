@@ -34,11 +34,14 @@ recipe (`train_notebook.ipynb`, selected by `MODEL_FAMILY` in §1):
 
 | Family | Backbone | Input | Role |
 |---|---|---|---|
-| `aqua` | DINOv2 ViT-S/14 | 196 | light, on-device (fast, lower ceiling) |
-| **`gamma`** | **DINOv2 ViT-S/14** | **224** | **current production tier — medium accuracy/latency** |
-| `frontier` | DINOv2 ViT-L/14 | 224 | future high-capacity tier (GPU inference) |
+| `aqua` | MobileNetV3-Small (distilled from `gamma`) → TFLite INT8 | 224 | **on-device, fully offline** (app downloads + caches the model) |
+| **`gamma`** | **frozen DINOv2 ViT-S/14 + MLP head** | **224** | **current production tier — balance of cost/accuracy** |
+| `frontier` | frozen DINOv2 ViT-B/14 (~86M) + MLP head | 224 | high-capacity (GPU); **server inference gated OFF by default** |
 
-Bundles trained before the field existed report `model_family = "gamma"`.
+`gamma` and `frontier` share one frozen-DINOv2 + MLP-head recipe (only the
+backbone + input size differ). `aqua` is a separate knowledge-distilled mobile
+student (notebook §5) — the DINOv2 `gamma` model is its teacher. Bundles trained
+before the `model_family` field existed report `model_family = "gamma"`.
 
 ## Classifier architecture
 
@@ -62,9 +65,17 @@ bundle declares (`classes.json -> architecture`):
   Shipped FP32 (`PREFER_FP32`) — dynamic-INT8 drift on `val_realworld`
   was not statistically significant (paired bootstrap CI spans 0) and the
   single-core CPU budget has the latency headroom.
-- **v2.2 (legacy):** MobileNetV3-Large student distilled from an
-  EfficientNetV2-S teacher. Retired in §4/§5 and no longer loadable — the
-  runtime is **ONNX-only** (the PyTorch `.pth` fallback was removed).
+- **`aqua` (on-device):** a **MobileNetV3-Small** student
+  **knowledge-distilled from the `gamma` DINOv2 teacher** (notebook §5),
+  exported to **TFLite** (dynamic-range INT8, float I/O) and run in the app
+  for fully-offline inference. KD is warranted here — the target is a hard
+  on-device size/latency budget, so a tiny student is the deliverable, not a
+  regression. This is distinct from the retired v2.2 KD chain below.
+- **v2.2 (legacy, retired):** a MobileNetV3-Large student distilled from an
+  EfficientNetV2-S teacher *as the server model*. Removed because distilling a
+  weaker server model under a much stronger teacher under-performed the frozen
+  DINOv2 backbone; the server runtime is **ONNX-only** (the PyTorch `.pth`
+  fallback was removed).
 
 ## Classes
 
