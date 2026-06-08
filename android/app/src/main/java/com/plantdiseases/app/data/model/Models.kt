@@ -329,6 +329,14 @@ data class CommunityOpinionsResponse(
     @SerializedName("count") val count: Int = 0,
 )
 
+/** /api/push/register request body — registers this install's FCM token
+ *  under its pseudo-id so the server can push opinion notifications. */
+data class PushRegisterRequest(
+    @SerializedName("user_pseudo_id") val userPseudoId: String,
+    @SerializedName("token") val token: String,
+    @SerializedName("platform") val platform: String = "android",
+)
+
 /** /api/community/view request body — records that the caller opened
  *  someone else's shared scan (deduped per viewer server-side). */
 data class CommunityViewRequest(

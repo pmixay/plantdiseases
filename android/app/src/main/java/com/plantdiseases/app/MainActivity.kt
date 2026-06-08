@@ -128,6 +128,10 @@ class MainActivity : AppCompatActivity() {
             scheduleOpinionChecks()
             checkOpinionsNow()
         }
+        // Register this install's FCM token (no-op until community is opted
+        // into and FCM is configured) so opinion replies can be PUSHED to a
+        // closed / idle device, not just caught by the poll on next open.
+        com.plantdiseases.app.push.PushManager.registerIfEnabled(this)
 
         val navHostFragment = supportFragmentManager
             .findFragmentById(R.id.nav_host_fragment) as NavHostFragment

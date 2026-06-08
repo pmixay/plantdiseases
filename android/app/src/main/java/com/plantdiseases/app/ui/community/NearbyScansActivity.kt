@@ -55,7 +55,10 @@ class NearbyScansActivity : AppCompatActivity() {
     // (+ notifications on 13+) then reloads the feed whatever the outcome.
     private val communityPermissionLauncher = registerForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions(),
-    ) { _ -> load(isRefresh = false) }
+    ) { _ ->
+        com.plantdiseases.app.push.PushManager.registerIfEnabled(this)
+        load(isRefresh = false)
+    }
 
     private fun requestCommunityPermissions() {
         val perms = mutableListOf(android.Manifest.permission.ACCESS_COARSE_LOCATION)

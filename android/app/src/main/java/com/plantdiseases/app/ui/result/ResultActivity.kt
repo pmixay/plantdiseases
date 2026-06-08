@@ -75,6 +75,8 @@ class ResultActivity : AppCompatActivity() {
     private val communityPermissionLauncher = registerForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions(),
     ) { _ ->
+        // Just opted in — register for push so replies reach a closed device.
+        com.plantdiseases.app.push.PushManager.registerIfEnabled(this)
         pendingCommunityRerun?.invoke()
         pendingCommunityRerun = null
     }

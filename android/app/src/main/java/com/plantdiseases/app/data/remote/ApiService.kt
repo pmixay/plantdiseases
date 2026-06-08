@@ -16,6 +16,7 @@ import com.plantdiseases.app.data.model.CommunityScansResponse
 import com.plantdiseases.app.data.model.MyScanOpinionsResponse
 import com.plantdiseases.app.data.model.CommunityScanUploadResponse
 import com.plantdiseases.app.data.model.CommunityViewRequest
+import com.plantdiseases.app.data.model.PushRegisterRequest
 import com.plantdiseases.app.data.model.CommunityScanCountsRequest
 import com.plantdiseases.app.data.model.CommunityScanCountsResponse
 import com.plantdiseases.app.data.model.SpeciesInfoResponse
@@ -189,6 +190,13 @@ interface ApiService {
     suspend fun communityMyScanOpinions(
         @Path("user_pseudo_id") userPseudoId: String,
     ): retrofit2.Response<MyScanOpinionsResponse>
+
+    /** Register this install's FCM token so the server can push opinion
+     *  notifications to a closed / idle device. */
+    @POST("api/push/register")
+    suspend fun registerPushToken(
+        @Body request: PushRegisterRequest,
+    ): retrofit2.Response<ResponseBody>
 
     /** Record that the caller opened someone else's shared scan. Deduped per
      *  viewer server-side, so it's safe to fire on every open. */

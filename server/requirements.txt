@@ -13,3 +13,7 @@ onnxruntime>=1.26.0
 # a graceful ``available: false`` when no API key is configured. Only
 # ``requests`` is required since OpenRouter speaks plain HTTPS JSON.
 requests>=2.34.0
+# Firebase Cloud Messaging push (server/push.py). Imported lazily and only
+# used when FCM_CREDENTIALS_FILE points at a service-account JSON — without it
+# every send is a no-op, so the dependency is harmless on push-less deploys.
+firebase-admin>=6.5.0

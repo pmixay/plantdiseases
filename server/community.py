@@ -441,6 +441,20 @@ def opinion_counts(scan_ids: list[str]) -> dict[str, int]:
     return {str(r[0]): int(r[1]) for r in rows}
 
 
+def owner_of(scan_id: str) -> str | None:
+    """The pseudo-id that shared ``scan_id`` (None if the scan isn't ours).
+    Used by the push path to decide who to notify about a new opinion."""
+    sid = (scan_id or "").strip()
+    if not sid:
+        return None
+    init_db()
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT user_pseudo_id FROM community_scans WHERE scan_id = ?", (sid,),
+        ).fetchone()
+    return str(row[0]) if row else None
+
+
 def record_view(scan_id: str, viewer_pseudo_id: str) -> bool:
     """Record that ``viewer_pseudo_id`` opened the shared scan ``scan_id``.
 

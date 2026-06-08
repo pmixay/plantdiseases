@@ -31,6 +31,22 @@ android {
             .replace("\"", "\\\"")
         buildConfigField("String", "API_BASE_URL", "\"$configuredApiBaseUrl\"")
 
+        // Firebase Cloud Messaging config, supplied at build time from your
+        // Firebase project (Project settings → your Android app, or the values
+        // inside google-services.json). Left unset, FCM stays dormant: no token
+        // is fetched and no push is delivered (the WorkManager poll remains the
+        // fallback), and the build still succeeds — we deliberately do NOT apply
+        // the google-services plugin, which would hard-require google-services.json.
+        // Pass via -PFCM_APP_ID=... (gradle property) or the same-named env var.
+        fun fcmProp(name: String): String =
+            (providers.gradleProperty(name).orNull ?: System.getenv(name) ?: "")
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+        buildConfigField("String", "FCM_APP_ID", "\"${fcmProp("FCM_APP_ID")}\"")
+        buildConfigField("String", "FCM_API_KEY", "\"${fcmProp("FCM_API_KEY")}\"")
+        buildConfigField("String", "FCM_PROJECT_ID", "\"${fcmProp("FCM_PROJECT_ID")}\"")
+        buildConfigField("String", "FCM_SENDER_ID", "\"${fcmProp("FCM_SENDER_ID")}\"")
+
         // The Aqua family runs a TFLite model on-device. Limit the bundled
         // native .so libs to the ABIs real devices use — dropping x86/mips
         // keeps the APK from carrying interpreter libs no phone will load.
@@ -169,6 +185,12 @@ dependencies {
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
+
+    // Firebase Cloud Messaging (push). No google-services plugin / json:
+    // Firebase is initialised manually from BuildConfig.FCM_* at runtime, so
+    // the build works with or without credentials.
+    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
+    implementation("com.google.firebase:firebase-messaging")
 
     // Gson
     implementation("com.google.code.gson:gson:2.11.0")

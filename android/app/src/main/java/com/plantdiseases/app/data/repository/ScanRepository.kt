@@ -616,6 +616,24 @@ class ScanRepository(
             }
         }
 
+    /** Register this install's FCM token with the server (best-effort,
+     *  fire-and-forget) so opinion notifications can be pushed to a closed
+     *  device. The server upserts by token. */
+    suspend fun registerPushToken(pseudoId: String, token: String) {
+        withContext(Dispatchers.IO) {
+            try {
+                apiService.registerPushToken(
+                    com.plantdiseases.app.data.model.PushRegisterRequest(
+                        userPseudoId = pseudoId,
+                        token = token,
+                    ),
+                )
+            } catch (_: Exception) {
+                // best-effort; the poll fallback still covers delivery
+            }
+        }
+    }
+
     /** Record that this install opened someone else's shared scan. Best-effort
      *  and fire-and-forget — the server dedups per viewer and ignores
      *  owner/self + unknown scans, so failures are swallowed silently. */
