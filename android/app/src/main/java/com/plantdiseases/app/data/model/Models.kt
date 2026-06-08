@@ -187,6 +187,7 @@ data class FamilyCapability(
 data class MyScanOpinionsResponse(
     @SerializedName("scans") val scans: List<ScanOpinionItem> = emptyList(),
     @SerializedName("total_opinions") val totalOpinions: Int = 0,
+    @SerializedName("total_views") val totalViews: Int = 0,
 )
 
 data class ScanOpinionItem(
@@ -194,6 +195,7 @@ data class ScanOpinionItem(
     @SerializedName("disease") val disease: String = "",
     @SerializedName("opinion_count") val opinionCount: Int = 0,
     @SerializedName("latest_at") val latestAt: Long = 0,
+    @SerializedName("view_count") val viewCount: Int = 0,
 )
 
 /** Describes the server-hosted Aqua on-device model (GET /api/aqua/manifest)
@@ -321,8 +323,32 @@ data class CommunityOpinionsResponse(
     @SerializedName("scan_id") val scanId: String = "",
     @SerializedName("opinions") val opinions: List<CommunityOpinion> = emptyList(),
     @SerializedName("consensus") val consensus: List<CommunityTopDisease> = emptyList(),
+    // Distinct-viewer count on this scan (per-user deduped server-side).
+    @SerializedName("views") val views: Int = 0,
     @SerializedName("ok") val ok: Boolean = false,
     @SerializedName("count") val count: Int = 0,
+)
+
+/** /api/community/view request body — records that the caller opened
+ *  someone else's shared scan (deduped per viewer server-side). */
+data class CommunityViewRequest(
+    @SerializedName("scan_id") val scanId: String,
+    @SerializedName("user_pseudo_id") val userPseudoId: String,
+)
+
+/** /api/community/scan-counts request + response: batched {opinions, views}
+ *  per scan so the Gallery can badge the caller's own rows in one call. */
+data class CommunityScanCountsRequest(
+    @SerializedName("scan_ids") val scanIds: List<String>,
+)
+
+data class CommunityScanCount(
+    @SerializedName("opinions") val opinions: Int = 0,
+    @SerializedName("views") val views: Int = 0,
+)
+
+data class CommunityScanCountsResponse(
+    @SerializedName("counts") val counts: Map<String, CommunityScanCount> = emptyMap(),
 )
 
 /** Guide article about plant care */

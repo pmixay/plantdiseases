@@ -51,6 +51,20 @@ class NearbyScansActivity : AppCompatActivity() {
     private var typeFilter: String? = null
     private var filterMenuItem: MenuItem? = null
 
+    // In-context community opt-in: tapping "Enable" requests coarse location
+    // (+ notifications on 13+) then reloads the feed whatever the outcome.
+    private val communityPermissionLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions(),
+    ) { _ -> load(isRefresh = false) }
+
+    private fun requestCommunityPermissions() {
+        val perms = mutableListOf(android.Manifest.permission.ACCESS_COARSE_LOCATION)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            perms += android.Manifest.permission.POST_NOTIFICATIONS
+        }
+        communityPermissionLauncher.launch(perms.toTypedArray())
+    }
+
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
     }
@@ -75,6 +89,13 @@ class NearbyScansActivity : AppCompatActivity() {
         adapter = NearbyScansAdapter(
             displayName = { key -> DiseaseLabels.displayName(key, isRu) ?: key },
             onSecondOpinion = { item ->
+                // Opening someone else's scan counts as a view (deduped per
+                // viewer server-side).
+                val app = application as PlantDiseasesApp
+                val pseudoId = TelemetryIds.userPseudoId(this)
+                lifecycleScope.launch {
+                    app.scanRepository.recordCommunityView(item.scanId, pseudoId)
+                }
                 CommunityOpinionSheet.show(
                     supportFragmentManager,
                     item.scanId,
@@ -108,6 +129,12 @@ class NearbyScansActivity : AppCompatActivity() {
     }
 
     private fun load(isRefresh: Boolean) {
+        // Community is opt-in. Until the user opts in, show an Enable prompt
+        // instead of reading their location / hitting the network.
+        if (!com.plantdiseases.app.util.CommunityPrefs.uploadsEnabled(this)) {
+            showEnableState()
+            return
+        }
         if (!isRefresh) showLoading()
         lifecycleScope.launch {
             val resolved = withContext(Dispatchers.IO) {
@@ -150,10 +177,29 @@ class NearbyScansActivity : AppCompatActivity() {
         }
     }
 
+    /** Opt-in prompt shown when community is OFF: a message + Enable button
+     *  that flips the pref, asks for location/notifications, then reloads. */
+    private fun showEnableState() {
+        binding.swipeRefresh.isRefreshing = false
+        binding.stateLayout.visibility = View.VISIBLE
+        binding.progress.visibility = View.GONE
+        binding.ivStateIcon.visibility = View.VISIBLE
+        binding.tvState.text = getString(R.string.similar_scans_enable_prompt)
+        binding.btnEnableCommunity.visibility = View.VISIBLE
+        binding.btnEnableCommunity.setOnClickListener {
+            com.plantdiseases.app.util.CommunityPrefs.enable(this)
+            binding.btnEnableCommunity.visibility = View.GONE
+            requestCommunityPermissions()
+        }
+        filterMenuItem?.isVisible = false
+        binding.rvNearby.visibility = View.GONE
+    }
+
     private fun showLoading() {
         binding.stateLayout.visibility = View.VISIBLE
         binding.progress.visibility = View.VISIBLE
         binding.ivStateIcon.visibility = View.GONE
+        binding.btnEnableCommunity.visibility = View.GONE
         binding.tvState.text = getString(R.string.nearby_scans_loading)
         filterMenuItem?.isVisible = false
         binding.rvNearby.visibility = View.GONE
@@ -163,6 +209,7 @@ class NearbyScansActivity : AppCompatActivity() {
         binding.stateLayout.visibility = View.VISIBLE
         binding.progress.visibility = View.GONE
         binding.ivStateIcon.visibility = View.VISIBLE
+        binding.btnEnableCommunity.visibility = View.GONE
         binding.tvState.text = message
         filterMenuItem?.isVisible = false
         binding.rvNearby.visibility = View.GONE

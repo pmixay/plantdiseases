@@ -170,6 +170,8 @@
     <string name="similar_scans_subtitle_region">Recent diagnoses near %1$s</string>
     <string name="similar_scans_subtitle_no_region">Enable approximate location to see scans near you.</string>
     <string name="similar_scans_empty">No nearby scans yet — your scan will be the first.</string>
+    <string name="similar_scans_enable_prompt">See scans near you and contribute yours. Uses approximate location only.</string>
+    <string name="community_enable_cta">Enable community</string>
     <!-- Community second opinion -->
     <string name="community_opinion_title">Get a second opinion</string>
     <string name="community_opinion_subtitle">Ask the community what they think — and weigh in on others\' scans.</string>
@@ -183,6 +185,7 @@
     <string name="community_opinion_error">Couldn\'t reach the community. Try again.</string>
     <string name="community_opinions_badge">%1$d opinions</string>
     <string name="result_view_opinions">%1$d community opinions</string>
+    <string name="result_view_activity">%1$d opinions · %2$d views</string>
     <string name="community_my_opinions_title">My second opinions</string>
     <string name="community_my_opinions_empty">You haven\'t sent any opinions yet.</string>
     <string name="community_my_opinions_count_label">diagnoses you\'ve weighed in on</string>
@@ -216,6 +219,7 @@
     <!-- Community consent + Profile toggle -->
     <string name="community_toggle_title">Share scans with the community</string>
     <string name="community_toggle_subtitle">Region + diagnosis + 512px thumbnail. Off keeps everything on-device.</string>
+    <string name="community_profile_subtitle">Turn this on from “Similar scans near you” on a result, or the Nearby screen. Below clears anything you’ve already shared.</string>
     <string name="community_delete_title">Delete my contributions</string>
     <string name="opinion_notif_title">New second opinion</string>
     <string name="opinion_notif_body">Someone weighed in on your %1$s scan</string>

@@ -68,6 +68,36 @@ class ResultActivity : AppCompatActivity() {
 
     private var carePlanCard: CarePlanCardView? = null
 
+    // In-context community opt-in: tapping "Enable" on the similar-scans card
+    // requests coarse location (+ notifications on 13+) and, whatever the
+    // outcome, re-renders the gated section via this stored lambda.
+    private var pendingCommunityRerun: (() -> Unit)? = null
+    private val communityPermissionLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions(),
+    ) { _ ->
+        pendingCommunityRerun?.invoke()
+        pendingCommunityRerun = null
+    }
+
+    private fun requestCommunityPermissions() {
+        val perms = mutableListOf(android.Manifest.permission.ACCESS_COARSE_LOCATION)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            // So the OpinionCheckWorker can later notify the owner when someone
+            // weighs in on a scan they shared.
+            perms += android.Manifest.permission.POST_NOTIFICATIONS
+        }
+        communityPermissionLauncher.launch(perms.toTypedArray())
+    }
+
+    /** Fire-and-forget: record that this install opened someone else's shared
+     *  scan. The repository swallows failures and the server dedups per
+     *  viewer + ignores owner self-views, so this is safe to call on any tap. */
+    private fun recordCommunityView(scanId: String, viewerPseudoId: String) {
+        if (scanId.isBlank() || viewerPseudoId.isBlank()) return
+        val repo = (application as PlantDiseasesApp).scanRepository
+        lifecycleScope.launch { repo.recordCommunityView(scanId, viewerPseudoId) }
+    }
+
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
     }
@@ -317,9 +347,17 @@ class ResultActivity : AppCompatActivity() {
                 lifecycleScope.launch {
                     repository.getCommunityOpinions(ownScanId).onSuccess { resp ->
                         val n = resp.opinions.size
-                        if (n > 0) {
-                            binding.btnViewOpinions.text =
+                        val v = resp.views
+                        // Show activity on the user's OWN shared scan whenever
+                        // there is any — opinions and/or views — not only when
+                        // they explicitly asked for a second opinion. The view
+                        // count is deduped per viewer server-side.
+                        if (n > 0 || v > 0) {
+                            binding.btnViewOpinions.text = if (v > 0) {
+                                getString(R.string.result_view_activity, n, v)
+                            } else {
                                 getString(R.string.result_view_opinions, n)
+                            }
                             binding.btnViewOpinions.visibility = View.VISIBLE
                             binding.btnViewOpinions.setOnClickListener {
                                 CommunityOpinionSheet.show(
@@ -836,6 +874,7 @@ class ResultActivity : AppCompatActivity() {
         val adapter = SimilarScansAdapter(
             displayName = { key -> classKeyDisplayName(key, isRu) ?: key },
             onClick = { item ->
+                recordCommunityView(item.scanId, pseudoId)
                 CommunityOpinionSheet.show(
                     supportFragmentManager,
                     item.scanId,
@@ -869,10 +908,28 @@ class ResultActivity : AppCompatActivity() {
         val card = binding.cardSimilarScans
         val rv = binding.rvSimilarScans
         val empty = binding.tvSimilarEmpty
+        val enableBtn = binding.btnEnableSimilar
         // Default state: hidden until the network call returns.
         card.visibility = View.GONE
         rv.visibility = View.GONE
         empty.visibility = View.GONE
+        enableBtn.visibility = View.GONE
+
+        // Community is opt-in. Until the user opts in, show the card as an
+        // in-context Enable prompt instead of reading their location / hitting
+        // the network. Tapping Enable flips the pref, asks for coarse location
+        // (+ notifications), and re-renders this card to populate it.
+        if (!com.plantdiseases.app.util.CommunityPrefs.uploadsEnabled(this)) {
+            card.visibility = View.VISIBLE
+            binding.tvSimilarSubtitle.text = getString(R.string.similar_scans_enable_prompt)
+            enableBtn.visibility = View.VISIBLE
+            enableBtn.setOnClickListener {
+                com.plantdiseases.app.util.CommunityPrefs.enable(this)
+                pendingCommunityRerun = { buildSimilarScansCard(scan, repository, isRu) }
+                requestCommunityPermissions()
+            }
+            return
+        }
 
         // Scope the carousel by the verdict the user actually SAW — the
         // server's reroute-aware displayed class — not the raw argmax.
@@ -886,8 +943,10 @@ class ResultActivity : AppCompatActivity() {
         val adapter = SimilarScansAdapter(
             displayName = { key -> classKeyDisplayName(key, isRu) ?: key },
             onClick = { item ->
-                // Tapping a "near you" scan lets the user weigh in with a
-                // second opinion on someone else's uncertain verdict.
+                // Opening someone else's scan counts as a view (deduped per
+                // viewer server-side) and lets the user weigh in with a second
+                // opinion on their uncertain verdict.
+                recordCommunityView(item.scanId, pseudoId)
                 CommunityOpinionSheet.show(
                     supportFragmentManager,
                     item.scanId,

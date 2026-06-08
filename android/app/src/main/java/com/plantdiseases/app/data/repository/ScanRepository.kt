@@ -604,6 +604,41 @@ class ScanRepository(
             }
         }
 
+    /** Record that this install opened someone else's shared scan. Best-effort
+     *  and fire-and-forget — the server dedups per viewer and ignores
+     *  owner/self + unknown scans, so failures are swallowed silently. */
+    suspend fun recordCommunityView(scanId: String, viewerPseudoId: String) {
+        withContext(Dispatchers.IO) {
+            try {
+                apiService.communityRecordView(
+                    com.plantdiseases.app.data.model.CommunityViewRequest(
+                        scanId = scanId,
+                        userPseudoId = viewerPseudoId,
+                    ),
+                )
+            } catch (_: Exception) {
+                // best-effort telemetry; never surface to the user
+            }
+        }
+    }
+
+    /** Batched {opinions, views} per scan_id for the Gallery badges. Returns
+     *  an empty map on failure so the UI just shows no badges. */
+    suspend fun getCommunityScanCounts(
+        scanIds: List<String>,
+    ): Map<String, com.plantdiseases.app.data.model.CommunityScanCount> =
+        withContext(Dispatchers.IO) {
+            if (scanIds.isEmpty()) return@withContext emptyMap()
+            try {
+                val r = apiService.communityScanCounts(
+                    com.plantdiseases.app.data.model.CommunityScanCountsRequest(scanIds),
+                )
+                if (r.isSuccessful && r.body() != null) r.body()!!.counts else emptyMap()
+            } catch (e: Exception) {
+                emptyMap()
+            }
+        }
+
     /** Delete a scan */
     suspend fun deleteScan(id: Long) = withContext(Dispatchers.IO) {
         scanDao.deleteById(id)

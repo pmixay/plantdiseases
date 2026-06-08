@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import android.view.animation.OvershootInterpolator
 import androidx.activity.result.contract.ActivityResultContracts
@@ -188,41 +187,25 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Ask for every startup permission the app needs in one batched
-     * system flow. Bundling them in a single ``RequestMultiplePermissions``
-     * call is what makes them all surface — see the launcher comment
-     * for the race we hit before.
-     *
-     * - CAMERA               : the scan tab is the start destination
-     *                          so the user needs this immediately
-     * - ACCESS_COARSE_LOCATION: used by the "similar scans near you"
-     *                          card; fine location is never requested
-     * - POST_NOTIFICATIONS    : (Android 13+) without it
-     *                          PlantReminderWorker can't notify
+     * The scan tab is the start destination, so CAMERA is the ONLY permission
+     * requested at launch. Location and notifications are deliberately NOT
+     * asked for here — they are opt-in IN CONTEXT (enabling community / nearby
+     * requests coarse location; enabling opinions or plant reminders requests
+     * notifications). This keeps a brand-new user from being hit by a wall of
+     * system dialogs on first launch.
      */
     private fun maybeRequestStartupPermissions() {
-        val needed = mutableListOf<String>()
+        // Only warm the region cache for users who already opted into
+        // community — a no-op without a prior COARSE_LOCATION grant, and never
+        // triggers a location read for someone who hasn't opted in.
+        if (com.plantdiseases.app.util.CommunityPrefs.uploadsEnabled(this)) {
+            warmRegionCache()
+        }
         if (ContextCompat.checkSelfPermission(
                 this, Manifest.permission.CAMERA,
             ) != PackageManager.PERMISSION_GRANTED) {
-            needed += Manifest.permission.CAMERA
+            startupPermissionsLauncher.launch(arrayOf(Manifest.permission.CAMERA))
         }
-        if (ContextCompat.checkSelfPermission(
-                this, Manifest.permission.ACCESS_COARSE_LOCATION,
-            ) != PackageManager.PERMISSION_GRANTED) {
-            needed += Manifest.permission.ACCESS_COARSE_LOCATION
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(
-                this, Manifest.permission.POST_NOTIFICATIONS,
-            ) != PackageManager.PERMISSION_GRANTED) {
-            needed += Manifest.permission.POST_NOTIFICATIONS
-        }
-        if (needed.isEmpty()) {
-            warmRegionCache()
-            return
-        }
-        startupPermissionsLauncher.launch(needed.toTypedArray())
     }
 
     private fun warmRegionCache() {

@@ -169,6 +169,8 @@
     <string name="similar_scans_subtitle_region">Недавние диагнозы рядом с %1$s</string>
     <string name="similar_scans_subtitle_no_region">Включите приблизительное местоположение, чтобы видеть сканы рядом.</string>
     <string name="similar_scans_empty">Похожих сканов пока нет — ваш будет первым.</string>
+    <string name="similar_scans_enable_prompt">Смотрите сканы рядом и делитесь своими. Используется только приблизительное местоположение.</string>
+    <string name="community_enable_cta">Включить сообщество</string>
     <!-- Community second opinion -->
     <string name="community_opinion_title">Второе мнение</string>
     <string name="community_opinion_subtitle">Спросите сообщество — и оцените чужие сканы.</string>
@@ -182,6 +184,7 @@
     <string name="community_opinion_error">Не удалось связаться с сообществом. Повторите.</string>
     <string name="community_opinions_badge">Мнений: %1$d</string>
     <string name="result_view_opinions">Мнений сообщества: %1$d</string>
+    <string name="result_view_activity">Мнений: %1$d · просмотров: %2$d</string>
     <string name="community_my_opinions_title">Мои мнения</string>
     <string name="community_my_opinions_empty">Вы пока не отправляли мнений.</string>
     <string name="community_my_opinions_count_label">диагнозов вы оценили</string>
@@ -212,6 +215,7 @@
     <string name="community_vote_percent">%1$d%%</string>
     <string name="community_toggle_title">Делиться сканами с сообществом</string>
     <string name="community_toggle_subtitle">Регион + диагноз + миниатюра 512px. Можно выключить — всё останется на устройстве.</string>
+    <string name="community_profile_subtitle">Включается в контексте — в блоке «Похожие сканы рядом» на результате или на экране «Рядом». Кнопка ниже удаляет всё, чем вы уже поделились.</string>
     <string name="community_delete_title">Удалить мои данные из сообщества</string>
     <string name="opinion_notif_title">Новое второе мнение</string>
     <string name="opinion_notif_body">Кто-то оставил мнение о вашем скане: %1$s</string>
