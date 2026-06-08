@@ -21,6 +21,13 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+/**
+ * Plant-care guide tab: category tabs (diseases / pests / watering / lighting /
+ * care) over a searchable list. Search is debounced (300 ms, min 2 chars) and
+ * matches across every category in the current language; recent queries are
+ * persisted and offered as chips when the field is focused. Tapping an item
+ * opens [GuideDetailSheet].
+ */
 class GuideFragment : Fragment() {
 
     private var _binding: FragmentGuideBinding? = null

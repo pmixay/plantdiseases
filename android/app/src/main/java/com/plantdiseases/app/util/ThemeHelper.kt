@@ -3,6 +3,11 @@ package com.plantdiseases.app.util
 import android.content.Context
 import androidx.appcompat.app.AppCompatDelegate
 
+/**
+ * Persists the user's light/dark/system theme choice and applies it through
+ * [AppCompatDelegate]'s night-mode. [applySavedTheme] is called once at app
+ * start; [saveTheme] both stores and applies a new choice immediately.
+ */
 object ThemeHelper {
 
     private const val PREFS_NAME = "plantdiseases_prefs"
@@ -12,11 +17,13 @@ object ThemeHelper {
     const val THEME_DARK = 1
     const val THEME_SYSTEM = 2
 
+    /** Applies the persisted theme; call once during app startup. */
     fun applySavedTheme(context: Context) {
         val mode = getSavedTheme(context)
         applyTheme(mode)
     }
 
+    /** Maps one of the `THEME_*` constants to the matching night-mode. */
     fun applyTheme(mode: Int) {
         val nightMode = when (mode) {
             THEME_LIGHT -> AppCompatDelegate.MODE_NIGHT_NO

@@ -13,6 +13,12 @@ import com.plantdiseases.app.data.model.GuideItem
 import com.plantdiseases.app.databinding.ItemGuideBinding
 import com.plantdiseases.app.util.LocaleHelper
 
+/**
+ * RecyclerView adapter for the guide list. Shows each [GuideItem]'s localised
+ * title and description with a per-category icon style, and highlights the
+ * current [searchQuery] (2+ chars) in the title/description via a background
+ * span. A tap fires [onClick].
+ */
 class GuideAdapter(
     private val onClick: (GuideItem) -> Unit,
     var searchQuery: String = ""

@@ -75,8 +75,17 @@ jobs:
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest --stacktrace --no-daemon
 
-      - name: Assemble debug APK
-        run: ./gradlew assembleDebug --stacktrace --no-daemon
+      # Only the release variant is packaged: it's smaller (R8 minification +
+      # resource shrinking) and it's the one that ships, so it's also the only
+      # build worth validating end-to-end. R8 is the only build that can break
+      # on a bad ProGuard rule — e.g. a stripped Gson/Retrofit reflection
+      # class — so packaging debug would just cost minutes without catching
+      # anything the release build doesn't. No keystore in CI, so this
+      # produces an unsigned-but-minified APK, which is exactly what validates
+      # the R8 config. (lintDebug + testDebugUnitTest above already compile the
+      # debug sources, so debug compilation is still covered.)
+      - name: Assemble release APK (R8 minification)
+        run: ./gradlew assembleRelease --stacktrace --no-daemon
 
       - name: Upload lint report
         if: always()
@@ -108,12 +117,12 @@ jobs:
             android/app/build/outputs/logs/**
           if-no-files-found: ignore
 
-      - name: Upload debug APK
+      - name: Upload release APK (unsigned, minified)
         if: success()
         uses: actions/upload-artifact@v7
         with:
-          name: app-debug-apk
-          path: android/app/build/outputs/apk/debug/*.apk
+          name: app-release-apk
+          path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: warn
 
   server:
