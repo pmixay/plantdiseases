@@ -394,6 +394,9 @@ data class ScanHistoryItem(
      *  a batched /community/scan-counts call (0 when none / not shared). */
     val communityOpinions: Int = 0,
     val communityViews: Int = 0,
+    /** Opinions on this scan the user hasn't viewed yet (current minus the
+     *  per-scan viewed baseline). Drives the red "+N" badge + row highlight. */
+    val newOpinions: Int = 0,
 )
 
 /**

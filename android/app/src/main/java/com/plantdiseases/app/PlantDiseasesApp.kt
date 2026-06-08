@@ -91,13 +91,18 @@ class PlantDiseasesApp : Application() {
         }
     }
 
-    /** Poll for new second opinions on shared scans a few times a day. Called
-     *  from MainActivity (not Application.onCreate — see note there). Idempotent
-     *  via enqueueUniquePeriodicWork(KEEP). Quiet: notifies only on a genuinely
-     *  new opinion — see OpinionCheckWorker. */
+    /** Poll for new second opinions on shared scans roughly hourly. Called
+     *  from MainActivity (not Application.onCreate — see note there).
+     *  Without server push (FCM) this poll is the only way a reply reaches a
+     *  closed app, so the interval is kept short with a flex window. UPDATE (not
+     *  KEEP) so installs created under the old 6h schedule adopt the new one.
+     *  Quiet: notifies only on a genuinely new opinion — see OpinionCheckWorker. */
     fun scheduleOpinionChecks() {
         val request = androidx.work.PeriodicWorkRequestBuilder<
-            com.plantdiseases.app.worker.OpinionCheckWorker>(6, java.util.concurrent.TimeUnit.HOURS)
+            com.plantdiseases.app.worker.OpinionCheckWorker>(
+            1, java.util.concurrent.TimeUnit.HOURS,
+            15, java.util.concurrent.TimeUnit.MINUTES,
+        )
             .setConstraints(
                 androidx.work.Constraints.Builder()
                     .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)
@@ -106,7 +111,31 @@ class PlantDiseasesApp : Application() {
             .build()
         androidx.work.WorkManager.getInstance(this).enqueueUniquePeriodicWork(
             "opinion_check",
-            androidx.work.ExistingPeriodicWorkPolicy.KEEP,
+            androidx.work.ExistingPeriodicWorkPolicy.UPDATE,
+            request,
+        )
+    }
+
+    /** Fire an immediate, one-off opinion check — called when the app comes to
+     *  the foreground (and right after the user asks for a second opinion) so a
+     *  reply that landed while the app was closed surfaces promptly instead of
+     *  waiting for the next periodic tick. Expedited, degrading to a normal job
+     *  if the expedited quota is spent. */
+    fun checkOpinionsNow() {
+        val request = androidx.work.OneTimeWorkRequestBuilder<
+            com.plantdiseases.app.worker.OpinionCheckWorker>()
+            .setConstraints(
+                androidx.work.Constraints.Builder()
+                    .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)
+                    .build(),
+            )
+            .setExpedited(
+                androidx.work.OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST,
+            )
+            .build()
+        androidx.work.WorkManager.getInstance(this).enqueueUniqueWork(
+            "opinion_check_now",
+            androidx.work.ExistingWorkPolicy.REPLACE,
             request,
         )
     }

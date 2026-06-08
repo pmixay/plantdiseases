@@ -89,6 +89,22 @@ class ResultActivity : AppCompatActivity() {
         communityPermissionLauncher.launch(perms.toTypedArray())
     }
 
+    // Notifications-only prompt, fired when the user asks for a second opinion
+    // so the reply can actually reach them. nm.notify() no-ops if denied.
+    private val notifPermissionLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+    ) { /* no-op: a denied grant just means no notification later */ }
+
+    private fun ensureNotificationPermission() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                this, android.Manifest.permission.POST_NOTIFICATIONS,
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            notifPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
     /** Fire-and-forget: record that this install opened someone else's shared
      *  scan. The repository swallows failures and the server dedups per
      *  viewer + ignores owner self-views, so this is safe to call on any tap. */
@@ -348,6 +364,11 @@ class ResultActivity : AppCompatActivity() {
                     repository.getCommunityOpinions(ownScanId).onSuccess { resp ->
                         val n = resp.opinions.size
                         val v = resp.views
+                        // Opening the scan's result counts as viewing its
+                        // activity — advance the viewed baseline so the Gallery
+                        // clears its "+N new opinions" badge for this scan.
+                        com.plantdiseases.app.util.OpinionPrefs
+                            .markViewedOpinions(this@ResultActivity, ownScanId, n)
                         // Show activity on the user's OWN shared scan whenever
                         // there is any — opinions and/or views — not only when
                         // they explicitly asked for a second opinion. The view
@@ -557,6 +578,8 @@ class ResultActivity : AppCompatActivity() {
             btn.setOnClickListener {
                 btn.isEnabled = false
                 btn.setText(R.string.result_second_opinion_waiting)
+                // They're asking for replies — make sure we can notify them.
+                ensureNotificationPermission()
                 val app = application as PlantDiseasesApp
                 val pseudoId =
                     com.plantdiseases.app.util.TelemetryIds.userPseudoId(this@ResultActivity)
@@ -574,7 +597,17 @@ class ResultActivity : AppCompatActivity() {
                         return@launch
                     }
                     app.scanRepository.requestSecondOpinion(scan.clientScanId, pseudoId)
-                        .onSuccess { showWaiting() }
+                        .onSuccess {
+                            showWaiting()
+                            // Seed the notify baseline at 0 so the very next
+                            // reply counts as new (and isn't swallowed as a
+                            // "first poll" pre-existing opinion), and flip the
+                            // global init flag for the same reason.
+                            com.plantdiseases.app.util.OpinionPrefs
+                                .markInitialized(this@ResultActivity)
+                            com.plantdiseases.app.util.OpinionPrefs
+                                .setSeen(this@ResultActivity, scan.clientScanId, 0)
+                        }
                         .onFailure {
                             showAsk()
                             Toast.makeText(

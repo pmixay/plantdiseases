@@ -86,6 +86,18 @@ class GalleryAdapter(
                 tvCommunityBadge.visibility = android.view.View.GONE
             }
 
+            // Red "+N" badge + accent stroke when there are opinions the user
+            // hasn't opened this scan to see yet. Cleared once they view it.
+            if (item.newOpinions > 0) {
+                tvNewOpinions.text = "+${item.newOpinions}"
+                tvNewOpinions.visibility = android.view.View.VISIBLE
+                root.strokeColor = context.getColor(R.color.disease_red)
+                root.strokeWidth = (2 * context.resources.displayMetrics.density).toInt()
+            } else {
+                tvNewOpinions.visibility = android.view.View.GONE
+                root.strokeWidth = 0
+            }
+
             root.setOnClickListener { onClick(item) }
             root.setOnLongClickListener {
                 MaterialAlertDialogBuilder(context)

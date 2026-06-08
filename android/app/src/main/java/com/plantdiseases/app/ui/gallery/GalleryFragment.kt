@@ -232,10 +232,18 @@ class GalleryFragment : Fragment() {
         lifecycleScope.launch {
             val counts = app.scanRepository.getCommunityScanCounts(ids)
             if (counts.isEmpty() || _binding == null) return@launch
+            val ctx = requireContext()
             allScans = allScans.map { item ->
                 val c = counts[item.clientScanId]
                 if (c != null) {
-                    item.copy(communityOpinions = c.opinions, communityViews = c.views)
+                    // "New" = opinions the user hasn't opened this scan to see.
+                    val viewed = com.plantdiseases.app.util.OpinionPrefs
+                        .viewedOpinions(ctx, item.clientScanId)
+                    item.copy(
+                        communityOpinions = c.opinions,
+                        communityViews = c.views,
+                        newOpinions = (c.opinions - viewed).coerceAtLeast(0),
+                    )
                 } else {
                     item
                 }
