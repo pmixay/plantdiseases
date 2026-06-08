@@ -153,10 +153,11 @@ class CameraFragment : Fragment() {
             object : MenuProvider {
                 override fun onCreateMenu(menu: Menu, menuInflater: MenuInflater) {
                     menuInflater.inflate(R.menu.camera_menu, menu)
-                    // Tint to match the flat surface toolbar (onSurface);
-                    // menu icons otherwise fall back to a default control colour.
+                    // Tint to match the toolbar title (theme-aware: white on the light
+                    // gradient, light on the dark surface bar). Menu icons
+                    // otherwise fall back to a default control colour.
                     menu.findItem(R.id.action_nearby_scans)?.icon
-                        ?.setTint(ContextCompat.getColor(requireContext(), R.color.on_surface))
+                        ?.setTint(ContextCompat.getColor(requireContext(), R.color.toolbar_title))
                 }
 
                 override fun onMenuItemSelected(item: MenuItem): Boolean {

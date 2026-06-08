@@ -15,7 +15,7 @@
         android:id="@+id/app_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="?attr/colorSurface"
+        android:background="@drawable/bg_toolbar_gradient"
         app:elevation="0dp">
 
         <com.google.android.material.appbar.MaterialToolbar
@@ -23,12 +23,11 @@
             android:layout_width="match_parent"
             android:layout_height="?attr/actionBarSize"
             android:background="@android:color/transparent"
-            android:theme="@style/ThemeOverlay.Material3.Toolbar.Surface"
             app:navigationIcon="@drawable/ic_back"
-            app:navigationIconTint="?attr/colorOnSurface"
+            app:navigationIconTint="@color/toolbar_title"
             app:title="@string/nearby_scans_title"
             app:titleTextAppearance="@style/TextAppearance.App.Toolbar"
-            app:titleTextColor="?attr/colorOnSurface" />
+            app:titleTextColor="@color/toolbar_title" />
 
     </com.google.android.material.appbar.AppBarLayout>
 

@@ -97,10 +97,10 @@ class GalleryFragment : Fragment() {
                 override fun onCreateMenu(menu: Menu, menuInflater: MenuInflater) {
                     menuInflater.inflate(R.menu.gallery_menu, menu)
                     clearHistoryItem = menu.findItem(R.id.action_clear_history)
-                    // Tint to match the flat surface toolbar (onSurface);
-                    // menu icons otherwise fall back to a default control colour.
+                    // Tint to match the toolbar title (theme-aware white/light); menu
+                    // icons otherwise fall back to a default control colour.
                     clearHistoryItem?.icon
-                        ?.setTint(ContextCompat.getColor(requireContext(), R.color.on_surface))
+                        ?.setTint(ContextCompat.getColor(requireContext(), R.color.toolbar_title))
                     // Nothing to clear on an empty gallery.
                     clearHistoryItem?.isVisible = allScans.isNotEmpty()
                 }

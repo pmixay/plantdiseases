@@ -195,7 +195,7 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
             setContentInsetsAbsolute(0, 0)
             setContentInsetsRelative(0, 0)
             setPadding(16.dp(), 0, 16.dp(), 0)
-            setNavigationIconTint(getColor(R.color.on_surface))
+            setNavigationIconTint(getColor(R.color.toolbar_title))
             setNavigationOnClickListener { finish() }
         }
 
