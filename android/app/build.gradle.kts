@@ -31,21 +31,35 @@ android {
             .replace("\"", "\\\"")
         buildConfigField("String", "API_BASE_URL", "\"$configuredApiBaseUrl\"")
 
-        // Firebase Cloud Messaging config, supplied at build time from your
-        // Firebase project (Project settings → your Android app, or the values
-        // inside google-services.json). Left unset, FCM stays dormant: no token
-        // is fetched and no push is delivered (the WorkManager poll remains the
-        // fallback), and the build still succeeds — we deliberately do NOT apply
-        // the google-services plugin, which would hard-require google-services.json.
-        // Pass via -PFCM_APP_ID=... (gradle property) or the same-named env var.
-        fun fcmProp(name: String): String =
-            (providers.gradleProperty(name).orNull ?: System.getenv(name) ?: "")
+        // Firebase Cloud Messaging config. Defaults below are the public
+        // client identifiers of the "plantdiseases-8ffeb" Firebase project
+        // (from its google-services.json) — these are the same values shipped
+        // inside every APK and are safe to commit; access is gated by app
+        // signing + the server's service-account key, not their secrecy.
+        // Override per-build with -PFCM_APP_ID=... (gradle property) or the
+        // same-named env var to point at a different Firebase project.
+        // We init Firebase MANUALLY from these (no google-services plugin), so
+        // the build never hard-requires a google-services.json file.
+        fun fcmProp(name: String, default: String): String =
+            (providers.gradleProperty(name).orNull ?: System.getenv(name) ?: default)
                 .replace("\\", "\\\\")
                 .replace("\"", "\\\"")
-        buildConfigField("String", "FCM_APP_ID", "\"${fcmProp("FCM_APP_ID")}\"")
-        buildConfigField("String", "FCM_API_KEY", "\"${fcmProp("FCM_API_KEY")}\"")
-        buildConfigField("String", "FCM_PROJECT_ID", "\"${fcmProp("FCM_PROJECT_ID")}\"")
-        buildConfigField("String", "FCM_SENDER_ID", "\"${fcmProp("FCM_SENDER_ID")}\"")
+        buildConfigField(
+            "String", "FCM_APP_ID",
+            "\"${fcmProp("FCM_APP_ID", "1:477261694434:android:ab17ca7387d4e5a390e5bb")}\"",
+        )
+        buildConfigField(
+            "String", "FCM_API_KEY",
+            "\"${fcmProp("FCM_API_KEY", "AIzaSyCaHSEXJDiEvPbh_O-T9GqhTg_9_E7oeqc")}\"",
+        )
+        buildConfigField(
+            "String", "FCM_PROJECT_ID",
+            "\"${fcmProp("FCM_PROJECT_ID", "plantdiseases-8ffeb")}\"",
+        )
+        buildConfigField(
+            "String", "FCM_SENDER_ID",
+            "\"${fcmProp("FCM_SENDER_ID", "477261694434")}\"",
+        )
 
         // The Aqua family runs a TFLite model on-device. Limit the bundled
         // native .so libs to the ABIs real devices use — dropping x86/mips
