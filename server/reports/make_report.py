@@ -76,31 +76,43 @@ def title(ax_or_fig, t, sub=None, y=0.965):
 # 00 — Scorecard
 # ════════════════════════════════════════════════════════════════════════
 def fig_overview():
-    fig = plt.figure(figsize=(12.8, 7.2))
-    title(fig, "Сводка качества модели", "PlantVision 2.4.0 · тир «gamma» · 9 классов · вход 224 px")
+    fig = plt.figure(figsize=(14.0, 8.0))
+    # header band
+    hb = fig.add_axes([0, 0.88, 1, 0.12]); hb.axis("off")
+    hb.text(0.045, 0.55, "Сводка качества модели", fontsize=26, fontweight="bold", color=FG,
+            transform=hb.transAxes, va="center")
+    hb.text(0.046, 0.16, "PlantVision 2.4.0  ·  тир «gamma»  ·  9 классов  ·  вход 224 px",
+            fontsize=12.5, color=MUT, transform=hb.transAxes, va="center")
+    hb.add_patch(plt.Rectangle((0.045, 0.04), 0.085, 0.05, transform=hb.transAxes, fc=GREEN))
+    # (label, value, unit, sub, accent)
     cards = [
-        ("Macro-F1 (реальные фото)", f"{rw['disease_macro_f1']*100:.1f}%", "болезни, без healthy/NAP", GREEN),
-        ("Macro-F1 (in-domain)", f"{idm['disease_macro_f1']*100:.1f}%", "та же доменная выборка", GREEN),
-        ("Общая точность", f"{acc_rw*100:.1f}%", "все 9 классов, real-world", GREEN),
+        ("Macro-F1 · реальные фото", f"{rw['disease_macro_f1']*100:.1f}%", "болезни, без healthy / NAP", GREEN),
+        ("Macro-F1 · in-domain", f"{idm['disease_macro_f1']*100:.1f}%", "доменная выборка", GREEN),
+        ("Общая точность", f"{acc_rw*100:.1f}%", "9 классов · real-world", GREEN),
         ("Healthy-bias", f"{rw['healthy_bias']:.2f}", "норма < 1.5 — нет перекоса", BLUE),
         ("Покрытие conformal", f"{cf['empirical_coverage']*100:.1f}%", f"цель ≥ {cf['target_coverage']*100:.0f}% · набор {cf['mean_set_size']:.2f}", VIOLET),
-        ("Распознавание «не растение»", f"{Rr['not_a_plant']*100:.1f}%", "OOD-защита", BLUE),
-        ("Размер модели (INT8)", "22.5 МБ", "fp32 87.3 МБ · дрейф −0.2%", AMBER),
-        ("Детектор листа (mAP50)", "82.0%", "Stage-1 YOLOv8n", GREEN),
+        ("Класс «не растение» (OOD)", f"{Rr['not_a_plant']*100:.1f}%", "защита от посторонних фото", BLUE),
+        ("Размер модели · INT8", "22.5 МБ", "fp32 87.3 МБ · дрейф −0.2%", AMBER),
+        ("Детектор листа · mAP50", "82.0%", "Stage-1 · YOLOv8n", GREEN),
     ]
     nx, ny = 4, 2
-    x0, y0, w, h, gx, gy = 0.055, 0.16, 0.208, 0.30, 0.025, 0.07
+    x0, y0, w, h, gx, gy = 0.045, 0.115, 0.2215, 0.335, 0.0233, 0.055
     for i, (lab, val, sub, col) in enumerate(cards):
         cx = x0 + (i % nx) * (w + gx)
         cy = y0 + (ny - 1 - i // nx) * (h + gy)
         ax = fig.add_axes([cx, cy, w, h]); ax.axis("off")
-        ax.add_patch(FancyBboxPatch((0, 0), 1, 1, boxstyle="round,pad=0.02,rounding_size=0.06",
-                                    transform=ax.transAxes, fc=CARD, ec=GRID, lw=1.2))
-        ax.plot([0.07, 0.07], [0.12, 0.88], color=col, lw=4, transform=ax.transAxes,
-                solid_capstyle="round")
-        ax.text(0.15, 0.70, val, fontsize=30, fontweight="bold", color=col, transform=ax.transAxes)
-        ax.text(0.15, 0.42, lab, fontsize=12.5, color=FG, transform=ax.transAxes, fontweight="bold")
-        ax.text(0.15, 0.20, sub, fontsize=10, color=MUT, transform=ax.transAxes)
+        ax.add_patch(FancyBboxPatch((0.012, 0.02), 0.976, 0.96,
+                                    boxstyle="round,pad=0,rounding_size=0.07",
+                                    transform=ax.transAxes, fc=CARD, ec=GRID, lw=1.3))
+        # faint accent header strip
+        ax.add_patch(FancyBboxPatch((0.012, 0.80), 0.976, 0.18,
+                                    boxstyle="round,pad=0,rounding_size=0.07",
+                                    transform=ax.transAxes, fc=col, ec="none", alpha=0.13))
+        ax.text(0.085, 0.875, lab, fontsize=11.5, color=FG, transform=ax.transAxes,
+                fontweight="bold", va="center")
+        ax.text(0.085, 0.47, val, fontsize=30, fontweight="bold", color=col,
+                transform=ax.transAxes, va="center")
+        ax.text(0.085, 0.17, sub, fontsize=9.8, color=MUT, transform=ax.transAxes, va="center")
     footer(fig)
     fig.savefig(OUT / "00_overview.png", dpi=150); plt.close(fig)
 
@@ -246,58 +258,78 @@ def fig_dataset():
 # 06 — Model families (3 columns): Aqua / Gamma / Frontier
 # ════════════════════════════════════════════════════════════════════════
 def fig_families():
-    fig = plt.figure(figsize=(13.6, 8.4))
-    title(fig, "Семейства моделей PlantVision", "Gamma — измерено. Aqua и Frontier — ПРОЕКЦИЯ (один рецепт обучения, разный бэкбон)", y=0.965)
+    fig = plt.figure(figsize=(14.4, 8.6))
+    hb = fig.add_axes([0, 0.88, 1, 0.12]); hb.axis("off")
+    hb.text(0.038, 0.55, "Семейства моделей PlantVision", fontsize=25, fontweight="bold",
+            color=FG, transform=hb.transAxes, va="center")
+    hb.text(0.039, 0.14, "Один рецепт обучения, разный бэкбон  ·  Gamma — измерено, Aqua и Frontier — проекция",
+            fontsize=12, color=MUT, transform=hb.transAxes, va="center")
+    hb.add_patch(plt.Rectangle((0.038, 0.03), 0.075, 0.05, transform=hb.transAxes, fc=GREEN))
+    # (label, value) rows — single-line values to avoid any overflow
     cols = [
         ("AQUA", "на устройстве · офлайн", BLUE, False, [
-            ("Бэкбон", "MobileNetV3-S\n(дистилляция)"),
-            ("Macro-F1 реальные", "≈ 70%"),
-            ("Macro-F1 in-domain", "≈ 79%"),
+            ("Бэкбон", "MobileNetV3-S"),
+            ("Дистилляция", "из Gamma"),
+            ("Macro-F1 · реальные", "≈ 70 %"),
+            ("Macro-F1 · in-domain", "≈ 79 %"),
             ("Размер (INT8)", "≈ 6 МБ"),
-            ("Задержка", "≈ 40 мс / CPU тел."),
-            ("Среда", "Android, офлайн"),
+            ("Задержка", "≈ 40 мс · CPU"),
+            ("Среда", "Android · офлайн"),
         ]),
         ("GAMMA", "текущий прод · баланс", GREEN, True, [
-            ("Бэкбон", "DINOv2 ViT-S/14\n(заморожен)+LoRA"),
-            ("Macro-F1 реальные", f"{rw['disease_macro_f1']*100:.1f}%"),
-            ("Macro-F1 in-domain", f"{idm['disease_macro_f1']*100:.1f}%"),
+            ("Бэкбон", "DINOv2 ViT-S/14"),
+            ("Адаптация", "заморожен + LoRA"),
+            ("Macro-F1 · реальные", f"{rw['disease_macro_f1']*100:.1f} %"),
+            ("Macro-F1 · in-domain", f"{idm['disease_macro_f1']*100:.1f} %"),
             ("Размер (INT8)", "22.5 МБ"),
-            ("Задержка", "≈ 8 мс / GPU"),
-            ("Среда", "сервер (CPU/GPU)"),
+            ("Задержка", "≈ 8 мс · GPU"),
+            ("Среда", "сервер CPU/GPU"),
         ]),
-        ("FRONTIER", "высокая ёмкость · проекция", VIOLET, False, [
-            ("Бэкбон", "DINOv2 ViT-B/14\n(~86M, заморожен)"),
-            ("Macro-F1 реальные", "≈ 83%"),
-            ("Macro-F1 in-domain", "≈ 90%"),
+        ("FRONTIER", "высокая ёмкость", VIOLET, False, [
+            ("Бэкбон", "DINOv2 ViT-B/14"),
+            ("Параметры", "≈ 86M · заморожен"),
+            ("Macro-F1 · реальные", "≈ 83 %"),
+            ("Macro-F1 · in-domain", "≈ 90 %"),
             ("Размер (INT8)", "≈ 90 МБ"),
-            ("Задержка", "≈ 20 мс / GPU"),
+            ("Задержка", "≈ 20 мс · GPU"),
             ("Среда", "сервер GPU (выкл.)"),
         ]),
     ]
-    cw, gap = 0.275, 0.045
+    cw, gap = 0.285, 0.038
     x0 = (1 - (3 * cw + 2 * gap)) / 2
+    top, bot = 0.835, 0.135           # card vertical extent
     for i, (name, role, col, primary, rows) in enumerate(cols):
         cx = x0 + i * (cw + gap)
-        ax = fig.add_axes([cx, 0.10, cw, 0.78]); ax.axis("off")
+        ax = fig.add_axes([cx, bot, cw, top - bot + 0.0]); ax.axis("off")
         fc = CARD2 if primary else CARD
-        ax.add_patch(FancyBboxPatch((0, 0), 1, 1, boxstyle="round,pad=0.02,rounding_size=0.04",
+        ax.add_patch(FancyBboxPatch((0.01, 0.01), 0.98, 0.98,
+                                    boxstyle="round,pad=0,rounding_size=0.035",
                                     transform=ax.transAxes, fc=fc, ec=(col if primary else GRID),
-                                    lw=(2.6 if primary else 1.2)))
-        ax.add_patch(plt.Rectangle((0.0, 0.92), 1.0, 0.08, transform=ax.transAxes, fc=col, alpha=0.16))
-        ax.text(0.5, 0.945, name, ha="center", fontsize=21, fontweight="bold", color=col, transform=ax.transAxes)
-        ax.text(0.5, 0.905, role, ha="center", fontsize=10.5, color=MUT, transform=ax.transAxes)
-        tag = "ИЗМЕРЕНО" if primary else "ПРОЕКЦИЯ"
-        ax.text(0.5, 0.86, tag, ha="center", fontsize=9, color=(GREEN if primary else AMBER),
-                fontweight="bold", transform=ax.transAxes)
+                                    lw=(2.8 if primary else 1.3)))
+        # header chip
+        ax.add_patch(FancyBboxPatch((0.01, 0.845), 0.98, 0.145,
+                                    boxstyle="round,pad=0,rounding_size=0.035",
+                                    transform=ax.transAxes, fc=col, ec="none", alpha=0.16))
+        ax.text(0.5, 0.945, name, ha="center", fontsize=20, fontweight="bold", color=col,
+                transform=ax.transAxes, va="center")
+        tag = "● ИЗМЕРЕНО" if primary else "○ ПРОЕКЦИЯ"
+        ax.text(0.5, 0.882, f"{role}   ·   {tag}", ha="center", fontsize=9.2,
+                color=(GREEN if primary else AMBER), transform=ax.transAxes, va="center")
+        n = len(rows); y_hi, y_lo = 0.80, 0.06
+        pitch = (y_hi - y_lo) / n
         for j, (k, v) in enumerate(rows):
-            yy = 0.78 - j * 0.125
-            ax.text(0.08, yy, k, color=MUT, fontsize=10.5, transform=ax.transAxes)
-            ax.text(0.92, yy, v, color=FG, fontsize=12.5, fontweight="bold", ha="right",
-                    va="top", transform=ax.transAxes, linespacing=0.95)
-            ax.plot([0.08, 0.92], [yy - 0.045, yy - 0.045], color=GRID, lw=0.7, transform=ax.transAxes)
-    fig.text(0.5, 0.03, "Проекции Aqua/Frontier — ожидания на основе типичного разрыва дистилляции (ViT-S→Mobile, −5…7 п.п.)\n"
-                        "и прироста ёмкости (ViT-S→ViT-B, +4…6 п.п.); подтверждаются только обучением соответствующего тира.",
-             ha="center", color=MUT, fontsize=9.2)
+            yc = y_hi - (j + 0.5) * pitch          # row centre
+            ax.text(0.075, yc, k, color=MUT, fontsize=10.5, transform=ax.transAxes, va="center")
+            ax.text(0.925, yc, v, color=FG, fontsize=12, fontweight="bold", ha="right",
+                    transform=ax.transAxes, va="center")
+            if j < n - 1:
+                ax.plot([0.075, 0.925], [y_hi - (j + 1) * pitch] * 2, color=GRID, lw=0.7,
+                        transform=ax.transAxes)
+    fig.text(0.5, 0.045, "Проекции Aqua / Frontier — ожидания по типичному разрыву дистилляции (ViT-S→Mobile, −5…7 п.п.) "
+                         "и приросту ёмкости (ViT-S→ViT-B, +4…6 п.п.).",
+             ha="center", color=MUT, fontsize=9.4)
+    fig.text(0.5, 0.022, "Точные значения подтверждаются только обучением соответствующего тира.",
+             ha="center", color=MUT, fontsize=9.4)
     fig.savefig(OUT / "06_families.png", dpi=150); plt.close(fig)
 
 # ════════════════════════════════════════════════════════════════════════
