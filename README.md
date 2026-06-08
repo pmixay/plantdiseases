@@ -1,5 +1,7 @@
 <div align="center">
 
+[English](README.md) | [Русский](README.ru.md)
+
 # 🌿 PlantDiseases
 
 **AI-powered houseplant disease detection — on-device camera, cloud inference, bilingual care plans.**
@@ -235,8 +237,6 @@ plantdiseases/
 - [`server/train_notebook.ipynb`](server/train_notebook.ipynb) — full
   training recipe (group-aware splits + leakage guard, the three model
   families, Aqua knowledge-distillation → TFLite, calibration + ONNX export).
-- [`server/DATA_SOURCES_VERIFICATION.md`](server/DATA_SOURCES_VERIFICATION.md) —
-  live verification of every `§2` data source (real counts + quality).
 
 ---
 
