@@ -204,7 +204,10 @@ class ScanRepository(
             try {
                 val response = apiService.carePlan(request)
                 if (response.isSuccessful && response.body() != null) {
-                    com.plantdiseases.app.util.ResponseCache.put(cacheKey, response.body()!!)
+                    com.plantdiseases.app.util.ResponseCache.put(
+                        cacheKey, response.body()!!,
+                        com.plantdiseases.app.util.ResponseCache.TTL_CARE_PLAN_MS,
+                    )
                     Result.success(response.body()!!)
                 } else if (response.code() == 503) {
                     Result.failure(ServerStartingException())
@@ -914,7 +917,10 @@ class ScanRepository(
                     // Don't cache a transient "unavailable" (e.g. Wikipedia
                     // miss / rate-limit) — only a real hit is worth keeping.
                     if (body.available) {
-                        com.plantdiseases.app.util.ResponseCache.put(cacheKey, body)
+                        com.plantdiseases.app.util.ResponseCache.put(
+                            cacheKey, body,
+                            com.plantdiseases.app.util.ResponseCache.TTL_SPECIES_MS,
+                        )
                     }
                     Result.success(body)
                 } else {
