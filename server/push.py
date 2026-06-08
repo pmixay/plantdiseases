@@ -133,11 +133,15 @@ def _ensure_fcm() -> bool:
     return _fcm_ready
 
 
-def send_opinion_push(owner_pseudo_id: str, scan_id: str, disease: str) -> int:
+def send_opinion_push(
+    owner_pseudo_id: str, scan_id: str, disease: str, note: str | None = None,
+) -> int:
     """Send a high-priority data push to every device the owner registered.
 
-    Returns the number of messages attempted (0 when push is disabled or the
-    owner has no tokens). Stale tokens (unregistered / sender mismatch) are
+    The payload carries the suggested-diagnosis class key (localised on-device)
+    and the responder's optional free-text note, so the notification can show
+    both. Returns the number of messages attempted (0 when push is disabled or
+    the owner has no tokens). Stale tokens (unregistered / sender mismatch) are
     pruned. Best-effort — never raises into the request path.
     """
     if not _ensure_fcm():
@@ -150,7 +154,13 @@ def send_opinion_push(owner_pseudo_id: str, scan_id: str, disease: str) -> int:
     except Exception:  # noqa: BLE001 - pragma: no cover
         return 0
 
-    data = {"type": "opinion", "scan_id": str(scan_id), "disease": str(disease or "")}
+    # FCM data values must be strings; cap the note so the payload stays small.
+    data = {
+        "type": "opinion",
+        "scan_id": str(scan_id),
+        "disease": str(disease or ""),
+        "note": (note or "").strip()[:240],
+    }
     stale: list[str] = []
     sent = 0
     for tok in toks:

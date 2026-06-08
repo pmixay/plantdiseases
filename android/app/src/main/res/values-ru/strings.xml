@@ -220,6 +220,7 @@
     <string name="community_delete_title">Удалить мои данные из сообщества</string>
     <string name="opinion_notif_title">Новое второе мнение</string>
     <string name="opinion_notif_body">Кто-то оставил мнение о вашем скане: %1$s</string>
+    <string name="opinion_notif_with_note">Предложенный диагноз: %1$s\n\n«%2$s»</string>
     <string name="channel_plant_reminders_name">Напоминания о растениях</string>
     <string name="channel_plant_reminders_desc">Напоминания по графику ухода за вашими растениями</string>
     <string name="channel_community_name">Сообщество</string>

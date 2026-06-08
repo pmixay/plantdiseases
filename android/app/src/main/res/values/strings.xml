@@ -224,6 +224,7 @@
     <string name="community_delete_title">Delete my contributions</string>
     <string name="opinion_notif_title">New second opinion</string>
     <string name="opinion_notif_body">Someone weighed in on your %1$s scan</string>
+    <string name="opinion_notif_with_note">Suggested diagnosis: %1$s\n\n“%2$s”</string>
     <string name="channel_plant_reminders_name">Plant Reminders</string>
     <string name="channel_plant_reminders_desc">Care schedule reminders for your plants</string>
     <string name="channel_community_name">Community</string>

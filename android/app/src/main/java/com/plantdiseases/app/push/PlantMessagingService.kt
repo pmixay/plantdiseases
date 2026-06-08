@@ -37,10 +37,11 @@ class PlantMessagingService : FirebaseMessagingService() {
         val scanId = data["scan_id"].orEmpty()
         if (scanId.isBlank()) return
         val disease = data["disease"].orEmpty()
+        val note = data["note"].orEmpty()
         // onMessageReceived already runs off the main thread; the scan lookup +
         // notify is quick and well within FCM's processing window.
         runBlocking {
-            OpinionNotifier.notifyNewOpinion(applicationContext, scanId, disease)
+            OpinionNotifier.notifyNewOpinion(applicationContext, scanId, disease, note)
         }
     }
 }

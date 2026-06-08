@@ -2679,7 +2679,7 @@ async def community_opinion_submit(payload: CommunityOpinionRequest, request: Re
         try:
             owner = community_owner_of(sid)
             if owner and owner != author:
-                push_send_opinion(owner, sid, disease)
+                push_send_opinion(owner, sid, disease, payload.note)
         except Exception as exc:  # noqa: BLE001
             logger.debug("Opinion push failed: %s", exc)
 
