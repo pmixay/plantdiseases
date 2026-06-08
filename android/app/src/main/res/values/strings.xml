@@ -219,6 +219,10 @@
     <string name="community_delete_title">Delete my contributions</string>
     <string name="opinion_notif_title">New second opinion</string>
     <string name="opinion_notif_body">Someone weighed in on your %1$s scan</string>
+    <string name="channel_plant_reminders_name">Plant Reminders</string>
+    <string name="channel_plant_reminders_desc">Care schedule reminders for your plants</string>
+    <string name="channel_community_name">Community</string>
+    <string name="channel_community_desc">Second opinions on scans you shared</string>
     <string name="community_delete_body">This removes every scan you\'ve shared so far from the community corpus. Continue?</string>
     <string name="community_delete_done">Your community contributions were removed.</string>
     <string name="community_delete_failed">Couldn\'t reach the server. Try again later.</string>
