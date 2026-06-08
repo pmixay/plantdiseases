@@ -50,8 +50,12 @@ def test_counts_only_for_my_scans_and_exclude_my_own_opinions(comm):
 def test_empty_for_user_with_no_opinions(comm):
     comm.record_scan(scan_id="x", user_pseudo_id="owner", country="GB",
                      region="London", disease="healthy")
-    assert comm.opinion_counts_for_user("owner") == {"scans": [], "total_opinions": 0}
-    assert comm.opinion_counts_for_user("") == {"scans": [], "total_opinions": 0}
+    assert comm.opinion_counts_for_user("owner") == {
+        "scans": [], "total_opinions": 0, "total_views": 0,
+    }
+    assert comm.opinion_counts_for_user("") == {
+        "scans": [], "total_opinions": 0, "total_views": 0,
+    }
 
 
 def test_endpoint_returns_counts(client):

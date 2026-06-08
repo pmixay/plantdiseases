@@ -95,7 +95,13 @@ try:
         record_scan as community_record_scan,
     )
     from .community import (
+        record_view as community_record_view,
+    )
+    from .community import (
         region_summary as community_region_summary,
+    )
+    from .community import (
+        scan_counts as community_scan_counts,
     )
     from .community import (
         scans_by_species as community_scans_by_species,
@@ -187,7 +193,13 @@ except ImportError:
         record_scan as community_record_scan,
     )
     from community import (
+        record_view as community_record_view,
+    )
+    from community import (
         region_summary as community_region_summary,
+    )
+    from community import (
+        scan_counts as community_scan_counts,
     )
     from community import (
         scans_by_species as community_scans_by_species,
@@ -2719,6 +2731,43 @@ async def community_my_scan_opinions(user_pseudo_id: str):
         _get_inference_executor(), lambda: community_opinion_counts_for_user(uid),
     )
     return JSONResponse(content=result)
+
+
+class CommunityViewRequest(BaseModel):
+    scan_id: str = Field(..., min_length=1, max_length=128)
+    user_pseudo_id: str = Field(..., min_length=1, max_length=128)
+
+
+@api_router.post("/community/view")
+async def community_record_scan_view(payload: CommunityViewRequest):
+    """Record that the caller opened someone else's shared scan. Deduped per
+    viewer server-side; a scan owner viewing their own scan and views of an
+    unknown scan never count, so this is safe to fire on every open."""
+    counted = await asyncio.get_running_loop().run_in_executor(
+        _get_inference_executor(),
+        lambda: community_record_view(
+            payload.scan_id.strip(), payload.user_pseudo_id.strip(),
+        ),
+    )
+    return JSONResponse(content={"ok": True, "counted": bool(counted)})
+
+
+class CommunityScanCountsRequest(BaseModel):
+    scan_ids: list[str] = Field(..., max_length=500)
+
+
+@api_router.post("/community/scan-counts")
+async def community_scan_counts_endpoint(payload: CommunityScanCountsRequest):
+    """Batched ``{opinions, views}`` per scan_id so the Gallery can badge the
+    caller's own rows in one round-trip. Unknown/zero scans are omitted."""
+    ids = [s.strip() for s in payload.scan_ids if s and s.strip()][:500]
+    counts = (
+        await asyncio.get_running_loop().run_in_executor(
+            _get_inference_executor(), lambda: community_scan_counts(ids),
+        )
+        if ids else {}
+    )
+    return JSONResponse(content={"counts": counts})
 
 
 @api_router.get("/community/nearby")

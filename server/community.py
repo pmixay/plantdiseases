@@ -97,6 +97,14 @@ CREATE TABLE IF NOT EXISTS community_opinion_requests (
     created_at     INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_opinion_requests_user ON community_opinion_requests(user_pseudo_id);
+
+CREATE TABLE IF NOT EXISTS community_scan_views (
+    scan_id          TEXT    NOT NULL,
+    viewer_pseudo_id TEXT    NOT NULL,
+    created_at       INTEGER NOT NULL,
+    PRIMARY KEY (scan_id, viewer_pseudo_id)
+);
+CREATE INDEX IF NOT EXISTS ix_views_scan ON community_scan_views(scan_id);
 """
 
 _write_lock = threading.RLock()
@@ -353,7 +361,11 @@ def opinions_for(scan_id: str, *, limit: int = 50) -> dict:
         for r in rows
     ]
     consensus = [{"disease": str(t[0]), "count": int(t[1])} for t in tally]
-    return {"opinions": opinions, "consensus": consensus}
+    return {
+        "opinions": opinions,
+        "consensus": consensus,
+        "views": view_count_for(scan_id),
+    }
 
 
 def opinion_counts_for_user(user_pseudo_id: str, *, limit: int = 200) -> dict:
@@ -372,11 +384,12 @@ def opinion_counts_for_user(user_pseudo_id: str, *, limit: int = 200) -> dict:
     init_db()
     uid = (user_pseudo_id or "").strip()
     if not uid:
-        return {"scans": [], "total_opinions": 0}
+        return {"scans": [], "total_opinions": 0, "total_views": 0}
     limit = max(1, min(int(limit), 500))
     with _connect() as conn:
         rows = conn.execute(
-            "SELECT s.scan_id, s.disease, COUNT(o.id) AS n, MAX(o.created_at) AS latest "
+            "SELECT s.scan_id, s.disease, COUNT(o.id) AS n, MAX(o.created_at) AS latest, "
+            "  (SELECT COUNT(*) FROM community_scan_views v WHERE v.scan_id = s.scan_id) AS views "
             "FROM community_scans s "
             "JOIN community_opinions o "
             "  ON o.scan_id = s.scan_id AND o.author_pseudo_id != s.user_pseudo_id "
@@ -387,10 +400,15 @@ def opinion_counts_for_user(user_pseudo_id: str, *, limit: int = 200) -> dict:
         ).fetchall()
     scans = [
         {"scan_id": str(r[0]), "disease": str(r[1]),
-         "opinion_count": int(r[2]), "latest_at": int(r[3])}
+         "opinion_count": int(r[2]), "latest_at": int(r[3]),
+         "view_count": int(r[4])}
         for r in rows
     ]
-    return {"scans": scans, "total_opinions": sum(s["opinion_count"] for s in scans)}
+    return {
+        "scans": scans,
+        "total_opinions": sum(s["opinion_count"] for s in scans),
+        "total_views": sum(s["view_count"] for s in scans),
+    }
 
 
 def daily_opinion_count_for_ip_hash(ip_hash: str | None) -> int:
@@ -421,6 +439,75 @@ def opinion_counts(scan_ids: list[str]) -> dict[str, int]:
             tuple(ids),
         ).fetchall()
     return {str(r[0]): int(r[1]) for r in rows}
+
+
+def record_view(scan_id: str, viewer_pseudo_id: str) -> bool:
+    """Record that ``viewer_pseudo_id`` opened the shared scan ``scan_id``.
+
+    Deduped per viewer by the (scan_id, viewer_pseudo_id) primary key, so a
+    given user only ever counts once no matter how many times they reopen the
+    scan. A scan owner viewing their OWN scan never counts. Returns True only
+    when a NEW view row was inserted (the count actually grew)."""
+    sid = (scan_id or "").strip()
+    vid = (viewer_pseudo_id or "").strip()
+    if not sid or not vid:
+        return False
+    init_db()
+    with _write_lock, _connect() as conn:
+        owner = conn.execute(
+            "SELECT user_pseudo_id FROM community_scans WHERE scan_id = ?",
+            (sid,),
+        ).fetchone()
+        # Only count views on a scan that exists and isn't the viewer's own.
+        if owner is None or str(owner[0]) == vid:
+            return False
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO community_scan_views "
+            "(scan_id, viewer_pseudo_id, created_at) VALUES (?, ?, ?)",
+            (sid, vid, int(time.time())),
+        )
+        return int(cur.rowcount or 0) > 0
+
+
+def view_counts(scan_ids: list[str]) -> dict[str, int]:
+    """Map each scan_id to its number of distinct viewers (zeros omitted)."""
+    ids = [s for s in scan_ids if s]
+    if not ids:
+        return {}
+    init_db()
+    placeholders = ",".join("?" * len(ids))
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT scan_id, COUNT(*) FROM community_scan_views "
+            f"WHERE scan_id IN ({placeholders}) GROUP BY scan_id",
+            tuple(ids),
+        ).fetchall()
+    return {str(r[0]): int(r[1]) for r in rows}
+
+
+def view_count_for(scan_id: str) -> int:
+    """Distinct-viewer count for a single shared scan (0 if none)."""
+    sid = (scan_id or "").strip()
+    if not sid:
+        return 0
+    init_db()
+    with _connect() as conn:
+        return int(conn.execute(
+            "SELECT COUNT(*) FROM community_scan_views WHERE scan_id = ?",
+            (sid,),
+        ).fetchone()[0])
+
+
+def scan_counts(scan_ids: list[str]) -> dict[str, dict]:
+    """Batched per-scan ``{opinions, views}`` map for a set of scan_ids — the
+    Gallery surfaces these badges on the caller's own rows. Scans with neither
+    are omitted so the client can default them to zero."""
+    op = opinion_counts(scan_ids)
+    vw = view_counts(scan_ids)
+    return {
+        sid: {"opinions": op.get(sid, 0), "views": vw.get(sid, 0)}
+        for sid in (set(op) | set(vw))
+    }
 
 
 def opinions_by_author(author_pseudo_id: str, *, limit: int = 100) -> list[dict]:
