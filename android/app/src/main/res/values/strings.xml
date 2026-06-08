@@ -186,7 +186,7 @@
     <string name="community_opinions_badge">%1$d opinions</string>
     <string name="result_view_opinions">%1$d community opinions</string>
     <string name="result_view_activity">%1$d opinions · %2$d views</string>
-    <string name="gallery_community_badge">💬 %1$d · 👁 %2$d</string>
+    <string name="gallery_community_badge">💬 %1$d</string>
     <string name="community_my_opinions_title">My second opinions</string>
     <string name="community_my_opinions_empty">You haven\'t sent any opinions yet.</string>
     <string name="community_my_opinions_count_label">diagnoses you\'ve weighed in on</string>
@@ -199,6 +199,7 @@
     <string name="result_second_opinion_no_region">Couldn\'t find your region, so this scan can\'t be shared for a second opinion.</string>
     <string name="community_opinion_replies_title">Community second opinions</string>
     <string name="community_opinion_replies_subtitle">What the community thinks about your scan.</string>
+    <string name="community_opinion_locked">You\'ve already shared your second opinion on this scan.</string>
     <string name="community_opinion_replies_empty">No second opinions yet. Check back soon.</string>
     <string name="community_wants_opinion_badge">Wants a second opinion</string>
 

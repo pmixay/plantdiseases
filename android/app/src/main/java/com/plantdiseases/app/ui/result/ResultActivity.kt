@@ -395,14 +395,32 @@ class ResultActivity : AppCompatActivity() {
                                 getString(R.string.result_view_opinions, n)
                             }
                             binding.btnViewOpinions.visibility = View.VISIBLE
+                            val opinionName =
+                                classKeyDisplayName(repository.topClassKey(scan) ?: "", isRu)
                             binding.btnViewOpinions.setOnClickListener {
                                 // Owner viewing their OWN scan — read-only, you
                                 // don't leave a second opinion on your own scan.
                                 CommunityOpinionSheet.showForOwner(
-                                    supportFragmentManager,
-                                    ownScanId,
-                                    classKeyDisplayName(repository.topClassKey(scan) ?: "", isRu),
+                                    supportFragmentManager, ownScanId, opinionName,
                                 )
+                            }
+                            // Arrived from a notification / a Gallery row with
+                            // new opinions → jump straight to them (scroll the
+                            // button into view, then open the sheet).
+                            if (n > 0 && intent.getBooleanExtra(EXTRA_OPEN_OPINIONS, false)) {
+                                intent.removeExtra(EXTRA_OPEN_OPINIONS)
+                                binding.scrollView.post {
+                                    binding.btnViewOpinions.requestRectangleOnScreen(
+                                        android.graphics.Rect(
+                                            0, 0,
+                                            binding.btnViewOpinions.width,
+                                            binding.btnViewOpinions.height,
+                                        ), false,
+                                    )
+                                    CommunityOpinionSheet.showForOwner(
+                                        supportFragmentManager, ownScanId, opinionName,
+                                    )
+                                }
                             }
                         }
                     }
@@ -1741,6 +1759,10 @@ class ResultActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_SCAN_ID = "extra_scan_id"
+        /** When true, auto-open the community opinions for this scan once it
+         *  loads — set from an opinion notification tap and from tapping a
+         *  Gallery row that has new opinions. */
+        const val EXTRA_OPEN_OPINIONS = "extra_open_opinions"
         private const val TAG = "ResultActivity"
         private const val FEEDBACK_PREFS = "plantdiseases_feedback_prefs"
         private const val FEEDBACK_KEY_PREFIX = "scan_"

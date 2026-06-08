@@ -16,6 +16,7 @@ object OpinionPrefs {
     private const val KEY_INITIALIZED = "baseline_initialized"
     private const val KEY_PREFIX = "seen_"
     private const val KEY_VIEWED_PREFIX = "viewed_"
+    private const val KEY_SUBMITTED_PREFIX = "opined_"
 
     fun isInitialized(context: Context): Boolean =
         prefs(context).getBoolean(KEY_INITIALIZED, false)
@@ -44,6 +45,19 @@ object OpinionPrefs {
 
     fun markViewedOpinions(context: Context, scanId: String, count: Int) {
         prefs(context).edit().putInt(KEY_VIEWED_PREFIX + scanId, count).apply()
+    }
+
+    /**
+     * Whether this install has already left a second opinion on [scanId].
+     * One opinion per scan: once submitted, the opinion sheet locks its input.
+     * Backed locally and also enforced server-side (a duplicate submit is
+     * ignored), so this is the fast, offline-correct gate for the UI.
+     */
+    fun hasSubmittedOpinion(context: Context, scanId: String): Boolean =
+        prefs(context).getBoolean(KEY_SUBMITTED_PREFIX + scanId, false)
+
+    fun markSubmittedOpinion(context: Context, scanId: String) {
+        prefs(context).edit().putBoolean(KEY_SUBMITTED_PREFIX + scanId, true).apply()
     }
 
     private fun prefs(context: Context) = context.applicationContext

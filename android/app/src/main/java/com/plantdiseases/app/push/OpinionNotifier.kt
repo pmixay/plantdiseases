@@ -52,6 +52,8 @@ object OpinionNotifier {
         val intent = if (localId != null) {
             Intent(ctx, ResultActivity::class.java)
                 .putExtra(ResultActivity.EXTRA_SCAN_ID, localId)
+                // Jump straight to the opinions when the notification is tapped.
+                .putExtra(ResultActivity.EXTRA_OPEN_OPINIONS, true)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         } else {
             Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

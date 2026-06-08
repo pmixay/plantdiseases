@@ -80,14 +80,24 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
 
         val ctx = requireContext()
         val cancelBtn = view.findViewById<MaterialButton>(R.id.btn_opinion_cancel)
+        // One second opinion per scan: once this install has submitted, the
+        // picker is locked and the sheet shows the replies read-only.
+        val alreadyOpined = !viewOnly &&
+            com.plantdiseases.app.util.OpinionPrefs.hasSubmittedOpinion(ctx, scanId)
 
-        if (viewOnly) {
-            // Reframe as "here's what the community thinks" and strip the
-            // input controls — the owner doesn't vote on their own scan.
-            view.findViewById<TextView>(R.id.tv_opinion_title)
-                .setText(R.string.community_opinion_replies_title)
-            view.findViewById<TextView>(R.id.tv_opinion_subtitle)
-                .setText(R.string.community_opinion_replies_subtitle)
+        if (viewOnly || alreadyOpined) {
+            // Strip the input controls. Owner = "here's what the community
+            // thinks"; a responder who already used their one opinion sees a
+            // "locked" note instead.
+            if (viewOnly) {
+                view.findViewById<TextView>(R.id.tv_opinion_title)
+                    .setText(R.string.community_opinion_replies_title)
+                view.findViewById<TextView>(R.id.tv_opinion_subtitle)
+                    .setText(R.string.community_opinion_replies_subtitle)
+            } else {
+                view.findViewById<TextView>(R.id.tv_opinion_subtitle)
+                    .setText(R.string.community_opinion_locked)
+            }
             view.findViewById<View>(R.id.tv_opinion_pick_label).visibility = View.GONE
             chipGroup?.visibility = View.GONE
             view.findViewById<View>(R.id.til_opinion_note).visibility = View.GONE
@@ -160,8 +170,9 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
             repo.submitCommunityOpinion(request)
                 .onSuccess { resp ->
                     Toast.makeText(ctx, R.string.community_opinion_thanks, Toast.LENGTH_SHORT).show()
-                    group.clearCheck()
-                    noteInput?.setText("")
+                    // One opinion per scan — record it and lock the input.
+                    com.plantdiseases.app.util.OpinionPrefs.markSubmittedOpinion(ctx, scanId)
+                    lockInputControls()
                     render(resp.consensus, resp.opinions)
                 }
                 .onFailure {
@@ -169,6 +180,18 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
                     sendBtn?.isEnabled = true
                 }
         }
+    }
+
+    /** Hide the picker / note / send and show the "already opined" note —
+     *  used once this install has left its single opinion on the scan. */
+    private fun lockInputControls() {
+        val v = view ?: return
+        v.findViewById<TextView>(R.id.tv_opinion_subtitle)
+            .setText(R.string.community_opinion_locked)
+        v.findViewById<View>(R.id.tv_opinion_pick_label).visibility = View.GONE
+        chipGroup?.visibility = View.GONE
+        v.findViewById<View>(R.id.til_opinion_note).visibility = View.GONE
+        sendBtn?.visibility = View.GONE
     }
 
     private fun render(consensus: List<CommunityTopDisease>, opinions: List<CommunityOpinion>) {

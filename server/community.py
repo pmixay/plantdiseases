@@ -323,6 +323,16 @@ def record_opinion(
     ip_hash = hash_client_ip(client_ip)
     note_clean = (note or "").strip()[:500] or None
     with _write_lock, _connect() as conn:
+        # One opinion per author per scan. If this install already weighed in,
+        # keep the original (the client locks its input too) and return that
+        # row's id rather than appending a duplicate.
+        existing = conn.execute(
+            "SELECT id FROM community_opinions "
+            "WHERE scan_id = ? AND author_pseudo_id = ? LIMIT 1",
+            (scan_id, author_pseudo_id),
+        ).fetchone()
+        if existing is not None:
+            return int(existing[0])
         cur = conn.execute(
             "INSERT INTO community_opinions ("
             "  scan_id, author_pseudo_id, suggested_disease, note, "

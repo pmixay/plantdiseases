@@ -59,3 +59,25 @@ def test_delete_for_user_removes_their_opinions(comm):
 
 def test_daily_opinion_count_guards_none(comm):
     assert comm.daily_opinion_count_for_ip_hash(None) == 0
+
+
+def test_one_opinion_per_author_per_scan(comm):
+    """A second submit by the same author on the same scan is ignored — the
+    original opinion stands (the client locks its input to match)."""
+    id1 = comm.record_opinion(
+        scan_id="s9", author_pseudo_id="bob", suggested_disease="leaf_spot",
+    )
+    id2 = comm.record_opinion(
+        scan_id="s9", author_pseudo_id="bob",
+        suggested_disease="powdery_mildew", note="changed my mind",
+    )
+    assert id1 == id2  # same row, no duplicate
+    res = comm.opinions_for("s9")
+    assert len(res["opinions"]) == 1
+    assert res["opinions"][0]["suggested_disease"] == "leaf_spot"  # original kept
+
+    # A different author can still leave their own opinion.
+    comm.record_opinion(
+        scan_id="s9", author_pseudo_id="carol", suggested_disease="viral_disease",
+    )
+    assert len(comm.opinions_for("s9")["opinions"]) == 2

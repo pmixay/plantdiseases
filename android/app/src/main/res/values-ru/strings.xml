@@ -185,7 +185,7 @@
     <string name="community_opinions_badge">Мнений: %1$d</string>
     <string name="result_view_opinions">Мнений сообщества: %1$d</string>
     <string name="result_view_activity">Мнений: %1$d · просмотров: %2$d</string>
-    <string name="gallery_community_badge">💬 %1$d · 👁 %2$d</string>
+    <string name="gallery_community_badge">💬 %1$d</string>
     <string name="community_my_opinions_title">Мои мнения</string>
     <string name="community_my_opinions_empty">Вы пока не отправляли мнений.</string>
     <string name="community_my_opinions_count_label">диагнозов вы оценили</string>
@@ -198,6 +198,7 @@
     <string name="result_second_opinion_no_region">Не удалось определить ваш регион, поэтому этот скан нельзя отправить на второе мнение.</string>
     <string name="community_opinion_replies_title">Второе мнение сообщества</string>
     <string name="community_opinion_replies_subtitle">Что сообщество думает о вашем скане.</string>
+    <string name="community_opinion_locked">Вы уже оставили своё второе мнение по этому скану.</string>
     <string name="community_opinion_replies_empty">Пока нет второго мнения. Загляните позже.</string>
     <string name="community_wants_opinion_badge">Ждёт второго мнения</string>
     <!-- Nearby scans feed (social-style, opened from the camera screen) -->

@@ -61,6 +61,10 @@ class GalleryFragment : Fragment() {
             onClick = { item ->
                 val intent = Intent(requireContext(), ResultActivity::class.java).apply {
                     putExtra(ResultActivity.EXTRA_SCAN_ID, item.id)
+                    // Tapping a row with unseen opinions jumps straight to them.
+                    if (item.newOpinions > 0) {
+                        putExtra(ResultActivity.EXTRA_OPEN_OPINIONS, true)
+                    }
                 }
                 startActivity(intent)
             },

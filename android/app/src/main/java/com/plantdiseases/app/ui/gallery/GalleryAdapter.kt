@@ -74,12 +74,11 @@ class GalleryAdapter(
                 .placeholder(R.drawable.ic_plant_placeholder)
                 .into(ivPlant)
 
-            // Community activity badge — only on the user's shared scans that
-            // actually have opinions and/or views (deduped per viewer).
-            if (item.communityOpinions > 0 || item.communityViews > 0) {
+            // Opinion-count badge on the user's own shared scans. View counts
+            // live on the result screen's community activity line, not here.
+            if (item.communityOpinions > 0) {
                 tvCommunityBadge.text = context.getString(
-                    R.string.gallery_community_badge,
-                    item.communityOpinions, item.communityViews,
+                    R.string.gallery_community_badge, item.communityOpinions,
                 )
                 tvCommunityBadge.visibility = android.view.View.VISIBLE
             } else {
