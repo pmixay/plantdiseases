@@ -140,6 +140,19 @@ class ResultActivity : AppCompatActivity() {
             insets
         }
 
+        // Keep the scroll content clear of the floating bottom bar. The bar's
+        // height is content + the nav-bar inset applied above, and isn't known
+        // until layout — a static paddingBottom (it was 80dp) left the last
+        // card (feedback) partly hidden behind the buttons. Match it to the
+        // bar's actual measured height instead.
+        binding.bottomActionBar.addOnLayoutChangeListener {
+            _, _, _, _, _, _, _, _, _ ->
+            val h = binding.bottomActionBar.height
+            if (h > 0 && binding.scrollView.paddingBottom != h) {
+                binding.scrollView.updatePadding(bottom = h)
+            }
+        }
+
         val scanId = intent.getLongExtra(EXTRA_SCAN_ID, -1)
         if (scanId == -1L) {
             finish()
@@ -381,7 +394,9 @@ class ResultActivity : AppCompatActivity() {
                             }
                             binding.btnViewOpinions.visibility = View.VISIBLE
                             binding.btnViewOpinions.setOnClickListener {
-                                CommunityOpinionSheet.show(
+                                // Owner viewing their OWN scan — read-only, you
+                                // don't leave a second opinion on your own scan.
+                                CommunityOpinionSheet.showForOwner(
                                     supportFragmentManager,
                                     ownScanId,
                                     classKeyDisplayName(repository.topClassKey(scan) ?: "", isRu),
