@@ -954,64 +954,81 @@
 
     </androidx.core.widget.NestedScrollView>
 
-    <!-- Bottom action bar — frosted leaf-glass over the page. -->
+    <!-- Bottom action bar — flat surface with a hairline top divider.
+         Kept as a MaterialCardView so ResultActivity.setContentPadding can
+         apply the nav-bar bottom inset; no android:background drawable and
+         no stroke (the old rounded-bg-in-a-square-card combo drew the ugly
+         seam). colorSurface + a 1dp top divider reads clean in light + dark. -->
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/bottom_action_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
-        android:background="@drawable/bg_glass_card_strong"
         app:cardCornerRadius="0dp"
-        app:cardElevation="@dimen/glass_elevation"
-        app:cardBackgroundColor="@android:color/transparent">
+        app:cardElevation="0dp"
+        app:strokeWidth="0dp"
+        app:cardBackgroundColor="?attr/colorSurface">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center"
-            android:paddingVertical="@dimen/space_sm"
-            android:paddingHorizontal="@dimen/space_lg">
+            android:orientation="vertical">
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_add_to_garden"
-                android:layout_width="0dp"
-                android:layout_height="48dp"
-                android:layout_weight="1.7"
-                android:layout_marginEnd="@dimen/space_sm"
-                android:text="@string/add_to_garden"
-                android:maxLines="1"
-                android:ellipsize="end"
-                app:icon="@drawable/ic_garden"
-                app:iconGravity="textStart"
-                app:iconPadding="@dimen/space_xs"
-                app:cornerRadius="@dimen/radius_md"
-                app:backgroundTint="@color/primary" />
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="@color/divider" />
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_new_scan"
-                style="@style/Widget.Material3.Button.TonalButton"
-                android:layout_width="0dp"
-                android:layout_height="48dp"
-                android:layout_weight="1.0"
-                android:layout_marginEnd="@dimen/space_sm"
-                android:text="@string/new_scan"
-                android:maxLines="1"
-                android:ellipsize="end"
-                android:textAllCaps="false"
-                app:cornerRadius="@dimen/radius_md" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center"
+                android:paddingVertical="@dimen/space_md"
+                android:paddingHorizontal="@dimen/space_lg">
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_share"
-                style="@style/Widget.Material3.Button.TonalButton"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:contentDescription="@string/share"
-                app:icon="@drawable/ic_share"
-                app:iconGravity="textStart"
-                app:iconPadding="0dp"
-                app:iconTint="@color/primary"
-                app:cornerRadius="@dimen/radius_md" />
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_add_to_garden"
+                    android:layout_width="0dp"
+                    android:layout_height="48dp"
+                    android:layout_weight="1.7"
+                    android:layout_marginEnd="@dimen/space_sm"
+                    android:text="@string/add_to_garden"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:textAllCaps="false"
+                    app:icon="@drawable/ic_garden"
+                    app:iconGravity="textStart"
+                    app:iconPadding="@dimen/space_xs"
+                    app:cornerRadius="@dimen/radius_md"
+                    app:backgroundTint="@color/primary" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_new_scan"
+                    style="@style/Widget.Material3.Button.TonalButton"
+                    android:layout_width="0dp"
+                    android:layout_height="48dp"
+                    android:layout_weight="1.0"
+                    android:layout_marginEnd="@dimen/space_sm"
+                    android:text="@string/new_scan"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:textAllCaps="false"
+                    app:cornerRadius="@dimen/radius_md" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_share"
+                    style="@style/Widget.Material3.Button.TonalButton"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:contentDescription="@string/share"
+                    app:icon="@drawable/ic_share"
+                    app:iconGravity="textStart"
+                    app:iconPadding="0dp"
+                    app:iconTint="@color/primary"
+                    app:cornerRadius="@dimen/radius_md" />
+
+            </LinearLayout>
 
         </LinearLayout>
 
