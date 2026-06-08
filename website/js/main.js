@@ -13,14 +13,26 @@
   window.addEventListener('scroll', onScroll, { passive: true });
   onScroll();
 
-  /* ---------- mobile menu ---------- */
+  /* ---------- mobile menu (full-screen overlay) ---------- */
   var burger = document.getElementById('burger');
   var navLinks = document.getElementById('navLinks');
+  function setMenu(open) {
+    document.body.classList.toggle('menu-open', open);
+    burger.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
   burger.addEventListener('click', function () {
-    navLinks.classList.toggle('open');
+    setMenu(!document.body.classList.contains('menu-open'));
   });
-  navLinks.querySelectorAll('a').forEach(function (a) {
-    a.addEventListener('click', function () { navLinks.classList.remove('open'); });
+  // close when a link is tapped, or when the empty overlay area is tapped
+  navLinks.addEventListener('click', function (e) {
+    if (e.target === navLinks || e.target.tagName === 'A') setMenu(false);
+  });
+  // close on Escape and when growing back to desktop width
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') setMenu(false);
+  });
+  window.addEventListener('resize', function () {
+    if (window.innerWidth > 680) setMenu(false);
   });
 
   /* ---------- language toggle (RU / EN) ---------- */
