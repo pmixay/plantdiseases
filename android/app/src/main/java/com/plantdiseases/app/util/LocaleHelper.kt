@@ -4,6 +4,13 @@ import android.content.Context
 import android.content.res.Configuration
 import java.util.Locale
 
+/**
+ * Persists the user's chosen UI language ("en"/"ru") and wraps a [Context]
+ * with the matching [Locale] so every screen renders in that language
+ * regardless of the device locale. Activities call [applyLocale] from
+ * `attachBaseContext`; the choice is cached in-process and mirrored in
+ * SharedPreferences so it survives restarts.
+ */
 object LocaleHelper {
 
     private const val PREFS_NAME = "plantdiseases_prefs"
@@ -12,11 +19,13 @@ object LocaleHelper {
     @Volatile
     private var cachedLanguage: String? = null
 
+    /** Wraps [context] in the persisted language, used from `attachBaseContext`. */
     fun applyLocale(context: Context): Context {
         val lang = getSavedLanguage(context)
         return setLocale(context, lang)
     }
 
+    /** Persists [language] and returns a [context] configured with that locale. */
     fun setLocale(context: Context, language: String): Context {
         saveLanguage(context, language)
         val locale = Locale(language)
@@ -45,8 +54,10 @@ object LocaleHelper {
             .apply()
     }
 
+    /** True when the persisted language is Russian — used to pick RU vs EN copy. */
     fun isRussian(context: Context): Boolean = getSavedLanguage(context) == "ru"
 
+    /** Flips between "en" and "ru", persists it, and returns the new language. */
     fun toggleLanguage(context: Context): String {
         val current = getSavedLanguage(context)
         val newLang = if (current == "ru") "en" else "ru"

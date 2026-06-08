@@ -18,9 +18,12 @@ object DiseaseLabels {
         "powdery_mildew" -> if (isRu) "Мучнистая роса" else "Powdery Mildew"
         "gray_mold_botrytis" -> if (isRu) "Серая гниль (ботритис)" else "Gray Mold (Botrytis)"
         "leaf_spot" -> if (isRu) "Пятнистость листьев" else "Leaf Spot"
+        "pests" -> if (isRu) "Сосущие вредители" else "Sap-sucking Pests"
         // legacy keys from pre-merge models / historical scans:
         "leaf_spot_fungal" -> if (isRu) "Грибковая пятнистость" else "Fungal Leaf Spot"
         "bacterial_leaf_spot" -> if (isRu) "Бактериальная пятнистость" else "Bacterial Leaf Spot"
+        "mealybugs", "mealybug" -> if (isRu) "Мучнистые червецы" else "Mealybugs"
+        "scale", "scale_insects" -> if (isRu) "Щитовки" else "Scale Insects"
         "viral_disease" -> if (isRu) "Вирусное заболевание" else "Viral Disease"
         "edema" -> if (isRu) "Эдема (отёчность)" else "Edema (Oedema)"
         "sunburn_or_scorch" -> if (isRu) "Солнечный ожог" else "Sunburn / Light Scorch"

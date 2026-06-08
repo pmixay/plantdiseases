@@ -73,6 +73,23 @@ android {
         buildConfig = true
     }
 
+    packaging {
+        jniLibs {
+            // These prebuilt .so libs (DataStore, CameraX JNI, TFLite) can't be
+            // stripped by the NDK strip tool, which logs a noisy "Unable to
+            // strip the following libraries" warning every build. They are
+            // packaged as-is either way, so declaring them here just keeps
+            // their (already-present) symbols and silences the warning — the
+            // APK size is unchanged.
+            keepDebugSymbols += listOf(
+                "**/libdatastore_shared_counter.so",
+                "**/libimage_processing_util_jni.so",
+                "**/libsurface_util_jni.so",
+                "**/libtensorflowlite_jni.so",
+            )
+        }
+    }
+
     lint {
         // Fail the release build on lint errors so we catch regressions
         // in CI rather than on-device. Warnings are still non-fatal —

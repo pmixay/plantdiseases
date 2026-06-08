@@ -17,6 +17,12 @@ import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.LocaleHelper
 import java.io.File
 
+/**
+ * RecyclerView adapter for the scan-history gallery. Renders each
+ * [ScanHistoryItem] with its localised disease name, relative date,
+ * status-coloured accent (healthy / disease / not-a-plant) and a Glide
+ * thumbnail. A tap fires [onClick]; a long-press confirms before [onDelete].
+ */
 class GalleryAdapter(
     private val onClick: (ScanHistoryItem) -> Unit,
     private val onDelete: (ScanHistoryItem) -> Unit

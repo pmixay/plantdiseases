@@ -404,7 +404,10 @@ abstract class AppDatabase : RoomDatabase() {
                     "plantdiseases_db"
                 )
                     .addMigrations(MIGRATION_1_2)
-                    .fallbackToDestructiveMigration()
+                    // Room 2.7 deprecated the no-arg overload; `dropAllTables =
+                    // true` preserves the previous behaviour (wipe everything
+                    // when no migration path exists).
+                    .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()
                 INSTANCE = instance
                 instance

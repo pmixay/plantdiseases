@@ -1,3 +1,10 @@
+// The vanniktech android-image-cropper deprecated its own CropImageContract /
+// CropImageContractOptions API (4.x) without shipping a replacement — the
+// guidance is to keep using it or copy the contract verbatim. We keep using it,
+// so the deprecation is suppressed file-wide. Remove this when migrating off
+// the cropper; it is the only deprecated dependency in this file.
+@file:Suppress("DEPRECATION")
+
 package com.plantdiseases.app.ui.camera
 
 import android.Manifest
@@ -20,7 +27,6 @@ import android.view.MenuInflater
 import android.view.MenuItem
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
-import android.view.Surface
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
@@ -373,9 +379,8 @@ class CameraFragment : Fragment() {
                     it.setSurfaceProvider(binding.cameraPreview.surfaceProvider)
                 }
 
-            val rotation = view?.display?.rotation
-                ?: requireActivity().windowManager.defaultDisplay?.rotation
-                ?: Surface.ROTATION_0
+            val rotation = (view?.display
+                ?: ContextCompat.getDisplayOrDefault(requireContext())).rotation
             imageCapture = ImageCapture.Builder()
                 .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
                 .setTargetRotation(rotation)

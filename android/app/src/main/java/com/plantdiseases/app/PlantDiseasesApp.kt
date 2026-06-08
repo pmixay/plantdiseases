@@ -78,15 +78,15 @@ class PlantDiseasesApp : Application() {
             val nm = getSystemService(NotificationManager::class.java)
             nm.createNotificationChannel(
                 NotificationChannel(
-                    CHANNEL_PLANT_REMINDERS, "Plant Reminders",
+                    CHANNEL_PLANT_REMINDERS, getString(R.string.channel_plant_reminders_name),
                     NotificationManager.IMPORTANCE_HIGH,
-                ).apply { description = "Care schedule reminders for your plants" },
+                ).apply { description = getString(R.string.channel_plant_reminders_desc) },
             )
             nm.createNotificationChannel(
                 NotificationChannel(
-                    CHANNEL_COMMUNITY, "Community",
+                    CHANNEL_COMMUNITY, getString(R.string.channel_community_name),
                     NotificationManager.IMPORTANCE_DEFAULT,
-                ).apply { description = "Second opinions on scans you shared" },
+                ).apply { description = getString(R.string.channel_community_desc) },
             )
         }
     }
