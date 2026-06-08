@@ -134,6 +134,22 @@ when no embedding bank is shipped (`max_logit_floor`).
   accuracy is claimed.
 - `viral_disease` is incurable; the pipeline escalates severity by one
   level on a high-confidence viral verdict.
+- **`viral_disease` over-triggers on naturally variegated / vividly
+  patterned ornamental foliage** (Calathea/Goeppertia, Maranta, Caladium,
+  Coleus, Croton, Aglaonema, Begonia rex…): the classifier reads the
+  natural mottling as viral *mosaic*. This is a training-data coverage gap,
+  not a pipeline bug — iNaturalist research-grade healthy photos skew to
+  plain-green specimens, so the strongly-patterned cultivars were
+  under-represented as healthy negatives. **Data fix (applied):**
+  `INAT_HEALTHY_TAXA` in `train_notebook.ipynb` was broadened with those
+  genera so the next training run learns that patterning ≠ mosaic; a
+  dedicated `natural_variegation` negative class is the longer-term option.
+  **Runtime mitigation (shipped):** below `VIRAL_MIN_CONFIDENCE` (0.65) a
+  viral verdict is demoted to low-confidence and always carries a
+  "could be natural variegation" caveat (`server/pipeline.py`). The
+  feedback corpus already records these as `predicted=viral_disease,
+  corrected=healthy` with the image — mine them via
+  `tools/analyse_feedback.py` (confusion matrix) for the retrain.
 - The dataset mix leans agricultural (PlantDoc / PlantVillage); real
   houseplant recall rides on the iNaturalist supplement and first-party
   data.
