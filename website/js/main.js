@@ -86,3 +86,74 @@
     if (e.key === 'Escape') closeLb();
   });
 })();
+
+/* ============================================================
+   Ambient interactions: scroll progress · count-up · parallax
+   ============================================================ */
+(function () {
+  'use strict';
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* ---- scroll progress bar ---- */
+  var bar = document.getElementById('progress');
+  if (bar) {
+    var ticking = false;
+    function upd() {
+      var h = document.documentElement;
+      var max = h.scrollHeight - h.clientHeight;
+      bar.style.width = (max > 0 ? (h.scrollTop / max) * 100 : 0) + '%';
+      ticking = false;
+    }
+    window.addEventListener('scroll', function () {
+      if (!ticking) { requestAnimationFrame(upd); ticking = true; }
+    }, { passive: true });
+    upd();
+  }
+
+  /* ---- count-up numbers (keeps prefix/suffix, restores rich markup) ---- */
+  function countUp(el) {
+    if (el.dataset.counted) return;
+    el.dataset.counted = '1';
+    var html = el.innerHTML;
+    var text = el.textContent.trim();
+    var m = text.match(/^(\D*)(\d[\d.,]*)(.*)$/);
+    if (!m) return;                              // nothing numeric — leave as-is
+    if (reduce) return;
+    var prefix = m[1], numStr = m[2].replace(',', '.'), suffix = m[3];
+    var target = parseFloat(numStr);
+    var decimals = (numStr.split('.')[1] || '').length;
+    var dur = 1100, start;
+    function tick(now) {
+      if (!start) start = now;
+      var p = Math.min(1, (now - start) / dur);
+      var e = 1 - Math.pow(1 - p, 3);            // easeOutCubic
+      el.textContent = prefix + (target * e).toFixed(decimals) + suffix;
+      if (p < 1) requestAnimationFrame(tick);
+      else el.innerHTML = html;                  // restore original (units, spans)
+    }
+    requestAnimationFrame(tick);
+  }
+
+  var counters = document.querySelectorAll('.hero-stats .v, .kpi .kv');
+  if ('IntersectionObserver' in window) {
+    var cio = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (en.isIntersecting) { countUp(en.target); cio.unobserve(en.target); }
+      });
+    }, { threshold: 0.6 });
+    counters.forEach(function (c) { cio.observe(c); });
+  }
+
+  /* ---- gentle cursor parallax on the hero phones ---- */
+  var hv = document.querySelector('.hero-visual');
+  if (hv && !reduce && window.matchMedia('(pointer:fine)').matches) {
+    var hero = document.querySelector('.hero');
+    hero.addEventListener('mousemove', function (e) {
+      var r = hero.getBoundingClientRect();
+      var dx = (e.clientX - r.left) / r.width - 0.5;
+      var dy = (e.clientY - r.top) / r.height - 0.5;
+      hv.style.transform = 'translate(' + (dx * 18).toFixed(1) + 'px,' + (dy * 14).toFixed(1) + 'px)';
+    });
+    hero.addEventListener('mouseleave', function () { hv.style.transform = ''; });
+  }
+})();
