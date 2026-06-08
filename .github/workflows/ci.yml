@@ -78,6 +78,15 @@ jobs:
       - name: Assemble debug APK
         run: ./gradlew assembleDebug --stacktrace --no-daemon
 
+      # Build the release variant too: it's the only one that runs R8
+      # (minification + resource shrinking). A bad ProGuard rule — e.g. a
+      # stripped Gson/Retrofit reflection class — only breaks in release, so
+      # assembleDebug alone would stay green while the shipped APK crashes.
+      # No keystore in CI, so this produces an unsigned-but-minified APK,
+      # which is exactly what validates the R8 config.
+      - name: Assemble release APK (R8 minification)
+        run: ./gradlew assembleRelease --stacktrace --no-daemon
+
       - name: Upload lint report
         if: always()
         uses: actions/upload-artifact@v7
@@ -114,6 +123,14 @@ jobs:
         with:
           name: app-debug-apk
           path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: warn
+
+      - name: Upload release APK (unsigned, minified)
+        if: success()
+        uses: actions/upload-artifact@v7
+        with:
+          name: app-release-apk
+          path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: warn
 
   server:

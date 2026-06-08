@@ -20,6 +20,12 @@ import com.plantdiseases.app.databinding.ActivityOnboardingBinding
 import com.plantdiseases.app.databinding.ItemOnboardingPageBinding
 import com.plantdiseases.app.util.LocaleHelper
 
+/**
+ * First-run onboarding: a three-page Lottie-animated [ViewPager2] (scan →
+ * diagnose → care) with an animated page indicator. Finishing or skipping
+ * sets [KEY_ONBOARDING_DONE] and moves on to [MainActivity]; [isOnboardingDone]
+ * lets the launcher decide whether to show this screen at all.
+ */
 class OnboardingActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityOnboardingBinding
@@ -170,12 +176,14 @@ class OnboardingActivity : AppCompatActivity() {
     }
 }
 
+/** One onboarding slide: a Lottie animation plus its title and body copy. */
 data class OnboardingPage(
     val lottieRes: Int,
     val title: String,
     val description: String
 )
 
+/** Binds [OnboardingPage]s into the onboarding pager, playing each Lottie animation. */
 class OnboardingAdapter(
     private val pages: List<OnboardingPage>
 ) : RecyclerView.Adapter<OnboardingAdapter.ViewHolder>() {
