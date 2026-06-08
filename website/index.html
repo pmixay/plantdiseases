@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PlantDiseases · PlantVision — ИИ-диагностика болезней комнатных растений</title>
+<meta name="description" content="PlantDiseases — определение болезней комнатных растений по одному фото. Двухэтапный ML-конвейер (YOLOv8 + DINOv2 ViT-S/14 + LoRA), офлайн-сканер, двуязычные планы ухода, личный сад и ИИ-фитопатолог.">
+<meta property="og:title" content="PlantDiseases · PlantVision">
+<meta property="og:description" content="ИИ-определение болезней комнатных растений по фото — сканер, диагноз за секунды, план ухода EN/RU.">
+<meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%2315924A'/%3E%3Cpath d='M32 52V26' stroke='%23fff' stroke-width='3.4' stroke-linecap='round'/%3E%3Cpath d='M32 30c-7-3-7-12 0-17 7 5 7 14 0 17zM32 40c-7-3-7-12 0-17' fill='%23fff'/%3E%3C/svg%3E">
+</head>
+<body>
+
+<!-- ===================== NAV ===================== -->
+<nav class="nav" id="nav">
+  <div class="wrap nav-inner">
+    <a href="#top" class="brand">
+      <span class="tile" aria-hidden="true">
+        <svg viewBox="0 0 64 64"><path d="M32 58V26" stroke="#fff" stroke-width="3.6" stroke-linecap="round" fill="none"/><path d="M32 30c-7-4-7-13 0-19 7 6 7 15 0 19zM32 42c-7-4-7-13 0-19" fill="#fff"/></svg>
+      </span>
+      PlantDiseases
+    </a>
+    <div class="nav-links" id="navLinks">
+      <a href="#features" data-ru="Возможности" data-en="Features">Возможности</a>
+      <a href="#pipeline" data-ru="Технология" data-en="Technology">Технология</a>
+      <a href="#models" data-ru="Модели" data-en="Models">Модели</a>
+      <a href="#metrics" data-ru="Метрики" data-en="Metrics">Метрики</a>
+      <a href="#tech" data-ru="Стек" data-en="Stack">Стек</a>
+      <a href="#team" data-ru="Команда" data-en="Team">Команда</a>
+    </div>
+    <div class="nav-actions">
+      <div class="lang-toggle" role="group" aria-label="Language">
+        <button data-lang="ru" class="active">RU</button>
+        <button data-lang="en">EN</button>
+      </div>
+      <a class="nav-gh" href="https://github.com/pmixay/plantdiseases" target="_blank" rel="noopener" aria-label="GitHub">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.7 18.3 5 18.3 5c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A11.5 11.5 0 0 0 23.5 12C23.5 5.7 18.3.5 12 .5z"/></svg>
+      </a>
+      <button class="burger" id="burger" aria-label="Menu">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+      </button>
+    </div>
+  </div>
+</nav>
+
+<span id="top"></span>
+
+<!-- ===================== HERO ===================== -->
+<header class="hero">
+  <div class="wrap hero-grid">
+    <div>
+      <span class="hero-badge" data-ru="Samsung IT Campus · Innovation 2026" data-en="Samsung IT Campus · Innovation 2026">Samsung IT Campus · Innovation 2026</span>
+      <h1 data-ru="Болезнь растения —<br>по одному фото" data-en="Diagnose a plant<br>from one photo">Болезнь растения —<br>по одному фото</h1>
+      <p class="sub" data-ru="Наведи камеру на лист — получишь диагноз за секунды и понятный план ухода. ИИ-фитопатолог в кармане." data-en="Point your camera at a leaf — get a diagnosis in seconds and a clear care plan. An AI plant doctor in your pocket.">Наведи камеру на лист — получишь диагноз за секунды и понятный план ухода. ИИ-фитопатолог в кармане.</p>
+      <span class="modeltag">PlantVision 2.4.0 · DINOv2 ViT-S/14 + LoRA · <span data-ru="9 классов" data-en="9 classes">9 классов</span></span>
+      <div class="hero-cta">
+        <a class="btn btn-white" href="#features" data-ru="Что умеет приложение" data-en="What the app does">Что умеет приложение</a>
+        <a class="btn btn-light" href="#pipeline" data-ru="Как это работает" data-en="How it works">Как это работает</a>
+      </div>
+      <div class="hero-stats">
+        <div class="st"><div class="v">90.4%</div><div class="l" data-ru="общая точность" data-en="overall accuracy">общая точность</div></div>
+        <div class="st"><div class="v">9</div><div class="l" data-ru="классов диагноза" data-en="diagnosis classes">классов диагноза</div></div>
+        <div class="st"><div class="v">~8<span style="font-size:18px"> мс</span></div><div class="l" data-ru="инференс gamma" data-en="gamma inference">инференс gamma</div></div>
+        <div class="st"><div class="v">EN·RU</div><div class="l" data-ru="двуязычный уход" data-en="bilingual care">двуязычный уход</div></div>
+      </div>
+    </div>
+    <div class="hero-visual">
+      <div class="hero-blob"></div>
+      <div class="phone back" style="--pw:270px;"><img src="assets/screens/result-scorch.jpg" alt="Экран результата диагностики" loading="eager"></div>
+      <div class="phone" style="--pw:286px;"><img src="assets/screens/scanner.jpg" alt="Экран сканера PlantDiseases" loading="eager"></div>
+    </div>
+  </div>
+</header>
+
+<!-- marquee -->
+<div class="marquee-band">
+  <div class="marquee">
+    <span>
+      <b>📷</b> <span data-ru="Сканер листа" data-en="Leaf scanner">Сканер листа</span> · <b>📴</b> <span data-ru="Офлайн-режим Aqua" data-en="Offline Aqua mode">Офлайн-режим Aqua</span> · <b>🌍</b> <span data-ru="Планы ухода EN / RU" data-en="EN / RU care plans">Планы ухода EN / RU</span> · <b>🪴</b> <span data-ru="Личный сад" data-en="Personal garden">Личный сад</span> · <b>🤖</b> <span data-ru="ИИ-фитопатолог" data-en="AI plant doctor">ИИ-фитопатолог</span> · <b>🔎</b> <span data-ru="Определение вида" data-en="Species ID">Определение вида</span> · <b>👥</b> <span data-ru="Сканы рядом" data-en="Scans near you">Сканы рядом</span> · <b>📊</b> <span data-ru="Честная неопределённость" data-en="Honest uncertainty">Честная неопределённость</span> ·&nbsp;
+    </span>
+    <span aria-hidden="true">
+      <b>📷</b> <span data-ru="Сканер листа" data-en="Leaf scanner">Сканер листа</span> · <b>📴</b> <span data-ru="Офлайн-режим Aqua" data-en="Offline Aqua mode">Офлайн-режим Aqua</span> · <b>🌍</b> <span data-ru="Планы ухода EN / RU" data-en="EN / RU care plans">Планы ухода EN / RU</span> · <b>🪴</b> <span data-ru="Личный сад" data-en="Personal garden">Личный сад</span> · <b>🤖</b> <span data-ru="ИИ-фитопатолог" data-en="AI plant doctor">ИИ-фитопатолог</span> · <b>🔎</b> <span data-ru="Определение вида" data-en="Species ID">Определение вида</span> · <b>👥</b> <span data-ru="Сканы рядом" data-en="Scans near you">Сканы рядом</span> · <b>📊</b> <span data-ru="Честная неопределённость" data-en="Honest uncertainty">Честная неопределённость</span> ·&nbsp;
+    </span>
+  </div>
+</div>
+
+<!-- ===================== PROBLEM ===================== -->
+<section class="section" id="problem">
+  <div class="wrap">
+    <span class="eyebrow reveal" data-ru="01 — Проблема" data-en="01 — The problem">01 — Проблема</span>
+    <h2 class="head reveal" data-ru="Болезнь замечают, когда уже поздно" data-en="The disease gets noticed too late">Болезнь замечают, когда уже поздно</h2>
+    <p class="lede reveal" data-ru="Любитель — не агроном. Симптомы похожи, а интернет даёт противоречивые советы. Растение успевает погибнуть, пока идёт спор на форуме." data-en="A hobbyist isn't an agronomist. Symptoms look alike and the internet gives conflicting advice. The plant dies while the forum argues.">Любитель — не агроном. Симптомы похожи, а интернет даёт противоречивые советы. Растение успевает погибнуть, пока идёт спор на форуме.</p>
+    <div class="prob-grid">
+      <div class="prob-card reveal"><div class="n">01</div><h3 data-ru="Симптомы путаются" data-en="Symptoms blur together">Симптомы путаются</h3><p data-ru="Пятна, краевой ожог и дефицит питания выглядят почти одинаково на телефонном фото." data-en="Spots, leaf scorch and nutrient deficiency look nearly identical in a phone photo.">Пятна, краевой ожог и дефицит питания выглядят почти одинаково на телефонном фото.</p></div>
+      <div class="prob-card reveal d1"><div class="n">02</div><h3 data-ru="Поиск не помогает" data-en="Search doesn't help">Поиск не помогает</h3><p data-ru="Десятки форумов, противоречивые диагнозы и потерянное время вместо лечения." data-en="Dozens of forums, conflicting diagnoses and lost time instead of treatment.">Десятки форумов, противоречивые диагнозы и потерянное время вместо лечения.</p></div>
+      <div class="prob-card reveal d2"><div class="n">03</div><h3 data-ru="Нет системы" data-en="No system">Нет системы</h3><p data-ru="История наблюдений, уход и напоминания живут в разных местах — или нигде." data-en="Observation history, care and reminders live in different places — or nowhere.">История наблюдений, уход и напоминания живут в разных местах — или нигде.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== STEPS ===================== -->
+<section class="section tight" style="background:var(--bg-2);">
+  <div class="wrap">
+    <span class="eyebrow reveal" data-ru="02 — Решение" data-en="02 — The solution">02 — Решение</span>
+    <h2 class="head reveal" data-ru="Один снимок — весь цикл диагностики" data-en="One snapshot — the full diagnostic cycle">Один снимок — весь цикл диагностики</h2>
+    <div class="steps-grid">
+      <div class="step reveal"><div class="num">1</div><h3 data-ru="Снимок листа" data-en="Snap a leaf">Снимок листа</h3><p data-ru="Камера или галерея — наводишь и снимаешь. Детектор сам находит лист в кадре." data-en="Camera or gallery — point and shoot. The detector finds the leaf for you.">Камера или галерея — наводишь и снимаешь. Детектор сам находит лист в кадре.</p><span class="arrow-link">→</span></div>
+      <div class="step reveal d1"><div class="num">2</div><h3 data-ru="Диагноз за секунды" data-en="Diagnosis in seconds">Диагноз за секунды</h3><p data-ru="Классификатор на 9 классов болезней и состояний с честной оценкой уверенности." data-en="A 9-class classifier of diseases and states with an honest confidence estimate.">Классификатор на 9 классов болезней и состояний с честной оценкой уверенности.</p><span class="arrow-link">→</span></div>
+      <div class="step reveal d2"><div class="num">3</div><h3 data-ru="План ухода EN / RU" data-en="EN / RU care plan">План ухода EN / RU</h3><p data-ru="Лечение, профилактика, график полива, подкормки и влажности — на двух языках." data-en="Treatment, prevention, watering, feeding and humidity schedule — in two languages.">Лечение, профилактика, график полива, подкормки и влажности — на двух языках.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== IN-APP FEATURES ===================== -->
+<section class="section" id="features">
+  <div class="wrap">
+    <div class="center" style="margin-bottom:10px;">
+      <span class="eyebrow reveal" data-ru="03 — Внутри приложения" data-en="03 — Inside the app">03 — Внутри приложения</span>
+      <h2 class="head reveal" data-ru="Не просто сканер — помощник по уходу" data-en="Not just a scanner — a care companion">Не просто сканер — помощник по уходу</h2>
+      <p class="lede reveal" data-ru="Каждый экран сделан так, чтобы провести человека от снимка до здорового растения." data-en="Every screen is built to walk a person from a snapshot to a healthy plant.">Каждый экран сделан так, чтобы провести человека от снимка до здорового растения.</p>
+    </div>
+
+    <!-- Feature 1: Scanner -->
+    <div class="feat-row reveal">
+      <div class="feat-phones">
+        <div class="phone" style="--pw:280px;"><img src="assets/screens/scanner.jpg" alt="Экран сканера с выбором модели Gamma" loading="lazy"></div>
+      </div>
+      <div class="feat-text">
+        <span class="fchip">📷 <span data-ru="Сканер" data-en="Scanner">Сканер</span></span>
+        <h3 data-ru="Наведи и сними" data-en="Point and shoot">Наведи и сними</h3>
+        <p class="lede" data-ru="Живая камера на CameraX. Выбираешь семейство модели прямо на экране — облачную Gamma или офлайн-Aqua. Фильтр размытия отсекает нечёткие кадры до того, как они получат фальшивую уверенность." data-en="Live CameraX preview. Pick the model family right on screen — cloud Gamma or offline Aqua. A blur gate rejects unfocused shots before they earn fake confidence.">Живая камера на CameraX. Выбираешь семейство модели прямо на экране — облачную Gamma или офлайн-Aqua. Фильтр размытия отсекает нечёткие кадры до того, как они получат фальшивую уверенность.</p>
+        <div class="pill-list">
+          <div class="feat-line"><span class="dot"></span><div class="ft"><b data-ru="Камера или галерея" data-en="Camera or gallery">Камера или галерея</b><span data-ru="Снять вживую или выбрать готовое фото." data-en="Shoot live or pick an existing photo.">Снять вживую или выбрать готовое фото.</span></div></div>
+          <div class="feat-line"><span class="dot"></span><div class="ft"><b data-ru="Переключатель Gamma / Aqua" data-en="Gamma / Aqua switch">Переключатель Gamma / Aqua</b><span data-ru="Облако для максимума точности или полностью офлайн на устройстве." data-en="Cloud for peak accuracy, or fully offline on-device.">Облако для максимума точности или полностью офлайн на устройстве.</span></div></div>
+          <div class="feat-line"><span class="dot"></span><div class="ft"><b data-ru="Фильтр размытия" data-en="Blur gate">Фильтр размытия</b><span data-ru="Нечёткий кадр → «переснимите» вместо ложного диагноза." data-en="Unfocused frame → 're-take' instead of a false diagnosis.">Нечёткий кадр → «переснимите» вместо ложного диагноза.</span></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Feature 2: Result / Diagnosis -->
+    <div class="feat-row rev reveal">
+      <div class="feat-text">
+        <span class="fchip">🩺 <span data-ru="Результат" data-en="Result">Результат</span></span>
+        <h3 data-ru="Понятный диагноз, а не сырая вероятность" data-en="A clear diagnosis, not a raw probability">Понятный диагноз, а не сырая вероятность</h3>
+        <p class="lede" data-ru="Класс болезни, уверенность в процентах, подсвеченная область обнаружения, эталонные фото «как это выглядит» и описание. Внизу — кнопки «В сад» и «Новый скан»." data-en="Disease class, confidence in percent, a highlighted detection region, reference 'how it looks' photos and a description. Below — 'Add to garden' and 'New scan'.">Класс болезни, уверенность в процентах, подсвеченная область обнаружения, эталонные фото «как это выглядит» и описание. Внизу — кнопки «В сад» и «Новый скан».</p>
+        <div class="pill-list">
+          <div class="feat-line"><span class="dot"></span><div class="ft"><b data-ru="Класс и уверенность" data-en="Class & confidence">Класс и уверенность</b><span data-ru="«Краевой ожог (недолив)» — 79%, с цветовой меткой риска." data-en="'Leaf scorch (under-watering)' — 79%, with a colour-coded risk tag.">«Краевой ожог (недолив)» — 79%, с цветовой меткой риска.</span></div></div>
+          <div class="feat-line"><span class="dot"></span><div class="ft"><b data-ru="Область обнаружения" data-en="Detection region">Область обнаружения</b><span data-ru="Детектор находит лист и подсвечивает зону поражения." data-en="The detector finds the leaf and highlights the affected zone.">Детектор находит лист и подсвечивает зону поражения.</span></div></div>
+          <div class="feat-line"><span class="dot"></span><div class="ft"><b data-ru="«Как это выглядит» + описание" data-en="'How it looks' + description">«Как это выглядит» + описание</b><span data-ru="Эталонные фото и текст болезни прямо в карточке." data-en="Reference photos and disease text right in the card.">Эталонные фото и текст болезни прямо в карточке.</span></div></div>
+        </div>
+      </div>
+      <div class="feat-phones">
+        <div class="phone" style="--pw:262px;"><img src="assets/screens/result-scorch.jpg" alt="Диагноз: краевой ожог, уверенность 79%" loading="lazy"></div>
+        <div class="phone second" style="--pw:262px;"><img src="assets/screens/result-leafspot.jpg" alt="Диагноз: пятнистость листьев" loading="lazy"></div>
+      </div>
+    </div>
+
+    <!-- Feature 3: Garden + Gallery + Guide -->
+    <div class="feat-row reveal">
+      <div class="feat-phones">
+        <div class="phone" style="--pw:248px;"><img src="assets/screens/garden.jpg" alt="Экран Мой сад" loading="lazy"></div>
+        <div class="phone second" style="--pw:248px;"><img src="assets/screens/gallery.jpg" alt="Галерея сканов с фильтром" loading="lazy"></div>
+      </div>
+      <div class="feat-text">
+        <span class="fchip">🪴 <span data-ru="Сад · Галерея · Справка" data-en="Garden · Gallery · Guide">Сад · Галерея · Справка</span></span>
+        <h3 data-ru="Растения под наблюдением" data-en="Plants under watch">Растения под наблюдением</h3>
+        <p class="lede" data-ru="Личный сад на Room хранит растения, сканы и заметки вместе. Напоминания о поливе и подкормке приходят через WorkManager. Галерея фильтрует историю на «здоровые / больные». Справка — двуязычная база болезней, вредителей, полива и света." data-en="A Room-backed garden keeps plants, scans and notes together. Watering and feeding reminders fire via WorkManager. The gallery filters history into 'healthy / sick'. The guide is a bilingual base of diseases, pests, watering and light.">Личный сад на Room хранит растения, сканы и заметки вместе. Напоминания о поливе и подкормке приходят через WorkManager. Галерея фильтрует историю на «здоровые / больные». Справка — двуязычная база болезней, вредителей, полива и света.</p>
+        <div class="pill-list">
+          <div class="feat-line"><span class="dot"></span><div class="ft"><b data-ru="Мой сад" data-en="My Garden">Мой сад</b><span data-ru="Несколько растений, история сканов и напоминания о поливе." data-en="Multiple plants, scan history and watering reminders.">Несколько растений, история сканов и напоминания о поливе.</span></div></div>
+          <div class="feat-line"><span class="dot"></span><div class="ft"><b data-ru="Галерея" data-en="Gallery">Галерея</b><span data-ru="Вся история сканов с фильтром «Все / Здоровые / Больные»." data-en="The full scan history with an 'All / Healthy / Sick' filter.">Вся история сканов с фильтром «Все / Здоровые / Больные».</span></div></div>
+          <div class="feat-line"><span class="dot"></span><div class="ft"><b data-ru="Справка" data-en="Guide">Справка</b><span data-ru="Болезни, вредители, полив, свет и уход — с поиском и фото." data-en="Diseases, pests, watering, light and care — searchable, with photos.">Болезни, вредители, полив, свет и уход — с поиском и фото.</span></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Feature 4: Community / Scans near you -->
+    <div class="feat-row rev reveal">
+      <div class="feat-text">
+        <span class="fchip">👥 <span data-ru="Сообщество" data-en="Community">Сообщество</span></span>
+        <h3 data-ru="Сканы рядом и второе мнение" data-en="Scans near you & second opinion">Сканы рядом и второе мнение</h3>
+        <p class="lede" data-ru="Лента похожих сканов поблизости — что болеет у соседей в этом сезоне. Можно попросить «второе мнение» по своему скану и получить ответы сообщества. Приватность по умолчанию: только грубый регион (город, страна), никаких сырых GPS-координат, и опт-аут в любой момент." data-en="A feed of similar scans nearby — what's sick around you this season. You can ask for a 'second opinion' on your scan and get community answers. Privacy by default: only a coarse region (city, country), never raw GPS, opt-out anytime.">Лента похожих сканов поблизости — что болеет у соседей в этом сезоне. Можно попросить «второе мнение» по своему скану и получить ответы сообщества. Приватность по умолчанию: только грубый регион (город, страна), никаких сырых GPS-координат, и опт-аут в любой момент.</p>
+        <div class="tags">
+          <span class="chip" data-ru="Лента поблизости" data-en="Nearby feed">Лента поблизости</span>
+          <span class="chip" data-ru="Второе мнение" data-en="Second opinion">Второе мнение</span>
+          <span class="chip" data-ru="Только грубый регион" data-en="Coarse region only">Только грубый регион</span>
+          <span class="chip" data-ru="Опт-аут" data-en="Opt-out">Опт-аут</span>
+        </div>
+      </div>
+      <div class="feat-phones">
+        <div class="phone" style="--pw:262px;"><img src="assets/screens/community-ru.jpg" alt="Сканы рядом — лента сообщества" loading="lazy"></div>
+        <div class="phone second" style="--pw:262px;"><img src="assets/screens/community-en.jpg" alt="Scans near you — community feed" loading="lazy"></div>
+      </div>
+    </div>
+
+    <!-- Mini features grid -->
+    <div class="minifeat">
+      <div class="mf reveal">
+        <div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+        <h3 data-ru="ИИ-фитопатолог" data-en="AI plant doctor">ИИ-фитопатолог</h3>
+        <p data-ru="Опциональный чат (OpenRouter), привязанный к диагнозу твоего скана — задавай уточняющие вопросы по лечению." data-en="An optional chat (OpenRouter) scoped to your scan's diagnosis — ask follow-up questions about treatment.">Опциональный чат (OpenRouter), привязанный к диагнозу твоего скана — задавай уточняющие вопросы по лечению.</p>
+        <span class="opt" data-ru="по ключу API" data-en="needs API key">по ключу API</span>
+      </div>
+      <div class="mf reveal d1">
+        <div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></div>
+        <h3 data-ru="Определение вида" data-en="Species ID">Определение вида</h3>
+        <p data-ru="Интеграция PlantNet автоматически подставляет вид растения по фото скана — уход становится точнее." data-en="PlantNet integration auto-fills the plant species from the scan photo — care gets more precise.">Интеграция PlantNet автоматически подставляет вид растения по фото скана — уход становится точнее.</p>
+        <span class="opt" data-ru="по ключу API" data-en="needs API key">по ключу API</span>
+      </div>
+      <div class="mf reveal d2">
+        <div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 14 4-4 3 3 5-6"/></svg></div>
+        <h3 data-ru="Динамика болезни" data-en="Progression">Динамика болезни</h3>
+        <p data-ru="Сравнение сканов во времени: вердикт «лучше / хуже / стабильно» и спарклайн тяжести по 5 точкам." data-en="Compare scans over time: a 'better / worse / stable' verdict and a 5-point severity sparkline.">Сравнение сканов во времени: вердикт «лучше / хуже / стабильно» и спарклайн тяжести по 5 точкам.</p>
+      </div>
+      <div class="mf reveal">
+        <div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h18M12 3v18"/></svg></div>
+        <h3 data-ru="Планы ухода EN / RU" data-en="EN / RU care plans">Планы ухода EN / RU</h3>
+        <p data-ru="К каждому диагнозу — описание, чек-лист лечения, профилактика, график полива/подкормки/влажности и список тревожных признаков." data-en="Every diagnosis ships a description, treatment checklist, prevention, watering/feeding/humidity schedule and a red-flag list.">К каждому диагнозу — описание, чек-лист лечения, профилактика, график полива/подкормки/влажности и список тревожных признаков.</p>
+      </div>
+      <div class="mf reveal d1">
+        <div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v6M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7z"/></svg></div>
+        <h3 data-ru="Полный офлайн" data-en="Fully offline">Полный офлайн</h3>
+        <p data-ru="Модель Aqua (TFLite INT8, ~6 МБ) скачивается с сервера и кешируется — диагноз без интернета." data-en="The Aqua model (TFLite INT8, ~6 MB) downloads from the server and caches — diagnosis with no internet.">Модель Aqua (TFLite INT8, ~6 МБ) скачивается с сервера и кешируется — диагноз без интернета.</p>
+      </div>
+      <div class="mf reveal d2">
+        <div class="ic"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+        <h3 data-ru="Честная неопределённость" data-en="Honest uncertainty">Честная неопределённость</h3>
+        <p data-ru="Топ-3 альтернативы, конформные множества, мягкие предупреждения (размытый кадр, спорный «здоров», конфликт детектора)." data-en="Top-3 alternatives, conformal sets, soft warnings (blurry image, uncertain 'healthy', detector mismatch).">Топ-3 альтернативы, конформные множества, мягкие предупреждения (размытый кадр, спорный «здоров», конфликт детектора).</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== PIPELINE (dark) ===================== -->
+<section class="section dark" id="pipeline">
+  <div class="wrap">
+    <span class="eyebrow reveal" data-ru="04 — Под капотом" data-en="04 — Under the hood">04 — Под капотом</span>
+    <h2 class="head reveal" style="color:#fff" data-ru="Сначала найти лист, потом поставить диагноз" data-en="First find the leaf, then diagnose">Сначала найти лист, потом поставить диагноз</h2>
+    <p class="lede reveal" data-ru="Двухэтапный конвейер: YOLOv8n находит лист и отдаёт плотный кроп, а замороженный DINOv2 ставит диагноз. Так классификатор видит лист, а не всю комнату." data-en="A two-stage pipeline: YOLOv8n finds the leaf and hands over a tight crop, then a frozen DINOv2 diagnoses it. So the classifier sees a leaf, not the whole room.">Двухэтапный конвейер: YOLOv8n находит лист и отдаёт плотный кроп, а замороженный DINOv2 ставит диагноз. Так классификатор видит лист, а не всю комнату.</p>
+
+    <div class="flow reveal">
+      <div class="node">
+        <div class="nt" data-ru="Клиент" data-en="Client">Клиент</div>
+        <div class="nh">Android · Kotlin</div>
+        <div class="nd" data-ru="CameraX, история (Room), напоминания, UI на Material 3" data-en="CameraX, history (Room), reminders, Material 3 UI">CameraX, история (Room), напоминания, UI на Material 3</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="node">
+        <div class="nt" data-ru="Этап 1 · Детектор" data-en="Stage 1 · Detector">Этап 1 · Детектор</div>
+        <div class="nh">YOLOv8n</div>
+        <div class="nd" data-ru="Находит лист и отдаёт плотный кроп" data-en="Finds the leaf and returns a tight crop">Находит лист и отдаёт плотный кроп</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="node accent">
+        <div class="nt" data-ru="Этап 2 · Классификатор" data-en="Stage 2 · Classifier">Этап 2 · Классификатор</div>
+        <div class="nh">DINOv2 ViT-S/14 + LoRA</div>
+        <div class="nd" data-ru="Замороженный backbone + MLP-голова, 9 классов, вход 224 px" data-en="Frozen backbone + MLP head, 9 classes, 224px input">Замороженный backbone + MLP-голова, 9 классов, вход 224 px</div>
+      </div>
+    </div>
+
+    <div class="guards reveal">
+      <div class="guard"><span class="gd" style="background:var(--acc-blue)"></span><div><b data-ru="OOD-фильтр MaxLogit" data-en="MaxLogit OOD gate">OOD-фильтр MaxLogit</b><span data-ru="Ловит «не лист», когда детектор сработал слабо." data-en="Catches 'not a leaf' when the detector fires weakly.">Ловит «не лист», когда детектор сработал слабо.</span></div></div>
+      <div class="guard"><span class="gd" style="background:var(--acc-amber)"></span><div><b data-ru="Фильтр размытия (Лаплас)" data-en="Blur gate (Laplacian)">Фильтр размытия (Лаплас)</b><span data-ru="Нечёткий кадр сразу отправляется на пересъёмку." data-en="An unfocused frame goes straight back for a re-take.">Нечёткий кадр сразу отправляется на пересъёмку.</span></div></div>
+      <div class="guard"><span class="gd" style="background:var(--acc-green)"></span><div><b data-ru="Калибровка + конформные множества" data-en="Calibration + conformal sets">Калибровка + конформные множества</b><span data-ru="Температура и RAPS дают честную уверенность." data-en="Temperature and RAPS give honest confidence.">Температура и RAPS дают честную уверенность.</span></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== MODELS ===================== -->
+<section class="section dark tight" id="models" style="padding-top:0;">
+  <div class="wrap">
+    <span class="eyebrow reveal" data-ru="05 — Семейства моделей" data-en="05 — Model families">05 — Семейства моделей</span>
+    <h2 class="head reveal" style="color:#fff" data-ru="Один рецепт обучения, три уровня ёмкости" data-en="One training recipe, three capacity tiers">Один рецепт обучения, три уровня ёмкости</h2>
+    <p class="lede reveal" data-ru="Gamma — измерено и работает в проде. Aqua и Frontier — проекции, подтверждаемые обучением соответствующего тира." data-en="Gamma is measured and in production. Aqua and Frontier are projections, confirmed by training the matching tier.">Gamma — измерено и работает в проде. Aqua и Frontier — проекции, подтверждаемые обучением соответствующего тира.</p>
+    <div class="fam-grid">
+      <div class="fam reveal">
+        <div class="fhead"><span class="fname">Aqua</span><span class="tag proj" data-ru="проекция" data-en="projection">проекция</span></div>
+        <div class="fsub" data-ru="на устройстве · офлайн" data-en="on-device · offline">на устройстве · офлайн</div>
+        <div class="frow"><span class="k" data-ru="Бэкбон" data-en="Backbone">Бэкбон</span><span class="v">MobileNetV3-S</span></div>
+        <div class="frow"><span class="k">Macro-F1 · real</span><span class="v big">≈70%</span></div>
+        <div class="frow"><span class="k" data-ru="Размер" data-en="Size">Размер</span><span class="v">≈6 МБ</span></div>
+        <div class="frow"><span class="k" data-ru="Среда" data-en="Runtime">Среда</span><span class="v">Android · TFLite</span></div>
+      </div>
+      <div class="fam cur reveal d1">
+        <div class="fhead"><span class="fname">Gamma</span><span class="tag measured" data-ru="● измерено" data-en="● measured">● измерено</span></div>
+        <div class="fsub" data-ru="текущий прод · баланс" data-en="current prod · balance">текущий прод · баланс</div>
+        <div class="frow"><span class="k" data-ru="Бэкбон" data-en="Backbone">Бэкбон</span><span class="v">DINOv2 ViT-S/14</span></div>
+        <div class="frow"><span class="k">Macro-F1 · real</span><span class="v big">77.4%</span></div>
+        <div class="frow"><span class="k" data-ru="Размер" data-en="Size">Размер</span><span class="v">22.5 МБ</span></div>
+        <div class="frow"><span class="k" data-ru="Среда" data-en="Runtime">Среда</span><span class="v">сервер CPU/GPU</span></div>
+      </div>
+      <div class="fam reveal d2">
+        <div class="fhead"><span class="fname">Frontier</span><span class="tag proj" data-ru="проекция" data-en="projection">проекция</span></div>
+        <div class="fsub" data-ru="высокая ёмкость · GPU" data-en="high capacity · GPU">высокая ёмкость · GPU</div>
+        <div class="frow"><span class="k" data-ru="Бэкбон" data-en="Backbone">Бэкбон</span><span class="v">DINOv2 ViT-B/14</span></div>
+        <div class="frow"><span class="k">Macro-F1 · real</span><span class="v big">≈83%</span></div>
+        <div class="frow"><span class="k" data-ru="Размер" data-en="Size">Размер</span><span class="v">≈90 МБ</span></div>
+        <div class="frow"><span class="k" data-ru="Среда" data-en="Runtime">Среда</span><span class="v" data-ru="сервер GPU (выкл.)" data-en="server GPU (off)">сервер GPU (выкл.)</span></div>
+      </div>
+    </div>
+    <div class="chart-gallery" style="margin-top:34px;">
+      <div class="chart-card wide reveal" data-zoom>
+        <img src="assets/charts/model-families.jpg" alt="Семейства моделей PlantVision — Aqua, Gamma, Frontier" loading="lazy">
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== METRICS ===================== -->
+<section class="section" id="metrics">
+  <div class="wrap">
+    <span class="eyebrow reveal" data-ru="06 — Качество модели" data-en="06 — Model quality">06 — Качество модели</span>
+    <h2 class="head reveal" data-ru="90.4% общей точности на реальных «садовых» фото" data-en="90.4% overall accuracy on real 'garden' photos">90.4% общей точности на реальных «садовых» фото</h2>
+    <p class="lede reveal" data-ru="Оценка тира gamma на отложенной выборке реальных фото (val_realworld) — не студийный датасет." data-en="The gamma tier evaluated on a held-out set of real photos (val_realworld) — not a studio dataset.">Оценка тира gamma на отложенной выборке реальных фото (val_realworld) — не студийный датасет.</p>
+    <div class="kpi-grid">
+      <div class="kpi reveal"><div class="kl">Macro-F1 · real</div><div class="kv" style="color:var(--acc-green)">77.4%</div><div class="ks" data-ru="болезни, без healthy / NaP" data-en="diseases, excl. healthy / NaP">болезни, без healthy / NaP</div></div>
+      <div class="kpi reveal d1"><div class="kl">Macro-F1 · in-domain</div><div class="kv" style="color:var(--acc-green)">86.1%</div><div class="ks" data-ru="доменная выборка" data-en="in-domain set">доменная выборка</div></div>
+      <div class="kpi reveal d2"><div class="kl" data-ru="Общая точность" data-en="Overall accuracy">Общая точность</div><div class="kv" style="color:var(--acc-green)">90.4%</div><div class="ks" data-ru="9 классов · real-world" data-en="9 classes · real-world">9 классов · real-world</div></div>
+      <div class="kpi reveal d3"><div class="kl">Healthy-bias</div><div class="kv" style="color:var(--acc-blue)">0.90</div><div class="ks" data-ru="норма < 1.5 — нет перекоса" data-en="norm < 1.5 — no skew">норма &lt; 1.5 — нет перекоса</div></div>
+      <div class="kpi reveal"><div class="kl" data-ru="Покрытие conformal" data-en="Conformal coverage">Покрытие conformal</div><div class="kv" style="color:var(--acc-purple)">96.6%</div><div class="ks" data-ru="цель ≥ 90% · набор 1.86" data-en="target ≥ 90% · set 1.86">цель ≥ 90% · набор 1.86</div></div>
+      <div class="kpi reveal d1"><div class="kl" data-ru="«Не растение» (OOD)" data-en="'Not a plant' (OOD)">«Не растение» (OOD)</div><div class="kv" style="color:var(--acc-blue)">97.5%</div><div class="ks" data-ru="защита от посторонних фото" data-en="rejects off-topic photos">защита от посторонних фото</div></div>
+      <div class="kpi reveal d2"><div class="kl" data-ru="Размер · INT8" data-en="Size · INT8">Размер · INT8</div><div class="kv" style="color:var(--acc-amber)">22.5 МБ</div><div class="ks" data-ru="fp32 87.3 МБ · дрейф −0.2%" data-en="fp32 87.3 MB · drift −0.2%">fp32 87.3 МБ · дрейф −0.2%</div></div>
+      <div class="kpi reveal d3"><div class="kl" data-ru="Детектор · mAP50" data-en="Detector · mAP50">Детектор · mAP50</div><div class="kv" style="color:var(--acc-green)">82.0%</div><div class="ks">Stage-1 · YOLOv8n</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== CHARTS (dark) ===================== -->
+<section class="section dark tight" style="padding-top:0;">
+  <div class="wrap">
+    <h2 class="head reveal center" style="color:#fff" data-ru="Доказательства, а не обещания" data-en="Evidence, not promises">Доказательства, а не обещания</h2>
+    <p class="lede reveal center" data-ru="Полная сводка метрик из отчёта об оценке. Нажми на график, чтобы увеличить." data-en="The full metric set from the evaluation report. Tap a chart to enlarge.">Полная сводка метрик из отчёта об оценке. Нажми на график, чтобы увеличить.</p>
+    <div class="chart-gallery">
+      <div class="chart-card reveal" data-zoom>
+        <img src="assets/charts/confusion.jpg" alt="Матрица ошибок на реальных фото" loading="lazy">
+        <div class="cap"><h4 data-ru="Матрица ошибок" data-en="Confusion matrix">Матрица ошибок</h4><p data-ru="Сильная диагональ — классы почти не путаются." data-en="A strong diagonal — classes rarely confuse.">Сильная диагональ — классы почти не путаются.</p></div>
+      </div>
+      <div class="chart-card reveal d1" data-zoom>
+        <img src="assets/charts/per-class.jpg" alt="Точность, полнота и F1 по классам" loading="lazy">
+        <div class="cap"><h4 data-ru="Метрики по классам" data-en="Per-class metrics">Метрики по классам</h4><p data-ru="Точность / полнота / F1 на реальных фото." data-en="Precision / recall / F1 on real photos.">Точность / полнота / F1 на реальных фото.</p></div>
+      </div>
+      <div class="chart-card reveal" data-zoom>
+        <img src="assets/charts/recall-ci.jpg" alt="Полнота по классам с доверительным интервалом" loading="lazy">
+        <div class="cap"><h4 data-ru="Полнота + 95% ДИ" data-en="Recall + 95% CI">Полнота + 95% ДИ</h4><p data-ru="Бутстрэп n=1937 · широкий ДИ = узкое место по данным." data-en="Bootstrap n=1937 · wide CI = a data bottleneck.">Бутстрэп n=1937 · широкий ДИ = узкое место по данным.</p></div>
+      </div>
+      <div class="chart-card reveal d1" data-zoom>
+        <img src="assets/charts/indomain-vs-real.jpg" alt="Полнота in-domain против реальных фото" loading="lazy">
+        <div class="cap"><h4 data-ru="In-domain vs реальные" data-en="In-domain vs real">In-domain vs реальные</h4><p data-ru="Разрыв показывает обобщение на «садовые» снимки." data-en="The gap shows generalisation to 'garden' shots.">Разрыв показывает обобщение на «садовые» снимки.</p></div>
+      </div>
+      <div class="chart-card reveal" data-zoom>
+        <img src="assets/charts/conformal.jpg" alt="Конформные множества предсказаний RAPS" loading="lazy">
+        <div class="cap"><h4 data-ru="Конформные множества (RAPS)" data-en="Conformal sets (RAPS)">Конформные множества (RAPS)</h4><p data-ru="96.6% покрытие · средний размер множества 1.86." data-en="96.6% coverage · average set size 1.86.">96.6% покрытие · средний размер множества 1.86.</p></div>
+      </div>
+      <div class="chart-card reveal d1" data-zoom>
+        <img src="assets/charts/quality-summary.jpg" alt="Сводка качества модели" loading="lazy">
+        <div class="cap"><h4 data-ru="Сводка качества" data-en="Quality summary">Сводка качества</h4><p data-ru="Все ключевые метрики тира gamma на одном экране." data-en="Every key gamma-tier metric on one screen.">Все ключевые метрики тира gamma на одном экране.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== HONEST UNCERTAINTY ===================== -->
+<section class="section dark tight" style="padding-top:0;">
+  <div class="wrap">
+    <span class="eyebrow reveal" data-ru="07 — Честная неопределённость" data-en="07 — Honest uncertainty">07 — Честная неопределённость</span>
+    <h2 class="head reveal" style="color:#fff" data-ru="Модель знает, когда она не уверена" data-en="The model knows when it's unsure">Модель знает, когда она не уверена</h2>
+    <div class="unc-grid">
+      <div class="unc reveal"><div class="uv" style="color:var(--acc-blue)">97.5%</div><h4 data-ru="Голова-отказ (OOD)" data-en="Rejection head (OOD)">Голова-отказ (OOD)</h4><p data-ru="Отсекает посторонние кадры вместо ложного диагноза." data-en="Rejects off-topic frames instead of a false diagnosis.">Отсекает посторонние кадры вместо ложного диагноза.</p></div>
+      <div class="unc reveal d1"><div class="uv" style="color:var(--acc-purple)">96.6%</div><h4 data-ru="Конформное покрытие" data-en="Conformal coverage">Конформное покрытие</h4><p data-ru="Топ-3 альтернативы с гарантией покрытия ≥ 90%." data-en="Top-3 alternatives with a ≥90% coverage guarantee.">Топ-3 альтернативы с гарантией покрытия ≥ 90%.</p></div>
+      <div class="unc reveal d2"><div class="uv" style="color:var(--acc-amber)" data-ru="Лаплас" data-en="Laplace">Лаплас</div><h4 data-ru="Фильтр размытия" data-en="Blur gate">Фильтр размытия</h4><p data-ru="Нечёткие кадры сразу отправляются на пересъёмку." data-en="Unfocused frames go straight back for a re-take.">Нечёткие кадры сразу отправляются на пересъёмку.</p></div>
+      <div class="unc reveal d3"><div class="uv" style="color:var(--acc-green)">0.90</div><h4 data-ru="Healthy-bias в норме" data-en="Healthy-bias in range">Healthy-bias в норме</h4><p data-ru="Нет перекоса в «здорово» — болезни не маскируются." data-en="No skew toward 'healthy' — diseases aren't masked.">Нет перекоса в «здорово» — болезни не маскируются.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== ROADMAP ===================== -->
+<section class="section" id="roadmap">
+  <div class="wrap">
+    <span class="eyebrow reveal" data-ru="08 — Итоги и планы" data-en="08 — Status & roadmap">08 — Итоги и планы</span>
+    <h2 class="head reveal" data-ru="Готовый продукт — и честный план роста" data-en="A finished product — and an honest growth plan">Готовый продукт — и честный план роста</h2>
+    <div class="road-grid">
+      <div class="road-col reveal">
+        <div class="ch"><span class="ic ok">✓</span><span data-ru="Что уже работает" data-en="What works today">Что уже работает</span></div>
+        <div class="rli"><span class="rk">90.4%</span><span class="rt"><b data-ru="Общая точность" data-en="Overall accuracy">Общая точность</b> <span data-ru="на 9 классах, реальные фото" data-en="across 9 classes, real photos">на 9 классах, реальные фото</span></span></div>
+        <div class="rli"><span class="rk">97.5%</span><span class="rt"><b data-ru="Защита от посторонних фото" data-en="Off-topic rejection">Защита от посторонних фото</b> <span data-ru="(класс «не растение»)" data-en="(the 'not a plant' class)">(класс «не растение»)</span></span></div>
+        <div class="rli"><span class="rk">22.5 МБ</span><span class="rt"><b data-ru="Офлайн-модель INT8" data-en="Offline INT8 model">Офлайн-модель INT8</b> <span data-ru="прямо на устройстве" data-en="right on the device">прямо на устройстве</span></span></div>
+        <div class="rli"><span class="rk">EN/RU</span><span class="rt"><b data-ru="Двуязычные планы ухода" data-en="Bilingual care plans">Двуязычные планы ухода</b> <span data-ru="и личный сад с напоминаниями" data-en="and a garden with reminders">и личный сад с напоминаниями</span></span></div>
+      </div>
+      <div class="road-col work reveal d1">
+        <div class="ch"><span class="ic work">↗</span><span data-ru="Над чем работаем" data-en="What we're improving">Над чем работаем</span></div>
+        <div class="rli"><span class="rk">64–76%</span><span class="rt"><b data-ru="Краевой ожог и дефицит питания" data-en="Leaf scorch & nutrient deficiency">Краевой ожог и дефицит питания</b> <span data-ru="— расширить датасет этих классов" data-en="— grow the dataset for these classes">— расширить датасет этих классов</span></span></div>
+        <div class="rli"><span class="rk" data-ru="Классы" data-en="Classes">Классы</span><span class="rt"><b data-ru="Разделить" data-en="Split">Разделить</b> <span data-ru="пятнистость и вредителей на подклассы при росте данных" data-en="leaf spot and pests into subclasses as data grows">пятнистость и вредителей на подклассы при росте данных</span></span></div>
+        <div class="rli"><span class="rk">frontier</span><span class="rt"><b data-ru="ViT-B/14 на GPU-хосте" data-en="ViT-B/14 on a GPU host">ViT-B/14 на GPU-хосте</b> <span data-ru="— следующий уровень точности" data-en="— the next accuracy tier">— следующий уровень точности</span></span></div>
+        <div class="rli"><span class="rk" data-ru="Поле" data-en="Field">Поле</span><span class="rt"><b data-ru="Больше «полевых» фото" data-en="More 'field' photos">Больше «полевых» фото</b> <span data-ru="для устойчивости в реальных условиях" data-en="for robustness in the wild">для устойчивости в реальных условиях</span></span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== TECH STACK ===================== -->
+<section class="section tight" id="tech" style="background:var(--bg-2);">
+  <div class="wrap">
+    <span class="eyebrow reveal" data-ru="09 — Стек и API" data-en="09 — Stack & API">09 — Стек и API</span>
+    <h2 class="head reveal" data-ru="Как это собрано" data-en="How it's built">Как это собрано</h2>
+    <div class="stack-cols">
+      <div class="stack-col reveal">
+        <h3><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></svg></span>Android</h3>
+        <p class="muted" data-ru="Kotlin-клиент: камера, история, напоминания и офлайн-инференс." data-en="Kotlin client: camera, history, reminders and offline inference.">Kotlin-клиент: камера, история, напоминания и офлайн-инференс.</p>
+        <div class="chiprow">
+          <span class="chip">Kotlin</span><span class="chip">Material 3</span><span class="chip">CameraX</span><span class="chip">Room</span><span class="chip">Retrofit + OkHttp</span><span class="chip">WorkManager</span><span class="chip">TFLite (Aqua)</span><span class="chip">Coroutines</span>
+        </div>
+      </div>
+      <div class="stack-col reveal d1">
+        <h3><span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12A10 10 0 1 1 12 2"/><path d="M12 2a10 10 0 0 1 10 10"/><circle cx="12" cy="12" r="3"/></svg></span>Server · ML</h3>
+        <p class="muted" data-ru="FastAPI-сервис: двухэтапный конвейер, калибровка и графы метрик." data-en="A FastAPI service: two-stage pipeline, calibration and metrics.">FastAPI-сервис: двухэтапный конвейер, калибровка и графы метрик.</p>
+        <div class="chiprow">
+          <span class="chip">Python</span><span class="chip">FastAPI</span><span class="chip">PyTorch</span><span class="chip">DINOv2 ViT-S/14</span><span class="chip">LoRA</span><span class="chip">YOLOv8n</span><span class="chip">ONNX · INT8</span><span class="chip">RAPS conformal</span><span class="chip">Prometheus</span><span class="chip">Docker</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="api-table reveal">
+      <div class="api-row"><span data-ru="Метод" data-en="Method">Метод</span><span data-ru="Эндпоинт" data-en="Endpoint">Эндпоинт</span><span class="d" data-ru="Назначение" data-en="Purpose">Назначение</span></div>
+      <div class="api-row"><span class="m post">POST</span><code>/api/analyze</code><span class="d" data-ru="Фото → двуязычный диагноз (family=aqua|gamma|frontier)" data-en="Photo → bilingual diagnosis (family=aqua|gamma|frontier)">Фото → двуязычный диагноз (family=aqua|gamma|frontier)</span></div>
+      <div class="api-row"><span class="m post">POST</span><code>/api/care-plan</code><span class="d" data-ru="График полива / света / влажности + чек-лист лечения" data-en="Watering / light / humidity schedule + treatment checklist">График полива / света / влажности + чек-лист лечения</span></div>
+      <div class="api-row"><span class="m post">POST</span><code>/api/progression</code><span class="d" data-ru="Сравнение сканов → тренд + спарклайн тяжести" data-en="Compare scans → trend + severity sparkline">Сравнение сканов → тренд + спарклайн тяжести</span></div>
+      <div class="api-row"><span class="m post">POST</span><code>/api/identify</code><span class="d" data-ru="Определение вида (PlantNet, graceful)" data-en="Species identification (PlantNet, graceful)">Определение вида (PlantNet, graceful)</span></div>
+      <div class="api-row"><span class="m post">POST</span><code>/api/chat</code><span class="d" data-ru="ИИ-фитопатолог (OpenRouter, graceful)" data-en="AI plant doctor (OpenRouter, graceful)">ИИ-фитопатолог (OpenRouter, graceful)</span></div>
+      <div class="api-row"><span class="m get">GET</span><code>/api/capabilities</code><span class="d" data-ru="Доступность семейств aqua / gamma / frontier" data-en="Availability of aqua / gamma / frontier families">Доступность семейств aqua / gamma / frontier</span></div>
+      <div class="api-row"><span class="m get">GET</span><code>/api/aqua/model</code><span class="d" data-ru="Офлайн-модель TFLite для скачивания на устройство" data-en="Offline TFLite model for the device to download">Офлайн-модель TFLite для скачивания на устройство</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== CTA ===================== -->
+<section class="cta" id="team">
+  <div class="wrap">
+    <h2 data-ru="Здоровые растения начинаются с одного снимка" data-en="Healthy plants start with one photo">Здоровые растения начинаются с одного снимка</h2>
+    <p data-ru="Открытый исходный код · общественное достояние (Unlicense)" data-en="Open source · public domain (Unlicense)">Открытый исходный код · общественное достояние (Unlicense)</p>
+    <div class="cta-btns">
+      <a class="btn btn-white" href="https://github.com/pmixay/plantdiseases" target="_blank" rel="noopener" data-ru="Открыть на GitHub" data-en="Open on GitHub">Открыть на GitHub</a>
+      <a class="btn btn-light" href="https://github.com/pmixay/plantdiseases/blob/main/README.md" target="_blank" rel="noopener" data-ru="Документация" data-en="Documentation">Документация</a>
+    </div>
+    <div class="repo">github.com/pmixay/plantdiseases</div>
+  </div>
+</section>
+
+<!-- ===================== FOOTER ===================== -->
+<footer>
+  <div class="wrap foot-grid">
+    <div class="foot-brand">
+      <a href="#top" class="brand">
+        <span class="tile" aria-hidden="true"><svg viewBox="0 0 64 64"><path d="M32 58V26" stroke="#fff" stroke-width="3.6" stroke-linecap="round" fill="none"/><path d="M32 30c-7-4-7-13 0-19 7 6 7 15 0 19zM32 42c-7-4-7-13 0-19" fill="#fff"/></svg></span>
+        PlantDiseases
+      </a>
+      <p data-ru="ИИ-определение болезней комнатных растений по фото. PlantVision 2.4.0 · DINOv2 ViT-S/14 + LoRA · 9 классов." data-en="AI houseplant disease detection from a photo. PlantVision 2.4.0 · DINOv2 ViT-S/14 + LoRA · 9 classes.">ИИ-определение болезней комнатных растений по фото. PlantVision 2.4.0 · DINOv2 ViT-S/14 + LoRA · 9 классов.</p>
+    </div>
+    <div class="foot-col">
+      <h4 data-ru="Проект" data-en="Project">Проект</h4>
+      <a href="#features" data-ru="Возможности" data-en="Features">Возможности</a>
+      <a href="#pipeline" data-ru="Технология" data-en="Technology">Технология</a>
+      <a href="#metrics" data-ru="Метрики" data-en="Metrics">Метрики</a>
+      <a href="https://github.com/pmixay/plantdiseases" target="_blank" rel="noopener">GitHub</a>
+    </div>
+    <div class="foot-col">
+      <h4 data-ru="Команда" data-en="Team">Команда</h4>
+      <span class="fitem team-line">Павел Голубев</span>
+      <span class="fitem team-line">Пётр Кузнецов</span>
+      <span class="fitem" data-ru="Руководитель: Дмитрий Мартыненко" data-en="Mentor: Dmitry Martynenko">Руководитель: Дмитрий Мартыненко</span>
+    </div>
+  </div>
+  <div class="wrap foot-bottom">
+    <span>© 2026 PlantDiseases · Samsung IT Campus</span>
+    <span data-ru="Лицензия Unlicense · общественное достояние" data-en="Unlicense · public domain">Лицензия Unlicense · общественное достояние</span>
+  </div>
+</footer>
+
+<!-- lightbox -->
+<div class="lightbox" id="lightbox"><button class="lb-close" id="lbClose" aria-label="Close">✕</button><img id="lbImg" src="" alt=""></div>
+
+<script src="js/main.js"></script>
+</body>
+</html>
