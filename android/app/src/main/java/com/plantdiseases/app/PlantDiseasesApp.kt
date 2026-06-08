@@ -66,6 +66,9 @@ class PlantDiseasesApp : Application() {
         LocaleHelper.applyLocale(this)
         ThemeHelper.applySavedTheme(this)
         createNotificationChannels()
+        // Persistent disk cache for repeatable server responses (care plans,
+        // species info) — "fetched once, never fetched again".
+        com.plantdiseases.app.util.ResponseCache.init(this)
         // NB: do NOT touch WorkManager here. The app disables the default
         // WorkManagerInitializer, so WorkManager.getInstance() in
         // Application.onCreate throws (and breaks every Robolectric test that

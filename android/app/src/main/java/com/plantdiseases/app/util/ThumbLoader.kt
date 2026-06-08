@@ -4,6 +4,7 @@ import android.graphics.drawable.Drawable
 import android.widget.ImageView
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.DataSource
+import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.bumptech.glide.load.engine.GlideException
 import com.bumptech.glide.request.RequestListener
 import com.bumptech.glide.request.target.Target
@@ -32,6 +33,7 @@ object ThumbLoader {
         shimmer.showShimmer(true)
         Glide.with(image)
             .load(url)
+            .diskCacheStrategy(DiskCacheStrategy.ALL)
             .placeholder(R.drawable.ic_plant_placeholder)
             .error(R.drawable.ic_plant_placeholder)
             .centerCrop()

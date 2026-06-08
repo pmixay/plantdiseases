@@ -193,9 +193,18 @@ class ScanRepository(
      */
     suspend fun fetchCarePlan(request: CarePlanRequest): Result<CarePlanResponse> =
         withContext(Dispatchers.IO) {
+            // Care plans are deterministic per (disease, species, light, locale)
+            // and expensive to generate, so serve from the persistent cache once
+            // fetched — reopening a result no longer re-hits the LLM.
+            val cacheKey = "careplan:v1:${request.disease}|${request.species}" +
+                "|${request.light}|${request.locale}"
+            com.plantdiseases.app.util.ResponseCache
+                .get(cacheKey, CarePlanResponse::class.java)
+                ?.let { return@withContext Result.success(it) }
             try {
                 val response = apiService.carePlan(request)
                 if (response.isSuccessful && response.body() != null) {
+                    com.plantdiseases.app.util.ResponseCache.put(cacheKey, response.body()!!)
                     Result.success(response.body()!!)
                 } else if (response.code() == 503) {
                     Result.failure(ServerStartingException())
@@ -892,10 +901,22 @@ class ScanRepository(
         locale: String,
     ): Result<com.plantdiseases.app.data.model.SpeciesInfoResponse> =
         withContext(Dispatchers.IO) {
+            // Wikipedia blurb + lead image are stable per (name, locale) — cache
+            // once available so the result screen doesn't re-fetch every open.
+            val cacheKey = "species:v1:${name.trim().lowercase()}|$locale"
+            com.plantdiseases.app.util.ResponseCache
+                .get(cacheKey, com.plantdiseases.app.data.model.SpeciesInfoResponse::class.java)
+                ?.let { return@withContext Result.success(it) }
             try {
                 val response = apiService.speciesInfo(name, locale)
                 if (response.isSuccessful && response.body() != null) {
-                    Result.success(response.body()!!)
+                    val body = response.body()!!
+                    // Don't cache a transient "unavailable" (e.g. Wikipedia
+                    // miss / rate-limit) — only a real hit is worth keeping.
+                    if (body.available) {
+                        com.plantdiseases.app.util.ResponseCache.put(cacheKey, body)
+                    }
+                    Result.success(body)
                 } else {
                     Result.failure(Exception("species-info failed: ${response.code()}"))
                 }

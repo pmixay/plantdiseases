@@ -905,6 +905,7 @@ class ResultActivity : AppCompatActivity() {
                 info.imageUrl?.takeIf { it.isNotBlank() }?.let { url ->
                     Glide.with(this@ResultActivity)
                         .load(url)
+                        .diskCacheStrategy(DiskCacheStrategy.ALL)
                         .transform(CenterCrop(), RoundedCorners(24))
                         .into(binding.ivSpeciesPhoto)
                     binding.ivSpeciesPhoto.visibility = View.VISIBLE
