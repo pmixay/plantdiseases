@@ -20,14 +20,16 @@
         android:id="@+id/detail_app_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@drawable/bg_toolbar_gradient"
+        android:background="?attr/colorSurface"
         app:elevation="0dp">
 
         <com.google.android.material.appbar.MaterialToolbar
             android:id="@+id/detail_toolbar"
             android:layout_width="match_parent"
             android:layout_height="64dp"
+            android:theme="@style/ThemeOverlay.Material3.Toolbar.Surface"
             app:navigationIcon="@drawable/ic_back"
+            app:navigationIconTint="?attr/colorOnSurface"
             app:title="">
 
             <TextView
@@ -40,7 +42,7 @@
                 android:ellipsize="end"
                 android:lineSpacingExtra="1dp"
                 android:text="@string/plant_detail_title"
-                android:textColor="@color/toolbar_title"
+                android:textColor="?attr/colorOnSurface"
                 android:textSize="22sp"
                 android:fontFamily="sans-serif-medium"
                 tools:text="Monstera" />

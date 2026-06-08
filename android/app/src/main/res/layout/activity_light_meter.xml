@@ -18,16 +18,18 @@
         android:id="@+id/light_app_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@drawable/bg_toolbar_gradient"
+        android:background="?attr/colorSurface"
         app:elevation="0dp">
 
         <com.google.android.material.appbar.MaterialToolbar
             android:id="@+id/light_toolbar"
             android:layout_width="match_parent"
             android:layout_height="64dp"
+            android:theme="@style/ThemeOverlay.Material3.Toolbar.Surface"
             app:navigationIcon="@drawable/ic_back"
+            app:navigationIconTint="?attr/colorOnSurface"
             app:title="@string/light_meter"
-            app:titleTextColor="@color/toolbar_title" />
+            app:titleTextColor="?attr/colorOnSurface" />
 
     </com.google.android.material.appbar.AppBarLayout>
 

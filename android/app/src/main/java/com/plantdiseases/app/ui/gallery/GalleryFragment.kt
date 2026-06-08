@@ -97,11 +97,10 @@ class GalleryFragment : Fragment() {
                 override fun onCreateMenu(menu: Menu, menuInflater: MenuInflater) {
                     menuInflater.inflate(R.menu.gallery_menu, menu)
                     clearHistoryItem = menu.findItem(R.id.action_clear_history)
-                    // Tint to match the white toolbar title over the green
-                    // hero gradient — menu icons otherwise fall back to the
-                    // dark default control colour (same as the Scan tab).
+                    // Tint to match the flat surface toolbar (onSurface);
+                    // menu icons otherwise fall back to a default control colour.
                     clearHistoryItem?.icon
-                        ?.setTint(ContextCompat.getColor(requireContext(), R.color.toolbar_title))
+                        ?.setTint(ContextCompat.getColor(requireContext(), R.color.on_surface))
                     // Nothing to clear on an empty gallery.
                     clearHistoryItem?.isVisible = allScans.isNotEmpty()
                 }

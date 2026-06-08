@@ -147,7 +147,7 @@ class PlantDetailActivity : AppCompatActivity() {
             setContentInsetsAbsolute(0, 0)
             setContentInsetsRelative(0, 0)
             setPadding(16.dp(), 0, 16.dp(), 0)
-            setNavigationIconTint(getColor(R.color.toolbar_title))
+            setNavigationIconTint(getColor(R.color.on_surface))
             setNavigationOnClickListener { finish() }
             inflateMenu(R.menu.plant_detail_menu)
             setOnMenuItemClickListener { item ->
