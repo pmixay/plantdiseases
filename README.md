@@ -11,12 +11,10 @@ backbone + LoRA + MLP head classifier) hosted behind a hardened FastAPI
 service, paired with a Kotlin Android client that ships scan history,
 plant care reminders and an AI plant doctor.
 
-### 🌐 [**Explore the project website →**](website/index.html)
+### 🌐 [**Explore the project website →**](https://pdis.arbuz.lol/)
 
 An interactive, bilingual (RU / EN) showcase of the app's features, the ML
-pipeline and live benchmark charts. Run it locally with
-`cd website && python3 -m http.server 8080`, or publish the `website/` folder
-to GitHub Pages.
+pipeline and live benchmark charts.
 
 [Quick start](#quick-start) · [Architecture](#architecture) ·
 [API](#api) · [Documentation](#documentation) · [License](#license)
