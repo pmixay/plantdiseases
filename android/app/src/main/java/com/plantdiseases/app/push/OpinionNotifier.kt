@@ -1,10 +1,14 @@
 package com.plantdiseases.app.push
 
+import android.Manifest
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
@@ -39,6 +43,16 @@ object OpinionNotifier {
     ) {
         val ctx = context.applicationContext
         val app = ctx as PlantDiseasesApp
+        // On Android 13+ notify() silently no-ops without POST_NOTIFICATIONS —
+        // bail before the DB lookup + notification build (matches the reminder
+        // worker, which also guards on the runtime permission).
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                ctx, Manifest.permission.POST_NOTIFICATIONS,
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
         // Localise the disease name to the SAME language the notification text
         // renders in (the app context's effective resource locale), not the
         // in-app language pref — those can disagree (e.g. a Russian device with

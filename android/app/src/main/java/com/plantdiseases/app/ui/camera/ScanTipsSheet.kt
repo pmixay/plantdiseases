@@ -5,6 +5,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.FragmentManager
+import androidx.fragment.app.setFragmentResult
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.button.MaterialButton
 import com.plantdiseases.app.R
@@ -26,8 +27,6 @@ import com.plantdiseases.app.R
  */
 class ScanTipsSheet : BottomSheetDialogFragment() {
 
-    private var onContinue: (() -> Unit)? = null
-
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
     ): View = inflater.inflate(R.layout.sheet_scan_tips, container, false)
@@ -35,19 +34,20 @@ class ScanTipsSheet : BottomSheetDialogFragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         view.findViewById<MaterialButton>(R.id.btn_tips_continue).setOnClickListener {
-            onContinue?.invoke()
+            // Emit a Fragment Result instead of invoking a transient lambda, so
+            // the "Continue" signal survives a config-change recreation while
+            // the sheet is open. The host (CameraFragment) listens for it.
+            setFragmentResult(REQUEST_KEY, Bundle.EMPTY)
             dismiss()
         }
     }
 
     companion object {
         private const val TAG = "scan-tips-sheet"
+        const val REQUEST_KEY = "scan_tips_continue"
 
-        fun show(fm: FragmentManager, onContinue: () -> Unit): ScanTipsSheet {
-            val sheet = ScanTipsSheet()
-            sheet.onContinue = onContinue
-            sheet.show(fm, TAG)
-            return sheet
+        fun show(fm: FragmentManager) {
+            ScanTipsSheet().show(fm, TAG)
         }
     }
 }

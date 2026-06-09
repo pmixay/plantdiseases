@@ -35,7 +35,10 @@ class OpinionCheckWorker(
 
         val firstRun = !OpinionPrefs.isInitialized(ctx)
 
-        for (scan in resp.scans) {
+        // .orEmpty() guards the case where Gson injects an explicit JSON
+        // `"scans": null` into the non-null field (it ignores the Kotlin
+        // default for present-but-null keys) — iterating null would NPE.
+        for (scan in resp.scans.orEmpty()) {
             if (scan.scanId.isBlank()) continue
             val previous = OpinionPrefs.lastSeen(ctx, scan.scanId)
             if (!firstRun && scan.opinionCount > previous) {

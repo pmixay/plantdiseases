@@ -91,6 +91,21 @@ class GalleryFragment : Fragment() {
         // the grid's entry animation, so the photos appeared to load twice.
     }
 
+    override fun onViewStateRestored(savedInstanceState: Bundle?) {
+        super.onViewStateRestored(savedInstanceState)
+        // The ChipGroup restores its checked chip across a config-change
+        // recreation, but currentFilter is a plain field that resets to ALL.
+        // Re-derive it from the restored chip (this runs after view-state
+        // restoration and before onResume -> loadScans -> applyFilter) so the
+        // highlighted chip and the rendered list stay in sync. On a fresh
+        // launch chip_all is checked by default, so this evaluates to ALL.
+        currentFilter = when {
+            binding.chipHealthy.isChecked -> Filter.HEALTHY
+            binding.chipDiseased.isChecked -> Filter.DISEASED
+            else -> Filter.ALL
+        }
+    }
+
     /** Add the "clear all history" basket to the shared toolbar, scoped to
      *  this fragment's RESUMED state so it only shows in the green top bar
      *  while the Gallery tab is open. This replaces the footer button that
@@ -132,7 +147,7 @@ class GalleryFragment : Fragment() {
 
     private fun clearHistory() {
         val app = requireActivity().application as PlantDiseasesApp
-        lifecycleScope.launch {
+        viewLifecycleOwner.lifecycleScope.launch {
             app.scanRepository.clearAll()
             Toast.makeText(requireContext(), R.string.history_cleared, Toast.LENGTH_SHORT).show()
             loadScans()
@@ -172,7 +187,7 @@ class GalleryFragment : Fragment() {
         }
     }
 
-    private fun applyFilter() {
+    private fun applyFilter(animate: Boolean = true) {
         val filtered = when (currentFilter) {
             Filter.ALL -> allScans
             Filter.HEALTHY -> allScans.filter { it.isHealthy && !it.isNotAPlant }
@@ -194,7 +209,10 @@ class GalleryFragment : Fragment() {
                 updateEmptyState(isEmpty = false, isFilterEmpty = false)
         }
 
-        binding.rvGallery.scheduleLayoutAnimation()
+        // Only run the staggered entry animation for user-driven changes and
+        // the first load — not when community badges arrive a moment later and
+        // re-submit the same list, which made the whole grid re-animate.
+        if (animate) binding.rvGallery.scheduleLayoutAnimation()
     }
 
     private fun loadScans() {
@@ -206,7 +224,7 @@ class GalleryFragment : Fragment() {
             binding.rvGallery.visibility = View.GONE
         }
 
-        lifecycleScope.launch {
+        viewLifecycleOwner.lifecycleScope.launch {
             binding.swipeRefresh.isRefreshing = !isFirstLoad
             allScans = app.scanRepository.getAllScans()
 
@@ -232,7 +250,7 @@ class GalleryFragment : Fragment() {
         if (!com.plantdiseases.app.util.CommunityPrefs.uploadsEnabled(requireContext())) return
         val ids = allScans.map { it.clientScanId }.filter { it.isNotBlank() }
         if (ids.isEmpty()) return
-        lifecycleScope.launch {
+        viewLifecycleOwner.lifecycleScope.launch {
             val counts = app.scanRepository.getCommunityScanCounts(ids)
             if (counts.isEmpty() || _binding == null) return@launch
             val ctx = requireContext()
@@ -251,7 +269,8 @@ class GalleryFragment : Fragment() {
                     item
                 }
             }
-            applyFilter()
+            // Re-render with badges but don't replay the grid entry animation.
+            applyFilter(animate = false)
         }
     }
 
@@ -263,7 +282,7 @@ class GalleryFragment : Fragment() {
 
     private fun deleteItem(id: Long) {
         val app = requireActivity().application as PlantDiseasesApp
-        lifecycleScope.launch {
+        viewLifecycleOwner.lifecycleScope.launch {
             app.scanRepository.deleteScan(id)
             loadScans()
         }

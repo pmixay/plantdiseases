@@ -129,6 +129,8 @@ class PlantReminderWorker(
             )
             val snoozeIntent = ReminderActionReceiver.buildIntent(
                 context, eventId, notificationId, ReminderActionReceiver.ACTION_SNOOZE,
+                plantId = plantId, reminderId = reminderId,
+                type = reminderType, plantName = plantName,
             )
             val snoozePending = PendingIntent.getBroadcast(
                 context,

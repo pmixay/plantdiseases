@@ -55,6 +55,8 @@
                 android:gravity="center_vertical">
 
                 <!-- Anonymous author avatar (deterministic colour + monogram). -->
+                <!-- Decorative monogram: TalkBack would otherwise read the
+                     two-letter avatar ("KX") aloud as meaningless noise. -->
                 <TextView
                     android:id="@+id/tv_nearby_avatar"
                     android:layout_width="28dp"
@@ -65,6 +67,7 @@
                     android:textColor="@android:color/white"
                     android:textSize="11sp"
                     android:fontFamily="sans-serif-medium"
+                    android:importantForAccessibility="no"
                     tools:text="KX" />
 
                 <LinearLayout

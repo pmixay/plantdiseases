@@ -121,8 +121,16 @@ class GuideFragment : Fragment() {
                 // Cancel previous debounce
                 searchJob?.cancel()
 
-                // Min 2 chars
+                // Min 2 chars. If there is leftover state from a longer query
+                // (e.g. backspacing "ro" -> "r"), reset it so the list falls
+                // back to the current category instead of showing stale
+                // cross-category results with old highlights.
                 if (query.length < 2 && query.isNotEmpty()) {
+                    if (searchQuery.isNotEmpty()) {
+                        searchQuery = ""
+                        adapter.searchQuery = ""
+                        loadItems()
+                    }
                     return
                 }
 
@@ -142,15 +150,18 @@ class GuideFragment : Fragment() {
         val items = if (searchQuery.isBlank()) {
             GuideDataProvider.getByCategory(currentCategory)
         } else {
-            // Search across all categories
-            val query = searchQuery.lowercase()
+            // Search across all categories. Use case-insensitive contains
+            // instead of allocating lowercased copies of every title/desc and
+            // the full multi-paragraph body on each search (title/desc are
+            // checked first and short-circuit before the larger content scan).
+            val query = searchQuery
             GuideDataProvider.getGuideItems().filter { item ->
                 val title = if (isRu) item.titleRu else item.titleEn
                 val desc = if (isRu) item.descriptionRu else item.descriptionEn
                 val content = if (isRu) item.contentRu else item.contentEn
-                title.lowercase().contains(query) ||
-                desc.lowercase().contains(query) ||
-                content.lowercase().contains(query)
+                title.contains(query, ignoreCase = true) ||
+                desc.contains(query, ignoreCase = true) ||
+                content.contains(query, ignoreCase = true)
             }
         }
         adapter.submitList(items)

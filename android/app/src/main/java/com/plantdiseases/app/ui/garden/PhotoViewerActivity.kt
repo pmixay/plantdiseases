@@ -18,6 +18,7 @@ import com.bumptech.glide.Glide
 import com.plantdiseases.app.R
 import com.plantdiseases.app.databinding.ActivityPhotoViewerBinding
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.expandTouchTarget
 
 /**
  * Full-screen swipeable photo viewer with pinch-to-zoom + pan.
@@ -75,6 +76,9 @@ class PhotoViewerActivity : AppCompatActivity() {
 
         indicator = binding.photoIndicator
         binding.photoClose.setOnClickListener { finish() }
+        // Accessibility: grow the 28dp close icon's hit area to 48dp without
+        // changing its visible size.
+        binding.photoClose.expandTouchTarget()
 
         pager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
             override fun onPageSelected(position: Int) {
@@ -195,6 +199,15 @@ class ZoomableImageView(context: Context) : androidx.appcompat.widget.AppCompatI
             matrixCurrent.postTranslate(tx, ty)
             imageMatrix = matrixCurrent
         }
+    }
+
+    override fun setImageDrawable(drawable: android.graphics.drawable.Drawable?) {
+        super.setImageDrawable(drawable)
+        // Glide delivers the bitmap asynchronously AFTER the adapter's reset()
+        // ran (when drawable was still null), so the first letterbox-fit was
+        // skipped and the photo drew top-left at intrinsic size until touched.
+        // Re-fit when the drawable actually arrives (unless mid-zoom).
+        if (drawable != null && scale <= 1.01f) reset()
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {

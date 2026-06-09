@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Dark-mode variant of the Gallery "+N new opinions" pill. In dark mode
+     @color/disease_red resolves to a light coral (#F87171), so white text on
+     it drops to ~1.9:1 contrast. Use a darker red here so the white "+N" stays
+     legible (~6.4:1). Light mode keeps the base @color/disease_red pill. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="#B91C1C" />
+    <corners android:radius="999dp" />
+</shape>

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Dark-mode variant: pale background blob + white photo card swapped for
+     dark-surface tones. Green leaf/mountain motifs unchanged. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="160dp"
+    android:height="160dp"
+    android:viewportWidth="160"
+    android:viewportHeight="160">
+    <path
+        android:fillColor="#1A211B"
+        android:pathData="M24,84C24,50 51,27 83,29C115,31 140,57 137,91C134,124 105,143 70,138C40,134 24,113 24,84Z" />
+    <path
+        android:fillColor="#1C261E"
+        android:pathData="M46,48H114C120,48 125,53 125,59V103C125,109 120,114 114,114H46C40,114 35,109 35,103V59C35,53 40,48 46,48Z" />
+    <path
+        android:fillColor="#1F8A4C"
+        android:pathData="M52,101L70,80L83,93L96,73L113,101Z" />
+    <path
+        android:fillColor="#7ED957"
+        android:pathData="M69,70C66,62 59,59 51,59C52,69 59,75 69,70Z" />
+    <path
+        android:fillColor="#2FB062"
+        android:pathData="M91,68C96,58 105,55 115,57C113,69 104,75 91,68Z" />
+    <path
+        android:fillColor="#0F4D25"
+        android:pathData="M78,58H84V95H78Z" />
+</vector>

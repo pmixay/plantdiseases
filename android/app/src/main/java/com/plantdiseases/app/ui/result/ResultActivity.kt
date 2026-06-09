@@ -1177,7 +1177,7 @@ class ResultActivity : AppCompatActivity() {
             }
 
             val percentView = TextView(this).apply {
-                text = "$percent%"
+                text = getString(R.string.confidence_format, percent)
                 textSize = if (isMain) 14f else 13f
                 setTextColor(getColor(if (isMain) R.color.primary else R.color.on_surface_secondary))
                 if (isMain) typeface = android.graphics.Typeface.DEFAULT_BOLD

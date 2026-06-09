@@ -27,6 +27,7 @@ import com.plantdiseases.app.ui.result.CommunityOpinionSheet
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.TelemetryIds
 import com.plantdiseases.app.util.ThemeHelper
+import com.plantdiseases.app.util.expandTouchTarget
 import kotlinx.coroutines.launch
 
 class ProfileFragment : Fragment() {
@@ -35,6 +36,11 @@ class ProfileFragment : Fragment() {
     private val binding get() = _binding!!
     private var isFirstLoad = true
     private var myOpinionsExpanded = true
+
+    // Count-up animators, cancelled in onDestroyView so they don't keep
+    // ticking against a detached TextView (transient view retention + wasted
+    // frames after the view is gone).
+    private val countAnimators = mutableListOf<android.animation.ValueAnimator>()
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -69,12 +75,17 @@ class ProfileFragment : Fragment() {
         binding.btnRefreshHealth.setOnClickListener {
             checkServerHealth()
         }
+        // Accessibility: grow the 40dp refresh icon's hit area to 48dp.
+        binding.btnRefreshHealth.expandTouchTarget()
 
         setupThemeChips()
         setupCommunityControls()
         setupMyOpinionsFold()
-        loadStats()
-        checkServerHealth()
+        // loadStats() + checkServerHealth() run in onResume(), which always
+        // fires immediately after this on first show and again on every return.
+        // Calling them here too issued a duplicate getStats() DB read and a
+        // duplicate /api/health request (with a visible status flicker) on
+        // every fragment creation.
     }
 
     private fun setupMyOpinionsFold() {
@@ -392,7 +403,10 @@ class ProfileFragment : Fragment() {
             binding.statsLayout.visibility = View.GONE
         }
 
-        lifecycleScope.launch {
+        // viewLifecycleOwner scope: cancels on onDestroyView so the
+        // continuation never resumes against a null binding (NPE on tab
+        // switch / config change mid-query).
+        viewLifecycleOwner.lifecycleScope.launch {
             val stats = app.scanRepository.getStats()
 
             // Hide shimmer
@@ -448,6 +462,7 @@ class ProfileFragment : Fragment() {
         android.animation.ValueAnimator.ofInt(0, target).apply {
             duration = 600L
             addUpdateListener { tv.text = (it.animatedValue as Int).toString() }
+            countAnimators += this
             start()
         }
     }
@@ -494,6 +509,8 @@ class ProfileFragment : Fragment() {
 
     override fun onDestroyView() {
         super.onDestroyView()
+        countAnimators.forEach { it.cancel() }
+        countAnimators.clear()
         _binding = null
     }
 }

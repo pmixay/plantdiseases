@@ -106,6 +106,9 @@ object ImageUtils {
     /**
      * Copy URI to internal storage. Returns null on I/O failure;
      * the cause is logged so the user-visible toast can stay simple.
+     *
+     * Must be called off the UI thread — a large or cloud-backed
+     * (e.g. Google Photos) source can block while the bytes stream in.
      */
     fun copyUriToFile(context: Context, uri: Uri): File? {
         return try {
@@ -224,14 +227,14 @@ object ImageUtils {
             bitmap.getPixels(pixels, 0, w, 0, 0, w, h)
             bitmap.recycle()
 
-            // Convert to grayscale
-            val gray = IntArray(w * h)
+            // Convert to grayscale in place — reuse the pixel buffer rather than
+            // allocating a second full-size IntArray (saves ~w*h*4 bytes).
             for (i in pixels.indices) {
                 val pixel = pixels[i]
                 val r = (pixel shr 16) and 0xFF
                 val g = (pixel shr 8) and 0xFF
                 val b = pixel and 0xFF
-                gray[i] = (0.299 * r + 0.587 * g + 0.114 * b).toInt()
+                pixels[i] = (0.299 * r + 0.587 * g + 0.114 * b).toInt()
             }
 
             // Apply Laplacian kernel [0,1,0; 1,-4,1; 0,1,0] and compute variance
@@ -240,11 +243,11 @@ object ImageUtils {
             var count = 0
             for (y in 1 until h - 1) {
                 for (x in 1 until w - 1) {
-                    val laplacian = gray[(y - 1) * w + x] +
-                            gray[(y + 1) * w + x] +
-                            gray[y * w + (x - 1)] +
-                            gray[y * w + (x + 1)] -
-                            4 * gray[y * w + x]
+                    val laplacian = pixels[(y - 1) * w + x] +
+                            pixels[(y + 1) * w + x] +
+                            pixels[y * w + (x - 1)] +
+                            pixels[y * w + (x + 1)] -
+                            4 * pixels[y * w + x]
                     sum += laplacian
                     sumSq += laplacian.toDouble() * laplacian
                     count++

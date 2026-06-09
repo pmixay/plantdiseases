@@ -168,12 +168,15 @@
                     android:layout_width="match_parent"
                     android:layout_height="260dp">
 
+                    <!-- The scanned photo is decorative for TalkBack; the
+                         diagnosis is announced by the status/label text below.
+                         (Was a static, misleading "Diagnosis" label.) -->
                     <ImageView
                         android:id="@+id/iv_plant"
                         android:layout_width="match_parent"
                         android:layout_height="match_parent"
                         android:scaleType="centerCrop"
-                        android:contentDescription="@string/result_title" />
+                        android:importantForAccessibility="no" />
 
                     <com.plantdiseases.app.ui.result.HeatmapOverlayView
                         android:id="@+id/heatmap_overlay"
@@ -222,11 +225,15 @@
                         android:orientation="horizontal"
                         android:gravity="center_vertical">
 
+                        <!-- Decorative: the icon's image swaps per verdict in
+                             code but its contentDescription never did, so it
+                             announced "Healthy" even on disease / not-a-plant.
+                             tv_status_label announces the real verdict. -->
                         <ImageView
                             android:id="@+id/iv_status_icon"
                             android:layout_width="40dp"
                             android:layout_height="40dp"
-                            android:contentDescription="@string/status_healthy" />
+                            android:importantForAccessibility="no" />
 
                         <LinearLayout
                             android:layout_width="0dp"

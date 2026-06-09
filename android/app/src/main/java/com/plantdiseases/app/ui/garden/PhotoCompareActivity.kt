@@ -19,6 +19,7 @@ import com.bumptech.glide.request.target.CustomTarget
 import com.bumptech.glide.request.transition.Transition
 import com.plantdiseases.app.databinding.ActivityPhotoCompareBinding
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.expandTouchTarget
 
 /**
  * Before/after photo compare. Two images stacked under a draggable
@@ -59,16 +60,24 @@ class PhotoCompareActivity : AppCompatActivity() {
 
         val compare = binding.compareView
         binding.compareClose.setOnClickListener { finish() }
+        // Accessibility: grow the 28dp close icon's hit area to 48dp.
+        binding.compareClose.expandTouchTarget()
 
         // Glide loads asynchronously into CustomTarget hooks; the
         // compare view re-invalidates as soon as each side lands.
-        Glide.with(this).load(firstUri).into(object : CustomTarget<Drawable>() {
+        // Cap the decode at display resolution — a bare CustomTarget defaults
+        // to SIZE_ORIGINAL, decoding each multi-megapixel photo at full size
+        // (two held at once) only to letterbox-fit them down, which can OOM on
+        // low-RAM devices. fitRect still handles the final scaling.
+        val maxW = resources.displayMetrics.widthPixels
+        val maxH = resources.displayMetrics.heightPixels
+        Glide.with(this).load(firstUri).override(maxW, maxH).into(object : CustomTarget<Drawable>() {
             override fun onResourceReady(resource: Drawable, transition: Transition<in Drawable>?) {
                 compare.setBefore(resource)
             }
             override fun onLoadCleared(placeholder: Drawable?) {}
         })
-        Glide.with(this).load(secondUri).into(object : CustomTarget<Drawable>() {
+        Glide.with(this).load(secondUri).override(maxW, maxH).into(object : CustomTarget<Drawable>() {
             override fun onResourceReady(resource: Drawable, transition: Transition<in Drawable>?) {
                 compare.setAfter(resource)
             }

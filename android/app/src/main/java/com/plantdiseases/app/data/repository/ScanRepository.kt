@@ -23,6 +23,8 @@ import com.plantdiseases.app.data.remote.ApiService
 import com.plantdiseases.app.data.remote.PlantApiClient
 import com.plantdiseases.app.util.AquaModelManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
@@ -40,6 +42,11 @@ class ScanRepository(
         get() = apiClient.apiService
 
     private val gson = Gson()
+
+    // Serialises Aqua model installs so two concurrent syncAquaModel calls
+    // (e.g. rapid config-change recreations each firing one) can't race the
+    // shared temp/model file and corrupt it.
+    private val aquaSyncMutex = Mutex()
 
     /**
      * Send image to server for analysis. `speciesHint` is optional —
@@ -131,17 +138,25 @@ class ScanRepository(
                 if (AquaModelManager.isUpToDate(context, sha)) {
                     return@withContext Result.success(false)
                 }
-                val modelResp = apiService.aquaModel()
-                val body = modelResp.body()
-                if (!modelResp.isSuccessful || body == null) {
-                    return@withContext Result.failure(
-                        Exception("Aqua model download failed: ${modelResp.code()}")
-                    )
+                // Serialise the download+install; re-check freshness inside the
+                // lock so a waiter that the first install already satisfied
+                // no-ops instead of racing the shared temp/model file.
+                aquaSyncMutex.withLock {
+                    if (AquaModelManager.isUpToDate(context, sha)) {
+                        return@withContext Result.success(false)
+                    }
+                    val modelResp = apiService.aquaModel()
+                    val body = modelResp.body()
+                    if (!modelResp.isSuccessful || body == null) {
+                        return@withContext Result.failure(
+                            Exception("Aqua model download failed: ${modelResp.code()}")
+                        )
+                    }
+                    val installed = body.byteStream().use { stream ->
+                        AquaModelManager.install(context, stream, sha, manifest.version, classes)
+                    }
+                    Result.success(installed)
                 }
-                val installed = body.byteStream().use { stream ->
-                    AquaModelManager.install(context, stream, sha, manifest.version, classes)
-                }
-                Result.success(installed)
             } catch (e: Exception) {
                 Result.failure(e)
             }
