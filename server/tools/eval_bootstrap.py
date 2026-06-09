@@ -107,6 +107,32 @@ def per_class_recall(
     return out
 
 
+def per_class_precision(
+    y_true: np.ndarray, y_pred: np.ndarray, class_names: list[str]
+) -> dict[str, float]:
+    """Precision for every class, keyed by class name.
+
+    The companion to :func:`per_class_recall`. The weak classes this repo
+    targets (``nutrient_deficiency``, ``leaf_scorch_underwatering``) are
+    bound by **precision**, not recall — they over-trigger (false
+    positives) far more than they miss — so a recall CI alone hides their
+    real failure mode. A class the model never *predicts* reports ``nan``
+    (precision is undefined with no positive predictions), which the
+    bootstrap below propagates so an unpredicted class is never silently
+    scored 0 or 1.
+    """
+    yt = np.asarray(y_true)
+    yp = np.asarray(y_pred)
+    out: dict[str, float] = {}
+    for idx, name in enumerate(class_names):
+        predicted = int(np.sum(yp == idx))
+        if predicted == 0:
+            out[name] = float("nan")
+        else:
+            out[name] = float(np.sum((yt == idx) & (yp == idx)) / predicted)
+    return out
+
+
 def _as_int_array(x) -> np.ndarray:
     a = np.asarray(x, dtype=np.int64)
     if a.ndim != 1:
@@ -268,6 +294,74 @@ def bootstrap_per_class_recall_ci(
         }
     return {
         "metric": "per_class_recall",
+        "ci_level": ci,
+        "n": int(n),
+        "n_boot": int(n_boot),
+        "classes": out,
+    }
+
+
+def bootstrap_per_class_precision_ci(
+    y_true,
+    y_pred,
+    class_names: list[str],
+    *,
+    n_boot: int = 5000,
+    ci: float = 0.95,
+    seed: int = 0,
+) -> dict[str, dict]:
+    """Percentile-bootstrap precision CI for every class.
+
+    Mirrors :func:`bootstrap_per_class_recall_ci`. ``support`` is the
+    true-class support (``y_true == i``, comparable to the recall CI);
+    ``n_predicted`` is the number of positive predictions (precision's
+    denominator). A bootstrap replicate that predicts a class zero times
+    yields ``nan`` for that replicate and is dropped from that class's
+    percentile computation, so a rarely-predicted class still gets a CI
+    from the replicates where it was predicted.
+    """
+    y_true = _as_int_array(y_true)
+    y_pred = _as_int_array(y_pred)
+    if y_true.shape != y_pred.shape:
+        raise ValueError("y_true and y_pred must have the same length")
+    n = y_true.shape[0]
+    if n == 0:
+        raise ValueError("empty prediction set")
+
+    point = per_class_precision(y_true, y_pred, class_names)
+    support = {c: int(np.sum(y_true == i)) for i, c in enumerate(class_names)}
+    n_predicted = {c: int(np.sum(y_pred == i)) for i, c in enumerate(class_names)}
+    rng = np.random.default_rng(seed)
+    boot = np.full((n_boot, len(class_names)), np.nan, dtype=np.float64)
+    for b in range(n_boot):
+        idx = rng.integers(0, n, size=n)
+        prec = per_class_precision(y_true[idx], y_pred[idx], class_names)
+        boot[b] = [prec[c] for c in class_names]
+
+    out: dict[str, dict] = {}
+    for i, c in enumerate(class_names):
+        col = boot[:, i]
+        valid = col[~np.isnan(col)]
+        if valid.size == 0:
+            out[c] = {
+                "point": point[c], "ci_low": float("nan"),
+                "ci_high": float("nan"), "ci_half_width": float("nan"),
+                "support": support[c], "n_predicted": n_predicted[c],
+                "n_boot_valid": 0,
+            }
+            continue
+        lo, hi = _percentile_ci(valid, ci)
+        out[c] = {
+            "point": point[c],
+            "ci_low": lo,
+            "ci_high": hi,
+            "ci_half_width": (hi - lo) / 2.0,
+            "support": support[c],
+            "n_predicted": n_predicted[c],
+            "n_boot_valid": int(valid.size),
+        }
+    return {
+        "metric": "per_class_precision",
         "ci_level": ci,
         "n": int(n),
         "n_boot": int(n_boot),

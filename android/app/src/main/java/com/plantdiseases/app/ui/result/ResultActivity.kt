@@ -1769,7 +1769,7 @@ class ResultActivity : AppCompatActivity() {
         // Pinned to the classifier release in server/models/classes.json.
         // When the server exposes model_version in /api/analyze we'll
         // start trusting that value per-scan instead.
-        private const val SERVER_MODEL_VERSION = "2.2"
+        private const val SERVER_MODEL_VERSION = "2.5.0"
     }
 
     private fun isFeedbackAlreadySubmitted(scanId: Long): Boolean =

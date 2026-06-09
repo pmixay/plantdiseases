@@ -783,3 +783,65 @@ def test_ood_floor_is_calibrated_not_hardcoded():
         f"max_logit_floor is {val}, must reference the calibrated "
         f"ML_FLOOR / ML_FLOOR_PERSISTED variable, not a hardcoded number"
     )
+
+
+def test_melon_broadleaf_nutrient_supplement_train_only():
+    """v2.5.1: the precision-/supply-bound nutrient_deficiency class gains a
+    BROADLEAF crop proxy (melon, dicot leaf morphology) whose leaf shape
+    transfers to houseplants better than the maize/rice grass-blade proxies.
+    Like every crop proxy it must be (a) wired with a concrete slug, (b)
+    fetched into nutrient_deficiency, (c) TRAIN-ONLY, and (d) down-weighted
+    with the LA prior decoupled below the sampler weight."""
+    src = _notebook_source()
+    assert "def fetch_kaggle_melon_nutrient" in src, "melon broadleaf fetcher missing"
+    assert "melon-macronutrient-deficiency" in src, "concrete melon slug missing"
+    for split_fn in ("make_val_realworld", "make_val_indomain",
+                     "make_temperature_cal", "make_conformal_cal"):
+        body = re.search(rf"def {split_fn}\(.*?\n(?:.*\n){{0,14}}", src)
+        assert body and "kaggle_melon" not in body.group(0), (
+            f"{split_fn} must NOT allow 'kaggle_melon' — it is a TRAIN-ONLY proxy"
+        )
+    sw = re.search(r"'kaggle_melon'\s*:\s*([0-9.]+)", src)
+    assert sw and float(sw.group(1)) < 1.0, "'kaggle_melon' must be down-weighted (<1.0)"
+    pr = re.search(r"PRIOR_SOURCE_WEIGHTS\['kaggle_melon'\]\s*=\s*([0-9.]+)", src)
+    assert pr and float(pr.group(1)) < float(sw.group(1)), (
+        "PRIOR_SOURCE_WEIGHTS['kaggle_melon'] must be < its sampler weight"
+    )
+
+
+def test_weakclass_precision_is_measured_shipped_and_selectable():
+    """v2.5: the physiological classes are PRECISION-bound (they over-trigger),
+    so precision must be (a) reported by the eval helper and (b) shipped with a
+    bootstrap CI in the model card next to the recall CI — both UNCONDITIONAL, so
+    the over-trigger is always visible. (c) A precision-aware checkpoint
+    selection lever exists (macro-F1 + weight * weak-class F0.5 on val_indomain)
+    but is OPT-IN, OFF by default (weight 0.0 == proven pure-macro-F1 selection),
+    because the precision/recall trade is not yet GPU-A/B-validated to transfer
+    to the val_realworld ship metric."""
+    src = _notebook_source()
+    # (a) the eval helper returns per-class precision
+    assert "'per_class_precision'" in src, "evaluate() must report per_class_precision"
+    # (b) a precision bootstrap CI is computed and shipped in the model card
+    assert "_per_class_precision_ci" in src, "per-class precision CI helper missing"
+    assert "per_class_precision_ci_realworld" in src, (
+        "model card must ship the weak-class precision CI beside the recall CI"
+    )
+    # (c) the selection lever exists, is F0.5-based (recall-aware, so a degenerate
+    # predict-once epoch earns no bonus), and DEFAULTS TO OFF (pure macro-F1).
+    assert "_weakclass_fbeta" in src, "the F0.5 weak-class selection metric is missing"
+    assert re.search(r"sel\s*=\s*f1\s*\+\s*SELECT_WEAKCLASS_PRECISION_WEIGHT", src), (
+        "the selection score must be macro-F1 + weight * weak-class F0.5"
+    )
+    assert re.search(r"SELECT_WEAKCLASS_PRECISION_WEIGHT\s*=\s*0\.0\b", src), (
+        "the precision-aware selection lever must default to 0.0 (pure macro-F1) "
+        "until the precision/recall trade is GPU-A/B-validated"
+    )
+
+
+def test_eval_bootstrap_exposes_per_class_precision():
+    """The canonical metric module must expose per-class precision + its
+    bootstrap CI, the precision companion to per_class_recall, so weak-class
+    precision is computed from one tested source of truth."""
+    from tools import eval_bootstrap as eb
+    assert hasattr(eb, "per_class_precision")
+    assert hasattr(eb, "bootstrap_per_class_precision_ci")

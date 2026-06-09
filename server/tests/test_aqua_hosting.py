@@ -29,7 +29,7 @@ def test_aqua_manifest_and_model_when_provisioned(client, monkeypatch, tmp_path)
     blob = b"FAKE_TFLITE_BYTES_FOR_TEST" * 16
     (tmp_path / "aqua_classifier.tflite").write_bytes(blob)
     (tmp_path / "classes.json").write_text(json.dumps({
-        "model_version": "2.4.0",
+        "model_version": "2.5.0",
         "model_family": "aqua",
         "architecture": "mobilenetv3_small",
         "class_names": ["healthy", "leaf_spot"],
@@ -41,7 +41,7 @@ def test_aqua_manifest_and_model_when_provisioned(client, monkeypatch, tmp_path)
 
     m = client.get("/api/aqua/manifest").json()
     assert m["available"] is True
-    assert m["version"] == "2.4.0"
+    assert m["version"] == "2.5.0"
     assert m["size_bytes"] == len(blob)
     assert m["sha256"] == hashlib.sha256(blob).hexdigest()
     # The sidecar metadata the app needs to run the model rides along.
