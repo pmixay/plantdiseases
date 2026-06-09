@@ -622,6 +622,57 @@ def test_kaggle_strawberry_graymold_is_train_only_proxy():
     )
 
 
+def test_kaggle_indoor_weakclass_is_explicit_allowlist_train_only_downweighted():
+    """v2.5: the indoor-houseplant supplement (aditisalvi04) feeds the two
+    precision-bound weak classes from REAL in-domain photos. Because the set is
+    mostly augmented/redundant and carries the black-bg-segmented Aloe leaf_spot
+    that diluted leaf_spot, it must (a) use an EXPLICIT folder allowlist (never a
+    keyword fallback) limited to the audited-clean chlorosis + scorch folders,
+    (b) never accept 'aloe' and still run the black-bg filter, (c) be TRAIN-ONLY
+    (no make_*_split allows 'kaggle_indoor'), (d) be down-weighted (<1.0) with
+    the LA prior decoupled below the sampler weight, and (e) run before the
+    pre-split dedup so its rows are deduped + train-scoped like the rest."""
+    src = _notebook_source()
+    assert "def fetch_kaggle_indoor_weakclass" in src, "indoor weak-class fetcher missing"
+    assert "KAGGLE_INDOOR_FOLDER_MAP" in src, "indoor source must use an explicit folder map"
+    # Explicit allowlist targets only the two audited-clean weak-class folders.
+    fmap = re.search(r"KAGGLE_INDOOR_FOLDER_MAP\s*=\s*\{.*?\}", src, re.DOTALL)
+    assert fmap, "KAGGLE_INDOOR_FOLDER_MAP table missing"
+    block = fmap.group(0)
+    assert "'money_plant_chlorosis': 'nutrient_deficiency'" in block, (
+        "indoor map must route real Pothos chlorosis -> nutrient_deficiency"
+    )
+    assert "'hibiscus_scorch':" in block and "leaf_scorch_underwatering" in block, (
+        "indoor map must route Hibiscus scorch -> leaf_scorch_underwatering"
+    )
+    # Belt-and-braces: never the black-bg Aloe succulent, and the black-bg gate runs.
+    body = re.search(r"def fetch_kaggle_indoor_weakclass\(.*?\n(?=\S)", src, re.DOTALL)
+    assert body, "indoor fetcher body not found"
+    fb = body.group(0)
+    assert "'aloe' in norm" in fb and "_is_black_bg_segmented" in fb, (
+        "indoor fetcher must reject 'aloe' and still run the black-bg filter"
+    )
+    # Train-only: 'kaggle_indoor' must not be an allowed source on any eval split.
+    for split_fn in ("make_val_realworld", "make_val_indomain",
+                     "make_temperature_cal", "make_conformal_cal"):
+        sbody = re.search(rf"def {split_fn}\(.*?\n(?:.*\n){{0,14}}", src)
+        assert sbody and "kaggle_indoor" not in sbody.group(0), (
+            f"{split_fn} must NOT allow 'kaggle_indoor' — it is a TRAIN-ONLY supplement"
+        )
+    # Down-weighted in the sampler with the LA prior decoupled below it.
+    sw = re.search(r"'kaggle_indoor'\s*:\s*([0-9.]+)", src)
+    assert sw and float(sw.group(1)) < 1.0, "'kaggle_indoor' must be down-weighted (<1.0)"
+    pr = re.search(r"PRIOR_SOURCE_WEIGHTS\['kaggle_indoor'\]\s*=\s*([0-9.]+)", src)
+    assert pr and float(pr.group(1)) <= float(sw.group(1)), (
+        "PRIOR_SOURCE_WEIGHTS['kaggle_indoor'] must be <= its sampler weight"
+    )
+    # Runs before the pre-split dedup.
+    assert 0 < src.find("_try_fetch('kaggle_indoor_weakclass'") < src.find(
+        "_dedup_train_in_place(TRAIN_ROOT"), (
+        "indoor fetch must run before the pre-split dedup"
+    )
+
+
 def test_kaggle_credentials_support_new_token_format_and_upload():
     """Credentials must support Kaggle's NEW token format (KAGGLE_API_TOKEN env
     / ~/.kaggle/access_token) in addition to the legacy username+key, and the
