@@ -49,6 +49,7 @@ import com.plantdiseases.app.databinding.FragmentCameraBinding
 import com.plantdiseases.app.ui.analysis.AnalysisActivity
 import com.plantdiseases.app.ui.community.NearbyScansActivity
 import com.plantdiseases.app.util.Haptics
+import com.plantdiseases.app.util.AutosavePrefs
 import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.ModelFamilyPrefs
 import kotlinx.coroutines.Dispatchers
@@ -81,6 +82,12 @@ class CameraFragment : Fragment() {
      *  returns. Tracked here so cleanup works on both the success and the
      *  cancel path. */
     private var pendingSourceFile: File? = null
+
+    /** True when the in-flight crop originated from the in-app camera (not a
+     *  gallery import). Drives autosave-to-album: we only copy photos the user
+     *  actually snapped into the device gallery — re-saving a gallery pick
+     *  would just duplicate it. */
+    private var pendingFromCamera = false
 
     private val PREFS_NAME = "plantdiseases_prefs"
     private val KEY_GRID_OVERLAY = "grid_overlay_enabled"
@@ -131,6 +138,18 @@ class CameraFragment : Fragment() {
         // crop with bytes on disk advances to analysis.
         val cropped = pendingCropFile
         if (result.isSuccessful && cropped != null && cropped.exists() && cropped.length() > 0L) {
+            // Autosave the kept (cropped) photo to the device gallery when the
+            // user opted in AND this scan came from the camera, not a gallery
+            // import. Fire-and-forget off the main thread so a slow MediaStore
+            // write never stalls the hop into analysis.
+            if (pendingFromCamera && AutosavePrefs.enabled(requireContext())) {
+                val toSave = cropped
+                val appContext = requireContext().applicationContext
+                val album = getString(R.string.autosave_album)
+                viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+                    ImageUtils.saveImageToGallery(appContext, toSave, album)
+                }
+            }
             navigateToAnalysis(cropped.absolutePath)
             // The crop succeeded; the raw original is no longer needed.
             clearPendingSource()
@@ -475,6 +494,7 @@ class CameraFragment : Fragment() {
                     // positives on textured fabric hurt UX more than
                     // they help.
                     pendingSourceFile = photoFile
+                    pendingFromCamera = true
                     // Shrink the full-res capture off the main thread before
                     // handing it to the cropper, then launch once it's done.
                     viewLifecycleOwner.lifecycleScope.launch {
@@ -535,6 +555,7 @@ class CameraFragment : Fragment() {
             if (_binding == null || !isAdded) return@launch
             if (file != null) {
                 pendingSourceFile = file
+                pendingFromCamera = false
                 launchCrop(Uri.fromFile(file))
             } else {
                 Toast.makeText(requireContext(), getString(R.string.image_load_error), Toast.LENGTH_SHORT).show()

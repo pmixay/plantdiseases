@@ -11,14 +11,15 @@
     android:paddingVertical="@dimen/space_md"
     android:minHeight="56dp">
 
+    <!-- Decorative: the family name is announced by family_title. -->
     <ImageView
         android:id="@+id/family_icon"
         android:layout_width="40dp"
         android:layout_height="40dp"
         android:padding="8dp"
         android:background="@drawable/bg_circle_surface_variant"
-        app:tint="?attr/colorPrimary"
-        tools:ignore="ContentDescription" />
+        android:importantForAccessibility="no"
+        app:tint="?attr/colorPrimary" />
 
     <LinearLayout
         android:layout_width="0dp"
@@ -63,6 +64,9 @@
             android:textColor="?attr/colorOnSurfaceVariant" />
     </LinearLayout>
 
+    <!-- Decorative: selection is announced on the row itself via a state
+         description set in ModelPickerSheet, so the check icon is silent to
+         avoid a redundant "selected, check" double announcement. -->
     <ImageView
         android:id="@+id/family_check"
         android:layout_width="24dp"
@@ -71,6 +75,6 @@
         android:src="@drawable/ic_check"
         app:tint="?attr/colorPrimary"
         android:visibility="invisible"
-        tools:ignore="ContentDescription" />
+        android:importantForAccessibility="no" />
 
 </LinearLayout>

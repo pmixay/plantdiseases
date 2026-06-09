@@ -16,12 +16,37 @@
 -dontwarn okhttp3.**
 -dontwarn okio.**
 
-# Gson — keep all model classes for serialization
+# Gson — keep all model classes for serialization.
+#
+# AGP 8 runs R8 in "full mode", which is more aggressive than the legacy
+# ProGuard-compat mode: it strips generic signatures, enum metadata and
+# annotation attributes unless they are explicitly kept. Gson reads all
+# three reflectively (Signature for List<T>/Map<K,V> field generics,
+# EnumConstantName + the enum's values() for @SerializedName-less enums,
+# and the @SerializedName annotations themselves), so pin them here.
 -keepattributes *Annotation*
+-keepattributes Signature, InnerClasses, EnumConstantName, AnnotationDefault
+-keepattributes RuntimeVisibleAnnotations, RuntimeVisibleParameterAnnotations
 -keep class com.google.gson.stream.** { *; }
 -keep class com.plantdiseases.app.data.model.** { *; }
 -keep class com.google.gson.reflect.TypeToken { *; }
 -keep class * extends com.google.gson.reflect.TypeToken
+
+# Belt-and-suspenders for any @SerializedName field on a model that R8 might
+# otherwise rename — without the keep, Gson would silently deserialise null
+# into the renamed field (a field-drop bug that only surfaces in the minified
+# release build, never in debug).
+-keepclassmembers,allowobfuscation class * {
+    @com.google.gson.annotations.SerializedName <fields>;
+}
+
+# Gson serialises enums by their constant names; full-mode R8 would rename
+# the constants and break the value↔name round-trip (e.g. GuideCategory).
+-keepclassmembers enum * {
+    <fields>;
+    public static **[] values();
+    public static ** valueOf(java.lang.String);
+}
 
 # Repository exceptions are returned inside Result<> and matched by
 # class in callers' when-blocks. Keep them so R8 minification doesn't
@@ -41,3 +66,18 @@
 -keep class com.airbnb.lottie.** { *; }
 -keep class com.airbnb.lottie.model.** { *; }
 -keep class com.airbnb.lottie.animation.** { *; }
+
+# TensorFlow Lite — the on-device Aqua classifier (AquaClassifier) reaches the
+# interpreter through JNI, and TFLite uses reflection internally for optional
+# delegates (GPU/NNAPI). R8 has no view into the native side, so keep the
+# public API surface and silence warnings about the optional delegate classes
+# this build doesn't bundle. Without this the release build can strip a class
+# the native layer expects and the offline scan crashes only in the minified
+# APK.
+-keep class org.tensorflow.lite.** { *; }
+-dontwarn org.tensorflow.lite.**
+
+# Firebase Messaging ships its own consumer ProGuard rules, but it is
+# initialised manually here (no google-services plugin), so silence any
+# stray warnings from the optional auto-init classes we remove in the manifest.
+-dontwarn com.google.firebase.**

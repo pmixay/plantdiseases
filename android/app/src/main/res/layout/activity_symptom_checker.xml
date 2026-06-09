@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Symptom checker — the no-photo diagnosis fallback. Gradient toolbar over a
+    scrollable column: an intro line, the questionnaire (question cards are
+    injected by SymptomCheckerActivity), a submit button, and a results
+    section (also injected) that replaces the questionnaire once answered.
+-->
+<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/symptom_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/background">
+
+    <com.google.android.material.appbar.AppBarLayout
+        android:id="@+id/symptom_app_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_toolbar_gradient"
+        app:elevation="0dp">
+
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/symptom_toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="64dp"
+            app:navigationIcon="@drawable/ic_back"
+            app:navigationIconTint="@color/toolbar_title"
+            app:title="@string/symptom_checker_title"
+            app:titleTextColor="@color/toolbar_title" />
+
+    </com.google.android.material.appbar.AppBarLayout>
+
+    <androidx.core.widget.NestedScrollView
+        android:id="@+id/symptom_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clipToPadding="false"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="@dimen/space_lg"
+            android:paddingTop="@dimen/space_lg"
+            android:paddingBottom="@dimen/space_3xl">
+
+            <TextView
+                android:id="@+id/symptom_intro"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/symptom_intro"
+                android:textColor="@color/on_surface_secondary"
+                android:textSize="@dimen/text_body"
+                android:lineSpacingExtra="2dp"
+                android:layout_marginBottom="@dimen/space_md" />
+
+            <!-- Question cards injected here. -->
+            <LinearLayout
+                android:id="@+id/symptom_questions"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/symptom_submit"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_lg"
+                android:text="@string/symptom_submit"
+                android:enabled="false"
+                app:icon="@drawable/ic_care"
+                app:iconGravity="textStart" />
+
+            <TextView
+                android:id="@+id/symptom_hint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_xs"
+                android:text="@string/symptom_need_more"
+                android:textColor="@color/on_surface_secondary"
+                android:textSize="@dimen/text_body_sm"
+                android:gravity="center" />
+
+            <ProgressBar
+                android:id="@+id/symptom_progress"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginTop="@dimen/space_lg"
+                android:visibility="gone" />
+
+            <!-- Results section (ranked care cards) injected here. -->
+            <LinearLayout
+                android:id="@+id/symptom_results"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone" />
+
+        </LinearLayout>
+
+    </androidx.core.widget.NestedScrollView>
+
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

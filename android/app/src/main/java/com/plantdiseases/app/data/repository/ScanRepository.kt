@@ -238,6 +238,33 @@ class ScanRepository(
             }
         }
 
+    /**
+     * No-photo symptom triage. Returns a ranked shortlist of likely
+     * conditions for the symptom questionnaire. Not cached — the input space
+     * is large and the call is cheap (rules-based, no LLM).
+     */
+    suspend fun diagnoseSymptoms(
+        request: com.plantdiseases.app.data.model.SymptomDiagnoseRequest,
+    ): Result<com.plantdiseases.app.data.model.SymptomDiagnoseResponse> =
+        withContext(Dispatchers.IO) {
+            try {
+                val response = apiService.symptomDiagnose(request)
+                if (response.isSuccessful && response.body() != null) {
+                    Result.success(response.body()!!)
+                } else if (response.code() == 503) {
+                    Result.failure(ServerStartingException())
+                } else {
+                    Result.failure(Exception("Server error: ${response.code()}"))
+                }
+            } catch (e: SocketTimeoutException) {
+                Result.failure(ServerTimeoutException())
+            } catch (e: UnknownHostException) {
+                Result.failure(NoNetworkException())
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
     /** List community "second opinions" + consensus for a shared scan. */
     suspend fun getCommunityOpinions(scanId: String): Result<CommunityOpinionsResponse> =
         withContext(Dispatchers.IO) {

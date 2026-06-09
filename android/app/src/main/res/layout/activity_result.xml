@@ -258,7 +258,8 @@
                                 android:layout_marginTop="2dp"
                                 android:textSize="22sp"
                                 android:textColor="@color/on_surface"
-                                android:fontFamily="sans-serif-medium" />
+                                android:fontFamily="sans-serif-medium"
+                                android:accessibilityHeading="true" />
 
                         </LinearLayout>
 
@@ -974,6 +975,20 @@
                 </LinearLayout>
 
             </com.google.android.material.card.MaterialCardView>
+
+            <!-- No-photo fallback: shown when the verdict is not_a_plant or
+                 low-confidence, so the user can still get guidance by
+                 answering a few symptom questions. -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_symptom_checker"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md"
+                android:visibility="gone"
+                android:text="@string/symptom_checker_entry_title"
+                app:icon="@drawable/ic_care"
+                app:iconGravity="textStart" />
 
         </LinearLayout>
 

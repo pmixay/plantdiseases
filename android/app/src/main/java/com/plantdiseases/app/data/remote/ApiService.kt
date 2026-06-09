@@ -4,6 +4,8 @@ import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.data.model.AnalysisResponse
 import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.CarePlanResponse
+import com.plantdiseases.app.data.model.SymptomDiagnoseRequest
+import com.plantdiseases.app.data.model.SymptomDiagnoseResponse
 import com.plantdiseases.app.data.model.ChatRequest
 import com.plantdiseases.app.data.model.ChatResponse
 import com.plantdiseases.app.data.model.CommunityOpinionRequest
@@ -94,6 +96,14 @@ interface ApiService {
 
     @POST("api/care-plan")
     suspend fun carePlan(@Body request: CarePlanRequest): retrofit2.Response<CarePlanResponse>
+
+    /** No-photo symptom triage. Returns a ranked shortlist of likely
+     *  conditions (each a full bilingual care card) for the symptom
+     *  questionnaire shown when the camera/ML can't get a confident read. */
+    @POST("api/symptom-diagnose")
+    suspend fun symptomDiagnose(
+        @Body request: SymptomDiagnoseRequest,
+    ): retrofit2.Response<SymptomDiagnoseResponse>
 
     @POST("api/progression")
     suspend fun progression(@Body request: ProgressionRequest): retrofit2.Response<ProgressionResponse>

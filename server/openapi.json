@@ -1206,6 +1206,43 @@
           }
         }
       }
+    },
+    "/api/symptom-diagnose": {
+      "post": {
+        "summary": "Symptom Diagnose Endpoint",
+        "description": "No-photo symptom triage — the fallback when the camera/ML pipeline can't get a confident read.\n\nScores the answered questionnaire against a transparent weight table (``symptoms.py``) and returns a ranked shortlist of likely conditions, each enriched with its full bilingual care card. ``low_confidence`` is set when the answers are too sparse/weak to trust, so the client can nudge the user to take a photo for a more reliable diagnosis. Always returns 200 with a usable payload — an empty questionnaire just yields an empty shortlist + the ``unknown`` guidance card.",
+        "operationId": "symptom_diagnose_endpoint_api_symptom_diagnose_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SymptomDiagnoseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1863,6 +1900,25 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "SymptomDiagnoseRequest": {
+        "properties": {
+          "answers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Answers"
+          },
+          "locale": {
+            "type": "string",
+            "maxLength": 8,
+            "title": "Locale",
+            "default": "en"
+          }
+        },
+        "type": "object",
+        "title": "SymptomDiagnoseRequest"
       }
     }
   }

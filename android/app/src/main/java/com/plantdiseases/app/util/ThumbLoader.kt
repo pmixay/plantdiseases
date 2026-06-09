@@ -4,6 +4,7 @@ import android.graphics.drawable.Drawable
 import android.widget.ImageView
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.DataSource
+import com.bumptech.glide.load.DecodeFormat
 import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.bumptech.glide.load.engine.GlideException
 import com.bumptech.glide.request.RequestListener
@@ -34,6 +35,10 @@ object ThumbLoader {
         Glide.with(image)
             .load(url)
             .diskCacheStrategy(DiskCacheStrategy.ALL)
+            // Community feed thumbnails are small and numerous — RGB_565 halves
+            // their bitmap RAM so the nearby grid scrolls without OOM on
+            // low-end devices.
+            .format(DecodeFormat.PREFER_RGB_565)
             .placeholder(R.drawable.ic_plant_placeholder)
             .error(R.drawable.ic_plant_placeholder)
             .centerCrop()

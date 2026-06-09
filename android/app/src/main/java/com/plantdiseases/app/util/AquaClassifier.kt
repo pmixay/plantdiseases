@@ -121,10 +121,34 @@ class AquaClassifier private constructor(
 
         /** Decode a captured image file to a bitmap for on-device inference,
          *  down-sampled so a large photo doesn't OOM before we scale to the
-         *  model input size. */
-        fun decodeForInference(imagePath: String): Bitmap? {
-            val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
-            return BitmapFactory.decodeFile(imagePath, opts)
+         *  model input size.
+         *
+         *  Bounds-aware: caps the longest edge near [targetMaxEdge] (≈1024 px,
+         *  far above any model input of 224–448) rather than the old blanket
+         *  ``inSampleSize = 2`` — a 4000 px phone shot used to decode to a
+         *  ~2000 px (16 MB ARGB) bitmap, which OOMed the offline scan on
+         *  low-RAM devices. On an OutOfMemoryError it doubles the sampling and
+         *  retries so the worst case is a slightly softer crop, not a crash. */
+        fun decodeForInference(imagePath: String, targetMaxEdge: Int = 1024): Bitmap? {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(imagePath, bounds)
+            val w = bounds.outWidth
+            val h = bounds.outHeight
+            if (w <= 0 || h <= 0) return null
+            var sample = 1
+            while (w / (sample * 2) >= targetMaxEdge || h / (sample * 2) >= targetMaxEdge) {
+                sample *= 2
+            }
+            while (sample <= 32) {
+                try {
+                    val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+                    return BitmapFactory.decodeFile(imagePath, opts)
+                } catch (e: OutOfMemoryError) {
+                    Log.w(TAG, "OOM decoding for inference at sample=$sample; retrying smaller", e)
+                    sample *= 2
+                }
+            }
+            return null
         }
     }
 }

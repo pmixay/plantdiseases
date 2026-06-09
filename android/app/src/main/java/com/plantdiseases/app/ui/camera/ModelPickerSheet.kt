@@ -7,6 +7,7 @@ import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.core.view.ViewCompat
 import androidx.fragment.app.FragmentManager
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.plantdiseases.app.R
@@ -71,8 +72,17 @@ class ModelPickerSheet : BottomSheetDialogFragment() {
                 else -> badge.visibility = View.GONE
             }
 
+            val isSelected = family == selected && available
             row.findViewById<ImageView>(R.id.family_check).visibility =
-                if (family == selected && available) View.VISIBLE else View.INVISIBLE
+                if (isSelected) View.VISIBLE else View.INVISIBLE
+
+            // Announce selection to TalkBack as a state on the whole row
+            // (the check icon itself is decorative) so screen-reader users
+            // know which family is active without seeing the checkmark.
+            row.isSelected = isSelected
+            ViewCompat.setStateDescription(
+                row, if (isSelected) getString(R.string.cd_selected) else null,
+            )
 
             row.isEnabled = available
             row.alpha = if (available) 1f else 0.45f
