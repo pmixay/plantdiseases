@@ -441,6 +441,37 @@
     <string name="light_species_fern">Fern</string>
     <string name="light_species_vegetable">Vegetable</string>
 
+    <!-- Water Calculator -->
+    <string name="water_calc">Water Calculator</string>
+    <string name="water_calc_result_unit">ml per watering</string>
+    <plurals name="water_calc_every_days">
+        <item quantity="one">Water every day</item>
+        <item quantity="other">Water every %d days</item>
+    </plurals>
+    <string name="water_calc_pot_size">Pot diameter</string>
+    <string name="water_calc_pot_value">Ø %d cm</string>
+    <string name="water_calc_plant_type">Plant type</string>
+    <string name="water_calc_light">Light at its spot</string>
+    <string name="water_calc_light_low">Low</string>
+    <string name="water_calc_light_medium">Medium</string>
+    <string name="water_calc_light_bright">Bright</string>
+    <string name="water_calc_season">Season</string>
+    <string name="water_calc_season_growing">Growing</string>
+    <string name="water_calc_season_dormant">Dormant</string>
+    <string name="water_calc_tip_succulent">Let the soil dry out fully between waterings — soggy roots rot fast.</string>
+    <string name="water_calc_tip_fern">Keep the soil lightly, evenly moist; ferns hate drying out.</string>
+    <string name="water_calc_tip_general">Water thoroughly until it drains, then let the top 2–3 cm dry before the next round.</string>
+    <string name="water_calc_disclaimer">A starting point, not a rule — always check the top soil with your finger before watering.</string>
+    <!-- Plant detail → Water Calculator shortcut -->
+    <string name="water_calc_entry_title">Calculate watering</string>
+    <string name="water_calc_entry_subtitle">Estimate how much and how often to water this plant.</string>
+
+    <!-- Autosave snapped scan photos to the device gallery -->
+    <string name="autosave_title">Autosave photos to album</string>
+    <string name="autosave_subtitle">Save photos you snap to your device gallery.</string>
+    <string name="autosave_permission_needed">Storage permission is needed to save photos to your gallery.</string>
+    <string name="autosave_album" translatable="false">PlantDiseases</string>
+
     <!-- Care Plan -->
     <string name="care_plan_title">Care Plan</string>
     <string name="care_plan_subtitle_species">Tailored for %s</string>

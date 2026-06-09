@@ -437,6 +437,38 @@
     <string name="light_species_fern">Папоротник</string>
     <string name="light_species_vegetable">Овощи / Зелень</string>
 
+    <!-- Water Calculator -->
+    <string name="water_calc">Калькулятор полива</string>
+    <string name="water_calc_result_unit">мл за полив</string>
+    <plurals name="water_calc_every_days">
+        <item quantity="one">Интервал полива: %d дн.</item>
+        <item quantity="few">Интервал полива: %d дн.</item>
+        <item quantity="many">Интервал полива: %d дн.</item>
+        <item quantity="other">Интервал полива: %d дн.</item>
+    </plurals>
+    <string name="water_calc_pot_size">Диаметр горшка</string>
+    <string name="water_calc_pot_value">Ø %d см</string>
+    <string name="water_calc_plant_type">Тип растения</string>
+    <string name="water_calc_light">Освещение на месте</string>
+    <string name="water_calc_light_low">Слабое</string>
+    <string name="water_calc_light_medium">Среднее</string>
+    <string name="water_calc_light_bright">Яркое</string>
+    <string name="water_calc_season">Сезон</string>
+    <string name="water_calc_season_growing">Рост</string>
+    <string name="water_calc_season_dormant">Покой</string>
+    <string name="water_calc_tip_succulent">Давайте земле полностью просохнуть между поливами — от сырости корни быстро гниют.</string>
+    <string name="water_calc_tip_fern">Держите землю слегка и равномерно влажной; папоротники не любят пересыхания.</string>
+    <string name="water_calc_tip_general">Поливайте обильно, пока не потечёт из дренажа, затем дайте просохнуть верхним 2–3 см.</string>
+    <string name="water_calc_disclaimer">Это отправная точка, а не правило — перед поливом всегда проверяйте верхний слой земли пальцем.</string>
+    <!-- Plant detail → Water Calculator shortcut -->
+    <string name="water_calc_entry_title">Рассчитать полив</string>
+    <string name="water_calc_entry_subtitle">Оцените, сколько и как часто поливать это растение.</string>
+
+    <!-- Autosave snapped scan photos to the device gallery -->
+    <string name="autosave_title">Автосохранение фото в галерею</string>
+    <string name="autosave_subtitle">Сохранять сделанные снимки в галерею устройства.</string>
+    <string name="autosave_permission_needed">Для сохранения фото в галерею нужно разрешение на доступ к памяти.</string>
+
     <!-- Care Plan -->
     <string name="care_plan_title">План ухода</string>
     <string name="care_plan_subtitle_species">Подобрано для %s</string>

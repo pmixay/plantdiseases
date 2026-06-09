@@ -244,6 +244,7 @@ class PlantDetailActivity : AppCompatActivity() {
         // Secondary surfaces — pushed below the tabs so the
         // primary-actions area stays scannable.
         content.addView(buildLightMeterEntry(plant))
+        content.addView(buildWaterCalculatorEntry(plant))
         content.addView(buildDoctorEntry(plant, scans))
 
         renderTimeline(scans)
@@ -953,6 +954,90 @@ class PlantDetailActivity : AppCompatActivity() {
                         } else {
                             getString(R.string.light_meter_entry_subtitle)
                         }
+                        textSize = 12f
+                        setTextColor(getColor(R.color.on_surface_secondary))
+                        maxLines = 2
+                        ellipsize = android.text.TextUtils.TruncateAt.END
+                        layoutParams = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                        ).apply { topMargin = 2.dp() }
+                    })
+                })
+                addView(ImageView(this@PlantDetailActivity).apply {
+                    setImageResource(R.drawable.ic_chevron_right)
+                    setColorFilter(getColor(R.color.on_surface_secondary))
+                    layoutParams = LinearLayout.LayoutParams(22.dp(), 22.dp())
+                })
+            })
+        }
+
+    /** Water-calculator shortcut. Launches the standalone
+     *  [com.plantdiseases.app.ui.camera.WaterCalculatorActivity], forwarding
+     *  the plant's species so the tool pre-selects the right plant-type bucket
+     *  (succulent / tropical / fern / vegetable / general). Advisory only —
+     *  nothing is persisted back onto the plant. */
+    private fun buildWaterCalculatorEntry(plant: PlantEntity): View =
+        MaterialCardView(this).apply {
+            radius = 18.dp().toFloat()
+            cardElevation = 0f
+            strokeWidth = 1.dp()
+            strokeColor = getColor(R.color.card_stroke)
+            setCardBackgroundColor(getColor(R.color.surface))
+            isClickable = true
+            foreground = selectable()
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = 10.dp() }
+            setOnClickListener {
+                Haptics.tick(this@PlantDetailActivity)
+                val intent = Intent(
+                    this@PlantDetailActivity,
+                    com.plantdiseases.app.ui.camera.WaterCalculatorActivity::class.java,
+                )
+                plant.scientificName?.takeIf { it.isNotBlank() }?.let {
+                    intent.putExtra(
+                        com.plantdiseases.app.ui.camera.WaterCalculatorActivity.EXTRA_SCIENTIFIC_NAME,
+                        it,
+                    )
+                }
+                (plant.commonName ?: plant.species)?.takeIf { it.isNotBlank() }?.let {
+                    intent.putExtra(
+                        com.plantdiseases.app.ui.camera.WaterCalculatorActivity.EXTRA_COMMON_NAME,
+                        it,
+                    )
+                }
+                startActivity(intent)
+            }
+            addView(LinearLayout(this@PlantDetailActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(14.dp(), 12.dp(), 14.dp(), 12.dp())
+                addView(FrameLayout(this@PlantDetailActivity).apply {
+                    setBackgroundResource(R.drawable.bg_icon_circle)
+                    layoutParams = LinearLayout.LayoutParams(42.dp(), 42.dp())
+                    addView(ImageView(this@PlantDetailActivity).apply {
+                        setImageResource(R.drawable.ic_watering)
+                        setColorFilter(getColor(R.color.primary))
+                        layoutParams = FrameLayout.LayoutParams(23.dp(), 23.dp(), Gravity.CENTER)
+                    })
+                })
+                addView(LinearLayout(this@PlantDetailActivity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                        .apply { marginStart = 12.dp() }
+                    addView(TextView(this@PlantDetailActivity).apply {
+                        text = getString(R.string.water_calc_entry_title)
+                        textSize = 15f
+                        setTextColor(getColor(R.color.on_surface))
+                        typeface = android.graphics.Typeface.create(
+                            "sans-serif-medium",
+                            android.graphics.Typeface.NORMAL,
+                        )
+                    })
+                    addView(TextView(this@PlantDetailActivity).apply {
+                        text = getString(R.string.water_calc_entry_subtitle)
                         textSize = 12f
                         setTextColor(getColor(R.color.on_surface_secondary))
                         maxLines = 2

@@ -1,10 +1,15 @@
 package com.plantdiseases.app.util
 
+import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
+import android.media.MediaScannerConnection
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import android.util.Log
 import androidx.exifinterface.media.ExifInterface
 import java.io.File
@@ -31,6 +36,68 @@ object ImageUtils {
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val storageDir = File(context.filesDir, "plant_images").apply { mkdirs() }
         return File(storageDir, "PLANT_${timeStamp}.jpg")
+    }
+
+    /**
+     * Copy a saved scan image into the device's public gallery under
+     * Pictures/<albumName>. Returns true on success.
+     *
+     * On Android 10+ (scoped storage) this uses MediaStore with a
+     * RELATIVE_PATH + IS_PENDING handshake and needs NO permission. On
+     * Android 9 and below it writes into the public Pictures directory and
+     * triggers a media scan, which requires WRITE_EXTERNAL_STORAGE (the
+     * Profile toggle requests it before enabling autosave on those API
+     * levels). Never throws — any failure is logged and reported as false so
+     * a gallery hiccup can't break the scan flow.
+     */
+    fun saveImageToGallery(context: Context, source: File, albumName: String): Boolean {
+        if (!source.exists() || source.length() == 0L) return false
+        val displayName = "PD_${System.currentTimeMillis()}.jpg"
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val resolver = context.contentResolver
+                val pending = ContentValues().apply {
+                    put(MediaStore.Images.Media.DISPLAY_NAME, displayName)
+                    put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                    put(
+                        MediaStore.Images.Media.RELATIVE_PATH,
+                        "${Environment.DIRECTORY_PICTURES}/$albumName",
+                    )
+                    put(MediaStore.Images.Media.IS_PENDING, 1)
+                }
+                val uri = resolver.insert(
+                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI, pending,
+                ) ?: return false
+                resolver.openOutputStream(uri).use { out ->
+                    if (out == null) {
+                        resolver.delete(uri, null, null)
+                        return false
+                    }
+                    source.inputStream().use { it.copyTo(out) }
+                }
+                resolver.update(
+                    uri,
+                    ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) },
+                    null, null,
+                )
+                true
+            } else {
+                @Suppress("DEPRECATION")
+                val picturesDir = File(
+                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+                    albumName,
+                ).apply { mkdirs() }
+                val dest = File(picturesDir, displayName)
+                source.copyTo(dest, overwrite = true)
+                MediaScannerConnection.scanFile(
+                    context, arrayOf(dest.absolutePath), arrayOf("image/jpeg"), null,
+                )
+                true
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Gallery save failed", e)
+            false
+        }
     }
 
     /**
