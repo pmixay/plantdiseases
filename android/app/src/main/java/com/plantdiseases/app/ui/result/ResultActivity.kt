@@ -34,6 +34,7 @@ import com.bumptech.glide.Glide
 import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.bumptech.glide.load.resource.bitmap.CenterCrop
 import com.bumptech.glide.load.resource.bitmap.RoundedCorners
+import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.GuideDataProvider
@@ -519,7 +520,18 @@ class ResultActivity : AppCompatActivity() {
             // Date
             tvDate.text = ImageUtils.formatTimestamp(scan.timestamp)
 
-            btnNewScan.setOnClickListener { finish() }
+            btnNewScan.setOnClickListener {
+                // Always land back on the scanner tab — finish() alone would
+                // return to whichever tab launched the result (e.g. Gallery).
+                val intent = Intent(this@ResultActivity, MainActivity::class.java).apply {
+                    addFlags(
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP,
+                    )
+                    putExtra(MainActivity.EXTRA_OPEN_SCANNER, true)
+                }
+                startActivity(intent)
+                finish()
+            }
 
             btnAddToGarden.text = if (scan.plantId == null) {
                 getString(R.string.add_to_garden)
@@ -790,6 +802,25 @@ class ResultActivity : AppCompatActivity() {
             override fun onTabUnselected(tab: TabLayout.Tab) {}
             override fun onTabReselected(tab: TabLayout.Tab) {}
         })
+
+        // AI Plant Doctor follow-up — the same assistant as the Garden plant
+        // detail. If this scan is already attached to a garden plant we open a
+        // persistent plant session; otherwise an ephemeral scan session that
+        // still carries the diagnosis context.
+        binding.btnAskDoctor.setOnClickListener {
+            Haptics.tick(this)
+            val app = application as PlantDiseasesApp
+            lifecycleScope.launch {
+                val plant = scan.plantId?.let { app.plantRepository.getPlant(it) }
+                if (plant != null) {
+                    com.plantdiseases.app.ui.garden.DoctorChatSheet
+                        .show(supportFragmentManager, plant)
+                } else {
+                    com.plantdiseases.app.ui.garden.DoctorChatSheet
+                        .show(supportFragmentManager, scan)
+                }
+            }
+        }
     }
 
     private fun buildPipelineWarnings(scan: ScanEntity, repository: ScanRepository) {
@@ -952,6 +983,10 @@ class ResultActivity : AppCompatActivity() {
                 val page = info.pageUrl
                 if (!page.isNullOrBlank()) {
                     binding.tvSpeciesSource.visibility = View.VISIBLE
+                    binding.tvSpeciesSource.text = getString(
+                        if (info.translated) R.string.species_source_wikipedia_translated
+                        else R.string.species_source_wikipedia,
+                    )
                     binding.tvSpeciesSource.setOnClickListener {
                         runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(page))) }
                     }
@@ -1387,23 +1422,30 @@ class ResultActivity : AppCompatActivity() {
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply {
-                    if (index > 0) topMargin = 12.dpToPx()
+                    if (index > 0) topMargin = 14.dpToPx()
                 }
             }
 
             val numberView = TextView(this).apply {
+                // Fixed-size badge that never shrinks (weight stays on the
+                // text) so the number can't crowd or overlap the step text.
                 layoutParams = LinearLayout.LayoutParams(28.dpToPx(), 28.dpToPx())
                 setBackgroundResource(bgRes)
                 text = "${index + 1}"
                 setTextColor(color)
                 textSize = 13f
                 gravity = Gravity.CENTER
+                includeFontPadding = false
                 typeface = android.graphics.Typeface.DEFAULT_BOLD
             }
 
             val textView = TextView(this).apply {
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
                     marginStart = 12.dpToPx()
+                    marginEnd = 4.dpToPx()
+                    // Nudge the text down so its first line optically centers
+                    // against the number badge instead of sitting above it.
+                    topMargin = 3.dpToPx()
                 }
                 text = step
                 setTextColor(getColor(R.color.on_surface_secondary))
@@ -1485,12 +1527,17 @@ class ResultActivity : AppCompatActivity() {
         card.showLoading(null)
 
         lifecycleScope.launch {
+            // Prefer the species attached to the saved garden plant; otherwise
+            // fall back to the PlantNet species detected for this scan so the
+            // care plan is species-specific even before "Add to garden".
             val plantSpecies = scan.plantId?.let { pid ->
                 val plant = app.plantRepository.getPlant(pid)
                 plant?.scientificName?.takeIf { it.isNotBlank() }
                     ?: plant?.commonName?.takeIf { it.isNotBlank() }
                     ?: plant?.species?.takeIf { it.isNotBlank() }
             }
+                ?: scan.speciesScientific?.takeIf { it.isNotBlank() }
+                ?: scan.speciesCommon?.takeIf { it.isNotBlank() }
             card.showLoading(plantSpecies)
 
             val request = CarePlanRequest(
@@ -1553,7 +1600,7 @@ class ResultActivity : AppCompatActivity() {
                 body.setTextColor(getColor(R.color.disease_red))
                 body.text = getString(
                     R.string.toxicity_toxic_body,
-                    speciesList.joinToString(", "),
+                    speciesList.joinToString(", ") { localizeToxicSpecies(it) },
                 )
             } else {
                 card.visibility = View.VISIBLE
@@ -1578,6 +1625,17 @@ class ResultActivity : AppCompatActivity() {
             }
         }
     }
+
+    /** Localize the ASPCA toxic-species tokens (a closed set: cats / dogs /
+     *  horses) so the toxicity card reads in the user's language. Unknown
+     *  tokens pass through unchanged. */
+    private fun localizeToxicSpecies(token: String): String =
+        when (token.trim().lowercase()) {
+            "cats", "cat" -> getString(R.string.toxicity_animal_cats)
+            "dogs", "dog" -> getString(R.string.toxicity_animal_dogs)
+            "horses", "horse" -> getString(R.string.toxicity_animal_horses)
+            else -> token
+        }
 
     // ─── Diagnosis feedback ──────────────────────────────────────────────
 

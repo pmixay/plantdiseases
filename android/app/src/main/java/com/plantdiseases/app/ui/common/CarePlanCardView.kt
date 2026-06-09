@@ -701,6 +701,19 @@ class CarePlanCardView @JvmOverloads constructor(
 
     private data class SetupRow(val labelRes: Int, val iconRes: Int, val value: String)
 
+    /** Map the server's watering-method enum to a localized, human-readable
+     *  sentence. Unknown/free-text values pass through unchanged. */
+    private fun humanizeWateringMethod(raw: String): String {
+        val res = when (raw.trim().lowercase()) {
+            "bottom_water" -> R.string.watering_method_bottom_water
+            "bottom_water_soak" -> R.string.watering_method_bottom_water_soak
+            "let_top_inch_dry" -> R.string.watering_method_let_top_inch_dry
+            "soak_and_drain" -> R.string.watering_method_soak_and_drain
+            else -> return raw
+        }
+        return context.getString(res)
+    }
+
     private fun buildSetupRows(plan: CarePlanResponse): List<SetupRow> = buildList {
         plan.placement?.takeIf { it.isNotBlank() }?.let {
             add(SetupRow(R.string.care_plan_detail_placement, R.drawable.ic_garden, it))
@@ -712,7 +725,11 @@ class CarePlanCardView @JvmOverloads constructor(
             add(SetupRow(R.string.care_plan_detail_npk, R.drawable.ic_treatment, it))
         }
         plan.wateringMethod?.takeIf { it.isNotBlank() }?.let {
-            add(SetupRow(R.string.care_plan_detail_watering_method, R.drawable.ic_watering, it))
+            add(SetupRow(
+                R.string.care_plan_detail_watering_method,
+                R.drawable.ic_watering,
+                humanizeWateringMethod(it),
+            ))
         }
         plan.acclimation?.takeIf { it.isNotBlank() }?.let {
             add(SetupRow(R.string.care_plan_detail_acclimation, R.drawable.ic_clock, it))

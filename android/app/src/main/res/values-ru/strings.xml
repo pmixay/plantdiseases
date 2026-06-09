@@ -162,6 +162,7 @@
     <string name="species_card_title">Определённый вид</string>
     <string name="species_card_score">PlantNet — %1$d%%</string>
     <string name="species_source_wikipedia">Источник: Wikipedia</string>
+    <string name="species_source_wikipedia_translated">Источник: Wikipedia (автоперевод)</string>
     <string name="species_community_others">Другие сканы этого вида</string>
     <string name="example_photos_label">Как это выглядит</string>
     <string name="similar_scans_title">Похожие сканы рядом</string>
@@ -380,6 +381,7 @@
     <string name="doctor_q2">Причина и как предотвратить рецидив?</string>
     <string name="doctor_q3">Самое быстрое домашнее лечение?</string>
     <string name="doctor_clear">Очистить чат</string>
+    <string name="doctor_open_cta">Спросить AI-доктора</string>
     <!-- Light Meter -->
     <string name="light_meter">Люксметр</string>
     <string name="light_needs_header">Потребность в свете для этого растения</string>
@@ -559,6 +561,11 @@
     <string name="care_plan_detail_placement">Размещение</string>
     <string name="care_plan_detail_acclimation">Акклиматизация</string>
     <string name="care_plan_detail_watering_method">Способ полива</string>
+    <!-- Watering method enum values from the server -->
+    <string name="watering_method_bottom_water">Полив снизу (дайте горшку впитать воду через дренажные отверстия)</string>
+    <string name="watering_method_bottom_water_soak">Замачивание снизу — поставьте горшок в воду на 20 мин, затем слейте</string>
+    <string name="watering_method_let_top_inch_dry">Давайте верхним 2–3 см почвы просохнуть между поливами</string>
+    <string name="watering_method_soak_and_drain">Полейте обильно до стекания, затем опорожните поддон</string>
     <string name="care_plan_detail_soil_mix">Грунт</string>
     <string name="care_plan_detail_npk">NPK удобрения</string>
     <string name="care_plan_detail_light_lux">Освещение (люкс)</string>
@@ -633,6 +640,9 @@
     <string name="toxicity_safe_title">Безопасно для питомцев</string>
     <string name="toxicity_toxic_body">Это растение токсично для: %1$s. Уберите подальше от животных, при отравлении — к ветеринару.</string>
     <string name="toxicity_safe_body">Данных о токсичности для кошек и собак нет.</string>
+    <string name="toxicity_animal_cats">кошек</string>
+    <string name="toxicity_animal_dogs">собак</string>
+    <string name="toxicity_animal_horses">лошадей</string>
     <!-- Historical progression sparkline -->
     <string name="progression_title">Динамика заболевания</string>
     <string name="progression_trend_improving">Улучшается</string>

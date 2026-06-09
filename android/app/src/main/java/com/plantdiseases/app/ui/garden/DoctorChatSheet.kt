@@ -29,6 +29,7 @@ import com.plantdiseases.app.R
 import com.plantdiseases.app.data.GuideDataProvider
 import com.plantdiseases.app.data.local.ChatMessageEntity
 import com.plantdiseases.app.data.local.PlantEntity
+import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.ChatRequest
 import com.plantdiseases.app.databinding.SheetDoctorChatBinding
 import com.plantdiseases.app.ui.guide.GuideDetailSheet
@@ -44,7 +45,32 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
     private var _binding: SheetDoctorChatBinding? = null
     private val binding get() = _binding!!
 
-    private lateinit var plant: PlantEntity
+    // The chat runs in one of two modes:
+    //   * plant mode — launched from the Garden plant detail; chat history
+    //     is persisted in Room, keyed by the plant id.
+    //   * scan mode — launched from the after-scan result screen before the
+    //     plant is in the garden; the session is ephemeral (no plant row to
+    //     hang chat_messages off of) but carries the scan's diagnosis context.
+    private var plant: PlantEntity? = null
+    private var scan: ScanEntity? = null
+
+    /** Plant id to persist chat under, or null for an ephemeral scan session. */
+    private val persistPlantId: Long?
+        get() = plant?.id
+
+    /** Stable per-session id sent to the server for turn/token budgeting. */
+    private val sessionId: String
+        get() = plant?.let { "plant_${it.id}" } ?: "scan_${scan?.id ?: 0L}"
+
+    /** Header label — the plant's name, or the scan's species/disease. */
+    private val displayName: String
+        get() = plant?.name
+            ?: scan?.let { s ->
+                s.speciesCommon?.takeIf { it.isNotBlank() }
+                    ?: s.speciesScientific?.takeIf { it.isNotBlank() }
+                    ?: s.diseaseName
+            }
+            ?: ""
 
     private lateinit var messagesLayout: LinearLayout
     private lateinit var scrollView: ScrollView
@@ -102,28 +128,31 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
         behavior.state = BottomSheetBehavior.STATE_EXPANDED
         behavior.peekHeight = 600.dp()
 
-        // Resolve the plant. Normal path: show() set it directly. After
-        // process death the system recreates the fragment WITHOUT calling
-        // show(), leaving `plant` uninitialised — fall back to the id
-        // stashed in arguments and reload from Room (chat history is
-        // persisted, so the session restores rather than crashing).
-        if (::plant.isInitialized) {
-            bindPlant()
+        // Resolve the session. Normal path: show() set plant/scan directly.
+        // After process death the system recreates the fragment WITHOUT
+        // calling show(), so fall back to the ids stashed in arguments and
+        // reload from Room (plant chat history is persisted, so it restores;
+        // an ephemeral scan session simply starts fresh).
+        if (plant != null || scan != null) {
+            bindSession()
         } else {
-            val savedId = arguments?.getLong(ARG_PLANT_ID, -1L) ?: -1L
-            if (savedId <= 0L) {
+            val savedPlantId = arguments?.getLong(ARG_PLANT_ID, -1L) ?: -1L
+            val savedScanId = arguments?.getLong(ARG_SCAN_ID, -1L) ?: -1L
+            if (savedPlantId <= 0L && savedScanId <= 0L) {
                 dismissAllowingStateLoss()
                 return
             }
             lifecycleScope.launch {
-                val restored = (requireActivity().application as PlantDiseasesApp)
-                    .plantRepository.getPlant(savedId)
-                if (restored == null || _binding == null) {
+                val app = requireActivity().application as PlantDiseasesApp
+                when {
+                    savedPlantId > 0L -> plant = app.plantRepository.getPlant(savedPlantId)
+                    savedScanId > 0L -> scan = app.scanRepository.getScanById(savedScanId)
+                }
+                if ((plant == null && scan == null) || _binding == null) {
                     dismissAllowingStateLoss()
                     return@launch
                 }
-                plant = restored
-                bindPlant()
+                bindSession()
             }
         }
     }
@@ -133,16 +162,18 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
         _binding = null
     }
 
-    /** Bind plant-dependent views. Safe to call only once [plant] is set. */
-    private fun bindPlant() {
-        binding.chatPlantName.text = plant.name
+    /** Bind session-dependent views. Safe once [plant] or [scan] is set. */
+    private fun bindSession() {
+        binding.chatPlantName.text = displayName
         loadMessages()
     }
 
     private fun loadMessages() {
+        // Ephemeral scan sessions have no persisted history to restore.
+        val pid = persistPlantId ?: return
         val repo = (requireActivity().application as PlantDiseasesApp).plantRepository
         lifecycleScope.launch {
-            val msgs = repo.getChatMessages(plant.id)
+            val msgs = repo.getChatMessages(pid)
             if (msgs.isNotEmpty()) {
                 suggestionsContainer.visibility = View.GONE
                 msgs.forEach { addMessageBubble(it.role, it.content, it.timestamp) }
@@ -153,8 +184,8 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
 
     private fun sendMessage(text: String) {
         // Guard the brief window during a process-death restore where the
-        // view exists but the plant hasn't finished reloading yet.
-        if (!::plant.isInitialized) return
+        // view exists but the session hasn't finished reloading yet.
+        if (plant == null && scan == null) return
         inputField.setText("")
         suggestionsContainer.visibility = View.GONE
 
@@ -178,37 +209,57 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
         messagesLayout.addView(thinkingBubble)
         scrollToBottom()
 
-        lifecycleScope.launch {
-            // Persist the user message before the network round-trip
-            // so it survives a server timeout / process death.
-            plantRepo.saveChatMessage(
-                ChatMessageEntity(plantId = plant.id, role = "user", content = text, timestamp = now),
-            )
+        val pid = persistPlantId
 
-            // Pull the latest scan for this plant (if any) and ship a
-            // compact diagnosis context. The server caps this dict at
-            // 8 KB on the wire — we keep it tiny on purpose.
-            val latestScan = plantRepo.getLatestScanForPlant(plant.id)
-            val diagnosis: Map<String, Any?>? = latestScan?.let {
-                val classKey = scanRepo.topClassKey(it)
-                    ?: it.diseaseName.lowercase().replace(' ', '_')
+        lifecycleScope.launch {
+            // Persist the user message before the network round-trip so it
+            // survives a server timeout / process death. Ephemeral scan
+            // sessions (no plant row) keep messages in-memory only.
+            if (pid != null) {
+                plantRepo.saveChatMessage(
+                    ChatMessageEntity(plantId = pid, role = "user", content = text, timestamp = now),
+                )
+            }
+
+            // Build a compact diagnosis context. The server caps this dict at
+            // 8 KB on the wire — we keep it tiny on purpose. Plant mode pulls
+            // the latest scan for the plant; scan mode uses the scan directly.
+            val diagnosis: Map<String, Any?>? = plant?.let { p ->
+                val latestScan = plantRepo.getLatestScanForPlant(p.id)
+                latestScan?.let {
+                    val classKey = scanRepo.topClassKey(it)
+                        ?: it.diseaseName.lowercase().replace(' ', '_')
+                    mapOf(
+                        "class_name" to classKey,
+                        "disease_name" to it.diseaseName,
+                        "confidence" to it.confidence.toDouble(),
+                        "severity" to it.severity,
+                        "is_healthy" to it.isHealthy,
+                        "warnings" to scanRepo.parseWarnings(it.warnings),
+                        "plant_name" to p.name,
+                        "species" to (p.scientificName ?: p.species),
+                    )
+                } ?: mapOf(
+                    "plant_name" to p.name,
+                    "species" to (p.scientificName ?: p.species),
+                )
+            } ?: scan?.let { s ->
+                val classKey = scanRepo.topClassKey(s)
+                    ?: s.diseaseName.lowercase().replace(' ', '_')
                 mapOf(
                     "class_name" to classKey,
-                    "disease_name" to it.diseaseName,
-                    "confidence" to it.confidence.toDouble(),
-                    "severity" to it.severity,
-                    "is_healthy" to it.isHealthy,
-                    "warnings" to scanRepo.parseWarnings(it.warnings),
-                    "plant_name" to plant.name,
-                    "species" to (plant.scientificName ?: plant.species),
+                    "disease_name" to s.diseaseName,
+                    "confidence" to s.confidence.toDouble(),
+                    "severity" to s.severity,
+                    "is_healthy" to s.isHealthy,
+                    "warnings" to scanRepo.parseWarnings(s.warnings),
+                    "plant_name" to displayName,
+                    "species" to (s.speciesScientific ?: s.speciesCommon),
                 )
-            } ?: mapOf(
-                "plant_name" to plant.name,
-                "species" to (plant.scientificName ?: plant.species),
-            )
+            }
 
             val request = ChatRequest(
-                sessionId = "plant_${plant.id}",
+                sessionId = sessionId,
                 message = text,
                 locale = if (isRu) "ru" else "en",
                 diagnosis = diagnosis,
@@ -236,14 +287,16 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
 
             addMessageBubble("bot", replyText, replyTime)
             scrollToBottom()
-            plantRepo.saveChatMessage(
-                ChatMessageEntity(
-                    plantId = plant.id,
-                    role = "bot",
-                    content = replyText,
-                    timestamp = replyTime,
-                ),
-            )
+            if (pid != null) {
+                plantRepo.saveChatMessage(
+                    ChatMessageEntity(
+                        plantId = pid,
+                        role = "bot",
+                        content = replyText,
+                        timestamp = replyTime,
+                    ),
+                )
+            }
         }
     }
 
@@ -408,10 +461,16 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
     }
 
     private fun clearChat() {
-        if (!::plant.isInitialized) return
+        val pid = persistPlantId
+        if (pid == null) {
+            // Ephemeral scan session — nothing persisted, just reset the UI.
+            messagesLayout.removeAllViews()
+            suggestionsContainer.visibility = View.VISIBLE
+            return
+        }
         val repo = (requireActivity().application as PlantDiseasesApp).plantRepository
         lifecycleScope.launch {
-            repo.clearChat(plant.id)
+            repo.clearChat(pid)
             messagesLayout.removeAllViews()
             suggestionsContainer.visibility = View.VISIBLE
         }
@@ -431,12 +490,24 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
     companion object {
         private const val TAG = "DoctorChatSheet"
         private const val ARG_PLANT_ID = "arg_plant_id"
+        private const val ARG_SCAN_ID = "arg_scan_id"
 
+        /** Plant session — persistent chat keyed by the garden plant. */
         fun show(fm: FragmentManager, plant: PlantEntity) {
             val sheet = DoctorChatSheet().apply {
                 this.plant = plant
                 // Stash the id so the sheet can self-heal after process death.
                 arguments = bundleOf(ARG_PLANT_ID to plant.id)
+            }
+            sheet.show(fm, TAG)
+        }
+
+        /** Scan session — ephemeral chat from the after-scan result screen,
+         *  carrying the scan's diagnosis context. */
+        fun show(fm: FragmentManager, scan: ScanEntity) {
+            val sheet = DoctorChatSheet().apply {
+                this.scan = scan
+                arguments = bundleOf(ARG_SCAN_ID to scan.id)
             }
             sheet.show(fm, TAG)
         }

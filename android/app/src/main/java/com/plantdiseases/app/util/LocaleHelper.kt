@@ -41,9 +41,24 @@ object LocaleHelper {
     fun getSavedLanguage(context: Context): String {
         cachedLanguage?.let { return it }
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val value = prefs.getString(KEY_LANGUAGE, "en") ?: "en"
+        // First launch (no explicit choice yet): follow the device language so
+        // a Russian phone opens in Russian and everything else in English —
+        // the two supported UI languages. Once the user picks a language in
+        // Profile it is persisted and takes over.
+        val value = prefs.getString(KEY_LANGUAGE, null) ?: defaultFromDeviceLocale(context)
         cachedLanguage = value
         return value
+    }
+
+    /** Maps the device locale to a supported UI language: "ru" for a Russian
+     *  device, "en" for everything else. Reads the locale off the context's
+     *  configuration so it reflects the real system setting even after we've
+     *  overridden the process-wide default via [setLocale]. */
+    private fun defaultFromDeviceLocale(context: Context): String {
+        val locales = context.resources.configuration.locales
+        val lang = (if (!locales.isEmpty) locales.get(0) else Locale.getDefault())
+            .language.lowercase()
+        return if (lang == "ru") "ru" else "en"
     }
 
     private fun saveLanguage(context: Context, language: String) {

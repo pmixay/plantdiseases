@@ -501,6 +501,9 @@ data class SpeciesInfoResponse(
     @SerializedName("images") val images: List<String> = emptyList(),
     @SerializedName("page_url") val pageUrl: String? = null,
     @SerializedName("source") val source: String? = null,
+    /** True when `extract` was machine-translated into the requested locale
+     *  because no Wikipedia article existed in that language. */
+    @SerializedName("translated") val translated: Boolean = false,
 )
 
 /** /api/care-plan request body. */

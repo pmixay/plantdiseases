@@ -193,6 +193,10 @@ class MainActivity : AppCompatActivity() {
                 bounceScanIcon()
             }
         }
+
+        // A cold-started "New scan" (MainActivity wasn't already in memory)
+        // routes through onCreate rather than onNewIntent.
+        handleOpenTabIntent(intent)
     }
 
     /**
@@ -262,6 +266,28 @@ class MainActivity : AppCompatActivity() {
             prefs.edit().putBoolean("new_scan_result", false).apply()
             showGalleryBadge()
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleOpenTabIntent(intent)
+    }
+
+    /** Honor an explicit "open this tab" request (e.g. the result screen's
+     *  "New scan" button, which can be reached from the gallery tab and must
+     *  still land the user back on the scanner). Selecting the item drives the
+     *  same nav transition as a manual tab tap. */
+    private fun handleOpenTabIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra(EXTRA_OPEN_SCANNER, false) == true) {
+            intent.removeExtra(EXTRA_OPEN_SCANNER)
+            binding.bottomNavigation.selectedItemId = R.id.cameraFragment
+        }
+    }
+
+    companion object {
+        /** Intent extra: bring MainActivity to front and switch to the scanner tab. */
+        const val EXTRA_OPEN_SCANNER = "extra_open_scanner"
     }
 
 }
