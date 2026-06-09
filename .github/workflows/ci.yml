@@ -97,6 +97,43 @@ jobs:
           RELEASE_STORE_FILE: ${{ env.RELEASE_KEYSTORE_BASE64 != '' && format('{0}/release.keystore', runner.temp) || '' }}
         run: ./gradlew lintDebug testDebugUnitTest assembleRelease --build-cache --stacktrace
 
+      # Prove the published APK is signed with the release key (when one is
+      # configured) instead of silently falling back to the debug key, and
+      # report whether the FCM client config was injected — without printing
+      # the secret values. Fails the build if a keystore secret is set but the
+      # APK ended up debug-signed (i.e. a signing misconfiguration).
+      - name: Verify APK signing & FCM config
+        run: |
+          set -eu
+          apk=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
+          echo "APK: $apk"
+          apksigner=$(find "$ANDROID_SDK_ROOT/build-tools" -name apksigner | sort -V | tail -1)
+          certs=$("$apksigner" verify --print-certs "$apk")
+          echo "----- signing certificate -----"
+          echo "$certs"
+          echo "--------------------------------"
+
+          # FCM: report configured/not from the generated BuildConfig without
+          # echoing the values themselves.
+          bc=$(find app/build/generated -name BuildConfig.java -path '*release*' | head -1 || true)
+          if [ -n "$bc" ] && grep -q 'FCM_API_KEY = "";' "$bc"; then
+            echo "FCM: NOT configured (FCM_* are empty → push stays dormant)"
+          elif [ -n "$bc" ]; then
+            echo "FCM: configured (FCM_* injected into BuildConfig)"
+          else
+            echo "FCM: release BuildConfig.java not found"
+          fi
+
+          if [ -n "${RELEASE_KEYSTORE_BASE64:-}" ]; then
+            if echo "$certs" | grep -q "CN=Android Debug"; then
+              echo "::error::RELEASE_KEYSTORE_BASE64 is set but the APK is debug-signed"
+              exit 1
+            fi
+            echo "OK: release APK is signed with the configured release key."
+          else
+            echo "No release keystore secret set; debug-signed fallback is expected."
+          fi
+
       - name: Upload lint report
         if: always()
         uses: actions/upload-artifact@v7
