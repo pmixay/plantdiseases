@@ -18,7 +18,10 @@ class GridOverlayView @JvmOverloads constructor(
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = context.getColor(R.color.scan_frame_color)
-        strokeWidth = 1f
+        // Density-scale so the guide line is a consistent ~1dp across screens.
+        // A raw 1f is 1 *pixel*, which renders as a near-invisible sub-pixel
+        // hairline on hidpi devices (~0.33dp at xxhdpi).
+        strokeWidth = resources.displayMetrics.density
         style = Paint.Style.STROKE
     }
 

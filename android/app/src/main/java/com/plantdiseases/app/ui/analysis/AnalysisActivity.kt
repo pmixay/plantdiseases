@@ -20,7 +20,6 @@ import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.databinding.ActivityAnalysisBinding
 import com.plantdiseases.app.ui.result.ResultActivity
-import android.widget.Toast
 import com.plantdiseases.app.util.AquaClassifier
 import com.plantdiseases.app.util.AquaInference
 import com.plantdiseases.app.util.ImageUtils
@@ -36,6 +35,9 @@ class AnalysisActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityAnalysisBinding
     private var imagePath: String = ""
+    // Held so onDestroy can dismiss the blurry-photo dialog — a config-change
+    // recreate while it is showing would otherwise leak the dialog window.
+    private var blurDialog: androidx.appcompat.app.AlertDialog? = null
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
@@ -98,8 +100,9 @@ class AnalysisActivity : AppCompatActivity() {
             }
 
             if (blurScore < 100.0) {
-                // Photo is blurry — warn user
-                MaterialAlertDialogBuilder(this@AnalysisActivity)
+                // Photo is blurry — warn user. Keep the reference so onDestroy
+                // can dismiss it and avoid a leaked window on recreation.
+                blurDialog = MaterialAlertDialogBuilder(this@AnalysisActivity)
                     .setTitle(R.string.blurry_photo_title)
                     .setMessage(R.string.blurry_photo_message)
                     .setPositiveButton(R.string.continue_anyway) { _, _ ->
@@ -125,49 +128,46 @@ class AnalysisActivity : AppCompatActivity() {
         val app = application as PlantDiseasesApp
 
         lifecycleScope.launch {
-            // Image preparation (decode + resize + re-encode) is CPU/IO heavy
-            // and allocates several bitmaps — keep it off the main thread.
-            val uploadFile = try {
-                withContext(Dispatchers.IO) {
-                    ImageUtils.prepareImageForUpload(this@AnalysisActivity, imagePath)
-                }
-            } catch (e: ImageUtils.ImageDecodeException) {
-                Log.w(TAG, "Image decode failed", e)
-                showError(getString(R.string.image_decode_error_title), getString(R.string.image_decode_error_detail))
-                return@launch
-            } catch (e: OutOfMemoryError) {
-                Log.e(TAG, "Out of memory preparing upload", e)
-                showError(getString(R.string.image_too_large_title), getString(R.string.image_too_large_detail))
-                return@launch
-            } catch (e: Exception) {
-                Log.e(TAG, "Unexpected failure preparing upload", e)
-                showError(getString(R.string.analysis_error), e.localizedMessage ?: getString(R.string.unknown_error))
-                return@launch
-            }
-
+            // Prepared lazily, only on the server path, so a successful
+            // on-device Aqua scan doesn't pay for a decode+resize+re-encode it
+            // never sends. Nullable so the finally deletes only what we made.
+            var uploadFile: File? = null
             try {
                 val locale = if (LocaleHelper.isRussian(this@AnalysisActivity)) "ru" else "en"
                 val family = ModelFamilyPrefs.selected(this@AnalysisActivity)
 
-                // Aqua runs fully on-device when its TFLite model is installed.
-                // This path needs no network and produces a (minimal) result
-                // directly. If the offline model isn't bundled, we hint that
-                // and fall back to the server (tagged family=aqua).
-                if (family == ModelFamily.AQUA) {
-                    if (AquaClassifier.isAvailable(this@AnalysisActivity)) {
-                        val response = runAquaOnDevice(imagePath)
-                        if (response != null) {
-                            proceedWithResult(imagePath, response)
-                            return@launch
-                        }
-                        // Inference failed — fall through to the server.
-                    } else {
-                        Toast.makeText(
-                            this@AnalysisActivity,
-                            getString(R.string.model_family_aqua_not_installed),
-                            Toast.LENGTH_SHORT,
-                        ).show()
+                // Aqua runs fully on-device when its TFLite model is installed —
+                // no network, minimal result. The picker only offers Aqua once
+                // the model is present, so a missing model simply falls through
+                // to the server (tagged family=aqua).
+                if (family == ModelFamily.AQUA && AquaClassifier.isAvailable(this@AnalysisActivity)) {
+                    val response = runAquaOnDevice(imagePath)
+                    if (response != null) {
+                        proceedWithResult(imagePath, response)
+                        return@launch
                     }
+                    // Inference failed — fall through to the server.
+                }
+
+                // Server path: prepare the upload now. Decode + resize +
+                // re-encode is CPU/IO heavy and allocates several bitmaps —
+                // keep it off the main thread.
+                uploadFile = try {
+                    withContext(Dispatchers.IO) {
+                        ImageUtils.prepareImageForUpload(this@AnalysisActivity, imagePath)
+                    }
+                } catch (e: ImageUtils.ImageDecodeException) {
+                    Log.w(TAG, "Image decode failed", e)
+                    showError(getString(R.string.image_decode_error_title), getString(R.string.image_decode_error_detail))
+                    return@launch
+                } catch (e: OutOfMemoryError) {
+                    Log.e(TAG, "Out of memory preparing upload", e)
+                    showError(getString(R.string.image_too_large_title), getString(R.string.image_too_large_detail))
+                    return@launch
+                } catch (e: Exception) {
+                    Log.e(TAG, "Unexpected failure preparing upload", e)
+                    showError(getString(R.string.analysis_error), e.localizedMessage ?: getString(R.string.unknown_error))
+                    return@launch
                 }
 
                 val result = app.scanRepository.analyzeImage(
@@ -210,7 +210,7 @@ class AnalysisActivity : AppCompatActivity() {
                     }
                 }
             } finally {
-                runCatching { uploadFile.delete() }
+                uploadFile?.let { f -> runCatching { f.delete() } }
             }
         }
     }
@@ -250,9 +250,19 @@ class AnalysisActivity : AppCompatActivity() {
             val classifier = AquaClassifier.create(this@AnalysisActivity) ?: return@withContext null
             try {
                 val bitmap = AquaClassifier.decodeForInference(imagePath) ?: return@withContext null
-                val probs = classifier.classify(bitmap)
-                bitmap.recycle()
+                // Recycle in finally so a classify() failure can't leak the bitmap.
+                val probs = try {
+                    classifier.classify(bitmap)
+                } finally {
+                    bitmap.recycle()
+                }
                 AquaInference.buildResponse(probs)
+            } catch (e: OutOfMemoryError) {
+                // OutOfMemoryError is an Error, not an Exception — without this
+                // clause a decode/inference OOM escapes and crashes the app
+                // instead of falling back to the (OOM-guarded) server path.
+                Log.w(TAG, "Aqua on-device OOM; falling back to server", e)
+                null
             } catch (e: Exception) {
                 Log.w(TAG, "Aqua on-device inference failed", e)
                 null
@@ -266,6 +276,12 @@ class AnalysisActivity : AppCompatActivity() {
         binding.errorLayout.visibility = View.VISIBLE
         binding.tvError.text = title
         binding.tvErrorDetail.text = detail
+    }
+
+    override fun onDestroy() {
+        blurDialog?.dismiss()
+        blurDialog = null
+        super.onDestroy()
     }
 
     companion object {

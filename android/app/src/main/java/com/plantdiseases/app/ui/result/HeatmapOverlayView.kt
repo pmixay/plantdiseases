@@ -53,6 +53,9 @@ class HeatmapOverlayView @JvmOverloads constructor(
     private var imgWidth = 0
     private var imgHeight = 0
 
+    // Reused across boxes/frames so onDraw allocates no RectF per frame.
+    private val boxRect = RectF()
+
     fun setBoxes(list: List<Box>, origW: Int, origH: Int) {
         boxes.clear()
         boxes.addAll(list)
@@ -133,8 +136,8 @@ class HeatmapOverlayView @JvmOverloads constructor(
 
             strokePaint.color = strokeColor
             strokePaint.strokeWidth = if (box.primary) 5f else 2f
-            val rect = RectF(left, top, right, bottom)
-            canvas.drawRoundRect(rect, 8f, 8f, strokePaint)
+            boxRect.set(left, top, right, bottom)
+            canvas.drawRoundRect(boxRect, 8f, 8f, strokePaint)
         }
     }
 }

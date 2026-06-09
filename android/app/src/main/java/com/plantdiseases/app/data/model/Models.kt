@@ -30,8 +30,8 @@ data class Detection(
 
 /** Single entry in the server-provided top-k candidate list. */
 data class TopKEntry(
-    @SerializedName("class") val className: String,
-    @SerializedName("confidence") val confidence: Float,
+    @SerializedName("class") val className: String = "",
+    @SerializedName("confidence") val confidence: Float = 0f,
     @SerializedName("name_en") val nameEn: String? = null,
     @SerializedName("name_ru") val nameRu: String? = null,
     @SerializedName("is_healthy") val isHealthy: Boolean? = null
@@ -39,7 +39,7 @@ data class TopKEntry(
 
 /** One class inside a conformal prediction set, with bilingual labels. */
 data class PredictionSetItem(
-    @SerializedName("class") val className: String,
+    @SerializedName("class") val className: String = "",
     @SerializedName("name_en") val nameEn: String? = null,
     @SerializedName("name_ru") val nameRu: String? = null,
 )
@@ -54,7 +54,7 @@ data class PredictionSetItem(
  * the user to guess which one to act on. Empty for every other set.
  */
 data class PredictionSetCareCard(
-    @SerializedName("class") val className: String,
+    @SerializedName("class") val className: String = "",
     @SerializedName("name_en") val nameEn: String? = null,
     @SerializedName("name_ru") val nameRu: String? = null,
     @SerializedName("description") val description: String = "",
@@ -242,10 +242,14 @@ data class CommunityScansResponse(
 )
 
 data class CommunityScanItem(
-    @SerializedName("scan_id") val scanId: String,
+    // Non-null with safe defaults: Gson does not honour Kotlin non-null types,
+    // so an item missing scan_id / disease would otherwise inject null and NPE
+    // the whole feed render on first access (consumers pass these into non-null
+    // String params). Defaulting degrades one bad row to blank instead.
+    @SerializedName("scan_id") val scanId: String = "",
     @SerializedName("country") val country: String = "",
     @SerializedName("region") val region: String = "",
-    @SerializedName("disease") val disease: String,
+    @SerializedName("disease") val disease: String = "",
     @SerializedName("confidence") val confidence: Float? = null,
     @SerializedName("species") val species: String? = null,
     @SerializedName("species_score") val speciesScore: Float? = null,
@@ -271,12 +275,12 @@ data class CommunityRegionSummary(
 )
 
 data class CommunityTopDisease(
-    @SerializedName("disease") val disease: String,
+    @SerializedName("disease") val disease: String = "",
     @SerializedName("count") val count: Int = 0,
 )
 
 data class CommunityTopRegion(
-    @SerializedName("region") val region: String,
+    @SerializedName("region") val region: String = "",
     @SerializedName("count") val count: Int = 0,
 )
 
@@ -311,7 +315,7 @@ data class CommunityRequestOpinionResponse(
 /** One community 'second opinion' on a shared scan. `scanId` is only
  *  populated by the /my-opinions endpoint (which scan the opinion was on). */
 data class CommunityOpinion(
-    @SerializedName("suggested_disease") val suggestedDisease: String,
+    @SerializedName("suggested_disease") val suggestedDisease: String = "",
     @SerializedName("note") val note: String = "",
     @SerializedName("created_at") val createdAt: Long = 0L,
     @SerializedName("scan_id") val scanId: String = "",
@@ -476,7 +480,7 @@ data class SpeciesCandidate(
  * the UI should fall back to manual species entry, not show an error toast.
  */
 data class IdentifyResponse(
-    @SerializedName("available") val available: Boolean,
+    @SerializedName("available") val available: Boolean = false,
     @SerializedName("results") val results: List<SpeciesCandidate> = emptyList(),
     @SerializedName("source") val source: String? = null,
     @SerializedName("organ") val organ: String? = null,
@@ -518,7 +522,7 @@ data class CarePlanRequest(
 data class CarePlanResponse(
     @SerializedName("species") val species: String = "",
     @SerializedName("disease") val disease: String = "",
-    @SerializedName("light_tier") val lightTier: String,
+    @SerializedName("light_tier") val lightTier: String = "bright_indirect",
     @SerializedName("watering_days") val wateringDaysRaw: Any? = null,
     @SerializedName("fertilise_weeks") val fertiliseWeeks: Int = 0,
     @SerializedName("humidity_target") val humidityTarget: String = "",
@@ -584,9 +588,9 @@ data class CarePlanCheckpoint(
 
 /** Server health check response */
 data class HealthResponse(
-    @SerializedName("status") val status: String,
-    @SerializedName("version") val version: String,
-    @SerializedName("num_classes") val numClasses: Int,
+    @SerializedName("status") val status: String = "",
+    @SerializedName("version") val version: String = "",
+    @SerializedName("num_classes") val numClasses: Int = 0,
     @SerializedName("uptime_seconds") val uptimeSeconds: Double? = null,
     @SerializedName("total_requests") val totalRequests: Int? = null
 )
@@ -606,7 +610,7 @@ data class ProgressionRequest(
  * against. `sparkline` is always populated (5-point severity series).
  */
 data class ProgressionResponse(
-    @SerializedName("trend") val trend: String,
+    @SerializedName("trend") val trend: String = "baseline",
     @SerializedName("delta_confidence") val deltaConfidence: Float = 0f,
     @SerializedName("delta_severity") val deltaSeverity: Int = 0,
     @SerializedName("class_changed") val classChanged: Boolean = false,

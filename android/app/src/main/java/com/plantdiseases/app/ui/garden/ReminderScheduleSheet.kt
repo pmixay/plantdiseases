@@ -11,6 +11,7 @@ import android.view.ViewGroup
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.core.os.bundleOf
 import androidx.fragment.app.FragmentManager
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.bottomsheet.BottomSheetBehavior
@@ -99,7 +100,6 @@ class ReminderScheduleSheet : BottomSheetDialogFragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        binding.reminderPlantName.text = plant.name
 
         waterRow = setupRow(binding.rowWater, R.drawable.ic_watering, R.string.reminder_watering)
         checkRow = setupRow(binding.rowCheck, R.drawable.ic_care, R.string.reminder_check)
@@ -113,6 +113,37 @@ class ReminderScheduleSheet : BottomSheetDialogFragment() {
         val behavior = BottomSheetBehavior.from(view.parent as View)
         behavior.state = BottomSheetBehavior.STATE_EXPANDED
         behavior.peekHeight = 600.dp()
+
+        // Resolve the plant. Normal path: show() set it directly. After a
+        // config-change recreate (rotation / dark-mode / locale) or process
+        // death the system rebuilds the fragment WITHOUT calling show(),
+        // leaving `plant` uninitialised — fall back to the id stashed in
+        // arguments and reload from Room instead of crashing on plant.name.
+        // (carePlanDefaults are a transient convenience, intentionally not
+        // restored; saved reminders still load.) Mirrors DoctorChatSheet.
+        if (::plant.isInitialized) {
+            bindPlant()
+        } else {
+            val savedId = arguments?.getLong(ARG_PLANT_ID, -1L) ?: -1L
+            if (savedId <= 0L) {
+                dismissAllowingStateLoss()
+                return
+            }
+            lifecycleScope.launch {
+                val restored = (requireActivity().application as PlantDiseasesApp)
+                    .plantRepository.getPlant(savedId)
+                if (restored == null || _binding == null) {
+                    dismissAllowingStateLoss()
+                    return@launch
+                }
+                plant = restored
+                bindPlant()
+            }
+        }
+    }
+
+    private fun bindPlant() {
+        binding.reminderPlantName.text = plant.name
         loadReminders()
     }
 
@@ -228,6 +259,7 @@ class ReminderScheduleSheet : BottomSheetDialogFragment() {
     }
 
     private fun persistReminders() {
+        if (!::plant.isInitialized) return
         val repo = (requireActivity().application as PlantDiseasesApp).plantRepository
         val ctx = requireContext()
 
@@ -282,10 +314,13 @@ class ReminderScheduleSheet : BottomSheetDialogFragment() {
 
     companion object {
         private const val TAG = "ReminderScheduleSheet"
+        private const val ARG_PLANT_ID = "arg_plant_id"
 
         fun show(fm: FragmentManager, plant: PlantEntity) {
             val sheet = ReminderScheduleSheet().apply {
                 this.plant = plant
+                // Stash the id so the sheet self-heals after recreation.
+                arguments = bundleOf(ARG_PLANT_ID to plant.id)
             }
             sheet.show(fm, TAG)
         }
@@ -304,6 +339,7 @@ class ReminderScheduleSheet : BottomSheetDialogFragment() {
             val sheet = ReminderScheduleSheet().apply {
                 this.plant = plant
                 this.carePlanDefaults = plan
+                arguments = bundleOf(ARG_PLANT_ID to plant.id)
             }
             sheet.show(fm, TAG)
         }

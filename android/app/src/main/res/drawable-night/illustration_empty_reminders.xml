@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Dark-mode variant: pale background blob, white card and pale body lines
+     swapped for dark-surface tones. Green title line + check motif unchanged. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="160dp"
+    android:height="160dp"
+    android:viewportWidth="160"
+    android:viewportHeight="160">
+    <path
+        android:fillColor="#1A211B"
+        android:pathData="M27,89C25,58 47,31 79,28C112,25 138,49 140,83C142,118 117,139 81,139C48,139 29,119 27,89Z" />
+    <path
+        android:fillColor="#1C261E"
+        android:pathData="M51,48H109C115,48 120,53 120,59V111C120,117 115,122 109,122H51C45,122 40,117 40,111V59C40,53 45,48 51,48Z" />
+    <path
+        android:fillColor="#1F8A4C"
+        android:pathData="M55,67H105V74H55Z" />
+    <path
+        android:fillColor="#3E4D44"
+        android:pathData="M55,85H105V92H55Z" />
+    <path
+        android:fillColor="#3E4D44"
+        android:pathData="M55,101H88V108H55Z" />
+    <path
+        android:fillColor="#7ED957"
+        android:pathData="M103,37C111,37 117,43 117,51C117,59 111,65 103,65C95,65 89,59 89,51C89,43 95,37 103,37Z" />
+    <path
+        android:fillColor="#0F4D25"
+        android:pathData="M101,43H105V53H101Z" />
+    <path
+        android:fillColor="#0F4D25"
+        android:pathData="M101,56H105V60H101Z" />
+</vector>

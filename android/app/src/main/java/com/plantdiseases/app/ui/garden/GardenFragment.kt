@@ -328,18 +328,22 @@ class GardenFragment : Fragment() {
         val action = summary.nextAction ?: return null
         val ctx = requireContext()
         val nowMs = System.currentTimeMillis()
-        val deltaDays = ((action.dueAt - nowMs) / (24L * 60L * 60L * 1000L)).toInt()
+        val deltaMs = action.dueAt - nowMs
+        val deltaDays = (deltaMs / (24L * 60L * 60L * 1000L)).toInt()
         val icon = when (action.type) {
             "watering" -> "💧"
             "fertilize" -> "🌱"
             else -> "⏰"
         }
         val label = when {
-            deltaDays <= 0 -> getString(R.string.garden_card_action_overdue, icon)
-            deltaDays == 1 -> getString(R.string.garden_card_action_tomorrow, icon)
+            // Only a genuinely-past reminder is "overdue". Integer-day
+            // truncation previously flagged anything due within the next 24h
+            // (deltaDays == 0) as overdue before it had even arrived.
+            deltaMs <= 0L -> getString(R.string.garden_card_action_overdue, icon)
+            deltaDays <= 1 -> getString(R.string.garden_card_action_tomorrow, icon)
             else -> getString(R.string.garden_card_action_in_days, icon, deltaDays)
         }
-        val (bg, fg) = if (deltaDays <= 0) {
+        val (bg, fg) = if (deltaMs <= 0L) {
             ctx.getColor(R.color.disease_red_bg) to ctx.getColor(R.color.disease_red)
         } else {
             ctx.getColor(R.color.neutral_blue_bg) to ctx.getColor(R.color.neutral_blue)

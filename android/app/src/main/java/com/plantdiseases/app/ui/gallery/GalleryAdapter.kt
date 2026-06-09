@@ -50,6 +50,9 @@ class GalleryAdapter(
                 else -> item.diseaseName
             }
             tvDiseaseName.text = displayName
+            // Per-item label so TalkBack distinguishes thumbnails instead of
+            // announcing the same generic string on every card.
+            ivPlant.contentDescription = displayName
             tvDate.text = ImageUtils.formatRelativeDate(context, item.timestamp)
             // Confidence on a NAP card is misleading — hide the percentage.
             if (item.isNotAPlant) {
@@ -67,10 +70,13 @@ class GalleryAdapter(
             statusIndicator.setBackgroundColor(context.getColor(statusColor))
             tvDiseaseName.setTextColor(context.getColor(statusColor))
 
+            // RoundedCorners takes pixels — density-scale 16dp so the photo
+            // corners match the card instead of looking near-square on hidpi.
+            val cornerPx = (16 * context.resources.displayMetrics.density).toInt()
             Glide.with(context)
                 .load(File(item.imagePath))
                 .diskCacheStrategy(DiskCacheStrategy.ALL)
-                .transform(CenterCrop(), RoundedCorners(16))
+                .transform(CenterCrop(), RoundedCorners(cornerPx))
                 .placeholder(R.drawable.ic_plant_placeholder)
                 .into(ivPlant)
 
@@ -88,7 +94,8 @@ class GalleryAdapter(
             // Red "+N" badge + accent stroke when there are opinions the user
             // hasn't opened this scan to see yet. Cleared once they view it.
             if (item.newOpinions > 0) {
-                tvNewOpinions.text = "+${item.newOpinions}"
+                tvNewOpinions.text =
+                    context.getString(R.string.gallery_new_opinions_badge, item.newOpinions)
                 tvNewOpinions.visibility = android.view.View.VISIBLE
                 root.strokeColor = context.getColor(R.color.disease_red)
                 root.strokeWidth = (2 * context.resources.displayMetrics.density).toInt()

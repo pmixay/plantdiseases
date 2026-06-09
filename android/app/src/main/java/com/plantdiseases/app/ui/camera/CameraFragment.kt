@@ -51,7 +51,9 @@ import com.plantdiseases.app.ui.community.NearbyScansActivity
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.ModelFamilyPrefs
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
 
@@ -73,6 +75,13 @@ class CameraFragment : Fragment() {
      *  — both for the preview (Glide caches by path) and analysis. */
     private var pendingCropFile: File? = null
 
+    /** The pre-crop original handed to the cropper as its source (the raw
+     *  camera capture or the gallery copy). It is never used downstream — the
+     *  saved scan uses the cropper's output — so it is deleted once the crop
+     *  returns. Tracked here so cleanup works on both the success and the
+     *  cancel path. */
+    private var pendingSourceFile: File? = null
+
     private val PREFS_NAME = "plantdiseases_prefs"
     private val KEY_GRID_OVERLAY = "grid_overlay_enabled"
     private val KEY_TIPS_SEEN = "scan_tips_seen"
@@ -87,6 +96,9 @@ class CameraFragment : Fragment() {
         if (granted) {
             startCamera()
         } else {
+            // Guard like every other async callback in this file — `binding`
+            // is a !! getter that NPEs after onDestroyView.
+            if (_binding == null) return@registerForActivityResult
             binding.permissionLayout.visibility = View.VISIBLE
             binding.cameraPreview.visibility = View.GONE
         }
@@ -120,9 +132,27 @@ class CameraFragment : Fragment() {
         val cropped = pendingCropFile
         if (result.isSuccessful && cropped != null && cropped.exists() && cropped.length() > 0L) {
             navigateToAnalysis(cropped.absolutePath)
+            // The crop succeeded; the raw original is no longer needed.
+            clearPendingSource()
         } else {
             if (result.error != null) Log.w(TAG, "Crop not completed", result.error)
             discardPendingCrop()
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // Deliver the first-run tips sheet's "Continue" tap via the Fragment
+        // Result API rather than a transient lambda, so it survives a
+        // config-change recreation (rotation / dark-mode / locale) while the
+        // sheet is open. Registering with `this` re-arms on recreation and the
+        // FragmentManager replays any pending result to the new listener.
+        parentFragmentManager.setFragmentResultListener(
+            ScanTipsSheet.REQUEST_KEY, this,
+        ) { _, _ ->
+            requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit().putBoolean(KEY_TIPS_SEEN, true).apply()
+            continueCaptureFlow()
         }
     }
 
@@ -400,10 +430,9 @@ class CameraFragment : Fragment() {
     private fun onCaptureClicked() {
         val prefs = requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         if (!prefs.getBoolean(KEY_TIPS_SEEN, false)) {
-            ScanTipsSheet.show(parentFragmentManager) {
-                prefs.edit().putBoolean(KEY_TIPS_SEEN, true).apply()
-                continueCaptureFlow()
-            }
+            // The Continue tap is handled by the Fragment Result listener
+            // registered in onCreate (config-change safe).
+            ScanTipsSheet.show(parentFragmentManager)
             return
         }
         continueCaptureFlow()
@@ -445,7 +474,16 @@ class CameraFragment : Fragment() {
                     // double-gate on green-content here — false
                     // positives on textured fabric hurt UX more than
                     // they help.
-                    launchCrop(Uri.fromFile(photoFile))
+                    pendingSourceFile = photoFile
+                    // Shrink the full-res capture off the main thread before
+                    // handing it to the cropper, then launch once it's done.
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        withContext(Dispatchers.IO) {
+                            ImageUtils.downscaleForCropInPlace(photoFile.absolutePath)
+                        }
+                        if (_binding == null || !isAdded) return@launch
+                        launchCrop(Uri.fromFile(photoFile))
+                    }
                 }
 
                 override fun onError(exception: ImageCaptureException) {
@@ -483,12 +521,24 @@ class CameraFragment : Fragment() {
     private fun handleGalleryImage(uri: Uri) {
         // Copy into our own files dir first so the cropper reads a stable
         // file:// uri rather than a transient content:// grant that may
-        // not survive the activity hop.
-        val file = ImageUtils.copyUriToFile(requireContext(), uri)
-        if (file != null) {
-            launchCrop(Uri.fromFile(file))
-        } else {
-            Toast.makeText(requireContext(), getString(R.string.image_load_error), Toast.LENGTH_SHORT).show()
+        // not survive the activity hop. Runs off the main thread — a large or
+        // cloud-backed (Google Photos) source can take a while to stream and
+        // would ANR if copied on the UI thread.
+        viewLifecycleOwner.lifecycleScope.launch {
+            val file = withContext(Dispatchers.IO) {
+                ImageUtils.copyUriToFile(requireContext(), uri)?.also {
+                    // Shrink before cropping so the cropper lays the image out
+                    // within its canvas instead of spilling under the toolbar.
+                    ImageUtils.downscaleForCropInPlace(it.absolutePath)
+                }
+            }
+            if (_binding == null || !isAdded) return@launch
+            if (file != null) {
+                pendingSourceFile = file
+                launchCrop(Uri.fromFile(file))
+            } else {
+                Toast.makeText(requireContext(), getString(R.string.image_load_error), Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -550,6 +600,18 @@ class CameraFragment : Fragment() {
     private fun discardPendingCrop() {
         pendingCropFile?.let { f -> runCatching { if (f.exists()) f.delete() } }
         pendingCropFile = null
+        clearPendingSource()
+    }
+
+    /** Delete the pre-crop original (the raw camera capture or the gallery
+     *  copy) once the cropper has written its own CROP_*.jpg. The original is
+     *  only ever the cropper's input — the saved scan always uses the crop — so
+     *  it is safe to remove on both the success and the cancel path. Without
+     *  this, a full-resolution original leaked into filesDir/plant_images on
+     *  every capture and every gallery import. */
+    private fun clearPendingSource() {
+        pendingSourceFile?.let { f -> runCatching { if (f.exists()) f.delete() } }
+        pendingSourceFile = null
     }
 
     private fun navigateToAnalysis(imagePath: String) {
@@ -590,6 +652,11 @@ class CameraFragment : Fragment() {
         // Re-arm the shutter in case we came back from gallery /
         // analysis without a fresh photo (cancelled, error, etc.).
         captureInFlight = false
+        // Re-sync the model-family chip from the persisted selection. Covers
+        // the case where the picker sheet's callback was lost to a
+        // config-change recreation while it was open — the chip would
+        // otherwise keep showing the previously-selected family.
+        if (_binding != null) refreshModelFamilyChip()
         // If MainActivity's startup permission batch just finished and
         // CAMERA flipped to granted, start the preview now — onResume
         // is the first point we're sure the system dialog has been

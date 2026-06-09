@@ -12,7 +12,7 @@ import androidx.core.content.ContextCompat
 import java.io.IOException
 import java.util.Locale
 import kotlin.coroutines.resume
-import kotlin.coroutines.suspendCoroutine
+import kotlinx.coroutines.suspendCancellableCoroutine
 
 /**
  * Resolves the device's coarse location into a stable, human-readable
@@ -114,11 +114,25 @@ object RegionResolver {
         val geocoder = Geocoder(context, Locale.getDefault())
         return try {
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                // Async API on API 33+.
-                suspendCoroutine { cont ->
-                    geocoder.getFromLocation(location.latitude, location.longitude, 1) { results ->
-                        cont.resume(formatRegion(results.firstOrNull()))
-                    }
+                // Async API on API 33+. Supply BOTH callbacks: the trailing
+                // lambda only implements onGeocode, so a geocoder error (no
+                // backend, throttling, IO) would invoke onError and never
+                // resume the continuation — hanging the coroutine forever
+                // (and leaking it on the app scope). suspendCancellableCoroutine
+                // also lets lifecycleScope cancel a pending lookup.
+                suspendCancellableCoroutine { cont ->
+                    geocoder.getFromLocation(
+                        location.latitude, location.longitude, 1,
+                        object : Geocoder.GeocodeListener {
+                            override fun onGeocode(addresses: MutableList<Address>) {
+                                if (cont.isActive) cont.resume(formatRegion(addresses.firstOrNull()))
+                            }
+
+                            override fun onError(errorMessage: String?) {
+                                if (cont.isActive) cont.resume(null)
+                            }
+                        },
+                    )
                 }
             } else {
                 @Suppress("DEPRECATION")

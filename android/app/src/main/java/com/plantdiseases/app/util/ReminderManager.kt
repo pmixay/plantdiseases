@@ -3,6 +3,8 @@ package com.plantdiseases.app.util
 import android.content.Context
 import androidx.work.Data
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.plantdiseases.app.worker.PlantReminderWorker
@@ -50,6 +52,39 @@ object ReminderManager {
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             uniqueName(plantId, type),
             ExistingPeriodicWorkPolicy.UPDATE,
+            request,
+        )
+    }
+
+    /**
+     * Re-fire a single reminder one day from now — the notification
+     * "Snooze 1d" action. One-shot: it does NOT touch the plant's periodic
+     * schedule, it just brings this one reminder back tomorrow. Unique work
+     * with REPLACE so a second snooze tap resets the 24h timer rather than
+     * stacking duplicate firings.
+     */
+    fun snooze(
+        context: Context,
+        plantId: Long,
+        plantName: String,
+        type: String,
+        reminderId: Long,
+    ) {
+        val inputData = Data.Builder()
+            .putLong(PlantReminderWorker.KEY_PLANT_ID, plantId)
+            .putLong(PlantReminderWorker.KEY_REMINDER_ID, reminderId)
+            .putString(PlantReminderWorker.KEY_REMINDER_TYPE, type)
+            .putString(PlantReminderWorker.KEY_PLANT_NAME, plantName)
+            .build()
+
+        val request = OneTimeWorkRequestBuilder<PlantReminderWorker>()
+            .setInputData(inputData)
+            .setInitialDelay(1, TimeUnit.DAYS)
+            .build()
+
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            "snooze_${plantId}_$type",
+            ExistingWorkPolicy.REPLACE,
             request,
         )
     }
