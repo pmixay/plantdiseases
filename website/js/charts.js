@@ -22,6 +22,13 @@
   function lbl(k) { return L[k][lang()]; }
   function t(ru, en) { return lang() === 'en' ? en : ru; }
 
+  /* short, language-neutral codes for the compact confusion matrix */
+  var SHORT = {
+    notplant: 'NP', powdery: 'PM', pests: 'PS', healthy: 'HL', viral: 'VI',
+    graymold: 'GM', leafspot: 'LS', nutrient: 'NU', scorch: 'SC'
+  };
+  function isNarrow() { return window.matchMedia('(max-width:680px)').matches; }
+
   /* ---------- data (from the evaluation report) ---------- */
   // precision / recall / f1 / n  ·  per-class on real-world photos
   var PERCLASS = [
@@ -210,7 +217,7 @@
         bars.appendChild(bar);
       });
       col.appendChild(bars);
-      col.appendChild(el('div', 'dm-name', lbl(d.k)));
+      col.appendChild(el('div', 'dm-name', isNarrow() ? SHORT[d.k] : lbl(d.k)));
       col.addEventListener('mousemove', function (e) {
         showTip('<b>' + lbl(d.k) + '</b><br>in-domain: <b>' + d.ind.toFixed(0) + '%</b><br>' + t('реальные','real-world') + ': <b>' + d.real.toFixed(1) + '%</b><br><span class="muted">' + t('разрыв','gap') + ' ' + (gap >= 0 ? '−' : '+') + Math.abs(gap).toFixed(1) + ' ' + t('п.п.','pp') + '</span>', e.clientX, e.clientY);
       });
@@ -225,17 +232,19 @@
      ============================================================ */
   function renderConfusion(root) {
     root.innerHTML = '';
-    var wrap = el('div', 'cm-wrap');
-    var grid = el('div', 'cm-grid');
-    grid.style.gridTemplateColumns = 'var(--cm-lbl) repeat(' + CM_ORDER.length + ', 1fr)';
+    var narrow = isNarrow();
+    var hd = function (k) { return narrow ? SHORT[k] : lbl(k); };
+    var wrap = el('div', 'cm-wrap' + (narrow ? ' cm-sm' : ''));
+    var grid = el('div', 'cm-grid' + (narrow ? ' cm-sm' : ''));
+    grid.style.gridTemplateColumns = 'var(--cm-lbl) repeat(' + CM_ORDER.length + ', minmax(0,1fr))';
     // corner
-    grid.appendChild(el('div', 'cm-corner', '<span>' + t('истина ╲ предск.','true ╲ pred') + '</span>'));
+    grid.appendChild(el('div', 'cm-corner', '<span>' + (narrow ? t('и╲п','t╲p') : t('истина ╲ предск.','true ╲ pred')) + '</span>'));
     // column headers
     CM_ORDER.forEach(function (c) {
-      grid.appendChild(el('div', 'cm-colh', '<span>' + lbl(c) + '</span>'));
+      grid.appendChild(el('div', 'cm-colh', '<span>' + hd(c) + '</span>'));
     });
     CM_ORDER.forEach(function (rk) {
-      grid.appendChild(el('div', 'cm-rowh', lbl(rk)));
+      grid.appendChild(el('div', 'cm-rowh', hd(rk)));
       CM_ORDER.forEach(function (ck) {
         var v = CM[rk][ck] || 0;
         var cell = el('div', 'cm-cell' + (rk === ck ? ' diag' : ''), v > 0 ? v : '');
@@ -255,6 +264,14 @@
     var scale = el('div', 'cm-scale');
     scale.innerHTML = '<span>0%</span><div class="cm-bar"></div><span>100%</span>';
     root.appendChild(scale);
+    // on narrow screens spell out the short codes
+    if (narrow) {
+      var key = el('div', 'cm-key');
+      key.innerHTML = CM_ORDER.map(function (k) {
+        return '<span><b>' + SHORT[k] + '</b>' + lbl(k) + '</span>';
+      }).join('');
+      root.appendChild(key);
+    }
   }
 
   /* ============================================================
@@ -342,6 +359,22 @@
       if (root) { c.fn(root); animate(root); }
     });
   });
+
+  // re-render the confusion matrix when crossing the compact-layout breakpoint
+  var lastNarrow = isNarrow();
+  var rzTimer;
+  window.addEventListener('resize', function () {
+    clearTimeout(rzTimer);
+    rzTimer = setTimeout(function () {
+      var n = isNarrow();
+      if (n === lastNarrow) return;
+      lastNarrow = n;
+      [['#chart-confusion', renderConfusion], ['#chart-domain', renderDomain]].forEach(function (c) {
+        var root = document.querySelector(c[0]);
+        if (root) { c[1](root); animate(root); }
+      });
+    }, 180);
+  }, { passive: true });
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();

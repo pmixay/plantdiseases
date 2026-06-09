@@ -27,12 +27,15 @@
   navLinks.addEventListener('click', function (e) {
     if (e.target === navLinks || e.target.tagName === 'A') setMenu(false);
   });
+  // close when the brand (kept above the overlay) is tapped
+  var brand = document.querySelector('.brand');
+  if (brand) brand.addEventListener('click', function () { setMenu(false); });
   // close on Escape and when growing back to desktop width
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') setMenu(false);
   });
   window.addEventListener('resize', function () {
-    if (window.innerWidth > 680) setMenu(false);
+    if (window.innerWidth > 1000) setMenu(false);
   });
 
   /* ---------- language toggle (RU / EN) ---------- */
