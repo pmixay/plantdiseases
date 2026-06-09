@@ -564,6 +564,11 @@
     <string name="care_plan_detail_placement">Placement</string>
     <string name="care_plan_detail_acclimation">Acclimation</string>
     <string name="care_plan_detail_watering_method">Watering method</string>
+    <!-- Watering method enum values from the server -->
+    <string name="watering_method_bottom_water">Water from below (let the pot soak up water through the drainage holes)</string>
+    <string name="watering_method_bottom_water_soak">Soak from below — stand the pot in water for 20 min, then drain</string>
+    <string name="watering_method_let_top_inch_dry">Let the top 2–3 cm of soil dry out between waterings</string>
+    <string name="watering_method_soak_and_drain">Water thoroughly until it drains, then empty the saucer</string>
     <string name="care_plan_detail_soil_mix">Soil mix</string>
     <string name="care_plan_detail_npk">Fertiliser NPK</string>
     <string name="care_plan_detail_light_lux">Light (lux)</string>

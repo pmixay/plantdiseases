@@ -561,6 +561,11 @@
     <string name="care_plan_detail_placement">Размещение</string>
     <string name="care_plan_detail_acclimation">Акклиматизация</string>
     <string name="care_plan_detail_watering_method">Способ полива</string>
+    <!-- Watering method enum values from the server -->
+    <string name="watering_method_bottom_water">Полив снизу (дайте горшку впитать воду через дренажные отверстия)</string>
+    <string name="watering_method_bottom_water_soak">Замачивание снизу — поставьте горшок в воду на 20 мин, затем слейте</string>
+    <string name="watering_method_let_top_inch_dry">Давайте верхним 2–3 см почвы просохнуть между поливами</string>
+    <string name="watering_method_soak_and_drain">Полейте обильно до стекания, затем опорожните поддон</string>
     <string name="care_plan_detail_soil_mix">Грунт</string>
     <string name="care_plan_detail_npk">NPK удобрения</string>
     <string name="care_plan_detail_light_lux">Освещение (люкс)</string>
