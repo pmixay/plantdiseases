@@ -384,6 +384,7 @@
     <string name="doctor_q2">What caused this? How to prevent recurrence?</string>
     <string name="doctor_q3">What\'s the fastest home treatment?</string>
     <string name="doctor_clear">Clear chat</string>
+    <string name="doctor_open_cta">Ask AI Plant Doctor</string>
     <!-- Light Meter -->
     <string name="light_meter">Light Meter</string>
     <string name="light_needs_header">Light needs for this plant</string>

@@ -790,6 +790,25 @@ class ResultActivity : AppCompatActivity() {
             override fun onTabUnselected(tab: TabLayout.Tab) {}
             override fun onTabReselected(tab: TabLayout.Tab) {}
         })
+
+        // AI Plant Doctor follow-up — the same assistant as the Garden plant
+        // detail. If this scan is already attached to a garden plant we open a
+        // persistent plant session; otherwise an ephemeral scan session that
+        // still carries the diagnosis context.
+        binding.btnAskDoctor.setOnClickListener {
+            Haptics.tick(this)
+            val app = application as PlantDiseasesApp
+            lifecycleScope.launch {
+                val plant = scan.plantId?.let { app.plantRepository.getPlant(it) }
+                if (plant != null) {
+                    com.plantdiseases.app.ui.garden.DoctorChatSheet
+                        .show(supportFragmentManager, plant)
+                } else {
+                    com.plantdiseases.app.ui.garden.DoctorChatSheet
+                        .show(supportFragmentManager, scan)
+                }
+            }
+        }
     }
 
     private fun buildPipelineWarnings(scan: ScanEntity, repository: ScanRepository) {
@@ -1485,12 +1504,17 @@ class ResultActivity : AppCompatActivity() {
         card.showLoading(null)
 
         lifecycleScope.launch {
+            // Prefer the species attached to the saved garden plant; otherwise
+            // fall back to the PlantNet species detected for this scan so the
+            // care plan is species-specific even before "Add to garden".
             val plantSpecies = scan.plantId?.let { pid ->
                 val plant = app.plantRepository.getPlant(pid)
                 plant?.scientificName?.takeIf { it.isNotBlank() }
                     ?: plant?.commonName?.takeIf { it.isNotBlank() }
                     ?: plant?.species?.takeIf { it.isNotBlank() }
             }
+                ?: scan.speciesScientific?.takeIf { it.isNotBlank() }
+                ?: scan.speciesCommon?.takeIf { it.isNotBlank() }
             card.showLoading(plantSpecies)
 
             val request = CarePlanRequest(

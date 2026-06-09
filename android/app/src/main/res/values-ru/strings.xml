@@ -380,6 +380,7 @@
     <string name="doctor_q2">Причина и как предотвратить рецидив?</string>
     <string name="doctor_q3">Самое быстрое домашнее лечение?</string>
     <string name="doctor_clear">Очистить чат</string>
+    <string name="doctor_open_cta">Спросить AI-доктора</string>
     <!-- Light Meter -->
     <string name="light_meter">Люксметр</string>
     <string name="light_needs_header">Потребность в свете для этого растения</string>
