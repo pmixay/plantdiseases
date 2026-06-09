@@ -25,6 +25,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
+import com.bumptech.glide.load.DecodeFormat
 import com.bumptech.glide.load.resource.bitmap.CenterCrop
 import com.bumptech.glide.load.resource.bitmap.RoundedCorners
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -200,6 +201,8 @@ class GardenFragment : Fragment() {
             row.plantThumb.colorFilter = null
             Glide.with(this)
                 .load(thumbSource)
+                // RGB_565 halves the per-card thumbnail RAM on the garden list.
+                .format(DecodeFormat.PREFER_RGB_565)
                 .transform(CenterCrop(), RoundedCorners(18.dp()))
                 .placeholder(R.drawable.ic_garden)
                 .error(R.drawable.ic_garden)

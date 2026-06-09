@@ -352,6 +352,7 @@
                     android:layout_height="wrap_content"
                     android:text="@string/language"
                     android:textAppearance="@style/TextAppearance.App.Title"
+                    android:accessibilityHeading="true"
                     android:layout_marginBottom="@dimen/space_sm" />
 
                 <!-- Flag-segmented language switch (replaces the plain button). -->
@@ -430,6 +431,7 @@
                     android:layout_height="wrap_content"
                     android:text="@string/theme_setting"
                     android:textAppearance="@style/TextAppearance.App.Title"
+                    android:accessibilityHeading="true"
                     android:layout_marginBottom="@dimen/space_sm" />
 
                 <com.google.android.material.chip.ChipGroup
@@ -492,7 +494,8 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="@string/autosave_title"
-                            android:textAppearance="@style/TextAppearance.App.Title" />
+                            android:textAppearance="@style/TextAppearance.App.Title"
+                            android:accessibilityHeading="true" />
 
                         <TextView
                             android:layout_width="match_parent"
@@ -535,7 +538,8 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/community_toggle_title"
-                    android:textAppearance="@style/TextAppearance.App.Title" />
+                    android:textAppearance="@style/TextAppearance.App.Title"
+                    android:accessibilityHeading="true" />
 
                 <!-- No toggle here: community is opt-in IN CONTEXT (the
                      "similar scans near you" card on a result, or the Nearby

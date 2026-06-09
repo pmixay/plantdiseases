@@ -466,6 +466,9 @@
     <string name="water_calc_entry_title">Calculate watering</string>
     <string name="water_calc_entry_subtitle">Estimate how much and how often to water this plant.</string>
 
+    <!-- Accessibility: state announced on the selected model-family row -->
+    <string name="cd_selected">Selected</string>
+
     <!-- Autosave snapped scan photos to the device gallery -->
     <string name="autosave_title">Autosave photos to album</string>
     <string name="autosave_subtitle">Save photos you snap to your device gallery.</string>

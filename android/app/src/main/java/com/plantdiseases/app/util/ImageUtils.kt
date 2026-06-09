@@ -209,8 +209,27 @@ object ImageUtils {
             while (rawW / (inSampleSize * 2) >= maxSize || rawH / (inSampleSize * 2) >= maxSize) {
                 inSampleSize *= 2
             }
-            val decodeOpts = BitmapFactory.Options().apply { this.inSampleSize = inSampleSize }
-            val decoded = BitmapFactory.decodeFile(imagePath, decodeOpts) ?: return
+            // Decode with an OOM fallback: a 4000 px capture lands on
+            // inSampleSize = 1 (a ~48 MB ARGB bitmap) and can OOM the decode on
+            // a low-RAM device before we ever get to scale it down. On failure
+            // we double the sampling and retry, so the worst case is a slightly
+            // softer pre-crop image rather than a crash on the capture path.
+            val decoded = run {
+                var s = inSampleSize
+                var bmp: Bitmap? = null
+                while (s <= 32) {
+                    try {
+                        bmp = BitmapFactory.decodeFile(
+                            imagePath, BitmapFactory.Options().apply { inSampleSize = s },
+                        )
+                        break
+                    } catch (e: OutOfMemoryError) {
+                        Log.w(TAG, "OOM in crop downscale at sample=$s; retrying smaller", e)
+                        s *= 2
+                    }
+                }
+                bmp
+            } ?: return
             try {
                 val ratio = maxSize.toFloat() / maxOf(decoded.width, decoded.height)
                 val scaled = if (ratio < 1f) {

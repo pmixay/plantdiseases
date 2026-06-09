@@ -25,6 +25,7 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.bumptech.glide.Glide
+import com.bumptech.glide.load.DecodeFormat
 import com.bumptech.glide.load.resource.bitmap.CenterCrop
 import com.bumptech.glide.load.resource.bitmap.RoundedCorners
 import com.google.android.material.appbar.MaterialToolbar
@@ -1539,6 +1540,9 @@ class PlantDetailActivity : AppCompatActivity() {
                 scaleType = ImageView.ScaleType.CENTER_CROP
                 Glide.with(this@PlantDetailActivity)
                     .load(Uri.parse(uri))
+                    // RGB_565 for the photos-grid thumbnails; the full-screen
+                    // viewer (openJournalPhotoViewer) still loads at full quality.
+                    .format(DecodeFormat.PREFER_RGB_565)
                     .transform(CenterCrop(), RoundedCorners(18.dp()))
                     .into(this)
                 isClickable = true

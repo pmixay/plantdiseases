@@ -6,6 +6,7 @@ import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.bumptech.glide.Glide
+import com.bumptech.glide.load.DecodeFormat
 import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.bumptech.glide.load.resource.bitmap.CenterCrop
 import com.bumptech.glide.load.resource.bitmap.RoundedCorners
@@ -76,6 +77,11 @@ class GalleryAdapter(
             Glide.with(context)
                 .load(File(item.imagePath))
                 .diskCacheStrategy(DiskCacheStrategy.ALL)
+                // RGB_565 halves the per-thumbnail bitmap footprint — at grid
+                // thumbnail size the quality loss is imperceptible, but on a
+                // long scan list it roughly halves the scrolling RAM peak that
+                // OOMs low-end devices. Full-screen photos keep ARGB_8888.
+                .format(DecodeFormat.PREFER_RGB_565)
                 .transform(CenterCrop(), RoundedCorners(cornerPx))
                 .placeholder(R.drawable.ic_plant_placeholder)
                 .into(ivPlant)
