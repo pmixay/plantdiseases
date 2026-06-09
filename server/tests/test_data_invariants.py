@@ -809,12 +809,15 @@ def test_melon_broadleaf_nutrient_supplement_train_only():
     )
 
 
-def test_weakclass_precision_is_measured_and_drives_selection():
-    """v2.5.1: the physiological classes are PRECISION-bound (they over-trigger),
-    so precision must be (a) reported by the eval helper, (b) shipped with a
-    bootstrap CI in the model card next to the recall CI, and (c) the head
-    checkpoint selection must be precision-aware (macro-F1 plus a small
-    weak-class-precision bonus on val_indomain) rather than recall-blind."""
+def test_weakclass_precision_is_measured_shipped_and_selectable():
+    """v2.5: the physiological classes are PRECISION-bound (they over-trigger),
+    so precision must be (a) reported by the eval helper and (b) shipped with a
+    bootstrap CI in the model card next to the recall CI — both UNCONDITIONAL, so
+    the over-trigger is always visible. (c) A precision-aware checkpoint
+    selection lever exists (macro-F1 + weight * weak-class F0.5 on val_indomain)
+    but is OPT-IN, OFF by default (weight 0.0 == proven pure-macro-F1 selection),
+    because the precision/recall trade is not yet GPU-A/B-validated to transfer
+    to the val_realworld ship metric."""
     src = _notebook_source()
     # (a) the eval helper returns per-class precision
     assert "'per_class_precision'" in src, "evaluate() must report per_class_precision"
@@ -823,12 +826,15 @@ def test_weakclass_precision_is_measured_and_drives_selection():
     assert "per_class_precision_ci_realworld" in src, (
         "model card must ship the weak-class precision CI beside the recall CI"
     )
-    # (c) checkpoint selection blends macro-F1 with weak-class precision
-    assert "SELECT_WEAKCLASS_PRECISION_WEIGHT" in src, (
-        "checkpoint selection must expose a weak-class precision weight"
-    )
+    # (c) the selection lever exists, is F0.5-based (recall-aware, so a degenerate
+    # predict-once epoch earns no bonus), and DEFAULTS TO OFF (pure macro-F1).
+    assert "_weakclass_fbeta" in src, "the F0.5 weak-class selection metric is missing"
     assert re.search(r"sel\s*=\s*f1\s*\+\s*SELECT_WEAKCLASS_PRECISION_WEIGHT", src), (
-        "the selection score must be macro-F1 + weight * mean weak-class precision"
+        "the selection score must be macro-F1 + weight * weak-class F0.5"
+    )
+    assert re.search(r"SELECT_WEAKCLASS_PRECISION_WEIGHT\s*=\s*0\.0\b", src), (
+        "the precision-aware selection lever must default to 0.0 (pure macro-F1) "
+        "until the precision/recall trade is GPU-A/B-validated"
     )
 
 

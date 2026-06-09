@@ -49,10 +49,13 @@ The production artefact is an ONNX graph and the runtime is
 **architecture-neutral** — it serves whatever backbone+head the shipped
 bundle declares (`classes.json -> architecture`):
 
-- **v2.4.x (current, `gamma`):** frozen **DINOv2 ViT-S/14** backbone +
-  LoRA on the later blocks (v2.4: rank 16 / last 8 blocks — the §3 probe
-  showed the *features*, not the head, cap weak-class recall) + a small
-  MLP head, **no distillation**. Motivated by a frozen DINOv2-S linear
+- **v2.5.x (current, `gamma`):** frozen **DINOv2 ViT-S/14** backbone +
+  LoRA on the later blocks (rank 16 / last 8 blocks, unchanged since v2.4
+  — the §3 probe showed the *features*, not the head, cap weak-class
+  recall) + a small MLP head, **no distillation**. v2.5 adds a BROADLEAF
+  nutrient source (melon) so `nutrient_deficiency` trains on dicot leaf
+  morphology, and ships **per-class precision CIs** beside the recall CIs
+  (the physiological classes are precision-bound — they over-trigger). Motivated by a frozen DINOv2-S linear
   probe reaching ~0.91 top-1 on `val_realworld`. v2.4 rebuilds the §2
   data supply for the weak classes (new ornamental/houseplant disease
   source; black-background segmented-Aloe and outdoor-cactus-as-pests
