@@ -405,7 +405,15 @@ footer{background:var(--dark);color:var(--dark-muted);padding:70px 0 40px;}
   .nav-inner{position:relative;z-index:3;}
   .brand{position:relative;z-index:3;}
   body.menu-open{overflow:hidden;}
-  body.menu-open .nav{background:transparent;box-shadow:none;}
+  /* When scrolled, .nav.scrolled applies backdrop-filter, which makes .nav a
+     containing block for its position:fixed child .nav-links — collapsing the
+     full-screen overlay onto the thin nav bar. Drop the filter (and out-specify
+     .nav.scrolled) while the menu is open so the overlay covers the viewport. */
+  body.menu-open .nav,
+  body.menu-open .nav.scrolled{
+    background:transparent;box-shadow:none;
+    -webkit-backdrop-filter:none;backdrop-filter:none;
+  }
   body.menu-open .brand{color:var(--ink);}
   .burger{display:grid;place-items:center;position:relative;}
   .burger .ic-close{display:none;}
@@ -499,8 +507,10 @@ footer{background:var(--dark);color:var(--dark-muted);padding:70px 0 40px;}
 .dm-name{font-size:10.5px;color:var(--dark-muted);text-align:center;line-height:1.2;min-height:2.6em;}
 
 /* ---- confusion matrix heatmap ---- */
-.cm-wrap{overflow-x:auto;padding-bottom:6px;--cm-lbl:150px;}
-.cm-grid{display:grid;gap:3px;min-width:680px;}
+.cm-wrap{overflow:visible;padding-bottom:0;--cm-lbl:150px;}
+/* Cap + centre the grid so it doesn't stretch to fill the full-width card
+   (which blew the cells up to cover the screen) and never needs a scrollbar. */
+.cm-grid{display:grid;gap:3px;max-width:600px;margin:0 auto;}
 .cm-corner{display:flex;align-items:flex-end;justify-content:flex-end;padding:4px 8px;}
 .cm-corner span{font-family:var(--f-mono);font-size:10px;color:var(--dark-muted);text-align:right;line-height:1.2;}
 .cm-colh{display:flex;align-items:flex-end;justify-content:center;height:118px;overflow:visible;}
@@ -518,7 +528,7 @@ footer{background:var(--dark);color:var(--dark-muted);padding:70px 0 40px;}
 
 /* compact confusion matrix (small screens) — short codes, no horizontal scroll */
 .cm-wrap.cm-sm{overflow:visible;padding-bottom:0;--cm-lbl:30px;}
-.cm-grid.cm-sm{min-width:0;gap:2px;}
+.cm-grid.cm-sm{min-width:0;max-width:none;gap:2px;}
 .cm-sm .cm-corner{padding:2px;}
 .cm-sm .cm-corner span{font-size:8px;}
 .cm-sm .cm-colh{height:auto;align-items:center;}

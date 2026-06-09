@@ -4,6 +4,8 @@ A standalone, responsive, bilingual (RU / EN) one-page site that presents the
 **PlantDiseases · PlantVision** project — both the **in-app functions** and the
 **ML technology** behind them.
 
+**🌐 Live:** <https://pdis.arbuz.lol/>
+
 ## What's inside
 
 - **`index.html`** — the full page. All copy carries `data-ru` / `data-en`
