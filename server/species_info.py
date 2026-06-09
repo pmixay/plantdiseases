@@ -54,6 +54,16 @@ def fetch_species_info(scientific_name: str | None, lang: str = "en") -> dict | 
 
     payload = _fetch(name, lang)
     if payload is None and lang != "en":
+        # The localized wiki frequently has the article under a DIFFERENT
+        # title than the scientific name we were given — most often because
+        # the name is a recent synonym (e.g. "Heptapleurum arboricola" while
+        # the ru article lives at "Шеффлера древовидная"). The English wiki
+        # resolves redirects/synonyms and carries interwiki langlinks, so use
+        # it to discover the correct localized title before giving up.
+        localized = _localized_title(name, lang)
+        if localized:
+            payload = _fetch(localized, lang)
+    if payload is None and lang != "en":
         # The localized wiki often lacks a SPECIES page for an obscure plant
         # (e.g. ru has no "Didymochlaena truncatula") but DOES have the GENUS
         # article — which still gives a useful localized blurb. Try the genus
@@ -61,6 +71,10 @@ def fetch_species_info(scientific_name: str | None, lang: str = "en") -> dict | 
         genus = name.split()[0] if name.split() else ""
         if genus and genus.lower() != name.lower():
             payload = _fetch(genus, lang)
+            if payload is None:
+                localized_genus = _localized_title(genus, lang)
+                if localized_genus:
+                    payload = _fetch(localized_genus, lang)
     if payload is None and lang != "en":
         payload = _fetch(name, "en")
 
@@ -69,6 +83,55 @@ def fetch_species_info(scientific_name: str | None, lang: str = "en") -> dict | 
             _cache.clear()
         _cache[key] = (now + _CACHE_TTL_S, payload)
     return payload
+
+
+def _localized_title(name: str, target_lang: str, source_lang: str = "en") -> str | None:
+    """Resolve the ``target_lang`` Wikipedia title for ``name`` via the
+    ``source_lang`` wiki's interwiki langlinks.
+
+    A direct title lookup on the localized wiki misses articles that exist
+    under a synonym or a localized common name (very common for plants whose
+    botanical name was recently reclassified). The English wiki follows
+    redirects (``redirects=1``) and exposes the localized title through its
+    langlinks, which is far more robust. Best-effort — returns ``None`` on any
+    failure so callers fall through to the next strategy.
+    """
+    try:
+        import requests  # lazy — only this path needs it
+    except Exception:  # pragma: no cover
+        return None
+
+    url = f"https://{source_lang}.wikipedia.org/w/api.php"
+    params = {
+        "action": "query",
+        "titles": name,
+        "redirects": "1",
+        "prop": "langlinks",
+        "lllang": target_lang,
+        "lllimit": "1",
+        "format": "json",
+        "formatversion": "2",
+    }
+    try:
+        r = requests.get(
+            url,
+            params=params,
+            headers={"User-Agent": _USER_AGENT, "Accept": "application/json"},
+            timeout=_TIMEOUT_S,
+        )
+        if not r.ok:
+            return None
+        pages = (r.json().get("query") or {}).get("pages") or []
+    except Exception as exc:  # network blip, timeout, bad JSON — all non-fatal
+        logger.info("Wikipedia langlink lookup failed (%s); continuing", exc)
+        return None
+
+    for page in pages:
+        for link in page.get("langlinks") or []:
+            title = (link.get("title") or "").strip()
+            if title:
+                return title
+    return None
 
 
 def _fetch(name: str, lang: str) -> dict | None:
