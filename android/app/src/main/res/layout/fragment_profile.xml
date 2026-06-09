@@ -376,12 +376,11 @@
                         android:clickable="true"
                         android:focusable="true">
 
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="🇺🇸"
-                            android:textSize="20sp"
-                            android:includeFontPadding="false" />
+                        <ImageView
+                            android:layout_width="24dp"
+                            android:layout_height="16dp"
+                            android:src="@drawable/ic_flag_us"
+                            android:contentDescription="@null" />
 
                         <TextView
                             android:id="@+id/tv_lang_en"
@@ -404,12 +403,11 @@
                         android:clickable="true"
                         android:focusable="true">
 
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="🇷🇺"
-                            android:textSize="20sp"
-                            android:includeFontPadding="false" />
+                        <ImageView
+                            android:layout_width="24dp"
+                            android:layout_height="16dp"
+                            android:src="@drawable/ic_flag_ru"
+                            android:contentDescription="@null" />
 
                         <TextView
                             android:id="@+id/tv_lang_ru"

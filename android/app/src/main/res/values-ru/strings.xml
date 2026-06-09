@@ -635,6 +635,9 @@
     <string name="toxicity_safe_title">Безопасно для питомцев</string>
     <string name="toxicity_toxic_body">Это растение токсично для: %1$s. Уберите подальше от животных, при отравлении — к ветеринару.</string>
     <string name="toxicity_safe_body">Данных о токсичности для кошек и собак нет.</string>
+    <string name="toxicity_animal_cats">кошек</string>
+    <string name="toxicity_animal_dogs">собак</string>
+    <string name="toxicity_animal_horses">лошадей</string>
     <!-- Historical progression sparkline -->
     <string name="progression_title">Динамика заболевания</string>
     <string name="progression_trend_improving">Улучшается</string>

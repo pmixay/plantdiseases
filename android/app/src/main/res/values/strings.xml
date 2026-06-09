@@ -645,6 +645,9 @@
     <string name="toxicity_safe_title">Pet-safe</string>
     <string name="toxicity_toxic_body">This species is reported toxic to %1$s. Keep out of reach and contact a vet on ingestion.</string>
     <string name="toxicity_safe_body">No toxicity reports for cats or dogs against this species.</string>
+    <string name="toxicity_animal_cats">cats</string>
+    <string name="toxicity_animal_dogs">dogs</string>
+    <string name="toxicity_animal_horses">horses</string>
     <!-- Historical progression sparkline -->
     <string name="progression_title">Disease progression</string>
     <string name="progression_trend_improving">Improving</string>
