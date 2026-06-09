@@ -515,31 +515,28 @@ class PlantDetailActivity : AppCompatActivity() {
      *  existing watering / note / photo dialogs stay separate because
      *  each has its own bespoke flow (photo picker, etc.). */
     private enum class JournalAction(
-        val titleRes: Int, val hintRes: Int,
+        val titleRes: Int, val hintRes: Int, val iconRes: Int,
     ) {
-        FERTILISE(R.string.log_fertilising, R.string.fertilising_hint),
-        PRUNE(R.string.log_pruning, R.string.pruning_hint),
-        REPOT(R.string.log_repotting, R.string.repotting_hint),
-        MIST(R.string.log_misting, R.string.misting_hint),
+        FERTILISE(R.string.log_fertilising, R.string.fertilising_hint, R.drawable.ic_garden),
+        PRUNE(R.string.log_pruning, R.string.pruning_hint, R.drawable.ic_garden),
+        REPOT(R.string.log_repotting, R.string.repotting_hint, R.drawable.ic_garden),
+        MIST(R.string.log_misting, R.string.misting_hint, R.drawable.ic_watering),
     }
 
     private fun showLogDialog(kind: JournalAction) {
-        val input = TextInputEditText(this).apply {
+        val view = layoutInflater.inflate(R.layout.dialog_gradient_input, null)
+        view.findViewById<ImageView>(R.id.iv_dialog_icon).setImageResource(kind.iconRes)
+        view.findViewById<TextView>(R.id.tv_dialog_title).setText(kind.titleRes)
+        view.findViewById<TextInputLayout>(R.id.til_dialog_input).hint = getString(kind.hintRes)
+        val input = view.findViewById<TextInputEditText>(R.id.et_dialog_input).apply {
             inputType = InputType.TYPE_CLASS_TEXT or
                 InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or
                 InputType.TYPE_TEXT_FLAG_MULTI_LINE
-            setHint(kind.hintRes)
             minLines = 2
             setSingleLine(false)
         }
-        val container = TextInputLayout(this).apply {
-            setPadding(20.dp(), 8.dp(), 20.dp(), 0)
-            boxStrokeColor = getColor(R.color.primary)
-            addView(input)
-        }
         MaterialAlertDialogBuilder(this)
-            .setTitle(kind.titleRes)
-            .setView(container)
+            .setView(view)
             .setPositiveButton(R.string.reminder_save) { _, _ ->
                 val raw = input.text?.toString()
                 lifecycleScope.launch {
@@ -1592,20 +1589,20 @@ class PlantDetailActivity : AppCompatActivity() {
         }
         val allowEmpty = type != PlantRepository.JournalType.NOTE
 
-        val input = TextInputEditText(this).apply {
+        val view = layoutInflater.inflate(R.layout.dialog_gradient_input, null)
+        view.findViewById<ImageView>(R.id.iv_dialog_icon).setImageResource(R.drawable.ic_note_pencil)
+        view.findViewById<TextView>(R.id.tv_dialog_title).setText(R.string.edit_entry)
+        val inputLayout = view.findViewById<TextInputLayout>(R.id.til_dialog_input).apply {
+            hint = getString(hintRes)
+        }
+        val input = view.findViewById<TextInputEditText>(R.id.et_dialog_input).apply {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
             minLines = 3
             maxLines = 6
             setText(entry.text.orEmpty())
         }
-        val inputLayout = TextInputLayout(this).apply {
-            hint = getString(hintRes)
-            addView(input)
-            setPadding(0, 8.dp(), 0, 0)
-        }
         val dialog = MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.edit_entry)
-            .setView(inputLayout)
+            .setView(view)
             .setNegativeButton(R.string.cancel, null)
             .setPositiveButton(R.string.save, null)
             .show()
@@ -1701,6 +1698,7 @@ class PlantDetailActivity : AppCompatActivity() {
     private fun showNoteDialog() = showTextDialog(
         titleRes = R.string.add_note,
         hintRes = R.string.note_hint,
+        iconRes = R.drawable.ic_note_pencil,
     ) { text ->
         lifecycleScope.launch {
             plantRepository.addNote(plantId, text)
@@ -1711,6 +1709,7 @@ class PlantDetailActivity : AppCompatActivity() {
     private fun showWateringDialog() = showTextDialog(
         titleRes = R.string.log_watering,
         hintRes = R.string.watering_hint,
+        iconRes = R.drawable.ic_watering,
         allowEmpty = true,
     ) { text ->
         lifecycleScope.launch {
@@ -1722,6 +1721,7 @@ class PlantDetailActivity : AppCompatActivity() {
     private fun showPhotoCaptionDialog(uri: Uri) = showTextDialog(
         titleRes = R.string.add_photo_log,
         hintRes = R.string.photo_caption_hint,
+        iconRes = R.drawable.ic_garden,
         allowEmpty = true,
     ) { text ->
         lifecycleScope.launch {
@@ -1733,22 +1733,23 @@ class PlantDetailActivity : AppCompatActivity() {
     private fun showTextDialog(
         titleRes: Int,
         hintRes: Int,
+        iconRes: Int = R.drawable.ic_garden,
         allowEmpty: Boolean = false,
         onSave: (String) -> Unit,
     ) {
-        val input = TextInputEditText(this).apply {
+        val view = layoutInflater.inflate(R.layout.dialog_gradient_input, null)
+        view.findViewById<ImageView>(R.id.iv_dialog_icon).setImageResource(iconRes)
+        view.findViewById<TextView>(R.id.tv_dialog_title).setText(titleRes)
+        val inputLayout = view.findViewById<TextInputLayout>(R.id.til_dialog_input).apply {
+            hint = getString(hintRes)
+        }
+        val input = view.findViewById<TextInputEditText>(R.id.et_dialog_input).apply {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
             minLines = 3
             maxLines = 6
         }
-        val inputLayout = TextInputLayout(this).apply {
-            hint = getString(hintRes)
-            addView(input)
-            setPadding(0, 8.dp(), 0, 0)
-        }
         val dialog = MaterialAlertDialogBuilder(this)
-            .setTitle(titleRes)
-            .setView(inputLayout)
+            .setView(view)
             .setNegativeButton(R.string.cancel, null)
             .setPositiveButton(R.string.save, null)
             .show()
