@@ -557,6 +557,14 @@ def _is_banned(identifier: str) -> bool:
 def _record_violation(identifier: str) -> None:
     now = time.time()
     with _abuse_lock:
+        # Bound the violation map: entries whose window already elapsed are
+        # dead weight, and under IP churn (public deploy behind CGNAT /
+        # scanners) the dict would otherwise grow without limit.
+        if len(_in_memory_violations) > 10_000:
+            for key in [
+                k for k, (reset, _c) in _in_memory_violations.items() if now > reset
+            ]:
+                del _in_memory_violations[key]
         reset_time, count = _in_memory_violations.get(identifier, (now + VIOLATION_WINDOW, 0))
         if now > reset_time:
             reset_time = now + VIOLATION_WINDOW
@@ -602,6 +610,13 @@ ISSUED_SCAN_ID_TTL_DAYS = get_int("ISSUED_SCAN_ID_TTL_DAYS", 30)
 # beats interleaving two — single-user latency is what matters for this
 # rate-limited (1 RPS) workload. Operators expecting real concurrency on a
 # many-core host can raise this and lower ONNX_INTRA_OP_THREADS to match.
+#
+# ONLY ``pipeline.analyze`` runs on this executor. Everything else that
+# needs a thread (SQLite reads/writes, PlantNet / OpenRouter / Wikipedia
+# HTTP, FCM pushes) runs on the event loop's default thread pool —
+# putting it here would queue millisecond DB ops and external HTTP
+# behind a 30-second inference (head-of-line blocking), stalling every
+# non-scan endpoint whenever a scan is in flight.
 INFER_WORKERS = get_int("INFER_WORKERS", 1)
 _inference_executor: ThreadPoolExecutor | None = None
 _executor_lock = threading.Lock()
@@ -856,10 +871,19 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # 2. Determine identifier and limits
         if api_key:
             identifier = f"key:{api_key}"
-            key_cfg = API_KEYS[api_key]
-            rate = float(key_cfg.get("rate_limit_rps", self.rate))
-            capacity = float(key_cfg.get("burst", self.capacity))
-            quota_daily = int(key_cfg.get("quota_daily", 0))
+            # A key's config is usually a dict of overrides, but tolerate a
+            # bare string/null value (e.g. {"key": "team name"}) — that key
+            # then just inherits the global limits instead of 500-ing every
+            # request with an AttributeError.
+            key_cfg = API_KEYS.get(api_key)
+            if not isinstance(key_cfg, dict):
+                key_cfg = {}
+            try:
+                rate = float(key_cfg.get("rate_limit_rps", self.rate))
+                capacity = float(key_cfg.get("burst", self.capacity))
+                quota_daily = int(key_cfg.get("quota_daily", 0))
+            except (TypeError, ValueError):
+                rate, capacity, quota_daily = self.rate, self.capacity, 0
         else:
             identifier = f"ip:{client_ip}"
             rate = self.rate
@@ -1406,8 +1430,10 @@ async def metrics_prometheus():
 async def _species_identify_best_effort(
     image_bytes: bytes, *, timeout: float, lang: str = "en",
 ) -> dict | None:
-    """Run PlantNet identify in the inference executor with a tight
-    timeout. Returns the compact species block ({class, score,
+    """Run PlantNet identify on the default thread pool with a tight
+    timeout (NOT the single-worker inference executor — there it would
+    serialise behind / ahead of the pipeline forward instead of running
+    in parallel with it). Returns the compact species block ({class, score,
     scientific, common, source}) for the response, or ``None`` if the
     call failed, timed out, or PlantNet isn't configured.
 
@@ -1422,7 +1448,7 @@ async def _species_identify_best_effort(
     try:
         raw = await asyncio.wait_for(
             loop.run_in_executor(
-                _get_inference_executor(),
+                None,
                 # identify_species keyword args (organ, lang) are
                 # keyword-only — run_in_executor only takes positional
                 # args, so we wrap in a lambda. Passing positionally
@@ -2254,7 +2280,7 @@ async def identify_endpoint(
     plantnet_lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
     loop = asyncio.get_running_loop()
     result = await loop.run_in_executor(
-        _get_inference_executor(),
+        None,
         lambda: identify_species(contents, organ=organ, lang=plantnet_lang),
     )
     # Deep-copy result before merging so a cache-hit return from
@@ -2281,7 +2307,7 @@ async def chat_endpoint(payload: ChatRequest, request: Request):
     if diagnosis is not None and len(json.dumps(diagnosis, default=str)) > 8 * 1024:
         raise HTTPException(status_code=400, detail="diagnosis context too large")
     result = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(),
+        None,
         lambda: chat_reply(
             session_id=payload.session_id,
             user_message=payload.message,
@@ -2320,7 +2346,7 @@ async def care_plan_endpoint(payload: CarePlanRequest):
         # endpoint forgiving while still producing a useful plan.
         disease = "unknown"
     plan = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(),
+        None,
         lambda: generate_care_plan(
             disease=disease,
             species=payload.species,
@@ -2410,7 +2436,7 @@ async def feedback_endpoint(payload: FeedbackRequest, request: Request):
     # column we persist on each row, so it survives across deploys.
     ip_hash = hash_client_ip(client_ip)
     today_writes = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(),
+        None,
         lambda: feedback_daily_writes(ip_hash),
     )
     if today_writes >= FEEDBACK_DAILY_QUOTA:
@@ -2429,7 +2455,7 @@ async def feedback_endpoint(payload: FeedbackRequest, request: Request):
     # consumes.
     scan_id_clean = payload.scan_id.strip()
     issued = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(),
+        None,
         lambda: is_scan_id_issued(scan_id_clean, ttl_days=ISSUED_SCAN_ID_TTL_DAYS),
     )
     if not issued:
@@ -2460,7 +2486,7 @@ async def feedback_endpoint(payload: FeedbackRequest, request: Request):
         out_of_head = payload.corrected_class not in _FEEDBACK_IN_HEAD_CLASSES
     try:
         row_id = await asyncio.get_running_loop().run_in_executor(
-            _get_inference_executor(),
+            None,
             lambda: record_feedback(
                 scan_id=payload.scan_id.strip(),
                 correct=payload.correct,
@@ -2530,7 +2556,7 @@ async def feedback_image_upload(
     client_ip = _client_ip(request)
     ip_hash = hash_client_ip(client_ip)
     today_writes = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(),
+        None,
         lambda: feedback_daily_writes(ip_hash),
     )
     if today_writes >= FEEDBACK_DAILY_QUOTA:
@@ -2543,7 +2569,7 @@ async def feedback_image_upload(
     if not scan_id_clean or any(ch not in _SCAN_ID_ALLOWED for ch in scan_id_clean):
         raise HTTPException(status_code=422, detail="Invalid scan_id")
     issued = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(),
+        None,
         lambda: is_scan_id_issued(scan_id_clean, ttl_days=ISSUED_SCAN_ID_TTL_DAYS),
     )
     if not issued:
@@ -2556,7 +2582,7 @@ async def feedback_image_upload(
     # used here previously pulled the whole body into RAM with no ceiling.
     image_bytes = await _read_upload(image)
     saved = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(),
+        None,
         lambda: save_feedback_image(
             image_bytes,
             content_type=image.content_type,
@@ -2570,7 +2596,7 @@ async def feedback_image_upload(
     filename, digest = saved
 
     updated = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(),
+        None,
         lambda: feedback_attach_image_path(scan_id_clean, filename),
     )
     logger.info(
@@ -2634,7 +2660,7 @@ async def community_scan_upload(
     client_ip = _client_ip(request)
     ip_hash = hash_client_ip(client_ip)
     today_writes = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(),
+        None,
         lambda: community_daily_writes(ip_hash),
     )
     if today_writes >= COMMUNITY_DAILY_QUOTA:
@@ -2661,9 +2687,24 @@ async def community_scan_upload(
         except Exception as exc:  # noqa: BLE001
             logger.info("Community thumb read failed: %s", exc)
             image_bytes = None
+        # Re-validate the actual bytes — Content-Type is attacker-controlled
+        # (and optional), but the magic bytes don't lie. Anything that isn't
+        # a real JPEG/PNG/WebP is refused so arbitrary bytes can never be
+        # stored and re-served from /api/community/thumb/.
+        if image_bytes:
+            head = image_bytes[:16]
+            if not (
+                head.startswith(b"\xff\xd8\xff")
+                or head.startswith(b"\x89PNG\r\n\x1a\n")
+                or _is_webp(head, image_bytes)
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Community thumbnail must be JPEG / PNG / WebP",
+                )
     try:
         row_id = await asyncio.get_running_loop().run_in_executor(
-            _get_inference_executor(),
+            None,
             lambda: community_record_scan(
                 scan_id=payload.scan_id,
                 user_pseudo_id=payload.user_pseudo_id,
@@ -2707,7 +2748,7 @@ async def community_opinion_submit(payload: CommunityOpinionRequest, request: Re
     ip_hash = hash_client_ip(client_ip)
     loop = asyncio.get_running_loop()
     today = await loop.run_in_executor(
-        _get_inference_executor(),
+        None,
         lambda: community_daily_opinion_writes(ip_hash),
     )
     if today >= COMMUNITY_OPINION_DAILY_QUOTA:
@@ -2716,7 +2757,7 @@ async def community_opinion_submit(payload: CommunityOpinionRequest, request: Re
     sid = payload.scan_id.strip()
     try:
         await loop.run_in_executor(
-            _get_inference_executor(),
+            None,
             lambda: community_record_opinion(
                 scan_id=sid,
                 author_pseudo_id=payload.user_pseudo_id.strip(),
@@ -2741,10 +2782,10 @@ async def community_opinion_submit(payload: CommunityOpinionRequest, request: Re
         except Exception as exc:  # noqa: BLE001
             logger.debug("Opinion push failed: %s", exc)
 
-    await loop.run_in_executor(_get_inference_executor(), _push_owner)
+    await loop.run_in_executor(None, _push_owner)
 
     result = await loop.run_in_executor(
-        _get_inference_executor(), lambda: community_opinions_for(sid),
+        None, lambda: community_opinions_for(sid),
     )
     return JSONResponse(
         content={"ok": True, "count": len(result["opinions"]), **result}
@@ -2779,14 +2820,14 @@ async def community_request_opinion(
     ip_hash = hash_client_ip(client_ip)
     loop = asyncio.get_running_loop()
     today = await loop.run_in_executor(
-        _get_inference_executor(),
+        None,
         lambda: community_daily_opinion_writes(ip_hash),
     )
     if today >= COMMUNITY_OPINION_DAILY_QUOTA:
         raise HTTPException(status_code=429, detail="Daily opinion quota reached.")
     try:
         flagged = await loop.run_in_executor(
-            _get_inference_executor(),
+            None,
             lambda: community_set_wants_opinion(sid, pid),
         )
     except Exception as exc:  # noqa: BLE001
@@ -2804,7 +2845,7 @@ async def community_opinions_list(scan_id: str):
     if not sid or len(sid) > 128:
         raise HTTPException(status_code=422, detail="Invalid scan id")
     result = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(), lambda: community_opinions_for(sid),
+        None, lambda: community_opinions_for(sid),
     )
     return JSONResponse(content={"scan_id": sid, **result})
 
@@ -2818,7 +2859,7 @@ async def community_my_scan_opinions(user_pseudo_id: str):
     if not uid or any(ch not in _SCAN_ID_ALLOWED for ch in uid):
         raise HTTPException(status_code=422, detail="Invalid user id")
     result = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(), lambda: community_opinion_counts_for_user(uid),
+        None, lambda: community_opinion_counts_for_user(uid),
     )
     return JSONResponse(content=result)
 
@@ -2834,7 +2875,7 @@ async def push_register_endpoint(payload: PushRegisterRequest):
     """Register this install's FCM token under its pseudo-id so the server can
     push opinion notifications to a closed / idle device. Upserts by token."""
     await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(),
+        None,
         lambda: push_register(
             payload.user_pseudo_id.strip(),
             payload.token.strip(),
@@ -2855,7 +2896,7 @@ async def community_record_scan_view(payload: CommunityViewRequest):
     viewer server-side; a scan owner viewing their own scan and views of an
     unknown scan never count, so this is safe to fire on every open."""
     counted = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(),
+        None,
         lambda: community_record_view(
             payload.scan_id.strip(), payload.user_pseudo_id.strip(),
         ),
@@ -2874,7 +2915,7 @@ async def community_scan_counts_endpoint(payload: CommunityScanCountsRequest):
     ids = [s.strip() for s in payload.scan_ids if s and s.strip()][:500]
     counts = (
         await asyncio.get_running_loop().run_in_executor(
-            _get_inference_executor(), lambda: community_scan_counts(ids),
+            None, lambda: community_scan_counts(ids),
         )
         if ids else {}
     )
@@ -2942,7 +2983,7 @@ async def community_my_opinions(user_pseudo_id: str):
     if not pid or len(pid) > 128:
         raise HTTPException(status_code=422, detail="Invalid id")
     rows = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(), lambda: community_opinions_by_author(pid),
+        None, lambda: community_opinions_by_author(pid),
     )
     return JSONResponse(content={"opinions": rows})
 
@@ -2959,7 +3000,7 @@ async def community_by_species(
     if not sci:
         raise HTTPException(status_code=422, detail="Invalid species")
     rows = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(),
+        None,
         lambda: community_scans_by_species(
             sci,
             limit=max(1, min(int(limit), 50)),
@@ -2980,7 +3021,7 @@ async def species_info_endpoint(name: str, locale: str = "en"):
         raise HTTPException(status_code=422, detail="Invalid species name")
     lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
     info = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(), lambda: fetch_species_info(n, lang),
+        None, lambda: fetch_species_info(n, lang),
     )
     if info is None:
         return JSONResponse(content={"available": False})
@@ -3110,11 +3151,11 @@ async def community_scan_delete_user(user_pseudo_id: str):
     if not user_pseudo_id or any(ch not in _SCAN_ID_ALLOWED for ch in user_pseudo_id):
         raise HTTPException(status_code=422, detail="Invalid user id")
     deleted_community = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(),
+        None,
         lambda: community_delete_for_user(user_pseudo_id),
     )
     deleted_feedback = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(),
+        None,
         lambda: feedback_delete_for_user(user_pseudo_id),
     )
     return JSONResponse(content={
@@ -3131,11 +3172,11 @@ async def export_user_data(user_pseudo_id: str):
     if not user_pseudo_id or any(ch not in _SCAN_ID_ALLOWED for ch in user_pseudo_id):
         raise HTTPException(status_code=422, detail="Invalid user id")
     community_data = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(),
+        None,
         lambda: community_get_user_data(user_pseudo_id),
     )
     feedback_data = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(),
+        None,
         lambda: feedback_get_user_data(user_pseudo_id),
     )
     return JSONResponse(content={

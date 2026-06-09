@@ -223,7 +223,6 @@ def record_scan(
     """Append a community-shared scan row. Returns the new row id."""
     init_db()
     now = int(time.time())
-    thumb_path = _save_thumbnail(scan_id, image_bytes) if image_bytes else None
     ip_hash = hash_client_ip(client_ip)
     region_value = region or ""
     species_lower = species.lower() if species else None
@@ -233,12 +232,16 @@ def record_scan(
         # upload, so the same scan can be offered twice; we never want
         # two feed rows for one scan. (There's no UNIQUE constraint on
         # scan_id for back-compat with legacy rows, so we guard here.)
+        # The dedup check runs BEFORE the thumbnail write — writing first
+        # leaked an orphan thumbnail file per duplicate upload that no
+        # prune path ever swept.
         existing = conn.execute(
             "SELECT id FROM community_scans WHERE scan_id = ? LIMIT 1",
             (scan_id,),
         ).fetchone()
         if existing:
             return int(existing[0])
+        thumb_path = _save_thumbnail(scan_id, image_bytes) if image_bytes else None
         # Honour a second-opinion request that arrived BEFORE this upload
         # landed (the durable request store decouples the two orderings).
         pending = conn.execute(
@@ -776,13 +779,33 @@ def delete_for_user(user_pseudo_id: str) -> int:
         return 0
     with _write_lock, _connect() as conn:
         rows = conn.execute(
-            "SELECT thumb_path FROM community_scans WHERE user_pseudo_id = ?",
+            "SELECT scan_id, thumb_path FROM community_scans WHERE user_pseudo_id = ?",
             (user_pseudo_id,),
         ).fetchall()
         deleted = conn.execute(
             "DELETE FROM community_scans WHERE user_pseudo_id = ?",
             (user_pseudo_id,),
         ).rowcount
+        # Opinions / views left by OTHER users on this install's scans
+        # reference rows that no longer exist — sweep them so the tables
+        # don't accumulate orphans (and the deleted scans stop showing up
+        # in opinion/view count queries keyed by scan_id).
+        scan_ids = [str(r[0]) for r in rows if r[0]]
+        if scan_ids:
+            placeholders = ",".join("?" * len(scan_ids))
+            conn.execute(
+                f"DELETE FROM community_opinions WHERE scan_id IN ({placeholders})",
+                tuple(scan_ids),
+            )
+            conn.execute(
+                f"DELETE FROM community_scan_views WHERE scan_id IN ({placeholders})",
+                tuple(scan_ids),
+            )
+        # Views this install left on other people's scans also go.
+        conn.execute(
+            "DELETE FROM community_scan_views WHERE viewer_pseudo_id = ?",
+            (user_pseudo_id,),
+        )
         # Opinions this install authored on *other* people's scans also go.
         conn.execute(
             "DELETE FROM community_opinions WHERE author_pseudo_id = ?",
@@ -794,7 +817,7 @@ def delete_for_user(user_pseudo_id: str) -> int:
             (user_pseudo_id,),
         )
     for row in rows:
-        thumb = row[0]
+        thumb = row[1]
         if not thumb:
             continue
         with contextlib.suppress(OSError):
@@ -817,6 +840,22 @@ def prune_older_than(days: int) -> int:
             "DELETE FROM community_scans WHERE created_at < ?",
             (cutoff,),
         ).rowcount
+        # Sweep companion-table rows that have aged past retention AND no
+        # longer reference a live scan — without this, opinions / views /
+        # requests outlive the scan they belong to indefinitely (unbounded
+        # growth + data retained past the stated window). The age guard
+        # keeps a request or opinion that legitimately arrived BEFORE its
+        # scan upload (the supported ordering) from being swept early.
+        for table in (
+            "community_opinions",
+            "community_scan_views",
+            "community_opinion_requests",
+        ):
+            conn.execute(
+                f"DELETE FROM {table} WHERE created_at < ? AND scan_id NOT IN "
+                "(SELECT scan_id FROM community_scans)",
+                (cutoff,),
+            )
     for row in rows:
         thumb = row[0]
         if not thumb:

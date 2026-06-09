@@ -506,3 +506,129 @@ def test_country_groups_with_region_breakdown(client, isolated_community):
     ).json()
     assert r_legacy["summary"]["country"] == "GB"
     assert r_legacy["summary"]["region"] == "Bristol"
+
+
+# ── Regression: thumbnail magic-byte validation ─────────────────────
+
+
+def test_community_scan_rejects_non_image_thumbnail_bytes(client, isolated_community):
+    """Bytes that aren't a real JPEG/PNG/WebP are refused even when the
+    multipart Content-Type claims image/png — the stored thumbnail is later
+    re-served as an image and must never carry arbitrary attacker bytes."""
+    _, thumb_dir = isolated_community
+    r = client.post(
+        "/api/community/scan",
+        data=_form(
+            scan_id="scanbadbytes1",
+            user_pseudo_id="pseudobadbyte",
+            region="London", country="GB",
+            disease="powdery_mildew",
+        ),
+        files={"image": ("scan.png", b"<html>not an image</html>", "image/png")},
+    )
+    assert r.status_code == 400
+    assert not thumb_dir.exists() or not any(thumb_dir.iterdir())
+
+
+# ── Regression: duplicate upload leaves no orphan thumbnail ─────────
+
+
+def test_duplicate_upload_does_not_orphan_thumbnail(client, isolated_community):
+    _, thumb_dir = isolated_community
+    form = _form(
+        scan_id="scandup00001",
+        user_pseudo_id="pseudodup001",
+        region="Berlin", country="DE",
+        disease="leaf_spot",
+    )
+    r1 = client.post(
+        "/api/community/scan", data=form,
+        files={"image": ("a.png", _png_bytes(), "image/png")},
+    )
+    assert r1.status_code == 200
+    files_after_first = sorted(p.name for p in thumb_dir.iterdir())
+    # Second upload of the same scan_id (different bytes) dedups on the
+    # row AND must not write a new, never-referenced thumbnail file.
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (32, 32), color=(200, 30, 30)).save(buf, format="PNG")
+    r2 = client.post(
+        "/api/community/scan", data=form,
+        files={"image": ("b.png", buf.getvalue(), "image/png")},
+    )
+    assert r2.status_code == 200
+    assert r2.json()["id"] == r1.json()["id"]
+    assert sorted(p.name for p in thumb_dir.iterdir()) == files_after_first
+
+
+# ── Regression: delete_for_user / prune sweep companion tables ──────
+
+
+def test_delete_for_user_sweeps_opinions_and_views_on_own_scans(isolated_community):
+    import community as comm
+
+    comm.record_scan(
+        scan_id="scanowned001", user_pseudo_id="owner0000001",
+        country="GB", region="London", disease="leaf_spot",
+    )
+    comm.record_opinion(
+        scan_id="scanowned001", author_pseudo_id="viewer000001",
+        suggested_disease="powdery_mildew",
+    )
+    comm.record_view("scanowned001", "viewer000001")
+    assert comm.view_count_for("scanowned001") == 1
+
+    deleted = comm.delete_for_user("owner0000001")
+    assert deleted == 1
+    db_path, _ = isolated_community
+    conn = sqlite3.connect(db_path)
+    try:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM community_opinions WHERE scan_id='scanowned001'"
+        ).fetchone()[0] == 0
+        assert conn.execute(
+            "SELECT COUNT(*) FROM community_scan_views WHERE scan_id='scanowned001'"
+        ).fetchone()[0] == 0
+    finally:
+        conn.close()
+
+
+def test_prune_sweeps_orphaned_companion_rows(isolated_community):
+    import time as _time
+
+    import community as comm
+
+    comm.init_db()
+    old = int(_time.time()) - 200 * 86_400
+    db_path, _ = isolated_community
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "INSERT INTO community_scans (scan_id, user_pseudo_id, country, "
+            "region, disease, created_at) VALUES ('scanold00001','u0000000001',"
+            "'GB','','leaf_spot',?)", (old,),
+        )
+        conn.execute(
+            "INSERT INTO community_opinions (scan_id, author_pseudo_id, "
+            "suggested_disease, created_at) VALUES ('scanold00001',"
+            "'u0000000002','healthy',?)", (old,),
+        )
+        conn.execute(
+            "INSERT INTO community_scan_views (scan_id, viewer_pseudo_id, "
+            "created_at) VALUES ('scanold00001','u0000000002',?)", (old,),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    assert comm.prune_older_than(90) == 1
+    conn = sqlite3.connect(db_path)
+    try:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM community_opinions"
+        ).fetchone()[0] == 0
+        assert conn.execute(
+            "SELECT COUNT(*) FROM community_scan_views"
+        ).fetchone()[0] == 0
+    finally:
+        conn.close()
