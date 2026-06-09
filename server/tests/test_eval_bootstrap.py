@@ -143,3 +143,46 @@ def test_per_class_recall_ci_handles_rare_class_without_crashing():
     assert db["support"] == 1
     assert db["n_boot_valid"] > 0
     assert db["point"] == 1.0
+
+
+def test_per_class_precision_matches_hand_computed_and_marks_unpredicted_class():
+    # disease_a: predicted at {0,3}, true only at 0 → precision 0.5.
+    # disease_b: predicted at {1,2}, true only at 2 → precision 0.5.
+    # healthy / not_a_plant: never predicted → undefined (nan), never 0/1.
+    y_true = np.array([0, 0, 1, 2])
+    y_pred = np.array([0, 1, 1, 0])
+    prec = eb.per_class_precision(y_true, y_pred, CLASS_NAMES)
+    assert prec["disease_a"] == 0.5
+    assert prec["disease_b"] == 0.5
+    assert np.isnan(prec["healthy"])
+    assert np.isnan(prec["not_a_plant"])
+
+
+def test_per_class_precision_ci_brackets_point_and_reports_predicted():
+    rng = np.random.default_rng(0)
+    n = 400
+    y_true = rng.integers(0, 4, size=n)
+    y_pred = y_true.copy()
+    flip = rng.random(n) < 0.2
+    y_pred[flip] = (y_true[flip] + rng.integers(1, 4, size=flip.sum())) % 4
+
+    out = eb.bootstrap_per_class_precision_ci(y_true, y_pred, CLASS_NAMES, n_boot=400, seed=1)
+    assert out["metric"] == "per_class_precision"
+    for c in CLASS_NAMES:
+        cls = out["classes"][c]
+        assert cls["ci_low"] <= cls["point"] <= cls["ci_high"]
+        assert cls["support"] == int(np.sum(y_true == CLASS_NAMES.index(c)))
+        assert cls["n_predicted"] == int(np.sum(y_pred == CLASS_NAMES.index(c)))
+        assert 0.0 < cls["ci_half_width"] < 0.25
+
+
+def test_per_class_precision_handles_never_predicted_class_without_crashing():
+    # A class the model never predicts must yield a nan point + empty-CI
+    # record, never a divide-by-zero or all-nan crash.
+    y_true = np.array([0, 0, 1, 1, 2, 2, 0, 1])
+    y_pred = np.array([0, 0, 1, 1, 0, 0, 0, 1])  # not_a_plant (3) never predicted
+    out = eb.bootstrap_per_class_precision_ci(y_true, y_pred, CLASS_NAMES, n_boot=200, seed=3)
+    nap = out["classes"]["not_a_plant"]
+    assert nap["n_predicted"] == 0
+    assert nap["n_boot_valid"] == 0
+    assert np.isnan(nap["point"])

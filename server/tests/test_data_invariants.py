@@ -783,3 +783,59 @@ def test_ood_floor_is_calibrated_not_hardcoded():
         f"max_logit_floor is {val}, must reference the calibrated "
         f"ML_FLOOR / ML_FLOOR_PERSISTED variable, not a hardcoded number"
     )
+
+
+def test_melon_broadleaf_nutrient_supplement_train_only():
+    """v2.5.1: the precision-/supply-bound nutrient_deficiency class gains a
+    BROADLEAF crop proxy (melon, dicot leaf morphology) whose leaf shape
+    transfers to houseplants better than the maize/rice grass-blade proxies.
+    Like every crop proxy it must be (a) wired with a concrete slug, (b)
+    fetched into nutrient_deficiency, (c) TRAIN-ONLY, and (d) down-weighted
+    with the LA prior decoupled below the sampler weight."""
+    src = _notebook_source()
+    assert "def fetch_kaggle_melon_nutrient" in src, "melon broadleaf fetcher missing"
+    assert "melon-macronutrient-deficiency" in src, "concrete melon slug missing"
+    for split_fn in ("make_val_realworld", "make_val_indomain",
+                     "make_temperature_cal", "make_conformal_cal"):
+        body = re.search(rf"def {split_fn}\(.*?\n(?:.*\n){{0,14}}", src)
+        assert body and "kaggle_melon" not in body.group(0), (
+            f"{split_fn} must NOT allow 'kaggle_melon' — it is a TRAIN-ONLY proxy"
+        )
+    sw = re.search(r"'kaggle_melon'\s*:\s*([0-9.]+)", src)
+    assert sw and float(sw.group(1)) < 1.0, "'kaggle_melon' must be down-weighted (<1.0)"
+    pr = re.search(r"PRIOR_SOURCE_WEIGHTS\['kaggle_melon'\]\s*=\s*([0-9.]+)", src)
+    assert pr and float(pr.group(1)) < float(sw.group(1)), (
+        "PRIOR_SOURCE_WEIGHTS['kaggle_melon'] must be < its sampler weight"
+    )
+
+
+def test_weakclass_precision_is_measured_and_drives_selection():
+    """v2.5.1: the physiological classes are PRECISION-bound (they over-trigger),
+    so precision must be (a) reported by the eval helper, (b) shipped with a
+    bootstrap CI in the model card next to the recall CI, and (c) the head
+    checkpoint selection must be precision-aware (macro-F1 plus a small
+    weak-class-precision bonus on val_indomain) rather than recall-blind."""
+    src = _notebook_source()
+    # (a) the eval helper returns per-class precision
+    assert "'per_class_precision'" in src, "evaluate() must report per_class_precision"
+    # (b) a precision bootstrap CI is computed and shipped in the model card
+    assert "_per_class_precision_ci" in src, "per-class precision CI helper missing"
+    assert "per_class_precision_ci_realworld" in src, (
+        "model card must ship the weak-class precision CI beside the recall CI"
+    )
+    # (c) checkpoint selection blends macro-F1 with weak-class precision
+    assert "SELECT_WEAKCLASS_PRECISION_WEIGHT" in src, (
+        "checkpoint selection must expose a weak-class precision weight"
+    )
+    assert re.search(r"sel\s*=\s*f1\s*\+\s*SELECT_WEAKCLASS_PRECISION_WEIGHT", src), (
+        "the selection score must be macro-F1 + weight * mean weak-class precision"
+    )
+
+
+def test_eval_bootstrap_exposes_per_class_precision():
+    """The canonical metric module must expose per-class precision + its
+    bootstrap CI, the precision companion to per_class_recall, so weak-class
+    precision is computed from one tested source of truth."""
+    from tools import eval_bootstrap as eb
+    assert hasattr(eb, "per_class_precision")
+    assert hasattr(eb, "bootstrap_per_class_precision_ci")
