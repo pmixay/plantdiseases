@@ -31,35 +31,26 @@ android {
             .replace("\"", "\\\"")
         buildConfigField("String", "API_BASE_URL", "\"$configuredApiBaseUrl\"")
 
-        // Firebase Cloud Messaging config. Defaults below are the public
-        // client identifiers of the "plantdiseases-8ffeb" Firebase project
-        // (from its google-services.json) — these are the same values shipped
-        // inside every APK and are safe to commit; access is gated by app
-        // signing + the server's service-account key, not their secrecy.
-        // Override per-build with -PFCM_APP_ID=... (gradle property) or the
-        // same-named env var to point at a different Firebase project.
-        // We init Firebase MANUALLY from these (no google-services plugin), so
-        // the build never hard-requires a google-services.json file.
-        fun fcmProp(name: String, default: String): String =
-            (providers.gradleProperty(name).orNull ?: System.getenv(name) ?: default)
+        // Firebase Cloud Messaging client config. These four values are the
+        // public client identifiers of a Firebase project (the same ones that
+        // normally live in google-services.json). They are NOT injected with
+        // any default here — they must be supplied at build time via a Gradle
+        // property, a same-named environment variable, or (in CI) a GitHub
+        // Actions secret. See docs/ANDROID_RELEASE.md.
+        //   ./gradlew :app:assembleRelease -PFCM_APP_ID=... -PFCM_API_KEY=...
+        // When any of them is blank the app builds fine and push messaging
+        // simply stays dormant (PushManager.isConfigured() returns false and
+        // the client falls back to its WorkManager poll). We init Firebase
+        // MANUALLY from these (no google-services plugin), so the build never
+        // requires a google-services.json file.
+        fun fcmProp(name: String): String =
+            (providers.gradleProperty(name).orNull ?: System.getenv(name) ?: "")
                 .replace("\\", "\\\\")
                 .replace("\"", "\\\"")
-        buildConfigField(
-            "String", "FCM_APP_ID",
-            "\"${fcmProp("FCM_APP_ID", "1:477261694434:android:ab17ca7387d4e5a390e5bb")}\"",
-        )
-        buildConfigField(
-            "String", "FCM_API_KEY",
-            "\"${fcmProp("FCM_API_KEY", "AIzaSyCaHSEXJDiEvPbh_O-T9GqhTg_9_E7oeqc")}\"",
-        )
-        buildConfigField(
-            "String", "FCM_PROJECT_ID",
-            "\"${fcmProp("FCM_PROJECT_ID", "plantdiseases-8ffeb")}\"",
-        )
-        buildConfigField(
-            "String", "FCM_SENDER_ID",
-            "\"${fcmProp("FCM_SENDER_ID", "477261694434")}\"",
-        )
+        buildConfigField("String", "FCM_APP_ID", "\"${fcmProp("FCM_APP_ID")}\"")
+        buildConfigField("String", "FCM_API_KEY", "\"${fcmProp("FCM_API_KEY")}\"")
+        buildConfigField("String", "FCM_PROJECT_ID", "\"${fcmProp("FCM_PROJECT_ID")}\"")
+        buildConfigField("String", "FCM_SENDER_ID", "\"${fcmProp("FCM_SENDER_ID")}\"")
 
         // The Aqua family runs a TFLite model on-device. Limit the bundled
         // native .so libs to the ABIs real devices use — dropping x86/mips
@@ -73,12 +64,22 @@ android {
 
     signingConfigs {
         create("release") {
-            val keystorePath = project.findProperty("RELEASE_STORE_FILE") as String?
-            if (!keystorePath.isNullOrEmpty()) {
+            // Each value comes from a Gradle property (-PRELEASE_STORE_FILE=…)
+            // or a same-named environment variable — so CI can inject them as
+            // plain env from GitHub Actions secrets. When RELEASE_STORE_FILE is
+            // absent the release build falls back to the debug key (see below),
+            // which keeps local/CI sideload builds installable without a
+            // keystore. See docs/ANDROID_RELEASE.md.
+            fun signProp(name: String): String? =
+                (project.findProperty(name) as String?)?.takeIf { it.isNotEmpty() }
+                    ?: System.getenv(name)?.takeIf { it.isNotEmpty() }
+
+            val keystorePath = signProp("RELEASE_STORE_FILE")
+            if (keystorePath != null) {
                 storeFile = file(keystorePath)
-                storePassword = project.findProperty("RELEASE_STORE_PASSWORD") as String? ?: ""
-                keyAlias = project.findProperty("RELEASE_KEY_ALIAS") as String? ?: ""
-                keyPassword = project.findProperty("RELEASE_KEY_PASSWORD") as String? ?: ""
+                storePassword = signProp("RELEASE_STORE_PASSWORD") ?: ""
+                keyAlias = signProp("RELEASE_KEY_ALIAS") ?: ""
+                keyPassword = signProp("RELEASE_KEY_PASSWORD") ?: ""
             }
         }
     }

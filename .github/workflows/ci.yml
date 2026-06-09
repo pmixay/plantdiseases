@@ -42,6 +42,21 @@ jobs:
     defaults:
       run:
         working-directory: android
+    env:
+      # Release signing (optional). Set these repo secrets to ship an APK
+      # signed with your own upload key; leave them unset and the build falls
+      # back to the debug key (installable for sideload). RELEASE_KEYSTORE_BASE64
+      # is a base64-encoded .jks — see docs/ANDROID_RELEASE.md.
+      RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+      RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+      RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+      RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+      # Firebase Cloud Messaging client config (optional). Unset ⇒ push stays
+      # dormant and the client falls back to polling (PushManager.isConfigured).
+      FCM_APP_ID: ${{ secrets.FCM_APP_ID }}
+      FCM_API_KEY: ${{ secrets.FCM_API_KEY }}
+      FCM_PROJECT_ID: ${{ secrets.FCM_PROJECT_ID }}
+      FCM_SENDER_ID: ${{ secrets.FCM_SENDER_ID }}
     steps:
       - uses: actions/checkout@v6
 
@@ -56,38 +71,68 @@ jobs:
         with:
           cmdline-tools-version: latest
 
-      - name: Gradle cache
-        uses: actions/cache@v5
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle*', 'android/**/gradle-wrapper.properties') }}
-          restore-keys: |
-            gradle-${{ runner.os }}-
+      # Restores the Gradle home (dependencies + local build cache) and reuses
+      # it across runs, so unchanged modules/tasks aren't recompiled. Replaces
+      # the hand-rolled actions/cache step and manages the Gradle daemon.
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Grant gradlew execute permission
         run: chmod +x gradlew
 
-      - name: Run lintDebug
-        run: ./gradlew lintDebug --stacktrace --no-daemon
+      # Decode the upload keystore from a secret only when one is configured.
+      - name: Decode release keystore
+        if: env.RELEASE_KEYSTORE_BASE64 != ''
+        run: echo "$RELEASE_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
 
-      - name: Run unit tests
-        run: ./gradlew testDebugUnitTest --stacktrace --no-daemon
+      # One Gradle invocation runs lint + unit tests + the R8 release package,
+      # sharing a single configuration phase and warm daemon (much faster than
+      # three separate `--no-daemon` calls). Only the release variant is
+      # packaged — it's the shipping artefact and the only build R8 can break
+      # (e.g. a stripped Gson/Retrofit reflection class); lint/test already
+      # compile the debug sources. With RELEASE_STORE_FILE set the APK is signed
+      # with your key, otherwise it falls back to the debug key.
+      - name: Lint, test & assemble release APK (R8)
+        env:
+          RELEASE_STORE_FILE: ${{ env.RELEASE_KEYSTORE_BASE64 != '' && format('{0}/release.keystore', runner.temp) || '' }}
+        run: ./gradlew lintDebug testDebugUnitTest assembleRelease --build-cache --stacktrace
 
-      # Only the release variant is packaged: it's smaller (R8 minification +
-      # resource shrinking) and it's the one that ships, so it's also the only
-      # build worth validating end-to-end. R8 is the only build that can break
-      # on a bad ProGuard rule — e.g. a stripped Gson/Retrofit reflection
-      # class — so packaging debug would just cost minutes without catching
-      # anything the release build doesn't. No keystore in CI, so the build
-      # falls back to the debug signing key (see app/build.gradle.kts) —
-      # producing a debug-SIGNED, R8-minified APK that both validates the R8
-      # config AND is installable for sideload testing. (lintDebug +
-      # testDebugUnitTest above already compile the debug sources, so debug
-      # compilation is still covered.)
-      - name: Assemble release APK (R8 minification)
-        run: ./gradlew assembleRelease --stacktrace --no-daemon
+      # Prove the published APK is signed with the release key (when one is
+      # configured) instead of silently falling back to the debug key, and
+      # report whether the FCM client config was injected — without printing
+      # the secret values. Fails the build if a keystore secret is set but the
+      # APK ended up debug-signed (i.e. a signing misconfiguration).
+      - name: Verify APK signing & FCM config
+        run: |
+          set -eu
+          apk=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
+          echo "APK: $apk"
+          apksigner=$(find "$ANDROID_SDK_ROOT/build-tools" -name apksigner | sort -V | tail -1)
+          certs=$("$apksigner" verify --print-certs "$apk")
+          echo "----- signing certificate -----"
+          echo "$certs"
+          echo "--------------------------------"
+
+          # FCM: report configured/not from the generated BuildConfig without
+          # echoing the values themselves.
+          bc=$(find app/build/generated -name BuildConfig.java -path '*release*' | head -1 || true)
+          if [ -n "$bc" ] && grep -q 'FCM_API_KEY = "";' "$bc"; then
+            echo "FCM: NOT configured (FCM_* are empty → push stays dormant)"
+          elif [ -n "$bc" ]; then
+            echo "FCM: configured (FCM_* injected into BuildConfig)"
+          else
+            echo "FCM: release BuildConfig.java not found"
+          fi
+
+          if [ -n "${RELEASE_KEYSTORE_BASE64:-}" ]; then
+            if echo "$certs" | grep -q "CN=Android Debug"; then
+              echo "::error::RELEASE_KEYSTORE_BASE64 is set but the APK is debug-signed"
+              exit 1
+            fi
+            echo "OK: release APK is signed with the configured release key."
+          else
+            echo "No release keystore secret set; debug-signed fallback is expected."
+          fi
 
       - name: Upload lint report
         if: always()
@@ -119,7 +164,7 @@ jobs:
             android/app/build/outputs/logs/**
           if-no-files-found: ignore
 
-      - name: Upload release APK (unsigned, minified)
+      - name: Upload release APK (R8, signed with release or debug key)
         if: success()
         uses: actions/upload-artifact@v7
         with:
