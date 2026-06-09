@@ -117,7 +117,6 @@ try:
     )
     from .config import get, get_bool, get_float, get_int, get_list, get_str
     from .diseases_data import DISEASES_DATABASE, lookup_pet_toxicity
-    from .symptoms import diagnose as symptom_diagnose
     from .feedback import (
         attach_image_path as feedback_attach_image_path,
     )
@@ -152,6 +151,7 @@ try:
         send_opinion_push as push_send_opinion,
     )
     from .species_info import fetch_species_info
+    from .symptoms import diagnose as symptom_diagnose
 except ImportError:
     from ai_services import (
         chat_metrics_snapshot,
@@ -225,7 +225,6 @@ except ImportError:
     )
     from config import get, get_bool, get_float, get_int, get_list, get_str
     from diseases_data import DISEASES_DATABASE, lookup_pet_toxicity
-    from symptoms import diagnose as symptom_diagnose
     from feedback import (
         attach_image_path as feedback_attach_image_path,
     )
@@ -260,6 +259,8 @@ except ImportError:
         send_opinion_push as push_send_opinion,
     )
     from species_info import fetch_species_info
+    from symptoms import diagnose as symptom_diagnose
+
 
 def _resolve_app_version() -> str:
     """Resolve the served model/app version.

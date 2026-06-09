@@ -4,6 +4,8 @@ import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.data.model.AnalysisResponse
 import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.CarePlanResponse
+import com.plantdiseases.app.data.model.SymptomDiagnoseRequest
+import com.plantdiseases.app.data.model.SymptomDiagnoseResponse
 import com.plantdiseases.app.data.model.ChatRequest
 import com.plantdiseases.app.data.model.ChatResponse
 import com.plantdiseases.app.data.model.CommunityOpinionRequest

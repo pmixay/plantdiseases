@@ -338,7 +338,7 @@ class SymptomCheckerActivity : AppCompatActivity() {
                         text = desc
                         textSize = 14f
                         setTextColor(getColor(R.color.on_surface_secondary))
-                        lineSpacingExtra = 2f
+                        setLineSpacing(2f, 1f)
                         layoutParams = LinearLayout.LayoutParams(
                             LinearLayout.LayoutParams.MATCH_PARENT,
                             LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -373,7 +373,7 @@ class SymptomCheckerActivity : AppCompatActivity() {
             text = message
             textSize = 13f
             setTextColor(getColor(R.color.on_surface))
-            lineSpacingExtra = 2f
+            setLineSpacing(2f, 1f)
             setPadding(14.dp(), 12.dp(), 14.dp(), 12.dp())
         })
     }
@@ -406,7 +406,7 @@ class SymptomCheckerActivity : AppCompatActivity() {
             this.text = text
             textSize = 14f
             setTextColor(getColor(R.color.on_surface))
-            lineSpacingExtra = 1f
+            setLineSpacing(1f, 1f)
             layoutParams = LinearLayout.LayoutParams(
                 0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f,
             ).apply { marginStart = 8.dp() }
