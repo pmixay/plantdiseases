@@ -513,6 +513,36 @@ data class CarePlanRequest(
     @SerializedName("season") val season: String? = null,
 )
 
+/** /api/symptom-diagnose request — a map of stable questionId → optionId
+ *  (the question/option IDs ship in the app and are scored server-side). */
+data class SymptomDiagnoseRequest(
+    @SerializedName("answers") val answers: Map<String, String>,
+    @SerializedName("locale") val locale: String = "en",
+)
+
+/** One ranked result from the symptom checker — a full bilingual care card
+ *  (same shape as the server's compact care card) plus its score/confidence. */
+data class SymptomResult(
+    @SerializedName("class") val classKey: String = "",
+    @SerializedName("name_en") val nameEn: String = "",
+    @SerializedName("name_ru") val nameRu: String = "",
+    @SerializedName("description") val description: String = "",
+    @SerializedName("description_ru") val descriptionRu: String = "",
+    @SerializedName("treatment") val treatment: List<String> = emptyList(),
+    @SerializedName("treatment_ru") val treatmentRu: List<String> = emptyList(),
+    @SerializedName("prevention") val prevention: List<String> = emptyList(),
+    @SerializedName("prevention_ru") val preventionRu: List<String> = emptyList(),
+    @SerializedName("score") val score: Float = 0f,
+    @SerializedName("confidence") val confidence: Float = 0f,
+    @SerializedName("rank") val rank: Int = 0,
+)
+
+data class SymptomDiagnoseResponse(
+    @SerializedName("results") val results: List<SymptomResult> = emptyList(),
+    @SerializedName("answered") val answered: Int = 0,
+    @SerializedName("low_confidence") val lowConfidence: Boolean = false,
+)
+
 /**
  * /api/care-plan response. `wateringDaysRaw` is `Any?` because the server
  * may return either an integer interval ("every N days") or the string

@@ -117,6 +117,7 @@ try:
     )
     from .config import get, get_bool, get_float, get_int, get_list, get_str
     from .diseases_data import DISEASES_DATABASE, lookup_pet_toxicity
+    from .symptoms import diagnose as symptom_diagnose
     from .feedback import (
         attach_image_path as feedback_attach_image_path,
     )
@@ -224,6 +225,7 @@ except ImportError:
     )
     from config import get, get_bool, get_float, get_int, get_list, get_str
     from diseases_data import DISEASES_DATABASE, lookup_pet_toxicity
+    from symptoms import diagnose as symptom_diagnose
     from feedback import (
         attach_image_path as feedback_attach_image_path,
     )
@@ -1855,6 +1857,23 @@ class CarePlanRequest(BaseModel):
     season: str | None = Field(default=None, max_length=16)
 
 
+class SymptomDiagnoseRequest(BaseModel):
+    # question_id -> option_id (see symptoms.SYMPTOM_WEIGHTS). Kept small and
+    # length-capped — this is an untrusted client payload.
+    answers: dict[str, str] = Field(default_factory=dict)
+    locale: str = Field(default="en", max_length=8)
+
+    @field_validator("answers")
+    @classmethod
+    def _validate_answers(cls, value: dict[str, str]) -> dict[str, str]:
+        if len(value) > 20:
+            raise ValueError("too many answers")
+        for k, v in value.items():
+            if len(k) > 32 or len(v) > 32:
+                raise ValueError("answer id too long")
+        return value
+
+
 # ── Community scan corpus ───────────────────────────────────────────
 
 
@@ -2319,6 +2338,44 @@ async def care_plan_endpoint(payload: CarePlanRequest):
         "toxicity_source": toxicity["source"],
     }
     return JSONResponse(content=plan)
+
+
+@api_router.post("/symptom-diagnose")
+async def symptom_diagnose_endpoint(payload: SymptomDiagnoseRequest):
+    """No-photo symptom triage — the fallback when the camera/ML pipeline
+    can't get a confident read.
+
+    Scores the answered questionnaire against a transparent weight table
+    (``symptoms.py``) and returns a ranked shortlist of likely conditions,
+    each enriched with its full bilingual care card. ``low_confidence`` is
+    set when the answers are too sparse/weak to trust, so the client can
+    nudge the user to take a photo for a more reliable diagnosis. Always
+    returns 200 with a usable payload — an empty questionnaire just yields
+    an empty shortlist + the ``unknown`` guidance card.
+    """
+    triage = symptom_diagnose(payload.answers)
+    results = []
+    for item in triage["results"]:
+        card = _compact_care_card(item["class"])
+        card["score"] = item["score"]
+        card["confidence"] = item["confidence"]
+        card["rank"] = item["rank"]
+        results.append(card)
+    # When nothing scored, hand back the generic "unknown" guidance card so
+    # the screen is never blank — and flag low confidence.
+    if not results:
+        fallback = _compact_care_card("unknown")
+        fallback["score"] = 0.0
+        fallback["confidence"] = 0.0
+        fallback["rank"] = 1
+        results = [fallback]
+    return JSONResponse(
+        content={
+            "results": results,
+            "answered": triage["answered"],
+            "low_confidence": triage["low_confidence"] or not triage["results"],
+        }
+    )
 
 
 @api_router.post("/progression")

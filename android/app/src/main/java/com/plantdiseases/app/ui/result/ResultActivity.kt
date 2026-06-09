@@ -544,6 +544,21 @@ class ResultActivity : AppCompatActivity() {
                 cardLowConfidence.visibility = View.GONE
             }
 
+            // No-photo fallback CTA: offer the symptom checker whenever the
+            // pipeline couldn't get a confident plant read (not_a_plant) or
+            // the diagnosis is low-confidence, so the user still gets guidance.
+            val showSymptomChecker = isNotAPlant ||
+                (scan.confidence < 0.5f && !isHealthyVerdict)
+            btnSymptomChecker.visibility = if (showSymptomChecker) View.VISIBLE else View.GONE
+            btnSymptomChecker.setOnClickListener {
+                startActivity(
+                    Intent(
+                        this@ResultActivity,
+                        com.plantdiseases.app.ui.symptom.SymptomCheckerActivity::class.java,
+                    ),
+                )
+            }
+
             btnRetryAnalysis.setOnClickListener {
                 val intent = Intent(this@ResultActivity, AnalysisActivity::class.java).apply {
                     putExtra(AnalysisActivity.EXTRA_IMAGE_PATH, scan.imagePath)

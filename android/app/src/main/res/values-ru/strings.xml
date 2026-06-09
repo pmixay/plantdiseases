@@ -467,6 +467,62 @@
     <!-- Accessibility: state announced on the selected model-family row -->
     <string name="cd_selected">Выбрано</string>
 
+    <!-- Symptom checker (no-photo diagnosis fallback) -->
+    <string name="symptom_checker_title">Подбор по симптомам</string>
+    <string name="symptom_checker_entry_title">Определить по симптомам</string>
+    <string name="symptom_intro">Не получается сделать чёткое фото? Ответьте на несколько вопросов — и мы подскажем наиболее вероятные проблемы. Выбирайте то, что больше похоже на увиденное.</string>
+    <string name="symptom_submit">Показать возможные проблемы</string>
+    <string name="symptom_need_more">Ответьте хотя бы на 2 вопроса</string>
+    <string name="symptom_error">Не удалось связаться с сервером. Проверьте подключение и попробуйте снова.</string>
+    <string name="symptom_results_title">Возможные проблемы</string>
+    <string name="symptom_low_confidence">Это приблизительная оценка по нескольким ответам. Для надёжного диагноза сделайте чёткое фото поражённого листа при хорошем освещении.</string>
+    <string name="symptom_take_photo">Сделать фото</string>
+    <string name="symptom_start_over">Начать заново</string>
+    <string name="symptom_match_most_likely">Наиболее вероятно</string>
+    <string name="symptom_match_possible">Также возможно</string>
+    <string name="symptom_treatment_label">Лечение</string>
+    <string name="symptom_prevention_label">Профилактика</string>
+    <!-- Questions -->
+    <string name="symptom_q_part">Какая часть растения поражена?</string>
+    <string name="symptom_q_symptom">Как выглядит проблема?</string>
+    <string name="symptom_q_pattern">Где на листе или растении?</string>
+    <string name="symptom_q_moisture">Как вы поливали?</string>
+    <string name="symptom_q_pests">Заметны ли насекомые?</string>
+    <!-- Options: affected part -->
+    <string name="symptom_opt_part_leaves">Листья</string>
+    <string name="symptom_opt_part_stems">Стебли / ствол</string>
+    <string name="symptom_opt_part_whole">Всё растение</string>
+    <string name="symptom_opt_part_flowers">Цветы / бутоны</string>
+    <string name="symptom_opt_part_soil">Почва / корни</string>
+    <!-- Options: main symptom -->
+    <string name="symptom_opt_symptom_spots">Пятна или кляксы</string>
+    <string name="symptom_opt_symptom_yellowing">Пожелтение</string>
+    <string name="symptom_opt_symptom_wilting">Увядание / поникание</string>
+    <string name="symptom_opt_symptom_powder">Белый налёт или плесень</string>
+    <string name="symptom_opt_symptom_webbing">Тонкая паутинка или крапинки</string>
+    <string name="symptom_opt_symptom_sticky">Липкий налёт или бугорки</string>
+    <string name="symptom_opt_symptom_dry_edges">Коричневые сухие края</string>
+    <string name="symptom_opt_symptom_cottony">Белые ватные комочки</string>
+    <string name="symptom_opt_symptom_deformed">Деформированные / пёстрые листья</string>
+    <string name="symptom_opt_symptom_holes">Дырки / погрызы</string>
+    <!-- Options: pattern / location -->
+    <string name="symptom_opt_pattern_tips_edges">Кончики и края</string>
+    <string name="symptom_opt_pattern_whole_leaf">Весь лист</string>
+    <string name="symptom_opt_pattern_underside">Нижняя сторона листа</string>
+    <string name="symptom_opt_pattern_new_growth">Молодые побеги</string>
+    <string name="symptom_opt_pattern_lower_leaves">Старые / нижние листья</string>
+    <string name="symptom_opt_pattern_window_side">Сторона к окну</string>
+    <!-- Options: moisture -->
+    <string name="symptom_opt_moisture_overwatered">Часто — почва остаётся мокрой</string>
+    <string name="symptom_opt_moisture_underwatered">Редко — почва пересыхает</string>
+    <string name="symptom_opt_moisture_normal">Нормально</string>
+    <!-- Options: visible pests -->
+    <string name="symptom_opt_pests_moving_dots">Крошечные движущиеся точки</string>
+    <string name="symptom_opt_pests_white_cotton">Белые ватные комочки</string>
+    <string name="symptom_opt_pests_brown_domes">Коричневые / бежевые бугорки</string>
+    <string name="symptom_opt_pests_flying">Летающие насекомые</string>
+    <string name="symptom_opt_pests_none">Не вижу</string>
+
     <!-- Autosave snapped scan photos to the device gallery -->
     <string name="autosave_title">Автосохранение фото в галерею</string>
     <string name="autosave_subtitle">Сохранять сделанные снимки в галерею устройства.</string>

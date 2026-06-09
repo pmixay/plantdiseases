@@ -469,6 +469,62 @@
     <!-- Accessibility: state announced on the selected model-family row -->
     <string name="cd_selected">Selected</string>
 
+    <!-- Symptom checker (no-photo diagnosis fallback) -->
+    <string name="symptom_checker_title">Symptom checker</string>
+    <string name="symptom_checker_entry_title">Diagnose by symptoms</string>
+    <string name="symptom_intro">Can\'t get a clear photo? Answer a few questions and we\'ll suggest the most likely problems. Pick what best matches what you see.</string>
+    <string name="symptom_submit">See likely issues</string>
+    <string name="symptom_need_more">Answer at least 2 questions</string>
+    <string name="symptom_error">Couldn\'t reach the server. Check your connection and try again.</string>
+    <string name="symptom_results_title">Likely issues</string>
+    <string name="symptom_low_confidence">These are rough guesses from a few answers. For a reliable diagnosis, take a clear, well-lit photo of the affected leaf.</string>
+    <string name="symptom_take_photo">Take a photo instead</string>
+    <string name="symptom_start_over">Start over</string>
+    <string name="symptom_match_most_likely">Most likely</string>
+    <string name="symptom_match_possible">Also possible</string>
+    <string name="symptom_treatment_label">Treatment</string>
+    <string name="symptom_prevention_label">Prevention</string>
+    <!-- Questions -->
+    <string name="symptom_q_part">Which part of the plant is affected?</string>
+    <string name="symptom_q_symptom">What does the problem look like?</string>
+    <string name="symptom_q_pattern">Where on the leaf or plant?</string>
+    <string name="symptom_q_moisture">How have you been watering?</string>
+    <string name="symptom_q_pests">Any visible bugs?</string>
+    <!-- Options: affected part -->
+    <string name="symptom_opt_part_leaves">Leaves</string>
+    <string name="symptom_opt_part_stems">Stems / trunk</string>
+    <string name="symptom_opt_part_whole">Whole plant</string>
+    <string name="symptom_opt_part_flowers">Flowers / buds</string>
+    <string name="symptom_opt_part_soil">Soil / roots</string>
+    <!-- Options: main symptom -->
+    <string name="symptom_opt_symptom_spots">Spots or blotches</string>
+    <string name="symptom_opt_symptom_yellowing">Yellowing</string>
+    <string name="symptom_opt_symptom_wilting">Wilting / drooping</string>
+    <string name="symptom_opt_symptom_powder">White powder or mould</string>
+    <string name="symptom_opt_symptom_webbing">Fine webbing or specks</string>
+    <string name="symptom_opt_symptom_sticky">Sticky residue or bumps</string>
+    <string name="symptom_opt_symptom_dry_edges">Brown, dry edges</string>
+    <string name="symptom_opt_symptom_cottony">White cottony tufts</string>
+    <string name="symptom_opt_symptom_deformed">Deformed / mottled leaves</string>
+    <string name="symptom_opt_symptom_holes">Holes / chewed</string>
+    <!-- Options: pattern / location -->
+    <string name="symptom_opt_pattern_tips_edges">Tips and edges</string>
+    <string name="symptom_opt_pattern_whole_leaf">Whole leaf</string>
+    <string name="symptom_opt_pattern_underside">Leaf underside</string>
+    <string name="symptom_opt_pattern_new_growth">New growth</string>
+    <string name="symptom_opt_pattern_lower_leaves">Older / lower leaves</string>
+    <string name="symptom_opt_pattern_window_side">Side facing the window</string>
+    <!-- Options: moisture -->
+    <string name="symptom_opt_moisture_overwatered">Often — soil stays wet</string>
+    <string name="symptom_opt_moisture_underwatered">Rarely — soil bone-dry</string>
+    <string name="symptom_opt_moisture_normal">Normal</string>
+    <!-- Options: visible pests -->
+    <string name="symptom_opt_pests_moving_dots">Tiny moving dots</string>
+    <string name="symptom_opt_pests_white_cotton">White cotton tufts</string>
+    <string name="symptom_opt_pests_brown_domes">Brown / tan domes</string>
+    <string name="symptom_opt_pests_flying">Flying insects</string>
+    <string name="symptom_opt_pests_none">None I can see</string>
+
     <!-- Autosave snapped scan photos to the device gallery -->
     <string name="autosave_title">Autosave photos to album</string>
     <string name="autosave_subtitle">Save photos you snap to your device gallery.</string>
