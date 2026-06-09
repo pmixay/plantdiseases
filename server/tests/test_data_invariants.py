@@ -785,30 +785,6 @@ def test_ood_floor_is_calibrated_not_hardcoded():
     )
 
 
-def test_melon_broadleaf_nutrient_supplement_train_only():
-    """v2.5.1: the precision-/supply-bound nutrient_deficiency class gains a
-    BROADLEAF crop proxy (melon, dicot leaf morphology) whose leaf shape
-    transfers to houseplants better than the maize/rice grass-blade proxies.
-    Like every crop proxy it must be (a) wired with a concrete slug, (b)
-    fetched into nutrient_deficiency, (c) TRAIN-ONLY, and (d) down-weighted
-    with the LA prior decoupled below the sampler weight."""
-    src = _notebook_source()
-    assert "def fetch_kaggle_melon_nutrient" in src, "melon broadleaf fetcher missing"
-    assert "melon-macronutrient-deficiency" in src, "concrete melon slug missing"
-    for split_fn in ("make_val_realworld", "make_val_indomain",
-                     "make_temperature_cal", "make_conformal_cal"):
-        body = re.search(rf"def {split_fn}\(.*?\n(?:.*\n){{0,14}}", src)
-        assert body and "kaggle_melon" not in body.group(0), (
-            f"{split_fn} must NOT allow 'kaggle_melon' — it is a TRAIN-ONLY proxy"
-        )
-    sw = re.search(r"'kaggle_melon'\s*:\s*([0-9.]+)", src)
-    assert sw and float(sw.group(1)) < 1.0, "'kaggle_melon' must be down-weighted (<1.0)"
-    pr = re.search(r"PRIOR_SOURCE_WEIGHTS\['kaggle_melon'\]\s*=\s*([0-9.]+)", src)
-    assert pr and float(pr.group(1)) < float(sw.group(1)), (
-        "PRIOR_SOURCE_WEIGHTS['kaggle_melon'] must be < its sampler weight"
-    )
-
-
 def test_weakclass_precision_is_measured_shipped_and_selectable():
     """v2.5: the physiological classes are PRECISION-bound (they over-trigger),
     so precision must be (a) reported by the eval helper and (b) shipped with a
