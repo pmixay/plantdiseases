@@ -42,8 +42,6 @@ server/config.json
 .DS_Store
 Thumbs.db
 
-# Claude Code local settings (per-machine, not committed)
-.claude/
 server/community.db
 server/community.db-wal
 server/community.db-shm
