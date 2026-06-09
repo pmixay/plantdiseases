@@ -78,6 +78,18 @@ def fetch_species_info(scientific_name: str | None, lang: str = "en") -> dict | 
     if payload is None and lang != "en":
         payload = _fetch(name, "en")
 
+    # Last resort: we only found an English article but the user wants another
+    # language — machine-translate the summary so the card isn't English-only.
+    if payload is not None and lang != "en" and payload.get("lang") == "en":
+        translated = _translate(payload.get("extract") or "", lang)
+        if translated:
+            payload = {
+                **payload,
+                "extract": translated,
+                "lang": lang,
+                "translated": True,
+            }
+
     with _lock:
         if len(_cache) >= _CACHE_MAX:
             _cache.clear()
@@ -132,6 +144,61 @@ def _localized_title(name: str, target_lang: str, source_lang: str = "en") -> st
             if title:
                 return title
     return None
+
+
+def _translate(text: str, target_lang: str, source_lang: str = "en") -> str | None:
+    """Machine-translate ``text`` into ``target_lang`` via Google Translate's
+    free (keyless) ``gtx`` endpoint.
+
+    Best-effort and last-resort only — used when we could find a Wikipedia
+    summary in the source language but not the user's language, so the card
+    isn't English-only. Returns ``None`` on any failure (the caller then keeps
+    the original-language text). The endpoint is unofficial; we keep the
+    request tiny and time-boxed and never let a failure surface to the user.
+    """
+    text = (text or "").strip()
+    if not text:
+        return None
+    # Keep the request well within the endpoint's practical query limit; a
+    # Wikipedia lead extract is a paragraph, so this only trims pathological
+    # cases rather than real content.
+    if len(text) > 4000:
+        text = text[:4000]
+    try:
+        import requests  # lazy — only this path needs it
+    except Exception:  # pragma: no cover
+        return None
+
+    url = "https://translate.googleapis.com/translate_a/single"
+    params = {
+        "client": "gtx",
+        "sl": source_lang,
+        "tl": target_lang,
+        "dt": "t",
+        "q": text,
+    }
+    try:
+        r = requests.get(
+            url,
+            params=params,
+            headers={"User-Agent": _USER_AGENT, "Accept": "application/json"},
+            timeout=_TIMEOUT_S,
+        )
+        if not r.ok:
+            return None
+        data = r.json()
+    except Exception as exc:  # network blip, timeout, bad JSON — all non-fatal
+        logger.info("Translation failed (%s); keeping original-language text", exc)
+        return None
+
+    # gtx shape: [[[translated, original, ...], [translated, original, ...]], ...]
+    try:
+        segments = data[0]
+        out = "".join(seg[0] for seg in segments if seg and seg[0])
+    except (IndexError, TypeError):
+        return None
+    out = out.strip()
+    return out or None
 
 
 def _fetch(name: str, lang: str) -> dict | None:

@@ -96,6 +96,48 @@ def test_ru_resolves_localized_title_via_langlinks(monkeypatch):
     assert "Шеффлера" in info["extract"]
 
 
+_EN_SUMMARY = {
+    "type": "standard",
+    "title": SCI_NAME,
+    "extract": "Heptapleurum arboricola is a flowering plant in the family Araliaceae.",
+    "thumbnail": {"source": "https://en.example/thumb.jpg"},
+    "content_urls": {"desktop": {"page": "https://en.wikipedia.org/wiki/Heptapleurum_arboricola"}},
+}
+_RU_TRANSLATION = "Гептаплеурум древовидный — цветковое растение семейства аралиевых."
+
+
+def test_ru_translates_when_only_english_exists(monkeypatch):
+    """No ru article (direct, langlinks, or genus) — fall back to the English
+    summary and machine-translate it into Russian."""
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        if "translate.googleapis.com" in url:
+            assert params["sl"] == "en" and params["tl"] == "ru"
+            # gtx shape: [[[translated, original, ...]], ...]
+            return _FakeResp(payload=[[[_RU_TRANSLATION, params["q"], None, None]]])
+        if "/w/api.php" in url:
+            # No ru interwiki link available.
+            return _FakeResp(payload={"query": {"pages": [{}]}})
+        if "/page/summary/" in url:
+            if "ru.wikipedia.org" in url:
+                return _FakeResp(status_code=404)
+            if "en.wikipedia.org" in url:
+                return _FakeResp(payload=_EN_SUMMARY)
+        if "/page/media-list/" in url:
+            return _FakeResp(payload={"items": []})
+        raise AssertionError(f"unexpected URL: {url}")
+
+    import requests
+
+    monkeypatch.setattr(requests, "get", fake_get)
+
+    info = species_info.fetch_species_info(SCI_NAME, "ru")
+    assert info is not None
+    assert info["translated"] is True
+    assert info["lang"] == "ru"
+    assert "Гептаплеурум" in info["extract"]
+
+
 def test_ru_direct_hit_skips_langlinks(monkeypatch):
     """When the ru wiki has the article under the scientific name directly,
     we use it and never need the langlinks detour."""

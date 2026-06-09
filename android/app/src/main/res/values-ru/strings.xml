@@ -162,6 +162,7 @@
     <string name="species_card_title">Определённый вид</string>
     <string name="species_card_score">PlantNet — %1$d%%</string>
     <string name="species_source_wikipedia">Источник: Wikipedia</string>
+    <string name="species_source_wikipedia_translated">Источник: Wikipedia (автоперевод)</string>
     <string name="species_community_others">Другие сканы этого вида</string>
     <string name="example_photos_label">Как это выглядит</string>
     <string name="similar_scans_title">Похожие сканы рядом</string>
