@@ -104,6 +104,85 @@ object ImageUtils {
     }
 
     /**
+     * Shrink an oversized capture/import *in place* before it is handed to
+     * the crop editor. Camera shots and gallery imports can be 4000px+ on a
+     * side; feeding a bitmap that large to the cropper makes it lay the image
+     * out taller than the visible canvas (the top spilled up under the
+     * toolbar) and wastes memory. We cap the longest edge at [maxSize] using a
+     * cheap power-of-two downsample, then re-encode over the same file.
+     *
+     * Orientation is preserved by copying the EXIF orientation tag onto the
+     * re-encoded file — decoding drops EXIF, so without this a rotated phone
+     * photo would display sideways in the cropper. No-op (and silently
+     * tolerant of any failure) when the image is already small enough or
+     * cannot be read; the caller still gets a usable file either way.
+     */
+    fun downscaleForCropInPlace(imagePath: String, maxSize: Int = 2048) {
+        try {
+            val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(imagePath, boundsOpts)
+            val rawW = boundsOpts.outWidth
+            val rawH = boundsOpts.outHeight
+            if (rawW <= 0 || rawH <= 0) return
+            if (rawW <= maxSize && rawH <= maxSize) return
+
+            // Preserve the original orientation tag — re-encoding strips EXIF.
+            val orientation = try {
+                ExifInterface(imagePath).getAttribute(ExifInterface.TAG_ORIENTATION)
+            } catch (e: IOException) {
+                Log.w(TAG, "EXIF read failed before crop downscale", e)
+                null
+            }
+
+            // Two-pass: cheap power-of-two downsample to just above the cap,
+            // then an exact scale down to it. inSampleSize alone is too coarse
+            // (a 4000px image only steps to 2000px), so the second pass
+            // guarantees the longest edge actually lands at maxSize.
+            var inSampleSize = 1
+            while (rawW / (inSampleSize * 2) >= maxSize || rawH / (inSampleSize * 2) >= maxSize) {
+                inSampleSize *= 2
+            }
+            val decodeOpts = BitmapFactory.Options().apply { this.inSampleSize = inSampleSize }
+            val decoded = BitmapFactory.decodeFile(imagePath, decodeOpts) ?: return
+            try {
+                val ratio = maxSize.toFloat() / maxOf(decoded.width, decoded.height)
+                val scaled = if (ratio < 1f) {
+                    Bitmap.createScaledBitmap(
+                        decoded,
+                        (decoded.width * ratio).toInt().coerceAtLeast(1),
+                        (decoded.height * ratio).toInt().coerceAtLeast(1),
+                        true,
+                    )
+                } else decoded
+                try {
+                    FileOutputStream(imagePath).use { stream ->
+                        scaled.compress(Bitmap.CompressFormat.JPEG, 92, stream)
+                    }
+                } finally {
+                    if (scaled !== decoded) scaled.recycle()
+                }
+            } finally {
+                decoded.recycle()
+            }
+
+            if (orientation != null) {
+                try {
+                    ExifInterface(imagePath).apply {
+                        setAttribute(ExifInterface.TAG_ORIENTATION, orientation)
+                        saveAttributes()
+                    }
+                } catch (e: IOException) {
+                    Log.w(TAG, "EXIF orientation re-write failed after crop downscale", e)
+                }
+            }
+        } catch (e: IOException) {
+            Log.w(TAG, "downscaleForCropInPlace failed for $imagePath", e)
+        } catch (e: OutOfMemoryError) {
+            Log.w(TAG, "downscaleForCropInPlace OOM for $imagePath", e)
+        }
+    }
+
+    /**
      * Copy URI to internal storage. Returns null on I/O failure;
      * the cause is logged so the user-visible toast can stay simple.
      *

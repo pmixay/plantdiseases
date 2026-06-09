@@ -475,7 +475,15 @@ class CameraFragment : Fragment() {
                     // positives on textured fabric hurt UX more than
                     // they help.
                     pendingSourceFile = photoFile
-                    launchCrop(Uri.fromFile(photoFile))
+                    // Shrink the full-res capture off the main thread before
+                    // handing it to the cropper, then launch once it's done.
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        withContext(Dispatchers.IO) {
+                            ImageUtils.downscaleForCropInPlace(photoFile.absolutePath)
+                        }
+                        if (_binding == null || !isAdded) return@launch
+                        launchCrop(Uri.fromFile(photoFile))
+                    }
                 }
 
                 override fun onError(exception: ImageCaptureException) {
@@ -518,7 +526,11 @@ class CameraFragment : Fragment() {
         // would ANR if copied on the UI thread.
         viewLifecycleOwner.lifecycleScope.launch {
             val file = withContext(Dispatchers.IO) {
-                ImageUtils.copyUriToFile(requireContext(), uri)
+                ImageUtils.copyUriToFile(requireContext(), uri)?.also {
+                    // Shrink before cropping so the cropper lays the image out
+                    // within its canvas instead of spilling under the toolbar.
+                    ImageUtils.downscaleForCropInPlace(it.absolutePath)
+                }
             }
             if (_binding == null || !isAdded) return@launch
             if (file != null) {

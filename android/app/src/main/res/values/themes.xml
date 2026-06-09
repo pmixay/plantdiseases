@@ -225,6 +225,20 @@
         <item name="actionBarStyle">@style/Widget.PlantDiseases.Crop.ActionBar</item>
         <item name="android:statusBarColor">#14532D</item>
         <item name="android:windowLightStatusBar">false</item>
+        <!-- Opaque window background. The cropper's CropImageView only paints
+             its own canvas area; without an opaque window behind it the
+             previous screen (the camera/scan fragment) bled through at the
+             edges during the activity transition — "sometimes I can see the
+             scan fragment in the crop fragment". -->
+        <item name="android:windowBackground">@color/background</item>
+        <!-- Opt this activity out of Android 15 (targetSdk 35) edge-to-edge
+             enforcement. With it enforced, CropImageActivity drew its image
+             under the status bar AND the action bar, so the picture appeared
+             "higher than the cropper top bar" (its top was clipped behind the
+             toolbar). Opting out restores opaque system bars and a normal
+             action-bar inset, so the image lays out fully below the toolbar.
+             Attribute is API 35; ignored as a no-op on older devices. -->
+        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
     </style>
 
     <style name="Widget.PlantDiseases.Crop.ActionBar" parent="Widget.MaterialComponents.ActionBar.Solid">
