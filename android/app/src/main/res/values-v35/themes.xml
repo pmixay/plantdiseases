@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- API 35+ crop theme. On Android 15 (targetSdk 35) edge-to-edge is
+         enforced, so CropImageActivity drew its image under the status bar AND
+         the action bar — the picture appeared "higher than the cropper top
+         bar" (its top clipped behind the toolbar). Opting out restores opaque
+         system bars and a normal action-bar inset, so the image lays out fully
+         below the toolbar. Isolated here (not in values/) so it never trips a
+         NewApi lint error on the app's minSdk 26. -->
+    <style name="Theme.PlantDiseases.Crop" parent="Base.Theme.PlantDiseases.Crop">
+        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
+    </style>
+</resources>
