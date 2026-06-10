@@ -613,6 +613,7 @@
     <string name="feedback_sheet_reason_label">Почему диагноз неверный?</string>
     <string name="feedback_sheet_note_hint">Что ещё хотите сказать? (необязательно)</string>
     <string name="feedback_class_healthy">Здоровое</string>
+    <string name="feedback_class_pests">Вредители (мучнистый червец, щитовка)</string>
     <string name="feedback_class_powdery_mildew">Мучнистая роса</string>
     <string name="feedback_class_gray_mold_botrytis">Серая гниль</string>
     <string name="feedback_class_leaf_spot">Пятнистость листьев</string>
@@ -632,6 +633,7 @@
     <string name="feedback_reason_other">Другое</string>
     <string name="feedback_send">Отправить</string>
     <string name="feedback_sent">Спасибо — ваш отзыв сохранён.</string>
+    <string name="feedback_sending">Отправляем ваш отзыв…</string>
     <string name="feedback_rate_limited">Слишком часто — попробуйте через секунду.</string>
     <string name="feedback_failed">Не удалось отправить отзыв. Попробуйте позже.</string>
 

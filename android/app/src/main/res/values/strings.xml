@@ -612,6 +612,7 @@
     <string name="feedback_no">Wrong</string>
     <string name="feedback_send">Send feedback</string>
     <string name="feedback_sent">Thanks — your feedback was saved.</string>
+    <string name="feedback_sending">Sending your feedback…</string>
     <string name="feedback_rate_limited">Slow down — try again in a moment.</string>
     <string name="feedback_failed">Could not send feedback. Try again later.</string>
 
@@ -626,6 +627,7 @@
     <string name="feedback_sheet_note_hint">Anything else? (optional)</string>
     <!-- Class chips — match server class keys 1:1. -->
     <string name="feedback_class_healthy">Healthy</string>
+    <string name="feedback_class_pests">Pests (mealybugs, scale)</string>
     <string name="feedback_class_powdery_mildew">Powdery Mildew</string>
     <string name="feedback_class_gray_mold_botrytis">Gray Mold</string>
     <string name="feedback_class_leaf_spot">Leaf Spot</string>

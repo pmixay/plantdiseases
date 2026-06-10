@@ -166,6 +166,30 @@ class ResultActivity : AppCompatActivity() {
         setupToolbarMenu()
         setupPinchToZoom()
         setupStickyHeader()
+        // Registered in onCreate — NOT when the sheet is shown — so the
+        // handoff survives the activity + sheet being recreated together
+        // (rotation, process death with the sheet open). A listener field
+        // on the sheet did not, and a recreated sheet's Send button then
+        // silently dropped the user's feedback.
+        supportFragmentManager.setFragmentResultListener(
+            FeedbackCorrectionSheet.REQUEST_KEY, this,
+        ) { _, result ->
+            val correctedClass = result.getString(FeedbackCorrectionSheet.RESULT_CORRECTED_CLASS)
+            val reason = result.getString(FeedbackCorrectionSheet.RESULT_REASON)
+            val note = result.getString(FeedbackCorrectionSheet.RESULT_NOTE)
+            val loaded = pendingScanForToolbar
+            if (loaded != null) {
+                submitFeedback(loaded, correct = false, correctedClass, reason, note)
+            } else {
+                // Sheet outlived the scan load (recreation) — re-fetch by id.
+                val app = application as PlantDiseasesApp
+                lifecycleScope.launch {
+                    app.scanRepository.getScanById(scanId)?.let {
+                        submitFeedback(it, correct = false, correctedClass, reason, note)
+                    }
+                }
+            }
+        }
         loadResult(scanId)
     }
 
@@ -1674,18 +1698,12 @@ class ResultActivity : AppCompatActivity() {
         val predictedKey = repository.topClassKey(scan)
         val predictedDisplay = predictedKey?.let { classKeyDisplayName(it, isRu) }
             ?: (if (isRu) scan.diseaseNameRu else scan.diseaseName)
+        // The submit lands via the Fragment Result API listener wired in
+        // onCreate — survives recreation while this sheet is open.
         FeedbackCorrectionSheet.show(
             supportFragmentManager,
             predictedDisplayName = predictedDisplay,
-        ) { correctedClass, reason, note ->
-            submitFeedback(
-                scan,
-                correct = false,
-                correctedClass = correctedClass,
-                reason = reason,
-                note = note,
-            )
-        }
+        )
     }
 
     private fun submitFeedback(
@@ -1695,8 +1713,12 @@ class ResultActivity : AppCompatActivity() {
         reason: String? = null,
         note: String? = null,
     ) {
+        // Visible progress, not just disabled buttons — a long send (slow
+        // network, server cold start) previously looked like a freeze.
         binding.btnFeedbackYes.isEnabled = false
         binding.btnFeedbackNo.isEnabled = false
+        binding.tvFeedbackStatus.visibility = View.VISIBLE
+        binding.tvFeedbackStatus.setText(R.string.feedback_sending)
         val app = application as PlantDiseasesApp
         lifecycleScope.launch {
             val request = buildFeedbackRequest(
@@ -1731,6 +1753,7 @@ class ResultActivity : AppCompatActivity() {
             }.onFailure { error ->
                 binding.btnFeedbackYes.isEnabled = true
                 binding.btnFeedbackNo.isEnabled = true
+                binding.tvFeedbackStatus.visibility = View.GONE
                 val msgRes = when (error) {
                     is ScanRepository.RateLimitException -> R.string.feedback_rate_limited
                     else -> R.string.feedback_failed
