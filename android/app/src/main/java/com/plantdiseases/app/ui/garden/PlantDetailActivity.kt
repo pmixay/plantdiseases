@@ -1354,7 +1354,8 @@ class PlantDetailActivity : AppCompatActivity() {
     private fun shareScan(scan: ScanEntity) {
         val isRu = LocaleHelper.isRussian(this)
         val caption = buildString {
-            append(if (isRu) "🌿 PlantDiseases — Диагноз\n\n" else "🌿 PlantDiseases — Diagnosis\n\n")
+            append(getString(R.string.share_diagnosis_header))
+            append("\n\n")
             append(if (isRu) scan.diseaseNameRu else scan.diseaseName)
             append(" (")
             append((scan.confidence * 100).toInt())

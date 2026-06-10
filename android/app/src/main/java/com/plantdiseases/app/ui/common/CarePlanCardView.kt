@@ -366,10 +366,18 @@ class CarePlanCardView @JvmOverloads constructor(
         speciesDisplay: String?,
         showApplyToReminders: Boolean,
         onApplyToReminders: ((CarePlanResponse) -> Unit)? = null,
+        // True for a locally-computed plan on an offline (Aqua) scan — the
+        // subtitle then flags it as a basic offline plan instead of
+        // pretending it's the server's species-tailored one.
+        offlineBasic: Boolean = false,
     ) {
         lastPlan = plan
         this.onApplyToReminders = onApplyToReminders
-        subtitleView.text = speciesSubtitle(speciesDisplay ?: plan.species.takeIf { plan.hasSpecies })
+        subtitleView.text = if (offlineBasic) {
+            context.getString(R.string.care_plan_subtitle_offline)
+        } else {
+            speciesSubtitle(speciesDisplay ?: plan.species.takeIf { plan.hasSpecies })
+        }
 
         loadingView.visibility = View.GONE
         errorView.visibility = View.GONE

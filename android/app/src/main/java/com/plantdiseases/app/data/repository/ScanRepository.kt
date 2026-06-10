@@ -1,6 +1,8 @@
 package com.plantdiseases.app.data.repository
 
 import com.google.gson.Gson
+import com.plantdiseases.app.data.local.ScanChatMessageDao
+import com.plantdiseases.app.data.local.ScanChatMessageEntity
 import com.plantdiseases.app.data.local.ScanDao
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.AnalysisResponse
@@ -37,6 +39,10 @@ import java.net.UnknownHostException
 class ScanRepository(
     private val scanDao: ScanDao,
     private val apiClient: PlantApiClient,
+    // Nullable so unit tests that exercise only the network / scan-history
+    // surface don't need a Room database. Chat persistence quietly no-ops
+    // when absent.
+    private val scanChatMessageDao: ScanChatMessageDao? = null,
 ) {
     private val apiService: ApiService
         get() = apiClient.apiService
@@ -714,6 +720,28 @@ class ScanRepository(
     /** Delete a scan */
     suspend fun deleteScan(id: Long) = withContext(Dispatchers.IO) {
         scanDao.deleteById(id)
+    }
+
+    // ─── AI Plant Doctor chat persistence (scan-keyed sessions) ──────
+
+    /** Persisted transcript for a scan-keyed AI Plant Doctor session. */
+    suspend fun getChatMessages(scanId: Long): List<ScanChatMessageEntity> =
+        withContext(Dispatchers.IO) {
+            scanChatMessageDao?.getForScan(scanId) ?: emptyList()
+        }
+
+    /** Append one message to a scan-keyed chat transcript. */
+    suspend fun saveChatMessage(entity: ScanChatMessageEntity) {
+        withContext(Dispatchers.IO) {
+            scanChatMessageDao?.insert(entity)
+        }
+    }
+
+    /** Drop the persisted transcript for a scan-keyed chat. */
+    suspend fun clearChat(scanId: Long) {
+        withContext(Dispatchers.IO) {
+            scanChatMessageDao?.deleteForScan(scanId)
+        }
     }
 
     /** Convert entity to display model */

@@ -279,6 +279,8 @@
     <string name="warning_nap_ood_gated">Детектору это изображение не показалось листом растения, поэтому результат может быть ненадёжным. Сфотографируйте один лист, заполняющий большую часть кадра, и попробуйте снова.</string>
     <string name="warning_disease_suspected_title">Замечена возможная проблема</string>
     <string name="warning_disease_suspected">Растение выглядит в основном здоровым, но модель также заметила признаки: %1$s. Понаблюдайте и переснимите, если симптомы усилятся.</string>
+    <string name="warning_offline_scan_title">Офлайн-скан</string>
+    <string name="warning_offline_scan">Этот результат рассчитан на вашем устройстве без сервера. Он может быть менее точным, чем полный серверный анализ — пересканируйте онлайн для более подробного диагноза.</string>
 
     <!-- Empty states -->
     <string name="first_scan_cta">Сделать первый скан</string>
@@ -398,6 +400,16 @@
     <string name="doctor_q2">Причина и как предотвратить рецидив?</string>
     <string name="doctor_q3">Самое быстрое домашнее лечение?</string>
     <string name="doctor_clear">Очистить чат</string>
+    <string name="chat_err_turn_cap">Лимит сообщений в этой сессии исчерпан. Очистите чат, чтобы начать заново.</string>
+    <string name="chat_err_token_cap">Бюджет токенов сессии исчерпан. Очистите чат, чтобы начать заново.</string>
+    <string name="chat_err_no_api_key">AI Plant Doctor временно недоступен (сервер не настроен). Используйте раздел «Лечение» в карточке диагноза.</string>
+    <string name="chat_err_message_rejected">Сообщение не отправлено. Сократите запрос и попробуйте снова.</string>
+    <string name="chat_err_no_reply">Не удалось получить ответ от ассистента. Попробуйте отправить сообщение ещё раз.</string>
+    <string name="chat_err_unavailable">AI Plant Doctor пока недоступен. Попробуйте позже.</string>
+    <string name="chat_err_no_network">Нет интернет-соединения. Подключитесь к сети и попробуйте снова.</string>
+    <string name="chat_err_timeout">Сервер не отвечает. Попробуйте отправить сообщение ещё раз.</string>
+    <string name="chat_err_rate_limit">Слишком частые запросы. Подождите несколько секунд и повторите.</string>
+    <string name="chat_err_generic">Не удалось связаться с сервером. Попробуйте позже.</string>
     <string name="doctor_open_cta">Спросить AI-доктора</string>
     <!-- Light Meter -->
     <string name="light_meter">Люксметр</string>
@@ -434,6 +446,8 @@
     <string name="guide_link_subtitle">Статья об уходе и лечении: %s</string>
     <!-- Шаринг сохранённого скана через системный диалог -->
     <string name="share_scan_chooser">Поделиться сканом</string>
+    <string name="share_diagnosis_header">🌿 PlantDiseases — Диагноз</string>
+    <string name="share_treatment_label">💊 Лечение:</string>
     <string name="share_confidence_format">Уверенность %d%%</string>
     <!-- Адаптивный полив (C2) -->
     <string name="adaptive_watering_title">💡 Сократить интервал полива с %1$d до %2$d дней?</string>
@@ -551,6 +565,7 @@
     <string name="care_plan_title">План ухода</string>
     <string name="care_plan_subtitle_species">Подобрано для %s</string>
     <string name="care_plan_subtitle_unknown">Общий план — вид не указан</string>
+    <string name="care_plan_subtitle_offline">Базовый офлайн-план — пересканируйте онлайн для точного</string>
     <string name="care_plan_loading">Готовим план ухода…</string>
     <string name="care_plan_unavailable">План ухода недоступен. Нажмите «Повторить».</string>
     <string name="care_plan_retry">Повторить</string>

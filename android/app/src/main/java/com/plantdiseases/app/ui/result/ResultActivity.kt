@@ -896,6 +896,13 @@ class ResultActivity : AppCompatActivity() {
         // hedge) > low_confidence (mild hedge).
         binding.cardPipelineWarning.visibility = View.VISIBLE
         when {
+            // On-device (Aqua) scan — always caveat: the offline model has
+            // no detector / post-processing pipeline behind it, so the
+            // verdict can be less confident than a server analysis.
+            "offline_aqua" in warnings -> {
+                binding.tvPipelineWarningTitle.setText(R.string.warning_offline_scan_title)
+                binding.tvPipelineWarningBody.setText(R.string.warning_offline_scan)
+            }
             "very_low_confidence" in warnings -> {
                 binding.tvPipelineWarningTitle.setText(R.string.warning_very_low_confidence_title)
                 binding.tvPipelineWarningBody.setText(R.string.warning_very_low_confidence)
@@ -1320,14 +1327,16 @@ class ResultActivity : AppCompatActivity() {
 
     private fun shareWithImage(scan: ScanEntity, repository: ScanRepository, isRu: Boolean) {
         val shareText = buildString {
-            append(if (isRu) "🌿 PlantDiseases — Диагноз\n\n" else "🌿 PlantDiseases — Diagnosis\n\n")
+            append(getString(R.string.share_diagnosis_header))
+            append("\n\n")
             append(if (isRu) scan.diseaseNameRu else scan.diseaseName)
             append(" (${(scan.confidence * 100).toInt()}%)\n\n")
             append(if (isRu) scan.descriptionRu else scan.description)
             val treatmentList = repository.parseStringList(if (isRu) scan.treatmentRu else scan.treatment)
             if (treatmentList.isNotEmpty()) {
                 append("\n\n")
-                append(if (isRu) "💊 Лечение:\n" else "💊 Treatment:\n")
+                append(getString(R.string.share_treatment_label))
+                append("\n")
                 treatmentList.forEachIndexed { i, t -> append("${i + 1}. $t\n") }
             }
         }
@@ -1577,6 +1586,23 @@ class ResultActivity : AppCompatActivity() {
         }
 
         val app = application as PlantDiseasesApp
+
+        // Offline (Aqua) scans never call the server: bind a basic,
+        // locally-computed plan instead, visually marked as offline.
+        if ("offline_aqua" in repository.parseWarnings(scan.warnings)) {
+            card.bind(
+                plan = com.plantdiseases.app.util.OfflineScanContent
+                    .localCarePlan(classKey, isRu),
+                speciesDisplay = null,
+                showApplyToReminders = scan.plantId != null,
+                onApplyToReminders = { applied ->
+                    applyCarePlanToReminders(scan, applied)
+                },
+                offlineBasic = true,
+            )
+            return
+        }
+
         card.showLoading(null)
 
         lifecycleScope.launch {

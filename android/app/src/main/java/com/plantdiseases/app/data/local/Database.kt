@@ -291,6 +291,45 @@ interface ChatMessageDao {
     suspend fun deleteForPlant(plantId: Long)
 }
 
+// ─── Scan Chat Message Entity ────────────────────────────────────────────────
+//
+// Mirrors `chat_messages` for AI Plant Doctor sessions launched from a scan
+// that isn't (yet) attached to a garden plant. Keyed by the scan row so the
+// transcript survives closing/reopening the result screen; CASCADE keeps it
+// tidy when the scan is deleted.
+
+@Entity(
+    tableName = "scan_chat_messages",
+    foreignKeys = [
+        ForeignKey(
+            entity = ScanEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["scan_id"],
+            onDelete = ForeignKey.CASCADE,
+        )
+    ],
+    indices = [Index(value = ["scan_id"])]
+)
+data class ScanChatMessageEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(name = "scan_id") val scanId: Long,
+    @ColumnInfo(name = "role") val role: String,       // "user" | "bot"
+    @ColumnInfo(name = "content") val content: String,
+    @ColumnInfo(name = "timestamp") val timestamp: Long = System.currentTimeMillis(),
+)
+
+@Dao
+interface ScanChatMessageDao {
+    @Query("SELECT * FROM scan_chat_messages WHERE scan_id = :scanId ORDER BY timestamp ASC")
+    suspend fun getForScan(scanId: Long): List<ScanChatMessageEntity>
+
+    @Insert
+    suspend fun insert(message: ScanChatMessageEntity): Long
+
+    @Query("DELETE FROM scan_chat_messages WHERE scan_id = :scanId")
+    suspend fun deleteForScan(scanId: Long)
+}
+
 // ─── Original DAOs ───────────────────────────────────────────────────────────
 
 @Dao
@@ -370,12 +409,13 @@ interface PlantJournalDao {
         PlantReminderEntity::class,
         PlantReminderEventEntity::class,
         ChatMessageEntity::class,
+        ScanChatMessageEntity::class,
     ],
     // The schema is treated as ephemeral while the app is in pre-release
     // testing: ``fallbackToDestructiveMigration`` is configured below
     // and any schema change wipes local data on next launch. Real
     // migrations come later, alongside cloud sync.
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -385,6 +425,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun plantReminderDao(): PlantReminderDao
     abstract fun plantReminderEventDao(): PlantReminderEventDao
     abstract fun chatMessageDao(): ChatMessageDao
+    abstract fun scanChatMessageDao(): ScanChatMessageDao
 
     companion object {
         @Volatile
@@ -396,6 +437,28 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `scan_chat_messages` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `scan_id` INTEGER NOT NULL,
+                        `role` TEXT NOT NULL,
+                        `content` TEXT NOT NULL,
+                        `timestamp` INTEGER NOT NULL,
+                        FOREIGN KEY(`scan_id`) REFERENCES `scans`(`id`)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_scan_chat_messages_scan_id` " +
+                        "ON `scan_chat_messages` (`scan_id`)"
+                )
+            }
+        }
+
         fun getInstance(context: android.content.Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -403,7 +466,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "plantdiseases_db"
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     // Room 2.7 deprecated the no-arg overload; `dropAllTables =
                     // true` preserves the previous behaviour (wipe everything
                     // when no migration path exists).

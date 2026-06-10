@@ -33,8 +33,22 @@ class AquaInferenceTest {
         assertThat(r.family).isEqualTo("aqua")
         assertThat(r.isHealthy).isFalse()
         assertThat(r.allProbs).isEqualTo(probs)
-        // Minimal-offline contract: a warning flags the thinner advice.
+        // Offline contract: a warning flags the on-device origin so the UI
+        // can caveat the result and skip server-only calls.
         assertThat(r.warnings).contains("offline_aqua")
+    }
+
+    @Test
+    fun buildResponse_fills_bilingual_card_content_from_local_table() {
+        val r = AquaInference.buildResponse(mapOf("powdery_mildew" to 0.8f, "healthy" to 0.2f))
+        // Offline scans must not render blank: description / treatment /
+        // prevention come from OfflineScanContent in both languages.
+        assertThat(r.description).isNotEmpty()
+        assertThat(r.descriptionRu).isNotEmpty()
+        assertThat(r.treatment).isNotEmpty()
+        assertThat(r.treatmentRu).isNotEmpty()
+        assertThat(r.prevention).isNotEmpty()
+        assertThat(r.preventionRu).isNotEmpty()
     }
 
     @Test

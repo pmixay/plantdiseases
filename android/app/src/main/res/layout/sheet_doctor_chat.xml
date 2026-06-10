@@ -71,6 +71,16 @@
 
         </LinearLayout>
 
+        <!-- Compact clear-chat (bin) action — 48dp touch target. -->
+        <ImageButton
+            android:id="@+id/chat_clear_btn"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/doctor_clear"
+            android:src="@drawable/ic_delete"
+            app:tint="@color/on_primary" />
+
     </LinearLayout>
 
     <!-- Messages — weighted so the input row stays pinned. -->
@@ -136,16 +146,6 @@
         </HorizontalScrollView>
 
     </LinearLayout>
-
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/chat_clear_btn"
-        style="@style/App.Button.Text"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="center_horizontal"
-        android:layout_marginBottom="@dimen/space_xs"
-        android:text="@string/doctor_clear"
-        android:textSize="@dimen/text_body_sm" />
 
     <!-- Input row — bottom inset is applied in code. -->
     <LinearLayout
