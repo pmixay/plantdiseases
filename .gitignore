@@ -50,3 +50,4 @@ server/community_thumbs/
 # Hosted Aqua on-device model (provisioned out of band)
 server/static/aqua/aqua_classifier.tflite
 server/static/aqua/classes.json
+/server/static/guide/.webp/

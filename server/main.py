@@ -839,12 +839,26 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         # Health, metadata and metrics endpoints are always free
-        if request.url.path in (
+        path = request.url.path
+        if path in (
             "/api/health",
             "/api/version",
             "/api/classes",
             "/api/metrics",
             "/api/metrics/prometheus",
+        ):
+            return await call_next(request)
+        # Static image assets + the tiny aqua manifest are also free.
+        # Opening the guide (or a thumbnail-heavy community strip) fans
+        # out into a dozen image GETs at once; metering those against
+        # the same token bucket as the API drained the burst budget and
+        # 429'd the *next real* request — the "docs stop working while
+        # images load" failure. These are cheap disk reads (mostly 304s
+        # after first fetch), so exempting them is safe.
+        if request.method in ("GET", "HEAD") and (
+            path.startswith("/api/guide/")
+            or path.startswith("/api/community/thumb/")
+            or path == "/api/aqua/manifest"
         ):
             return await call_next(request)
 
@@ -3090,8 +3104,33 @@ async def species_info_endpoint(name: str, locale: str = "en"):
     return JSONResponse(content={"available": True, **info})
 
 
+def _cached_image_response(
+    request: Request,
+    path: Path,
+    *,
+    media_type: str,
+    cache_control: str,
+) -> StarletteResponse:
+    """FileResponse with working HTTP revalidation.
+
+    Starlette's ``FileResponse`` attaches an ETag but never *checks*
+    ``If-None-Match``, so a revalidating client re-downloads the full
+    bytes on every poll. This wrapper answers a matching conditional
+    request with an empty 304 — for the guide photos and community
+    thumbnails that is the difference between ~100 KB and ~100 bytes
+    per revalidation on a mobile uplink.
+    """
+    st = path.stat()
+    etag = f'W/"{int(st.st_mtime)}-{st.st_size}"'
+    headers = {"Cache-Control": cache_control, "ETag": etag}
+    inm = request.headers.get("if-none-match", "")
+    if etag in {t.strip() for t in inm.split(",") if t.strip()}:
+        return StarletteResponse(status_code=304, headers=headers)
+    return FileResponse(path, media_type=media_type, headers=headers)
+
+
 @api_router.get("/community/thumb/{filename}")
-async def community_scan_thumb(filename: str):
+async def community_scan_thumb(filename: str, request: Request):
     """Serve a community thumbnail by filename.
 
     The corpus only ever stores filenames that ``community._save_thumbnail``
@@ -3104,13 +3143,12 @@ async def community_scan_thumb(filename: str):
     path = COMMUNITY_THUMB_DIR / filename
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Thumbnail not found")
-    # FileResponse streams the file off the event loop instead of
-    # reading the whole thumbnail into memory inline. Thumbnails are
-    # always re-encoded to JPEG by community._save_thumbnail.
-    return FileResponse(
-        path,
+    # Streams off the event loop; supports 304 revalidation. Thumbnails
+    # are always re-encoded to JPEG by community._save_thumbnail.
+    return _cached_image_response(
+        request, path,
         media_type="image/jpeg",
-        headers={"Cache-Control": "public, max-age=86400"},
+        cache_control="public, max-age=86400",
     )
 
 
@@ -3126,22 +3164,78 @@ async def guide_manifest():
     return {"count": len(keys), "keys": keys}
 
 
+# Guide photos ship as large PNGs (80–565 KB of photographic content —
+# the worst case for PNG). We transcode each to a downscaled WebP once,
+# lazily, into a sibling cache dir and serve that instead: ~10× fewer
+# bytes for visually identical strips. The variant is keyed by the
+# source file's mtime so replacing a photo in a release regenerates it.
+_GUIDE_WEBP_DIR_NAME = ".webp"
+_GUIDE_WEBP_MAX_SIDE = 800
+_GUIDE_WEBP_QUALITY = 80
+_guide_webp_lock = threading.Lock()
+
+
+def _guide_webp_variant(src: Path) -> Path | None:
+    """Return the cached WebP variant for ``src``, generating it if stale.
+
+    Any failure (PIL hiccup, unwritable dir) returns ``None`` and the
+    caller falls back to serving the original PNG — the optimisation
+    must never take the endpoint down.
+    """
+    try:
+        out_dir = src.parent / _GUIDE_WEBP_DIR_NAME
+        out = out_dir / f"{src.stem}.webp"
+        src_mtime = src.stat().st_mtime
+        if out.is_file() and out.stat().st_mtime >= src_mtime:
+            return out
+        # One transcode at a time — two concurrent first requests for the
+        # same key must not interleave writes into the same target file.
+        with _guide_webp_lock:
+            if out.is_file() and out.stat().st_mtime >= src_mtime:
+                return out
+            out_dir.mkdir(parents=True, exist_ok=True)
+            img = Image.open(src)
+            img.load()
+            img = img.convert("RGB")
+            w, h = img.size
+            scale = _GUIDE_WEBP_MAX_SIDE / float(max(w, h))
+            if scale < 1.0:
+                img = img.resize(
+                    (max(1, int(w * scale)), max(1, int(h * scale))),
+                    Image.LANCZOS,
+                )
+            tmp = out.with_suffix(".webp.tmp")
+            img.save(tmp, format="WEBP", quality=_GUIDE_WEBP_QUALITY, method=4)
+            tmp.replace(out)
+        return out
+    except Exception as exc:  # noqa: BLE001 — fall back to the original PNG
+        logger.warning("Guide WebP transcode failed for %s: %s", src, exc)
+        return None
+
+
 @api_router.get("/guide/photo/{key}")
-async def guide_photo(key: str):
+async def guide_photo(key: str, request: Request):
     """Serve a guide example photo by key (e.g. ``powdery_mildew``).
 
     Path-traversal guarded like the community-thumb route; missing keys 404.
-    Long-cached because the photos are immutable per release.
+    Long-cached because the photos are immutable per release. Serves the
+    downscaled WebP variant when available (Glide sniffs the magic bytes,
+    so clients of any vintage decode it transparently); the original PNG
+    is the fallback if transcoding ever fails.
     """
     if "/" in key or "\\" in key or ".." in key:
         raise HTTPException(status_code=400, detail="Invalid guide photo key")
     path = GUIDE_STATIC_DIR / f"{key}.png"
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Guide photo not found")
-    return FileResponse(
-        path,
-        media_type="image/png",
-        headers={"Cache-Control": "public, max-age=604800"},
+    webp = await asyncio.get_running_loop().run_in_executor(
+        None, _guide_webp_variant, path,
+    )
+    serve, media = (webp, "image/webp") if webp is not None else (path, "image/png")
+    return _cached_image_response(
+        request, serve,
+        media_type=media,
+        cache_control="public, max-age=604800",
     )
 
 
