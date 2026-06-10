@@ -659,7 +659,7 @@
     <string name="species_suggest_unavailable_rate_limited">Дневная квота PlantNet исчерпана. Попробуйте позже или введите вид вручную.</string>
     <string name="species_suggest_unavailable_auth_failed">Ключ PlantNet на сервере недействителен. Введите вид вручную.</string>
     <string name="species_suggest_match">совпадение %d%%</string>
-    <string name="species_suggest_prefilled">Определено при сканировании (%d%% совпадение). Нажмите «Опознать», чтобы расширить список.</string>
+    <string name="species_suggest_prefilled">Определено при сканировании (%d%% совпадение).</string>
     <string name="species_suggest_no_results">Уверенных совпадений не найдено.</string>
     <string name="species_suggest_unknown_name">Без названия</string>
     <!-- Diagnosis feedback -->

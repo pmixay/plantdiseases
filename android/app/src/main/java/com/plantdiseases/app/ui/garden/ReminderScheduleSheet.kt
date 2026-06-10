@@ -10,7 +10,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
-import android.widget.GridLayout
+import android.widget.LinearLayout
 import android.widget.ImageView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -260,9 +260,7 @@ class ReminderScheduleSheet : BottomSheetDialogFragment() {
         var lastPresetLabel: String? = null
         ReminderPresets.presets.forEach { preset ->
             val cell = FrameLayout(ctx).apply {
-                layoutParams = GridLayout.LayoutParams().apply {
-                    width = 44.dp()
-                    height = 44.dp()
+                layoutParams = LinearLayout.LayoutParams(44.dp(), 44.dp()).apply {
                     setMargins(4.dp(), 4.dp(), 4.dp(), 4.dp())
                 }
                 isClickable = true

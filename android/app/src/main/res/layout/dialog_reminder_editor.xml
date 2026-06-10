@@ -59,14 +59,24 @@
             android:letterSpacing="0.06"
             android:textAllCaps="true" />
 
-        <!-- Preset icon grid — one cell per ReminderPresets entry,
-             built in code (single select). -->
-        <GridLayout
-            android:id="@+id/editor_icon_grid"
+        <!-- Preset icon strip — one cell per ReminderPresets entry,
+             built in code (single select). A horizontal scroller so all
+             12 presets stay reachable on narrow screens; the two-row
+             GridLayout previously clipped the later icons. -->
+        <HorizontalScrollView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/space_sm"
-            android:columnCount="6" />
+            android:clipToPadding="false"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:id="@+id/editor_icon_grid"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal" />
+
+        </HorizontalScrollView>
 
         <LinearLayout
             android:layout_width="match_parent"

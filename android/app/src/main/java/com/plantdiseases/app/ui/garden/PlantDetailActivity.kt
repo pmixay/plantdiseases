@@ -1,7 +1,9 @@
 package com.plantdiseases.app.ui.garden
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.text.InputType
@@ -16,6 +18,8 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -68,10 +72,32 @@ class PlantDetailActivity : AppCompatActivity() {
     private val plantRepository: PlantRepository
         get() = (application as PlantDiseasesApp).plantRepository
 
-    private val pickPhoto = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        if (uri != null && tryPersistRead(uri)) {
-            showPhotoCaptionDialog(uri)
+    /** "New scan" → opens the camera, runs the capture through the normal
+     *  disease-analysis flow ([AnalysisActivity]) and auto-attaches the
+     *  resulting scan to THIS plant (via EXTRA_PLANT_ID) so the photo lands
+     *  in the plant's Photos + Timeline without a manual "Add to garden".
+     *  Replaces the old journal-only gallery photo import — a "scan" means
+     *  the camera. The captured file lives in the same plant_images dir the
+     *  in-app scanner uses, so the saved scan persists identically. */
+    private var pendingScanFile: java.io.File? = null
+
+    private val takeScan = registerForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        val file = pendingScanFile
+        pendingScanFile = null
+        if (ok && file != null && file.exists()) {
+            launchAnalysisForScan(file)
+        } else {
+            runCatching { file?.delete() }
         }
+    }
+
+    private val scanCameraPermission = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) launchCameraScan()
+        else Toast.makeText(
+            this, R.string.camera_permission_needed, Toast.LENGTH_SHORT,
+        ).show()
     }
 
     /** Cover-photo picker — the picked URI is persisted on
@@ -103,6 +129,54 @@ class PlantDetailActivity : AppCompatActivity() {
         android.util.Log.w("PlantDetail", "Persistable URI grant refused for $uri: $e")
         Toast.makeText(this, R.string.photo_picker_permission_refused, Toast.LENGTH_SHORT).show()
         false
+    }
+
+    /** Entry point for the "New scan" action tile: ensure the camera
+     *  permission, then capture. */
+    private fun requestNewScan() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+            == PackageManager.PERMISSION_GRANTED
+        ) {
+            launchCameraScan()
+        } else {
+            scanCameraPermission.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    /** Mint a capture file in the plant_images dir (covered by
+     *  file_paths.xml so FileProvider can grant it to the camera app) and
+     *  fire the system camera. */
+    private fun launchCameraScan() {
+        val file = ImageUtils.createImageFile(this)
+        pendingScanFile = file
+        val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+        runCatching { takeScan.launch(uri) }.onFailure {
+            pendingScanFile = null
+            runCatching { file.delete() }
+            Toast.makeText(this, R.string.image_load_error, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /** Run a freshly captured photo through the normal analysis flow,
+     *  threading this plant's id so the saved scan is auto-attached on
+     *  completion. The fresh scan shows up via onRestart → loadPlant when
+     *  the user comes back. */
+    private fun launchAnalysisForScan(file: java.io.File) {
+        startActivity(
+            Intent(
+                this,
+                com.plantdiseases.app.ui.analysis.AnalysisActivity::class.java,
+            ).apply {
+                putExtra(
+                    com.plantdiseases.app.ui.analysis.AnalysisActivity.EXTRA_IMAGE_PATH,
+                    file.absolutePath,
+                )
+                putExtra(
+                    com.plantdiseases.app.ui.analysis.AnalysisActivity.EXTRA_PLANT_ID,
+                    plantId,
+                )
+            },
+        )
     }
 
     override fun attachBaseContext(newBase: Context) {
@@ -269,11 +343,22 @@ class PlantDetailActivity : AppCompatActivity() {
         scans: List<ScanEntity>,
         journal: List<PlantJournalEntity>,
     ): View {
+        // Round only the BOTTOM corners. The hero stacks a cover photo on
+        // top of the green info card; rounding the top corners cut awkward
+        // arcs out of the real photo (it never sat flush with the card edge).
+        // Full-bleed square top + rounded bottom reads as one clean hero
+        // panel.
+        val heroRadius = resources.getDimension(R.dimen.radius_lg)
         val card = MaterialCardView(this).apply {
-            // Design-system radius token — the freehand 24dp clashed with
-            // the radius_lg overlay cards around it.
-            radius = resources.getDimension(R.dimen.radius_lg)
             cardElevation = 0f
+            shapeAppearanceModel = com.google.android.material.shape.ShapeAppearanceModel.builder()
+                .setBottomLeftCorner(
+                    com.google.android.material.shape.CornerFamily.ROUNDED, heroRadius,
+                )
+                .setBottomRightCorner(
+                    com.google.android.material.shape.CornerFamily.ROUNDED, heroRadius,
+                )
+                .build()
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -383,7 +468,7 @@ class PlantDetailActivity : AppCompatActivity() {
         return actionRow(listOf(
             ActionSpec(R.string.log_watering, R.drawable.ic_watering) { showWateringDialog() },
             ActionSpec(R.string.add_note, R.drawable.ic_note_pencil) { showNoteDialog() },
-            ActionSpec(R.string.add_photo_log, R.drawable.ic_gallery) { pickPhoto.launch(arrayOf("image/*")) },
+            ActionSpec(R.string.new_scan, R.drawable.ic_scan) { requestNewScan() },
             ActionSpec(R.string.action_more, R.drawable.ic_clock) { showMoreActionsSheet() },
         )).apply {
             (layoutParams as LinearLayout.LayoutParams).topMargin = 12.dp()
@@ -1780,18 +1865,6 @@ class PlantDetailActivity : AppCompatActivity() {
             ),
             Toast.LENGTH_SHORT,
         ).show()
-    }
-
-    private fun showPhotoCaptionDialog(uri: Uri) = showTextDialog(
-        titleRes = R.string.add_photo_log,
-        hintRes = R.string.photo_caption_hint,
-        iconRes = R.drawable.ic_garden,
-        allowEmpty = true,
-    ) { text ->
-        lifecycleScope.launch {
-            plantRepository.addPhoto(plantId, uri.toString(), text)
-            loadPlant()
-        }
     }
 
     private fun showTextDialog(

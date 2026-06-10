@@ -338,7 +338,21 @@ class GardenFragment : Fragment() {
         val healthChip = buildHealthChip(summary.latestScan)
         val nextChip = buildNextActionChip(summary)
         if (healthChip != null || nextChip != null) {
-            healthChip?.let { row.plantStatusRow.addView(it) }
+            healthChip?.let { hc ->
+                // When BOTH chips are present, let the (variable-length)
+                // health/disease chip absorb the squeeze and ellipsize via
+                // layout_weight, so the fixed next-action chip always keeps
+                // its full intrinsic width. A long localised disease badge
+                // ("Краевой ожог (недолив)") used to squeeze the trailing
+                // reminder chip down to a bare "…" blue stub.
+                if (nextChip != null) {
+                    (hc.layoutParams as? LinearLayout.LayoutParams)?.apply {
+                        width = 0
+                        weight = 1f
+                    }
+                }
+                row.plantStatusRow.addView(hc)
+            }
             nextChip?.let { row.plantStatusRow.addView(it) }
             row.plantStatusRow.visibility = View.VISIBLE
         } else {
