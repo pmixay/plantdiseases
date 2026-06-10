@@ -757,10 +757,18 @@ class ResultActivity : AppCompatActivity() {
         // The save handoff arrives via the Fragment Result listener
         // registered in onCreate (config-change safe); the sheet itself
         // carries every input in arguments.
+        //
+        // Suggested plant name: prefer the detected species' common name
+        // (people name plants after the plant, not its disease); fall back
+        // to the LOCALIZED disease name — the raw English ``diseaseName``
+        // used to leak into the RU UI here.
+        val isRu = LocaleHelper.isRussian(this)
+        val suggestedName = scan.speciesCommon?.takeIf { it.isNotBlank() }
+            ?: if (isRu) scan.diseaseNameRu else scan.diseaseName
         CreatePlantSheet.show(
             supportFragmentManager,
             scan,
-            initialName = scan.diseaseName,
+            initialName = suggestedName,
         )
     }
 
@@ -1196,7 +1204,6 @@ class ResultActivity : AppCompatActivity() {
                 val items = com.plantdiseases.app.util.SimilarScans.filterSimilar(
                     response.items, disease, speciesScientific,
                 )
-                val total = response.summary?.last7d ?: items.size
 
                 if (items.isEmpty()) {
                     binding.tvSimilarSubtitle.text = getString(
@@ -1206,8 +1213,13 @@ class ResultActivity : AppCompatActivity() {
                     empty.visibility = View.VISIBLE
                     rv.visibility = View.GONE
                 } else {
-                    binding.tvSimilarSubtitle.text = getString(
-                        R.string.similar_scans_subtitle, total, label,
+                    // Count what the strip actually SHOWS. The old
+                    // ``summary.last_7d`` was the regional all-disease
+                    // total, so the header said "9 scans nearby" above a
+                    // one-item carousel of genuinely similar scans.
+                    binding.tvSimilarSubtitle.text = resources.getQuantityString(
+                        R.plurals.similar_scans_subtitle_count,
+                        items.size, items.size, label,
                     )
                     rv.visibility = View.VISIBLE
                     empty.visibility = View.GONE

@@ -167,6 +167,12 @@
     <string name="example_photos_label">Как это выглядит</string>
     <string name="similar_scans_title">Похожие сканы рядом</string>
     <string name="similar_scans_subtitle">%1$d сканов рядом с %2$s</string>
+    <plurals name="similar_scans_subtitle_count">
+        <item quantity="one">%1$d похожий скан рядом с %2$s</item>
+        <item quantity="few">%1$d похожих скана рядом с %2$s</item>
+        <item quantity="many">%1$d похожих сканов рядом с %2$s</item>
+        <item quantity="other">%1$d похожих скана рядом с %2$s</item>
+    </plurals>
     <string name="similar_scans_subtitle_region">Недавние диагнозы рядом с %1$s</string>
     <string name="similar_scans_subtitle_no_region">Включите приблизительное местоположение, чтобы видеть сканы рядом.</string>
     <string name="similar_scans_empty">Похожих сканов пока нет — ваш будет первым.</string>

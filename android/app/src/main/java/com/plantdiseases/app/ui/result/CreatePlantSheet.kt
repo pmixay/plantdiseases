@@ -85,6 +85,11 @@ class CreatePlantSheet : BottomSheetDialogFragment() {
                 R.string.species_suggest_prefilled,
                 ((prefilledScore ?: 0f) * 100).toInt().coerceIn(0, 100),
             )
+            // The species is already filled in from the scan-time PlantNet
+            // detection — a separate "Suggest species" button here is
+            // redundant (it re-runs the same identify). It stays only for
+            // scans where no species was detected, as the manual fallback.
+            identifyBtn.visibility = View.GONE
         }
 
         identifyBtn.setOnClickListener {

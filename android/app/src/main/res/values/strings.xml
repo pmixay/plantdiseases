@@ -168,6 +168,13 @@
     <!-- Similar scans (community corpus) -->
     <string name="similar_scans_title">Similar scans near you</string>
     <string name="similar_scans_subtitle">%1$d recent scans near %2$s</string>
+    <!-- Count of genuinely SIMILAR scans rendered in the strip (post
+         disease/species filter) - not the regional all-disease total,
+         which used to say "9 scans" above a one-item carousel. -->
+    <plurals name="similar_scans_subtitle_count">
+        <item quantity="one">%1$d similar scan near %2$s</item>
+        <item quantity="other">%1$d similar scans near %2$s</item>
+    </plurals>
     <string name="similar_scans_subtitle_region">Recent diagnoses near %1$s</string>
     <string name="similar_scans_subtitle_no_region">Enable approximate location to see scans near you.</string>
     <string name="similar_scans_empty">No nearby scans yet — your scan will be the first.</string>
