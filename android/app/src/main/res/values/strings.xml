@@ -324,6 +324,15 @@
     <string name="garden_card_action_overdue">%1$s overdue</string>
     <string name="garden_card_action_tomorrow">%1$s tomorrow</string>
     <string name="garden_card_action_in_days">%1$s in %2$d days</string>
+    <!-- Garden search + attention section -->
+    <string name="garden_search_hint">Search plants…</string>
+    <string name="garden_search_empty">No plants match “%1$s”</string>
+    <string name="garden_section_attention">Needs attention</string>
+    <!-- "Mark watered/fertilised now" reminder reschedule confirmation -->
+    <plurals name="care_reminder_rescheduled">
+        <item quantity="one">Logged — next reminder in %1$d day</item>
+        <item quantity="other">Logged — next reminder in %1$d days</item>
+    </plurals>
     <!-- Plant cover photo (toolbar overflow on plant detail) -->
     <string name="cover_photo_set">Set cover photo</string>
     <string name="cover_photo_clear">Clear cover photo</string>

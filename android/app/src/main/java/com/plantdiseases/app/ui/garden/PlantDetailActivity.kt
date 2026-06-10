@@ -120,6 +120,17 @@ class PlantDetailActivity : AppCompatActivity() {
         loadPlant()
     }
 
+    override fun onRestart() {
+        super.onRestart()
+        // Coming back from another activity (Light Meter, a scan result,
+        // the photo viewer…) — re-read the plant so this screen reflects
+        // whatever just changed elsewhere (e.g. the lux reading the Light
+        // Meter persisted in ITS onPause, or a freshly attached scan).
+        // onRestart (not onResume) so the initial onCreate→loadPlant()
+        // isn't doubled on first show.
+        loadPlant()
+    }
+
     private fun buildLayout() {
         // Edge-to-edge: let the gradient app bar fill the status-bar area.
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -545,6 +556,11 @@ class PlantDetailActivity : AppCompatActivity() {
                         JournalAction.PRUNE -> plantRepository.addPruning(plantId, raw)
                         JournalAction.REPOT -> plantRepository.addRepotting(plantId, raw)
                         JournalAction.MIST -> plantRepository.addMisting(plantId, raw)
+                    }
+                    if (kind == JournalAction.FERTILISE) {
+                        rescheduleReminderAfterCare(
+                            com.plantdiseases.app.worker.PlantReminderWorker.TYPE_FERTILIZE,
+                        )
                     }
                     loadPlant()
                 }
@@ -1714,8 +1730,43 @@ class PlantDetailActivity : AppCompatActivity() {
     ) { text ->
         lifecycleScope.launch {
             plantRepository.addWatering(plantId, text)
+            rescheduleReminderAfterCare(
+                com.plantdiseases.app.worker.PlantReminderWorker.TYPE_WATERING,
+            )
             loadPlant()
         }
+    }
+
+    /**
+     * "Mark watered/fertilised now" semantics: when the user logs the care
+     * action by hand AND a matching reminder is enabled, push the periodic
+     * schedule out so the next notification lands a full interval from now
+     * — not on the stale cadence the morning after they already did the
+     * work. No-op when the plant has no enabled reminder of this type.
+     */
+    private suspend fun rescheduleReminderAfterCare(type: String) {
+        val plant = currentPlant ?: return
+        val reminder = plantRepository.getReminders(plant.id)
+            .firstOrNull { it.type == type && it.enabled } ?: return
+        com.plantdiseases.app.util.ReminderManager.rescheduleAfterCare(
+            context = this,
+            plantId = plant.id,
+            plantName = plant.name,
+            type = reminder.type,
+            intervalDays = reminder.intervalDays,
+            hour = reminder.hour,
+            minute = reminder.minute,
+            reminderId = reminder.id,
+        )
+        Toast.makeText(
+            this,
+            resources.getQuantityString(
+                R.plurals.care_reminder_rescheduled,
+                reminder.intervalDays,
+                reminder.intervalDays,
+            ),
+            Toast.LENGTH_SHORT,
+        ).show()
     }
 
     private fun showPhotoCaptionDialog(uri: Uri) = showTextDialog(

@@ -190,6 +190,12 @@ class ResultActivity : AppCompatActivity() {
                 }
             }
         }
+        // Same recreation-safe handoff for the "create plant from this
+        // scan" sheet — its Save used to ride on a listener field that a
+        // recreated sheet lost, silently dropping the new plant.
+        supportFragmentManager.setFragmentResultListener(
+            CreatePlantSheet.REQUEST_KEY, this,
+        ) { _, result -> onCreatePlantResult(result) }
         loadResult(scanId)
     }
 
@@ -748,27 +754,38 @@ class ResultActivity : AppCompatActivity() {
     }
 
     private fun showCreatePlantForScanDialog(scan: ScanEntity) {
+        // The save handoff arrives via the Fragment Result listener
+        // registered in onCreate (config-change safe); the sheet itself
+        // carries every input in arguments.
         CreatePlantSheet.show(
             supportFragmentManager,
             scan,
             initialName = scan.diseaseName,
-        ) { plantName, species, scientific, common ->
-            val app = application as PlantDiseasesApp
-            lifecycleScope.launch {
-                val plantId = app.plantRepository.savePlant(
-                    name = plantName,
-                    species = species,
-                    scientificName = scientific,
-                    commonName = common,
-                )
-                app.plantRepository.assignScanToPlant(scan.id, plantId)
-                binding.btnAddToGarden.text = getString(R.string.added_to_garden)
-                Toast.makeText(
-                    this@ResultActivity,
-                    getString(R.string.scan_added_to_garden),
-                    Toast.LENGTH_SHORT,
-                ).show()
-            }
+        )
+    }
+
+    /** Persist the plant the CreatePlantSheet just saved and attach the
+     *  scan to it. Invoked through the Fragment Result API so the handoff
+     *  survives the activity + sheet being recreated together. */
+    private fun onCreatePlantResult(result: Bundle) {
+        val plantName = result.getString(CreatePlantSheet.RESULT_NAME) ?: return
+        val scanId = result.getLong(CreatePlantSheet.RESULT_SCAN_ID, -1L)
+        if (scanId <= 0L) return
+        val app = application as PlantDiseasesApp
+        lifecycleScope.launch {
+            val plantId = app.plantRepository.savePlant(
+                name = plantName,
+                species = result.getString(CreatePlantSheet.RESULT_SPECIES),
+                scientificName = result.getString(CreatePlantSheet.RESULT_SCIENTIFIC),
+                commonName = result.getString(CreatePlantSheet.RESULT_COMMON),
+            )
+            app.plantRepository.assignScanToPlant(scanId, plantId)
+            binding.btnAddToGarden.text = getString(R.string.added_to_garden)
+            Toast.makeText(
+                this@ResultActivity,
+                getString(R.string.scan_added_to_garden),
+                Toast.LENGTH_SHORT,
+            ).show()
         }
     }
 

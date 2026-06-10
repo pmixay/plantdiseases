@@ -320,6 +320,17 @@
     <string name="garden_card_action_overdue">%1$s просрочено</string>
     <string name="garden_card_action_tomorrow">%1$s завтра</string>
     <string name="garden_card_action_in_days">%1$s через %2$d дн.</string>
+    <!-- Сад: поиск и секция «требуют внимания» -->
+    <string name="garden_search_hint">Поиск растений…</string>
+    <string name="garden_search_empty">По запросу «%1$s» ничего не найдено</string>
+    <string name="garden_section_attention">Требуют внимания</string>
+    <!-- Подтверждение переноса напоминания после отметки «полито/удобрено» -->
+    <plurals name="care_reminder_rescheduled">
+        <item quantity="one">Записано — следующее напоминание через %1$d день</item>
+        <item quantity="few">Записано — следующее напоминание через %1$d дня</item>
+        <item quantity="many">Записано — следующее напоминание через %1$d дней</item>
+        <item quantity="other">Записано — следующее напоминание через %1$d дня</item>
+    </plurals>
     <!-- Обложка растения (меню верхней панели на экране деталей) -->
     <string name="cover_photo_set">Выбрать обложку</string>
     <string name="cover_photo_clear">Убрать обложку</string>

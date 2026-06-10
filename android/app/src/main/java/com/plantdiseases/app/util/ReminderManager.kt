@@ -8,7 +8,6 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.plantdiseases.app.worker.PlantReminderWorker
-import java.util.Calendar
 import java.util.concurrent.TimeUnit
 
 object ReminderManager {
@@ -33,6 +32,44 @@ object ReminderManager {
         minute: Int,
         reminderId: Long = 0L,
     ) {
+        enqueuePeriodic(
+            context, plantId, plantName, type, intervalDays, reminderId,
+            initialDelayMs = CareSchedule.initialDelayMs(hour, minute),
+        )
+    }
+
+    /**
+     * Re-anchor a reminder's periodic schedule after the user just logged
+     * the matching care action ("mark watered now"). The next firing lands
+     * [intervalDays] days from now at the reminder's usual [hour]:[minute],
+     * instead of nagging on the old cadence the morning after the user
+     * already did the work. Subsequent firings keep the periodic interval.
+     */
+    fun rescheduleAfterCare(
+        context: Context,
+        plantId: Long,
+        plantName: String,
+        type: String,
+        intervalDays: Int,
+        hour: Int,
+        minute: Int,
+        reminderId: Long = 0L,
+    ) {
+        enqueuePeriodic(
+            context, plantId, plantName, type, intervalDays, reminderId,
+            initialDelayMs = CareSchedule.delayAfterCareMs(hour, minute, intervalDays),
+        )
+    }
+
+    private fun enqueuePeriodic(
+        context: Context,
+        plantId: Long,
+        plantName: String,
+        type: String,
+        intervalDays: Int,
+        reminderId: Long,
+        initialDelayMs: Long,
+    ) {
         val inputData = Data.Builder()
             .putLong(PlantReminderWorker.KEY_PLANT_ID, plantId)
             .putLong(PlantReminderWorker.KEY_REMINDER_ID, reminderId)
@@ -40,13 +77,11 @@ object ReminderManager {
             .putString(PlantReminderWorker.KEY_PLANT_NAME, plantName)
             .build()
 
-        val initialDelay = computeInitialDelayMs(hour, minute)
-
         val request = PeriodicWorkRequestBuilder<PlantReminderWorker>(
             intervalDays.toLong(), TimeUnit.DAYS,
         )
             .setInputData(inputData)
-            .setInitialDelay(initialDelay, TimeUnit.MILLISECONDS)
+            .setInitialDelay(initialDelayMs, TimeUnit.MILLISECONDS)
             .build()
 
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
@@ -104,22 +139,4 @@ object ReminderManager {
     }
 
     private fun uniqueName(plantId: Long, type: String) = "reminder_${plantId}_$type"
-
-    /**
-     * Compute how many milliseconds until the next occurrence of [hour]:[minute].
-     * If the time has already passed today, schedules for tomorrow.
-     */
-    private fun computeInitialDelayMs(hour: Int, minute: Int): Long {
-        val now = Calendar.getInstance()
-        val target = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, hour)
-            set(Calendar.MINUTE, minute)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }
-        if (target.before(now)) {
-            target.add(Calendar.DAY_OF_MONTH, 1)
-        }
-        return (target.timeInMillis - now.timeInMillis).coerceAtLeast(0L)
-    }
 }

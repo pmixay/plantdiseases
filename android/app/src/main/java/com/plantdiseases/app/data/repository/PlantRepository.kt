@@ -12,6 +12,7 @@ import com.plantdiseases.app.data.local.PlantReminderEventDao
 import com.plantdiseases.app.data.local.PlantReminderEventEntity
 import com.plantdiseases.app.data.local.ScanDao
 import com.plantdiseases.app.data.local.ScanEntity
+import com.plantdiseases.app.util.CareSchedule
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -33,7 +34,7 @@ class PlantRepository(
                 scanCount = scans.size,
                 latestScan = scans.maxByOrNull { it.timestamp },
                 lastJournalEntry = journal.firstOrNull(),
-                nextAction = soonestReminderDueAt(reminders, journal),
+                nextAction = soonestReminderDueAt(reminders, journal, plant.createdAt),
             )
         }
     }
@@ -41,18 +42,23 @@ class PlantRepository(
     /** Compute the soonest reminder due-time across all enabled reminders
      *  for a plant. ``dueAt = (mostRecent matching-type journal entry's
      *  timestamp OR plant_created_at) + interval_days * 86_400_000``.
-     *  Returns ``null`` when no reminder is enabled. */
+     *  Returns ``null`` when no reminder is enabled.
+     *
+     *  The fallback anchor is the plant's creation time — anchoring at
+     *  epoch 0 (the old behaviour) flagged every never-yet-logged
+     *  reminder as "overdue" the moment it was enabled. */
     private fun soonestReminderDueAt(
         reminders: List<PlantReminderEntity>,
         journal: List<PlantJournalEntity>,
+        plantCreatedAt: Long,
     ): NextAction? {
         val active = reminders.filter { it.enabled }
         if (active.isEmpty()) return null
         return active.mapNotNull { reminder ->
             val journalType = reminderTypeToJournalType(reminder.type) ?: return@mapNotNull null
-            val anchor = journal.firstOrNull { it.type == journalType.value }?.timestamp ?: 0L
-            val dueAt = anchor + reminder.intervalDays.toLong() * 24L * 60L * 60L * 1000L
-            NextAction(reminder.type, dueAt)
+            val anchor = journal.firstOrNull { it.type == journalType.value }?.timestamp
+                ?: plantCreatedAt
+            NextAction(reminder.type, CareSchedule.nextDueAt(anchor, reminder.intervalDays))
         }.minByOrNull { it.dueAt }
     }
 

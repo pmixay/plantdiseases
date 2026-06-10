@@ -9,6 +9,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.view.ViewCompat
 import androidx.fragment.app.FragmentManager
+import androidx.fragment.app.setFragmentResult
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.plantdiseases.app.R
 import com.plantdiseases.app.util.AquaModelManager
@@ -22,12 +23,12 @@ import com.plantdiseases.app.util.ModelFamilyPrefs
  * one-line description. Aqua carries an "Offline" badge. A family the server
  * doesn't serve (frontier when disabled — see [ModelFamilyPrefs.frontierAvailable])
  * is shown disabled with an "Unavailable on this server" badge and can't be
- * picked. The chosen family is persisted; [onPicked] lets the host refresh
- * its chip.
+ * picked. The chosen family is persisted; a Fragment Result on [REQUEST_KEY]
+ * lets the host refresh its chip. (A lambda field set from the static show()
+ * did not survive a configuration-change recreation of the open sheet, so a
+ * pick made after rotating left the host chip stale until the next resume.)
  */
 class ModelPickerSheet : BottomSheetDialogFragment() {
-
-    private var onPicked: ((ModelFamily) -> Unit)? = null
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?,
@@ -89,7 +90,7 @@ class ModelPickerSheet : BottomSheetDialogFragment() {
             if (available) {
                 row.setOnClickListener {
                     ModelFamilyPrefs.setSelected(ctx, family)
-                    onPicked?.invoke(family)
+                    setFragmentResult(REQUEST_KEY, Bundle.EMPTY)
                     dismiss()
                 }
             }
@@ -100,8 +101,12 @@ class ModelPickerSheet : BottomSheetDialogFragment() {
     companion object {
         private const val TAG = "ModelPickerSheet"
 
-        fun show(fm: FragmentManager, onPicked: (ModelFamily) -> Unit) {
-            ModelPickerSheet().apply { this.onPicked = onPicked }.show(fm, TAG)
+        /** Fragment Result key fired after a family is picked + persisted.
+         *  The payload is empty — hosts re-read [ModelFamilyPrefs]. */
+        const val REQUEST_KEY = "model_family_picked"
+
+        fun show(fm: FragmentManager) {
+            ModelPickerSheet().show(fm, TAG)
         }
     }
 }

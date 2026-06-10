@@ -89,6 +89,37 @@
 
             </LinearLayout>
 
+            <!-- Search — only shown once the garden grows past a handful of
+                 plants (GardenFragment toggles visibility at >6). Mirrors the
+                 Guide tab's search-bar styling. -->
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/garden_search_layout"
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md"
+                android:visibility="gone"
+                app:boxCornerRadiusTopStart="@dimen/radius_md"
+                app:boxCornerRadiusTopEnd="@dimen/radius_md"
+                app:boxCornerRadiusBottomStart="@dimen/radius_md"
+                app:boxCornerRadiusBottomEnd="@dimen/radius_md"
+                app:startIconDrawable="@android:drawable/ic_menu_search"
+                app:startIconTint="@color/on_surface_secondary"
+                app:endIconMode="clear_text"
+                app:hintEnabled="false"
+                tools:visibility="visible">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/garden_search"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="@string/garden_search_hint"
+                    android:inputType="text"
+                    android:maxLines="1"
+                    android:textSize="@dimen/text_body" />
+
+            </com.google.android.material.textfield.TextInputLayout>
+
             <!-- Plant list — item_plant_card rows are inflated here. -->
             <LinearLayout
                 android:id="@+id/garden_plants_container"
