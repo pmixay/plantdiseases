@@ -104,7 +104,13 @@ try:
         region_summary as community_region_summary,
     )
     from .community import (
+        resolve_scan_token as community_resolve_scan_token,
+    )
+    from .community import (
         scan_counts as community_scan_counts,
+    )
+    from .community import (
+        scan_exists as community_scan_exists,
     )
     from .community import (
         scans_by_species as community_scans_by_species,
@@ -212,7 +218,13 @@ except ImportError:
         region_summary as community_region_summary,
     )
     from community import (
+        resolve_scan_token as community_resolve_scan_token,
+    )
+    from community import (
         scan_counts as community_scan_counts,
+    )
+    from community import (
+        scan_exists as community_scan_exists,
     )
     from community import (
         scans_by_species as community_scans_by_species,
@@ -279,8 +291,11 @@ def _resolve_app_version() -> str:
     except Exception:
         pass
     try:
+        # Honour a custom MODELS_DIR (mirrors the constant defined below;
+        # this helper runs at import time, before that constant exists).
+        models_dir = Path(get_str("MODELS_DIR", "models"))
         meta = json.loads(
-            (Path("models") / "classes.json").read_text(encoding="utf-8")
+            (models_dir / "classes.json").read_text(encoding="utf-8")
         )
         version = meta.get("model_version")
         if version:
@@ -897,20 +912,20 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 content={"detail": "API key or IP temporarily banned due to suspected abuse."},
             )
 
-        # 4. Check Daily Quota (if key has quota)
-        if quota_daily > 0:
-            if not _check_and_increment_quota(api_key, quota_daily):
+        # Bypass rate limiter checks if rate is infinity or non-positive
+        if rate == float("inf") or rate <= 0:
+            # 4. Daily quota still applies to unthrottled keys.
+            if quota_daily > 0 and not _check_and_increment_quota(api_key, quota_daily):
                 logger.warning("Daily quota exceeded for key=%s quota=%d", api_key[:12], quota_daily)
                 return JSONResponse(
                     status_code=429,
                     content={"detail": "Daily quota exceeded for this API key. Try again tomorrow."},
                 )
-
-        # Bypass rate limiter checks if rate is infinity or non-positive
-        if rate == float("inf") or rate <= 0:
             return await call_next(request)
 
-        # 5. Token bucket rate limit check
+        # 5. Token bucket rate limit check. Runs BEFORE the daily quota
+        # so a burst of rate-limited 429s doesn't burn quota for
+        # requests the server never processed.
         now = time.monotonic()
         with self._lock:
             if now - self._last_cleanup > _RATE_LIMIT_CLEANUP_INTERVAL:
@@ -936,6 +951,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 )
             tokens -= 1.0
             self._buckets[identifier] = (tokens, now)
+
+        # 6. Daily quota — only requests that passed the rate limiter
+        # count against the key's daily budget.
+        if quota_daily > 0 and not _check_and_increment_quota(api_key, quota_daily):
+            logger.warning("Daily quota exceeded for key=%s quota=%d", api_key[:12], quota_daily)
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Daily quota exceeded for this API key. Try again tomorrow."},
+            )
 
         return await call_next(request)
 
@@ -1169,6 +1193,17 @@ def _open_image(contents: bytes) -> Image.Image:
     """Decode bytes into a validated, EXIF-normalised RGB PIL image."""
     try:
         img = Image.open(io.BytesIO(contents))
+        # Reject oversized resolutions from the HEADER, before the full
+        # decode: Pillow only hard-errors at 2× MAX_IMAGE_PIXELS, so a
+        # ~36 MP upload would otherwise fully decode (~150 MB RSS) just
+        # to be bounced by the post-decode dimension check below.
+        w, h = img.size
+        if w > MAX_IMAGE_DIMENSION or h > MAX_IMAGE_DIMENSION:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Image resolution too large ({w}x{h}). "
+                       f"Maximum dimension: {MAX_IMAGE_DIMENSION}px",
+            )
         img.load()  # force actual decoding to surface truncation errors
         # Apply the EXIF orientation tag BEFORE converting to RGB.
         # Phone cameras commonly store sideways/upside-down captures
@@ -1178,6 +1213,8 @@ def _open_image(contents: bytes) -> Image.Image:
         # shots. ``exif_transpose`` is a no-op when no tag is present.
         img = ImageOps.exif_transpose(img)
         return img.convert("RGB")
+    except HTTPException:
+        raise
     except Image.DecompressionBombError as exc:
         raise HTTPException(status_code=400, detail="Image exceeds decompression safety limit") from exc
     except UnidentifiedImageError as exc:
@@ -2754,7 +2791,16 @@ async def community_opinion_submit(payload: CommunityOpinionRequest, request: Re
     if today >= COMMUNITY_OPINION_DAILY_QUOTA:
         raise HTTPException(status_code=429, detail="Daily opinion quota reached.")
 
-    sid = payload.scan_id.strip()
+    # Viewers arrive with the feed's public token; the scan's owner (and
+    # legacy cached feeds) with the real scan_id. Resolve to the real id
+    # and require the shared scan to exist — opinions against ids that
+    # were never shared are write-only noise in the consensus tally.
+    sid = await loop.run_in_executor(
+        None, lambda: community_resolve_scan_token(payload.scan_id.strip()),
+    )
+    known = await loop.run_in_executor(None, lambda: community_scan_exists(sid))
+    if not known:
+        raise HTTPException(status_code=422, detail="Unknown scan")
     try:
         await loop.run_in_executor(
             None,
@@ -2840,12 +2886,20 @@ async def community_request_opinion(
 
 @api_router.get("/community/opinions/{scan_id}")
 async def community_opinions_list(scan_id: str):
-    """List community opinions + a consensus tally for one shared scan."""
+    """List community opinions + a consensus tally for one shared scan.
+
+    Accepts the real scan_id (owner's own app) or the feed's public
+    token (viewers); echoes back whichever form the caller sent.
+    """
     sid = (scan_id or "").strip()
     if not sid or len(sid) > 128:
         raise HTTPException(status_code=422, detail="Invalid scan id")
-    result = await asyncio.get_running_loop().run_in_executor(
-        None, lambda: community_opinions_for(sid),
+    loop = asyncio.get_running_loop()
+    resolved = await loop.run_in_executor(
+        None, lambda: community_resolve_scan_token(sid),
+    )
+    result = await loop.run_in_executor(
+        None, lambda: community_opinions_for(resolved),
     )
     return JSONResponse(content={"scan_id": sid, **result})
 
@@ -2895,11 +2949,14 @@ async def community_record_scan_view(payload: CommunityViewRequest):
     """Record that the caller opened someone else's shared scan. Deduped per
     viewer server-side; a scan owner viewing their own scan and views of an
     unknown scan never count, so this is safe to fire on every open."""
-    counted = await asyncio.get_running_loop().run_in_executor(
+    loop = asyncio.get_running_loop()
+    # Viewers send the feed's public token — resolve it to the real id.
+    sid = await loop.run_in_executor(
+        None, lambda: community_resolve_scan_token(payload.scan_id.strip()),
+    )
+    counted = await loop.run_in_executor(
         None,
-        lambda: community_record_view(
-            payload.scan_id.strip(), payload.user_pseudo_id.strip(),
-        ),
+        lambda: community_record_view(sid, payload.user_pseudo_id.strip()),
     )
     return JSONResponse(content={"ok": True, "counted": bool(counted)})
 
@@ -2969,10 +3026,13 @@ async def community_scan_nearby(
         exclude_user_pseudo_id=user_pseudo_id,
     )
     # Annotate each cell with how many second opinions it has so the carousel
-    # can show a badge.
+    # can show a badge, then swap the real scan_id for the public token —
+    # the real id authorises /api/feedback writes and must never reach
+    # other users (see community.public_scan_token).
     counts = community_opinion_counts([str(r.get("scan_id")) for r in rows if r.get("scan_id")])
     for r in rows:
         r["opinion_count"] = counts.get(str(r.get("scan_id")), 0)
+        r["scan_id"] = r.pop("public_id", None) or r["scan_id"]
     return JSONResponse(content={"items": rows, "summary": summary})
 
 
@@ -3010,6 +3070,8 @@ async def community_by_species(
     counts = community_opinion_counts([str(r.get("scan_id")) for r in rows if r.get("scan_id")])
     for r in rows:
         r["opinion_count"] = counts.get(str(r.get("scan_id")), 0)
+        # Public token only — never the feedback-authorising real id.
+        r["scan_id"] = r.pop("public_id", None) or r["scan_id"]
     return JSONResponse(content={"items": rows})
 
 

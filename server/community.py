@@ -70,8 +70,12 @@ CREATE TABLE IF NOT EXISTS community_scans (
     locale          TEXT,
     client_ip_hash  TEXT,
     wants_opinion   INTEGER NOT NULL DEFAULT 0,
+    public_id       TEXT,
     created_at      INTEGER NOT NULL
 );
+-- NOTE: the ix_community_public_id index is created in init_db AFTER the
+-- public_id column migration — putting it here would crash executescript
+-- on a legacy DB whose table predates the column.
 CREATE INDEX IF NOT EXISTS ix_community_region          ON community_scans(region, created_at);
 CREATE INDEX IF NOT EXISTS ix_community_user            ON community_scans(user_pseudo_id);
 CREATE INDEX IF NOT EXISTS ix_community_created         ON community_scans(created_at);
@@ -110,6 +114,55 @@ CREATE INDEX IF NOT EXISTS ix_views_scan ON community_scan_views(scan_id);
 _write_lock = threading.RLock()
 _init_lock = threading.Lock()
 _initialised = False
+
+
+# ── Public scan tokens ────────────────────────────────────────────────
+# The real ``scan_id`` is the server-issued id from /api/analyze — the
+# SAME value that authorises /api/feedback writes. Exposing it verbatim
+# in the community feed let any feed reader post feedback (and attach
+# images) against other people's scans, partially defeating the
+# anti-poisoning gate. Viewer-facing feed rows therefore carry a
+# deterministic one-way PUBLIC token instead; the opinion / view
+# endpoints accept either form and resolve the token back to the real
+# id server-side, so existing app builds keep working unchanged.
+_PUBLIC_TOKEN_PREFIX = "cs"
+
+
+def public_scan_token(scan_id: str) -> str:
+    """Deterministic, non-reversible public token for one scan_id."""
+    digest = hashlib.sha256(f"community-public-v1|{scan_id}".encode()).hexdigest()
+    return _PUBLIC_TOKEN_PREFIX + digest[:30]
+
+
+def resolve_scan_token(token: str | None) -> str:
+    """Map a public token back to its real scan_id.
+
+    Real scan_ids (the owner's own app uses them directly) and ids of
+    scans that haven't been shared yet pass through unchanged, so every
+    historical client call keeps its meaning.
+    """
+    tok = (token or "").strip()
+    if not (tok.startswith(_PUBLIC_TOKEN_PREFIX) and len(tok) == 32):
+        return tok
+    init_db()
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT scan_id FROM community_scans WHERE public_id = ? LIMIT 1",
+            (tok,),
+        ).fetchone()
+    return str(row[0]) if row else tok
+
+
+def scan_exists(scan_id: str) -> bool:
+    """True when a community row exists for ``scan_id`` (already resolved)."""
+    sid = (scan_id or "").strip()
+    if not sid:
+        return False
+    init_db()
+    with _connect() as conn:
+        return conn.execute(
+            "SELECT 1 FROM community_scans WHERE scan_id = ? LIMIT 1", (sid,),
+        ).fetchone() is not None
 
 # Disease classes that should never surface in the community feed.
 # ``not_a_plant`` rows are uninteresting to other users (and often
@@ -173,8 +226,44 @@ def init_db() -> None:
             # scanner via /api/community/request-opinion. Older rows
             # default to 0 (no request).
             _add_column_if_missing(conn, "community_scans", "wants_opinion", "INTEGER NOT NULL DEFAULT 0")
+            # Public viewer-facing token (see ``public_scan_token``).
+            _add_column_if_missing(conn, "community_scans", "public_id", "TEXT")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS ix_community_public_id "
+                "ON community_scans(public_id)"
+            )
+            _backfill_public_ids(conn)
         _initialised = True
         logger.info("Community DB ready at %s", COMMUNITY_DB_PATH)
+
+
+def _backfill_public_ids(conn: sqlite3.Connection) -> None:
+    """One-off migration for rows that predate the public token.
+
+    Computes ``public_id`` for every legacy row, and renames legacy
+    thumbnails from ``<scan_id>_<digest>.jpg`` to the token-prefixed
+    form — the filename rode through the feed and leaked the real
+    (feedback-authorising) scan_id just as much as the id field did.
+    """
+    rows = conn.execute(
+        "SELECT id, scan_id, thumb_path FROM community_scans "
+        "WHERE public_id IS NULL",
+    ).fetchall()
+    for row_id, scan_id, thumb_path in rows:
+        token = public_scan_token(str(scan_id))
+        new_thumb = thumb_path
+        if thumb_path and str(thumb_path).startswith(f"{scan_id}_"):
+            new_thumb = token + str(thumb_path)[len(str(scan_id)):]
+            old_file = COMMUNITY_THUMB_DIR / str(thumb_path)
+            with contextlib.suppress(OSError):
+                if old_file.exists():
+                    old_file.rename(COMMUNITY_THUMB_DIR / new_thumb)
+        conn.execute(
+            "UPDATE community_scans SET public_id = ?, thumb_path = ? WHERE id = ?",
+            (token, new_thumb, row_id),
+        )
+    if rows:
+        logger.info("Community: backfilled public ids for %d legacy rows", len(rows))
 
 
 def _save_thumbnail(scan_id: str, image_bytes: bytes) -> str | None:
@@ -195,8 +284,11 @@ def _save_thumbnail(scan_id: str, image_bytes: bytes) -> str | None:
     # Hash-prefix the filename so two scans with the same scan_id (a
     # mis-behaved client) can't collide. Truncate to 24 hex chars —
     # plenty of collision resistance for a per-pseudo-id namespace.
+    # Named by the PUBLIC token, not the raw scan_id: the filename is
+    # served to every feed reader via ``thumb_path`` and must not leak
+    # the feedback-authorising id.
     digest = hashlib.sha256(image_bytes).hexdigest()[:24]
-    filename = f"{scan_id}_{digest}.jpg"
+    filename = f"{public_scan_token(scan_id)}_{digest}.jpg"
     target = COMMUNITY_THUMB_DIR / filename
     try:
         target.write_bytes(image_bytes)
@@ -254,8 +346,8 @@ def record_scan(
             "INSERT INTO community_scans ("
             "  scan_id, user_pseudo_id, country, region, disease, confidence, "
             "  species, species_lower, species_score, thumb_path, locale, "
-            "  client_ip_hash, wants_opinion, created_at"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "  client_ip_hash, wants_opinion, public_id, created_at"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 scan_id,
                 user_pseudo_id,
@@ -270,6 +362,7 @@ def record_scan(
                 locale,
                 ip_hash,
                 wants_opinion,
+                public_scan_token(scan_id),
                 now,
             ),
         )
@@ -876,7 +969,11 @@ def _author_token(user_pseudo_id: str | None) -> str | None:
 
 def _row_to_dict(row: tuple) -> dict:
     return {
+        # Real scan_id — INTERNAL ONLY. Viewer-facing endpoints must
+        # replace it with ``public_id`` before serialising (see the
+        # nearby / by-species handlers in main.py).
         "scan_id": row[0],
+        "public_id": public_scan_token(str(row[0])),
         "country": row[1] or "",
         "region": row[2] or "",
         "disease": row[3],
@@ -952,11 +1049,14 @@ __all__ = [
     "COMMUNITY_THUMB_DIR",
     "daily_write_count_for_ip_hash",
     "delete_for_user",
+    "get_user_data",
     "init_db",
     "nearby_scans",
     "prune_older_than",
+    "public_scan_token",
     "record_scan",
     "region_summary",
+    "resolve_scan_token",
+    "scan_exists",
     "stats_snapshot",
-    "get_user_data",
 ]

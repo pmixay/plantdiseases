@@ -202,7 +202,11 @@ def test_community_nearby_excludes_requesting_user(client, isolated_community):
         params={"region": "Paris", "country": "FR", "user_pseudo_id": "pseudo-self-x"},
     )
     body = r.json()
-    assert {item["scan_id"] for item in body["items"]} == {"scanotherid1"}
+    # The feed exposes the PUBLIC token in the scan_id field — never the
+    # real (feedback-authorising) scan_id.
+    import community as comm
+    assert {item["scan_id"] for item in body["items"]} \
+        == {comm.public_scan_token("scanotherid1")}
     # The summary block must apply the same exclusion. Otherwise the
     # chip row on Android shows a phantom disease — the user's own
     # scan they just uploaded — alongside the carousel that already
@@ -310,7 +314,9 @@ def test_community_request_opinion_flags_owner_scan(client, isolated_community):
             params={"region": "Oslo", "country": "NO",
                     "user_pseudo_id": "pseudo-viewer-z"},
         ).json()["items"]
-        assert len(items) == 1 and items[0]["scan_id"] == "wantsopinion1"
+        import community as comm
+        assert len(items) == 1 \
+            and items[0]["scan_id"] == comm.public_scan_token("wantsopinion1")
         return items[0]["wants_opinion"]
 
     # A non-owner's request is recorded (the endpoint never errors), but
@@ -359,7 +365,9 @@ def test_community_request_opinion_missing_row_records_intent(client, isolated_c
         "/api/community/nearby",
         params={"region": "Oslo", "country": "NO", "user_pseudo_id": "pseudo-viewer-z"},
     ).json()["items"]
-    assert len(items) == 1 and items[0]["scan_id"] == "racedupload"
+    import community as comm
+    assert len(items) == 1 \
+        and items[0]["scan_id"] == comm.public_scan_token("racedupload")
     assert items[0]["wants_opinion"] is True
 
 
@@ -632,3 +640,113 @@ def test_prune_sweeps_orphaned_companion_rows(isolated_community):
         ).fetchone()[0] == 0
     finally:
         conn.close()
+
+
+# ── Public scan tokens (feedback-gate leak closed) ──────────────────
+
+
+def test_feed_token_round_trip_for_opinions_and_views(client, isolated_community):
+    """Viewers only ever see the public token; opinions and views posted
+    with it must resolve to the real scan_id so the owner (who uses the
+    real id) sees them."""
+    import community as comm
+
+    client.post(
+        "/api/community/scan",
+        data=_form(
+            scan_id="realscanid01",
+            user_pseudo_id="pseudo-owner-1",
+            region="Paris", country="FR",
+            disease="leaf_spot",
+        ),
+    )
+    feed = client.get(
+        "/api/community/nearby",
+        params={"country": "FR", "user_pseudo_id": "pseudo-viewer-1"},
+    ).json()["items"]
+    token = feed[0]["scan_id"]
+    assert token == comm.public_scan_token("realscanid01")
+    assert token != "realscanid01"
+    # Thumb filenames must not leak the real id either.
+    assert "realscanid01" not in (feed[0].get("thumb_path") or "")
+
+    # Viewer posts an opinion + view against the token.
+    r = client.post(
+        "/api/community/opinion",
+        json={
+            "scan_id": token,
+            "user_pseudo_id": "pseudo-viewer-1",
+            "suggested_disease": "powdery_mildew",
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["count"] == 1
+    r = client.post(
+        "/api/community/view",
+        json={"scan_id": token, "user_pseudo_id": "pseudo-viewer-1"},
+    )
+    assert r.json()["counted"] is True
+
+    # Owner reads activity under the REAL id and sees both.
+    own = client.get("/api/community/opinions/realscanid01").json()
+    assert len(own["opinions"]) == 1
+    assert own["opinions"][0]["suggested_disease"] == "powdery_mildew"
+    assert own["views"] == 1
+    # Viewer reads under the token and sees the same.
+    via_token = client.get(f"/api/community/opinions/{token}").json()
+    assert len(via_token["opinions"]) == 1
+
+
+def test_opinion_on_unknown_scan_rejected(client, isolated_community):
+    r = client.post(
+        "/api/community/opinion",
+        json={
+            "scan_id": "neverssharedscan1",
+            "user_pseudo_id": "pseudo-viewer-1",
+            "suggested_disease": "healthy",
+        },
+    )
+    assert r.status_code == 422
+
+
+def test_legacy_rows_backfilled_with_public_id_and_thumb_rename(tmp_path, monkeypatch):
+    """Rows + thumbnails created before the public_id column existed get
+    migrated on init: token assigned, thumbnail renamed off the real id."""
+    import importlib
+    import time as _time
+
+    monkeypatch.setenv("COMMUNITY_DB_PATH", str(tmp_path / "community.db"))
+    monkeypatch.setenv("COMMUNITY_THUMB_DIR", str(tmp_path / "thumbs"))
+    import community as comm
+    importlib.reload(comm)
+
+    # Simulate a legacy DB: table without public_id, plus a legacy thumb.
+    (tmp_path / "thumbs").mkdir()
+    (tmp_path / "thumbs" / "legacyscan01_abc.jpg").write_bytes(b"\xff\xd8\xffthumb")
+    conn = sqlite3.connect(tmp_path / "community.db")
+    conn.executescript(
+        "CREATE TABLE community_scans ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT, scan_id TEXT NOT NULL,"
+        " user_pseudo_id TEXT NOT NULL, country TEXT, region TEXT NOT NULL,"
+        " disease TEXT NOT NULL, confidence REAL, species TEXT,"
+        " species_lower TEXT, species_score REAL, thumb_path TEXT,"
+        " locale TEXT, client_ip_hash TEXT,"
+        " wants_opinion INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL)"
+    )
+    conn.execute(
+        "INSERT INTO community_scans (scan_id, user_pseudo_id, country, region,"
+        " disease, thumb_path, created_at) VALUES (?,?,?,?,?,?,?)",
+        ("legacyscan01", "pseudo-legacy", "FR", "Paris", "leaf_spot",
+         "legacyscan01_abc.jpg", int(_time.time())),
+    )
+    conn.commit()
+    conn.close()
+
+    comm.init_db()
+    token = comm.public_scan_token("legacyscan01")
+    assert comm.resolve_scan_token(token) == "legacyscan01"
+    rows = comm.nearby_scans(country="FR")
+    assert rows[0]["public_id"] == token
+    assert rows[0]["thumb_path"] == f"{token}_abc.jpg"
+    assert (tmp_path / "thumbs" / f"{token}_abc.jpg").exists()
+    assert not (tmp_path / "thumbs" / "legacyscan01_abc.jpg").exists()
