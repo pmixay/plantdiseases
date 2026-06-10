@@ -62,7 +62,7 @@
                         android:layout_gravity="center"
                         android:src="@drawable/ic_garden"
                         android:contentDescription="@null"
-                        app:tint="@color/on_primary" />
+                        app:tint="@color/on_hero" />
 
                 </FrameLayout>
 
@@ -72,7 +72,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_md"
                     android:text="@string/garden_title"
-                    android:textColor="@color/on_primary"
+                    android:textColor="@color/on_hero"
                     android:textSize="28sp"
                     android:fontFamily="sans-serif-black"
                     android:letterSpacing="-0.02" />
@@ -83,7 +83,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_xs"
                     android:text="@string/garden_subtitle"
-                    android:textColor="@color/on_primary_secondary"
+                    android:textColor="@color/on_hero_secondary"
                     android:textSize="@dimen/text_body"
                     android:lineSpacingExtra="3dp" />
 

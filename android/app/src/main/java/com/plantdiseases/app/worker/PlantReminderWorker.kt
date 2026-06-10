@@ -60,13 +60,17 @@ class PlantReminderWorker(
             return Result.success()
         }
 
-        val typeIndex = when (reminderType) {
-            TYPE_WATERING -> 0
-            TYPE_CHECK -> 1
-            TYPE_FERTILIZE -> 2
-            else -> return Result.failure()
+        // Stable per-(plant, legacy-type) ids keep the historical dedupe
+        // behaviour; generic reminders dedupe on their row id instead
+        // (offset so the two ranges can't collide).
+        val notificationId = when (reminderType) {
+            TYPE_WATERING -> (plantId * 10).toInt()
+            TYPE_CHECK -> (plantId * 10 + 1).toInt()
+            TYPE_FERTILIZE -> (plantId * 10 + 2).toInt()
+            else ->
+                if (reminderId > 0) (reminderId % 1_000_000L).toInt() + 10_000_000
+                else (plantId * 10 + 9).toInt()
         }
-        val notificationId = (plantId * 10 + typeIndex).toInt()
 
         // Log the firing as a pending event BEFORE posting the notify
         // so the action receivers always have a row to resolve. If
@@ -79,21 +83,31 @@ class PlantReminderWorker(
             app.plantRepository.recordReminderFire(reminder)
         } else -1L
 
-        val (title, body) = when (reminderType) {
-            TYPE_WATERING -> Pair(
-                context.getString(R.string.reminder_notif_watering, plantName),
-                context.getString(R.string.reminder_watering)
+        // Custom-named reminders title with their own name; legacy rows
+        // without a custom label keep the friendlier verb phrasing. The
+        // body prefers the user's description when present.
+        val customLabel = reminder?.label?.trim()?.takeIf { it.isNotEmpty() }
+        val title = when {
+            customLabel != null ->
+                context.getString(R.string.reminder_notif_generic, customLabel, plantName)
+            reminderType == TYPE_WATERING ->
+                context.getString(R.string.reminder_notif_watering, plantName)
+            reminderType == TYPE_CHECK ->
+                context.getString(R.string.reminder_notif_check, plantName)
+            reminderType == TYPE_FERTILIZE ->
+                context.getString(R.string.reminder_notif_fertilize, plantName)
+            else -> context.getString(
+                R.string.reminder_notif_generic,
+                com.plantdiseases.app.util.ReminderPresets.displayLabel(null, reminderType) {
+                    context.getString(it)
+                },
+                plantName,
             )
-            TYPE_CHECK -> Pair(
-                context.getString(R.string.reminder_notif_check, plantName),
-                context.getString(R.string.reminder_check)
-            )
-            TYPE_FERTILIZE -> Pair(
-                context.getString(R.string.reminder_notif_fertilize, plantName),
-                context.getString(R.string.reminder_fertilize)
-            )
-            else -> return Result.failure()
         }
+        val body = reminder?.description?.trim()?.takeIf { it.isNotEmpty() }
+            ?: com.plantdiseases.app.util.ReminderPresets.displayLabel(
+                customLabel, reminderType,
+            ) { context.getString(it) }
 
         val contentIntent = PendingIntent.getActivity(
             context,

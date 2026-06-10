@@ -40,6 +40,7 @@ import com.plantdiseases.app.databinding.FragmentGardenBinding
 import com.plantdiseases.app.databinding.ItemPlantCardBinding
 import com.plantdiseases.app.util.CareSchedule
 import com.plantdiseases.app.util.Haptics
+import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.ReminderManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -168,11 +169,16 @@ class GardenFragment : Fragment() {
             binding.gardenAddFab.visibility = View.VISIBLE
             binding.gardenAddFab.extend()
         }
+        // Two independent counts, two independently-inflected plurals:
+        // garden_summary's quantity follows the PLANT count, so the scan
+        // part is pre-pluralised via scan_count and passed in as %2$s
+        // (1 plant used to force the plant-form onto "N сканов" in RU).
+        val scanTotal = all.sumOf { it.scanCount }
         binding.gardenSummaryBody.text = resources.getQuantityString(
             R.plurals.garden_summary,
             all.size,
             all.size,
-            all.sumOf { it.scanCount },
+            resources.getQuantityString(R.plurals.scan_count, scanTotal, scanTotal),
         )
         // The search box earns its vertical space only once the list is big
         // enough to need it. Keep it visible while a query is active even if
@@ -299,7 +305,11 @@ class GardenFragment : Fragment() {
                 .load(thumbSource)
                 // RGB_565 halves the per-card thumbnail RAM on the garden list.
                 .format(DecodeFormat.PREFER_RGB_565)
-                .transform(CenterCrop(), RoundedCorners(18.dp()))
+                .transform(
+                    CenterCrop(),
+                    // Match the bg_thumb_rounded backdrop / design radius scale.
+                    RoundedCorners(resources.getDimensionPixelSize(R.dimen.radius_md)),
+                )
                 .placeholder(R.drawable.ic_garden)
                 .error(R.drawable.ic_garden)
                 .into(row.plantThumb)
@@ -377,13 +387,8 @@ class GardenFragment : Fragment() {
             setColor(dotColor)
             setStroke(2.dp(), ctx.getColor(R.color.surface))
         }
-        // Pulled slightly outside the thumb so the white halo reads as a
-        // separate badge rather than a corner pixel.
-        (dot.layoutParams as? FrameLayout.LayoutParams)?.let { lp ->
-            lp.topMargin = (-2).dp()
-            lp.marginEnd = (-2).dp()
-            dot.layoutParams = lp
-        }
+        // Sits inside the thumbnail's top-end corner (margin from XML) —
+        // the old negative offsets left it half-floating off the image.
         dot.visibility = View.VISIBLE
     }
 
@@ -414,7 +419,9 @@ class GardenFragment : Fragment() {
                 ctx.getColor(R.color.disease_red),
                 getString(
                     R.string.garden_card_health_disease,
-                    scan.diseaseName,
+                    // RU UI shows the localised verdict, mirroring
+                    // ResultActivity — diseaseName is always English.
+                    if (LocaleHelper.isRussian(ctx)) scan.diseaseNameRu else scan.diseaseName,
                 ),
             )
         }
@@ -461,7 +468,10 @@ class GardenFragment : Fragment() {
             setPadding(12.dp(), 6.dp(), 12.dp(), 6.dp())
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
-                cornerRadius = 999f
+                // Pill radius from the design-system scale rather than a
+                // magic constant, so the chips match the other rounded
+                // surfaces on the card.
+                cornerRadius = resources.getDimension(R.dimen.radius_round)
                 setColor(bgColor)
             }
             layoutParams = LinearLayout.LayoutParams(
@@ -498,7 +508,13 @@ class GardenFragment : Fragment() {
             .setNegativeButton(R.string.cancel, null)
             .setPositiveButton(R.string.delete) { _, _ ->
                 lifecycleScope.launch {
-                    ReminderManager.cancelAll(requireContext(), plant.id)
+                    // Generic reminders carry their row id in the unique
+                    // work name, so the rows must be fetched before the
+                    // CASCADE delete wipes them.
+                    ReminderManager.cancelAll(
+                        requireContext(), plant.id,
+                        plantRepository.getReminders(plant.id),
+                    )
                     plantRepository.deletePlant(plant.id)
                     Toast.makeText(
                         requireContext(),
@@ -528,7 +544,7 @@ class GardenFragment : Fragment() {
             layoutParams = LinearLayout.LayoutParams(52.dp(), 52.dp())
             addView(ImageView(requireContext()).apply {
                 setImageResource(R.drawable.ic_garden)
-                setColorFilter(requireContext().getColor(R.color.on_primary))
+                setColorFilter(requireContext().getColor(R.color.on_hero))
                 layoutParams = FrameLayout.LayoutParams(28.dp(), 28.dp(), Gravity.CENTER)
             })
         })
@@ -539,7 +555,7 @@ class GardenFragment : Fragment() {
             addView(TextView(requireContext()).apply {
                 text = getString(if (existing == null) R.string.add_plant else R.string.edit_plant)
                 textSize = 20f
-                setTextColor(requireContext().getColor(R.color.on_primary))
+                setTextColor(requireContext().getColor(R.color.on_hero))
                 typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             })
             addView(TextView(requireContext()).apply {
@@ -548,7 +564,7 @@ class GardenFragment : Fragment() {
                     else R.string.plant_dialog_edit_subtitle
                 )
                 textSize = 13f
-                setTextColor(requireContext().getColor(R.color.on_primary_secondary))
+                setTextColor(requireContext().getColor(R.color.on_hero_secondary))
                 setLineSpacing(3.dp().toFloat(), 1f)
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,

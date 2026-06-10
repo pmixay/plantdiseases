@@ -32,6 +32,13 @@
     <color name="hero_gradient_mid">#22C55E</color>
     <color name="hero_gradient_end">#4ADE80</color>
     <color name="hero_solid">#16A34A</color>
+    <!-- Text/icon colours for content sitting ON the hero gradient
+         (bg_garden_hero / bg_care_plan_gradient). Unlike ``on_primary``
+         — which tracks the *button* primary and flips dark in night
+         mode — these stay light in both themes because the hero
+         gradient stays green in both. -->
+    <color name="on_hero">#FFFFFF</color>
+    <color name="on_hero_secondary">#CCFFFFFF</color>
     <color name="hero_stat_bg">#29FFFFFF</color>
     <color name="hero_stat_stroke">#52FFFFFF</color>
     <color name="hero_stat_text">#FFFFFF</color>
@@ -89,6 +96,10 @@
     <!-- ─── Category accents ────────────────────────────────────── -->
     <color name="watering_blue">#2563EB</color>
     <color name="lighting_yellow">#F59E0B</color>
+    <!-- Guide-list lighting (sun) icon. Same amber as lighting_yellow
+         in light mode; values-night brightens it because amber-400 on
+         the dark amber chip background read as near-invisible. -->
+    <color name="guide_icon_lighting">#F59E0B</color>
 
     <!-- ─── Misc ────────────────────────────────────────────────── -->
     <color name="scan_frame_color">#80FFFFFF</color>

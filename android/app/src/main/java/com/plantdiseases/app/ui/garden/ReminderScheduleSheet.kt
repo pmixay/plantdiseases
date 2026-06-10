@@ -5,9 +5,13 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.util.TypedValue
+import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.FrameLayout
+import android.widget.GridLayout
+import android.widget.ImageView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
@@ -16,23 +20,35 @@ import androidx.fragment.app.FragmentManager
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.PlantEntity
 import com.plantdiseases.app.data.local.PlantReminderEntity
 import com.plantdiseases.app.data.model.CarePlanResponse
+import com.plantdiseases.app.data.repository.PlantRepository
+import com.plantdiseases.app.databinding.DialogReminderEditorBinding
 import com.plantdiseases.app.databinding.ItemReminderRowBinding
 import com.plantdiseases.app.databinding.SheetReminderScheduleBinding
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ReminderManager
-import com.plantdiseases.app.worker.PlantReminderWorker
+import com.plantdiseases.app.util.ReminderPresets
 import kotlinx.coroutines.launch
 
 /**
- * Reminder schedule bottom sheet. The chrome (handle, header, three
- * reminder rows, save button) lives in ``sheet_reminder_schedule.xml``
- * with each row included from ``item_reminder_row.xml``. NumberPicker
- * ranges / formatters and all the persistence logic stay in code.
+ * Plant reminders bottom sheet — generic-reminder edition.
+ *
+ * Lists every reminder on the plant (icon + name + cadence + enable
+ * switch); rows are user-composed via a small editor dialog (name,
+ * optional description, preset icon, interval, time). The legacy
+ * water / health-check / fertilise rows surface here as preset-backed
+ * reminders: rows saved before schema v4 have NULL label/icon, and the
+ * display falls back to their `type` via [ReminderPresets].
+ *
+ * The care-plan "apply to reminders" entry point still lands here via
+ * [showWithCarePlanDefaults]; it creates/updates the watering +
+ * fertilise + check preset reminders exactly like the old fixed rows,
+ * with saved user customisations always winning over server defaults.
  */
 class ReminderScheduleSheet : BottomSheetDialogFragment() {
 
@@ -40,52 +56,34 @@ class ReminderScheduleSheet : BottomSheetDialogFragment() {
     private val binding get() = _binding!!
 
     private lateinit var plant: PlantEntity
-    private var pendingSaveAfterPermission = false
+
+    /** Action deferred behind the POST_NOTIFICATIONS request. */
+    private var pendingAfterPermission: (() -> Unit)? = null
 
     /**
      * Optional care-plan defaults supplied by the caller. Applied once,
-     * after Room reminders load, only for rows the user hasn't already
-     * customised — manual edits always win over server suggestions.
+     * after Room reminders load, only for preset types the user hasn't
+     * already saved — manual edits always win over server suggestions.
      */
     private var carePlanDefaults: CarePlanResponse? = null
+
+    private val plantRepository: PlantRepository
+        get() = (requireActivity().application as PlantDiseasesApp).plantRepository
 
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (!pendingSaveAfterPermission) return@registerForActivityResult
-        pendingSaveAfterPermission = false
+        val action = pendingAfterPermission ?: return@registerForActivityResult
+        pendingAfterPermission = null
         if (granted) {
-            persistReminders()
+            action()
         } else {
             Toast.makeText(
                 requireContext(),
                 R.string.reminder_notifications_permission,
                 Toast.LENGTH_SHORT,
             ).show()
-        }
-    }
-
-    // Row wrappers — assigned in onViewCreated once the binding exists.
-    private lateinit var waterRow: ReminderRow
-    private lateinit var checkRow: ReminderRow
-    private lateinit var fertilizeRow: ReminderRow
-
-    /** Thin wrapper over an included row binding so the rest of the
-     *  sheet keeps reading rows by name. */
-    private inner class ReminderRow(private val b: ItemReminderRowBinding) {
-        val switch get() = b.reminderSwitch
-        val picker get() = b.reminderInterval
-        val hourPicker get() = b.reminderHour
-        val minutePicker get() = b.reminderMinute
-        val intervalRow get() = b.reminderIntervalRow
-
-        fun refreshLabels() {
-            b.reminderIntervalLabel.text = getString(R.string.reminder_every_days, picker.value)
-            b.reminderTimeLabel.text = getString(
-                R.string.reminder_at_time,
-                hourPicker.value,
-                minutePicker.value * 15,
-            )
+            loadReminders() // reset any optimistic switch flips
         }
     }
 
@@ -101,13 +99,9 @@ class ReminderScheduleSheet : BottomSheetDialogFragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        waterRow = setupRow(binding.rowWater, R.drawable.ic_watering, R.string.reminder_watering)
-        checkRow = setupRow(binding.rowCheck, R.drawable.ic_care, R.string.reminder_check)
-        fertilizeRow = setupRow(binding.rowFertilize, R.drawable.ic_garden, R.string.reminder_fertilize)
-
-        binding.reminderSaveBtn.setOnClickListener {
-            Haptics.success(requireContext())
-            saveReminders()
+        binding.reminderAddBtn.setOnClickListener {
+            Haptics.medium(requireContext())
+            showEditor(existing = null)
         }
 
         val behavior = BottomSheetBehavior.from(view.parent as View)
@@ -130,8 +124,7 @@ class ReminderScheduleSheet : BottomSheetDialogFragment() {
                 return
             }
             lifecycleScope.launch {
-                val restored = (requireActivity().application as PlantDiseasesApp)
-                    .plantRepository.getPlant(savedId)
+                val restored = plantRepository.getPlant(savedId)
                 if (restored == null || _binding == null) {
                     dismissAllowingStateLoss()
                     return@launch
@@ -144,7 +137,13 @@ class ReminderScheduleSheet : BottomSheetDialogFragment() {
 
     private fun bindPlant() {
         binding.reminderPlantName.text = plant.name
-        loadReminders()
+        val defaults = carePlanDefaults
+        if (defaults != null) {
+            carePlanDefaults = null
+            runWithNotificationPermission { applyCarePlanDefaults(defaults) }
+        } else {
+            loadReminders()
+        }
     }
 
     override fun onDestroyView() {
@@ -152,154 +151,318 @@ class ReminderScheduleSheet : BottomSheetDialogFragment() {
         _binding = null
     }
 
-    /** Configure one included row: icon, label, picker ranges, formatters
-     *  and the listeners that keep the labels + interval visibility live. */
-    private fun setupRow(b: ItemReminderRowBinding, iconRes: Int, labelRes: Int): ReminderRow {
-        b.reminderIcon.setImageResource(iconRes)
-        b.reminderLabel.setText(labelRes)
-        val row = ReminderRow(b)
+    // ─── List ──────────────────────────────────────────────────────────
 
-        b.reminderInterval.apply { minValue = 1; maxValue = 30; value = 7 }
-        b.reminderHour.apply {
+    private fun loadReminders() {
+        if (!::plant.isInitialized) return
+        lifecycleScope.launch {
+            val reminders = plantRepository.getReminders(plant.id)
+                .sortedWith(compareByDescending<PlantReminderEntity> { it.enabled }
+                    .thenBy { it.id })
+            val b = _binding ?: return@launch
+            b.reminderList.removeAllViews()
+            b.reminderEmpty.visibility =
+                if (reminders.isEmpty()) View.VISIBLE else View.GONE
+            reminders.forEach { reminder ->
+                val row = ItemReminderRowBinding.inflate(
+                    layoutInflater, b.reminderList, false,
+                )
+                bindRow(row, reminder)
+                b.reminderList.addView(row.root)
+            }
+        }
+    }
+
+    private fun bindRow(row: ItemReminderRowBinding, reminder: PlantReminderEntity) {
+        row.reminderIcon.setImageResource(
+            ReminderPresets.iconRes(reminder.icon, reminder.type)
+        )
+        row.reminderLabel.text =
+            ReminderPresets.displayLabel(reminder.label, reminder.type) { getString(it) }
+        val meta = resources.getQuantityString(
+            R.plurals.reminder_row_meta,
+            reminder.intervalDays,
+            reminder.intervalDays,
+            reminder.hour,
+            reminder.minute,
+        )
+        val description = reminder.description?.trim()?.takeIf { it.isNotEmpty() }
+        row.reminderMeta.text =
+            if (description != null) "$meta · $description" else meta
+
+        row.reminderSwitch.setOnCheckedChangeListener(null)
+        row.reminderSwitch.isChecked = reminder.enabled
+        row.reminderSwitch.setOnCheckedChangeListener { _, checked ->
+            Haptics.tick(requireContext())
+            if (checked) {
+                runWithNotificationPermission { setReminderEnabled(reminder, true) }
+            } else {
+                setReminderEnabled(reminder, false)
+            }
+        }
+        row.reminderCard.setOnClickListener {
+            Haptics.tick(requireContext())
+            showEditor(reminder)
+        }
+    }
+
+    private fun setReminderEnabled(reminder: PlantReminderEntity, enabled: Boolean) {
+        lifecycleScope.launch {
+            val updated = reminder.copy(enabled = enabled)
+            plantRepository.saveReminderRow(updated)
+            if (enabled) {
+                ReminderManager.schedule(requireContext(), updated, plant.name)
+            } else {
+                ReminderManager.cancelReminder(requireContext(), updated)
+            }
+            loadReminders()
+        }
+    }
+
+    // ─── Editor ────────────────────────────────────────────────────────
+
+    private fun showEditor(existing: PlantReminderEntity?) {
+        if (!::plant.isInitialized) return
+        val ctx = requireContext()
+        val editor = DialogReminderEditorBinding.inflate(layoutInflater)
+
+        editor.editorInterval.apply { minValue = 1; maxValue = 30; value = 7 }
+        editor.editorHour.apply {
             minValue = 0
             maxValue = 23
             value = 9
             setFormatter { v -> "%02d".format(v) }
         }
-        b.reminderMinute.apply {
+        editor.editorMinute.apply {
             minValue = 0
             maxValue = 3
             value = 0
             displayedValues = arrayOf("00", "15", "30", "45")
         }
-        row.refreshLabels()
 
-        val update = { row.refreshLabels() }
-        b.reminderInterval.setOnValueChangedListener { _, _, _ -> update() }
-        b.reminderHour.setOnValueChangedListener { _, _, _ -> update() }
-        b.reminderMinute.setOnValueChangedListener { _, _, _ -> update() }
-        b.reminderSwitch.setOnCheckedChangeListener { _, checked ->
-            b.reminderIntervalRow.visibility = if (checked) View.VISIBLE else View.GONE
-        }
-        return row
-    }
-
-    private fun loadReminders() {
-        val repo = (requireActivity().application as PlantDiseasesApp).plantRepository
-        lifecycleScope.launch {
-            val reminders = repo.getReminders(plant.id)
-            val customisedTypes = mutableSetOf<String>()
-            reminders.forEach { r ->
-                val row = when (r.type) {
-                    PlantReminderWorker.TYPE_WATERING -> waterRow
-                    PlantReminderWorker.TYPE_CHECK -> checkRow
-                    PlantReminderWorker.TYPE_FERTILIZE -> fertilizeRow
-                    else -> return@forEach
-                }
-                row.switch.isChecked = r.enabled
-                row.picker.value = r.intervalDays
-                row.hourPicker.value = r.hour.coerceIn(0, 23)
-                row.minutePicker.value = (r.minute / 15).coerceIn(0, 3)
-                row.refreshLabels()
-                row.intervalRow.visibility = if (r.enabled) View.VISIBLE else View.GONE
-                customisedTypes += r.type
+        // Icon grid: single-select over the curated presets. For a NEW
+        // reminder the selected preset also becomes the row's `type`
+        // (back-compat semantics); editing never rewrites `type`.
+        var selectedIconKey = existing?.icon
+            ?: ReminderPresets.presetForType(existing?.type ?: ReminderPresets.TYPE_CUSTOM).key
+        val cells = mutableMapOf<String, FrameLayout>()
+        fun refreshSelection() {
+            cells.forEach { (key, cell) ->
+                cell.setBackgroundResource(
+                    if (key == selectedIconKey) R.drawable.bg_icon_circle_selected
+                    else R.drawable.bg_icon_circle
+                )
             }
-            applyCarePlanDefaults(customisedTypes)
+        }
+        // Track whether the name field still holds an untouched preset
+        // label, so switching presets keeps prefilling it without ever
+        // clobbering a user-typed name.
+        var lastPresetLabel: String? = null
+        ReminderPresets.presets.forEach { preset ->
+            val cell = FrameLayout(ctx).apply {
+                layoutParams = GridLayout.LayoutParams().apply {
+                    width = 44.dp()
+                    height = 44.dp()
+                    setMargins(4.dp(), 4.dp(), 4.dp(), 4.dp())
+                }
+                isClickable = true
+                isFocusable = true
+                contentDescription = getString(preset.labelRes)
+                addView(ImageView(ctx).apply {
+                    setImageResource(preset.iconRes)
+                    setColorFilter(ctx.getColor(R.color.primary))
+                    layoutParams = FrameLayout.LayoutParams(22.dp(), 22.dp(), Gravity.CENTER)
+                })
+                setOnClickListener {
+                    Haptics.tick(ctx)
+                    selectedIconKey = preset.key
+                    refreshSelection()
+                    val current = editor.editorName.text?.toString()?.trim().orEmpty()
+                    if (current.isEmpty() || current == lastPresetLabel) {
+                        val label = getString(preset.labelRes)
+                        editor.editorName.setText(label)
+                        lastPresetLabel = label
+                    }
+                }
+            }
+            cells[preset.key] = cell
+            editor.editorIconGrid.addView(cell)
+        }
+
+        // Prefill.
+        if (existing != null) {
+            editor.editorName.setText(
+                ReminderPresets.displayLabel(existing.label, existing.type) { getString(it) }
+            )
+            editor.editorDescription.setText(existing.description.orEmpty())
+            editor.editorInterval.value = existing.intervalDays.coerceIn(1, 30)
+            editor.editorHour.value = existing.hour.coerceIn(0, 23)
+            editor.editorMinute.value = (existing.minute / 15).coerceIn(0, 3)
+        } else {
+            val label = getString(ReminderPresets.presetForType(selectedIconKey).labelRes)
+            editor.editorName.setText(label)
+            lastPresetLabel = label
+        }
+        refreshSelection()
+
+        fun refreshLabels() {
+            editor.editorIntervalLabel.text =
+                getString(R.string.reminder_every_days, editor.editorInterval.value)
+            editor.editorTimeLabel.text = getString(
+                R.string.reminder_at_time,
+                editor.editorHour.value,
+                editor.editorMinute.value * 15,
+            )
+        }
+        refreshLabels()
+        editor.editorInterval.setOnValueChangedListener { _, _, _ -> refreshLabels() }
+        editor.editorHour.setOnValueChangedListener { _, _, _ -> refreshLabels() }
+        editor.editorMinute.setOnValueChangedListener { _, _, _ -> refreshLabels() }
+
+        val builder = MaterialAlertDialogBuilder(ctx)
+            .setTitle(if (existing == null) R.string.reminder_new_title else R.string.reminder_edit_title)
+            .setView(editor.root)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.save, null)
+        if (existing != null) {
+            builder.setNeutralButton(R.string.reminder_delete) { _, _ ->
+                deleteReminder(existing)
+            }
+        }
+        val dialog = builder.show()
+
+        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val name = editor.editorName.text?.toString()?.trim().orEmpty()
+            if (name.isEmpty()) {
+                editor.editorNameLayout.error = getString(R.string.reminder_name_required)
+                return@setOnClickListener
+            }
+            val description = editor.editorDescription.text?.toString()?.trim()
+                ?.takeIf { it.isNotEmpty() }
+            val entity = (existing ?: PlantReminderEntity(
+                plantId = plant.id,
+                type = selectedIconKey, // preset key, or "custom" for the bell
+                enabled = true,
+            )).copy(
+                label = name,
+                description = description,
+                icon = selectedIconKey,
+                intervalDays = editor.editorInterval.value,
+                hour = editor.editorHour.value,
+                minute = editor.editorMinute.value * 15,
+            )
+            dialog.dismiss()
+            if (entity.enabled) {
+                runWithNotificationPermission { persistReminder(entity) }
+            } else {
+                persistReminder(entity)
+            }
         }
     }
+
+    private fun persistReminder(entity: PlantReminderEntity) {
+        lifecycleScope.launch {
+            // New reminders for the legacy preset types merge into the
+            // existing row of that type (one watering schedule per
+            // plant — care-plan apply and quick-log depend on it).
+            // Everything else is a plain row upsert by id.
+            val savedId = if (entity.id == 0L && ReminderPresets.isLegacyType(entity.type)) {
+                plantRepository.saveReminder(entity)
+            } else {
+                plantRepository.saveReminderRow(entity)
+            }
+            val saved = entity.copy(id = savedId)
+            if (saved.enabled) {
+                ReminderManager.schedule(requireContext(), saved, plant.name)
+            } else {
+                ReminderManager.cancelReminder(requireContext(), saved)
+            }
+            Toast.makeText(requireContext(), R.string.reminder_saved, Toast.LENGTH_SHORT).show()
+            loadReminders()
+        }
+    }
+
+    private fun deleteReminder(reminder: PlantReminderEntity) {
+        lifecycleScope.launch {
+            ReminderManager.cancelReminder(requireContext(), reminder)
+            plantRepository.deleteReminder(reminder.id)
+            Toast.makeText(requireContext(), R.string.reminder_deleted, Toast.LENGTH_SHORT).show()
+            loadReminders()
+        }
+    }
+
+    // ─── Care-plan defaults ────────────────────────────────────────────
 
     /**
-     * Care-plan-driven defaults. Only fills in rows the user hasn't already
-     * saved a custom value for — saved reminders always take priority.
+     * Care-plan-driven defaults. Creates/updates the three preset
+     * reminders, but only for types the user hasn't already saved —
+     * saved reminders always take priority.
      *
-     *  - watering:  `wateringDaysInt` if numeric, else leave the row alone
-     *               (the server's `as_needed` cadence is intentionally not
-     *               translated into a fixed reminder).
+     *  - watering:  `wateringDaysInt` if numeric ("as_needed" cadence is
+     *               intentionally not turned into a fixed reminder).
      *  - fertilise: `fertiliseWeeks * 7` days.
-     *  - check:     half the watering cadence, capped to [3, 14] days, so
-     *               diseased plants get a sane health-check rhythm out of
-     *               the box.
+     *  - check:     half the watering cadence, capped to [3, 14] days.
      */
-    private fun applyCarePlanDefaults(alreadyCustomised: Set<String>) {
-        val plan = carePlanDefaults ?: return
-
-        if (PlantReminderWorker.TYPE_WATERING !in alreadyCustomised) {
-            plan.wateringDaysInt?.let { days ->
-                waterRow.picker.value = days.coerceIn(waterRow.picker.minValue, waterRow.picker.maxValue)
-                waterRow.switch.isChecked = true
-                waterRow.intervalRow.visibility = View.VISIBLE
-            }
-        }
-        if (PlantReminderWorker.TYPE_FERTILIZE !in alreadyCustomised && plan.fertiliseWeeks > 0) {
-            val days = (plan.fertiliseWeeks * 7)
-                .coerceIn(fertilizeRow.picker.minValue, fertilizeRow.picker.maxValue)
-            fertilizeRow.picker.value = days
-            fertilizeRow.switch.isChecked = true
-            fertilizeRow.intervalRow.visibility = View.VISIBLE
-        }
-        if (PlantReminderWorker.TYPE_CHECK !in alreadyCustomised) {
-            val baseDays = plan.wateringDaysInt ?: 7
-            val checkDays = (baseDays / 2).coerceIn(3, 14)
-            checkRow.picker.value = checkDays.coerceIn(
-                checkRow.picker.minValue, checkRow.picker.maxValue
-            )
-            checkRow.switch.isChecked = true
-            checkRow.intervalRow.visibility = View.VISIBLE
-        }
-        listOf(waterRow, checkRow, fertilizeRow).forEach { it.refreshLabels() }
-    }
-
-    private fun saveReminders() {
-        if (needsNotificationPermission() && hasEnabledReminder()) {
-            pendingSaveAfterPermission = true
-            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            return
-        }
-        persistReminders()
-    }
-
-    private fun persistReminders() {
-        if (!::plant.isInitialized) return
-        val repo = (requireActivity().application as PlantDiseasesApp).plantRepository
-        val ctx = requireContext()
-
+    private fun applyCarePlanDefaults(plan: CarePlanResponse) {
         lifecycleScope.launch {
-            val entries = listOf(
-                PlantReminderWorker.TYPE_WATERING to waterRow,
-                PlantReminderWorker.TYPE_CHECK to checkRow,
-                PlantReminderWorker.TYPE_FERTILIZE to fertilizeRow,
-            )
-            entries.forEach { (type, row) ->
-                val enabled = row.switch.isChecked
-                val days = row.picker.value
-                val hour = row.hourPicker.value
-                val minute = row.minutePicker.value * 15
-                val savedId = repo.saveReminder(
-                    PlantReminderEntity(
+            val existingTypes = plantRepository.getReminders(plant.id).map { it.type }.toSet()
+            val defaults = mutableListOf<PlantReminderEntity>()
+
+            if (ReminderPresets.TYPE_WATERING !in existingTypes) {
+                plan.wateringDaysInt?.let { days ->
+                    defaults += PlantReminderEntity(
                         plantId = plant.id,
-                        type = type,
-                        intervalDays = days,
-                        hour = hour,
-                        minute = minute,
-                        enabled = enabled,
+                        type = ReminderPresets.TYPE_WATERING,
+                        intervalDays = days.coerceIn(1, 30),
+                        enabled = true,
                     )
-                )
-                if (enabled) {
-                    ReminderManager.schedule(
-                        ctx, plant.id, plant.name, type, days, hour, minute,
-                        reminderId = savedId,
-                    )
-                } else {
-                    ReminderManager.cancel(ctx, plant.id, type)
                 }
             }
-            Toast.makeText(ctx, getString(R.string.reminder_save), Toast.LENGTH_SHORT).show()
-            dismiss()
+            if (ReminderPresets.TYPE_FERTILIZE !in existingTypes && plan.fertiliseWeeks > 0) {
+                defaults += PlantReminderEntity(
+                    plantId = plant.id,
+                    type = ReminderPresets.TYPE_FERTILIZE,
+                    intervalDays = (plan.fertiliseWeeks * 7).coerceIn(1, 30),
+                    enabled = true,
+                )
+            }
+            if (ReminderPresets.TYPE_CHECK !in existingTypes) {
+                val baseDays = plan.wateringDaysInt ?: 7
+                defaults += PlantReminderEntity(
+                    plantId = plant.id,
+                    type = ReminderPresets.TYPE_CHECK,
+                    intervalDays = (baseDays / 2).coerceIn(3, 14),
+                    enabled = true,
+                )
+            }
+
+            defaults.forEach { entity ->
+                val savedId = plantRepository.saveReminder(entity)
+                ReminderManager.schedule(
+                    requireContext(), entity.copy(id = savedId), plant.name,
+                )
+            }
+            if (defaults.isNotEmpty()) {
+                Toast.makeText(
+                    requireContext(),
+                    R.string.care_plan_reminders_applied,
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
+            loadReminders()
         }
     }
 
-    private fun hasEnabledReminder(): Boolean =
-        waterRow.switch.isChecked || checkRow.switch.isChecked || fertilizeRow.switch.isChecked
+    // ─── Permission plumbing ───────────────────────────────────────────
+
+    private fun runWithNotificationPermission(action: () -> Unit) {
+        if (needsNotificationPermission()) {
+            pendingAfterPermission = action
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            action()
+        }
+    }
 
     private fun needsNotificationPermission(): Boolean =
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -329,7 +492,7 @@ class ReminderScheduleSheet : BottomSheetDialogFragment() {
          * Open the sheet pre-populated with care-plan defaults (watering /
          * fertilising cadence, derived health-check interval). Existing saved
          * reminders for the plant still win — defaults are only applied to
-         * the rows the user hasn't already customised.
+         * preset types the user hasn't already customised.
          */
         fun showWithCarePlanDefaults(
             fm: FragmentManager,

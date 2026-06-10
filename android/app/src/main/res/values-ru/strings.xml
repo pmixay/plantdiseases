@@ -3,11 +3,14 @@
     <string name="app_name">PlantDiseases</string>
 
     <!-- Plurals consumed by GardenFragment via getQuantityString. -->
+    <!-- %2$s — отдельно склонённая строка scan_count: quantity этого
+         plural выбирается по числу РАСТЕНИЙ, поэтому слово «скан»
+         здесь не склоняется. -->
     <plurals name="garden_summary">
-        <item quantity="one">%1$d растение под наблюдением, %2$d сканов</item>
-        <item quantity="few">%1$d растения под наблюдением, %2$d сканов</item>
-        <item quantity="many">%1$d растений под наблюдением, %2$d сканов</item>
-        <item quantity="other">%1$d растения под наблюдением, %2$d сканов</item>
+        <item quantity="one">%1$d растение под наблюдением, %2$s</item>
+        <item quantity="few">%1$d растения под наблюдением, %2$s</item>
+        <item quantity="many">%1$d растений под наблюдением, %2$s</item>
+        <item quantity="other">%1$d растения под наблюдением, %2$s</item>
     </plurals>
     <plurals name="scan_count">
         <item quantity="one">%d скан</item>
@@ -389,7 +392,35 @@
     <string name="reminder_notif_watering">Полейте %s!</string>
     <string name="reminder_notif_check">Пора осмотреть %s!</string>
     <string name="reminder_notif_fertilize">Пора удобрить %s!</string>
+    <string name="reminder_notif_generic">%1$s · %2$s</string>
     <string name="reminder_subtitle">Настройте расписание ухода</string>
+    <!-- Универсальные напоминания (список + редактор) -->
+    <string name="reminder_add">Добавить напоминание</string>
+    <string name="reminder_new_title">Новое напоминание</string>
+    <string name="reminder_edit_title">Изменить напоминание</string>
+    <string name="reminder_name">Название</string>
+    <string name="reminder_name_required">Введите название</string>
+    <string name="reminder_description">Описание (необязательно)</string>
+    <string name="reminder_icon_label">Значок</string>
+    <string name="reminder_delete">Удалить</string>
+    <string name="reminder_deleted">Напоминание удалено</string>
+    <string name="reminder_saved">Напоминание сохранено</string>
+    <string name="reminder_empty_list">Пока нет напоминаний — добавьте первое.</string>
+    <plurals name="reminder_row_meta">
+        <item quantity="one">Каждый %1$d день · %2$02d:%3$02d</item>
+        <item quantity="few">Каждые %1$d дня · %2$02d:%3$02d</item>
+        <item quantity="many">Каждые %1$d дней · %2$02d:%3$02d</item>
+        <item quantity="other">Каждые %1$d дня · %2$02d:%3$02d</item>
+    </plurals>
+    <string name="reminder_preset_mist">Опрыскивание</string>
+    <string name="reminder_preset_rotate">Повернуть растение</string>
+    <string name="reminder_preset_repot">Пересадка</string>
+    <string name="reminder_preset_prune">Обрезка</string>
+    <string name="reminder_preset_clean">Протереть листья</string>
+    <string name="reminder_preset_light">Проверка освещения</string>
+    <string name="reminder_preset_humidity">Проверка влажности</string>
+    <string name="reminder_preset_temperature">Проверка температуры</string>
+    <string name="reminder_preset_custom">Своё напоминание</string>
     <!-- Doctor Chat -->
     <string name="doctor_title">ИИ-врач растений</string>
     <string name="doctor_stub_subtitle">Спросите об этом растении — симптомы, полив, свет…</string>

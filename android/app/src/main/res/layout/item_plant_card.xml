@@ -29,17 +29,20 @@
         android:gravity="center_vertical"
         android:padding="@dimen/space_lg">
 
+        <!-- Rounded-rect thumbnail on the radius_md design token (was a
+             circle that clashed with every other card corner). The
+             health dot sits cleanly inside the top-end corner instead
+             of hanging over the edge. -->
         <FrameLayout
             android:id="@+id/plant_thumb_wrap"
             android:layout_width="96dp"
-            android:layout_height="96dp"
-            android:clipChildren="false">
+            android:layout_height="96dp">
 
             <ImageView
                 android:id="@+id/plant_thumb"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:background="@drawable/bg_icon_circle"
+                android:background="@drawable/bg_thumb_rounded"
                 android:scaleType="centerCrop"
                 android:contentDescription="@null" />
 
@@ -48,6 +51,7 @@
                 android:layout_width="14dp"
                 android:layout_height="14dp"
                 android:layout_gravity="top|end"
+                android:layout_margin="@dimen/space_xs"
                 android:visibility="gone"
                 tools:background="@color/healthy_green"
                 tools:visibility="visible" />

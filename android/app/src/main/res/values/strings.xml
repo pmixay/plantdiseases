@@ -6,9 +6,12 @@
          only reachable through ``R.plurals.X``, never via
          ``R.string.X`` / ``@string/X``, which is why the dead-code
          sweep on a previous commit mis-flagged them as orphans. -->
+    <!-- %2$s is the separately-pluralised scan_count string — the
+         quantity here only selects on the PLANT count, so the scan
+         word must not be inflected inside this plural. -->
     <plurals name="garden_summary">
-        <item quantity="one">%1$d plant watched with %2$d scans</item>
-        <item quantity="other">%1$d plants watched with %2$d scans</item>
+        <item quantity="one">%1$d plant watched with %2$s</item>
+        <item quantity="other">%1$d plants watched with %2$s</item>
     </plurals>
     <plurals name="scan_count">
         <item quantity="one">%d scan</item>
@@ -392,7 +395,33 @@
     <string name="reminder_notif_watering">Time to water %s!</string>
     <string name="reminder_notif_check">Time to check on %s!</string>
     <string name="reminder_notif_fertilize">Time to fertilize %s!</string>
+    <string name="reminder_notif_generic">%1$s · %2$s</string>
     <string name="reminder_subtitle">Set care schedules for this plant</string>
+    <!-- Generic reminders (composer + list) -->
+    <string name="reminder_add">Add reminder</string>
+    <string name="reminder_new_title">New reminder</string>
+    <string name="reminder_edit_title">Edit reminder</string>
+    <string name="reminder_name">Name</string>
+    <string name="reminder_name_required">Enter a name</string>
+    <string name="reminder_description">Description (optional)</string>
+    <string name="reminder_icon_label">Icon</string>
+    <string name="reminder_delete">Delete</string>
+    <string name="reminder_deleted">Reminder deleted</string>
+    <string name="reminder_saved">Reminder saved</string>
+    <string name="reminder_empty_list">No reminders yet — add one below.</string>
+    <plurals name="reminder_row_meta">
+        <item quantity="one">Every %1$d day · %2$02d:%3$02d</item>
+        <item quantity="other">Every %1$d days · %2$02d:%3$02d</item>
+    </plurals>
+    <string name="reminder_preset_mist">Misting</string>
+    <string name="reminder_preset_rotate">Rotate plant</string>
+    <string name="reminder_preset_repot">Repotting</string>
+    <string name="reminder_preset_prune">Pruning</string>
+    <string name="reminder_preset_clean">Clean leaves</string>
+    <string name="reminder_preset_light">Light check</string>
+    <string name="reminder_preset_humidity">Humidity check</string>
+    <string name="reminder_preset_temperature">Temperature check</string>
+    <string name="reminder_preset_custom">Custom reminder</string>
     <!-- Doctor Chat -->
     <string name="doctor_title">AI Plant Doctor</string>
     <string name="doctor_stub_subtitle">Ask about this plant — symptoms, watering, light…</string>

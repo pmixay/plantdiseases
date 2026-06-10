@@ -66,9 +66,14 @@ class PlantRepository(
         when (reminderType) {
             "watering" -> JournalType.WATERING
             "fertilize" -> JournalType.FERTILISING
-            // "check" reminders don't correspond to a logged journal type —
-            // they're a re-shoot prompt. Treat as null so they don't gate
-            // the next-action chip.
+            // Generic presets that map onto a logged care action anchor
+            // on their matching journal type just like watering does.
+            "mist" -> JournalType.MISTING
+            "repot" -> JournalType.REPOTTING
+            "prune" -> JournalType.PRUNING
+            // "check" reminders (and the remaining generic presets) don't
+            // correspond to a logged journal type — treat as null so they
+            // don't gate the next-action chip.
             else -> null
         }
 
@@ -227,6 +232,18 @@ class PlantRepository(
      *  (plant_id, type) can't both insert. */
     suspend fun saveReminder(entity: PlantReminderEntity): Long =
         withContext(Dispatchers.IO) { reminderDao.upsertByPlantAndType(entity) }
+
+    /** Upsert a reminder ROW by primary key (no merge-by-type). Used by
+     *  the generic-reminder editor, where several reminders may share a
+     *  type (e.g. two "custom" rows on one plant). */
+    suspend fun saveReminderRow(entity: PlantReminderEntity): Long =
+        withContext(Dispatchers.IO) {
+            val rowId = reminderDao.upsert(entity)
+            if (entity.id != 0L) entity.id else rowId
+        }
+
+    suspend fun deleteReminder(id: Long) =
+        withContext(Dispatchers.IO) { reminderDao.deleteById(id) }
 
     suspend fun getReminderById(id: Long): PlantReminderEntity? =
         withContext(Dispatchers.IO) { reminderDao.getById(id) }

@@ -221,7 +221,7 @@ class PlantDetailActivity : AppCompatActivity() {
         content.addView(buildActionRow())
         buildLastWateredStrip()?.let { content.addView(it) }
         buildAdaptiveWateringChip()?.let { content.addView(it) }
-        content.addView(buildProgressionCard(scans))
+        buildProgressionCard(scans)?.let { content.addView(it) }
         content.addView(buildCarePlanSlot(plant, scans))
         buildGuideLink(scans)?.let { content.addView(it) }
         content.addView(buildTabs())
@@ -270,7 +270,9 @@ class PlantDetailActivity : AppCompatActivity() {
         journal: List<PlantJournalEntity>,
     ): View {
         val card = MaterialCardView(this).apply {
-            radius = 24.dp().toFloat()
+            // Design-system radius token — the freehand 24dp clashed with
+            // the radius_lg overlay cards around it.
+            radius = resources.getDimension(R.dimen.radius_lg)
             cardElevation = 0f
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -856,7 +858,17 @@ class PlantDetailActivity : AppCompatActivity() {
                         )
                     })
                     addView(TextView(this@PlantDetailActivity).apply {
-                        text = getString(R.string.guide_link_subtitle, latest.diseaseName)
+                        text = getString(
+                            R.string.guide_link_subtitle,
+                            // RU UI shows the localised verdict — the EN
+                            // diseaseName leaked through here (same bug as
+                            // the garden card badge).
+                            if (LocaleHelper.isRussian(this@PlantDetailActivity)) {
+                                latest.diseaseNameRu
+                            } else {
+                                latest.diseaseName
+                            },
+                        )
                         textSize = 12f
                         setTextColor(getColor(R.color.on_surface_secondary))
                         maxLines = 2
@@ -1834,13 +1846,15 @@ class PlantDetailActivity : AppCompatActivity() {
      * the request body bounded) and asks `/api/progression` for the
      * 5-point severity sparkline.
      *
-     * On a plant with zero or one scan we render a "no history yet"
-     * placeholder without hitting the network — the endpoint would
-     * return ``trend="baseline"`` anyway.
+     * Returns null with fewer than two scans — there is nothing to draw
+     * a trend between, and the old "baseline" placeholder rendered as an
+     * empty box. The card also hides itself if the fetch fails or the
+     * server returns no usable sparkline.
      */
-    private fun buildProgressionCard(scans: List<ScanEntity>): View {
+    private fun buildProgressionCard(scans: List<ScanEntity>): View? {
+        if (scans.size < 2) return null
         val card = MaterialCardView(this).apply {
-            radius = 22.dp().toFloat()
+            radius = resources.getDimension(R.dimen.radius_lg)
             cardElevation = 0f
             strokeWidth = 1.dp()
             strokeColor = getColor(R.color.card_stroke)
@@ -1893,25 +1907,6 @@ class PlantDetailActivity : AppCompatActivity() {
         body.addView(meta)
         card.addView(body)
 
-        if (scans.size < 2) {
-            // Single-scan plants get a baseline placeholder + a CTA to
-            // book a follow-up scan in 7 days. The CTA wires straight
-            // into the `check` reminder type — accepting it both
-            // confirms the schedule and removes the empty-state hint
-            // for next time.
-            trendChip.text = getString(R.string.progression_trend_baseline)
-            trendChip.setTextColor(getColor(R.color.on_surface_secondary))
-            sparkline.setData(emptyList(), "baseline")
-            meta.text = if (scans.isEmpty()) ""
-                else getString(
-                    R.string.progression_history_meta,
-                    scans.size,
-                    formatRelativeDate(this, scans[0].timestamp),
-                )
-            if (scans.isNotEmpty()) body.addView(buildProgressionCTA())
-            return card
-        }
-
         // Loading state.
         trendChip.text = getString(R.string.progression_loading)
         trendChip.setTextColor(getColor(R.color.on_surface_secondary))
@@ -1929,6 +1924,13 @@ class PlantDetailActivity : AppCompatActivity() {
                 ProgressionRequest(history = historyPayload),
             )
             res.onSuccess { resp ->
+                // "Usable data" gate: a response with no sparkline points
+                // would draw the same empty box the <2-scans path used
+                // to — collapse the whole section instead.
+                if (resp.sparkline.isNullOrEmpty()) {
+                    card.visibility = View.GONE
+                    return@onSuccess
+                }
                 val trendLabel = when (resp.trend) {
                     "improving" -> getString(R.string.progression_trend_improving)
                     "worsening" -> getString(R.string.progression_trend_worsening)
@@ -1943,7 +1945,7 @@ class PlantDetailActivity : AppCompatActivity() {
                 }
                 trendChip.text = trendLabel
                 trendChip.setTextColor(trendColor)
-                sparkline.setData(resp.sparkline ?: emptyList(), resp.trend)
+                sparkline.setData(resp.sparkline, resp.trend)
                 meta.text = getString(
                     R.string.progression_history_meta,
                     resp.historyLength ?: ordered.size,
@@ -1957,78 +1959,12 @@ class PlantDetailActivity : AppCompatActivity() {
                     fireProgressionAlert(currentPlant?.name ?: "")
                 }
             }.onFailure {
-                trendChip.text = getString(R.string.progression_trend_baseline)
-                trendChip.setTextColor(getColor(R.color.on_surface_secondary))
-                meta.text = getString(R.string.progression_failed)
-                sparkline.setData(emptyList(), "baseline")
+                // No data to show — hide the whole section rather than
+                // leaving a header over an empty sparkline box.
+                card.visibility = View.GONE
             }
         }
         return card
-    }
-
-    /** Builds the "Take a follow-up scan in 7 days" CTA shown when
-     *  the plant has exactly one scan so far — the sparkline has
-     *  nothing to draw, but we still want a forward-looking action
-     *  instead of a dead end. Wires into the existing `check`
-     *  reminder type via [ReminderManager]. */
-    private fun buildProgressionCTA(): View {
-        val ctx = this
-        val container = LinearLayout(ctx).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundResource(R.drawable.bg_plant_stat_pill)
-            setPadding(14.dp(), 12.dp(), 14.dp(), 12.dp())
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 12.dp() }
-        }
-        container.addView(TextView(ctx).apply {
-            text = getString(R.string.progression_followup_cta)
-            textSize = 13f
-            setTextColor(getColor(R.color.on_surface))
-            setLineSpacing(2.dp().toFloat(), 1f)
-        })
-        container.addView(com.google.android.material.button.MaterialButton(
-            ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle,
-        ).apply {
-            text = getString(R.string.progression_followup_remind)
-            cornerRadius = 12.dp()
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 8.dp() }
-            setOnClickListener {
-                Haptics.tick(this@PlantDetailActivity)
-                lifecycleScope.launch {
-                    val plant = currentPlant ?: return@launch
-                    val reminder = com.plantdiseases.app.data.local.PlantReminderEntity(
-                        plantId = plant.id,
-                        type = "check",
-                        intervalDays = 7,
-                        hour = 9,
-                        minute = 0,
-                        enabled = true,
-                    )
-                    val rid = plantRepository.saveReminder(reminder)
-                    com.plantdiseases.app.util.ReminderManager.schedule(
-                        context = this@PlantDetailActivity,
-                        plantId = plant.id,
-                        plantName = plant.name,
-                        type = reminder.type,
-                        intervalDays = reminder.intervalDays,
-                        hour = reminder.hour,
-                        minute = reminder.minute,
-                        reminderId = rid,
-                    )
-                    Toast.makeText(
-                        this@PlantDetailActivity,
-                        R.string.progression_followup_scheduled,
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                }
-            }
-        })
-        return container
     }
 
     /** Open the full-screen photo viewer rooted at a journal photo entry.
@@ -2110,6 +2046,9 @@ class PlantDetailActivity : AppCompatActivity() {
                 lifecycleScope.launch {
                     com.plantdiseases.app.util.ReminderManager.cancelAll(
                         this@PlantDetailActivity, plant.id,
+                        // Generic reminders cancel by row id — fetch
+                        // before the CASCADE delete wipes them.
+                        plantRepository.getReminders(plant.id),
                     )
                     plantRepository.deletePlant(plant.id)
                     Toast.makeText(
