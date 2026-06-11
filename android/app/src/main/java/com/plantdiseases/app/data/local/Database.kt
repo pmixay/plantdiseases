@@ -155,17 +155,33 @@ data class ScanEntity(
     ],
     indices = [
         Index(value = ["plant_id"]),
-        Index(value = ["plant_id", "type"], unique = true),
+        // Was unique up to schema v3 — dropped in MIGRATION_3_4 so a
+        // plant can hold several generic ("custom") reminders. The
+        // legacy preset types are still kept one-per-plant at the DAO
+        // level via upsertByPlantAndType.
+        Index(value = ["plant_id", "type"]),
     ]
 )
 data class PlantReminderEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     @ColumnInfo(name = "plant_id") val plantId: Long,
-    @ColumnInfo(name = "type") val type: String,          // "watering" | "check" | "fertilize"
+    /** Semantic key. The legacy presets keep their historical values
+     *  ("watering" | "check" | "fertilize") because care-plan apply and
+     *  the "mark watered/fertilised" quick-log re-anchor by type; newer
+     *  presets store their preset key and free-form reminders store
+     *  "custom". */
+    @ColumnInfo(name = "type") val type: String,
     @ColumnInfo(name = "interval_days") val intervalDays: Int = 7,
     @ColumnInfo(name = "hour") val hour: Int = 9,
     @ColumnInfo(name = "minute") val minute: Int = 0,
     @ColumnInfo(name = "enabled") val enabled: Boolean = false,
+    /** User-visible name. NULL on rows written before schema v4 — the
+     *  UI derives a display label from [type] via ReminderPresets. */
+    @ColumnInfo(name = "label") val label: String? = null,
+    /** Optional free-text note, doubles as the notification body. */
+    @ColumnInfo(name = "description") val description: String? = null,
+    /** Preset icon key (see ReminderPresets). NULL → derive from [type]. */
+    @ColumnInfo(name = "icon") val icon: String? = null,
 )
 
 @Dao
@@ -182,6 +198,9 @@ abstract class PlantReminderDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     abstract suspend fun upsert(reminder: PlantReminderEntity): Long
 
+    @Query("DELETE FROM plant_reminders WHERE id = :id")
+    abstract suspend fun deleteById(id: Long)
+
     /** Read-then-write merge of a (plant_id, type) reminder inside a
      *  single Room transaction. Two coroutines hitting saveReminder on
      *  the same (plant_id, type) used to race — both read existing=null
@@ -191,7 +210,17 @@ abstract class PlantReminderDao {
     @androidx.room.Transaction
     open suspend fun upsertByPlantAndType(entity: PlantReminderEntity): Long {
         val existing = getByPlantAndType(entity.plantId, entity.type)
-        return upsert(entity.copy(id = existing?.id ?: entity.id))
+        // Merge-by-type callers (care-plan defaults, adaptive watering,
+        // follow-up CTA) only carry scheduling fields — preserve any
+        // user-customised label/description/icon already on the row.
+        return upsert(
+            entity.copy(
+                id = existing?.id ?: entity.id,
+                label = entity.label ?: existing?.label,
+                description = entity.description ?: existing?.description,
+                icon = entity.icon ?: existing?.icon,
+            )
+        )
     }
 }
 
@@ -291,6 +320,45 @@ interface ChatMessageDao {
     suspend fun deleteForPlant(plantId: Long)
 }
 
+// ─── Scan Chat Message Entity ────────────────────────────────────────────────
+//
+// Mirrors `chat_messages` for AI Plant Doctor sessions launched from a scan
+// that isn't (yet) attached to a garden plant. Keyed by the scan row so the
+// transcript survives closing/reopening the result screen; CASCADE keeps it
+// tidy when the scan is deleted.
+
+@Entity(
+    tableName = "scan_chat_messages",
+    foreignKeys = [
+        ForeignKey(
+            entity = ScanEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["scan_id"],
+            onDelete = ForeignKey.CASCADE,
+        )
+    ],
+    indices = [Index(value = ["scan_id"])]
+)
+data class ScanChatMessageEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(name = "scan_id") val scanId: Long,
+    @ColumnInfo(name = "role") val role: String,       // "user" | "bot"
+    @ColumnInfo(name = "content") val content: String,
+    @ColumnInfo(name = "timestamp") val timestamp: Long = System.currentTimeMillis(),
+)
+
+@Dao
+interface ScanChatMessageDao {
+    @Query("SELECT * FROM scan_chat_messages WHERE scan_id = :scanId ORDER BY timestamp ASC")
+    suspend fun getForScan(scanId: Long): List<ScanChatMessageEntity>
+
+    @Insert
+    suspend fun insert(message: ScanChatMessageEntity): Long
+
+    @Query("DELETE FROM scan_chat_messages WHERE scan_id = :scanId")
+    suspend fun deleteForScan(scanId: Long)
+}
+
 // ─── Original DAOs ───────────────────────────────────────────────────────────
 
 @Dao
@@ -370,12 +438,13 @@ interface PlantJournalDao {
         PlantReminderEntity::class,
         PlantReminderEventEntity::class,
         ChatMessageEntity::class,
+        ScanChatMessageEntity::class,
     ],
     // The schema is treated as ephemeral while the app is in pre-release
     // testing: ``fallbackToDestructiveMigration`` is configured below
     // and any schema change wipes local data on next launch. Real
     // migrations come later, alongside cloud sync.
-    version = 2,
+    version = 4,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -385,6 +454,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun plantReminderDao(): PlantReminderDao
     abstract fun plantReminderEventDao(): PlantReminderEventDao
     abstract fun chatMessageDao(): ChatMessageDao
+    abstract fun scanChatMessageDao(): ScanChatMessageDao
 
     companion object {
         @Volatile
@@ -396,6 +466,45 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `scan_chat_messages` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `scan_id` INTEGER NOT NULL,
+                        `role` TEXT NOT NULL,
+                        `content` TEXT NOT NULL,
+                        `timestamp` INTEGER NOT NULL,
+                        FOREIGN KEY(`scan_id`) REFERENCES `scans`(`id`)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_scan_chat_messages_scan_id` " +
+                        "ON `scan_chat_messages` (`scan_id`)"
+                )
+            }
+        }
+
+        /** Generic-reminder columns + drop the (plant_id, type) UNIQUE
+         *  constraint so several "custom" reminders can coexist on a
+         *  plant. Existing typed rows are untouched: label/description/
+         *  icon stay NULL and the UI derives display data from `type`. */
+        val MIGRATION_3_4 = object : androidx.room.migration.Migration(3, 4) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE plant_reminders ADD COLUMN label TEXT")
+                db.execSQL("ALTER TABLE plant_reminders ADD COLUMN description TEXT")
+                db.execSQL("ALTER TABLE plant_reminders ADD COLUMN icon TEXT")
+                db.execSQL("DROP INDEX IF EXISTS `index_plant_reminders_plant_id_type`")
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_plant_reminders_plant_id_type` " +
+                        "ON `plant_reminders` (`plant_id`, `type`)"
+                )
+            }
+        }
+
         fun getInstance(context: android.content.Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -403,7 +512,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "plantdiseases_db"
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     // Room 2.7 deprecated the no-arg overload; `dropAllTables =
                     // true` preserves the previous behaviour (wipe everything
                     // when no migration path exists).

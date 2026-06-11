@@ -4,15 +4,16 @@ import com.plantdiseases.app.data.model.AnalysisResponse
 import com.plantdiseases.app.data.model.TopKEntry
 
 /**
- * Turns on-device [AquaClassifier] probabilities into a *minimal*
- * [AnalysisResponse] so the rest of the app (saveScan, ResultActivity) renders
- * an Aqua scan unchanged.
+ * Turns on-device [AquaClassifier] probabilities into an [AnalysisResponse]
+ * so the rest of the app (saveScan, ResultActivity) renders an Aqua scan
+ * unchanged.
  *
- * "Minimal" by design: offline we have the verdict, confidence, bilingual
- * display name and a severity heuristic, but NOT the rich treatment/prevention
- * text (that lives server-side in diseases_data.py). Those fields stay empty
- * offline; if the user later goes online the server model fills them in on a
- * re-scan. Detection/regions and species are server-only and stay null.
+ * Offline we have the verdict, confidence, bilingual display name and a
+ * severity heuristic; description / treatment / prevention come from the
+ * local bilingual fallback table ([OfflineScanContent]) instead of the
+ * server's richer copy. Detection/regions and species are server-only and
+ * stay null. The `offline_aqua` warning flags the result so the UI can
+ * caveat it and skip server-only calls.
  */
 object AquaInference {
 
@@ -36,11 +37,21 @@ object AquaInference {
             )
         }
 
+        // Local bilingual fallback content — the server isn't around to
+        // supply description / treatment / prevention for an offline scan.
+        val card = OfflineScanContent.careCard(topKey)
+
         return AnalysisResponse(
             classKey = topKey,
             family = ModelFamily.AQUA.id,
             diseaseName = DiseaseLabels.displayName(topKey, isRu = false) ?: prettify(topKey),
             diseaseNameRu = DiseaseLabels.displayName(topKey, isRu = true) ?: prettify(topKey),
+            description = card?.descriptionEn ?: "",
+            descriptionRu = card?.descriptionRu ?: "",
+            treatment = card?.treatmentEn ?: emptyList(),
+            treatmentRu = card?.treatmentRu ?: emptyList(),
+            prevention = card?.preventionEn ?: emptyList(),
+            preventionRu = card?.preventionRu ?: emptyList(),
             confidence = topConf,
             isHealthy = isHealthy,
             severity = severityFor(topKey, topConf, isHealthy),

@@ -24,6 +24,11 @@
     <color name="hero_gradient_mid">#166534</color>
     <color name="hero_gradient_end">#22C55E</color>
     <color name="hero_solid">#15803D</color>
+    <!-- Hero-surface text: the dark-theme hero gradient is a deep
+         green, so the copy stays light (mirrors hero_stat_text)
+         instead of inheriting the inverted ``on_primary``. -->
+    <color name="on_hero">#F0FDF4</color>
+    <color name="on_hero_secondary">#CCF0FDF4</color>
     <color name="hero_stat_bg">#33FFFFFF</color>
     <color name="hero_stat_stroke">#52FFFFFF</color>
     <color name="hero_stat_text">#F0FDF4</color>
@@ -69,6 +74,9 @@
     <!-- ─── Category accents ────────────────────────────────────── -->
     <color name="watering_blue">#60A5FA</color>
     <color name="lighting_yellow">#FBBF24</color>
+    <!-- Brighter sun icon for the Guide list in dark mode (amber-300):
+         the light-mode amber sank into the dark chip background. -->
+    <color name="guide_icon_lighting">#FCD34D</color>
 
     <!-- ─── Misc ────────────────────────────────────────────────── -->
     <color name="scan_frame_color">#80FFFFFF</color>

@@ -90,7 +90,7 @@ class CarePlanCardView @JvmOverloads constructor(
             layoutParams = LinearLayout.LayoutParams(44.dp(), 44.dp())
             addView(ImageView(context).apply {
                 setImageResource(R.drawable.ic_care)
-                setColorFilter(context.getColor(R.color.on_primary))
+                setColorFilter(context.getColor(R.color.on_hero))
                 layoutParams = FrameLayout.LayoutParams(24.dp(), 24.dp(), Gravity.CENTER)
             })
         })
@@ -104,12 +104,12 @@ class CarePlanCardView @JvmOverloads constructor(
         titleView = TextView(context).apply {
             text = context.getString(R.string.care_plan_title)
             textSize = 18f
-            setTextColor(context.getColor(R.color.on_primary))
+            setTextColor(context.getColor(R.color.on_hero))
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
         }
         subtitleView = TextView(context).apply {
             textSize = 12f
-            setTextColor(context.getColor(R.color.on_primary_secondary))
+            setTextColor(context.getColor(R.color.on_hero_secondary))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -138,14 +138,14 @@ class CarePlanCardView @JvmOverloads constructor(
             addView(ProgressBar(context).apply {
                 isIndeterminate = true
                 indeterminateTintList = android.content.res.ColorStateList.valueOf(
-                    context.getColor(R.color.on_primary)
+                    context.getColor(R.color.on_hero)
                 )
                 layoutParams = LinearLayout.LayoutParams(22.dp(), 22.dp())
             })
             addView(TextView(context).apply {
                 text = context.getString(R.string.care_plan_loading)
                 textSize = 14f
-                setTextColor(context.getColor(R.color.on_primary))
+                setTextColor(context.getColor(R.color.on_hero))
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -162,19 +162,19 @@ class CarePlanCardView @JvmOverloads constructor(
         errorBody = TextView(context).apply {
             text = context.getString(R.string.care_plan_unavailable)
             textSize = 13f
-            setTextColor(context.getColor(R.color.on_primary))
+            setTextColor(context.getColor(R.color.on_hero))
             alpha = 0.92f
         }
         retryButton = MaterialButton(
             context, null, com.google.android.material.R.attr.materialButtonOutlinedStyle,
         ).apply {
             text = context.getString(R.string.care_plan_retry)
-            setTextColor(context.getColor(R.color.on_primary))
+            setTextColor(context.getColor(R.color.on_hero))
             strokeColor = android.content.res.ColorStateList.valueOf(
-                context.getColor(R.color.on_primary)
+                context.getColor(R.color.on_hero)
             )
             iconTint = android.content.res.ColorStateList.valueOf(
-                context.getColor(R.color.on_primary)
+                context.getColor(R.color.on_hero)
             )
             cornerRadius = 14.dp()
             layoutParams = LinearLayout.LayoutParams(
@@ -207,13 +207,13 @@ class CarePlanCardView @JvmOverloads constructor(
         noteContainer.addView(TextView(context).apply {
             text = context.getString(R.string.care_plan_disease_note)
             textSize = 11f
-            setTextColor(context.getColor(R.color.on_primary_secondary))
+            setTextColor(context.getColor(R.color.on_hero_secondary))
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             letterSpacing = 0.06f
         })
         noteBody = TextView(context).apply {
             textSize = 13f
-            setTextColor(context.getColor(R.color.on_primary))
+            setTextColor(context.getColor(R.color.on_hero))
             setLineSpacing(2.dp().toFloat(), 1f)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -225,7 +225,7 @@ class CarePlanCardView @JvmOverloads constructor(
 
         followUpView = TextView(context).apply {
             textSize = 12f
-            setTextColor(context.getColor(R.color.on_primary_secondary))
+            setTextColor(context.getColor(R.color.on_hero_secondary))
             visibility = View.GONE
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -238,12 +238,12 @@ class CarePlanCardView @JvmOverloads constructor(
             context, null, com.google.android.material.R.attr.materialButtonOutlinedStyle,
         ).apply {
             text = context.getString(R.string.care_plan_use_for_reminders)
-            setTextColor(context.getColor(R.color.on_primary))
+            setTextColor(context.getColor(R.color.on_hero))
             strokeColor = android.content.res.ColorStateList.valueOf(
-                context.getColor(R.color.on_primary)
+                context.getColor(R.color.on_hero)
             )
             iconTint = android.content.res.ColorStateList.valueOf(
-                context.getColor(R.color.on_primary)
+                context.getColor(R.color.on_hero)
             )
             cornerRadius = 14.dp()
             visibility = View.GONE
@@ -265,9 +265,9 @@ class CarePlanCardView @JvmOverloads constructor(
             context, null, com.google.android.material.R.attr.borderlessButtonStyle,
         ).apply {
             text = context.getString(R.string.care_plan_show_details)
-            setTextColor(context.getColor(R.color.on_primary))
+            setTextColor(context.getColor(R.color.on_hero))
             iconTint = android.content.res.ColorStateList.valueOf(
-                context.getColor(R.color.on_primary)
+                context.getColor(R.color.on_hero)
             )
             setIconResource(R.drawable.ic_chevron_down)
             iconGravity = MaterialButton.ICON_GRAVITY_TEXT_END
@@ -366,10 +366,18 @@ class CarePlanCardView @JvmOverloads constructor(
         speciesDisplay: String?,
         showApplyToReminders: Boolean,
         onApplyToReminders: ((CarePlanResponse) -> Unit)? = null,
+        // True for a locally-computed plan on an offline (Aqua) scan — the
+        // subtitle then flags it as a basic offline plan instead of
+        // pretending it's the server's species-tailored one.
+        offlineBasic: Boolean = false,
     ) {
         lastPlan = plan
         this.onApplyToReminders = onApplyToReminders
-        subtitleView.text = speciesSubtitle(speciesDisplay ?: plan.species.takeIf { plan.hasSpecies })
+        subtitleView.text = if (offlineBasic) {
+            context.getString(R.string.care_plan_subtitle_offline)
+        } else {
+            speciesSubtitle(speciesDisplay ?: plan.species.takeIf { plan.hasSpecies })
+        }
 
         loadingView.visibility = View.GONE
         errorView.visibility = View.GONE
@@ -701,6 +709,19 @@ class CarePlanCardView @JvmOverloads constructor(
 
     private data class SetupRow(val labelRes: Int, val iconRes: Int, val value: String)
 
+    /** Map the server's watering-method enum to a localized, human-readable
+     *  sentence. Unknown/free-text values pass through unchanged. */
+    private fun humanizeWateringMethod(raw: String): String {
+        val res = when (raw.trim().lowercase()) {
+            "bottom_water" -> R.string.watering_method_bottom_water
+            "bottom_water_soak" -> R.string.watering_method_bottom_water_soak
+            "let_top_inch_dry" -> R.string.watering_method_let_top_inch_dry
+            "soak_and_drain" -> R.string.watering_method_soak_and_drain
+            else -> return raw
+        }
+        return context.getString(res)
+    }
+
     private fun buildSetupRows(plan: CarePlanResponse): List<SetupRow> = buildList {
         plan.placement?.takeIf { it.isNotBlank() }?.let {
             add(SetupRow(R.string.care_plan_detail_placement, R.drawable.ic_garden, it))
@@ -712,7 +733,11 @@ class CarePlanCardView @JvmOverloads constructor(
             add(SetupRow(R.string.care_plan_detail_npk, R.drawable.ic_treatment, it))
         }
         plan.wateringMethod?.takeIf { it.isNotBlank() }?.let {
-            add(SetupRow(R.string.care_plan_detail_watering_method, R.drawable.ic_watering, it))
+            add(SetupRow(
+                R.string.care_plan_detail_watering_method,
+                R.drawable.ic_watering,
+                humanizeWateringMethod(it),
+            ))
         }
         plan.acclimation?.takeIf { it.isNotBlank() }?.let {
             add(SetupRow(R.string.care_plan_detail_acclimation, R.drawable.ic_clock, it))
@@ -888,13 +913,13 @@ class CarePlanCardView @JvmOverloads constructor(
         }
         labelRow.addView(ImageView(context).apply {
             setImageResource(iconRes)
-            setColorFilter(context.getColor(R.color.on_primary))
+            setColorFilter(context.getColor(R.color.on_hero))
             layoutParams = LinearLayout.LayoutParams(15.dp(), 15.dp())
         })
         labelRow.addView(TextView(context).apply {
             text = label.uppercase()
             textSize = 10f
-            setTextColor(context.getColor(R.color.on_primary_secondary))
+            setTextColor(context.getColor(R.color.on_hero_secondary))
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             letterSpacing = 0.08f
             layoutParams = LinearLayout.LayoutParams(
@@ -906,7 +931,7 @@ class CarePlanCardView @JvmOverloads constructor(
         box.addView(TextView(context).apply {
             text = value.ifBlank { "—" }
             textSize = 15f
-            setTextColor(context.getColor(R.color.on_primary))
+            setTextColor(context.getColor(R.color.on_hero))
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             maxLines = 2
             ellipsize = android.text.TextUtils.TruncateAt.END

@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Reusable gradient-header input dialog used by the Garden plant
+    detail journal actions (watering, note, pruning, etc.). Mirrors the
+    "create new plant" sheet so the floating windows feel consistent:
+    a colourful gradient hero with the action title sits above a real
+    Material outlined text field instead of a plain AlertDialog title.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <!-- Gradient hero -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:padding="@dimen/space_lg"
+        android:layout_marginHorizontal="@dimen/space_lg"
+        android:layout_marginTop="@dimen/space_lg"
+        android:background="@drawable/bg_garden_hero">
+
+        <FrameLayout
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:background="@drawable/bg_circle_semi">
+
+            <ImageView
+                android:id="@+id/iv_dialog_icon"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:layout_gravity="center"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_garden"
+                app:tint="@color/on_hero" />
+
+        </FrameLayout>
+
+        <TextView
+            android:id="@+id/tv_dialog_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="@dimen/space_md"
+            android:textSize="20sp"
+            android:textColor="@color/on_hero"
+            android:fontFamily="sans-serif-medium" />
+
+    </LinearLayout>
+
+    <!-- Input field -->
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/til_dialog_input"
+        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="@dimen/space_lg"
+        android:layout_marginTop="@dimen/space_lg"
+        app:boxCornerRadiusTopStart="@dimen/radius_md"
+        app:boxCornerRadiusTopEnd="@dimen/radius_md"
+        app:boxCornerRadiusBottomStart="@dimen/radius_md"
+        app:boxCornerRadiusBottomEnd="@dimen/radius_md">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/et_dialog_input"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+
+    </com.google.android.material.textfield.TextInputLayout>
+
+</LinearLayout>

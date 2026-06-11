@@ -438,6 +438,29 @@
                         android:padding="@dimen/space_lg"
                         android:visibility="gone" />
 
+                    <!-- AI Plant Doctor entry point — same assistant as the
+                         Garden plant detail, surfaced right after the
+                         treatment/prevention advice for a follow-up chat. -->
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginHorizontal="@dimen/space_lg"
+                        android:background="@color/divider" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_ask_doctor"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginHorizontal="@dimen/space_lg"
+                        android:layout_marginTop="@dimen/space_md"
+                        android:layout_marginBottom="@dimen/space_lg"
+                        android:minHeight="48dp"
+                        android:text="@string/doctor_open_cta"
+                        app:icon="@drawable/ic_doctor_chat"
+                        app:iconGravity="textStart"
+                        app:cornerRadius="@dimen/radius_md" />
+
                 </LinearLayout>
 
             </com.google.android.material.card.MaterialCardView>

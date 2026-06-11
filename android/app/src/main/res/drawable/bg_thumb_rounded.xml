@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Garden plant-card thumbnail backdrop: rounded rect on the design
+     system's radius_md, replacing the old circle so the thumbnail
+     matches the card / chip corner language. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/icon_bg" />
+    <corners android:radius="@dimen/radius_md" />
+</shape>

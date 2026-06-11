@@ -3,11 +3,14 @@
     <string name="app_name">PlantDiseases</string>
 
     <!-- Plurals consumed by GardenFragment via getQuantityString. -->
+    <!-- %2$s — отдельно склонённая строка scan_count: quantity этого
+         plural выбирается по числу РАСТЕНИЙ, поэтому слово «скан»
+         здесь не склоняется. -->
     <plurals name="garden_summary">
-        <item quantity="one">%1$d растение под наблюдением, %2$d сканов</item>
-        <item quantity="few">%1$d растения под наблюдением, %2$d сканов</item>
-        <item quantity="many">%1$d растений под наблюдением, %2$d сканов</item>
-        <item quantity="other">%1$d растения под наблюдением, %2$d сканов</item>
+        <item quantity="one">%1$d растение под наблюдением, %2$s</item>
+        <item quantity="few">%1$d растения под наблюдением, %2$s</item>
+        <item quantity="many">%1$d растений под наблюдением, %2$s</item>
+        <item quantity="other">%1$d растения под наблюдением, %2$s</item>
     </plurals>
     <plurals name="scan_count">
         <item quantity="one">%d скан</item>
@@ -162,10 +165,17 @@
     <string name="species_card_title">Определённый вид</string>
     <string name="species_card_score">PlantNet — %1$d%%</string>
     <string name="species_source_wikipedia">Источник: Wikipedia</string>
+    <string name="species_source_wikipedia_translated">Источник: Wikipedia (автоперевод)</string>
     <string name="species_community_others">Другие сканы этого вида</string>
     <string name="example_photos_label">Как это выглядит</string>
     <string name="similar_scans_title">Похожие сканы рядом</string>
     <string name="similar_scans_subtitle">%1$d сканов рядом с %2$s</string>
+    <plurals name="similar_scans_subtitle_count">
+        <item quantity="one">%1$d похожий скан рядом с %2$s</item>
+        <item quantity="few">%1$d похожих скана рядом с %2$s</item>
+        <item quantity="many">%1$d похожих сканов рядом с %2$s</item>
+        <item quantity="other">%1$d похожих скана рядом с %2$s</item>
+    </plurals>
     <string name="similar_scans_subtitle_region">Недавние диагнозы рядом с %1$s</string>
     <string name="similar_scans_subtitle_no_region">Включите приблизительное местоположение, чтобы видеть сканы рядом.</string>
     <string name="similar_scans_empty">Похожих сканов пока нет — ваш будет первым.</string>
@@ -272,6 +282,8 @@
     <string name="warning_nap_ood_gated">Детектору это изображение не показалось листом растения, поэтому результат может быть ненадёжным. Сфотографируйте один лист, заполняющий большую часть кадра, и попробуйте снова.</string>
     <string name="warning_disease_suspected_title">Замечена возможная проблема</string>
     <string name="warning_disease_suspected">Растение выглядит в основном здоровым, но модель также заметила признаки: %1$s. Понаблюдайте и переснимите, если симптомы усилятся.</string>
+    <string name="warning_offline_scan_title">Офлайн-скан</string>
+    <string name="warning_offline_scan">Этот результат рассчитан на вашем устройстве без сервера. Он может быть менее точным, чем полный серверный анализ — пересканируйте онлайн для более подробного диагноза.</string>
 
     <!-- Empty states -->
     <string name="first_scan_cta">Сделать первый скан</string>
@@ -319,6 +331,17 @@
     <string name="garden_card_action_overdue">%1$s просрочено</string>
     <string name="garden_card_action_tomorrow">%1$s завтра</string>
     <string name="garden_card_action_in_days">%1$s через %2$d дн.</string>
+    <!-- Сад: поиск и секция «требуют внимания» -->
+    <string name="garden_search_hint">Поиск растений…</string>
+    <string name="garden_search_empty">По запросу «%1$s» ничего не найдено</string>
+    <string name="garden_section_attention">Требуют внимания</string>
+    <!-- Подтверждение переноса напоминания после отметки «полито/удобрено» -->
+    <plurals name="care_reminder_rescheduled">
+        <item quantity="one">Записано — следующее напоминание через %1$d день</item>
+        <item quantity="few">Записано — следующее напоминание через %1$d дня</item>
+        <item quantity="many">Записано — следующее напоминание через %1$d дней</item>
+        <item quantity="other">Записано — следующее напоминание через %1$d дня</item>
+    </plurals>
     <!-- Обложка растения (меню верхней панели на экране деталей) -->
     <string name="cover_photo_set">Выбрать обложку</string>
     <string name="cover_photo_clear">Убрать обложку</string>
@@ -369,7 +392,35 @@
     <string name="reminder_notif_watering">Полейте %s!</string>
     <string name="reminder_notif_check">Пора осмотреть %s!</string>
     <string name="reminder_notif_fertilize">Пора удобрить %s!</string>
+    <string name="reminder_notif_generic">%1$s · %2$s</string>
     <string name="reminder_subtitle">Настройте расписание ухода</string>
+    <!-- Универсальные напоминания (список + редактор) -->
+    <string name="reminder_add">Добавить напоминание</string>
+    <string name="reminder_new_title">Новое напоминание</string>
+    <string name="reminder_edit_title">Изменить напоминание</string>
+    <string name="reminder_name">Название</string>
+    <string name="reminder_name_required">Введите название</string>
+    <string name="reminder_description">Описание (необязательно)</string>
+    <string name="reminder_icon_label">Значок</string>
+    <string name="reminder_delete">Удалить</string>
+    <string name="reminder_deleted">Напоминание удалено</string>
+    <string name="reminder_saved">Напоминание сохранено</string>
+    <string name="reminder_empty_list">Пока нет напоминаний — добавьте первое.</string>
+    <plurals name="reminder_row_meta">
+        <item quantity="one">Каждый %1$d день · %2$02d:%3$02d</item>
+        <item quantity="few">Каждые %1$d дня · %2$02d:%3$02d</item>
+        <item quantity="many">Каждые %1$d дней · %2$02d:%3$02d</item>
+        <item quantity="other">Каждые %1$d дня · %2$02d:%3$02d</item>
+    </plurals>
+    <string name="reminder_preset_mist">Опрыскивание</string>
+    <string name="reminder_preset_rotate">Повернуть растение</string>
+    <string name="reminder_preset_repot">Пересадка</string>
+    <string name="reminder_preset_prune">Обрезка</string>
+    <string name="reminder_preset_clean">Протереть листья</string>
+    <string name="reminder_preset_light">Проверка освещения</string>
+    <string name="reminder_preset_humidity">Проверка влажности</string>
+    <string name="reminder_preset_temperature">Проверка температуры</string>
+    <string name="reminder_preset_custom">Своё напоминание</string>
     <!-- Doctor Chat -->
     <string name="doctor_title">ИИ-врач растений</string>
     <string name="doctor_stub_subtitle">Спросите об этом растении — симптомы, полив, свет…</string>
@@ -380,6 +431,17 @@
     <string name="doctor_q2">Причина и как предотвратить рецидив?</string>
     <string name="doctor_q3">Самое быстрое домашнее лечение?</string>
     <string name="doctor_clear">Очистить чат</string>
+    <string name="chat_err_turn_cap">Лимит сообщений в этой сессии исчерпан. Очистите чат, чтобы начать заново.</string>
+    <string name="chat_err_token_cap">Бюджет токенов сессии исчерпан. Очистите чат, чтобы начать заново.</string>
+    <string name="chat_err_no_api_key">AI Plant Doctor временно недоступен (сервер не настроен). Используйте раздел «Лечение» в карточке диагноза.</string>
+    <string name="chat_err_message_rejected">Сообщение не отправлено. Сократите запрос и попробуйте снова.</string>
+    <string name="chat_err_no_reply">Не удалось получить ответ от ассистента. Попробуйте отправить сообщение ещё раз.</string>
+    <string name="chat_err_unavailable">AI Plant Doctor пока недоступен. Попробуйте позже.</string>
+    <string name="chat_err_no_network">Нет интернет-соединения. Подключитесь к сети и попробуйте снова.</string>
+    <string name="chat_err_timeout">Сервер не отвечает. Попробуйте отправить сообщение ещё раз.</string>
+    <string name="chat_err_rate_limit">Слишком частые запросы. Подождите несколько секунд и повторите.</string>
+    <string name="chat_err_generic">Не удалось связаться с сервером. Попробуйте позже.</string>
+    <string name="doctor_open_cta">Спросить AI-доктора</string>
     <!-- Light Meter -->
     <string name="light_meter">Люксметр</string>
     <string name="light_needs_header">Потребность в свете для этого растения</string>
@@ -415,6 +477,8 @@
     <string name="guide_link_subtitle">Статья об уходе и лечении: %s</string>
     <!-- Шаринг сохранённого скана через системный диалог -->
     <string name="share_scan_chooser">Поделиться сканом</string>
+    <string name="share_diagnosis_header">🌿 PlantDiseases — Диагноз</string>
+    <string name="share_treatment_label">💊 Лечение:</string>
     <string name="share_confidence_format">Уверенность %d%%</string>
     <!-- Адаптивный полив (C2) -->
     <string name="adaptive_watering_title">💡 Сократить интервал полива с %1$d до %2$d дней?</string>
@@ -532,6 +596,7 @@
     <string name="care_plan_title">План ухода</string>
     <string name="care_plan_subtitle_species">Подобрано для %s</string>
     <string name="care_plan_subtitle_unknown">Общий план — вид не указан</string>
+    <string name="care_plan_subtitle_offline">Базовый офлайн-план — пересканируйте онлайн для точного</string>
     <string name="care_plan_loading">Готовим план ухода…</string>
     <string name="care_plan_unavailable">План ухода недоступен. Нажмите «Повторить».</string>
     <string name="care_plan_retry">Повторить</string>
@@ -559,6 +624,11 @@
     <string name="care_plan_detail_placement">Размещение</string>
     <string name="care_plan_detail_acclimation">Акклиматизация</string>
     <string name="care_plan_detail_watering_method">Способ полива</string>
+    <!-- Watering method enum values from the server -->
+    <string name="watering_method_bottom_water">Полив снизу (дайте горшку впитать воду через дренажные отверстия)</string>
+    <string name="watering_method_bottom_water_soak">Замачивание снизу — поставьте горшок в воду на 20 мин, затем слейте</string>
+    <string name="watering_method_let_top_inch_dry">Давайте верхним 2–3 см почвы просохнуть между поливами</string>
+    <string name="watering_method_soak_and_drain">Полейте обильно до стекания, затем опорожните поддон</string>
     <string name="care_plan_detail_soil_mix">Грунт</string>
     <string name="care_plan_detail_npk">NPK удобрения</string>
     <string name="care_plan_detail_light_lux">Освещение (люкс)</string>
@@ -589,7 +659,7 @@
     <string name="species_suggest_unavailable_rate_limited">Дневная квота PlantNet исчерпана. Попробуйте позже или введите вид вручную.</string>
     <string name="species_suggest_unavailable_auth_failed">Ключ PlantNet на сервере недействителен. Введите вид вручную.</string>
     <string name="species_suggest_match">совпадение %d%%</string>
-    <string name="species_suggest_prefilled">Определено при сканировании (%d%% совпадение). Нажмите «Опознать», чтобы расширить список.</string>
+    <string name="species_suggest_prefilled">Определено при сканировании (%d%% совпадение).</string>
     <string name="species_suggest_no_results">Уверенных совпадений не найдено.</string>
     <string name="species_suggest_unknown_name">Без названия</string>
     <!-- Diagnosis feedback -->
@@ -606,6 +676,7 @@
     <string name="feedback_sheet_reason_label">Почему диагноз неверный?</string>
     <string name="feedback_sheet_note_hint">Что ещё хотите сказать? (необязательно)</string>
     <string name="feedback_class_healthy">Здоровое</string>
+    <string name="feedback_class_pests">Вредители (мучнистый червец, щитовка)</string>
     <string name="feedback_class_powdery_mildew">Мучнистая роса</string>
     <string name="feedback_class_gray_mold_botrytis">Серая гниль</string>
     <string name="feedback_class_leaf_spot">Пятнистость листьев</string>
@@ -625,6 +696,7 @@
     <string name="feedback_reason_other">Другое</string>
     <string name="feedback_send">Отправить</string>
     <string name="feedback_sent">Спасибо — ваш отзыв сохранён.</string>
+    <string name="feedback_sending">Отправляем ваш отзыв…</string>
     <string name="feedback_rate_limited">Слишком часто — попробуйте через секунду.</string>
     <string name="feedback_failed">Не удалось отправить отзыв. Попробуйте позже.</string>
 
@@ -633,6 +705,9 @@
     <string name="toxicity_safe_title">Безопасно для питомцев</string>
     <string name="toxicity_toxic_body">Это растение токсично для: %1$s. Уберите подальше от животных, при отравлении — к ветеринару.</string>
     <string name="toxicity_safe_body">Данных о токсичности для кошек и собак нет.</string>
+    <string name="toxicity_animal_cats">кошек</string>
+    <string name="toxicity_animal_dogs">собак</string>
+    <string name="toxicity_animal_horses">лошадей</string>
     <!-- Historical progression sparkline -->
     <string name="progression_title">Динамика заболевания</string>
     <string name="progression_trend_improving">Улучшается</string>

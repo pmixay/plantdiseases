@@ -17,7 +17,6 @@ import android.graphics.Color
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
-import android.net.NetworkRequest
 import android.net.Uri
 import android.os.Bundle
 import android.util.Log
@@ -232,9 +231,17 @@ class CameraFragment : Fragment() {
         }
 
         refreshModelFamilyChip()
+        // Fragment Result instead of a lambda field on the sheet: the
+        // chip-refresh signal survives a config-change recreation while the
+        // picker is open (re-registered here on every view creation).
+        childFragmentManager.setFragmentResultListener(
+            ModelPickerSheet.REQUEST_KEY, viewLifecycleOwner,
+        ) { _, _ ->
+            if (_binding != null) refreshModelFamilyChip()
+        }
         binding.btnModelFamily.setOnClickListener {
             Haptics.tick(requireContext())
-            ModelPickerSheet.show(childFragmentManager) { refreshModelFamilyChip() }
+            ModelPickerSheet.show(childFragmentManager)
         }
         syncModelCapabilities()
 
@@ -694,25 +701,41 @@ class CameraFragment : Fragment() {
     private fun registerNetworkCallback() {
         val cm = requireContext().getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
-        val activeNetwork = cm.getNetworkCapabilities(cm.activeNetwork)
-        val isConnected = activeNetwork?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
-        binding.offlineBanner.visibility = if (isConnected) View.GONE else View.VISIBLE
+        // Seed from the current default network.
+        updateOfflineBanner(hasUsableInternet(cm.getNetworkCapabilities(cm.activeNetwork)))
 
+        // Track the DEFAULT network and react to capability changes — not just
+        // onAvailable/onLost. The banner used to get stuck because reconnecting
+        // (or the system re-validating internet on a network that was already
+        // "available") fires onCapabilitiesChanged, not onAvailable, so the
+        // GONE transition was never delivered until the app was restarted.
         val callback = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) {
-                view?.post { _binding?.offlineBanner?.visibility = View.GONE }
+            override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
+                view?.post { updateOfflineBanner(hasUsableInternet(caps)) }
             }
 
             override fun onLost(network: Network) {
-                view?.post { _binding?.offlineBanner?.visibility = View.VISIBLE }
+                view?.post { updateOfflineBanner(false) }
+            }
+
+            override fun onUnavailable() {
+                view?.post { updateOfflineBanner(false) }
             }
         }
         networkCallback = callback
+        cm.registerDefaultNetworkCallback(callback)
+    }
 
-        val request = NetworkRequest.Builder()
-            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            .build()
-        cm.registerNetworkCallback(request, callback)
+    /** True only when the network can actually reach the internet (present AND
+     *  validated by the system), so the banner reflects real reachability
+     *  rather than just "a network object exists". */
+    private fun hasUsableInternet(caps: NetworkCapabilities?): Boolean =
+        caps != null &&
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+
+    private fun updateOfflineBanner(online: Boolean) {
+        _binding?.offlineBanner?.visibility = if (online) View.GONE else View.VISIBLE
     }
 
     override fun onDestroyView() {

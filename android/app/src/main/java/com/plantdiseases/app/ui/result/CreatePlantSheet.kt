@@ -7,7 +7,9 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.core.os.bundleOf
 import androidx.fragment.app.FragmentManager
+import androidx.fragment.app.setFragmentResult
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.button.MaterialButton
@@ -28,9 +30,14 @@ import java.io.File
  * the cramped AlertDialog content view.
  *
  * The host activity receives the picked name, species and PlantNet
- * candidate (if any) via [Listener.onSave]. Networking + repository
- * writes still belong on the host so this fragment stays stateless
- * across configuration changes.
+ * candidate (if any) via the Fragment Result API ([REQUEST_KEY]) — NOT a
+ * listener field. A listener field set from the static show() does not
+ * survive a configuration-change / process-death recreation (the system
+ * rebuilds the fragment without calling show()), which silently dropped
+ * the user's Save tap; the FragmentManager replays a pending result to
+ * the re-registered host listener instead. All inputs ride in arguments
+ * for the same reason. Networking + repository writes still belong on
+ * the host so this fragment stays stateless across configuration changes.
  */
 class CreatePlantSheet : BottomSheetDialogFragment() {
 
@@ -39,11 +46,6 @@ class CreatePlantSheet : BottomSheetDialogFragment() {
     private var prefilledScientific: String? = null
     private var prefilledCommon: String? = null
     private var prefilledScore: Float? = null
-    private var listener: Listener? = null
-
-    fun interface Listener {
-        fun onSave(name: String, species: String?, scientific: String?, common: String?)
-    }
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -51,6 +53,13 @@ class CreatePlantSheet : BottomSheetDialogFragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+
+        scanId = arguments?.getLong(ARG_SCAN_ID, -1L) ?: -1L
+        initialName = arguments?.getString(ARG_INITIAL_NAME)
+        prefilledScientific = arguments?.getString(ARG_PREFILL_SCIENTIFIC)
+        prefilledCommon = arguments?.getString(ARG_PREFILL_COMMON)
+        prefilledScore = arguments?.takeIf { it.containsKey(ARG_PREFILL_SCORE) }
+            ?.getFloat(ARG_PREFILL_SCORE)
 
         val tilName = view.findViewById<TextInputLayout>(R.id.til_name)
         val etName = view.findViewById<TextInputEditText>(R.id.et_name)
@@ -76,6 +85,11 @@ class CreatePlantSheet : BottomSheetDialogFragment() {
                 R.string.species_suggest_prefilled,
                 ((prefilledScore ?: 0f) * 100).toInt().coerceIn(0, 100),
             )
+            // The species is already filled in from the scan-time PlantNet
+            // detection — a separate "Suggest species" button here is
+            // redundant (it re-runs the same identify). It stays only for
+            // scans where no species was detected, as the manual fallback.
+            identifyBtn.visibility = View.GONE
         }
 
         identifyBtn.setOnClickListener {
@@ -137,11 +151,16 @@ class CreatePlantSheet : BottomSheetDialogFragment() {
                 return@setOnClickListener
             }
             tilName.error = null
-            listener?.onSave(
-                name,
-                etSpecies.text?.toString()?.trim().orEmpty().ifBlank { null },
-                pickedScientific,
-                pickedCommon,
+            setFragmentResult(
+                REQUEST_KEY,
+                bundleOf(
+                    RESULT_SCAN_ID to scanId,
+                    RESULT_NAME to name,
+                    RESULT_SPECIES to etSpecies.text?.toString()?.trim()
+                        .orEmpty().ifBlank { null },
+                    RESULT_SCIENTIFIC to pickedScientific,
+                    RESULT_COMMON to pickedCommon,
+                ),
             )
             dismiss()
         }
@@ -231,24 +250,40 @@ class CreatePlantSheet : BottomSheetDialogFragment() {
     companion object {
         private const val TAG = "create-plant-sheet"
 
+        /** Fragment Result API contract with the host. */
+        const val REQUEST_KEY = "create_plant_save"
+        const val RESULT_SCAN_ID = "result_scan_id"
+        const val RESULT_NAME = "result_name"
+        const val RESULT_SPECIES = "result_species"
+        const val RESULT_SCIENTIFIC = "result_scientific"
+        const val RESULT_COMMON = "result_common"
+
+        private const val ARG_SCAN_ID = "arg_scan_id"
+        private const val ARG_INITIAL_NAME = "arg_initial_name"
+        private const val ARG_PREFILL_SCIENTIFIC = "arg_prefill_scientific"
+        private const val ARG_PREFILL_COMMON = "arg_prefill_common"
+        private const val ARG_PREFILL_SCORE = "arg_prefill_score"
+
         fun show(
             fm: FragmentManager,
             scan: ScanEntity,
             initialName: String?,
-            listener: Listener,
         ): CreatePlantSheet {
             val sheet = CreatePlantSheet()
-            sheet.scanId = scan.id
-            sheet.initialName = initialName
-            // The scan already carries the PlantNet result from analyse
-            // time — pre-fill the species fields so the user doesn't
-            // have to tap Identify a second time. Each is nullable on
-            // ScanEntity; the empty case falls back to the manual
-            // identify flow.
-            sheet.prefilledScientific = scan.speciesScientific?.takeIf { it.isNotBlank() }
-            sheet.prefilledCommon = scan.speciesCommon?.takeIf { it.isNotBlank() }
-            sheet.prefilledScore = scan.speciesScore
-            sheet.listener = listener
+            // Everything rides in arguments so a config-change / process-
+            // death recreation rebuilds an identical sheet. The scan already
+            // carries the PlantNet result from analyse time — pre-fill the
+            // species fields so the user doesn't have to tap Identify a
+            // second time. Each is nullable on ScanEntity; the empty case
+            // falls back to the manual identify flow.
+            sheet.arguments = bundleOf(
+                ARG_SCAN_ID to scan.id,
+                ARG_INITIAL_NAME to initialName,
+                ARG_PREFILL_SCIENTIFIC to scan.speciesScientific?.takeIf { it.isNotBlank() },
+                ARG_PREFILL_COMMON to scan.speciesCommon?.takeIf { it.isNotBlank() },
+            ).apply {
+                scan.speciesScore?.let { putFloat(ARG_PREFILL_SCORE, it) }
+            }
             sheet.show(fm, TAG)
             return sheet
         }

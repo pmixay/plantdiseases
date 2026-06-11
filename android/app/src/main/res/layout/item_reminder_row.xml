@@ -1,10 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    One reminder row (watering / health-check / fertilising) used three
-    times by sheet_reminder_schedule.xml via <include>. The icon, label,
-    NumberPicker ranges and formatters are configured per-row in
-    ReminderScheduleSheet.setupRow; the interval block is hidden until
-    the switch is on.
+    One generic reminder row in the ReminderScheduleSheet list: preset
+    icon, name + "Every N days · HH:MM" meta line, and an enable
+    switch. Tapping the row opens the editor dialog; the switch
+    persists immediately. Bound in ReminderScheduleSheet.bindRow.
 -->
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -13,6 +12,9 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginBottom="@dimen/space_sm"
+    android:clickable="true"
+    android:focusable="true"
+    android:foreground="?attr/selectableItemBackground"
     app:cardBackgroundColor="@color/surface"
     app:cardCornerRadius="@dimen/radius_md"
     app:cardElevation="0dp"
@@ -22,118 +24,63 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
         android:paddingHorizontal="@dimen/space_lg"
         android:paddingVertical="@dimen/space_md">
 
+        <FrameLayout
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="@drawable/bg_icon_circle">
+
+            <ImageView
+                android:id="@+id/reminder_icon"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:layout_gravity="center"
+                android:contentDescription="@null"
+                app:tint="@color/primary"
+                tools:src="@drawable/ic_watering" />
+
+        </FrameLayout>
+
         <LinearLayout
-            android:layout_width="match_parent"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
-
-            <FrameLayout
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:background="@drawable/bg_icon_circle">
-
-                <ImageView
-                    android:id="@+id/reminder_icon"
-                    android:layout_width="22dp"
-                    android:layout_height="22dp"
-                    android:layout_gravity="center"
-                    android:contentDescription="@null"
-                    app:tint="@color/primary"
-                    tools:src="@drawable/ic_watering" />
-
-            </FrameLayout>
+            android:layout_weight="1"
+            android:layout_marginStart="@dimen/space_md"
+            android:orientation="vertical">
 
             <TextView
                 android:id="@+id/reminder_label"
-                android:layout_width="0dp"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="@dimen/space_md"
+                android:maxLines="1"
+                android:ellipsize="end"
                 android:textColor="@color/on_surface"
                 android:textSize="@dimen/text_title_sm"
                 android:fontFamily="sans-serif-medium"
                 tools:text="Watering" />
 
-            <com.google.android.material.materialswitch.MaterialSwitch
-                android:id="@+id/reminder_switch"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content" />
+            <TextView
+                android:id="@+id/reminder_meta"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_xxs"
+                android:maxLines="2"
+                android:ellipsize="end"
+                android:textColor="@color/on_surface_secondary"
+                android:textSize="@dimen/text_body_sm"
+                tools:text="Every 7 days · 09:00" />
 
         </LinearLayout>
 
-        <LinearLayout
-            android:id="@+id/reminder_interval_row"
-            android:layout_width="match_parent"
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/reminder_switch"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_sm"
-            android:orientation="vertical"
-            android:visibility="gone"
-            tools:visibility="visible">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical">
-
-                <TextView
-                    android:id="@+id/reminder_interval_label"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:textColor="@color/on_surface_secondary"
-                    android:textSize="@dimen/text_body_sm"
-                    tools:text="Every 7 days" />
-
-                <NumberPicker
-                    android:id="@+id/reminder_interval"
-                    android:layout_width="80dp"
-                    android:layout_height="wrap_content" />
-
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_xs"
-                android:orientation="horizontal"
-                android:gravity="center_vertical">
-
-                <TextView
-                    android:id="@+id/reminder_time_label"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:textColor="@color/on_surface_secondary"
-                    android:textSize="@dimen/text_body_sm"
-                    tools:text="At 09:00" />
-
-                <NumberPicker
-                    android:id="@+id/reminder_hour"
-                    android:layout_width="70dp"
-                    android:layout_height="wrap_content" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:paddingHorizontal="@dimen/space_xs"
-                    android:text=":"
-                    android:textColor="@color/on_surface_secondary"
-                    android:textSize="18sp" />
-
-                <NumberPicker
-                    android:id="@+id/reminder_minute"
-                    android:layout_width="70dp"
-                    android:layout_height="wrap_content" />
-
-            </LinearLayout>
-
-        </LinearLayout>
+            android:layout_marginStart="@dimen/space_sm" />
 
     </LinearLayout>
 
