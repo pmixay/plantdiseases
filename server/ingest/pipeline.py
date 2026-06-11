@@ -55,7 +55,9 @@ def run_ingestion(
         if t["weight"] > 0 and (t["weight"] - t["validated"] - t["pending"]) > 0
     }
     if not deficits:
+        logger.info("labeling ingest: all weighted classes satisfied — nothing to do")
         return {}
+    logger.info("labeling ingest: deficits %s", deficits)
 
     seen_ph: set[str] = set(labeling.existing_phashes())
     target_classes = {c for c, t in targets.items() if int(t or 0) > 0}
@@ -85,7 +87,11 @@ def run_ingestion(
             if not body:
                 continue
             im = valid_image_bytes(body)
-            if im is None or green_ratio(im) < 0.10:
+            # Low green floor (0.04): scorch is brown and nutrient chlorosis is
+            # yellow, so a 0.10 floor wrongly dropped legitimate disease leaves.
+            # This only needs to reject obvious non-foliage (agar plates, UI,
+            # full-fruit shots); humans verify everything else downstream.
+            if im is None or green_ratio(im) < 0.04:
                 continue
             sha = sha256_bytes(body)
             ph = phash_bytes(body)
@@ -107,7 +113,7 @@ def run_ingestion(
                 seen_ph.add(ph)
             per_subject[key] = per_subject.get(key, 0) + 1
             got += 1
-        if got:
-            added[cls] = got
-            logger.info("labeling ingest: %s += %d", cls, got)
+        added[cls] = got
+        logger.info("labeling ingest: %s += %d (probed %d)", cls, got, probed)
+    logger.info("labeling ingest: done, added=%s", added)
     return added

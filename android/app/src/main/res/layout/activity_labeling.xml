@@ -133,10 +133,12 @@
         android:textColor="?attr/colorOnSurface" />
 
     <LinearLayout
+        android:id="@+id/button_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:padding="12dp"
+        android:background="?attr/colorSurface"
         android:gravity="center">
 
         <com.google.android.material.button.MaterialButton

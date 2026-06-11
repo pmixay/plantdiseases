@@ -7,49 +7,54 @@ error). Queries are ported from the notebook tables + EVAL_DATASET_PLAN.md §5.
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from typing import Iterator
 
 from .http import http_get_json
 
-# Per-class search queries (EVAL_DATASET_PLAN §5 + notebook free-text tables).
+logger = logging.getLogger(__name__)
+
+# Per-class search queries. SHORT (2-3 words): Openverse ANDs the terms, so the
+# old 4-6 word queries matched almost nothing. Kept high-recall + on-topic.
 CLASS_QUERIES: dict[str, list[str]] = {
     "nutrient_deficiency": [
-        "interveinal chlorosis houseplant leaf", "iron chlorosis pothos leaf",
-        "nitrogen deficiency plant leaf", "magnesium deficiency leaf",
-        "phosphorus deficiency purple leaf", "potassium deficiency leaf margin",
+        "leaf chlorosis", "interveinal chlorosis", "iron chlorosis",
+        "nutrient deficiency leaf", "yellowing leaf",
     ],
     "leaf_scorch_underwatering": [
-        "underwatered houseplant crispy leaves", "leaf scorch brown tips houseplant",
-        "drought stress leaf margin necrosis", "calathea crispy brown edges",
-        "fern frond scorch dry", "desiccated plant leaf",
+        "leaf scorch", "leaf tip burn", "crispy brown leaf",
+        "drought stressed plant", "scorched leaf",
     ],
     "gray_mold_botrytis": [
-        "botrytis gray mold houseplant leaf", "botrytis blight begonia",
-        "gray mould cyclamen", "botrytis cinerea ornamental leaf",
-        "grey mould geranium", "botrytis african violet",
+        "botrytis", "gray mold leaf", "grey mould plant",
+        "botrytis cinerea", "botrytis blight",
     ],
     "powdery_mildew": [
-        "powdery mildew houseplant leaf", "powdery mildew begonia leaf",
-        "powdery mildew violet leaf",
+        "powdery mildew", "powdery mildew leaf", "mildew foliage",
     ],
 }
 
 _OPENVERSE_API = "https://api.openverse.org/v1/images/"
 
 
-def openverse(query: str, subject: str, page_size: int = 40) -> Iterator[dict]:
-    """Openverse aggregates openly-licensed images (Flickr et al.)."""
+def openverse(query: str, subject: str, page_size: int = 20) -> Iterator[dict]:
+    """Openverse aggregates openly-licensed images (Flickr et al.). page_size is
+    capped at 20: anonymous requests 429 on larger pages."""
     try:
         data = http_get_json(
             _OPENVERSE_API,
-            params={"q": query, "page_size": page_size, "mature": "false"},
+            params={"q": query, "page_size": min(page_size, 20), "mature": "false"},
             timeout=30,
         )
-    except Exception:  # noqa: BLE001 - fail-soft
+    except Exception as e:  # noqa: BLE001 - fail-soft, but log so it isn't silent
+        logger.warning("openverse query %r failed: %s", query, e)
         return
-    for item in (data.get("results") or []):
+    results = data.get("results") or []
+    if not results:
+        logger.info("openverse query %r returned 0 results", query)
+    for item in results:
         url = item.get("url")
         if not url:
             continue
@@ -74,15 +79,20 @@ def kaggle_supplement(slug: str, target_classes: set[str]) -> Iterator[dict]:
     try:
         import kagglehub
     except Exception:  # noqa: BLE001
+        logger.warning("kaggle_supplement: kagglehub not installed — source skipped")
         return
     if not (os.environ.get("KAGGLE_API_TOKEN")
             or (Path.home() / ".kaggle" / "access_token").exists()
             or (os.environ.get("KAGGLE_USERNAME") and os.environ.get("KAGGLE_KEY"))
             or (Path.home() / ".kaggle" / "kaggle.json").exists()):
-        return  # no creds → skip silently
+        logger.warning(
+            "kaggle_supplement: no Kaggle credentials (KAGGLE_API_TOKEN / ~/.kaggle) "
+            "— source skipped; the candidate queue will stay empty until set")
+        return
     try:
         root = Path(kagglehub.dataset_download(slug))
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
+        logger.warning("kaggle_supplement: download of %s failed: %s", slug, e)
         return
     exts = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
     for p in root.rglob("*"):
