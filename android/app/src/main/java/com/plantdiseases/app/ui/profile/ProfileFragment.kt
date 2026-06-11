@@ -1,8 +1,11 @@
 package com.plantdiseases.app.ui.profile
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Typeface
+import android.text.InputType
+import android.widget.EditText
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
@@ -26,7 +29,10 @@ import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.GuideDataProvider
 import com.plantdiseases.app.data.model.CommunityOpinion
+import com.plantdiseases.app.data.repository.LabelingRepository
+import com.plantdiseases.app.data.repository.LabelingUnavailableException
 import com.plantdiseases.app.databinding.FragmentProfileBinding
+import com.plantdiseases.app.ui.labeling.LabelingActivity
 import com.plantdiseases.app.ui.result.CommunityOpinionSheet
 import com.plantdiseases.app.util.AutosavePrefs
 import com.plantdiseases.app.util.LocaleHelper
@@ -93,6 +99,8 @@ class ProfileFragment : Fragment() {
         binding.langEn.setOnClickListener { setLanguage("en") }
         binding.langRu.setOnClickListener { setLanguage("ru") }
         highlightActiveLanguage()
+
+        binding.btnDataLabeling.setOnClickListener { promptLabelingLogin() }
 
         binding.btnRefreshHealth.setOnClickListener {
             checkServerHealth()
@@ -371,6 +379,42 @@ class ProfileFragment : Fragment() {
                 if (active) R.color.on_primary else R.color.on_surface_secondary,
             ),
         )
+    }
+
+    /** Admin data-labeling entry: password prompt → server login → screen.
+     *  The token lives only in memory (passed via intent), never persisted. */
+    private fun promptLabelingLogin() {
+        val ctx = requireContext()
+        val input = EditText(ctx).apply {
+            hint = getString(R.string.label_password_hint)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        MaterialAlertDialogBuilder(ctx)
+            .setTitle(R.string.label_admin_entry)
+            .setView(input)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                val pw = input.text?.toString().orEmpty()
+                if (pw.isBlank()) return@setPositiveButton
+                val app = requireActivity().application as PlantDiseasesApp
+                val repo = LabelingRepository(app.apiClient)
+                lifecycleScope.launch {
+                    repo.login(pw).onSuccess { token ->
+                        startActivity(
+                            Intent(requireContext(), LabelingActivity::class.java)
+                                .putExtra(LabelingActivity.EXTRA_TOKEN, token)
+                        )
+                    }.onFailure {
+                        val msg = if (it is LabelingUnavailableException) {
+                            getString(R.string.label_unavailable)
+                        } else {
+                            getString(R.string.label_login_failed)
+                        }
+                        Toast.makeText(requireContext(), msg, Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     private fun setLanguage(lang: String) {
