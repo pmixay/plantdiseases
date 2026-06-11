@@ -12,7 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Thin wrapper over the /api/label/* endpoints for the admin labeling screen.
+ * Thin wrapper over the /api/label endpoints for the admin labeling screen.
  * Returns [Result] like the other repositories. A 404 surfaces as
  * [LabelingUnavailableException] so the UI can show the graceful "not available
  * on this server" message (back-compat with older server builds).

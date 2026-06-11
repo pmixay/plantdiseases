@@ -2,7 +2,7 @@ package com.plantdiseases.app.data.model
 
 import com.google.gson.annotations.SerializedName
 
-/** DTOs for the admin data-labeling tool (/api/label/*). */
+/** DTOs for the admin data-labeling tool (the /api/label endpoints). */
 
 data class LabelLoginRequest(val password: String)
 
