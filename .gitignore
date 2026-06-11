@@ -51,3 +51,8 @@ server/community_thumbs/
 server/static/aqua/aqua_classifier.tflite
 server/static/aqua/classes.json
 /server/static/guide/.webp/
+
+# Data-labeling tool runtime artifacts (created at runtime, never committed)
+server/labeling.db*
+server/labeling_images/
+server/labeling_exports/

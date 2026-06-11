@@ -28,6 +28,7 @@ from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -45,6 +46,7 @@ from starlette.responses import Response as StarletteResponse
 #      server.main:app`) — same names live under the `server.` package.
 # The try/except below covers both without forcing PYTHONPATH gymnastics.
 try:
+    from . import labeling
     from .ai_services import (  # type: ignore[import-not-found]
         chat_metrics_snapshot,
         chat_reply,
@@ -122,7 +124,13 @@ try:
         stats_snapshot as community_stats_snapshot,
     )
     from .config import get, get_bool, get_float, get_int, get_list, get_str
-    from .diseases_data import DISEASES_DATABASE, lookup_pet_toxicity
+    from .diseases_data import (
+        DISEASES_DATABASE,
+        class_display_name,
+        confusables_for,
+        labeling_guidance_for,
+        lookup_pet_toxicity,
+    )
     from .feedback import (
         attach_image_path as feedback_attach_image_path,
     )
@@ -159,6 +167,7 @@ try:
     from .species_info import fetch_species_info
     from .symptoms import diagnose as symptom_diagnose
 except ImportError:
+    import labeling
     from ai_services import (
         chat_metrics_snapshot,
         chat_reply,
@@ -236,7 +245,13 @@ except ImportError:
         stats_snapshot as community_stats_snapshot,
     )
     from config import get, get_bool, get_float, get_int, get_list, get_str
-    from diseases_data import DISEASES_DATABASE, lookup_pet_toxicity
+    from diseases_data import (
+        DISEASES_DATABASE,
+        class_display_name,
+        confusables_for,
+        labeling_guidance_for,
+        lookup_pet_toxicity,
+    )
     from feedback import (
         attach_image_path as feedback_attach_image_path,
     )
@@ -390,6 +405,32 @@ FRONTIER_ENABLED = get_bool("FRONTIER_ENABLED", False)
 # detector is shared (the gamma YOLOv8n crops are family-agnostic).
 FRONTIER_MODELS_DIR = Path(get_str("FRONTIER_MODELS_DIR", str(MODELS_DIR / "frontier")))
 FRONTIER_CLASSIFIER_PATH = FRONTIER_MODELS_DIR / "classifier.onnx"
+
+# ── Data-labeling admin tool ─────────────────────────────────────────
+# Human-in-the-loop filtering of candidate images for the classes still short
+# on supply. Enabled + prepared by default; a BLANK admin password refuses
+# every login, so "enabled" is safe out of the box (operator sets the password
+# in config.json). See server/labeling.py + server/ingest/.
+LABELING_ENABLED = get_bool("LABELING_ENABLED", True)
+LABELING_INGEST_ENABLED = get_bool("LABELING_INGEST_ENABLED", True)
+LABELING_KAGGLE_SLUG = get_str(
+    "LABELING_KAGGLE_SUPPLEMENT_SLUG", "maxayyt5/houseplant-disease-eval-supplement")
+LABELING_EXPORT_SLUG = get_str(
+    "LABELING_EXPORT_SLUG", LABELING_KAGGLE_SLUG)
+LABELING_INGEST_INTERVAL = get_int("LABELING_INGEST_INTERVAL_SECONDS", 3600)
+# Per-class "required-data weight" (target approved count). 0 ⇒ not collected.
+_LABELING_TARGETS_DEFAULT = {
+    "nutrient_deficiency": 600, "leaf_scorch_underwatering": 600,
+    "gray_mold_botrytis": 400, "powdery_mildew": 150,
+    "viral_disease": 0, "leaf_spot": 0, "pests": 0, "healthy": 0, "not_a_plant": 0,
+}
+_labeling_targets_raw = get("LABELING_TARGETS", _LABELING_TARGETS_DEFAULT)
+if isinstance(_labeling_targets_raw, str):
+    try:
+        _labeling_targets_raw = json.loads(_labeling_targets_raw)
+    except Exception:  # noqa: BLE001
+        _labeling_targets_raw = _LABELING_TARGETS_DEFAULT
+LABELING_TARGETS = {k: int(v) for k, v in (_labeling_targets_raw or {}).items()}
 
 # ── Guide example photos ─────────────────────────────────────────────
 # Disease/pest example photos used by the app's guide + after-scan strip.
@@ -1032,6 +1073,7 @@ async def lifespan(app: FastAPI):
     _inference_executor = _get_inference_executor()
     init_feedback_db()
     init_community_db()
+    labeling.init_labeling_db()
     # Model artefacts must already be present under MODELS_DIR (provisioned
     # out of band). The pipeline constructor is fail-fast and aborts boot
     # if a required weight / classes.json is missing.
@@ -1076,11 +1118,21 @@ async def lifespan(app: FastAPI):
     # Cancelled cleanly on shutdown so the lifespan exit doesn't
     # leak the task.
     prune_task = asyncio.create_task(_prune_loop())
+    # Candidate ingestion for the labeling tool. Default-enabled but
+    # deficit-driven (idles when every weighted class has met its target), and
+    # fail-soft — a scraping error must never abort boot.
+    labeling_ingest_task = None
+    if LABELING_ENABLED and LABELING_INGEST_ENABLED:
+        labeling_ingest_task = asyncio.create_task(_labeling_ingest_loop())
     try:
         yield
     finally:
         logger.info("Server shutting down")
         prune_task.cancel()
+        if labeling_ingest_task is not None:
+            labeling_ingest_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await labeling_ingest_task
         with contextlib.suppress(asyncio.CancelledError, Exception):
             await prune_task
         with _executor_lock:
@@ -1114,8 +1166,44 @@ async def _prune_loop() -> None:
             raise
         except Exception as exc:  # noqa: BLE001
             logger.warning("Prune pass failed (will retry tomorrow): %s", exc)
+        # Requeue abandoned label claims so a closed app doesn't strand cards.
+        try:
+            await asyncio.get_running_loop().run_in_executor(
+                None, labeling.requeue_expired_claims,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Label claim requeue failed: %s", exc)
         try:
             await asyncio.sleep(PRUNE_INTERVAL_SECONDS)
+        except asyncio.CancelledError:
+            raise
+
+
+async def _labeling_ingest_loop() -> None:
+    """Deficit-driven candidate ingestion. Runs immediately, then every
+    ``LABELING_INGEST_INTERVAL``. Does no network work when all targets are met.
+    Fully fail-soft: errors are logged and retried next cycle, never fatal.
+    """
+    try:  # local import keeps boot light if unused; dual package/script form
+        from .ingest import run_ingestion
+    except ImportError:
+        from ingest import run_ingestion
+
+    while True:
+        try:
+            added = await asyncio.get_running_loop().run_in_executor(
+                None, run_ingestion, LABELING_TARGETS, LABELING_KAGGLE_SLUG,
+            )
+            if added:
+                logger.info("Labeling ingestion added: %s", added)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Labeling ingestion pass failed: %s", exc)
+        try:
+            await asyncio.sleep(LABELING_INGEST_INTERVAL)
         except asyncio.CancelledError:
             raise
 
@@ -3340,6 +3428,150 @@ async def export_user_data(user_pseudo_id: str):
         "community_scans": community_data,
         "feedback_submissions": feedback_data,
     })
+
+
+# ── Data-labeling admin endpoints ────────────────────────────────────
+# Human-in-the-loop candidate filtering. Auth = shared password → stateless
+# session token (validated per-endpoint since the codebase has no Depends
+# auth convention). All blocking DB work runs in the inference executor.
+class LabelLoginRequest(BaseModel):
+    password: str
+
+
+class LabelVerdictItem(BaseModel):
+    id: int
+    verdict: Literal["yes", "no", "not_sure"]
+
+
+class LabelVerdictBatch(BaseModel):
+    verdicts: list[LabelVerdictItem]
+
+
+def _require_labeling_session(request: Request) -> str:
+    """404 when the feature is off (so it isn't advertised on a public deploy),
+    401 when the bearer session token is missing/invalid. Returns session id."""
+    if not LABELING_ENABLED:
+        raise HTTPException(status_code=404, detail="Not found")
+    # A dedicated header (NOT Authorization/x-api-key) so the session token
+    # doesn't collide with the global API-key check in RateLimitMiddleware.
+    sid = labeling.verify_session_token(request.headers.get("x-label-token"))
+    if not sid:
+        raise HTTPException(status_code=401, detail="labeling session invalid or expired")
+    return sid
+
+
+async def _run(fn, *args):
+    return await asyncio.get_running_loop().run_in_executor(
+        _get_inference_executor(), lambda: fn(*args)
+    )
+
+
+@api_router.post("/label/login")
+async def label_login(payload: LabelLoginRequest, request: Request):
+    if not LABELING_ENABLED:
+        raise HTTPException(status_code=404, detail="Not found")
+    if not labeling.login_allowed(_client_ip(request)):
+        raise HTTPException(status_code=429, detail="too many login attempts")
+    if not labeling.verify_admin_password(payload.password):
+        raise HTTPException(status_code=401, detail="invalid password")
+    token, exp = labeling.issue_session_token()
+    return JSONResponse(content={"token": token, "expires_at": exp})
+
+
+@api_router.get("/label/next")
+async def label_next(
+    request: Request,
+    count: int = 20,
+    klass: str | None = Query(default=None, alias="class"),
+):
+    sid = _require_labeling_session(request)
+    classes = [klass] if klass else None
+    cards = await _run(labeling.claim_next, sid, count, LABELING_TARGETS, classes)
+    return JSONResponse(content={
+        "cards": cards,
+        "lease_seconds": labeling._CLAIM_LEASE,
+    })
+
+
+@api_router.post("/label/verdict")
+async def label_verdict(payload: LabelVerdictBatch, request: Request):
+    sid = _require_labeling_session(request)
+    items = [(v.id, v.verdict) for v in payload.verdicts]
+    applied = await _run(labeling.record_verdicts, sid, items)
+    return JSONResponse(content={"applied": applied})
+
+
+@api_router.get("/label/stats")
+async def label_stats(request: Request):
+    _require_labeling_session(request)
+    data = await _run(labeling.stats, LABELING_TARGETS)
+    return JSONResponse(content=data)
+
+
+@api_router.get("/label/clue/{klass}")
+async def label_clue(klass: str, request: Request, lang: str = "en"):
+    _require_labeling_session(request)
+    if "/" in klass or "\\" in klass or ".." in klass:
+        raise HTTPException(status_code=400, detail="bad class")
+    if klass not in DISEASES_DATABASE:
+        raise HTTPException(status_code=404, detail="unknown class")
+
+    def _photo(stem: str) -> str | None:
+        return f"/api/guide/photo/{stem}" if (GUIDE_STATIC_DIR / f"{stem}.png").is_file() else None
+
+    guidance = labeling_guidance_for(klass, lang)
+    confus = [
+        {"class": c, "name": class_display_name(c, lang), "photo_url": _photo(c)}
+        for c in confusables_for(klass)
+    ]
+    return JSONResponse(content={
+        "suggested": {
+            "class": klass,
+            "name": class_display_name(klass, lang),
+            "photo_url": _photo("botrytis" if klass == "gray_mold_botrytis" else klass),
+        },
+        "pass": guidance["pass"],
+        "drop": guidance["drop"],
+        "confusables": confus,
+    })
+
+
+@api_router.get("/label/image/{candidate_id}")
+async def label_image(candidate_id: int, request: Request):
+    _require_labeling_session(request)
+    path = await _run(labeling.image_path_for, candidate_id)
+    if path is None:
+        raise HTTPException(status_code=404, detail="candidate image not found")
+    return _cached_image_response(
+        request, path, media_type="image/jpeg", cache_control="private, max-age=600",
+    )
+
+
+@api_router.post("/label/export")
+async def label_export(request: Request):
+    _require_labeling_session(request)
+    bundle = await _run(labeling.build_export_bundle, LABELING_EXPORT_SLUG)
+    if bundle is None:
+        raise HTTPException(status_code=409, detail="no approved images to export")
+    name = bundle.name
+    return JSONResponse(content={
+        "bundle": name,
+        "download_url": f"/api/label/export/{name}",
+        "kaggle_command": (
+            f"kaggle datasets version -p . -m 'labeling export {name}' -r zip --dir-mode zip"
+        ),
+    })
+
+
+@api_router.get("/label/export/{bundle}")
+async def label_export_download(bundle: str, request: Request):
+    _require_labeling_session(request)
+    if "/" in bundle or "\\" in bundle or ".." in bundle:
+        raise HTTPException(status_code=400, detail="bad bundle name")
+    path = labeling.LABELING_EXPORT_DIR / bundle
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="bundle not found")
+    return FileResponse(path, media_type="application/zip", filename=bundle)
 
 
 app.include_router(api_router, prefix="/api")
