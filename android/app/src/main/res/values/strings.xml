@@ -6,9 +6,12 @@
          only reachable through ``R.plurals.X``, never via
          ``R.string.X`` / ``@string/X``, which is why the dead-code
          sweep on a previous commit mis-flagged them as orphans. -->
+    <!-- %2$s is the separately-pluralised scan_count string — the
+         quantity here only selects on the PLANT count, so the scan
+         word must not be inflected inside this plural. -->
     <plurals name="garden_summary">
-        <item quantity="one">%1$d plant watched with %2$d scans</item>
-        <item quantity="other">%1$d plants watched with %2$d scans</item>
+        <item quantity="one">%1$d plant watched with %2$s</item>
+        <item quantity="other">%1$d plants watched with %2$s</item>
     </plurals>
     <plurals name="scan_count">
         <item quantity="one">%d scan</item>
@@ -168,6 +171,13 @@
     <!-- Similar scans (community corpus) -->
     <string name="similar_scans_title">Similar scans near you</string>
     <string name="similar_scans_subtitle">%1$d recent scans near %2$s</string>
+    <!-- Count of genuinely SIMILAR scans rendered in the strip (post
+         disease/species filter) - not the regional all-disease total,
+         which used to say "9 scans" above a one-item carousel. -->
+    <plurals name="similar_scans_subtitle_count">
+        <item quantity="one">%1$d similar scan near %2$s</item>
+        <item quantity="other">%1$d similar scans near %2$s</item>
+    </plurals>
     <string name="similar_scans_subtitle_region">Recent diagnoses near %1$s</string>
     <string name="similar_scans_subtitle_no_region">Enable approximate location to see scans near you.</string>
     <string name="similar_scans_empty">No nearby scans yet — your scan will be the first.</string>
@@ -277,6 +287,8 @@
     <string name="warning_nap_ood_gated">This image didn\'t look like a plant leaf to the detector, so the result may be unreliable. Frame a single leaf filling most of the photo and try again.</string>
     <string name="warning_disease_suspected_title">Possible problem spotted</string>
     <string name="warning_disease_suspected">The plant looks mostly healthy, but the model also picked up signs of %1$s. Keep an eye on it and re-scan if it spreads.</string>
+    <string name="warning_offline_scan_title">Offline scan</string>
+    <string name="warning_offline_scan">This result was computed on your device without the server. It may be less confident than the full server analysis — re-scan online for a richer diagnosis.</string>
 
     <!-- Empty states -->
     <string name="first_scan_cta">Take First Scan</string>
@@ -324,6 +336,15 @@
     <string name="garden_card_action_overdue">%1$s overdue</string>
     <string name="garden_card_action_tomorrow">%1$s tomorrow</string>
     <string name="garden_card_action_in_days">%1$s in %2$d days</string>
+    <!-- Garden search + attention section -->
+    <string name="garden_search_hint">Search plants…</string>
+    <string name="garden_search_empty">No plants match “%1$s”</string>
+    <string name="garden_section_attention">Needs attention</string>
+    <!-- "Mark watered/fertilised now" reminder reschedule confirmation -->
+    <plurals name="care_reminder_rescheduled">
+        <item quantity="one">Logged — next reminder in %1$d day</item>
+        <item quantity="other">Logged — next reminder in %1$d days</item>
+    </plurals>
     <!-- Plant cover photo (toolbar overflow on plant detail) -->
     <string name="cover_photo_set">Set cover photo</string>
     <string name="cover_photo_clear">Clear cover photo</string>
@@ -374,7 +395,33 @@
     <string name="reminder_notif_watering">Time to water %s!</string>
     <string name="reminder_notif_check">Time to check on %s!</string>
     <string name="reminder_notif_fertilize">Time to fertilize %s!</string>
+    <string name="reminder_notif_generic">%1$s · %2$s</string>
     <string name="reminder_subtitle">Set care schedules for this plant</string>
+    <!-- Generic reminders (composer + list) -->
+    <string name="reminder_add">Add reminder</string>
+    <string name="reminder_new_title">New reminder</string>
+    <string name="reminder_edit_title">Edit reminder</string>
+    <string name="reminder_name">Name</string>
+    <string name="reminder_name_required">Enter a name</string>
+    <string name="reminder_description">Description (optional)</string>
+    <string name="reminder_icon_label">Icon</string>
+    <string name="reminder_delete">Delete</string>
+    <string name="reminder_deleted">Reminder deleted</string>
+    <string name="reminder_saved">Reminder saved</string>
+    <string name="reminder_empty_list">No reminders yet — add one below.</string>
+    <plurals name="reminder_row_meta">
+        <item quantity="one">Every %1$d day · %2$02d:%3$02d</item>
+        <item quantity="other">Every %1$d days · %2$02d:%3$02d</item>
+    </plurals>
+    <string name="reminder_preset_mist">Misting</string>
+    <string name="reminder_preset_rotate">Rotate plant</string>
+    <string name="reminder_preset_repot">Repotting</string>
+    <string name="reminder_preset_prune">Pruning</string>
+    <string name="reminder_preset_clean">Clean leaves</string>
+    <string name="reminder_preset_light">Light check</string>
+    <string name="reminder_preset_humidity">Humidity check</string>
+    <string name="reminder_preset_temperature">Temperature check</string>
+    <string name="reminder_preset_custom">Custom reminder</string>
     <!-- Doctor Chat -->
     <string name="doctor_title">AI Plant Doctor</string>
     <string name="doctor_stub_subtitle">Ask about this plant — symptoms, watering, light…</string>
@@ -385,6 +432,16 @@
     <string name="doctor_q2">What caused this? How to prevent recurrence?</string>
     <string name="doctor_q3">What\'s the fastest home treatment?</string>
     <string name="doctor_clear">Clear chat</string>
+    <string name="chat_err_turn_cap">You hit the per-session message cap. Clear the chat to start over.</string>
+    <string name="chat_err_token_cap">You hit the per-session token budget. Clear the chat to start over.</string>
+    <string name="chat_err_no_api_key">AI Plant Doctor is offline (server not configured). See the diagnosis Treatment list for now.</string>
+    <string name="chat_err_message_rejected">The message wasn\'t sent. Shorten it and try again.</string>
+    <string name="chat_err_no_reply">The assistant couldn\'t reply. Try sending the message again.</string>
+    <string name="chat_err_unavailable">AI Plant Doctor is unavailable right now. Try again later.</string>
+    <string name="chat_err_no_network">No internet connection. Reconnect and try again.</string>
+    <string name="chat_err_timeout">The server didn\'t respond. Try sending the message again.</string>
+    <string name="chat_err_rate_limit">Too many requests. Wait a few seconds and try again.</string>
+    <string name="chat_err_generic">Couldn\'t reach the server. Try again later.</string>
     <string name="doctor_open_cta">Ask AI Plant Doctor</string>
     <!-- Light Meter -->
     <string name="light_meter">Light Meter</string>
@@ -421,6 +478,8 @@
     <string name="guide_link_subtitle">Care + treatment article for %s</string>
     <!-- Share a past scan to the OS share sheet -->
     <string name="share_scan_chooser">Share scan</string>
+    <string name="share_diagnosis_header">🌿 PlantDiseases — Diagnosis</string>
+    <string name="share_treatment_label">💊 Treatment:</string>
     <string name="share_confidence_format">Confidence %d%%</string>
     <!-- Adaptive watering suggestion (C2) -->
     <string name="adaptive_watering_title">💡 Shorten watering from %1$d to %2$d days?</string>
@@ -537,6 +596,7 @@
     <string name="care_plan_title">Care Plan</string>
     <string name="care_plan_subtitle_species">Tailored for %s</string>
     <string name="care_plan_subtitle_unknown">Generic plan — species not set</string>
+    <string name="care_plan_subtitle_offline">Basic offline plan — re-scan online for a tailored one</string>
     <string name="care_plan_loading">Building your care plan…</string>
     <string name="care_plan_unavailable">Care plan is unavailable. Tap retry to try again.</string>
     <string name="care_plan_retry">Retry</string>
@@ -602,7 +662,7 @@
     <string name="species_suggest_unavailable_rate_limited">PlantNet\'s daily quota is exhausted. Try again later, or add the species manually.</string>
     <string name="species_suggest_unavailable_auth_failed">The PlantNet API key on the server is invalid. Add the species manually.</string>
     <string name="species_suggest_match">%d%% match</string>
-    <string name="species_suggest_prefilled">Detected at scan time (%d%% match). Tap Identify to widen the candidate list.</string>
+    <string name="species_suggest_prefilled">Detected at scan time (%d%% match).</string>
     <string name="species_suggest_no_results">No confident matches found.</string>
     <string name="species_suggest_unknown_name">Unnamed candidate</string>
     <!-- Diagnosis feedback (/api/feedback) -->
@@ -612,6 +672,7 @@
     <string name="feedback_no">Wrong</string>
     <string name="feedback_send">Send feedback</string>
     <string name="feedback_sent">Thanks — your feedback was saved.</string>
+    <string name="feedback_sending">Sending your feedback…</string>
     <string name="feedback_rate_limited">Slow down — try again in a moment.</string>
     <string name="feedback_failed">Could not send feedback. Try again later.</string>
 
@@ -626,6 +687,7 @@
     <string name="feedback_sheet_note_hint">Anything else? (optional)</string>
     <!-- Class chips — match server class keys 1:1. -->
     <string name="feedback_class_healthy">Healthy</string>
+    <string name="feedback_class_pests">Pests (mealybugs, scale)</string>
     <string name="feedback_class_powdery_mildew">Powdery Mildew</string>
     <string name="feedback_class_gray_mold_botrytis">Gray Mold</string>
     <string name="feedback_class_leaf_spot">Leaf Spot</string>

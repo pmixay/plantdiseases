@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Reminder schedule bottom sheet. Drag handle, gradient header, three
-    reminder rows (item_reminder_row, configured in code) and a save
-    button. Replaces the fully programmatic ReminderScheduleSheet.buildUI.
+    Reminder schedule bottom sheet — generic-reminder edition. Drag
+    handle, gradient header, then a scrollable list of the plant's
+    reminders (item_reminder_row, bound in code) and an "Add reminder"
+    button that opens the composer dialog (dialog_reminder_editor).
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -54,7 +55,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/reminders"
-                android:textColor="@color/on_primary"
+                android:textColor="@color/on_hero"
                 android:textSize="@dimen/text_title"
                 android:fontFamily="sans-serif-medium" />
 
@@ -62,7 +63,7 @@
                 android:id="@+id/reminder_plant_name"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textColor="@color/on_primary_secondary"
+                android:textColor="@color/on_hero_secondary"
                 android:textSize="@dimen/text_body"
                 tools:text="Monstera" />
 
@@ -80,36 +81,49 @@
         android:textColor="@color/on_surface_secondary"
         android:textSize="@dimen/text_body_sm" />
 
-    <!-- Three reminder rows. -->
-    <LinearLayout
+    <androidx.core.widget.NestedScrollView
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:paddingHorizontal="@dimen/space_lg"
-        android:paddingTop="@dimen/space_sm">
+        android:layout_height="wrap_content">
 
-        <include
-            android:id="@+id/row_water"
-            layout="@layout/item_reminder_row" />
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="@dimen/space_lg"
+            android:paddingTop="@dimen/space_sm">
 
-        <include
-            android:id="@+id/row_check"
-            layout="@layout/item_reminder_row" />
+            <!-- Populated with item_reminder_row entries in code. -->
+            <LinearLayout
+                android:id="@+id/reminder_list"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
 
-        <include
-            android:id="@+id/row_fertilize"
-            layout="@layout/item_reminder_row" />
+            <TextView
+                android:id="@+id/reminder_empty"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingVertical="@dimen/space_xl"
+                android:gravity="center"
+                android:text="@string/reminder_empty_list"
+                android:textColor="@color/on_surface_secondary"
+                android:textSize="@dimen/text_body"
+                android:visibility="gone"
+                tools:visibility="visible" />
 
-    </LinearLayout>
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/reminder_add_btn"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md"
+                android:layout_marginBottom="@dimen/space_2xl"
+                android:minHeight="52dp"
+                android:text="@string/reminder_add"
+                app:icon="@drawable/ic_bell"
+                app:iconGravity="textStart" />
 
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/reminder_save_btn"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginHorizontal="@dimen/space_lg"
-        android:layout_marginTop="@dimen/space_xl"
-        android:layout_marginBottom="@dimen/space_2xl"
-        android:minHeight="52dp"
-        android:text="@string/reminder_save" />
+        </LinearLayout>
+
+    </androidx.core.widget.NestedScrollView>
 
 </LinearLayout>

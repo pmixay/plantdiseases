@@ -38,7 +38,9 @@ import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.databinding.FragmentGardenBinding
 import com.plantdiseases.app.databinding.ItemPlantCardBinding
+import com.plantdiseases.app.util.CareSchedule
 import com.plantdiseases.app.util.Haptics
+import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.ReminderManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -54,6 +56,13 @@ class GardenFragment : Fragment() {
 
     private var _binding: FragmentGardenBinding? = null
     private val binding get() = _binding!!
+
+    /** Full, unfiltered garden as last loaded from Room. The search box
+     *  filters a render off this list without re-querying. */
+    private var allSummaries: List<PlantRepository.PlantSummary> = emptyList()
+
+    /** Plant count above which the search box appears. */
+    private val searchVisibleThreshold = 6
 
     private val plantRepository: PlantRepository
         get() = (requireActivity().application as PlantDiseasesApp).plantRepository
@@ -77,6 +86,22 @@ class GardenFragment : Fragment() {
             Haptics.medium(requireContext())
             showPlantDialog(null)
         }
+        // Live search over the loaded garden. No debounce needed — the
+        // filter runs against the in-memory list, not Room. Skip the
+        // stagger animation so typing doesn't make the list flash.
+        binding.gardenSearch.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) {
+                // Skip the watcher fire from view-state restoration that can
+                // land before the first Room load — renderGarden would show
+                // the empty-garden chrome for a frame. (With an empty garden
+                // the search box is hidden, so nothing is lost.)
+                if (_binding != null && allSummaries.isNotEmpty()) {
+                    renderGarden(animate = false)
+                }
+            }
+        })
         // Collapse the extended FAB to an icon while scrolling down so it
         // stops sitting over plant-card text; re-extend at the top / on the
         // way back up.
@@ -106,37 +131,124 @@ class GardenFragment : Fragment() {
     private fun loadPlants() {
         lifecycleScope.launch {
             val plants = plantRepository.getPlants()
-            if (_binding != null) renderPlants(plants)
+            if (_binding != null) {
+                allSummaries = plants
+                renderGarden(animate = true)
+            }
         }
     }
 
-    private fun renderPlants(plants: List<PlantRepository.PlantSummary>) {
-        val container = binding.gardenPlantsContainer
-        container.removeAllViews()
-        binding.gardenEmptyState.visibility = if (plants.isEmpty()) View.VISIBLE else View.GONE
-        container.visibility = if (plants.isEmpty()) View.GONE else View.VISIBLE
+    /** Current trimmed search query, or empty when the box is hidden/blank. */
+    private fun currentQuery(): String =
+        binding.gardenSearch.text?.toString()?.trim().orEmpty()
+
+    /** Case-insensitive match across name, species, common name and room. */
+    private fun matchesQuery(summary: PlantRepository.PlantSummary, query: String): Boolean {
+        if (query.isEmpty()) return true
+        val p = summary.plant
+        return p.name.contains(query, ignoreCase = true) ||
+            p.species?.contains(query, ignoreCase = true) == true ||
+            p.commonName?.contains(query, ignoreCase = true) == true ||
+            p.scientificName?.contains(query, ignoreCase = true) == true ||
+            p.room?.contains(query, ignoreCase = true) == true
+    }
+
+    /** Re-render the whole tab from [allSummaries]: screen chrome (empty
+     *  state / FAB / summary / search visibility) follows the FULL garden;
+     *  the list itself follows the search filter. */
+    private fun renderGarden(animate: Boolean) {
+        val all = allSummaries
+        binding.gardenEmptyState.visibility = if (all.isEmpty()) View.VISIBLE else View.GONE
+        binding.gardenPlantsContainer.visibility = if (all.isEmpty()) View.GONE else View.VISIBLE
         // When the garden is empty the centred "Add your first plant" CTA is
         // the only call to action — hide the floating button so the two
         // don't compete (and re-extend it for the populated state).
-        if (plants.isEmpty()) {
+        if (all.isEmpty()) {
             binding.gardenAddFab.visibility = View.GONE
         } else {
             binding.gardenAddFab.visibility = View.VISIBLE
             binding.gardenAddFab.extend()
         }
+        // Two independent counts, two independently-inflected plurals:
+        // garden_summary's quantity follows the PLANT count, so the scan
+        // part is pre-pluralised via scan_count and passed in as %2$s
+        // (1 plant used to force the plant-form onto "N сканов" in RU).
+        val scanTotal = all.sumOf { it.scanCount }
         binding.gardenSummaryBody.text = resources.getQuantityString(
             R.plurals.garden_summary,
-            plants.size,
-            plants.size,
-            plants.sumOf { it.scanCount },
+            all.size,
+            all.size,
+            resources.getQuantityString(R.plurals.scan_count, scanTotal, scanTotal),
         )
+        // The search box earns its vertical space only once the list is big
+        // enough to need it. Keep it visible while a query is active even if
+        // the threshold check would hide it (e.g. a plant was just deleted).
+        val query = currentQuery()
+        binding.gardenSearchLayout.visibility =
+            if (all.size > searchVisibleThreshold || query.isNotEmpty()) View.VISIBLE
+            else View.GONE
 
-        // Group by room. Named rooms render alphabetically; unassigned
-        // plants land at the bottom in their own bucket so the user has
-        // a visible nudge to assign rooms without anything being hidden.
-        // When NO plant has a room (the common first-launch case) the
-        // grouping headers don't render at all.
-        val byRoom = plants.groupBy {
+        renderPlantList(all.filter { matchesQuery(it, query) }, query, animate)
+    }
+
+    private fun renderPlantList(
+        plants: List<PlantRepository.PlantSummary>,
+        query: String,
+        animate: Boolean,
+    ) {
+        val container = binding.gardenPlantsContainer
+        container.removeAllViews()
+        if (plants.isEmpty() && query.isNotEmpty()) {
+            // Search matched nothing — quiet inline message, NOT the big
+            // empty-garden illustration (the garden itself isn't empty).
+            container.addView(TextView(requireContext()).apply {
+                text = getString(R.string.garden_search_empty, query)
+                textSize = 14f
+                setTextColor(requireContext().getColor(R.color.on_surface_secondary))
+                gravity = Gravity.CENTER
+                setPadding(8.dp(), 24.dp(), 8.dp(), 24.dp())
+            })
+            return
+        }
+
+        var animIndex = 0
+        val emit: (View) -> Unit = { view ->
+            if (animate) {
+                view.alpha = 0f
+                view.translationY = 24.dp().toFloat()
+                container.addView(view)
+                view.animate()
+                    .alpha(1f)
+                    .translationY(0f)
+                    .setDuration(260)
+                    .setStartDelay((animIndex * 45).toLong())
+                    .setInterpolator(DecelerateInterpolator())
+                    .start()
+                animIndex++
+            } else {
+                container.addView(view)
+            }
+        }
+
+        // "Needs attention" first: plants whose soonest enabled reminder is
+        // genuinely overdue surface in their own section at the top so they
+        // aren't buried inside a room bucket halfway down the list.
+        val nowMs = System.currentTimeMillis()
+        val (due, rest) = plants.partition { summary ->
+            summary.nextAction?.let { CareSchedule.isOverdue(it.dueAt, nowMs) } == true
+        }
+        if (due.isNotEmpty()) {
+            emit(buildRoomHeader(getString(R.string.garden_section_attention)))
+            due.sortedBy { it.nextAction?.dueAt ?: Long.MAX_VALUE }
+                .forEach { emit(buildPlantCard(it)) }
+        }
+
+        // Group the remainder by room. Named rooms render alphabetically;
+        // unassigned plants land at the bottom in their own bucket so the
+        // user has a visible nudge to assign rooms without anything being
+        // hidden. When NO plant has a room (the common first-launch case)
+        // and nothing is due, the grouping headers don't render at all.
+        val byRoom = rest.groupBy {
             it.plant.room?.trim()?.takeIf { r -> r.isNotEmpty() }
         }
         val named = byRoom.entries
@@ -144,26 +256,16 @@ class GardenFragment : Fragment() {
             .sortedBy { it.key!!.lowercase() }
         val unassigned = byRoom[null].orEmpty()
         val anyNamed = named.isNotEmpty()
-        var animIndex = 0
-        val emit: (View) -> Unit = { view ->
-            view.alpha = 0f
-            view.translationY = 24.dp().toFloat()
-            container.addView(view)
-            view.animate()
-                .alpha(1f)
-                .translationY(0f)
-                .setDuration(260)
-                .setStartDelay((animIndex * 45).toLong())
-                .setInterpolator(DecelerateInterpolator())
-                .start()
-            animIndex++
-        }
         named.forEach { (room, bucket) ->
             emit(buildRoomHeader(room!!))
             bucket.forEach { emit(buildPlantCard(it)) }
         }
         if (unassigned.isNotEmpty()) {
-            if (anyNamed) emit(buildRoomHeader(getString(R.string.plant_room_unassigned)))
+            // The header also renders when an attention section exists, so
+            // the unassigned bucket doesn't visually merge into it.
+            if (anyNamed || due.isNotEmpty()) {
+                emit(buildRoomHeader(getString(R.string.plant_room_unassigned)))
+            }
             unassigned.forEach { emit(buildPlantCard(it)) }
         }
     }
@@ -203,7 +305,11 @@ class GardenFragment : Fragment() {
                 .load(thumbSource)
                 // RGB_565 halves the per-card thumbnail RAM on the garden list.
                 .format(DecodeFormat.PREFER_RGB_565)
-                .transform(CenterCrop(), RoundedCorners(18.dp()))
+                .transform(
+                    CenterCrop(),
+                    // Match the bg_thumb_rounded backdrop / design radius scale.
+                    RoundedCorners(resources.getDimensionPixelSize(R.dimen.radius_md)),
+                )
                 .placeholder(R.drawable.ic_garden)
                 .error(R.drawable.ic_garden)
                 .into(row.plantThumb)
@@ -232,7 +338,21 @@ class GardenFragment : Fragment() {
         val healthChip = buildHealthChip(summary.latestScan)
         val nextChip = buildNextActionChip(summary)
         if (healthChip != null || nextChip != null) {
-            healthChip?.let { row.plantStatusRow.addView(it) }
+            healthChip?.let { hc ->
+                // When BOTH chips are present, let the (variable-length)
+                // health/disease chip absorb the squeeze and ellipsize via
+                // layout_weight, so the fixed next-action chip always keeps
+                // its full intrinsic width. A long localised disease badge
+                // ("Краевой ожог (недолив)") used to squeeze the trailing
+                // reminder chip down to a bare "…" blue stub.
+                if (nextChip != null) {
+                    (hc.layoutParams as? LinearLayout.LayoutParams)?.apply {
+                        width = 0
+                        weight = 1f
+                    }
+                }
+                row.plantStatusRow.addView(hc)
+            }
             nextChip?.let { row.plantStatusRow.addView(it) }
             row.plantStatusRow.visibility = View.VISIBLE
         } else {
@@ -281,13 +401,8 @@ class GardenFragment : Fragment() {
             setColor(dotColor)
             setStroke(2.dp(), ctx.getColor(R.color.surface))
         }
-        // Pulled slightly outside the thumb so the white halo reads as a
-        // separate badge rather than a corner pixel.
-        (dot.layoutParams as? FrameLayout.LayoutParams)?.let { lp ->
-            lp.topMargin = (-2).dp()
-            lp.marginEnd = (-2).dp()
-            dot.layoutParams = lp
-        }
+        // Sits inside the thumbnail's top-end corner (margin from XML) —
+        // the old negative offsets left it half-floating off the image.
         dot.visibility = View.VISIBLE
     }
 
@@ -318,7 +433,9 @@ class GardenFragment : Fragment() {
                 ctx.getColor(R.color.disease_red),
                 getString(
                     R.string.garden_card_health_disease,
-                    scan.diseaseName,
+                    // RU UI shows the localised verdict, mirroring
+                    // ResultActivity — diseaseName is always English.
+                    if (LocaleHelper.isRussian(ctx)) scan.diseaseNameRu else scan.diseaseName,
                 ),
             )
         }
@@ -331,8 +448,8 @@ class GardenFragment : Fragment() {
         val action = summary.nextAction ?: return null
         val ctx = requireContext()
         val nowMs = System.currentTimeMillis()
-        val deltaMs = action.dueAt - nowMs
-        val deltaDays = (deltaMs / (24L * 60L * 60L * 1000L)).toInt()
+        val overdue = CareSchedule.isOverdue(action.dueAt, nowMs)
+        val deltaDays = CareSchedule.daysUntil(action.dueAt, nowMs)
         val icon = when (action.type) {
             "watering" -> "💧"
             "fertilize" -> "🌱"
@@ -342,11 +459,11 @@ class GardenFragment : Fragment() {
             // Only a genuinely-past reminder is "overdue". Integer-day
             // truncation previously flagged anything due within the next 24h
             // (deltaDays == 0) as overdue before it had even arrived.
-            deltaMs <= 0L -> getString(R.string.garden_card_action_overdue, icon)
+            overdue -> getString(R.string.garden_card_action_overdue, icon)
             deltaDays <= 1 -> getString(R.string.garden_card_action_tomorrow, icon)
             else -> getString(R.string.garden_card_action_in_days, icon, deltaDays)
         }
-        val (bg, fg) = if (deltaMs <= 0L) {
+        val (bg, fg) = if (overdue) {
             ctx.getColor(R.color.disease_red_bg) to ctx.getColor(R.color.disease_red)
         } else {
             ctx.getColor(R.color.neutral_blue_bg) to ctx.getColor(R.color.neutral_blue)
@@ -365,7 +482,10 @@ class GardenFragment : Fragment() {
             setPadding(12.dp(), 6.dp(), 12.dp(), 6.dp())
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
-                cornerRadius = 999f
+                // Pill radius from the design-system scale rather than a
+                // magic constant, so the chips match the other rounded
+                // surfaces on the card.
+                cornerRadius = resources.getDimension(R.dimen.radius_round)
                 setColor(bgColor)
             }
             layoutParams = LinearLayout.LayoutParams(
@@ -402,7 +522,13 @@ class GardenFragment : Fragment() {
             .setNegativeButton(R.string.cancel, null)
             .setPositiveButton(R.string.delete) { _, _ ->
                 lifecycleScope.launch {
-                    ReminderManager.cancelAll(requireContext(), plant.id)
+                    // Generic reminders carry their row id in the unique
+                    // work name, so the rows must be fetched before the
+                    // CASCADE delete wipes them.
+                    ReminderManager.cancelAll(
+                        requireContext(), plant.id,
+                        plantRepository.getReminders(plant.id),
+                    )
                     plantRepository.deletePlant(plant.id)
                     Toast.makeText(
                         requireContext(),
@@ -432,7 +558,7 @@ class GardenFragment : Fragment() {
             layoutParams = LinearLayout.LayoutParams(52.dp(), 52.dp())
             addView(ImageView(requireContext()).apply {
                 setImageResource(R.drawable.ic_garden)
-                setColorFilter(requireContext().getColor(R.color.on_primary))
+                setColorFilter(requireContext().getColor(R.color.on_hero))
                 layoutParams = FrameLayout.LayoutParams(28.dp(), 28.dp(), Gravity.CENTER)
             })
         })
@@ -443,7 +569,7 @@ class GardenFragment : Fragment() {
             addView(TextView(requireContext()).apply {
                 text = getString(if (existing == null) R.string.add_plant else R.string.edit_plant)
                 textSize = 20f
-                setTextColor(requireContext().getColor(R.color.on_primary))
+                setTextColor(requireContext().getColor(R.color.on_hero))
                 typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             })
             addView(TextView(requireContext()).apply {
@@ -452,7 +578,7 @@ class GardenFragment : Fragment() {
                     else R.string.plant_dialog_edit_subtitle
                 )
                 textSize = 13f
-                setTextColor(requireContext().getColor(R.color.on_primary_secondary))
+                setTextColor(requireContext().getColor(R.color.on_hero_secondary))
                 setLineSpacing(3.dp().toFloat(), 1f)
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
@@ -497,7 +623,8 @@ class GardenFragment : Fragment() {
                 )
                 awaitKeyboardClosed()
                 if (_binding != null) {
-                    renderPlants(plantRepository.getPlants())
+                    allSummaries = plantRepository.getPlants()
+                    renderGarden(animate = true)
                     stabilizeFloatingAddButton()
                 }
             }

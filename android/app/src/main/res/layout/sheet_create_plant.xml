@@ -53,7 +53,7 @@
                     android:layout_gravity="center"
                     android:contentDescription="@null"
                     android:src="@drawable/ic_garden"
-                    app:tint="@color/on_primary" />
+                    app:tint="@color/on_hero" />
 
             </FrameLayout>
 
@@ -69,7 +69,7 @@
                     android:layout_height="wrap_content"
                     android:text="@string/create_new_plant"
                     android:textSize="20sp"
-                    android:textColor="@color/on_primary"
+                    android:textColor="@color/on_hero"
                     android:fontFamily="sans-serif-medium" />
 
                 <TextView
@@ -78,7 +78,7 @@
                     android:layout_marginTop="@dimen/space_xxs"
                     android:text="@string/plant_dialog_add_subtitle"
                     android:textSize="13sp"
-                    android:textColor="@color/on_primary_secondary"
+                    android:textColor="@color/on_hero_secondary"
                     android:lineSpacingExtra="3dp" />
 
             </LinearLayout>

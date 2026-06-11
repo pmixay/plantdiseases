@@ -7,8 +7,8 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import com.plantdiseases.app.data.local.PlantReminderEntity
 import com.plantdiseases.app.worker.PlantReminderWorker
-import java.util.Calendar
 import java.util.concurrent.TimeUnit
 
 object ReminderManager {
@@ -33,6 +33,52 @@ object ReminderManager {
         minute: Int,
         reminderId: Long = 0L,
     ) {
+        enqueuePeriodic(
+            context, plantId, plantName, type, intervalDays, reminderId,
+            initialDelayMs = CareSchedule.initialDelayMs(hour, minute),
+        )
+    }
+
+    /** Convenience overload for the generic-reminder list UI. */
+    fun schedule(context: Context, reminder: PlantReminderEntity, plantName: String) =
+        schedule(
+            context, reminder.plantId, plantName, reminder.type,
+            reminder.intervalDays, reminder.hour, reminder.minute,
+            reminderId = reminder.id,
+        )
+
+    /**
+     * Re-anchor a reminder's periodic schedule after the user just logged
+     * the matching care action ("mark watered now"). The next firing lands
+     * [intervalDays] days from now at the reminder's usual [hour]:[minute],
+     * instead of nagging on the old cadence the morning after the user
+     * already did the work. Subsequent firings keep the periodic interval.
+     */
+    fun rescheduleAfterCare(
+        context: Context,
+        plantId: Long,
+        plantName: String,
+        type: String,
+        intervalDays: Int,
+        hour: Int,
+        minute: Int,
+        reminderId: Long = 0L,
+    ) {
+        enqueuePeriodic(
+            context, plantId, plantName, type, intervalDays, reminderId,
+            initialDelayMs = CareSchedule.delayAfterCareMs(hour, minute, intervalDays),
+        )
+    }
+
+    private fun enqueuePeriodic(
+        context: Context,
+        plantId: Long,
+        plantName: String,
+        type: String,
+        intervalDays: Int,
+        reminderId: Long,
+        initialDelayMs: Long,
+    ) {
         val inputData = Data.Builder()
             .putLong(PlantReminderWorker.KEY_PLANT_ID, plantId)
             .putLong(PlantReminderWorker.KEY_REMINDER_ID, reminderId)
@@ -40,17 +86,15 @@ object ReminderManager {
             .putString(PlantReminderWorker.KEY_PLANT_NAME, plantName)
             .build()
 
-        val initialDelay = computeInitialDelayMs(hour, minute)
-
         val request = PeriodicWorkRequestBuilder<PlantReminderWorker>(
             intervalDays.toLong(), TimeUnit.DAYS,
         )
             .setInputData(inputData)
-            .setInitialDelay(initialDelay, TimeUnit.MILLISECONDS)
+            .setInitialDelay(initialDelayMs, TimeUnit.MILLISECONDS)
             .build()
 
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-            uniqueName(plantId, type),
+            uniqueName(plantId, type, reminderId),
             ExistingPeriodicWorkPolicy.UPDATE,
             request,
         )
@@ -83,43 +127,49 @@ object ReminderManager {
             .build()
 
         WorkManager.getInstance(context).enqueueUniqueWork(
-            "snooze_${plantId}_$type",
+            "snooze_${uniqueName(plantId, type, reminderId)}",
             ExistingWorkPolicy.REPLACE,
             request,
         )
     }
 
-    fun cancel(context: Context, plantId: Long, type: String) {
-        WorkManager.getInstance(context).cancelUniqueWork(uniqueName(plantId, type))
+    fun cancel(context: Context, plantId: Long, type: String, reminderId: Long = 0L) {
+        WorkManager.getInstance(context)
+            .cancelUniqueWork(uniqueName(plantId, type, reminderId))
     }
 
-    fun cancelAll(context: Context, plantId: Long) {
-        listOf(
-            PlantReminderWorker.TYPE_WATERING,
-            PlantReminderWorker.TYPE_CHECK,
-            PlantReminderWorker.TYPE_FERTILIZE,
-        ).forEach { type ->
-            cancel(context, plantId, type)
-        }
-    }
-
-    private fun uniqueName(plantId: Long, type: String) = "reminder_${plantId}_$type"
+    fun cancelReminder(context: Context, reminder: PlantReminderEntity) =
+        cancel(context, reminder.plantId, reminder.type, reminder.id)
 
     /**
-     * Compute how many milliseconds until the next occurrence of [hour]:[minute].
-     * If the time has already passed today, schedules for tomorrow.
+     * Cancel every scheduled reminder for a plant (plant deletion).
+     * [reminders] is the plant's current reminder rows — needed because
+     * generic reminders carry their row id in the unique work name. The
+     * legacy three names are always cancelled too, covering rows that
+     * were scheduled before the v4 generic-reminder migration.
      */
-    private fun computeInitialDelayMs(hour: Int, minute: Int): Long {
-        val now = Calendar.getInstance()
-        val target = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, hour)
-            set(Calendar.MINUTE, minute)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
+    fun cancelAll(
+        context: Context,
+        plantId: Long,
+        reminders: List<PlantReminderEntity> = emptyList(),
+    ) {
+        ReminderPresets.LEGACY_TYPES.forEach { type ->
+            cancel(context, plantId, type)
         }
-        if (target.before(now)) {
-            target.add(Calendar.DAY_OF_MONTH, 1)
-        }
-        return (target.timeInMillis - now.timeInMillis).coerceAtLeast(0L)
+        reminders.forEach { cancelReminder(context, it) }
     }
+
+    /**
+     * Unique periodic-work name. The legacy preset types keep the
+     * historical ``reminder_{plant}_{type}`` shape so already-enqueued
+     * workers from older app versions are still addressable (UPDATE /
+     * cancel by the same name). Generic reminders may repeat a type
+     * ("custom" twice on one plant), so their name carries the row id.
+     */
+    private fun uniqueName(plantId: Long, type: String, reminderId: Long = 0L): String =
+        if (ReminderPresets.isLegacyType(type) || reminderId <= 0L) {
+            "reminder_${plantId}_$type"
+        } else {
+            "reminder_${plantId}_${type}_$reminderId"
+        }
 }

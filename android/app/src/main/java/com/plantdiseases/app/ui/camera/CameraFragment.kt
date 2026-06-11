@@ -231,9 +231,17 @@ class CameraFragment : Fragment() {
         }
 
         refreshModelFamilyChip()
+        // Fragment Result instead of a lambda field on the sheet: the
+        // chip-refresh signal survives a config-change recreation while the
+        // picker is open (re-registered here on every view creation).
+        childFragmentManager.setFragmentResultListener(
+            ModelPickerSheet.REQUEST_KEY, viewLifecycleOwner,
+        ) { _, _ ->
+            if (_binding != null) refreshModelFamilyChip()
+        }
         binding.btnModelFamily.setOnClickListener {
             Haptics.tick(requireContext())
-            ModelPickerSheet.show(childFragmentManager) { refreshModelFamilyChip() }
+            ModelPickerSheet.show(childFragmentManager)
         }
         syncModelCapabilities()
 

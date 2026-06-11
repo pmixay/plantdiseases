@@ -1,7 +1,9 @@
 package com.plantdiseases.app.ui.garden
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.text.InputType
@@ -16,6 +18,8 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -68,10 +72,32 @@ class PlantDetailActivity : AppCompatActivity() {
     private val plantRepository: PlantRepository
         get() = (application as PlantDiseasesApp).plantRepository
 
-    private val pickPhoto = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        if (uri != null && tryPersistRead(uri)) {
-            showPhotoCaptionDialog(uri)
+    /** "New scan" → opens the camera, runs the capture through the normal
+     *  disease-analysis flow ([AnalysisActivity]) and auto-attaches the
+     *  resulting scan to THIS plant (via EXTRA_PLANT_ID) so the photo lands
+     *  in the plant's Photos + Timeline without a manual "Add to garden".
+     *  Replaces the old journal-only gallery photo import — a "scan" means
+     *  the camera. The captured file lives in the same plant_images dir the
+     *  in-app scanner uses, so the saved scan persists identically. */
+    private var pendingScanFile: java.io.File? = null
+
+    private val takeScan = registerForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        val file = pendingScanFile
+        pendingScanFile = null
+        if (ok && file != null && file.exists()) {
+            launchAnalysisForScan(file)
+        } else {
+            runCatching { file?.delete() }
         }
+    }
+
+    private val scanCameraPermission = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) launchCameraScan()
+        else Toast.makeText(
+            this, R.string.camera_permission_needed, Toast.LENGTH_SHORT,
+        ).show()
     }
 
     /** Cover-photo picker — the picked URI is persisted on
@@ -105,6 +131,54 @@ class PlantDetailActivity : AppCompatActivity() {
         false
     }
 
+    /** Entry point for the "New scan" action tile: ensure the camera
+     *  permission, then capture. */
+    private fun requestNewScan() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+            == PackageManager.PERMISSION_GRANTED
+        ) {
+            launchCameraScan()
+        } else {
+            scanCameraPermission.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    /** Mint a capture file in the plant_images dir (covered by
+     *  file_paths.xml so FileProvider can grant it to the camera app) and
+     *  fire the system camera. */
+    private fun launchCameraScan() {
+        val file = ImageUtils.createImageFile(this)
+        pendingScanFile = file
+        val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+        runCatching { takeScan.launch(uri) }.onFailure {
+            pendingScanFile = null
+            runCatching { file.delete() }
+            Toast.makeText(this, R.string.image_load_error, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /** Run a freshly captured photo through the normal analysis flow,
+     *  threading this plant's id so the saved scan is auto-attached on
+     *  completion. The fresh scan shows up via onRestart → loadPlant when
+     *  the user comes back. */
+    private fun launchAnalysisForScan(file: java.io.File) {
+        startActivity(
+            Intent(
+                this,
+                com.plantdiseases.app.ui.analysis.AnalysisActivity::class.java,
+            ).apply {
+                putExtra(
+                    com.plantdiseases.app.ui.analysis.AnalysisActivity.EXTRA_IMAGE_PATH,
+                    file.absolutePath,
+                )
+                putExtra(
+                    com.plantdiseases.app.ui.analysis.AnalysisActivity.EXTRA_PLANT_ID,
+                    plantId,
+                )
+            },
+        )
+    }
+
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
     }
@@ -117,6 +191,17 @@ class PlantDetailActivity : AppCompatActivity() {
             return
         }
         buildLayout()
+        loadPlant()
+    }
+
+    override fun onRestart() {
+        super.onRestart()
+        // Coming back from another activity (Light Meter, a scan result,
+        // the photo viewer…) — re-read the plant so this screen reflects
+        // whatever just changed elsewhere (e.g. the lux reading the Light
+        // Meter persisted in ITS onPause, or a freshly attached scan).
+        // onRestart (not onResume) so the initial onCreate→loadPlant()
+        // isn't doubled on first show.
         loadPlant()
     }
 
@@ -210,7 +295,7 @@ class PlantDetailActivity : AppCompatActivity() {
         content.addView(buildActionRow())
         buildLastWateredStrip()?.let { content.addView(it) }
         buildAdaptiveWateringChip()?.let { content.addView(it) }
-        content.addView(buildProgressionCard(scans))
+        buildProgressionCard(scans)?.let { content.addView(it) }
         content.addView(buildCarePlanSlot(plant, scans))
         buildGuideLink(scans)?.let { content.addView(it) }
         content.addView(buildTabs())
@@ -258,9 +343,22 @@ class PlantDetailActivity : AppCompatActivity() {
         scans: List<ScanEntity>,
         journal: List<PlantJournalEntity>,
     ): View {
+        // Round only the BOTTOM corners. The hero stacks a cover photo on
+        // top of the green info card; rounding the top corners cut awkward
+        // arcs out of the real photo (it never sat flush with the card edge).
+        // Full-bleed square top + rounded bottom reads as one clean hero
+        // panel.
+        val heroRadius = resources.getDimension(R.dimen.radius_lg)
         val card = MaterialCardView(this).apply {
-            radius = 24.dp().toFloat()
             cardElevation = 0f
+            shapeAppearanceModel = com.google.android.material.shape.ShapeAppearanceModel.builder()
+                .setBottomLeftCorner(
+                    com.google.android.material.shape.CornerFamily.ROUNDED, heroRadius,
+                )
+                .setBottomRightCorner(
+                    com.google.android.material.shape.CornerFamily.ROUNDED, heroRadius,
+                )
+                .build()
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -370,7 +468,7 @@ class PlantDetailActivity : AppCompatActivity() {
         return actionRow(listOf(
             ActionSpec(R.string.log_watering, R.drawable.ic_watering) { showWateringDialog() },
             ActionSpec(R.string.add_note, R.drawable.ic_note_pencil) { showNoteDialog() },
-            ActionSpec(R.string.add_photo_log, R.drawable.ic_gallery) { pickPhoto.launch(arrayOf("image/*")) },
+            ActionSpec(R.string.new_scan, R.drawable.ic_scan) { requestNewScan() },
             ActionSpec(R.string.action_more, R.drawable.ic_clock) { showMoreActionsSheet() },
         )).apply {
             (layoutParams as LinearLayout.LayoutParams).topMargin = 12.dp()
@@ -545,6 +643,11 @@ class PlantDetailActivity : AppCompatActivity() {
                         JournalAction.PRUNE -> plantRepository.addPruning(plantId, raw)
                         JournalAction.REPOT -> plantRepository.addRepotting(plantId, raw)
                         JournalAction.MIST -> plantRepository.addMisting(plantId, raw)
+                    }
+                    if (kind == JournalAction.FERTILISE) {
+                        rescheduleReminderAfterCare(
+                            com.plantdiseases.app.worker.PlantReminderWorker.TYPE_FERTILIZE,
+                        )
                     }
                     loadPlant()
                 }
@@ -840,7 +943,17 @@ class PlantDetailActivity : AppCompatActivity() {
                         )
                     })
                     addView(TextView(this@PlantDetailActivity).apply {
-                        text = getString(R.string.guide_link_subtitle, latest.diseaseName)
+                        text = getString(
+                            R.string.guide_link_subtitle,
+                            // RU UI shows the localised verdict — the EN
+                            // diseaseName leaked through here (same bug as
+                            // the garden card badge).
+                            if (LocaleHelper.isRussian(this@PlantDetailActivity)) {
+                                latest.diseaseNameRu
+                            } else {
+                                latest.diseaseName
+                            },
+                        )
                         textSize = 12f
                         setTextColor(getColor(R.color.on_surface_secondary))
                         maxLines = 2
@@ -1338,7 +1451,8 @@ class PlantDetailActivity : AppCompatActivity() {
     private fun shareScan(scan: ScanEntity) {
         val isRu = LocaleHelper.isRussian(this)
         val caption = buildString {
-            append(if (isRu) "🌿 PlantDiseases — Диагноз\n\n" else "🌿 PlantDiseases — Diagnosis\n\n")
+            append(getString(R.string.share_diagnosis_header))
+            append("\n\n")
             append(if (isRu) scan.diseaseNameRu else scan.diseaseName)
             append(" (")
             append((scan.confidence * 100).toInt())
@@ -1714,20 +1828,43 @@ class PlantDetailActivity : AppCompatActivity() {
     ) { text ->
         lifecycleScope.launch {
             plantRepository.addWatering(plantId, text)
+            rescheduleReminderAfterCare(
+                com.plantdiseases.app.worker.PlantReminderWorker.TYPE_WATERING,
+            )
             loadPlant()
         }
     }
 
-    private fun showPhotoCaptionDialog(uri: Uri) = showTextDialog(
-        titleRes = R.string.add_photo_log,
-        hintRes = R.string.photo_caption_hint,
-        iconRes = R.drawable.ic_garden,
-        allowEmpty = true,
-    ) { text ->
-        lifecycleScope.launch {
-            plantRepository.addPhoto(plantId, uri.toString(), text)
-            loadPlant()
-        }
+    /**
+     * "Mark watered/fertilised now" semantics: when the user logs the care
+     * action by hand AND a matching reminder is enabled, push the periodic
+     * schedule out so the next notification lands a full interval from now
+     * — not on the stale cadence the morning after they already did the
+     * work. No-op when the plant has no enabled reminder of this type.
+     */
+    private suspend fun rescheduleReminderAfterCare(type: String) {
+        val plant = currentPlant ?: return
+        val reminder = plantRepository.getReminders(plant.id)
+            .firstOrNull { it.type == type && it.enabled } ?: return
+        com.plantdiseases.app.util.ReminderManager.rescheduleAfterCare(
+            context = this,
+            plantId = plant.id,
+            plantName = plant.name,
+            type = reminder.type,
+            intervalDays = reminder.intervalDays,
+            hour = reminder.hour,
+            minute = reminder.minute,
+            reminderId = reminder.id,
+        )
+        Toast.makeText(
+            this,
+            resources.getQuantityString(
+                R.plurals.care_reminder_rescheduled,
+                reminder.intervalDays,
+                reminder.intervalDays,
+            ),
+            Toast.LENGTH_SHORT,
+        ).show()
     }
 
     private fun showTextDialog(
@@ -1782,13 +1919,15 @@ class PlantDetailActivity : AppCompatActivity() {
      * the request body bounded) and asks `/api/progression` for the
      * 5-point severity sparkline.
      *
-     * On a plant with zero or one scan we render a "no history yet"
-     * placeholder without hitting the network — the endpoint would
-     * return ``trend="baseline"`` anyway.
+     * Returns null with fewer than two scans — there is nothing to draw
+     * a trend between, and the old "baseline" placeholder rendered as an
+     * empty box. The card also hides itself if the fetch fails or the
+     * server returns no usable sparkline.
      */
-    private fun buildProgressionCard(scans: List<ScanEntity>): View {
+    private fun buildProgressionCard(scans: List<ScanEntity>): View? {
+        if (scans.size < 2) return null
         val card = MaterialCardView(this).apply {
-            radius = 22.dp().toFloat()
+            radius = resources.getDimension(R.dimen.radius_lg)
             cardElevation = 0f
             strokeWidth = 1.dp()
             strokeColor = getColor(R.color.card_stroke)
@@ -1841,25 +1980,6 @@ class PlantDetailActivity : AppCompatActivity() {
         body.addView(meta)
         card.addView(body)
 
-        if (scans.size < 2) {
-            // Single-scan plants get a baseline placeholder + a CTA to
-            // book a follow-up scan in 7 days. The CTA wires straight
-            // into the `check` reminder type — accepting it both
-            // confirms the schedule and removes the empty-state hint
-            // for next time.
-            trendChip.text = getString(R.string.progression_trend_baseline)
-            trendChip.setTextColor(getColor(R.color.on_surface_secondary))
-            sparkline.setData(emptyList(), "baseline")
-            meta.text = if (scans.isEmpty()) ""
-                else getString(
-                    R.string.progression_history_meta,
-                    scans.size,
-                    formatRelativeDate(this, scans[0].timestamp),
-                )
-            if (scans.isNotEmpty()) body.addView(buildProgressionCTA())
-            return card
-        }
-
         // Loading state.
         trendChip.text = getString(R.string.progression_loading)
         trendChip.setTextColor(getColor(R.color.on_surface_secondary))
@@ -1877,6 +1997,13 @@ class PlantDetailActivity : AppCompatActivity() {
                 ProgressionRequest(history = historyPayload),
             )
             res.onSuccess { resp ->
+                // "Usable data" gate: a response with no sparkline points
+                // would draw the same empty box the <2-scans path used
+                // to — collapse the whole section instead.
+                if (resp.sparkline.isNullOrEmpty()) {
+                    card.visibility = View.GONE
+                    return@onSuccess
+                }
                 val trendLabel = when (resp.trend) {
                     "improving" -> getString(R.string.progression_trend_improving)
                     "worsening" -> getString(R.string.progression_trend_worsening)
@@ -1891,7 +2018,7 @@ class PlantDetailActivity : AppCompatActivity() {
                 }
                 trendChip.text = trendLabel
                 trendChip.setTextColor(trendColor)
-                sparkline.setData(resp.sparkline ?: emptyList(), resp.trend)
+                sparkline.setData(resp.sparkline, resp.trend)
                 meta.text = getString(
                     R.string.progression_history_meta,
                     resp.historyLength ?: ordered.size,
@@ -1905,78 +2032,12 @@ class PlantDetailActivity : AppCompatActivity() {
                     fireProgressionAlert(currentPlant?.name ?: "")
                 }
             }.onFailure {
-                trendChip.text = getString(R.string.progression_trend_baseline)
-                trendChip.setTextColor(getColor(R.color.on_surface_secondary))
-                meta.text = getString(R.string.progression_failed)
-                sparkline.setData(emptyList(), "baseline")
+                // No data to show — hide the whole section rather than
+                // leaving a header over an empty sparkline box.
+                card.visibility = View.GONE
             }
         }
         return card
-    }
-
-    /** Builds the "Take a follow-up scan in 7 days" CTA shown when
-     *  the plant has exactly one scan so far — the sparkline has
-     *  nothing to draw, but we still want a forward-looking action
-     *  instead of a dead end. Wires into the existing `check`
-     *  reminder type via [ReminderManager]. */
-    private fun buildProgressionCTA(): View {
-        val ctx = this
-        val container = LinearLayout(ctx).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundResource(R.drawable.bg_plant_stat_pill)
-            setPadding(14.dp(), 12.dp(), 14.dp(), 12.dp())
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 12.dp() }
-        }
-        container.addView(TextView(ctx).apply {
-            text = getString(R.string.progression_followup_cta)
-            textSize = 13f
-            setTextColor(getColor(R.color.on_surface))
-            setLineSpacing(2.dp().toFloat(), 1f)
-        })
-        container.addView(com.google.android.material.button.MaterialButton(
-            ctx, null, com.google.android.material.R.attr.materialButtonOutlinedStyle,
-        ).apply {
-            text = getString(R.string.progression_followup_remind)
-            cornerRadius = 12.dp()
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 8.dp() }
-            setOnClickListener {
-                Haptics.tick(this@PlantDetailActivity)
-                lifecycleScope.launch {
-                    val plant = currentPlant ?: return@launch
-                    val reminder = com.plantdiseases.app.data.local.PlantReminderEntity(
-                        plantId = plant.id,
-                        type = "check",
-                        intervalDays = 7,
-                        hour = 9,
-                        minute = 0,
-                        enabled = true,
-                    )
-                    val rid = plantRepository.saveReminder(reminder)
-                    com.plantdiseases.app.util.ReminderManager.schedule(
-                        context = this@PlantDetailActivity,
-                        plantId = plant.id,
-                        plantName = plant.name,
-                        type = reminder.type,
-                        intervalDays = reminder.intervalDays,
-                        hour = reminder.hour,
-                        minute = reminder.minute,
-                        reminderId = rid,
-                    )
-                    Toast.makeText(
-                        this@PlantDetailActivity,
-                        R.string.progression_followup_scheduled,
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                }
-            }
-        })
-        return container
     }
 
     /** Open the full-screen photo viewer rooted at a journal photo entry.
@@ -2058,6 +2119,9 @@ class PlantDetailActivity : AppCompatActivity() {
                 lifecycleScope.launch {
                     com.plantdiseases.app.util.ReminderManager.cancelAll(
                         this@PlantDetailActivity, plant.id,
+                        // Generic reminders cancel by row id — fetch
+                        // before the CASCADE delete wipes them.
+                        plantRepository.getReminders(plant.id),
                     )
                     plantRepository.deletePlant(plant.id)
                     Toast.makeText(

@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    Detail-hero info panel. Bottom corners rounded only — the cover
+    photo sits flush against the square top so the hero reads as one
+    full-bleed panel (the host MaterialCardView clips to the same shape).
+-->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
     <gradient
@@ -7,5 +12,9 @@
         android:startColor="@color/hero_gradient_start"
         android:centerColor="@color/hero_gradient_mid"
         android:endColor="@color/hero_gradient_end" />
-    <corners android:radius="24dp" />
+    <corners
+        android:topLeftRadius="0dp"
+        android:topRightRadius="0dp"
+        android:bottomLeftRadius="@dimen/radius_lg"
+        android:bottomRightRadius="@dimen/radius_lg" />
 </shape>

@@ -26,19 +26,15 @@ import com.plantdiseases.app.R
  *   3. ``note`` — free-text up to 2000 chars (the server caps it
  *      identically). The TextInputLayout shows a live char counter.
  *
- * The sheet posts the result via the [Listener] callback; the host
- * activity does the actual /api/feedback request so this fragment
- * stays state-light and survives configuration changes cleanly.
+ * The sheet delivers the result via the Fragment Result API
+ * ([REQUEST_KEY]); the host activity does the actual /api/feedback
+ * request. The result-API handoff (rather than a listener field) is
+ * load-bearing: a DialogFragment is recreated from its default
+ * constructor on rotation / process death, and the old listener-field
+ * version came back with a null listener — the Send button then
+ * silently did nothing until the app was fully restarted.
  */
 class FeedbackCorrectionSheet : BottomSheetDialogFragment() {
-
-    private var predictedDisplayName: String? = null
-    private var listener: Listener? = null
-
-    /** Callback fired when the user taps **Send**. */
-    fun interface Listener {
-        fun onSubmit(correctedClass: String?, reason: String?, note: String?)
-    }
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
@@ -56,7 +52,9 @@ class FeedbackCorrectionSheet : BottomSheetDialogFragment() {
         val predictedView = view.findViewById<android.widget.TextView>(R.id.tv_predicted_name)
         val predictedCard = view.findViewById<View>(R.id.card_predicted)
 
-        predictedDisplayName?.let { predictedView.text = it }
+        // Arguments (not instance fields) so the value survives the
+        // system recreating this fragment via its default constructor.
+        arguments?.getString(ARG_PREDICTED_NAME)?.let { predictedView.text = it }
             ?: run { predictedCard.visibility = View.GONE }
 
         // Populate class chips from a fixed catalog so the keys we
@@ -124,7 +122,14 @@ class FeedbackCorrectionSheet : BottomSheetDialogFragment() {
                 .takeIf { it != View.NO_ID }
                 ?.let { reasonGroup.findViewById<Chip>(it).tag as? String }
             val note = noteInput.text?.toString()?.trim().orEmpty().ifBlank { null }
-            listener?.onSubmit(correctedClass, reason, note)
+            parentFragmentManager.setFragmentResult(
+                REQUEST_KEY,
+                Bundle().apply {
+                    putString(RESULT_CORRECTED_CLASS, correctedClass)
+                    putString(RESULT_REASON, reason)
+                    putString(RESULT_NOTE, note)
+                },
+            )
             dismiss()
         }
     }
@@ -132,6 +137,13 @@ class FeedbackCorrectionSheet : BottomSheetDialogFragment() {
     companion object {
         private const val TAG = "feedback-correction-sheet"
         private const val KEY_OTHER = "other"
+        private const val ARG_PREDICTED_NAME = "arg_predicted_name"
+
+        /** Fragment Result API contract with the host activity. */
+        const val REQUEST_KEY = "feedback_correction"
+        const val RESULT_CORRECTED_CLASS = "corrected_class"
+        const val RESULT_REASON = "reason"
+        const val RESULT_NOTE = "note"
 
         /**
          * Class chip catalog. Keys must match the server's
@@ -144,6 +156,7 @@ class FeedbackCorrectionSheet : BottomSheetDialogFragment() {
             "gray_mold_botrytis" to R.string.feedback_class_gray_mold_botrytis,
             "leaf_spot" to R.string.feedback_class_leaf_spot,
             "viral_disease" to R.string.feedback_class_viral_disease,
+            "pests" to R.string.feedback_class_pests,
             "not_a_plant" to R.string.feedback_class_not_a_plant,
             "edema" to R.string.feedback_class_edema,
             "sunburn_or_scorch" to R.string.feedback_class_sunburn_or_scorch,
@@ -165,11 +178,11 @@ class FeedbackCorrectionSheet : BottomSheetDialogFragment() {
         fun show(
             fm: FragmentManager,
             predictedDisplayName: String?,
-            listener: Listener,
         ): FeedbackCorrectionSheet {
             val sheet = FeedbackCorrectionSheet()
-            sheet.predictedDisplayName = predictedDisplayName
-            sheet.listener = listener
+            sheet.arguments = Bundle().apply {
+                putString(ARG_PREDICTED_NAME, predictedDisplayName)
+            }
             sheet.show(fm, TAG)
             return sheet
         }

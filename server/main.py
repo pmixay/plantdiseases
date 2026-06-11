@@ -104,7 +104,13 @@ try:
         region_summary as community_region_summary,
     )
     from .community import (
+        resolve_scan_token as community_resolve_scan_token,
+    )
+    from .community import (
         scan_counts as community_scan_counts,
+    )
+    from .community import (
+        scan_exists as community_scan_exists,
     )
     from .community import (
         scans_by_species as community_scans_by_species,
@@ -212,7 +218,13 @@ except ImportError:
         region_summary as community_region_summary,
     )
     from community import (
+        resolve_scan_token as community_resolve_scan_token,
+    )
+    from community import (
         scan_counts as community_scan_counts,
+    )
+    from community import (
+        scan_exists as community_scan_exists,
     )
     from community import (
         scans_by_species as community_scans_by_species,
@@ -279,8 +291,11 @@ def _resolve_app_version() -> str:
     except Exception:
         pass
     try:
+        # Honour a custom MODELS_DIR (mirrors the constant defined below;
+        # this helper runs at import time, before that constant exists).
+        models_dir = Path(get_str("MODELS_DIR", "models"))
         meta = json.loads(
-            (Path("models") / "classes.json").read_text(encoding="utf-8")
+            (models_dir / "classes.json").read_text(encoding="utf-8")
         )
         version = meta.get("model_version")
         if version:
@@ -557,6 +572,14 @@ def _is_banned(identifier: str) -> bool:
 def _record_violation(identifier: str) -> None:
     now = time.time()
     with _abuse_lock:
+        # Bound the violation map: entries whose window already elapsed are
+        # dead weight, and under IP churn (public deploy behind CGNAT /
+        # scanners) the dict would otherwise grow without limit.
+        if len(_in_memory_violations) > 10_000:
+            for key in [
+                k for k, (reset, _c) in _in_memory_violations.items() if now > reset
+            ]:
+                del _in_memory_violations[key]
         reset_time, count = _in_memory_violations.get(identifier, (now + VIOLATION_WINDOW, 0))
         if now > reset_time:
             reset_time = now + VIOLATION_WINDOW
@@ -602,6 +625,13 @@ ISSUED_SCAN_ID_TTL_DAYS = get_int("ISSUED_SCAN_ID_TTL_DAYS", 30)
 # beats interleaving two — single-user latency is what matters for this
 # rate-limited (1 RPS) workload. Operators expecting real concurrency on a
 # many-core host can raise this and lower ONNX_INTRA_OP_THREADS to match.
+#
+# ONLY ``pipeline.analyze`` runs on this executor. Everything else that
+# needs a thread (SQLite reads/writes, PlantNet / OpenRouter / Wikipedia
+# HTTP, FCM pushes) runs on the event loop's default thread pool —
+# putting it here would queue millisecond DB ops and external HTTP
+# behind a 30-second inference (head-of-line blocking), stalling every
+# non-scan endpoint whenever a scan is in flight.
 INFER_WORKERS = get_int("INFER_WORKERS", 1)
 _inference_executor: ThreadPoolExecutor | None = None
 _executor_lock = threading.Lock()
@@ -809,12 +839,26 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         # Health, metadata and metrics endpoints are always free
-        if request.url.path in (
+        path = request.url.path
+        if path in (
             "/api/health",
             "/api/version",
             "/api/classes",
             "/api/metrics",
             "/api/metrics/prometheus",
+        ):
+            return await call_next(request)
+        # Static image assets + the tiny aqua manifest are also free.
+        # Opening the guide (or a thumbnail-heavy community strip) fans
+        # out into a dozen image GETs at once; metering those against
+        # the same token bucket as the API drained the burst budget and
+        # 429'd the *next real* request — the "docs stop working while
+        # images load" failure. These are cheap disk reads (mostly 304s
+        # after first fetch), so exempting them is safe.
+        if request.method in ("GET", "HEAD") and (
+            path.startswith("/api/guide/")
+            or path.startswith("/api/community/thumb/")
+            or path == "/api/aqua/manifest"
         ):
             return await call_next(request)
 
@@ -856,10 +900,19 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # 2. Determine identifier and limits
         if api_key:
             identifier = f"key:{api_key}"
-            key_cfg = API_KEYS[api_key]
-            rate = float(key_cfg.get("rate_limit_rps", self.rate))
-            capacity = float(key_cfg.get("burst", self.capacity))
-            quota_daily = int(key_cfg.get("quota_daily", 0))
+            # A key's config is usually a dict of overrides, but tolerate a
+            # bare string/null value (e.g. {"key": "team name"}) — that key
+            # then just inherits the global limits instead of 500-ing every
+            # request with an AttributeError.
+            key_cfg = API_KEYS.get(api_key)
+            if not isinstance(key_cfg, dict):
+                key_cfg = {}
+            try:
+                rate = float(key_cfg.get("rate_limit_rps", self.rate))
+                capacity = float(key_cfg.get("burst", self.capacity))
+                quota_daily = int(key_cfg.get("quota_daily", 0))
+            except (TypeError, ValueError):
+                rate, capacity, quota_daily = self.rate, self.capacity, 0
         else:
             identifier = f"ip:{client_ip}"
             rate = self.rate
@@ -873,20 +926,20 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 content={"detail": "API key or IP temporarily banned due to suspected abuse."},
             )
 
-        # 4. Check Daily Quota (if key has quota)
-        if quota_daily > 0:
-            if not _check_and_increment_quota(api_key, quota_daily):
+        # Bypass rate limiter checks if rate is infinity or non-positive
+        if rate == float("inf") or rate <= 0:
+            # 4. Daily quota still applies to unthrottled keys.
+            if quota_daily > 0 and not _check_and_increment_quota(api_key, quota_daily):
                 logger.warning("Daily quota exceeded for key=%s quota=%d", api_key[:12], quota_daily)
                 return JSONResponse(
                     status_code=429,
                     content={"detail": "Daily quota exceeded for this API key. Try again tomorrow."},
                 )
-
-        # Bypass rate limiter checks if rate is infinity or non-positive
-        if rate == float("inf") or rate <= 0:
             return await call_next(request)
 
-        # 5. Token bucket rate limit check
+        # 5. Token bucket rate limit check. Runs BEFORE the daily quota
+        # so a burst of rate-limited 429s doesn't burn quota for
+        # requests the server never processed.
         now = time.monotonic()
         with self._lock:
             if now - self._last_cleanup > _RATE_LIMIT_CLEANUP_INTERVAL:
@@ -912,6 +965,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 )
             tokens -= 1.0
             self._buckets[identifier] = (tokens, now)
+
+        # 6. Daily quota — only requests that passed the rate limiter
+        # count against the key's daily budget.
+        if quota_daily > 0 and not _check_and_increment_quota(api_key, quota_daily):
+            logger.warning("Daily quota exceeded for key=%s quota=%d", api_key[:12], quota_daily)
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Daily quota exceeded for this API key. Try again tomorrow."},
+            )
 
         return await call_next(request)
 
@@ -1145,6 +1207,17 @@ def _open_image(contents: bytes) -> Image.Image:
     """Decode bytes into a validated, EXIF-normalised RGB PIL image."""
     try:
         img = Image.open(io.BytesIO(contents))
+        # Reject oversized resolutions from the HEADER, before the full
+        # decode: Pillow only hard-errors at 2× MAX_IMAGE_PIXELS, so a
+        # ~36 MP upload would otherwise fully decode (~150 MB RSS) just
+        # to be bounced by the post-decode dimension check below.
+        w, h = img.size
+        if w > MAX_IMAGE_DIMENSION or h > MAX_IMAGE_DIMENSION:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Image resolution too large ({w}x{h}). "
+                       f"Maximum dimension: {MAX_IMAGE_DIMENSION}px",
+            )
         img.load()  # force actual decoding to surface truncation errors
         # Apply the EXIF orientation tag BEFORE converting to RGB.
         # Phone cameras commonly store sideways/upside-down captures
@@ -1154,6 +1227,8 @@ def _open_image(contents: bytes) -> Image.Image:
         # shots. ``exif_transpose`` is a no-op when no tag is present.
         img = ImageOps.exif_transpose(img)
         return img.convert("RGB")
+    except HTTPException:
+        raise
     except Image.DecompressionBombError as exc:
         raise HTTPException(status_code=400, detail="Image exceeds decompression safety limit") from exc
     except UnidentifiedImageError as exc:
@@ -1406,8 +1481,10 @@ async def metrics_prometheus():
 async def _species_identify_best_effort(
     image_bytes: bytes, *, timeout: float, lang: str = "en",
 ) -> dict | None:
-    """Run PlantNet identify in the inference executor with a tight
-    timeout. Returns the compact species block ({class, score,
+    """Run PlantNet identify on the default thread pool with a tight
+    timeout (NOT the single-worker inference executor — there it would
+    serialise behind / ahead of the pipeline forward instead of running
+    in parallel with it). Returns the compact species block ({class, score,
     scientific, common, source}) for the response, or ``None`` if the
     call failed, timed out, or PlantNet isn't configured.
 
@@ -1422,7 +1499,7 @@ async def _species_identify_best_effort(
     try:
         raw = await asyncio.wait_for(
             loop.run_in_executor(
-                _get_inference_executor(),
+                None,
                 # identify_species keyword args (organ, lang) are
                 # keyword-only — run_in_executor only takes positional
                 # args, so we wrap in a lambda. Passing positionally
@@ -2254,7 +2331,7 @@ async def identify_endpoint(
     plantnet_lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
     loop = asyncio.get_running_loop()
     result = await loop.run_in_executor(
-        _get_inference_executor(),
+        None,
         lambda: identify_species(contents, organ=organ, lang=plantnet_lang),
     )
     # Deep-copy result before merging so a cache-hit return from
@@ -2281,7 +2358,7 @@ async def chat_endpoint(payload: ChatRequest, request: Request):
     if diagnosis is not None and len(json.dumps(diagnosis, default=str)) > 8 * 1024:
         raise HTTPException(status_code=400, detail="diagnosis context too large")
     result = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(),
+        None,
         lambda: chat_reply(
             session_id=payload.session_id,
             user_message=payload.message,
@@ -2320,7 +2397,7 @@ async def care_plan_endpoint(payload: CarePlanRequest):
         # endpoint forgiving while still producing a useful plan.
         disease = "unknown"
     plan = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(),
+        None,
         lambda: generate_care_plan(
             disease=disease,
             species=payload.species,
@@ -2410,7 +2487,7 @@ async def feedback_endpoint(payload: FeedbackRequest, request: Request):
     # column we persist on each row, so it survives across deploys.
     ip_hash = hash_client_ip(client_ip)
     today_writes = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(),
+        None,
         lambda: feedback_daily_writes(ip_hash),
     )
     if today_writes >= FEEDBACK_DAILY_QUOTA:
@@ -2429,7 +2506,7 @@ async def feedback_endpoint(payload: FeedbackRequest, request: Request):
     # consumes.
     scan_id_clean = payload.scan_id.strip()
     issued = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(),
+        None,
         lambda: is_scan_id_issued(scan_id_clean, ttl_days=ISSUED_SCAN_ID_TTL_DAYS),
     )
     if not issued:
@@ -2460,7 +2537,7 @@ async def feedback_endpoint(payload: FeedbackRequest, request: Request):
         out_of_head = payload.corrected_class not in _FEEDBACK_IN_HEAD_CLASSES
     try:
         row_id = await asyncio.get_running_loop().run_in_executor(
-            _get_inference_executor(),
+            None,
             lambda: record_feedback(
                 scan_id=payload.scan_id.strip(),
                 correct=payload.correct,
@@ -2530,7 +2607,7 @@ async def feedback_image_upload(
     client_ip = _client_ip(request)
     ip_hash = hash_client_ip(client_ip)
     today_writes = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(),
+        None,
         lambda: feedback_daily_writes(ip_hash),
     )
     if today_writes >= FEEDBACK_DAILY_QUOTA:
@@ -2543,7 +2620,7 @@ async def feedback_image_upload(
     if not scan_id_clean or any(ch not in _SCAN_ID_ALLOWED for ch in scan_id_clean):
         raise HTTPException(status_code=422, detail="Invalid scan_id")
     issued = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(),
+        None,
         lambda: is_scan_id_issued(scan_id_clean, ttl_days=ISSUED_SCAN_ID_TTL_DAYS),
     )
     if not issued:
@@ -2556,7 +2633,7 @@ async def feedback_image_upload(
     # used here previously pulled the whole body into RAM with no ceiling.
     image_bytes = await _read_upload(image)
     saved = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(),
+        None,
         lambda: save_feedback_image(
             image_bytes,
             content_type=image.content_type,
@@ -2570,7 +2647,7 @@ async def feedback_image_upload(
     filename, digest = saved
 
     updated = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(),
+        None,
         lambda: feedback_attach_image_path(scan_id_clean, filename),
     )
     logger.info(
@@ -2634,7 +2711,7 @@ async def community_scan_upload(
     client_ip = _client_ip(request)
     ip_hash = hash_client_ip(client_ip)
     today_writes = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(),
+        None,
         lambda: community_daily_writes(ip_hash),
     )
     if today_writes >= COMMUNITY_DAILY_QUOTA:
@@ -2661,9 +2738,24 @@ async def community_scan_upload(
         except Exception as exc:  # noqa: BLE001
             logger.info("Community thumb read failed: %s", exc)
             image_bytes = None
+        # Re-validate the actual bytes — Content-Type is attacker-controlled
+        # (and optional), but the magic bytes don't lie. Anything that isn't
+        # a real JPEG/PNG/WebP is refused so arbitrary bytes can never be
+        # stored and re-served from /api/community/thumb/.
+        if image_bytes:
+            head = image_bytes[:16]
+            if not (
+                head.startswith(b"\xff\xd8\xff")
+                or head.startswith(b"\x89PNG\r\n\x1a\n")
+                or _is_webp(head, image_bytes)
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Community thumbnail must be JPEG / PNG / WebP",
+                )
     try:
         row_id = await asyncio.get_running_loop().run_in_executor(
-            _get_inference_executor(),
+            None,
             lambda: community_record_scan(
                 scan_id=payload.scan_id,
                 user_pseudo_id=payload.user_pseudo_id,
@@ -2707,16 +2799,25 @@ async def community_opinion_submit(payload: CommunityOpinionRequest, request: Re
     ip_hash = hash_client_ip(client_ip)
     loop = asyncio.get_running_loop()
     today = await loop.run_in_executor(
-        _get_inference_executor(),
+        None,
         lambda: community_daily_opinion_writes(ip_hash),
     )
     if today >= COMMUNITY_OPINION_DAILY_QUOTA:
         raise HTTPException(status_code=429, detail="Daily opinion quota reached.")
 
-    sid = payload.scan_id.strip()
+    # Viewers arrive with the feed's public token; the scan's owner (and
+    # legacy cached feeds) with the real scan_id. Resolve to the real id
+    # and require the shared scan to exist — opinions against ids that
+    # were never shared are write-only noise in the consensus tally.
+    sid = await loop.run_in_executor(
+        None, lambda: community_resolve_scan_token(payload.scan_id.strip()),
+    )
+    known = await loop.run_in_executor(None, lambda: community_scan_exists(sid))
+    if not known:
+        raise HTTPException(status_code=422, detail="Unknown scan")
     try:
         await loop.run_in_executor(
-            _get_inference_executor(),
+            None,
             lambda: community_record_opinion(
                 scan_id=sid,
                 author_pseudo_id=payload.user_pseudo_id.strip(),
@@ -2741,10 +2842,10 @@ async def community_opinion_submit(payload: CommunityOpinionRequest, request: Re
         except Exception as exc:  # noqa: BLE001
             logger.debug("Opinion push failed: %s", exc)
 
-    await loop.run_in_executor(_get_inference_executor(), _push_owner)
+    await loop.run_in_executor(None, _push_owner)
 
     result = await loop.run_in_executor(
-        _get_inference_executor(), lambda: community_opinions_for(sid),
+        None, lambda: community_opinions_for(sid),
     )
     return JSONResponse(
         content={"ok": True, "count": len(result["opinions"]), **result}
@@ -2779,14 +2880,14 @@ async def community_request_opinion(
     ip_hash = hash_client_ip(client_ip)
     loop = asyncio.get_running_loop()
     today = await loop.run_in_executor(
-        _get_inference_executor(),
+        None,
         lambda: community_daily_opinion_writes(ip_hash),
     )
     if today >= COMMUNITY_OPINION_DAILY_QUOTA:
         raise HTTPException(status_code=429, detail="Daily opinion quota reached.")
     try:
         flagged = await loop.run_in_executor(
-            _get_inference_executor(),
+            None,
             lambda: community_set_wants_opinion(sid, pid),
         )
     except Exception as exc:  # noqa: BLE001
@@ -2799,12 +2900,20 @@ async def community_request_opinion(
 
 @api_router.get("/community/opinions/{scan_id}")
 async def community_opinions_list(scan_id: str):
-    """List community opinions + a consensus tally for one shared scan."""
+    """List community opinions + a consensus tally for one shared scan.
+
+    Accepts the real scan_id (owner's own app) or the feed's public
+    token (viewers); echoes back whichever form the caller sent.
+    """
     sid = (scan_id or "").strip()
     if not sid or len(sid) > 128:
         raise HTTPException(status_code=422, detail="Invalid scan id")
-    result = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(), lambda: community_opinions_for(sid),
+    loop = asyncio.get_running_loop()
+    resolved = await loop.run_in_executor(
+        None, lambda: community_resolve_scan_token(sid),
+    )
+    result = await loop.run_in_executor(
+        None, lambda: community_opinions_for(resolved),
     )
     return JSONResponse(content={"scan_id": sid, **result})
 
@@ -2818,7 +2927,7 @@ async def community_my_scan_opinions(user_pseudo_id: str):
     if not uid or any(ch not in _SCAN_ID_ALLOWED for ch in uid):
         raise HTTPException(status_code=422, detail="Invalid user id")
     result = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(), lambda: community_opinion_counts_for_user(uid),
+        None, lambda: community_opinion_counts_for_user(uid),
     )
     return JSONResponse(content=result)
 
@@ -2834,7 +2943,7 @@ async def push_register_endpoint(payload: PushRegisterRequest):
     """Register this install's FCM token under its pseudo-id so the server can
     push opinion notifications to a closed / idle device. Upserts by token."""
     await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(),
+        None,
         lambda: push_register(
             payload.user_pseudo_id.strip(),
             payload.token.strip(),
@@ -2854,11 +2963,14 @@ async def community_record_scan_view(payload: CommunityViewRequest):
     """Record that the caller opened someone else's shared scan. Deduped per
     viewer server-side; a scan owner viewing their own scan and views of an
     unknown scan never count, so this is safe to fire on every open."""
-    counted = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(),
-        lambda: community_record_view(
-            payload.scan_id.strip(), payload.user_pseudo_id.strip(),
-        ),
+    loop = asyncio.get_running_loop()
+    # Viewers send the feed's public token — resolve it to the real id.
+    sid = await loop.run_in_executor(
+        None, lambda: community_resolve_scan_token(payload.scan_id.strip()),
+    )
+    counted = await loop.run_in_executor(
+        None,
+        lambda: community_record_view(sid, payload.user_pseudo_id.strip()),
     )
     return JSONResponse(content={"ok": True, "counted": bool(counted)})
 
@@ -2874,7 +2986,7 @@ async def community_scan_counts_endpoint(payload: CommunityScanCountsRequest):
     ids = [s.strip() for s in payload.scan_ids if s and s.strip()][:500]
     counts = (
         await asyncio.get_running_loop().run_in_executor(
-            _get_inference_executor(), lambda: community_scan_counts(ids),
+            None, lambda: community_scan_counts(ids),
         )
         if ids else {}
     )
@@ -2928,10 +3040,13 @@ async def community_scan_nearby(
         exclude_user_pseudo_id=user_pseudo_id,
     )
     # Annotate each cell with how many second opinions it has so the carousel
-    # can show a badge.
+    # can show a badge, then swap the real scan_id for the public token —
+    # the real id authorises /api/feedback writes and must never reach
+    # other users (see community.public_scan_token).
     counts = community_opinion_counts([str(r.get("scan_id")) for r in rows if r.get("scan_id")])
     for r in rows:
         r["opinion_count"] = counts.get(str(r.get("scan_id")), 0)
+        r["scan_id"] = r.pop("public_id", None) or r["scan_id"]
     return JSONResponse(content={"items": rows, "summary": summary})
 
 
@@ -2942,7 +3057,7 @@ async def community_my_opinions(user_pseudo_id: str):
     if not pid or len(pid) > 128:
         raise HTTPException(status_code=422, detail="Invalid id")
     rows = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(), lambda: community_opinions_by_author(pid),
+        None, lambda: community_opinions_by_author(pid),
     )
     return JSONResponse(content={"opinions": rows})
 
@@ -2959,7 +3074,7 @@ async def community_by_species(
     if not sci:
         raise HTTPException(status_code=422, detail="Invalid species")
     rows = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(),
+        None,
         lambda: community_scans_by_species(
             sci,
             limit=max(1, min(int(limit), 50)),
@@ -2969,6 +3084,8 @@ async def community_by_species(
     counts = community_opinion_counts([str(r.get("scan_id")) for r in rows if r.get("scan_id")])
     for r in rows:
         r["opinion_count"] = counts.get(str(r.get("scan_id")), 0)
+        # Public token only — never the feedback-authorising real id.
+        r["scan_id"] = r.pop("public_id", None) or r["scan_id"]
     return JSONResponse(content={"items": rows})
 
 
@@ -2980,15 +3097,40 @@ async def species_info_endpoint(name: str, locale: str = "en"):
         raise HTTPException(status_code=422, detail="Invalid species name")
     lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
     info = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(), lambda: fetch_species_info(n, lang),
+        None, lambda: fetch_species_info(n, lang),
     )
     if info is None:
         return JSONResponse(content={"available": False})
     return JSONResponse(content={"available": True, **info})
 
 
+def _cached_image_response(
+    request: Request,
+    path: Path,
+    *,
+    media_type: str,
+    cache_control: str,
+) -> StarletteResponse:
+    """FileResponse with working HTTP revalidation.
+
+    Starlette's ``FileResponse`` attaches an ETag but never *checks*
+    ``If-None-Match``, so a revalidating client re-downloads the full
+    bytes on every poll. This wrapper answers a matching conditional
+    request with an empty 304 — for the guide photos and community
+    thumbnails that is the difference between ~100 KB and ~100 bytes
+    per revalidation on a mobile uplink.
+    """
+    st = path.stat()
+    etag = f'W/"{int(st.st_mtime)}-{st.st_size}"'
+    headers = {"Cache-Control": cache_control, "ETag": etag}
+    inm = request.headers.get("if-none-match", "")
+    if etag in {t.strip() for t in inm.split(",") if t.strip()}:
+        return StarletteResponse(status_code=304, headers=headers)
+    return FileResponse(path, media_type=media_type, headers=headers)
+
+
 @api_router.get("/community/thumb/{filename}")
-async def community_scan_thumb(filename: str):
+async def community_scan_thumb(filename: str, request: Request):
     """Serve a community thumbnail by filename.
 
     The corpus only ever stores filenames that ``community._save_thumbnail``
@@ -3001,13 +3143,12 @@ async def community_scan_thumb(filename: str):
     path = COMMUNITY_THUMB_DIR / filename
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Thumbnail not found")
-    # FileResponse streams the file off the event loop instead of
-    # reading the whole thumbnail into memory inline. Thumbnails are
-    # always re-encoded to JPEG by community._save_thumbnail.
-    return FileResponse(
-        path,
+    # Streams off the event loop; supports 304 revalidation. Thumbnails
+    # are always re-encoded to JPEG by community._save_thumbnail.
+    return _cached_image_response(
+        request, path,
         media_type="image/jpeg",
-        headers={"Cache-Control": "public, max-age=86400"},
+        cache_control="public, max-age=86400",
     )
 
 
@@ -3023,22 +3164,78 @@ async def guide_manifest():
     return {"count": len(keys), "keys": keys}
 
 
+# Guide photos ship as large PNGs (80–565 KB of photographic content —
+# the worst case for PNG). We transcode each to a downscaled WebP once,
+# lazily, into a sibling cache dir and serve that instead: ~10× fewer
+# bytes for visually identical strips. The variant is keyed by the
+# source file's mtime so replacing a photo in a release regenerates it.
+_GUIDE_WEBP_DIR_NAME = ".webp"
+_GUIDE_WEBP_MAX_SIDE = 800
+_GUIDE_WEBP_QUALITY = 80
+_guide_webp_lock = threading.Lock()
+
+
+def _guide_webp_variant(src: Path) -> Path | None:
+    """Return the cached WebP variant for ``src``, generating it if stale.
+
+    Any failure (PIL hiccup, unwritable dir) returns ``None`` and the
+    caller falls back to serving the original PNG — the optimisation
+    must never take the endpoint down.
+    """
+    try:
+        out_dir = src.parent / _GUIDE_WEBP_DIR_NAME
+        out = out_dir / f"{src.stem}.webp"
+        src_mtime = src.stat().st_mtime
+        if out.is_file() and out.stat().st_mtime >= src_mtime:
+            return out
+        # One transcode at a time — two concurrent first requests for the
+        # same key must not interleave writes into the same target file.
+        with _guide_webp_lock:
+            if out.is_file() and out.stat().st_mtime >= src_mtime:
+                return out
+            out_dir.mkdir(parents=True, exist_ok=True)
+            img = Image.open(src)
+            img.load()
+            img = img.convert("RGB")
+            w, h = img.size
+            scale = _GUIDE_WEBP_MAX_SIDE / float(max(w, h))
+            if scale < 1.0:
+                img = img.resize(
+                    (max(1, int(w * scale)), max(1, int(h * scale))),
+                    Image.LANCZOS,
+                )
+            tmp = out.with_suffix(".webp.tmp")
+            img.save(tmp, format="WEBP", quality=_GUIDE_WEBP_QUALITY, method=4)
+            tmp.replace(out)
+        return out
+    except Exception as exc:  # noqa: BLE001 — fall back to the original PNG
+        logger.warning("Guide WebP transcode failed for %s: %s", src, exc)
+        return None
+
+
 @api_router.get("/guide/photo/{key}")
-async def guide_photo(key: str):
+async def guide_photo(key: str, request: Request):
     """Serve a guide example photo by key (e.g. ``powdery_mildew``).
 
     Path-traversal guarded like the community-thumb route; missing keys 404.
-    Long-cached because the photos are immutable per release.
+    Long-cached because the photos are immutable per release. Serves the
+    downscaled WebP variant when available (Glide sniffs the magic bytes,
+    so clients of any vintage decode it transparently); the original PNG
+    is the fallback if transcoding ever fails.
     """
     if "/" in key or "\\" in key or ".." in key:
         raise HTTPException(status_code=400, detail="Invalid guide photo key")
     path = GUIDE_STATIC_DIR / f"{key}.png"
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Guide photo not found")
-    return FileResponse(
-        path,
-        media_type="image/png",
-        headers={"Cache-Control": "public, max-age=604800"},
+    webp = await asyncio.get_running_loop().run_in_executor(
+        None, _guide_webp_variant, path,
+    )
+    serve, media = (webp, "image/webp") if webp is not None else (path, "image/png")
+    return _cached_image_response(
+        request, serve,
+        media_type=media,
+        cache_control="public, max-age=604800",
     )
 
 
@@ -3110,11 +3307,11 @@ async def community_scan_delete_user(user_pseudo_id: str):
     if not user_pseudo_id or any(ch not in _SCAN_ID_ALLOWED for ch in user_pseudo_id):
         raise HTTPException(status_code=422, detail="Invalid user id")
     deleted_community = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(),
+        None,
         lambda: community_delete_for_user(user_pseudo_id),
     )
     deleted_feedback = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(),
+        None,
         lambda: feedback_delete_for_user(user_pseudo_id),
     )
     return JSONResponse(content={
@@ -3131,11 +3328,11 @@ async def export_user_data(user_pseudo_id: str):
     if not user_pseudo_id or any(ch not in _SCAN_ID_ALLOWED for ch in user_pseudo_id):
         raise HTTPException(status_code=422, detail="Invalid user id")
     community_data = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(),
+        None,
         lambda: community_get_user_data(user_pseudo_id),
     )
     feedback_data = await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(),
+        None,
         lambda: feedback_get_user_data(user_pseudo_id),
     )
     return JSONResponse(content={

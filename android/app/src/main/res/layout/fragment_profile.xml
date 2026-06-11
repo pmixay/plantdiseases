@@ -3,7 +3,7 @@
     Profile screen — minimal, sharing the Garden tab's visual language.
 
       • Header is the same leaf-green gradient hero as the Garden tab
-        (bg_garden_hero + bg_circle_semi icon chip + on_primary type),
+        (bg_garden_hero + bg_circle_semi icon chip + on_hero type),
         so the two tabs read as one production design.
       • Every section is the same App.GlassCard so radii, padding and
         translucency are uniform; sections are separated only by the
@@ -28,7 +28,7 @@
 
         <!-- Hero: leaf-green gradient header, mirroring the Garden tab so
              the two tabs share one production look (same bg_garden_hero,
-             bg_circle_semi, type ramp and on_primary palette). -->
+             bg_circle_semi, type ramp and on_hero palette). -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -49,7 +49,7 @@
                     android:layout_gravity="center"
                     android:src="@drawable/ic_profile"
                     android:contentDescription="@null"
-                    app:tint="@color/on_primary" />
+                    app:tint="@color/on_hero" />
             </FrameLayout>
 
             <TextView
@@ -57,7 +57,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_md"
                 android:text="@string/tab_profile"
-                android:textColor="@color/on_primary"
+                android:textColor="@color/on_hero"
                 android:textSize="28sp"
                 android:fontFamily="sans-serif-black"
                 android:letterSpacing="-0.02" />
@@ -67,7 +67,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_xs"
                 android:text="@string/profile_subtitle"
-                android:textColor="@color/on_primary_secondary"
+                android:textColor="@color/on_hero_secondary"
                 android:textSize="@dimen/text_body"
                 android:lineSpacingExtra="3dp" />
         </LinearLayout>

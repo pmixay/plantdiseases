@@ -57,7 +57,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/doctor_title"
-                android:textColor="@color/on_primary"
+                android:textColor="@color/on_hero"
                 android:textSize="@dimen/text_title"
                 android:fontFamily="sans-serif-medium" />
 
@@ -65,11 +65,21 @@
                 android:id="@+id/chat_plant_name"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textColor="@color/on_primary_secondary"
+                android:textColor="@color/on_hero_secondary"
                 android:textSize="@dimen/text_body"
                 tools:text="Monstera" />
 
         </LinearLayout>
+
+        <!-- Compact clear-chat (bin) action — 48dp touch target. -->
+        <ImageButton
+            android:id="@+id/chat_clear_btn"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/doctor_clear"
+            android:src="@drawable/ic_delete"
+            app:tint="@color/on_hero" />
 
     </LinearLayout>
 
@@ -136,16 +146,6 @@
         </HorizontalScrollView>
 
     </LinearLayout>
-
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/chat_clear_btn"
-        style="@style/App.Button.Text"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="center_horizontal"
-        android:layout_marginBottom="@dimen/space_xs"
-        android:text="@string/doctor_clear"
-        android:textSize="@dimen/text_body_sm" />
 
     <!-- Input row — bottom inset is applied in code. -->
     <LinearLayout

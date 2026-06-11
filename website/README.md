@@ -39,5 +39,4 @@ python3 -m http.server 8080
 # open http://localhost:8080
 ```
 
-It's fully static — no build step. To publish, point GitHub Pages (or any
-static host / CDN) at this folder.
+It's fully static — no build step.

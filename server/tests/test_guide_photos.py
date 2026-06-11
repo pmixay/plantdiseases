@@ -24,9 +24,31 @@ def test_guide_photo_served_for_known_key(client):
     keys = client.get("/api/guide/manifest").json()["keys"]
     r = client.get(f"/api/guide/photo/{keys[0]}")
     assert r.status_code == 200, r.text
-    assert r.headers["content-type"] == "image/png"
+    # Photos are served as the downscaled WebP variant (PNG only when
+    # transcoding failed). Verify the declared type matches the bytes.
+    ctype = r.headers["content-type"]
+    assert ctype in ("image/webp", "image/png")
+    if ctype == "image/webp":
+        assert r.content[:4] == b"RIFF" and r.content[8:12] == b"WEBP"
+        import main as server_main
+        original = (server_main.GUIDE_STATIC_DIR / f"{keys[0]}.png").stat().st_size
+        assert len(r.content) < original
+    else:
+        assert r.content[:8] == b"\x89PNG\r\n\x1a\n"
     assert r.headers.get("cache-control", "").startswith("public")
     assert len(r.content) > 0
+
+
+def test_guide_photo_supports_304_revalidation(client):
+    keys = client.get("/api/guide/manifest").json()["keys"]
+    r1 = client.get(f"/api/guide/photo/{keys[0]}")
+    etag = r1.headers.get("etag")
+    assert etag, "guide photo response must carry an ETag"
+    r2 = client.get(
+        f"/api/guide/photo/{keys[0]}", headers={"If-None-Match": etag},
+    )
+    assert r2.status_code == 304
+    assert r2.content == b""
 
 
 def test_guide_photo_missing_key_404(client):

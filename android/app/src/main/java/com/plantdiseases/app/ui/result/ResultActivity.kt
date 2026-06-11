@@ -166,6 +166,36 @@ class ResultActivity : AppCompatActivity() {
         setupToolbarMenu()
         setupPinchToZoom()
         setupStickyHeader()
+        // Registered in onCreate — NOT when the sheet is shown — so the
+        // handoff survives the activity + sheet being recreated together
+        // (rotation, process death with the sheet open). A listener field
+        // on the sheet did not, and a recreated sheet's Send button then
+        // silently dropped the user's feedback.
+        supportFragmentManager.setFragmentResultListener(
+            FeedbackCorrectionSheet.REQUEST_KEY, this,
+        ) { _, result ->
+            val correctedClass = result.getString(FeedbackCorrectionSheet.RESULT_CORRECTED_CLASS)
+            val reason = result.getString(FeedbackCorrectionSheet.RESULT_REASON)
+            val note = result.getString(FeedbackCorrectionSheet.RESULT_NOTE)
+            val loaded = pendingScanForToolbar
+            if (loaded != null) {
+                submitFeedback(loaded, correct = false, correctedClass, reason, note)
+            } else {
+                // Sheet outlived the scan load (recreation) — re-fetch by id.
+                val app = application as PlantDiseasesApp
+                lifecycleScope.launch {
+                    app.scanRepository.getScanById(scanId)?.let {
+                        submitFeedback(it, correct = false, correctedClass, reason, note)
+                    }
+                }
+            }
+        }
+        // Same recreation-safe handoff for the "create plant from this
+        // scan" sheet — its Save used to ride on a listener field that a
+        // recreated sheet lost, silently dropping the new plant.
+        supportFragmentManager.setFragmentResultListener(
+            CreatePlantSheet.REQUEST_KEY, this,
+        ) { _, result -> onCreatePlantResult(result) }
         loadResult(scanId)
     }
 
@@ -724,27 +754,46 @@ class ResultActivity : AppCompatActivity() {
     }
 
     private fun showCreatePlantForScanDialog(scan: ScanEntity) {
+        // The save handoff arrives via the Fragment Result listener
+        // registered in onCreate (config-change safe); the sheet itself
+        // carries every input in arguments.
+        //
+        // Suggested plant name: prefer the detected species' common name
+        // (people name plants after the plant, not its disease); fall back
+        // to the LOCALIZED disease name — the raw English ``diseaseName``
+        // used to leak into the RU UI here.
+        val isRu = LocaleHelper.isRussian(this)
+        val suggestedName = scan.speciesCommon?.takeIf { it.isNotBlank() }
+            ?: if (isRu) scan.diseaseNameRu else scan.diseaseName
         CreatePlantSheet.show(
             supportFragmentManager,
             scan,
-            initialName = scan.diseaseName,
-        ) { plantName, species, scientific, common ->
-            val app = application as PlantDiseasesApp
-            lifecycleScope.launch {
-                val plantId = app.plantRepository.savePlant(
-                    name = plantName,
-                    species = species,
-                    scientificName = scientific,
-                    commonName = common,
-                )
-                app.plantRepository.assignScanToPlant(scan.id, plantId)
-                binding.btnAddToGarden.text = getString(R.string.added_to_garden)
-                Toast.makeText(
-                    this@ResultActivity,
-                    getString(R.string.scan_added_to_garden),
-                    Toast.LENGTH_SHORT,
-                ).show()
-            }
+            initialName = suggestedName,
+        )
+    }
+
+    /** Persist the plant the CreatePlantSheet just saved and attach the
+     *  scan to it. Invoked through the Fragment Result API so the handoff
+     *  survives the activity + sheet being recreated together. */
+    private fun onCreatePlantResult(result: Bundle) {
+        val plantName = result.getString(CreatePlantSheet.RESULT_NAME) ?: return
+        val scanId = result.getLong(CreatePlantSheet.RESULT_SCAN_ID, -1L)
+        if (scanId <= 0L) return
+        val app = application as PlantDiseasesApp
+        lifecycleScope.launch {
+            val plantId = app.plantRepository.savePlant(
+                name = plantName,
+                species = result.getString(CreatePlantSheet.RESULT_SPECIES),
+                scientificName = result.getString(CreatePlantSheet.RESULT_SCIENTIFIC),
+                commonName = result.getString(CreatePlantSheet.RESULT_COMMON),
+            )
+            app.plantRepository.assignScanToPlant(scanId, plantId)
+            binding.btnAddToGarden.text = getString(R.string.added_to_garden)
+            Toast.makeText(
+                this@ResultActivity,
+                getString(R.string.scan_added_to_garden),
+                Toast.LENGTH_SHORT,
+            ).show()
         }
     }
 
@@ -847,6 +896,13 @@ class ResultActivity : AppCompatActivity() {
         // hedge) > low_confidence (mild hedge).
         binding.cardPipelineWarning.visibility = View.VISIBLE
         when {
+            // On-device (Aqua) scan — always caveat: the offline model has
+            // no detector / post-processing pipeline behind it, so the
+            // verdict can be less confident than a server analysis.
+            "offline_aqua" in warnings -> {
+                binding.tvPipelineWarningTitle.setText(R.string.warning_offline_scan_title)
+                binding.tvPipelineWarningBody.setText(R.string.warning_offline_scan)
+            }
             "very_low_confidence" in warnings -> {
                 binding.tvPipelineWarningTitle.setText(R.string.warning_very_low_confidence_title)
                 binding.tvPipelineWarningBody.setText(R.string.warning_very_low_confidence)
@@ -1155,7 +1211,6 @@ class ResultActivity : AppCompatActivity() {
                 val items = com.plantdiseases.app.util.SimilarScans.filterSimilar(
                     response.items, disease, speciesScientific,
                 )
-                val total = response.summary?.last7d ?: items.size
 
                 if (items.isEmpty()) {
                     binding.tvSimilarSubtitle.text = getString(
@@ -1165,8 +1220,13 @@ class ResultActivity : AppCompatActivity() {
                     empty.visibility = View.VISIBLE
                     rv.visibility = View.GONE
                 } else {
-                    binding.tvSimilarSubtitle.text = getString(
-                        R.string.similar_scans_subtitle, total, label,
+                    // Count what the strip actually SHOWS. The old
+                    // ``summary.last_7d`` was the regional all-disease
+                    // total, so the header said "9 scans nearby" above a
+                    // one-item carousel of genuinely similar scans.
+                    binding.tvSimilarSubtitle.text = resources.getQuantityString(
+                        R.plurals.similar_scans_subtitle_count,
+                        items.size, items.size, label,
                     )
                     rv.visibility = View.VISIBLE
                     empty.visibility = View.GONE
@@ -1267,14 +1327,16 @@ class ResultActivity : AppCompatActivity() {
 
     private fun shareWithImage(scan: ScanEntity, repository: ScanRepository, isRu: Boolean) {
         val shareText = buildString {
-            append(if (isRu) "🌿 PlantDiseases — Диагноз\n\n" else "🌿 PlantDiseases — Diagnosis\n\n")
+            append(getString(R.string.share_diagnosis_header))
+            append("\n\n")
             append(if (isRu) scan.diseaseNameRu else scan.diseaseName)
             append(" (${(scan.confidence * 100).toInt()}%)\n\n")
             append(if (isRu) scan.descriptionRu else scan.description)
             val treatmentList = repository.parseStringList(if (isRu) scan.treatmentRu else scan.treatment)
             if (treatmentList.isNotEmpty()) {
                 append("\n\n")
-                append(if (isRu) "💊 Лечение:\n" else "💊 Treatment:\n")
+                append(getString(R.string.share_treatment_label))
+                append("\n")
                 treatmentList.forEachIndexed { i, t -> append("${i + 1}. $t\n") }
             }
         }
@@ -1524,6 +1586,23 @@ class ResultActivity : AppCompatActivity() {
         }
 
         val app = application as PlantDiseasesApp
+
+        // Offline (Aqua) scans never call the server: bind a basic,
+        // locally-computed plan instead, visually marked as offline.
+        if ("offline_aqua" in repository.parseWarnings(scan.warnings)) {
+            card.bind(
+                plan = com.plantdiseases.app.util.OfflineScanContent
+                    .localCarePlan(classKey, isRu),
+                speciesDisplay = null,
+                showApplyToReminders = scan.plantId != null,
+                onApplyToReminders = { applied ->
+                    applyCarePlanToReminders(scan, applied)
+                },
+                offlineBasic = true,
+            )
+            return
+        }
+
         card.showLoading(null)
 
         lifecycleScope.launch {
@@ -1674,18 +1753,12 @@ class ResultActivity : AppCompatActivity() {
         val predictedKey = repository.topClassKey(scan)
         val predictedDisplay = predictedKey?.let { classKeyDisplayName(it, isRu) }
             ?: (if (isRu) scan.diseaseNameRu else scan.diseaseName)
+        // The submit lands via the Fragment Result API listener wired in
+        // onCreate — survives recreation while this sheet is open.
         FeedbackCorrectionSheet.show(
             supportFragmentManager,
             predictedDisplayName = predictedDisplay,
-        ) { correctedClass, reason, note ->
-            submitFeedback(
-                scan,
-                correct = false,
-                correctedClass = correctedClass,
-                reason = reason,
-                note = note,
-            )
-        }
+        )
     }
 
     private fun submitFeedback(
@@ -1695,8 +1768,12 @@ class ResultActivity : AppCompatActivity() {
         reason: String? = null,
         note: String? = null,
     ) {
+        // Visible progress, not just disabled buttons — a long send (slow
+        // network, server cold start) previously looked like a freeze.
         binding.btnFeedbackYes.isEnabled = false
         binding.btnFeedbackNo.isEnabled = false
+        binding.tvFeedbackStatus.visibility = View.VISIBLE
+        binding.tvFeedbackStatus.setText(R.string.feedback_sending)
         val app = application as PlantDiseasesApp
         lifecycleScope.launch {
             val request = buildFeedbackRequest(
@@ -1731,6 +1808,7 @@ class ResultActivity : AppCompatActivity() {
             }.onFailure { error ->
                 binding.btnFeedbackYes.isEnabled = true
                 binding.btnFeedbackNo.isEnabled = true
+                binding.tvFeedbackStatus.visibility = View.GONE
                 val msgRes = when (error) {
                     is ScanRepository.RateLimitException -> R.string.feedback_rate_limited
                     else -> R.string.feedback_failed
