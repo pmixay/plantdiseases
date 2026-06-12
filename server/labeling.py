@@ -177,32 +177,6 @@ def _validated_counts(conn: sqlite3.Connection) -> dict[str, int]:
     return {r["class"]: int(r["n"]) for r in rows}
 
 
-def is_satisfied(cls: str, targets: dict[str, int], conn: sqlite3.Connection | None = None) -> bool:
-    target = int(targets.get(cls, 0) or 0)
-    if target <= 0:
-        return True  # weight 0 ⇒ never collected ⇒ treated as "done"
-    own = conn is None
-    conn = conn or _connect()
-    try:
-        n = conn.execute(
-            "SELECT COUNT(*) FROM candidates WHERE class=? AND status IN ('yes','auto_yes')",
-            (cls,),
-        ).fetchone()[0]
-        return int(n) >= target
-    finally:
-        if own:
-            conn.close()
-
-
-def count_pending_for_class(cls: str) -> int:
-    with _connect() as conn:
-        return int(
-            conn.execute(
-                "SELECT COUNT(*) FROM candidates WHERE class=? AND status='pending'", (cls,)
-            ).fetchone()[0]
-        )
-
-
 # ── Ingestion writes ────────────────────────────────────────────────
 def insert_candidate(
     *, cls: str, image_path: str, source: str, source_url: str | None,
@@ -566,18 +540,3 @@ def build_export_bundle(slug: str) -> Path | None:
             ),
         )
     return bundle
-
-
-def prune_older_than(days: int) -> int:
-    """Retention prune of RESOLVED rows (default disabled — days<=0 is a no-op).
-    Resolved labels are the product, so retention should normally stay off."""
-    if days <= 0:
-        return 0
-    init_db()
-    cutoff = int(time.time()) - days * 86400
-    with _write_lock, _connect() as conn:
-        cur = conn.execute(
-            "DELETE FROM candidates WHERE status IN ('no','not_sure') AND created_at < ?",
-            (cutoff,),
-        )
-        return int(cur.rowcount or 0)

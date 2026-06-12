@@ -66,13 +66,6 @@ def openverse(query: str, subject: str, page_size: int = 20) -> Iterator[dict]:
         }
 
 
-def web_image_search(query: str, subject: str) -> Iterator[dict]:
-    """Best-effort web image search hook. Returns nothing unless an operator
-    wires a search backend (kept a no-op so ingestion never hard-depends on a
-    brittle scraper — Openverse + the Kaggle supplement carry the load)."""
-    return iter(())
-
-
 def kaggle_supplement(slug: str, target_classes: set[str]) -> Iterator[dict]:
     """Download + parse the maintainer's Kaggle eval-supplement: read the
     ``<class>/`` folders (folder name == class) for the target classes only."""
@@ -115,4 +108,3 @@ def probe_class(cls: str, kaggle_slug: str | None, target_classes: set[str]) -> 
         yield from kaggle_supplement(kaggle_slug, {cls})
     for q in CLASS_QUERIES.get(cls, []):
         yield from openverse(q, subject=cls)
-        yield from web_image_search(q, subject=cls)

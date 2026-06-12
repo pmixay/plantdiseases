@@ -17,8 +17,7 @@ try:
 except Exception:  # pragma: no cover - imagehash is a declared dep
     imagehash = None
 
-MIN_SIDE = 384          # eval-grade floor (DATASET_LABELING_PLAN §4)
-MIN_GREEN_RATIO = 0.10  # drop non-foliage (agar plates / fruit close-ups / UI)
+MIN_SIDE = 384  # eval-grade floor (DATASET_LABELING_PLAN §4)
 PHASH_HAMMING = 6
 
 
