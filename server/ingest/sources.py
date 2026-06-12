@@ -2,7 +2,7 @@
 
 Each probe yields candidate descriptors ``{image_url|local_path, source,
 source_url, subject_plant}``. Network probes are fail-soft (yield nothing on
-error). Queries are ported from the notebook tables + EVAL_DATASET_PLAN.md §5.
+error). Queries are ported from the notebook tables + DATASET_LABELING_PLAN.md §5.
 """
 
 from __future__ import annotations

@@ -1,5 +1,5 @@
 """Image validation + dedup gates (ported from train_notebook.ipynb §2 + the
-EVAL_DATASET_PLAN.md §4 acceptance criteria).
+DATASET_LABELING_PLAN.md §4 acceptance criteria).
 
 Eval-grade defaults: short side >= 384 px (reject < 256), real-photo only, a
 green-content floor, and SHA + perceptual-hash de-duplication.
@@ -17,7 +17,7 @@ try:
 except Exception:  # pragma: no cover - imagehash is a declared dep
     imagehash = None
 
-MIN_SIDE = 384          # eval-grade floor (EVAL_DATASET_PLAN §4)
+MIN_SIDE = 384          # eval-grade floor (DATASET_LABELING_PLAN §4)
 MIN_GREEN_RATIO = 0.10  # drop non-foliage (agar plates / fruit close-ups / UI)
 PHASH_HAMMING = 6
 

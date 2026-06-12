@@ -4,7 +4,7 @@ Human data-labeling store + session auth + Kaggle export bundle.
 A "Tinder-style" admin tool: the server ingests candidate images for the
 classes that still need supply (``ingest`` package), admins verify each
 candidate (yes / no / not_sure) from the app, and approved images export as a
-Kaggle-ready bundle. See ``docs/EVAL_DATASET_PLAN.md`` for the why and the
+Kaggle-ready bundle. See ``docs/DATASET_LABELING_PLAN.md`` for the why and the
 acceptance/leakage gates this operationalises.
 
 Storage mirrors ``feedback.py`` / ``community.py`` exactly: a module-level

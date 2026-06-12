@@ -1,4 +1,4 @@
-"""Source-disjointness gate — eval-leakage prevention (EVAL_DATASET_PLAN.md §3-A).
+"""Source-disjointness gate — eval-leakage prevention (DATASET_LABELING_PLAN.md §3-A).
 
 Scraped candidates must NOT originate from any source already in the training
 corpus, or a held-out image could secretly be a training image and inflate the
@@ -13,7 +13,7 @@ _BANNED = (
     "plantdoc",
     "plantvillage",
     "kaggle.com", "kagglehub", "storage.googleapis.com/kaggle",
-    # named training-source slugs (EVAL_DATASET_PLAN §3-A)
+    # named training-source slugs (DATASET_LABELING_PLAN §3-A)
     "abdulahad0296", "pappu54", "usmanafzaal", "guy007", "alexanderuzhinskiy",
     # maintainer asked to skip wikimedia/wikipedia (often inaccurate labels)
     "wikimedia.org", "wikipedia.org",
