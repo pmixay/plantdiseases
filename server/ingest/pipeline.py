@@ -1,6 +1,8 @@
-"""Deficit-driven ingestion: scrape ONLY classes below target, gate every
-candidate (disjointness → image quality → green → dedup), persist to the
-labeling store. Runs in a worker thread; fail-soft per source.
+"""Deficit-driven ingestion from the maintainer's Kaggle supplement (the only
+source — the offline collection workflow owns scraping/filtering; see
+``docs/DATASET_LABELING_PLAN.md``). Every candidate is gated (image quality →
+dedup), model auto-routed, and persisted to the labeling store. Runs in a
+worker thread; fail-soft per candidate.
 """
 
 from __future__ import annotations
@@ -8,10 +10,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from .disjoint import is_disjoint
-from .http import http_get_bytes
 from .imagefilter import (
-    green_ratio,
     is_near_dup,
     phash_bytes,
     sha256_bytes,
@@ -26,8 +25,37 @@ except ImportError:  # pragma: no cover - script mode
 
 logger = logging.getLogger(__name__)
 
-_DIVERSITY_CAP = 3        # max kept per (source_url page / subject)
 _MAX_PROBE_PER_CLASS = 1500  # bound work per run
+
+_INGESTED_VERSION_KEY = "last_ingested_dataset_version"
+
+
+def run_ingestion_versioned(
+    targets: dict[str, int], kaggle_slug: str | None, img_dir: Path | None = None,
+    classify=None, audit_rate: float = 0.0,
+) -> dict[str, int] | None:
+    """Version-gated wrapper: run a full ingestion only when the Kaggle
+    dataset's published version changed since the last successful run (or on
+    first run). Returns ``None`` when the metadata call failed (cycle
+    skipped), ``{}`` when the version is unchanged, else ``run_ingestion``'s
+    result."""
+    from . import sources
+
+    version = sources.dataset_version(kaggle_slug) if kaggle_slug else None
+    if version is None:
+        logger.warning("labeling ingest: dataset version unavailable — skipping cycle")
+        return None
+    last = labeling.get_meta(_INGESTED_VERSION_KEY)
+    if last is not None and str(version) == last:
+        logger.debug("labeling ingest: dataset still at version %s — nothing new", version)
+        return {}
+    added = run_ingestion(
+        targets, kaggle_slug, img_dir, classify=classify, audit_rate=audit_rate,
+    )
+    labeling.set_meta(_INGESTED_VERSION_KEY, str(version))
+    if added:
+        logger.info("labeling ingest: dataset v%s added %s", version, added)
+    return added
 
 
 def _ext_for(body: bytes) -> str:
@@ -40,16 +68,28 @@ def _ext_for(body: bytes) -> str:
     return ".jpg"
 
 
+def _audit_sampled(sha: str, rate: float) -> bool:
+    """Deterministic (by sha) audit sampling of confident model calls: those
+    candidates land in the human queue with audit=1 instead, so auto
+    pre-filtering can never silently bury model false positives."""
+    if rate <= 0:
+        return False
+    return int(sha[:8], 16) % 10_000 < int(rate * 10_000)
+
+
 def run_ingestion(
     targets: dict[str, int], kaggle_slug: str | None = None, img_dir: Path | None = None,
-    classify=None,
+    classify=None, audit_rate: float = 0.0,
 ) -> dict[str, int]:
     """Top up every deficit class. Returns ``{class: n_added}``.
 
     ``classify(image_pil, proposed_class) -> (status, pred, conf, set)`` is the
     optional model auto-labeler. When given, each candidate is routed to
     ``auto_yes`` / ``auto_no`` / ``pending`` instead of all going to the human
-    queue; ``auto_no`` rows are dropped (not stored).
+    queue. ``auto_no`` rows are KEPT (image + row) — confident disagreements
+    are exactly where model false positives hide — but don't count toward the
+    deficit. ``audit_rate`` routes a deterministic fraction of confident calls
+    to the human queue (audit=1) for spot-checking.
     """
     labeling.init_db()
     img_dir = Path(img_dir) if img_dir else labeling.LABELING_IMG_DIR
@@ -67,53 +107,40 @@ def run_ingestion(
     logger.info("labeling ingest: deficits %s", deficits)
 
     seen_ph: set[str] = set(labeling.existing_phashes())
-    target_classes = {c for c, t in targets.items() if int(t or 0) > 0}
     added: dict[str, int] = {}
 
     for cls, deficit in deficits.items():
         got = 0
-        per_subject: dict[str, int] = {}
         probed = 0
-        for desc in probe_class(cls, kaggle_slug, target_classes):
+        for desc in probe_class(cls, kaggle_slug, {cls}):
             if got >= deficit or probed >= _MAX_PROBE_PER_CLASS:
                 break
             probed += 1
-            if not is_disjoint(desc.get("source_url")):
-                continue
-            key = desc.get("source_url") or ""
-            if per_subject.get(key, 0) >= _DIVERSITY_CAP:
-                continue
-            # fetch bytes (remote url or local kaggle file)
+            # Descriptors are local Kaggle files only (no remote fetch).
             try:
-                if desc.get("local_path"):
-                    body = Path(desc["local_path"]).read_bytes()
-                else:
-                    body = http_get_bytes(desc["image_url"])
+                body = Path(desc["local_path"]).read_bytes()
             except Exception:  # noqa: BLE001
-                body = None
-            if not body:
                 continue
             im = valid_image_bytes(body)
-            # Low green floor (0.04): scorch is brown and nutrient chlorosis is
-            # yellow, so a 0.10 floor wrongly dropped legitimate disease leaves.
-            # This only needs to reject obvious non-foliage (agar plates, UI,
-            # full-fruit shots); humans verify everything else downstream.
-            if im is None or green_ratio(im) < 0.04:
+            if im is None:
                 continue
             sha = sha256_bytes(body)
             ph = phash_bytes(body)
             if is_near_dup(ph, seen_ph):
                 continue
-            # Model auto-label (trust-the-model routing). auto_no is dropped
-            # entirely; auto_yes counts toward the target; pending → human.
+            # Model auto-label (trust-the-model routing). auto_yes counts
+            # toward the target; pending → human; auto_no is stored but
+            # doesn't reduce the deficit. A sampled fraction of confident
+            # calls is re-routed to the human queue as an audit.
             status, mpred, mconf, mset = "pending", None, None, None
+            audit = False
             if classify is not None:
                 try:
                     status, mpred, mconf, mset = classify(im, cls)
                 except Exception:  # noqa: BLE001 - fail-soft to human
                     status = "pending"
-            if status == "auto_no":
-                continue
+                if status in ("auto_yes", "auto_no") and _audit_sampled(sha, audit_rate):
+                    status, audit = "pending", True
             fn = f"{sha}{_ext_for(body)}"
             try:
                 (img_dir / fn).write_bytes(body)
@@ -123,14 +150,14 @@ def run_ingestion(
                 cls=cls, image_path=fn, source=desc["source"],
                 source_url=desc.get("source_url"), subject_plant=desc.get("subject_plant"),
                 sha=sha, phash=ph, status=status, model_pred=mpred,
-                model_conf=mconf, model_set=mset,
+                model_conf=mconf, model_set=mset, audit=audit,
             )
             if row_id is None:  # sha duplicate already in DB
                 continue
             if ph:
                 seen_ph.add(ph)
-            per_subject[key] = per_subject.get(key, 0) + 1
-            got += 1
+            if status != "auto_no":
+                got += 1
         added[cls] = got
         logger.info("labeling ingest: %s += %d (probed %d)", cls, got, probed)
     logger.info("labeling ingest: done, added=%s", added)

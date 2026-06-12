@@ -1,69 +1,73 @@
-"""Per-source candidate probes + per-class query tables.
+"""Kaggle-supplement candidate probe (the ONLY ingestion source).
 
-Each probe yields candidate descriptors ``{image_url|local_path, source,
-source_url, subject_plant}``. Network probes are fail-soft (yield nothing on
-error). Queries are ported from the notebook tables + DATASET_LABELING_PLAN.md §5.
+The maintainer collects, filters and model-judges the dataset OFFLINE and
+publishes it to Kaggle; the server just pulls the published folders. Each
+probe yields candidate descriptors ``{local_path, source, source_url,
+subject_plant}``. Probes are fail-soft (yield nothing on error).
 """
 
 from __future__ import annotations
 
+import base64
+import json
 import logging
 import os
 from pathlib import Path
 from typing import Iterator
 
-from .http import http_get_json
-
 logger = logging.getLogger(__name__)
 
-# Per-class search queries. SHORT (2-3 words): Openverse ANDs the terms, so the
-# old 4-6 word queries matched almost nothing. Kept high-recall + on-topic.
-CLASS_QUERIES: dict[str, list[str]] = {
-    "nutrient_deficiency": [
-        "leaf chlorosis", "interveinal chlorosis", "iron chlorosis",
-        "nutrient deficiency leaf", "yellowing leaf",
-    ],
-    "leaf_scorch_underwatering": [
-        "leaf scorch", "leaf tip burn", "crispy brown leaf",
-        "drought stressed plant", "scorched leaf",
-    ],
-    "gray_mold_botrytis": [
-        "botrytis", "gray mold leaf", "grey mould plant",
-        "botrytis cinerea", "botrytis blight",
-    ],
-    "powdery_mildew": [
-        "powdery mildew", "powdery mildew leaf", "mildew foliage",
-    ],
-}
 
-_OPENVERSE_API = "https://api.openverse.org/v1/images/"
+def _kaggle_credentials() -> tuple[str, str] | str | None:
+    """Bearer token (str), basic-auth pair (tuple), or None. Download-only:
+    the server NEVER uploads to Kaggle."""
+    token = os.environ.get("KAGGLE_API_TOKEN")
+    if not token:
+        tok_file = Path.home() / ".kaggle" / "access_token"
+        if tok_file.exists():
+            token = tok_file.read_text().strip()
+    if token:
+        return token
+    user, key = os.environ.get("KAGGLE_USERNAME"), os.environ.get("KAGGLE_KEY")
+    if not (user and key):
+        cred_file = Path.home() / ".kaggle" / "kaggle.json"
+        if cred_file.exists():
+            try:
+                data = json.loads(cred_file.read_text())
+                user, key = data.get("username"), data.get("key")
+            except Exception:  # noqa: BLE001
+                user = key = None
+    if user and key:
+        return (user, key)
+    return None
 
 
-def openverse(query: str, subject: str, page_size: int = 20) -> Iterator[dict]:
-    """Openverse aggregates openly-licensed images (Flickr et al.). page_size is
-    capped at 20: anonymous requests 429 on larger pages."""
+def dataset_version(slug: str) -> int | None:
+    """Current version number of the Kaggle dataset (cheap metadata call so
+    the ingest loop can skip cycles when nothing was published). ``None`` on
+    any failure — the caller skips the cycle (fail-soft)."""
+    creds = _kaggle_credentials()
+    if creds is None:
+        logger.warning("dataset_version: no Kaggle credentials — skipping")
+        return None
     try:
-        data = http_get_json(
-            _OPENVERSE_API,
-            params={"q": query, "page_size": min(page_size, 20), "mature": "false"},
-            timeout=30,
+        import requests
+
+        if isinstance(creds, str):
+            headers = {"Authorization": f"Bearer {creds}"}
+        else:
+            basic = base64.b64encode(f"{creds[0]}:{creds[1]}".encode()).decode()
+            headers = {"Authorization": f"Basic {basic}"}
+        r = requests.get(
+            f"https://www.kaggle.com/api/v1/datasets/view/{slug}",
+            headers=headers, timeout=30,
         )
-    except Exception as e:  # noqa: BLE001 - fail-soft, but log so it isn't silent
-        logger.warning("openverse query %r failed: %s", query, e)
-        return
-    results = data.get("results") or []
-    if not results:
-        logger.info("openverse query %r returned 0 results", query)
-    for item in results:
-        url = item.get("url")
-        if not url:
-            continue
-        yield {
-            "image_url": url,
-            "source": "openverse",
-            "source_url": item.get("foreign_landing_url") or url,
-            "subject_plant": subject,
-        }
+        r.raise_for_status()
+        v = r.json().get("currentVersionNumber")
+        return int(v) if v is not None else None
+    except Exception as e:  # noqa: BLE001
+        logger.warning("dataset_version(%s) failed: %s", slug, e)
+        return None
 
 
 def kaggle_supplement(slug: str, target_classes: set[str]) -> Iterator[dict]:
@@ -74,10 +78,7 @@ def kaggle_supplement(slug: str, target_classes: set[str]) -> Iterator[dict]:
     except Exception:  # noqa: BLE001
         logger.warning("kaggle_supplement: kagglehub not installed — source skipped")
         return
-    if not (os.environ.get("KAGGLE_API_TOKEN")
-            or (Path.home() / ".kaggle" / "access_token").exists()
-            or (os.environ.get("KAGGLE_USERNAME") and os.environ.get("KAGGLE_KEY"))
-            or (Path.home() / ".kaggle" / "kaggle.json").exists()):
+    if _kaggle_credentials() is None:
         logger.warning(
             "kaggle_supplement: no Kaggle credentials (KAGGLE_API_TOKEN / ~/.kaggle) "
             "— source skipped; the candidate queue will stay empty until set")
@@ -103,8 +104,7 @@ def kaggle_supplement(slug: str, target_classes: set[str]) -> Iterator[dict]:
 
 
 def probe_class(cls: str, kaggle_slug: str | None, target_classes: set[str]) -> Iterator[dict]:
-    """All descriptors for one class, across sources."""
+    """All descriptors for one class. Kept as the seam the pipeline (and its
+    tests) stub — now a thin wrapper over the Kaggle supplement."""
     if kaggle_slug:
         yield from kaggle_supplement(kaggle_slug, {cls})
-    for q in CLASS_QUERIES.get(cls, []):
-        yield from openverse(q, subject=cls)

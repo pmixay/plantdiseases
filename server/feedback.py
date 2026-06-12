@@ -562,6 +562,38 @@ def feedback_counts() -> dict:
     }
 
 
+def latest_for_scan(scan_id: str) -> dict | None:
+    """Most recent feedback row for a scan_id (read helper for the labeling
+    wiring — lets the feedback-image path propose a candidate class)."""
+    init_db()
+    if not scan_id:
+        return None
+    with _connect() as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT * FROM feedback WHERE scan_id = ? "
+            "ORDER BY created_at DESC, id DESC LIMIT 1",
+            (scan_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def scan_ids_for_user(user_pseudo_id: str) -> list[str]:
+    """All scan_ids this install ever sent feedback for. This is the ONLY
+    user↔scan_id join in the system — labeling.db itself stores no user
+    data — so the GDPR delete cascade resolves it here before sweeping the
+    labeling candidates."""
+    init_db()
+    if not user_pseudo_id:
+        return []
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT scan_id FROM feedback WHERE user_pseudo_id = ?",
+            (user_pseudo_id,),
+        ).fetchall()
+    return [r[0] for r in rows if r[0]]
+
+
 def delete_for_user(user_pseudo_id: str) -> int:
     """Erase every row + feedback image associated with user_pseudo_id. Part of GDPR data deletion."""
     init_db()
