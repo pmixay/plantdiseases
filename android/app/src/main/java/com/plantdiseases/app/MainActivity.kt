@@ -267,8 +267,8 @@ class MainActivity : AppCompatActivity() {
     // Bounce animation on Scan tab icon
     private fun bounceScanIcon() {
         val menuView = binding.bottomNavigation.getChildAt(0) as? android.view.ViewGroup ?: return
-        if (menuView.childCount > 0) {
-            val scanItem = menuView.getChildAt(0) // First item = Scan
+        if (menuView.childCount > 1) {
+            val scanItem = menuView.getChildAt(1) // Second item = Scan (Home is first)
             scanItem.scaleX = 0.8f
             scanItem.scaleY = 0.8f
             scanItem.animate()

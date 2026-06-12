@@ -384,6 +384,29 @@ enum class GuideCategory {
     PESTS
 }
 
+/** /api/community/trending — the Home screen's "trending nearby" module.
+ *  `scope` reports how far the server had to widen (region/country/global)
+ *  so the UI can label the card honestly. */
+data class TrendingResponse(
+    @SerializedName("scope") val scope: String = "global",
+    @SerializedName("country") val country: String? = null,
+    @SerializedName("region") val region: String? = null,
+    @SerializedName("window_days") val windowDays: Int = 7,
+    @SerializedName("total") val total: Int = 0,
+    @SerializedName("top_species") val topSpecies: List<TrendingSpecies> = emptyList(),
+    @SerializedName("top_diseases") val topDiseases: List<TrendingDisease> = emptyList(),
+)
+
+data class TrendingSpecies(
+    @SerializedName("species") val species: String = "",
+    @SerializedName("count") val count: Int = 0,
+)
+
+data class TrendingDisease(
+    @SerializedName("disease") val disease: String = "",
+    @SerializedName("count") val count: Int = 0,
+)
+
 /** Scan history item for display */
 data class ScanHistoryItem(
     val id: Long,

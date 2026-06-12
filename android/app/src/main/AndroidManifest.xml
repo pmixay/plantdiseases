@@ -112,6 +112,16 @@
             android:screenOrientation="portrait" />
 
         <activity
+            android:name=".ui.identify.SpeciesIdentifyActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
+        <activity
+            android:name=".ui.stats.StatsTipsActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
+        <activity
             android:name=".ui.labeling.LabelingActivity"
             android:exported="false"
             android:screenOrientation="portrait" />

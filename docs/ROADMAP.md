@@ -65,12 +65,14 @@ calibrated uncertainty, no account, no trial traps, privacy-respecting
    upgrade-path dialog, `website/privacy.html`, GDPR cascade,
    `PLAY_DATA_SAFETY.md` answers. Required by Play's prominent-disclosure
    and 2025 health-content policies.
-2. **Species ID as a first-class feature** (user-approved decision): a
-   dedicated "Identify my plant" entry point reusing the existing PlantNet
-   `/api/identify` integration (camera/gallery → candidates with confidence →
-   add to garden with the species pre-filled). Every category leader leads
-   with species ID; it's the top reason users open these apps. *Separate
-   implementation task — next after this refactor.*
+2. **Species ID as a first-class feature** (user-approved decision, DONE):
+   the Home tab's "Identify plant" hero card opens a dedicated flow —
+   camera/gallery photo + organ choice → PlantNet candidates with
+   confidence → Wikipedia summary/photo, care-at-a-glance, add-to-garden
+   and scan-health follow-ups. Every category leader leads with species ID.
+   Home itself (greeting, hero actions, tools grid, trending-nearby module,
+   Stats & Tips) replaced the camera-first start screen; the admin labeling
+   entry is now hidden behind 7 taps on the Profile version row.
 3. **leaf_scorch precision fix** (model gate): collect the ~300
    scorch-lookalike hard negatives (offline v2) + verified production scans
    via the new loop → retrain → ship gate: **leaf_scorch precision ≥ 0.75**

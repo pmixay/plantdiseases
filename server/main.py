@@ -133,6 +133,9 @@ try:
     from .community import (
         stats_snapshot as community_stats_snapshot,
     )
+    from .community import (
+        trending as community_trending,
+    )
     from .config import get, get_bool, get_float, get_int, get_list, get_str
     from .diseases_data import (
         DISEASES_DATABASE,
@@ -259,6 +262,9 @@ except ImportError:
     )
     from community import (
         stats_snapshot as community_stats_snapshot,
+    )
+    from community import (
+        trending as community_trending,
     )
     from config import get, get_bool, get_float, get_int, get_list, get_str
     from diseases_data import (
@@ -3352,6 +3358,33 @@ async def community_scan_nearby(
         r["opinion_count"] = counts.get(str(r.get("scan_id")), 0)
         r["scan_id"] = r.pop("public_id", None) or r["scan_id"]
     return JSONResponse(content={"items": rows, "summary": summary})
+
+
+@api_router.get("/community/trending")
+async def community_trending_endpoint(
+    country: str | None = None,
+    region: str | None = None,
+    days: int = 7,
+    limit: int = 6,
+):
+    """Trending species + diseases for the Home screen's "trending nearby"
+    module. Unlike /community/nearby, ``country`` is OPTIONAL and an invalid
+    value degrades to the wider scope instead of 422 — this is a discovery
+    widget that must never error a fresh install with no location. The
+    response widens region → country → global until a scope has enough data
+    (``scope`` reports which one was served)."""
+    country_norm = _normalise_country(country) if country else ""
+    region_norm = _normalise_locality(region) if region else ""
+    data = await asyncio.get_running_loop().run_in_executor(
+        None,
+        lambda: community_trending(
+            country_norm or None,
+            region_norm or None,
+            days=max(1, min(int(days), 90)),
+            limit=max(1, min(int(limit), 20)),
+        ),
+    )
+    return JSONResponse(content=data)
 
 
 @api_router.get("/community/my-opinions/{user_pseudo_id}")

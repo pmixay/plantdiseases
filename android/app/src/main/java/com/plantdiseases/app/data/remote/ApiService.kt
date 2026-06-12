@@ -28,6 +28,7 @@ import com.plantdiseases.app.data.model.HealthResponse
 import com.plantdiseases.app.data.model.IdentifyResponse
 import com.plantdiseases.app.data.model.ProgressionRequest
 import com.plantdiseases.app.data.model.ProgressionResponse
+import com.plantdiseases.app.data.model.TrendingResponse
 import com.plantdiseases.app.util.ServerConfig
 import okhttp3.Interceptor
 import okhttp3.MultipartBody
@@ -230,6 +231,17 @@ interface ApiService {
     suspend fun communityScanCounts(
         @Body request: CommunityScanCountsRequest,
     ): retrofit2.Response<CommunityScanCountsResponse>
+
+    /** Home-screen "trending nearby" module. Country/region optional — the
+     *  server widens region → country → global until a scope has data, and
+     *  never 422s, so the widget works on a fresh install with no location. */
+    @GET("api/community/trending")
+    suspend fun communityTrending(
+        @Query("country") country: String? = null,
+        @Query("region") region: String? = null,
+        @Query("days") days: Int = 7,
+        @Query("limit") limit: Int = 6,
+    ): retrofit2.Response<TrendingResponse>
 
     /** Localized Wikipedia blurb + lead image for a scientific name. */
     @GET("api/species-info")

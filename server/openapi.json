@@ -884,6 +884,87 @@
         }
       }
     },
+    "/api/community/trending": {
+      "get": {
+        "summary": "Community Trending Endpoint",
+        "description": "Trending species + diseases for the Home screen's \"trending nearby\"\nmodule. Unlike /community/nearby, ``country`` is OPTIONAL and an invalid\nvalue degrades to the wider scope instead of 422 — this is a discovery\nwidget that must never error a fresh install with no location. The\nresponse widens region → country → global until a scope has enough data\n(``scope`` reports which one was served).",
+        "operationId": "community_trending_endpoint_api_community_trending_get",
+        "parameters": [
+          {
+            "name": "country",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Country"
+            }
+          },
+          {
+            "name": "region",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Region"
+            }
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 7,
+              "title": "Days"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 6,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/community/my-opinions/{user_pseudo_id}": {
       "get": {
         "summary": "Community My Opinions",
