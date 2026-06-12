@@ -319,6 +319,43 @@
         }
       }
     },
+    "/api/symptom-diagnose": {
+      "post": {
+        "summary": "Symptom Diagnose Endpoint",
+        "description": "No-photo symptom triage — the fallback when the camera/ML pipeline\ncan't get a confident read.\n\nScores the answered questionnaire against a transparent weight table\n(``symptoms.py``) and returns a ranked shortlist of likely conditions,\neach enriched with its full bilingual care card. ``low_confidence`` is\nset when the answers are too sparse/weak to trust, so the client can\nnudge the user to take a photo for a more reliable diagnosis. Always\nreturns 200 with a usable payload — an empty questionnaire just yields\nan empty shortlist + the ``unknown`` guidance card.",
+        "operationId": "symptom_diagnose_endpoint_api_symptom_diagnose_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SymptomDiagnoseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/progression": {
       "post": {
         "summary": "Progression Endpoint",
@@ -544,7 +581,7 @@
     "/api/community/opinions/{scan_id}": {
       "get": {
         "summary": "Community Opinions List",
-        "description": "List community opinions + a consensus tally for one shared scan.",
+        "description": "List community opinions + a consensus tally for one shared scan.\n\nAccepts the real scan_id (owner's own app) or the feed's public\ntoken (viewers); echoes back whichever form the caller sent.",
         "operationId": "community_opinions_list_api_community_opinions__scan_id__get",
         "parameters": [
           {
@@ -1062,7 +1099,7 @@
     "/api/guide/photo/{key}": {
       "get": {
         "summary": "Guide Photo",
-        "description": "Serve a guide example photo by key (e.g. ``powdery_mildew``).\n\nPath-traversal guarded like the community-thumb route; missing keys 404.\nLong-cached because the photos are immutable per release.",
+        "description": "Serve a guide example photo by key (e.g. ``powdery_mildew``).\n\nPath-traversal guarded like the community-thumb route; missing keys 404.\nLong-cached because the photos are immutable per release. Serves the\ndownscaled WebP variant when available (Glide sniffs the magic bytes,\nso clients of any vintage decode it transparently); the original PNG\nis the fallback if transcoding ever fails.",
         "operationId": "guide_photo_api_guide_photo__key__get",
         "parameters": [
           {
@@ -1207,21 +1244,302 @@
         }
       }
     },
-    "/api/symptom-diagnose": {
+    "/api/label/login": {
       "post": {
-        "summary": "Symptom Diagnose Endpoint",
-        "description": "No-photo symptom triage — the fallback when the camera/ML pipeline can't get a confident read.\n\nScores the answered questionnaire against a transparent weight table (``symptoms.py``) and returns a ranked shortlist of likely conditions, each enriched with its full bilingual care card. ``low_confidence`` is set when the answers are too sparse/weak to trust, so the client can nudge the user to take a photo for a more reliable diagnosis. Always returns 200 with a usable payload — an empty questionnaire just yields an empty shortlist + the ``unknown`` guidance card.",
-        "operationId": "symptom_diagnose_endpoint_api_symptom_diagnose_post",
+        "summary": "Label Login",
+        "operationId": "label_login_api_label_login_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SymptomDiagnoseRequest"
+                "$ref": "#/components/schemas/LabelLoginRequest"
               }
             }
           },
           "required": true
         },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/label/next": {
+      "get": {
+        "summary": "Label Next",
+        "operationId": "label_next_api_label_next_get",
+        "parameters": [
+          {
+            "name": "count",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "title": "Count"
+            }
+          },
+          {
+            "name": "class",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Class"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/label/verdict": {
+      "post": {
+        "summary": "Label Verdict",
+        "operationId": "label_verdict_api_label_verdict_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LabelVerdictBatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/label/stats": {
+      "get": {
+        "summary": "Label Stats",
+        "operationId": "label_stats_api_label_stats_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/label/clue/{klass}": {
+      "get": {
+        "summary": "Label Clue",
+        "operationId": "label_clue_api_label_clue__klass__get",
+        "parameters": [
+          {
+            "name": "klass",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Klass"
+            }
+          },
+          {
+            "name": "lang",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "en",
+              "title": "Lang"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/label/image/{candidate_id}": {
+      "get": {
+        "summary": "Label Image",
+        "operationId": "label_image_api_label_image__candidate_id__get",
+        "parameters": [
+          {
+            "name": "candidate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Candidate Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/label/rescore": {
+      "post": {
+        "summary": "Label Rescore",
+        "description": "Re-run the model auto-labeler over pending cards and re-route the\nconfident ones out of the human queue (e.g. after a model update, or to\nauto-clear a backlog ingested before auto-labeling existed).",
+        "operationId": "label_rescore_api_label_rescore_post",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 300,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/label/export": {
+      "post": {
+        "summary": "Label Export",
+        "operationId": "label_export_api_label_export_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/label/export/{bundle}": {
+      "get": {
+        "summary": "Label Export Download",
+        "operationId": "label_export_download_api_label_export__bundle__get",
+        "parameters": [
+          {
+            "name": "bundle",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Bundle"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -1815,6 +2133,58 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "LabelLoginRequest": {
+        "properties": {
+          "password": {
+            "type": "string",
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "password"
+        ],
+        "title": "LabelLoginRequest"
+      },
+      "LabelVerdictBatch": {
+        "properties": {
+          "verdicts": {
+            "items": {
+              "$ref": "#/components/schemas/LabelVerdictItem"
+            },
+            "type": "array",
+            "title": "Verdicts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "verdicts"
+        ],
+        "title": "LabelVerdictBatch"
+      },
+      "LabelVerdictItem": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "yes",
+              "no",
+              "not_sure"
+            ],
+            "title": "Verdict"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "verdict"
+        ],
+        "title": "LabelVerdictItem"
+      },
       "ProgressionRequest": {
         "properties": {
           "history": {
@@ -1861,6 +2231,25 @@
         ],
         "title": "PushRegisterRequest"
       },
+      "SymptomDiagnoseRequest": {
+        "properties": {
+          "answers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Answers"
+          },
+          "locale": {
+            "type": "string",
+            "maxLength": 8,
+            "title": "Locale",
+            "default": "en"
+          }
+        },
+        "type": "object",
+        "title": "SymptomDiagnoseRequest"
+      },
       "ValidationError": {
         "properties": {
           "loc": {
@@ -1900,25 +2289,6 @@
           "type"
         ],
         "title": "ValidationError"
-      },
-      "SymptomDiagnoseRequest": {
-        "properties": {
-          "answers": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "type": "object",
-            "title": "Answers"
-          },
-          "locale": {
-            "type": "string",
-            "maxLength": 8,
-            "title": "Locale",
-            "default": "en"
-          }
-        },
-        "type": "object",
-        "title": "SymptomDiagnoseRequest"
       }
     }
   }

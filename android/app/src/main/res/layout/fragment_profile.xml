@@ -733,6 +733,15 @@
                 android:textSize="@dimen/text_caption"
                 android:textColor="@color/on_surface_secondary" />
 
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_data_labeling"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_xs"
+                android:textSize="@dimen/text_caption"
+                android:text="@string/label_admin_entry" />
+
         </LinearLayout>
 
     </LinearLayout>

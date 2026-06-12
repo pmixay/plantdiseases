@@ -741,4 +741,25 @@
     <string name="model_family_chip">Модель: %1$s</string>
     <string name="model_family_aqua_not_installed">Офлайн-модель ещё не установлена — пока используется облачная.</string>
     <string name="model_family_cd">Выбрать модель диагностики</string>
+
+    <!-- Admin data-labeling tool -->
+    <string name="label_admin_entry">Разметка данных (админ)</string>
+    <string name="label_title">Разметка данных</string>
+    <string name="label_password_hint">Пароль администратора</string>
+    <string name="label_unavailable">Разметка недоступна на этом сервере.</string>
+    <string name="label_login_failed">Неверный пароль или ошибка входа.</string>
+    <string name="label_clue_hint">Нажмите: что оставить / отбросить</string>
+    <string name="label_any_class">Любой (случайно)</string>
+    <string name="label_yes">Да</string>
+    <string name="label_no">Нет</string>
+    <string name="label_not_sure">Не уверен</string>
+    <string name="label_stats">Статистика</string>
+    <string name="label_export">Экспорт в Kaggle</string>
+    <string name="label_pass">Рекомендуется принять</string>
+    <string name="label_drop">Отбросить</string>
+    <string name="label_similar">Похожие классы</string>
+    <string name="label_progress_fmt">%1$s: %2$d / %3$d проверено</string>
+    <string name="label_empty">Больше нет карточек для этого класса.</string>
+    <string name="label_model_hint">Модель: %1$s %2$d%%, вероятно: %3$s</string>
+    <string name="label_error">Что-то пошло не так.</string>
 </resources>

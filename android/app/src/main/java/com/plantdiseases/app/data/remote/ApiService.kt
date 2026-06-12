@@ -38,9 +38,18 @@ import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import okhttp3.RequestBody
 import okhttp3.ResponseBody
+import com.plantdiseases.app.data.model.LabelClueResponse
+import com.plantdiseases.app.data.model.LabelExportResponse
+import com.plantdiseases.app.data.model.LabelLoginRequest
+import com.plantdiseases.app.data.model.LabelLoginResponse
+import com.plantdiseases.app.data.model.LabelNextResponse
+import com.plantdiseases.app.data.model.LabelStatsResponse
+import com.plantdiseases.app.data.model.LabelVerdictBatch
+import com.plantdiseases.app.data.model.LabelVerdictResponse
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.Header
 import retrofit2.http.Multipart
 import retrofit2.http.POST
 import retrofit2.http.Streaming
@@ -236,6 +245,42 @@ interface ApiService {
         @Query("limit") limit: Int = 12,
         @Query("user_pseudo_id") userPseudoId: String? = null,
     ): retrofit2.Response<CommunityScansResponse>
+
+    // ── Admin data-labeling tool (session via X-Label-Token header) ──
+    @POST("api/label/login")
+    suspend fun labelLogin(
+        @Body request: LabelLoginRequest,
+    ): retrofit2.Response<LabelLoginResponse>
+
+    @GET("api/label/next")
+    suspend fun labelNext(
+        @Header("X-Label-Token") token: String,
+        @Query("count") count: Int = 20,
+        @Query("class") klass: String? = null,
+    ): retrofit2.Response<LabelNextResponse>
+
+    @POST("api/label/verdict")
+    suspend fun labelVerdict(
+        @Header("X-Label-Token") token: String,
+        @Body request: LabelVerdictBatch,
+    ): retrofit2.Response<LabelVerdictResponse>
+
+    @GET("api/label/stats")
+    suspend fun labelStats(
+        @Header("X-Label-Token") token: String,
+    ): retrofit2.Response<LabelStatsResponse>
+
+    @GET("api/label/clue/{klass}")
+    suspend fun labelClue(
+        @Header("X-Label-Token") token: String,
+        @Path("klass") klass: String,
+        @Query("lang") lang: String = "en",
+    ): retrofit2.Response<LabelClueResponse>
+
+    @POST("api/label/export")
+    suspend fun labelExport(
+        @Header("X-Label-Token") token: String,
+    ): retrofit2.Response<LabelExportResponse>
 }
 
 /**

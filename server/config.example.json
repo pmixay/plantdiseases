@@ -49,6 +49,30 @@
         "burst": 10.0,
         "quota_daily": 500
       }
+    },
+    "labeling_enabled": true,
+    "labeling_auto_enabled": true,
+    "labeling_trust_conformal": true,
+    "labeling_conf_high": 0.85,
+    "labeling_admin_password": "",
+    "labeling_session_secret": "",
+    "labeling_session_ttl_seconds": 28800,
+    "labeling_claim_lease_seconds": 900,
+    "labeling_login_max_attempts": 10,
+    "labeling_login_window_seconds": 300,
+    "labeling_ingest_enabled": true,
+    "labeling_ingest_interval_seconds": 3600,
+    "labeling_kaggle_supplement_slug": "maxayyt5/houseplant-disease-eval-supplement",
+    "labeling_targets": {
+      "nutrient_deficiency": 600,
+      "leaf_scorch_underwatering": 600,
+      "gray_mold_botrytis": 400,
+      "powdery_mildew": 150,
+      "viral_disease": 0,
+      "leaf_spot": 0,
+      "pests": 0,
+      "healthy": 0,
+      "not_a_plant": 0
     }
   }
 }

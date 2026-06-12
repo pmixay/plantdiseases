@@ -2,6 +2,15 @@ fastapi==0.136.3
 uvicorn[standard]==0.49.0
 python-multipart==0.0.32
 Pillow==12.2.0
+# Perceptual-hash near-duplicate detection for the data-labeling ingestion
+# (server/ingest/imagefilter.py) — dedups candidate images + backs the
+# eval-leakage guard. Pulls numpy/scipy/PyWavelets (numpy already pinned below).
+ImageHash>=4.3
+# Kaggle dataset download for the data-labeling ingestion's primary source
+# (server/ingest/sources.py kaggle_supplement). Without it that source skipped
+# silently and the candidate queue stayed empty. Needs a KAGGLE_API_TOKEN env
+# (or ~/.kaggle creds) at runtime to actually pull; absent creds, it no-ops.
+kagglehub>=0.3
 # numpy 2.x is supported across the stack (onnxruntime >= 1.19 ships
 # numpy-2 wheels), so the historical ``<2.0`` cap is lifted — this also
 # matches the training notebook, which already runs on numpy 2.x. Floor

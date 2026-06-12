@@ -613,3 +613,68 @@ def lookup_pet_toxicity(species: str | None) -> dict:
     # request. ``{**entry, ...}`` is a shallow merge and the list is
     # still aliased.
     return {**copy.deepcopy(entry), "source": "db", "matched": key}
+
+
+# ── Data-labeling clue support ──────────────────────────────────────
+# Powers the labeling tool's clue card/detail: the similar classes a labeler
+# might confuse with the suggested one (shown as "defer to" references), and
+# the per-class accept ("pass") / reject ("drop") guidance derived from
+# docs/DATASET_LABELING_PLAN.md §4. Keys map to existing static/guide/*.png stems.
+CONFUSABLE_CLASSES: dict[str, list[str]] = {
+    "nutrient_deficiency": ["leaf_scorch_underwatering", "leaf_spot", "viral_disease"],
+    "leaf_scorch_underwatering": ["sunburn_or_scorch", "nutrient_deficiency", "leaf_spot"],
+    "gray_mold_botrytis": ["powdery_mildew", "leaf_mold", "leaf_spot"],
+    "powdery_mildew": ["gray_mold_botrytis", "leaf_mold"],
+}
+
+CLASS_LABELING_GUIDANCE: dict[str, dict[str, list[str]]] = {
+    "nutrient_deficiency": {
+        "pass_en": ["Interveinal or general chlorosis (yellowing)",
+                    "Iron / nitrogen / magnesium patterns; purpling (phosphorus)"],
+        "pass_ru": ["Межжилковый или общий хлороз (пожелтение)",
+                    "Признаки дефицита железа / азота / магния; покраснение (фосфор)"],
+        "drop_en": ["Whole-plant wilt", "Brown crispy edges (that's leaf scorch)",
+                    "Distinct spots (that's leaf spot)"],
+        "drop_ru": ["Увядание всего растения", "Сухие коричневые края (это ожог листа)",
+                    "Чёткие пятна (это пятнистость)"],
+    },
+    "leaf_scorch_underwatering": {
+        "pass_en": ["Crispy brown dead leaf tips/margins", "Desiccation, drought/heat scorch"],
+        "pass_ru": ["Сухие коричневые кончики/края листа", "Иссушение, ожог от засухи/жары"],
+        "drop_en": ["Sunburn bleaching", "Wilting/curl (loss of turgor)",
+                    "Generic yellowing (that's nutrient deficiency)"],
+        "drop_ru": ["Выгорание от солнца", "Увядание/скручивание (потеря тургора)",
+                    "Общее пожелтение (это дефицит питания)"],
+    },
+    "gray_mold_botrytis": {
+        "pass_en": ["Fuzzy grey/brown mould sporulation on leaves, stems, cuttings, flowers"],
+        "pass_ru": ["Пушистый серо-коричневый налёт плесени на листьях, стеблях, черенках, цветах"],
+        "drop_en": ["White powdery coating (that's powdery mildew)",
+                    "Dry necrosis (that's scorch)", "Fruit-rot close-ups"],
+        "drop_ru": ["Белый мучнистый налёт (это мучнистая роса)",
+                    "Сухой некроз (это ожог)", "Крупные планы гнили плодов"],
+    },
+    "powdery_mildew": {
+        "pass_en": ["White/greyish powdery coating on leaves and stems"],
+        "pass_ru": ["Белый/сероватый мучнистый налёт на листьях и стеблях"],
+        "drop_en": ["Fuzzy grey mould (that's gray mold)", "Spots without powder"],
+        "drop_ru": ["Пушистая серая плесень (это серая гниль)", "Пятна без налёта"],
+    },
+}
+
+
+def confusables_for(cls: str) -> list[str]:
+    """Similar classes a labeler might confuse with ``cls`` (clue references)."""
+    return list(CONFUSABLE_CLASSES.get(cls, []))
+
+
+def labeling_guidance_for(cls: str, lang: str = "en") -> dict[str, list[str]]:
+    """Per-class accept ("pass") / reject ("drop") guidance for the clue detail."""
+    g = CLASS_LABELING_GUIDANCE.get(cls, {})
+    suffix = "_ru" if lang == "ru" else "_en"
+    return {"pass": g.get(f"pass{suffix}", []), "drop": g.get(f"drop{suffix}", [])}
+
+
+def class_display_name(cls: str, lang: str = "en") -> str:
+    entry = DISEASES_DATABASE.get(cls, {})
+    return entry.get("name_ru" if lang == "ru" else "name_en", cls)
