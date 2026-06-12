@@ -74,6 +74,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         maybeRequestStartupPermissions()
+        maybeShowConsentDialog()
 
         // Edge-to-edge display
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -219,6 +220,39 @@ class MainActivity : AppCompatActivity() {
             ) != PackageManager.PERMISSION_GRANTED) {
             startupPermissionsLauncher.launch(arrayOf(Manifest.permission.CAMERA))
         }
+    }
+
+    /** Upgrade path for installs that completed onboarding before the consent
+     *  page existed: a one-time BLOCKING dialog with the same disclosure +
+     *  Agree button (no decline path — Play "prominent disclosure" pattern,
+     *  same as the onboarding consent page new installs see). */
+    private fun maybeShowConsentDialog() {
+        if (OnboardingActivity.isDataConsentGiven(this)) return
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.consent_title)
+            .setMessage(R.string.consent_body)
+            .setCancelable(false)
+            .setPositiveButton(R.string.consent_agree) { _, _ ->
+                OnboardingActivity.setDataConsentGiven(this)
+            }
+            .setNeutralButton(R.string.consent_privacy_link, null)
+            .create()
+            .apply {
+                setOnShowListener {
+                    // Keep the dialog open when the privacy link is tapped —
+                    // the default neutral handler would dismiss it and let
+                    // the user bypass Agree.
+                    getButton(android.app.AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                        startActivity(
+                            Intent(
+                                Intent.ACTION_VIEW,
+                                android.net.Uri.parse(getString(R.string.consent_privacy_url)),
+                            ),
+                        )
+                    }
+                }
+            }
+            .show()
     }
 
     private fun warmRegionCache() {

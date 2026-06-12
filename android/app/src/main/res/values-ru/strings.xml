@@ -107,6 +107,12 @@
     <string name="onboarding_care_title">Уход</string>
     <string name="onboarding_care_body">Получите двуязычные рекомендации по лечению, профилактике и расписание полива и света под ваш диагноз.</string>
 
+    <!-- Согласие на использование данных (блокирующее) -->
+    <string name="consent_title">Ваши данные и наши модели</string>
+    <string name="consent_body">Снимки, которые вы сканируете, и ваши отзывы используются для обучения и улучшения наших моделей диагностики. Данные анонимизируются перед сохранением — без имени, аккаунта, точной геолокации и идентификаторов устройства; метаданные фото (EXIF, включая GPS) удаляются. Удалить свои данные можно в любой момент в Профиле.</string>
+    <string name="consent_agree">Принять</string>
+    <string name="consent_privacy_link">Политика конфиденциальности</string>
+
     <!-- Result -->
     <string name="new_scan">Новый скан</string>
     <string name="heatmap_label">Область обнаружения</string>
@@ -762,4 +768,12 @@
     <string name="label_empty">Больше нет карточек для этого класса.</string>
     <string name="label_model_hint">Модель: %1$s %2$d%%, вероятно: %3$s</string>
     <string name="label_error">Что-то пошло не так.</string>
+    <string name="label_source_all">Все</string>
+    <string name="label_source_feedback">Отзывы</string>
+    <string name="label_source_dataset">Датасет</string>
+    <string name="label_source_scans">Сканы</string>
+    <string name="label_audit_badge">Аудит</string>
+    <string name="label_feedback_ctx">Пользователь: %1$s — модель: %2$s</string>
+    <string name="label_stats_sources">По источникам</string>
+    <string name="label_stats_classes">По классам</string>
 </resources>

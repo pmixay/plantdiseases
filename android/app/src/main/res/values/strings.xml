@@ -106,6 +106,13 @@
     <string name="onboarding_care_title">Care</string>
     <string name="onboarding_care_body">Get bilingual treatment, prevention tips and a watering / light plan tailored to the diagnosis.</string>
 
+    <!-- Data-use consent (blocking; Play prominent disclosure) -->
+    <string name="consent_title">Your data &amp; our models</string>
+    <string name="consent_body">Photos you scan and the feedback you give are used to train and improve our diagnosis models. Data is anonymized before storage — no account, name, precise location or device identifiers are attached, and photo metadata (EXIF, including GPS) is removed. You can delete your contributions at any time from Profile.</string>
+    <string name="consent_agree">Agree</string>
+    <string name="consent_privacy_link">Privacy policy</string>
+    <string name="consent_privacy_url" translatable="false">https://pdis.arbuz.lol/privacy.html</string>
+
     <!-- Result -->
     <string name="new_scan">New Scan</string>
     <string name="heatmap_label">Detection Area</string>
@@ -769,4 +776,12 @@
     <string name="label_empty">No more cards for this class.</string>
     <string name="label_model_hint">Model: %1$s %2$d%%, likely: %3$s</string>
     <string name="label_error">Something went wrong.</string>
+    <string name="label_source_all">All</string>
+    <string name="label_source_feedback">Feedback</string>
+    <string name="label_source_dataset">Dataset</string>
+    <string name="label_source_scans">Scans</string>
+    <string name="label_audit_badge">Audit</string>
+    <string name="label_feedback_ctx">User proposed %1$s — model said %2$s</string>
+    <string name="label_stats_sources">By source</string>
+    <string name="label_stats_classes">By class</string>
 </resources>

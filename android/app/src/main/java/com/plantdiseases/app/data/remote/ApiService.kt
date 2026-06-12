@@ -257,6 +257,9 @@ interface ApiService {
         @Header("X-Label-Token") token: String,
         @Query("count") count: Int = 20,
         @Query("class") klass: String? = null,
+        // "feedback" | "dataset" | "scans" — restricts the card group; null =
+        // all groups in server priority order (feedback → dataset → scans).
+        @Query("source") source: String? = null,
     ): retrofit2.Response<LabelNextResponse>
 
     @POST("api/label/verdict")
