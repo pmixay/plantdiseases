@@ -51,6 +51,9 @@
       }
     },
     "labeling_enabled": true,
+    "labeling_auto_enabled": true,
+    "labeling_trust_conformal": true,
+    "labeling_conf_high": 0.85,
     "labeling_admin_password": "",
     "labeling_session_secret": "",
     "labeling_session_ttl_seconds": 28800,

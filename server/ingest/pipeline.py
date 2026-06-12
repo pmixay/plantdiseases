@@ -42,8 +42,15 @@ def _ext_for(body: bytes) -> str:
 
 def run_ingestion(
     targets: dict[str, int], kaggle_slug: str | None = None, img_dir: Path | None = None,
+    classify=None,
 ) -> dict[str, int]:
-    """Top up every deficit class. Returns ``{class: n_added}``."""
+    """Top up every deficit class. Returns ``{class: n_added}``.
+
+    ``classify(image_pil, proposed_class) -> (status, pred, conf, set)`` is the
+    optional model auto-labeler. When given, each candidate is routed to
+    ``auto_yes`` / ``auto_no`` / ``pending`` instead of all going to the human
+    queue; ``auto_no`` rows are dropped (not stored).
+    """
     labeling.init_db()
     img_dir = Path(img_dir) if img_dir else labeling.LABELING_IMG_DIR
     img_dir.mkdir(parents=True, exist_ok=True)
@@ -97,6 +104,16 @@ def run_ingestion(
             ph = phash_bytes(body)
             if is_near_dup(ph, seen_ph):
                 continue
+            # Model auto-label (trust-the-model routing). auto_no is dropped
+            # entirely; auto_yes counts toward the target; pending → human.
+            status, mpred, mconf, mset = "pending", None, None, None
+            if classify is not None:
+                try:
+                    status, mpred, mconf, mset = classify(im, cls)
+                except Exception:  # noqa: BLE001 - fail-soft to human
+                    status = "pending"
+            if status == "auto_no":
+                continue
             fn = f"{sha}{_ext_for(body)}"
             try:
                 (img_dir / fn).write_bytes(body)
@@ -105,7 +122,8 @@ def run_ingestion(
             row_id = labeling.insert_candidate(
                 cls=cls, image_path=fn, source=desc["source"],
                 source_url=desc.get("source_url"), subject_plant=desc.get("subject_plant"),
-                sha=sha, phash=ph,
+                sha=sha, phash=ph, status=status, model_pred=mpred,
+                model_conf=mconf, model_set=mset,
             )
             if row_id is None:  # sha duplicate already in DB
                 continue

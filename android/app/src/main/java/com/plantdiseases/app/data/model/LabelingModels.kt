@@ -18,6 +18,9 @@ data class LabelCard(
     val source: String? = null,
     @SerializedName("source_url") val sourceUrl: String? = null,
     @SerializedName("image_url") val imageUrl: String,
+    @SerializedName("model_pred") val modelPred: String? = null,
+    @SerializedName("model_conf") val modelConf: Double? = null,
+    @SerializedName("model_set") val modelSet: List<String> = emptyList(),
 )
 
 data class LabelNextResponse(

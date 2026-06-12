@@ -1470,6 +1470,45 @@
         }
       }
     },
+    "/api/label/rescore": {
+      "post": {
+        "summary": "Label Rescore",
+        "description": "Re-run the model auto-labeler over pending cards and re-route the\nconfident ones out of the human queue (e.g. after a model update, or to\nauto-clear a backlog ingested before auto-labeling existed).",
+        "operationId": "label_rescore_api_label_rescore_post",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 300,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/label/export": {
       "post": {
         "summary": "Label Export",

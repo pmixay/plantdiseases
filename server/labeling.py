@@ -134,6 +134,12 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
+def _add_column_if_missing(conn, table, column, decl) -> None:
+    cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+    if column not in cols:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+
+
 def init_db() -> None:
     """Create schema + image/export dirs. Idempotent."""
     global _initialised
@@ -145,7 +151,17 @@ def init_db() -> None:
         LABELING_EXPORT_DIR.mkdir(parents=True, exist_ok=True)
         with _connect() as conn:
             conn.executescript(_SCHEMA)
+            # Model-auto-labeling provenance (DATASET_LABELING_PLAN.md): added via
+            # ALTER so rolling deploys with an existing DB migrate in place.
+            _add_column_if_missing(conn, "candidates", "model_pred", "TEXT")
+            _add_column_if_missing(conn, "candidates", "model_conf", "REAL")
+            _add_column_if_missing(conn, "candidates", "model_set", "TEXT")
         _initialised = True
+
+
+# Statuses that count as an approved (validated) image: a model auto-accept
+# or a human "yes". Both feed the exported dataset.
+APPROVED_STATUSES = ("yes", "auto_yes")
 
 
 # main.py imports this under the init_*_db convention.
@@ -155,7 +171,8 @@ init_labeling_db = init_db
 # ── Targets / supply accounting ─────────────────────────────────────
 def _validated_counts(conn: sqlite3.Connection) -> dict[str, int]:
     rows = conn.execute(
-        "SELECT class, COUNT(*) AS n FROM candidates WHERE status='yes' GROUP BY class"
+        "SELECT class, COUNT(*) AS n FROM candidates "
+        "WHERE status IN ('yes','auto_yes') GROUP BY class"
     ).fetchall()
     return {r["class"]: int(r["n"]) for r in rows}
 
@@ -168,7 +185,8 @@ def is_satisfied(cls: str, targets: dict[str, int], conn: sqlite3.Connection | N
     conn = conn or _connect()
     try:
         n = conn.execute(
-            "SELECT COUNT(*) FROM candidates WHERE class=? AND status='yes'", (cls,)
+            "SELECT COUNT(*) FROM candidates WHERE class=? AND status IN ('yes','auto_yes')",
+            (cls,),
         ).fetchone()[0]
         return int(n) >= target
     finally:
@@ -189,17 +207,23 @@ def count_pending_for_class(cls: str) -> int:
 def insert_candidate(
     *, cls: str, image_path: str, source: str, source_url: str | None,
     subject_plant: str | None, sha: str, phash: str | None,
+    status: str = "pending", model_pred: str | None = None,
+    model_conf: float | None = None, model_set: list[str] | None = None,
 ) -> int | None:
-    """Append a pending candidate. ``INSERT OR IGNORE`` on the unique sha
-    makes ingestion idempotent (returns None on a duplicate)."""
+    """Append a candidate at the given status (model auto-label or 'pending' for
+    the human queue). ``INSERT OR IGNORE`` on the unique sha makes ingestion
+    idempotent (returns None on a duplicate)."""
     init_db()
     now = int(time.time())
+    set_json = json.dumps(model_set) if model_set is not None else None
     with _write_lock, _connect() as conn:
         cur = conn.execute(
             "INSERT OR IGNORE INTO candidates "
             "(class, image_path, source, source_url, subject_plant, sha, phash, "
-            " status, created_at) VALUES (?,?,?,?,?,?,?, 'pending', ?)",
-            (cls, image_path, source, source_url, subject_plant, sha, phash, now),
+            " status, model_pred, model_conf, model_set, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (cls, image_path, source, source_url, subject_plant, sha, phash,
+             status, model_pred, model_conf, set_json, now),
         )
         return int(cur.lastrowid) if cur.rowcount else None
 
@@ -281,20 +305,28 @@ def claim_next(
             (session_id, now, *ids),
         )
         claimed = conn.execute(
-            f"SELECT id, class, source, source_url FROM candidates WHERE id IN ({idph})",
+            f"SELECT id, class, source, source_url, model_pred, model_conf, model_set "
+            f"FROM candidates WHERE id IN ({idph})",
             ids,
         ).fetchall()
-        return [
-            {
+        out = []
+        for r in claimed:
+            try:
+                mset = json.loads(r["model_set"]) if r["model_set"] else []
+            except Exception:  # noqa: BLE001
+                mset = []
+            out.append({
                 "id": int(r["id"]),
                 "class": r["class"],
                 "suggested_class": r["class"],
                 "source": r["source"],
                 "source_url": r["source_url"],
                 "image_url": f"/api/label/image/{int(r['id'])}",
-            }
-            for r in claimed
-        ]
+                "model_pred": r["model_pred"],
+                "model_conf": r["model_conf"],
+                "model_set": mset,
+            })
+        return out
 
 
 def record_verdicts(session_id: str, items: list[tuple[int, str]]) -> int:
@@ -319,6 +351,48 @@ def record_verdicts(session_id: str, items: list[tuple[int, str]]) -> int:
                 )
                 applied += 1
     return applied
+
+
+def pending_candidates(limit: int = 500) -> list[dict]:
+    """Pending (human-queue) rows for re-scoring against the current model."""
+    init_db()
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT id, class, image_path FROM candidates WHERE status='pending' "
+            "ORDER BY id LIMIT ?",
+            (int(limit),),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def apply_auto_status(
+    candidate_id: int, status: str, pred: str | None,
+    conf: float | None, mset: list[str] | None,
+) -> bool:
+    """Re-route a still-pending candidate after a model re-score. Only touches
+    rows still ``pending`` (never overrides a human verdict)."""
+    set_json = json.dumps(mset) if mset is not None else None
+    with _write_lock, _connect() as conn:
+        cur = conn.execute(
+            "UPDATE candidates SET status=?, model_pred=?, model_conf=?, model_set=? "
+            "WHERE id=? AND status='pending'",
+            (status, pred, conf, set_json, int(candidate_id)),
+        )
+        return bool(cur.rowcount)
+
+
+def delete_candidate(candidate_id: int) -> None:
+    """Remove a candidate + its image (used when a re-score yields auto_no)."""
+    with _write_lock, _connect() as conn:
+        row = conn.execute(
+            "SELECT image_path FROM candidates WHERE id=?", (int(candidate_id),)
+        ).fetchone()
+        conn.execute("DELETE FROM candidates WHERE id=?", (int(candidate_id),))
+    if row:
+        try:
+            (LABELING_IMG_DIR / row["image_path"]).unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def image_path_for(candidate_id: int) -> Path | None:
@@ -348,13 +422,18 @@ def stats(targets: dict[str, int]) -> dict:
     for cls, target in targets.items():
         t = int(target or 0)
         g = grid.get(cls, {})
-        validated = g.get("yes", 0)
+        auto_yes = g.get("auto_yes", 0)
+        human_yes = g.get("yes", 0)
+        validated = auto_yes + human_yes
         pending = g.get("pending", 0)
         per_class[cls] = {
             "weight": t,
-            "validated": validated,
-            "pending": pending,
+            "validated": validated,        # approved = model auto-accept + human yes
+            "auto_yes": auto_yes,          # model-trusted
+            "human_yes": human_yes,        # human-confirmed (the confusing tail)
+            "pending": pending,            # confusing, awaiting a human
             "claimed": g.get("claimed", 0),
+            "auto_no": g.get("auto_no", 0),
             "no": g.get("no", 0),
             "not_sure": g.get("not_sure", 0),
             "satisfied": (t > 0 and validated >= t),
@@ -431,8 +510,9 @@ def verify_session_token(token: str | None) -> str | None:
 def approved_for_export() -> list[dict]:
     with _connect() as conn:
         rows = conn.execute(
-            "SELECT id, class, image_path, source, source_url, subject_plant "
-            "FROM candidates WHERE status='yes' ORDER BY class, id"
+            "SELECT id, class, image_path, source, source_url, subject_plant, "
+            "status, model_pred, model_conf "
+            "FROM candidates WHERE status IN ('yes','auto_yes') ORDER BY class, id"
         ).fetchall()
     return [dict(r) for r in rows]
 
@@ -465,9 +545,13 @@ def build_export_bundle(slug: str) -> Path | None:
             ext = src_img.suffix.lower() or ".jpg"
             arc = f"{cls}/{prefix}_{per_class_n[cls]:04d}{ext}"
             zf.write(src_img, arc)
+            verified_by = "model" if r.get("status") == "auto_yes" else "human"
+            note = r.get("source") or ""
+            if r.get("model_pred"):
+                note = f"{note}; model={r.get('model_pred')}@{r.get('model_conf')}"
             writer.writerow(
                 [arc, cls, r.get("source_url") or "", r.get("subject_plant") or "",
-                 "human-labeling-tool", r.get("source") or ""]
+                 verified_by, note]
             )
         zf.writestr("manifest.csv", manifest.getvalue())
         zf.writestr(

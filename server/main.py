@@ -413,6 +413,11 @@ FRONTIER_CLASSIFIER_PATH = FRONTIER_MODELS_DIR / "classifier.onnx"
 # in config.json). See server/labeling.py + server/ingest/.
 LABELING_ENABLED = get_bool("LABELING_ENABLED", True)
 LABELING_INGEST_ENABLED = get_bool("LABELING_INGEST_ENABLED", True)
+# Model-trust auto-labeling: the calibrated classifier labels the confident
+# majority; humans only see the uncertain tail. See DATASET_LABELING_PLAN.md.
+LABELING_AUTO_ENABLED = get_bool("LABELING_AUTO_ENABLED", True)
+LABELING_TRUST_CONFORMAL = get_bool("LABELING_TRUST_CONFORMAL", True)
+LABELING_CONF_HIGH = get_float("LABELING_CONF_HIGH", 0.85)
 LABELING_KAGGLE_SLUG = get_str(
     "LABELING_KAGGLE_SUPPLEMENT_SLUG", "maxayyt5/houseplant-disease-eval-supplement")
 LABELING_EXPORT_SLUG = get_str(
@@ -1188,13 +1193,23 @@ async def _labeling_ingest_loop() -> None:
     """
     try:  # local import keeps boot light if unused; dual package/script form
         from .ingest import run_ingestion
+        from .labeling_auto import classify_candidate
     except ImportError:
         from ingest import run_ingestion
+        from labeling_auto import classify_candidate
 
     while True:
+        # Build the model auto-labeler from the loaded gamma pipeline (if any).
+        classify = None
+        if LABELING_AUTO_ENABLED and pipeline is not None:
+            def classify(image, proposed, _p=pipeline):
+                return classify_candidate(
+                    _p, image, proposed,
+                    trust_conformal=LABELING_TRUST_CONFORMAL, conf_high=LABELING_CONF_HIGH,
+                )
         try:
             added = await asyncio.get_running_loop().run_in_executor(
-                None, run_ingestion, LABELING_TARGETS, LABELING_KAGGLE_SLUG,
+                None, run_ingestion, LABELING_TARGETS, LABELING_KAGGLE_SLUG, None, classify,
             )
             if added:
                 logger.info("Labeling ingestion added: %s", added)
@@ -3545,6 +3560,50 @@ async def label_image(candidate_id: int, request: Request):
     return _cached_image_response(
         request, path, media_type="image/jpeg", cache_control="private, max-age=600",
     )
+
+
+@api_router.post("/label/rescore")
+async def label_rescore(request: Request, limit: int = 300):
+    """Re-run the model auto-labeler over pending cards and re-route the
+    confident ones out of the human queue (e.g. after a model update, or to
+    auto-clear a backlog ingested before auto-labeling existed)."""
+    _require_labeling_session(request)
+    if not LABELING_AUTO_ENABLED or pipeline is None:
+        raise HTTPException(status_code=409, detail="auto-labeling unavailable")
+
+    def _rescore() -> dict:
+        try:
+            from .labeling_auto import classify_candidate
+        except ImportError:
+            from labeling_auto import classify_candidate
+        from PIL import Image
+        rows = labeling.pending_candidates(min(max(int(limit), 1), 1000))
+        out = {"auto_yes": 0, "auto_no": 0, "pending": 0}
+        for r in rows:
+            p = labeling.LABELING_IMG_DIR / r["image_path"]
+            if not p.is_file():
+                continue
+            try:
+                img = Image.open(p).convert("RGB")
+            except Exception:  # noqa: BLE001
+                continue
+            status, pred, conf, mset = classify_candidate(
+                pipeline, img, r["class"],
+                trust_conformal=LABELING_TRUST_CONFORMAL, conf_high=LABELING_CONF_HIGH,
+            )
+            if status == "auto_no":
+                labeling.delete_candidate(r["id"])
+                out["auto_no"] += 1
+            elif status == "auto_yes":
+                labeling.apply_auto_status(r["id"], "auto_yes", pred, conf, mset)
+                out["auto_yes"] += 1
+            else:
+                labeling.apply_auto_status(r["id"], "pending", pred, conf, mset)
+                out["pending"] += 1
+        return out
+
+    result = await _run(_rescore)
+    return JSONResponse(content={"rescored": result})
 
 
 @api_router.post("/label/export")

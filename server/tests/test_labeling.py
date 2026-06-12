@@ -147,7 +147,7 @@ def test_export_bundle_layout(labdb):
         assert any(n.startswith("gray_mold_botrytis/gm_") for n in names)
         assert "manifest.csv" in names and "dataset-metadata.json" in names
         manifest = zf.read("manifest.csv").decode()
-        assert "human-labeling-tool" in manifest
+        assert "human" in manifest  # verified_by = human (status 'yes')
 
 
 def test_export_none_when_empty(labdb):
@@ -213,6 +213,16 @@ def test_clue_pass_drop_payload(client, labdb):
     assert body["suggested"]["class"] == "leaf_scorch_underwatering"
     assert body["pass"] and body["drop"]
     assert any(c["class"] == "sunburn_or_scorch" for c in body["confusables"])
+
+
+def test_rescore_routes_pending(client, labdb):
+    # FakePipeline predicts 'healthy' at low conf, so a nutrient candidate stays
+    # pending (model not confident) — the endpoint runs and reports counts.
+    _seed("nutrient_deficiency")
+    tok = _login(client)
+    r = client.post("/api/label/rescore?limit=50", headers=_auth(tok))
+    assert r.status_code == 200, r.text
+    assert "rescored" in r.json()
 
 
 def test_clue_guards(client, labdb):

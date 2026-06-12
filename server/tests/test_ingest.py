@@ -80,6 +80,41 @@ def test_run_ingestion_deficit_driven(labdb, tmp_path, monkeypatch):
     assert st["pending"] == 1
 
 
+def test_run_ingestion_auto_labels(labdb, tmp_path, monkeypatch):
+    # 3 VISUALLY DISTINCT candidates (distinct pHash so dedup keeps all 3);
+    # the classifier routes them yes/no/pending.
+    from PIL import ImageDraw
+    paths = []
+    for i in range(3):
+        p = tmp_path / f"c{i}.jpg"
+        img = Image.new("RGB", (400, 400), (20, 190, 40))
+        d = ImageDraw.Draw(img)
+        d.rectangle([20 + i * 90, 20, 120 + i * 110, 200 + i * 50], fill=(200, 60 + i * 60, 30))
+        img.save(p, format="JPEG")
+        paths.append(str(p))
+
+    def fake_probe(cls, slug, target_classes):
+        for p in paths:
+            yield {"local_path": p, "source": "openverse",
+                   "source_url": f"https://example.com/{p}", "subject_plant": None}
+
+    routes = iter([
+        ("auto_yes", "nutrient_deficiency", 0.9, ["nutrient_deficiency"]),
+        ("auto_no", "leaf_spot", 0.95, ["leaf_spot"]),
+        ("pending", "nutrient_deficiency", 0.5, ["nutrient_deficiency", "leaf_spot"]),
+    ])
+
+    def classify(img, proposed):
+        return next(routes)
+
+    monkeypatch.setattr(ingest_pipeline, "probe_class", fake_probe)
+    targets = {"nutrient_deficiency": 10}
+    ingest_pipeline.run_ingestion(targets, None, tmp_path / "img", classify=classify)
+    st = labeling.stats(targets)["per_class"]["nutrient_deficiency"]
+    assert st["auto_yes"] == 1 and st["pending"] == 1   # auto_no was dropped
+    assert st["validated"] == 1                          # auto_yes counts as approved
+
+
 def test_run_ingestion_skips_satisfied(labdb, tmp_path, monkeypatch):
     called = {"n": 0}
 

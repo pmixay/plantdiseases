@@ -159,6 +159,13 @@ class LabelingActivity : AppCompatActivity() {
         Glide.with(this)
             .load(GlideUrl(base + card.imageUrl, authHeaders()))
             .into(binding.ivCard)
+        // Why the model flagged this as confusing: its guess + the calibrated
+        // alternatives. The model already auto-labeled the easy ones.
+        binding.tvModel.text = if (card.modelPred != null) {
+            val conf = ((card.modelConf ?: 0.0) * 100).toInt()
+            val alts = card.modelSet.joinToString(", ").ifBlank { card.modelPred }
+            getString(R.string.label_model_hint, card.modelPred, conf, alts)
+        } else ""
         updateClue(card.suggestedClass ?: card.klass)
         if (buffer.size < PREFETCH_AT) loadMore()
     }

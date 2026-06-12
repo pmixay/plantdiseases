@@ -767,5 +767,6 @@
     <string name="label_similar">Similar classes</string>
     <string name="label_progress_fmt">%1$s: %2$d / %3$d validated</string>
     <string name="label_empty">No more cards for this class.</string>
+    <string name="label_model_hint">Model: %1$s %2$d%%, likely: %3$s</string>
     <string name="label_error">Something went wrong.</string>
 </resources>
