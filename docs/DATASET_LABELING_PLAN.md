@@ -64,6 +64,39 @@ every published version must satisfy:
   leaf_scorch PRECISION (0.52), so it needs lookalike negatives, not more
   positives. Place them under `healthy/` / `not_a_plant/` as appropriate.
 
+### Audited state of the live supplement — v1 (audited 2026-06-13)
+
+`maxayyt5/houseplant-disease-eval-supplement` **v1**: 1248 images, every row
+`verified_by=agent_vision`, manifest carries the required columns plus
+`phash`/`confidence`/`query`/`observed`. Measured against the §1 gates:
+
+| class | n | short-side ≥384 | houseplant domain (keyword sniff) | verdict |
+|---|---|---|---|---|
+| `leaf_scorch_underwatering` | 505 | 100% | ~90% houseplant (25 crop) | domain OK — **but all POSITIVES; see gap 1** |
+| `nutrient_deficiency` | 504 | 100% | ~50% houseplant / ~50% crop | **half crop — tighten domain gate** |
+| `gray_mold_botrytis` | 239 | 100% | ~5% (105/239 are grape/strawberry/fruit) | **fails domain gate — re-collect on houseplants** |
+
+Internal pHash dedup is clean (0 near-dups/class); the resolution gate passes
+100%. So the *image* gates hold — the gaps are **domain** and **label intent**:
+
+1. **leaf_scorch needs NEGATIVES, not more positives.** The #1 model defect is
+   leaf_scorch *precision* (0.52); 505 positives do not move it. Collect the
+   ~300 scorch-lookalike negatives (per the bullet above) into `healthy/` and
+   `not_a_plant/` folders — v1 contains neither folder yet.
+2. **gray_mold is field/orchard imagery (grapes, strawberries, fruit), not
+   houseplants** — the v1 agricultural-leakage limitation, now quantified.
+   Re-run the houseplant-domain gate on this class; foliar houseplant Botrytis
+   is what the model actually serves.
+3. **nutrient_deficiency is ~50% crop (rice/maize/tomato N-P-K).** Crop nutrient
+   proxies already train via CoLeaf/MPLD/rice (down-weighted, train-only), so
+   prioritise real houseplant interveinal-chlorosis over more crop rows.
+4. **18 banned-origin rows present** (wikimedia 9, wikipedia 8, plantvillage 1)
+   — drop them; they violate the §1 disjointness / label-quality ban.
+5. **License hygiene:** rows carry an empty `license` and the dataset license is
+   "Other", yet the export `dataset-metadata.json` (`labeling.py`) hard-codes
+   `CC0-1.0`. For web-scraped imagery either record a per-image license or set
+   the dataset license honestly.
+
 ## (2)→(3) Server ingestion — Kaggle-only, version-gated
 
 `server/ingest/` pulls ONLY from the Kaggle supplement (no in-server
