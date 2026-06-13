@@ -1,7 +1,6 @@
 package com.plantdiseases.app.ui.identify
 
 import android.content.Context
-import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -20,12 +19,11 @@ import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
 import com.google.android.material.chip.Chip
-import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
-import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.SpeciesCandidate
 import com.plantdiseases.app.databinding.ActivitySpeciesIdentifyBinding
+import com.plantdiseases.app.ui.species.SpeciesDetailActivity
 import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -35,12 +33,11 @@ import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
- * "Identify my plant" — the species-first entry point promoted from
- * background enrichment to a headline feature (see docs/ROADMAP.md §3).
- * Take/pick a photo, choose the photographed organ, identify via the
- * server's PlantNet proxy, then drill into a candidate: Wikipedia summary
- * + lead photo (/api/species-info), a care summary (/api/care-plan with
- * disease="healthy"), and add-to-garden / scan-health follow-ups.
+ * "Identify my plant" — the species-first entry point (see docs/ROADMAP.md
+ * §3). Take/pick a photo, choose the photographed organ, identify via the
+ * server's PlantNet proxy, then tap a candidate to open the full, scan-like
+ * [SpeciesDetailActivity] (reference photos, encyclopedia blurb, care summary,
+ * common problems with guide links, add-to-garden / scan-health).
  */
 class SpeciesIdentifyActivity : AppCompatActivity() {
 
@@ -49,7 +46,6 @@ class SpeciesIdentifyActivity : AppCompatActivity() {
     private var photoFile: File? = null
     private var pendingCameraUri: Uri? = null
     private var selectedOrgan: String = "leaf"
-    private var selectedCandidate: SpeciesCandidate? = null
 
     private val isRu: Boolean get() = Locale.getDefault().language == "ru"
     private val locale: String get() = if (isRu) "ru" else "en"
@@ -82,7 +78,9 @@ class SpeciesIdentifyActivity : AppCompatActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            binding.identifyToolbar.updatePadding(top = bars.top)
+            // Pad the app-bar container (not the fixed-height toolbar) so the
+            // toolbar sits fully below the status bar instead of being squeezed.
+            binding.appbar.updatePadding(top = bars.top)
             insets
         }
 
@@ -143,7 +141,6 @@ class SpeciesIdentifyActivity : AppCompatActivity() {
             }
             photoFile = file
             binding.btnIdentify.isEnabled = true
-            binding.cardDetail.visibility = View.GONE
             binding.listCandidates.removeAllViews()
             Glide.with(this@SpeciesIdentifyActivity).load(file)
                 .skipMemoryCache(true)
@@ -178,7 +175,6 @@ class SpeciesIdentifyActivity : AppCompatActivity() {
         binding.tvStatus.visibility = View.GONE
         binding.btnIdentify.isEnabled = false
         binding.listCandidates.removeAllViews()
-        binding.cardDetail.visibility = View.GONE
         lifecycleScope.launch {
             val result = app.scanRepository.identifySpecies(file, selectedOrgan, locale)
             binding.progress.visibility = View.GONE
@@ -202,8 +198,8 @@ class SpeciesIdentifyActivity : AppCompatActivity() {
 
     private fun renderCandidates(candidates: List<SpeciesCandidate>) {
         binding.listCandidates.removeAllViews()
-        candidates.forEachIndexed { i, c ->
-            val sci = c.scientificName ?: return@forEachIndexed
+        candidates.forEach { c ->
+            val sci = c.scientificName ?: return@forEach
             val row = layoutInflater.inflate(
                 R.layout.item_home_tool, binding.listCandidates, false,
             )
@@ -217,117 +213,10 @@ class SpeciesIdentifyActivity : AppCompatActivity() {
             )
             (row.layoutParams as? LinearLayout.LayoutParams)?.topMargin =
                 (8 * resources.displayMetrics.density).toInt()
-            row.setOnClickListener { showDetail(c) }
+            row.setOnClickListener {
+                SpeciesDetailActivity.start(this, sci, c.displayCommonName)
+            }
             binding.listCandidates.addView(row)
-            if (i == 0) showDetail(c)   // auto-expand the best match
-        }
-    }
-
-    // ── Species detail (Wikipedia + care plan) ──────────────────────
-    private fun showDetail(c: SpeciesCandidate) {
-        val sci = c.scientificName ?: return
-        selectedCandidate = c
-        val app = application as PlantDiseasesApp
-        binding.cardDetail.visibility = View.VISIBLE
-        binding.tvSpeciesName.text = c.displayCommonName ?: sci
-        binding.tvSpeciesSci.text = listOfNotNull(
-            sci, c.family?.let { getString(R.string.identify_family, it) },
-        ).joinToString(" · ")
-        binding.tvSpeciesExtract.text = getString(R.string.identify_loading)
-        binding.ivSpecies.visibility = View.GONE
-        binding.btnWikipedia.visibility = View.GONE
-        binding.tvCareTitle.visibility = View.GONE
-        binding.tvCareBody.visibility = View.GONE
-
-        binding.btnAddGarden.setOnClickListener { addToGarden(c) }
-        binding.btnScanHealth.setOnClickListener {
-            startActivity(
-                Intent(this, MainActivity::class.java).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                    putExtra(MainActivity.EXTRA_OPEN_SCANNER, true)
-                },
-            )
-        }
-
-        lifecycleScope.launch {
-            // Wikipedia summary + lead image (best-effort).
-            val info = runCatching {
-                app.apiClient.apiService.speciesInfo(sci, locale).body()
-            }.getOrNull()
-            if (info?.available == true) {
-                binding.tvSpeciesExtract.text =
-                    info.extract ?: getString(R.string.identify_no_info)
-                info.imageUrl?.let { url ->
-                    binding.ivSpecies.visibility = View.VISIBLE
-                    Glide.with(this@SpeciesIdentifyActivity).load(url).into(binding.ivSpecies)
-                }
-                info.pageUrl?.let { url ->
-                    binding.btnWikipedia.visibility = View.VISIBLE
-                    binding.btnWikipedia.setOnClickListener {
-                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                    }
-                }
-            } else {
-                binding.tvSpeciesExtract.text = getString(R.string.identify_no_info)
-            }
-            // Healthy-baseline care summary for this species.
-            val plan = runCatching {
-                app.apiClient.apiService.carePlan(
-                    CarePlanRequest(disease = "healthy", species = sci, locale = locale),
-                ).body()
-            }.getOrNull()
-            if (plan != null) {
-                val watering = when {
-                    plan.wateringDaysIsAsNeeded -> getString(R.string.identify_water_as_needed)
-                    plan.wateringDaysInt != null ->
-                        getString(R.string.identify_water_days, plan.wateringDaysInt)
-                    else -> null
-                }
-                val lines = listOfNotNull(
-                    getString(R.string.identify_light_tier, prettyTier(plan.lightTier)),
-                    watering,
-                    plan.humidityTarget.takeIf { it.isNotBlank() }
-                        ?.let { getString(R.string.identify_humidity, it) },
-                    if (plan.toxicToPets) getString(R.string.identify_toxic_pets) else null,
-                )
-                if (lines.isNotEmpty()) {
-                    binding.tvCareTitle.visibility = View.VISIBLE
-                    binding.tvCareBody.visibility = View.VISIBLE
-                    binding.tvCareBody.text = lines.joinToString("\n")
-                }
-            }
-        }
-    }
-
-    private fun prettyTier(tier: String): String = when (tier) {
-        "low" -> getString(R.string.identify_light_low)
-        "medium" -> getString(R.string.identify_light_medium)
-        "direct" -> getString(R.string.identify_light_direct)
-        else -> getString(R.string.identify_light_bright_indirect)
-    }
-
-    private fun addToGarden(c: SpeciesCandidate) {
-        val sci = c.scientificName ?: return
-        val app = application as PlantDiseasesApp
-        lifecycleScope.launch {
-            runCatching {
-                app.plantRepository.savePlant(
-                    name = c.displayCommonName ?: sci,
-                    species = sci,
-                    scientificName = sci,
-                    commonName = c.displayCommonName,
-                )
-            }.onSuccess {
-                Toast.makeText(
-                    this@SpeciesIdentifyActivity,
-                    R.string.identify_added_garden, Toast.LENGTH_SHORT,
-                ).show()
-            }.onFailure {
-                Toast.makeText(
-                    this@SpeciesIdentifyActivity,
-                    R.string.identify_failed, Toast.LENGTH_SHORT,
-                ).show()
-            }
         }
     }
 }

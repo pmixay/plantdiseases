@@ -1122,6 +1122,64 @@
         }
       }
     },
+    "/api/species-diseases": {
+      "get": {
+        "summary": "Species Diseases Endpoint",
+        "description": "Common conditions a species is affected by indoors (AI, best-effort).\n\nGraceful ``{\"available\": False, \"diseases\": []}`` when no OpenRouter key\nis configured or on any failure — the client then renders its bundled\ndisease guide, so the species screen's \"common problems\" section is never\nempty. Results are cached server-side per (species, language).",
+        "operationId": "species_diseases_endpoint_api_species_diseases_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "common",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Common"
+            }
+          },
+          {
+            "name": "locale",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "en",
+              "title": "Locale"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/community/thumb/{filename}": {
       "get": {
         "summary": "Community Scan Thumb",

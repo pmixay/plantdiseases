@@ -865,6 +865,9 @@
     <string name="identify_add_garden">В мой сад</string>
     <string name="identify_scan_health">Проверить здоровье</string>
     <string name="identify_added_garden">Добавлено в ваш сад</string>
+    <string name="species_common_problems">Частые проблемы этого вида</string>
+    <string name="species_problems_ai_note">Наиболее вероятны для этого вида — нажмите, чтобы открыть руководство.</string>
+    <string name="species_problems_guide_note">Болезни комнатных растений, которые умеет распознавать приложение, — нажмите, чтобы узнать больше.</string>
 
     <!-- Статистика и советы -->
     <string name="stats_tips_title">Статистика и советы</string>

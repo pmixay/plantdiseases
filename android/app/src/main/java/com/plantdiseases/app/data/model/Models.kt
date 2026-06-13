@@ -529,6 +529,27 @@ data class SpeciesInfoResponse(
     @SerializedName("translated") val translated: Boolean = false,
 )
 
+/**
+ * /api/species-diseases response — the conditions a species is commonly
+ * affected by indoors (AI, best-effort). `available=false` (no OpenRouter
+ * key or any failure) is a graceful state: the species screen then renders
+ * the bundled offline disease guide instead, so the section is never empty.
+ */
+data class SpeciesDiseasesResponse(
+    @SerializedName("available") val available: Boolean = false,
+    @SerializedName("species") val species: String? = null,
+    @SerializedName("diseases") val diseases: List<SpeciesDiseaseItem> = emptyList(),
+    @SerializedName("source") val source: String? = null,
+)
+
+/** One common-problem entry. `docKey`, when present, is a disease-guide class
+ *  key (see DiseaseCatalog) the client turns into a tappable guide link. */
+data class SpeciesDiseaseItem(
+    @SerializedName("name") val name: String = "",
+    @SerializedName("doc_key") val docKey: String? = null,
+    @SerializedName("note") val note: String? = null,
+)
+
 /** /api/care-plan request body. */
 data class CarePlanRequest(
     @SerializedName("disease") val disease: String,

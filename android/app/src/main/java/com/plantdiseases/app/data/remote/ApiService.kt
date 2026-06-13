@@ -21,6 +21,7 @@ import com.plantdiseases.app.data.model.CommunityViewRequest
 import com.plantdiseases.app.data.model.PushRegisterRequest
 import com.plantdiseases.app.data.model.CommunityScanCountsRequest
 import com.plantdiseases.app.data.model.CommunityScanCountsResponse
+import com.plantdiseases.app.data.model.SpeciesDiseasesResponse
 import com.plantdiseases.app.data.model.SpeciesInfoResponse
 import com.plantdiseases.app.data.model.FeedbackRequest
 import com.plantdiseases.app.data.model.FeedbackResponse
@@ -241,6 +242,16 @@ interface ApiService {
         @Query("name") name: String,
         @Query("locale") locale: String = "en",
     ): retrofit2.Response<SpeciesInfoResponse>
+
+    /** Common conditions a species is affected by indoors (AI, best-effort).
+     *  `available=false` is graceful — the client falls back to the bundled
+     *  disease guide. */
+    @GET("api/species-diseases")
+    suspend fun speciesDiseases(
+        @Query("name") name: String,
+        @Query("common") common: String? = null,
+        @Query("locale") locale: String = "en",
+    ): retrofit2.Response<SpeciesDiseasesResponse>
 
     /** Community scans of one species (scientific name), across regions. */
     @GET("api/community/by-species")

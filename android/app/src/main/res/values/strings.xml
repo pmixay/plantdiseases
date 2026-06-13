@@ -867,6 +867,9 @@
     <string name="identify_add_garden">Add to garden</string>
     <string name="identify_scan_health">Scan health</string>
     <string name="identify_added_garden">Added to your garden</string>
+    <string name="species_common_problems">Common problems to watch for</string>
+    <string name="species_problems_ai_note">Most likely for this species — tap one for the full care guide.</string>
+    <string name="species_problems_guide_note">Houseplant conditions this app can diagnose — tap one to learn more.</string>
 
     <!-- Stats & Tips -->
     <string name="stats_tips_title">Stats &amp; tips</string>
