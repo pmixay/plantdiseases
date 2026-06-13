@@ -81,3 +81,28 @@ def test_analyze_error_routes_to_human():
             raise RuntimeError("model down")
     status, pred, conf, mset = classify_candidate(_Boom(), _img(), "leaf_spot")
     assert status == "pending" and pred is None and mset == []
+
+
+# ── route_scan (production scan routing — no second inference) ───────
+def test_route_scan_singleton_set_auto_yes():
+    from labeling_auto import route_scan
+    assert route_scan("healthy", 0.95, ["healthy"]) == "auto_yes"
+
+
+def test_route_scan_multiclass_set_pending():
+    from labeling_auto import route_scan
+    assert route_scan("leaf_spot", 0.95, ["leaf_spot", "viral_disease"]) == "pending"
+
+
+def test_route_scan_no_set_falls_back_to_confidence():
+    from labeling_auto import route_scan
+    assert route_scan("pests", 0.9, None) == "auto_yes"
+    assert route_scan("pests", 0.5, []) == "pending"
+    assert route_scan("pests", None, None) == "pending"
+
+
+def test_route_scan_conformal_disabled_uses_confidence():
+    from labeling_auto import route_scan
+    # set says singleton but conformal is distrusted → confidence decides
+    assert route_scan("pests", 0.5, ["pests"], trust_conformal=False) == "pending"
+    assert route_scan("pests", 0.9, ["pests"], trust_conformal=False) == "auto_yes"

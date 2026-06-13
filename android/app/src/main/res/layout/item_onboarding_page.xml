@@ -35,4 +35,17 @@
         android:textColor="@color/on_surface_secondary"
         android:lineSpacingExtra="4dp" />
 
+    <!-- Optional tappable link (the consent page's privacy policy) -->
+    <TextView
+        android:id="@+id/tv_link"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="@dimen/space_lg"
+        android:padding="@dimen/space_sm"
+        android:gravity="center"
+        android:textSize="@dimen/text_title_sm"
+        android:textColor="@color/primary"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
 </LinearLayout>

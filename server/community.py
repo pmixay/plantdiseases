@@ -865,6 +865,82 @@ def region_summary(
     }
 
 
+# A scope must have at least this many scans in the window to be served;
+# thinner scopes widen (region → country → global) so the Home widget is
+# useful from day one in low-traffic regions.
+_TRENDING_MIN_SCANS = 3
+
+
+def trending(
+    country: str | None = None,
+    region: str | None = None,
+    *,
+    days: int = 7,
+    limit: int = 6,
+) -> dict:
+    """Trending species + diseases for the Home screen's "trending nearby"
+    module. Widening fallback so the module never renders empty: try
+    country+region, then country, then global — a scope is accepted once it
+    has at least ``_TRENDING_MIN_SCANS`` rows in the window (the last scope,
+    global, is returned regardless). Hidden diseases (not_a_plant) excluded.
+    """
+    init_db()
+    since = int(time.time()) - max(1, int(days)) * 86_400
+    limit = max(1, min(int(limit), 20))
+    country_clean = (country or "").strip()
+    region_clean = (region or "").strip()
+
+    scopes: list[tuple[str, str, tuple]] = []
+    if country_clean and region_clean:
+        scopes.append(("region", " AND country = ? AND region = ?",
+                       (country_clean, region_clean)))
+    if country_clean:
+        scopes.append(("country", " AND country = ?", (country_clean,)))
+    scopes.append(("global", "", ()))
+
+    hidden_clause = _hidden_clause()
+    with _connect() as conn:
+        for scope, where, params in scopes:
+            full_params = (since, *params, *_HIDDEN_COMMUNITY_DISEASES)
+            total = int(conn.execute(
+                "SELECT COUNT(*) FROM community_scans "
+                "WHERE created_at >= ?" + where + hidden_clause,
+                full_params,
+            ).fetchone()[0])
+            if total < _TRENDING_MIN_SCANS and scope != "global":
+                continue
+            species_rows = conn.execute(
+                "SELECT MAX(species) AS sp, COUNT(*) AS n FROM community_scans "
+                "WHERE created_at >= ? AND species_lower IS NOT NULL "
+                "AND species_lower != ''" + where + hidden_clause +
+                " GROUP BY species_lower ORDER BY n DESC LIMIT ?",
+                (*full_params, limit),
+            ).fetchall()
+            disease_rows = conn.execute(
+                "SELECT disease, COUNT(*) AS n FROM community_scans "
+                "WHERE created_at >= ?" + where + hidden_clause +
+                " GROUP BY disease ORDER BY n DESC LIMIT ?",
+                (*full_params, limit),
+            ).fetchall()
+            return {
+                "scope": scope,
+                "country": country_clean if scope != "global" else None,
+                "region": region_clean if scope == "region" else None,
+                "window_days": max(1, int(days)),
+                "total": total,
+                "top_species": [
+                    {"species": str(r[0]), "count": int(r[1])} for r in species_rows
+                ],
+                "top_diseases": [
+                    {"disease": str(r[0]), "count": int(r[1])} for r in disease_rows
+                ],
+            }
+    # unreachable (the global scope always returns) — defensive default
+    return {"scope": "global", "country": None, "region": None,
+            "window_days": max(1, int(days)), "total": 0,
+            "top_species": [], "top_diseases": []}
+
+
 def delete_for_user(user_pseudo_id: str) -> int:
     """Erase every row + thumbnail attributed to one install."""
     init_db()

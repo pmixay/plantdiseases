@@ -18,11 +18,28 @@
         app:titleTextColor="?attr/colorOnPrimary"
         app:menu="@menu/menu_labeling" />
 
+    <!-- Source filter: All / Feedback / Dataset / Scans (server priority order) -->
     <HorizontalScrollView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:scrollbars="none"
-        android:padding="8dp">
+        android:paddingHorizontal="8dp"
+        android:paddingTop="8dp">
+
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/chip_sources"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:singleLine="true"
+            app:singleSelection="true" />
+    </HorizontalScrollView>
+
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scrollbars="none"
+        android:paddingHorizontal="8dp"
+        android:paddingBottom="8dp">
 
         <com.google.android.material.chip.ChipGroup
             android:id="@+id/chip_classes"
@@ -104,6 +121,21 @@
                 android:layout_height="match_parent"
                 android:scaleType="centerCrop"
                 android:contentDescription="@string/label_title" />
+
+            <!-- Source badge (feedback / scan / audit) pinned to the card corner -->
+            <TextView
+                android:id="@+id/tv_source_badge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="top|start"
+                android:layout_margin="10dp"
+                android:paddingHorizontal="10dp"
+                android:paddingVertical="4dp"
+                android:background="@drawable/badge_background"
+                android:textColor="@android:color/white"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
         </com.google.android.material.card.MaterialCardView>
 
         <TextView
@@ -134,6 +166,18 @@
         android:textSize="13sp"
         android:textStyle="italic"
         android:textColor="?attr/colorPrimary" />
+
+    <!-- User-feedback context: "user proposed X — model said Y" + the note -->
+    <TextView
+        android:id="@+id/tv_feedback"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:paddingHorizontal="12dp"
+        android:paddingTop="2dp"
+        android:textSize="13sp"
+        android:textColor="?attr/colorTertiary"
+        android:visibility="gone" />
 
     <TextView
         android:id="@+id/tv_progress"

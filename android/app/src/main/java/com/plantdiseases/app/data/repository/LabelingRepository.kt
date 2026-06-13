@@ -34,8 +34,13 @@ class LabelingRepository(
         token
     }
 
-    suspend fun next(token: String, klass: String?, count: Int = 20): Result<List<LabelCard>> = call {
-        val r = api.labelNext(token, count, klass)
+    suspend fun next(
+        token: String,
+        klass: String?,
+        count: Int = 20,
+        source: String? = null,
+    ): Result<List<LabelCard>> = call {
+        val r = api.labelNext(token, count, klass, source)
         if (r.code() == 404) throw LabelingUnavailableException()
         r.body()?.cards ?: throw Exception("next failed (${r.code()})")
     }

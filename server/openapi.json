@@ -433,7 +433,7 @@
     "/api/feedback/image": {
       "post": {
         "summary": "Feedback Image Upload",
-        "description": "Persist the original image bytes for a negative-feedback row.\n\nCalled by the Android client immediately after a successful\n``correct=false`` ``/api/feedback`` submission. The image is\nwritten to ``FEEDBACK_IMG_DIR`` keyed by SHA-256 of the bytes,\nand the most recent feedback row for ``scan_id`` is updated\nin-place with ``image_path``. Same per-IP rate limit and\nscan-id-was-issued gate as ``/api/feedback`` so a hostile\nclient can't spray arbitrary bytes at the corpus.\n\nPrivacy note: this endpoint reverses the historical \"we never\nstore the photo\" promise, but only for ``correct=false`` rows\nwhere the training value is highest. The Android feedback sheet\ndiscloses this in its copy; if the user wants their image\npurged they can use the existing community delete-for-user path\n(which doesn't currently sweep this directory; a separate\ncleanup endpoint is owed but out of scope here).",
+        "description": "Persist the original image bytes for a negative-feedback row.\n\nCalled by the Android client immediately after a successful\n``correct=false`` ``/api/feedback`` submission. The image is\nwritten to ``FEEDBACK_IMG_DIR`` keyed by SHA-256 of the bytes,\nand the most recent feedback row for ``scan_id`` is updated\nin-place with ``image_path``. Same per-IP rate limit and\nscan-id-was-issued gate as ``/api/feedback`` so a hostile\nclient can't spray arbitrary bytes at the corpus.\n\nPrivacy note: photo storage for model improvement is disclosed in\nthe first-launch consent screen (and the feedback sheet copy); the\nimage is also anonymized (EXIF-stripped, downscaled) before it\nreaches the labeling queue. The community delete-for-user path\ncascades through feedback rows AND the labeling candidates keyed\nby this user's scan_ids, so \"delete my data\" purges these too.",
         "operationId": "feedback_image_upload_api_feedback_image_post",
         "requestBody": {
           "content": {
@@ -859,6 +859,87 @@
                 }
               ],
               "title": "User Pseudo Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/community/trending": {
+      "get": {
+        "summary": "Community Trending Endpoint",
+        "description": "Trending species + diseases for the Home screen's \"trending nearby\"\nmodule. Unlike /community/nearby, ``country`` is OPTIONAL and an invalid\nvalue degrades to the wider scope instead of 422 — this is a discovery\nwidget that must never error a fresh install with no location. The\nresponse widens region → country → global until a scope has enough data\n(``scope`` reports which one was served).",
+        "operationId": "community_trending_endpoint_api_community_trending_get",
+        "parameters": [
+          {
+            "name": "country",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Country"
+            }
+          },
+          {
+            "name": "region",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Region"
+            }
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 7,
+              "title": "Days"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 6,
+              "title": "Limit"
             }
           }
         ],
@@ -1310,6 +1391,27 @@
               ],
               "title": "Class"
             }
+          },
+          {
+            "name": "source",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "feedback",
+                    "dataset",
+                    "scans"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
+            }
           }
         ],
         "responses": {
@@ -1512,13 +1614,43 @@
     "/api/label/export": {
       "post": {
         "summary": "Label Export",
+        "description": "Build the Kaggle-ready bundle of verified images. The admin downloads\nit and uploads to Kaggle manually — the server itself never uploads.\n``?include=hard_negatives`` adds the human-rejected false positives as a\n``hard_negatives/<class>/`` tree (reference rejects for the offline\ncollection workflow); default exports stay positives-only.",
         "operationId": "label_export_api_label_export_post",
+        "parameters": [
+          {
+            "name": "include",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "const": "hard_negatives",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Include"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
               }
             }
           }

@@ -53,8 +53,11 @@ class LabelingActivity : AppCompatActivity() {
     private val pending = ArrayList<Pair<Long, String>>()
     private var current: LabelCard? = null
     private var selectedClass: String? = null   // null = Any/random
+    private var selectedSource: String? = null  // null = All (server priority order)
     private var loading = false
     private var stats: LabelStatsResponse? = null
+
+    private val sourceKeys = listOf("feedback", "dataset", "scans")
 
     private val lang: String get() = if (Locale.getDefault().language == "ru") "ru" else "en"
     private val base: String get() = ServerConfig.baseUrl.trimEnd('/')
@@ -93,6 +96,44 @@ class LabelingActivity : AppCompatActivity() {
         setupSwipe()
 
         refreshStats(thenLoad = true)
+    }
+
+    // ── Source switcher (All ▸ Feedback ▸ Dataset ▸ Scans) ──────────
+    private fun sourceLabel(key: String): String = when (key) {
+        "feedback" -> getString(R.string.label_source_feedback)
+        "dataset" -> getString(R.string.label_source_dataset)
+        else -> getString(R.string.label_source_scans)
+    }
+
+    private fun buildSourceChips() {
+        val s = stats ?: return
+        binding.chipSources.removeAllViews()
+        val all = Chip(this).apply {
+            text = getString(R.string.label_source_all)
+            isCheckable = true
+            isChecked = selectedSource == null
+            setOnClickListener { selectSource(null) }
+        }
+        binding.chipSources.addView(all)
+        // Hide the row entirely against an older server (no sources block).
+        if (s.sources.isEmpty()) return
+        sourceKeys.forEach { key ->
+            val pendingN = s.sources[key]?.pending ?: 0
+            val chip = Chip(this).apply {
+                text = "${sourceLabel(key)} ($pendingN)"
+                isCheckable = true
+                isChecked = selectedSource == key
+                setOnClickListener { selectSource(key) }
+            }
+            binding.chipSources.addView(chip)
+        }
+    }
+
+    private fun selectSource(src: String?) {
+        selectedSource = src
+        buffer.clear()
+        current = null
+        loadMore(reset = true)
     }
 
     // ── Class switcher ──────────────────────────────────────────────
@@ -134,7 +175,7 @@ class LabelingActivity : AppCompatActivity() {
         loading = true
         if (reset) binding.progress.visibility = View.VISIBLE
         lifecycleScope.launch {
-            val res = repo.next(token, selectedClass)
+            val res = repo.next(token, selectedClass, source = selectedSource)
             loading = false
             binding.progress.visibility = View.GONE
             res.onSuccess { cards ->
@@ -150,6 +191,8 @@ class LabelingActivity : AppCompatActivity() {
         if (card == null) {
             binding.ivCard.setImageDrawable(null)
             binding.tvEmpty.visibility = View.VISIBLE
+            binding.tvSourceBadge.visibility = View.GONE
+            binding.tvFeedback.visibility = View.GONE
             updateClue(null)
             return
         }
@@ -166,8 +209,38 @@ class LabelingActivity : AppCompatActivity() {
             val alts = card.modelSet.joinToString(", ").ifBlank { card.modelPred }
             getString(R.string.label_model_hint, card.modelPred, conf, alts)
         } else ""
+        renderSourceBadge(card)
+        renderFeedbackContext(card)
         updateClue(card.suggestedClass ?: card.klass)
         if (buffer.size < PREFETCH_AT) loadMore()
+    }
+
+    /** Corner badge: where the card came from (+ audit marker). */
+    private fun renderSourceBadge(card: LabelCard) {
+        val label = when (card.source) {
+            "user_feedback" -> getString(R.string.label_source_feedback)
+            "user_scan" -> getString(R.string.label_source_scans)
+            else -> null
+        }
+        val text = listOfNotNull(
+            label,
+            if (card.audit) getString(R.string.label_audit_badge) else null,
+        ).joinToString("  ·  ")
+        binding.tvSourceBadge.text = text
+        binding.tvSourceBadge.visibility = if (text.isBlank()) View.GONE else View.VISIBLE
+    }
+
+    /** Feedback cards: "user proposed X — model said Y" + the user's note. */
+    private fun renderFeedbackContext(card: LabelCard) {
+        val parts = ArrayList<String>()
+        if (card.scanFeedback == false && card.modelPred != null &&
+            card.modelPred != card.klass
+        ) {
+            parts.add(getString(R.string.label_feedback_ctx, card.klass, card.modelPred))
+        }
+        card.feedbackNote?.takeIf { it.isNotBlank() }?.let { parts.add("“$it”") }
+        binding.tvFeedback.text = parts.joinToString("\n")
+        binding.tvFeedback.visibility = if (parts.isEmpty()) View.GONE else View.VISIBLE
     }
 
     private fun verdict(v: String) {
@@ -230,6 +303,7 @@ class LabelingActivity : AppCompatActivity() {
         lifecycleScope.launch {
             repo.stats(token).onSuccess {
                 stats = it
+                buildSourceChips()
                 buildChips()
                 renderProgressStrip()
                 if (thenLoad) loadMore(reset = true)
@@ -251,6 +325,17 @@ class LabelingActivity : AppCompatActivity() {
         val s = stats ?: return
         val root = verticalSheet()
         root.addView(header(getString(R.string.label_stats)))
+        if (s.sources.isNotEmpty()) {
+            root.addView(sectionTitle(getString(R.string.label_stats_sources)))
+            sourceKeys.forEach { key ->
+                val st = s.sources[key] ?: return@forEach
+                root.addView(bullet(
+                    "${sourceLabel(key)} — pending ${st.pending}, " +
+                        "claimed ${st.claimed}, resolved ${st.resolved}",
+                ))
+            }
+            root.addView(sectionTitle(getString(R.string.label_stats_classes)))
+        }
         s.perClass.entries.filter { it.value.weight > 0 }.forEach { (cls, st) ->
             val mark = if (st.satisfied) "  ✓" else ""
             root.addView(bullet("$cls — ${st.validated}/${st.weight}  (pending ${st.pending})$mark"))

@@ -30,7 +30,17 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -123,6 +133,9 @@ try:
     from .community import (
         stats_snapshot as community_stats_snapshot,
     )
+    from .community import (
+        trending as community_trending,
+    )
     from .config import get, get_bool, get_float, get_int, get_list, get_str
     from .diseases_data import (
         DISEASES_DATABASE,
@@ -155,7 +168,13 @@ try:
         init_db as init_feedback_db,
     )
     from .feedback import (
+        latest_for_scan as feedback_latest_for_scan,
+    )
+    from .feedback import (
         prune_older_than as feedback_prune_older_than,
+    )
+    from .feedback import (
+        scan_ids_for_user as feedback_scan_ids_for_user,
     )
     from .pipeline import PlantDiseasePipeline
     from .push import (
@@ -244,6 +263,9 @@ except ImportError:
     from community import (
         stats_snapshot as community_stats_snapshot,
     )
+    from community import (
+        trending as community_trending,
+    )
     from config import get, get_bool, get_float, get_int, get_list, get_str
     from diseases_data import (
         DISEASES_DATABASE,
@@ -276,7 +298,13 @@ except ImportError:
         init_db as init_feedback_db,
     )
     from feedback import (
+        latest_for_scan as feedback_latest_for_scan,
+    )
+    from feedback import (
         prune_older_than as feedback_prune_older_than,
+    )
+    from feedback import (
+        scan_ids_for_user as feedback_scan_ids_for_user,
     )
     from pipeline import PlantDiseasePipeline
     from push import (
@@ -422,11 +450,19 @@ LABELING_KAGGLE_SLUG = get_str(
     "LABELING_KAGGLE_SUPPLEMENT_SLUG", "maxayyt5/houseplant-disease-eval-supplement")
 LABELING_EXPORT_SLUG = get_str(
     "LABELING_EXPORT_SLUG", LABELING_KAGGLE_SLUG)
-LABELING_INGEST_INTERVAL = get_int("LABELING_INGEST_INTERVAL_SECONDS", 3600)
+# The ingest loop only re-ingests when the Kaggle dataset VERSION changes, so
+# the interval is just the metadata-poll cadence (daily is plenty).
+LABELING_INGEST_INTERVAL = get_int("LABELING_INGEST_INTERVAL_SECONDS", 86400)
+# Deterministic fraction of confident (auto_yes/auto_no) dataset candidates
+# re-routed to the human queue as an audit — spot-checks of the model's
+# confident calls so auto pre-filtering can't silently bury false positives.
+LABELING_AUDIT_RATE = get_float("LABELING_AUDIT_RATE", 0.05)
 # Per-class "required-data weight" (target approved count). 0 ⇒ not collected.
+# powdery_mildew dropped to 0 after model v2.5.0 (precision 0.97 / recall
+# 0.91 on real-world eval — solved); see docs/ROADMAP.md for the evidence.
 _LABELING_TARGETS_DEFAULT = {
     "nutrient_deficiency": 600, "leaf_scorch_underwatering": 600,
-    "gray_mold_botrytis": 400, "powdery_mildew": 150,
+    "gray_mold_botrytis": 400, "powdery_mildew": 0,
     "viral_disease": 0, "leaf_spot": 0, "pests": 0, "healthy": 0, "not_a_plant": 0,
 }
 _labeling_targets_raw = get("LABELING_TARGETS", _LABELING_TARGETS_DEFAULT)
@@ -436,6 +472,24 @@ if isinstance(_labeling_targets_raw, str):
     except Exception:  # noqa: BLE001
         _labeling_targets_raw = _LABELING_TARGETS_DEFAULT
 LABELING_TARGETS = {k: int(v) for k, v in (_labeling_targets_raw or {}).items()}
+
+# ── Production scan recording ────────────────────────────────────────
+# Every non-not_a_plant (and non-blur — the blur gate emits a synthetic NAP)
+# analyze result is recorded ANONYMIZED for model improvement: re-encoded
+# (EXIF/GPS dropped), downscaled, no user identifiers — the only linkage is
+# the response scan_id, and the user↔scan_id join lives solely in feedback.db
+# (which the GDPR delete cascade sweeps). Routed by route_scan(): confident →
+# auto_yes, suspicious → the admin labeling queue. Disclosed to users via the
+# blocking first-launch consent screen (Android) + website/privacy.html.
+SCAN_RECORDING_ENABLED = get_bool("SCAN_RECORDING_ENABLED", True)
+SCAN_RETENTION_DAYS = get_int("SCAN_RETENTION_DAYS", 90)
+SCAN_MAX_IMAGES = get_int("SCAN_MAX_IMAGES", 20000)
+# Class-balanced caps: confident scans of classes with no collection target
+# are sampled at this rate so a flood of confident-healthy photos can't drown
+# the weak classes; per-class daily cap bounds disk regardless of class.
+SCAN_COMMON_KEEP_RATE = get_float("SCAN_COMMON_KEEP_RATE", 0.1)
+SCAN_DAILY_CAP_PER_CLASS = get_int("SCAN_DAILY_CAP_PER_CLASS", 50)
+SCAN_IMG_MAX_SIDE = 1024  # anonymization downscale bound (not configurable)
 
 # ── Guide example photos ─────────────────────────────────────────────
 # Disease/pest example photos used by the app's guide + after-scan strip.
@@ -1180,6 +1234,20 @@ async def _prune_loop() -> None:
             raise
         except Exception as exc:  # noqa: BLE001
             logger.warning("Label claim requeue failed: %s", exc)
+        # Bound the recorded-scan footprint (retention + class-balanced cap).
+        if SCAN_RECORDING_ENABLED:
+            try:
+                weak = {c for c, t in LABELING_TARGETS.items() if int(t or 0) > 0}
+                pruned = await asyncio.get_running_loop().run_in_executor(
+                    None, labeling.prune_user_scans,
+                    SCAN_RETENTION_DAYS, SCAN_MAX_IMAGES, weak,
+                )
+                if pruned:
+                    logger.info("Pruned %d recorded user scans", pruned)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("User-scan prune failed: %s", exc)
         try:
             await asyncio.sleep(PRUNE_INTERVAL_SECONDS)
         except asyncio.CancelledError:
@@ -1187,17 +1255,19 @@ async def _prune_loop() -> None:
 
 
 async def _labeling_ingest_loop() -> None:
-    """Deficit-driven candidate ingestion. Runs immediately, then every
-    ``LABELING_INGEST_INTERVAL``. Does no network work when all targets are met.
-    Fully fail-soft: errors are logged and retried next cycle, never fatal.
+    """Version-gated candidate ingestion: each cycle polls the Kaggle dataset
+    metadata (cheap call) and runs a full ingestion only when the published
+    version number changed (or on first run). Does no work when all targets
+    are met. Fully fail-soft: errors are logged and retried next cycle.
     """
     try:  # local import keeps boot light if unused; dual package/script form
-        from .ingest import run_ingestion
+        from .ingest.pipeline import run_ingestion_versioned
         from .labeling_auto import classify_candidate
     except ImportError:
-        from ingest import run_ingestion
+        from ingest.pipeline import run_ingestion_versioned
         from labeling_auto import classify_candidate
 
+    loop = asyncio.get_running_loop()
     while True:
         # Build the model auto-labeler from the loaded gamma pipeline (if any).
         classify = None
@@ -1208,8 +1278,9 @@ async def _labeling_ingest_loop() -> None:
                     trust_conformal=LABELING_TRUST_CONFORMAL, conf_high=LABELING_CONF_HIGH,
                 )
         try:
-            added = await asyncio.get_running_loop().run_in_executor(
-                None, run_ingestion, LABELING_TARGETS, LABELING_KAGGLE_SLUG, None, classify,
+            added = await loop.run_in_executor(
+                None, run_ingestion_versioned, LABELING_TARGETS,
+                LABELING_KAGGLE_SLUG, None, classify, LABELING_AUDIT_RATE,
             )
             if added:
                 logger.info("Labeling ingestion added: %s", added)
@@ -1345,6 +1416,83 @@ def _sha256_hex(data: bytes) -> str:
     a thread — hashing up to MAX_UPLOAD_BYTES on the event loop would stall
     every other request for the duration."""
     return hashlib.sha256(data).hexdigest()
+
+
+# ── Scan recording (anonymized model-improvement loop) ──────────────
+
+
+def _anonymise_scan_image(img: Image.Image) -> tuple[bytes, str, str | None]:
+    """Re-encode a decoded PIL image for labeling storage: downscale to
+    ``SCAN_IMG_MAX_SIDE``, JPEG q88 WITHOUT exif — all EXIF/GPS metadata is
+    dropped by construction. Returns ``(jpeg_bytes, sha256, phash)``."""
+    try:
+        from .ingest.imagefilter import phash_bytes
+    except ImportError:  # pragma: no cover - script mode
+        from ingest.imagefilter import phash_bytes
+    img = img.convert("RGB")
+    if max(img.size) > SCAN_IMG_MAX_SIDE:
+        img.thumbnail((SCAN_IMG_MAX_SIDE, SCAN_IMG_MAX_SIDE), Image.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=88)  # no exif= ⇒ metadata stripped
+    body = buf.getvalue()
+    return body, _sha256_hex(body), phash_bytes(body)
+
+
+def _scan_keep_sampled(sha: str, rate: float) -> bool:
+    """Deterministic (by sha) keep decision for confident common-class scans."""
+    if rate >= 1.0:
+        return True
+    if rate <= 0.0:
+        return False
+    return int(sha[:8], 16) % 10_000 < int(rate * 10_000)
+
+
+def _record_scan_candidate(
+    img: Image.Image, scan_id: str, class_name: str,
+    confidence: float, pset_classes: list[str] | None,
+) -> None:
+    """Record one anonymized production scan into the labeling store
+    (post-response via BackgroundTasks — zero hot-path latency). Sync and
+    fail-soft: recording must never break or slow an analyze response.
+
+    Class-balanced caps keep the corpus useful: suspicious (``pending``)
+    scans and weak-class (target>0) scans are always kept; confident scans of
+    common classes are sampled at ``SCAN_COMMON_KEEP_RATE``; a per-class
+    daily cap bounds disk regardless."""
+    try:
+        if not SCAN_RECORDING_ENABLED or class_name == "not_a_plant":
+            # The blur gate emits a synthetic not_a_plant (blurry_image
+            # warning), so this single check excludes NAP + blur-gated scans.
+            return
+        try:
+            from .labeling_auto import route_scan
+        except ImportError:  # pragma: no cover - script mode
+            from labeling_auto import route_scan
+        status = route_scan(
+            class_name, confidence, pset_classes,
+            trust_conformal=LABELING_TRUST_CONFORMAL, conf_high=LABELING_CONF_HIGH,
+        )
+        body, sha, ph = _anonymise_scan_image(img)
+        weak = class_name in {
+            c for c, t in LABELING_TARGETS.items() if int(t or 0) > 0
+        }
+        if status == "auto_yes" and not weak and not _scan_keep_sampled(
+            sha, SCAN_COMMON_KEEP_RATE,
+        ):
+            return
+        if labeling.count_user_scans_today(class_name) >= SCAN_DAILY_CAP_PER_CLASS:
+            return
+        fn = f"{sha}.jpg"
+        labeling.LABELING_IMG_DIR.mkdir(parents=True, exist_ok=True)
+        (labeling.LABELING_IMG_DIR / fn).write_bytes(body)
+        labeling.insert_candidate(
+            cls=class_name, image_path=fn, source="user_scan", source_url=None,
+            subject_plant=None, sha=sha, phash=ph, status=status,
+            model_pred=class_name, model_conf=float(confidence or 0.0),
+            model_set=list(pset_classes or []), scan_id=scan_id,
+        )
+    except Exception as exc:  # noqa: BLE001 - never raise from a background task
+        logger.warning("Scan recording failed for %s: %s", scan_id[:16], exc)
 
 
 # ── Endpoints ────────────────────────────────────────────────────────
@@ -1652,6 +1800,7 @@ async def _species_identify_best_effort(
 
 @api_router.post("/analyze")
 async def analyze_image(
+    background_tasks: BackgroundTasks,
     image: UploadFile = File(...),
     species: str | None = Query(default=None, max_length=128),
     locale: str = Query(default="en", max_length=16),
@@ -2014,6 +2163,16 @@ async def analyze_image(
     # plantnet_lang) key so the NEXT identical upload from the same
     # locale short-circuits at the top of this handler.
     _analyze_cache_put(cache_key, response_payload)
+    # Record the scan (anonymized) for the model-improvement loop. Runs
+    # AFTER the response is sent (BackgroundTasks) so it costs the user
+    # nothing; cache hits return earlier and are never double-recorded.
+    # ``img.copy()`` is defensive — the task must never share pixels with
+    # anything the handler might still touch.
+    if SCAN_RECORDING_ENABLED and class_name != "not_a_plant":
+        background_tasks.add_task(
+            _record_scan_candidate, img.copy(), scan_id, class_name,
+            confidence, list((result.get("prediction_set") or {}).get("classes") or []),
+        )
     return JSONResponse(content=response_payload)
 
 
@@ -2668,6 +2827,20 @@ async def feedback_endpoint(payload: FeedbackRequest, request: Request):
         logger.exception("Failed to record feedback: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to record feedback") from exc
 
+    # Fold the feedback into the labeling queue (fail-soft, off the event
+    # loop): negative feedback re-opens the recorded scan candidate as a
+    # top-priority pending card; positive feedback stamps user_correct and
+    # can promote a pending card to auto_yes (model+user agreement).
+    def _mark_labeling_feedback() -> None:
+        try:
+            labeling.mark_feedback(
+                scan_id_clean, payload.correct, payload.corrected_class, note,
+            )
+        except Exception as exc:  # noqa: BLE001 - feedback must still succeed
+            logger.warning("labeling.mark_feedback failed: %s", exc)
+
+    asyncio.get_running_loop().run_in_executor(None, _mark_labeling_feedback)
+
     # Truncate scan_id in the access log so attacker-supplied bytes
     # can't blow up log lines, even though the pydantic validator
     # already capped it at 64 chars.
@@ -2699,13 +2872,12 @@ async def feedback_image_upload(
     scan-id-was-issued gate as ``/api/feedback`` so a hostile
     client can't spray arbitrary bytes at the corpus.
 
-    Privacy note: this endpoint reverses the historical "we never
-    store the photo" promise, but only for ``correct=false`` rows
-    where the training value is highest. The Android feedback sheet
-    discloses this in its copy; if the user wants their image
-    purged they can use the existing community delete-for-user path
-    (which doesn't currently sweep this directory; a separate
-    cleanup endpoint is owed but out of scope here).
+    Privacy note: photo storage for model improvement is disclosed in
+    the first-launch consent screen (and the feedback sheet copy); the
+    image is also anonymized (EXIF-stripped, downscaled) before it
+    reaches the labeling queue. The community delete-for-user path
+    cascades through feedback rows AND the labeling candidates keyed
+    by this user's scan_ids, so "delete my data" purges these too.
     """
     client_ip = _client_ip(request)
     ip_hash = hash_client_ip(client_ip)
@@ -2753,6 +2925,41 @@ async def feedback_image_upload(
         None,
         lambda: feedback_attach_image_path(scan_id_clean, filename),
     )
+
+    # If the scan was never recorded (pre-recording install, recording
+    # disabled, or a disputed not_a_plant the recorder skipped), build the
+    # labeling candidate from the uploaded bytes via the SAME anonymize
+    # helper — negative feedback must always reach the admin queue when we
+    # have pixels for it. Fail-soft: the feedback upload already succeeded.
+    def _enqueue_feedback_candidate() -> None:
+        try:
+            if labeling.candidate_for_scan(scan_id_clean) is not None:
+                return  # mark_feedback already re-routed the recorded scan
+            fb_row = feedback_latest_for_scan(scan_id_clean)
+            cls = (
+                (fb_row or {}).get("corrected_class")
+                or (fb_row or {}).get("predicted_class")
+            )
+            if not cls or cls not in DISEASES_DATABASE:
+                return  # nothing actionable to propose
+            img = _open_image(image_bytes)
+            body, sha, ph = _anonymise_scan_image(img)
+            fn = f"{sha}.jpg"
+            labeling.LABELING_IMG_DIR.mkdir(parents=True, exist_ok=True)
+            (labeling.LABELING_IMG_DIR / fn).write_bytes(body)
+            labeling.insert_candidate(
+                cls=cls, image_path=fn, source="user_feedback", source_url=None,
+                subject_plant=None, sha=sha, phash=ph, status="pending",
+                model_pred=(fb_row or {}).get("predicted_class"),
+                model_conf=(fb_row or {}).get("predicted_confidence"),
+                scan_id=scan_id_clean,
+                feedback_note=(fb_row or {}).get("note"),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("feedback→labeling enqueue failed: %s", exc)
+
+    asyncio.get_running_loop().run_in_executor(None, _enqueue_feedback_candidate)
+
     logger.info(
         "Feedback image stored scan=%s file=%s linked=%s",
         scan_id_clean[:16], filename, updated,
@@ -3153,6 +3360,33 @@ async def community_scan_nearby(
     return JSONResponse(content={"items": rows, "summary": summary})
 
 
+@api_router.get("/community/trending")
+async def community_trending_endpoint(
+    country: str | None = None,
+    region: str | None = None,
+    days: int = 7,
+    limit: int = 6,
+):
+    """Trending species + diseases for the Home screen's "trending nearby"
+    module. Unlike /community/nearby, ``country`` is OPTIONAL and an invalid
+    value degrades to the wider scope instead of 422 — this is a discovery
+    widget that must never error a fresh install with no location. The
+    response widens region → country → global until a scope has enough data
+    (``scope`` reports which one was served)."""
+    country_norm = _normalise_country(country) if country else ""
+    region_norm = _normalise_locality(region) if region else ""
+    data = await asyncio.get_running_loop().run_in_executor(
+        None,
+        lambda: community_trending(
+            country_norm or None,
+            region_norm or None,
+            days=max(1, min(int(days), 90)),
+            limit=max(1, min(int(limit), 20)),
+        ),
+    )
+    return JSONResponse(content=data)
+
+
 @api_router.get("/community/my-opinions/{user_pseudo_id}")
 async def community_my_opinions(user_pseudo_id: str):
     """List the second opinions one install has authored (newest first)."""
@@ -3409,19 +3643,32 @@ async def community_scan_delete_user(user_pseudo_id: str):
     """
     if not user_pseudo_id or any(ch not in _SCAN_ID_ALLOWED for ch in user_pseudo_id):
         raise HTTPException(status_code=422, detail="Invalid user id")
-    deleted_community = await asyncio.get_running_loop().run_in_executor(
+    loop = asyncio.get_running_loop()
+    # Resolve the user's scan_ids BEFORE deleting the feedback rows — the
+    # feedback DB holds the only user↔scan_id join, and the labeling
+    # candidates (recorded scans / feedback uploads) are keyed by scan_id.
+    scan_ids = await loop.run_in_executor(
+        None,
+        lambda: feedback_scan_ids_for_user(user_pseudo_id),
+    )
+    deleted_community = await loop.run_in_executor(
         None,
         lambda: community_delete_for_user(user_pseudo_id),
     )
-    deleted_feedback = await asyncio.get_running_loop().run_in_executor(
+    deleted_feedback = await loop.run_in_executor(
         None,
         lambda: feedback_delete_for_user(user_pseudo_id),
+    )
+    deleted_labeling = await loop.run_in_executor(
+        None,
+        lambda: labeling.delete_candidates_for_scan_ids(scan_ids),
     )
     return JSONResponse(content={
         "ok": True,
         "deleted": deleted_community,
         "deleted_community": deleted_community,
         "deleted_feedback": deleted_feedback,
+        "deleted_labeling_candidates": deleted_labeling,
     })
 
 
@@ -3498,10 +3745,14 @@ async def label_next(
     request: Request,
     count: int = 20,
     klass: str | None = Query(default=None, alias="class"),
+    source: Literal["feedback", "dataset", "scans"] | None = Query(default=None),
 ):
     sid = _require_labeling_session(request)
     classes = [klass] if klass else None
-    cards = await _run(labeling.claim_next, sid, count, LABELING_TARGETS, classes)
+    cards = await _run(
+        labeling.claim_next, sid, count, LABELING_TARGETS, classes,
+        labeling._CLAIM_LEASE, source,
+    )
     return JSONResponse(content={
         "cards": cards,
         "lease_seconds": labeling._CLAIM_LEASE,
@@ -3591,15 +3842,11 @@ async def label_rescore(request: Request, limit: int = 300):
                 pipeline, img, r["class"],
                 trust_conformal=LABELING_TRUST_CONFORMAL, conf_high=LABELING_CONF_HIGH,
             )
-            if status == "auto_no":
-                labeling.delete_candidate(r["id"])
-                out["auto_no"] += 1
-            elif status == "auto_yes":
-                labeling.apply_auto_status(r["id"], "auto_yes", pred, conf, mset)
-                out["auto_yes"] += 1
-            else:
-                labeling.apply_auto_status(r["id"], "pending", pred, conf, mset)
-                out["pending"] += 1
+            # auto_no rows are KEPT (row + image) — confident disagreements
+            # are where model false positives hide; they stay auditable and
+            # exportable as hard negatives once a human confirms.
+            labeling.apply_auto_status(r["id"], status, pred, conf, mset)
+            out[status] += 1
         return out
 
     result = await _run(_rescore)
@@ -3607,9 +3854,20 @@ async def label_rescore(request: Request, limit: int = 300):
 
 
 @api_router.post("/label/export")
-async def label_export(request: Request):
+async def label_export(
+    request: Request,
+    include: Literal["hard_negatives"] | None = Query(default=None),
+):
+    """Build the Kaggle-ready bundle of verified images. The admin downloads
+    it and uploads to Kaggle manually — the server itself never uploads.
+    ``?include=hard_negatives`` adds the human-rejected false positives as a
+    ``hard_negatives/<class>/`` tree (reference rejects for the offline
+    collection workflow); default exports stay positives-only."""
     _require_labeling_session(request)
-    bundle = await _run(labeling.build_export_bundle, LABELING_EXPORT_SLUG)
+    bundle = await _run(
+        labeling.build_export_bundle, LABELING_EXPORT_SLUG,
+        include == "hard_negatives",
+    )
     if bundle is None:
         raise HTTPException(status_code=409, detail="no approved images to export")
     name = bundle.name

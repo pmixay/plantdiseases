@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Compact Home tools-row tile: icon over a caption, evenly weighted
+         across the row, with a borderless ripple. Content (icon + text) is
+         set per-tile in the layout; clicks are wired in HomeFragment. -->
+    <style name="HomeToolTile">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:orientation">vertical</item>
+        <item name="android:gravity">center_horizontal</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+        <item name="android:background">?attr/selectableItemBackgroundBorderless</item>
+        <item name="android:paddingVertical">@dimen/space_sm</item>
+    </style>
+
+    <style name="HomeToolTileIcon">
+        <item name="android:layout_width">26dp</item>
+        <item name="android:layout_height">26dp</item>
+        <item name="android:tint">@color/primary</item>
+    </style>
+
+    <style name="HomeToolTileLabel">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">4dp</item>
+        <item name="android:gravity">center</item>
+        <item name="android:textColor">@color/on_surface_secondary</item>
+        <item name="android:textSize">@dimen/text_caption</item>
+    </style>
+
+</resources>

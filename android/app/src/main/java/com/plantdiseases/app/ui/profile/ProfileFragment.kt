@@ -82,6 +82,7 @@ class ProfileFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
 
         binding.tvAppVersion.text = "v${BuildConfig.VERSION_NAME}"
+        setupSecretLabelingEntry()
 
         // "Clear all history" now lives on the Gallery tab's top-app-bar
         // basket, next to the scans it actually wipes.
@@ -99,8 +100,6 @@ class ProfileFragment : Fragment() {
         binding.langEn.setOnClickListener { setLanguage("en") }
         binding.langRu.setOnClickListener { setLanguage("ru") }
         highlightActiveLanguage()
-
-        binding.btnDataLabeling.setOnClickListener { promptLabelingLogin() }
 
         binding.btnRefreshHealth.setOnClickListener {
             checkServerHealth()
@@ -383,6 +382,27 @@ class ProfileFragment : Fragment() {
 
     /** Admin data-labeling entry: password prompt → server login → screen.
      *  The token lives only in memory (passed via intent), never persisted. */
+    /** Hidden admin entry (the visible labeling button was removed for the
+     *  Play release): 7 quick taps on the version row — the Android
+     *  developer-options pattern — open the password gate. Taps more than
+     *  2s apart reset the counter, so accidental touches never trigger it,
+     *  and there is deliberately NO toast countdown: the entry should stay
+     *  invisible to anyone who doesn't already know it exists. */
+    private var secretTapCount = 0
+    private var secretLastTapMs = 0L
+
+    private fun setupSecretLabelingEntry() {
+        binding.tvAppVersion.setOnClickListener {
+            val now = System.currentTimeMillis()
+            secretTapCount = if (now - secretLastTapMs <= 2_000) secretTapCount + 1 else 1
+            secretLastTapMs = now
+            if (secretTapCount >= 7) {
+                secretTapCount = 0
+                promptLabelingLogin()
+            }
+        }
+    }
+
     private fun promptLabelingLogin() {
         val ctx = requireContext()
         val input = EditText(ctx).apply {

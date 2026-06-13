@@ -1,8 +1,9 @@
 """Image validation + dedup gates (ported from train_notebook.ipynb §2 + the
 DATASET_LABELING_PLAN.md §4 acceptance criteria).
 
-Eval-grade defaults: short side >= 384 px (reject < 256), real-photo only, a
-green-content floor, and SHA + perceptual-hash de-duplication.
+Eval-grade defaults: short side >= 384 px, real-photo only, and SHA +
+perceptual-hash de-duplication. Content gates (foliage/subject checks) live
+in the maintainer's offline collection workflow, not here.
 """
 
 from __future__ import annotations
@@ -58,16 +59,3 @@ def is_near_dup(phash: str | None, existing: set[str], hamming: int = PHASH_HAMM
     if not phash or imagehash is None:
         return False
     return any(_hamming(phash, e) <= hamming for e in existing)
-
-
-def green_ratio(im: Image.Image) -> float:
-    """Fraction of pixels that read as green foliage (HSV gate, downscaled)."""
-    raw = im.convert("HSV").resize((64, 64)).tobytes()  # H,S,V per pixel
-    n = len(raw) // 3
-    if n == 0:
-        return 0.0
-    green = sum(
-        1 for i in range(0, n * 3, 3)
-        if 55 <= raw[i] <= 95 and raw[i + 1] >= 40 and raw[i + 2] >= 30
-    )
-    return green / n

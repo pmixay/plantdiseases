@@ -61,18 +61,28 @@
     "labeling_login_max_attempts": 10,
     "labeling_login_window_seconds": 300,
     "labeling_ingest_enabled": true,
-    "labeling_ingest_interval_seconds": 3600,
+    "_labeling_ingest_note": "Ingestion is Kaggle-only and version-gated: each cycle polls the dataset metadata and re-ingests only when the published version number changed, so the interval is just the poll cadence.",
+    "labeling_ingest_interval_seconds": 86400,
     "labeling_kaggle_supplement_slug": "maxayyt5/houseplant-disease-eval-supplement",
+    "_labeling_audit_note": "Deterministic fraction of confident (auto_yes/auto_no) dataset candidates re-routed to the human queue as audits, so auto pre-filtering can't silently bury model false positives. 0 disables.",
+    "labeling_audit_rate": 0.05,
+    "_labeling_targets_note": "powdery_mildew retargeted to 0 after model v2.5.0 (real-world precision 0.97 / recall 0.91 — solved); leaf_scorch's defect is PRECISION, fixed by hard negatives (see docs/ROADMAP.md + DATASET_LABELING_PLAN.md), not by more positives.",
     "labeling_targets": {
       "nutrient_deficiency": 600,
       "leaf_scorch_underwatering": 600,
       "gray_mold_botrytis": 400,
-      "powdery_mildew": 150,
+      "powdery_mildew": 0,
       "viral_disease": 0,
       "leaf_spot": 0,
       "pests": 0,
       "healthy": 0,
       "not_a_plant": 0
-    }
+    },
+    "_scan_recording_note": "Anonymized production-scan recording for the model-improvement loop: re-encoded (EXIF/GPS dropped), max side 1024px, no user identifiers — disclosed via the app's blocking consent screen + website/privacy.html. Suspicious scans + weak-class scans are always kept; confident common-class scans are sampled at scan_common_keep_rate; per-class daily cap + global image cap bound disk.",
+    "scan_recording_enabled": true,
+    "scan_retention_days": 90,
+    "scan_max_images": 20000,
+    "scan_common_keep_rate": 0.1,
+    "scan_daily_cap_per_class": 50
   }
 }

@@ -21,10 +21,14 @@ import com.plantdiseases.app.databinding.ItemOnboardingPageBinding
 import com.plantdiseases.app.util.LocaleHelper
 
 /**
- * First-run onboarding: a three-page Lottie-animated [ViewPager2] (scan →
- * diagnose → care) with an animated page indicator. Finishing or skipping
- * sets [KEY_ONBOARDING_DONE] and moves on to [MainActivity]; [isOnboardingDone]
- * lets the launcher decide whether to show this screen at all.
+ * First-run onboarding: a Lottie-animated [ViewPager2] (scan → diagnose →
+ * care → data consent) with an animated page indicator. The final page is a
+ * BLOCKING consent disclosure (photos + feedback are used, anonymized, to
+ * train our models — Play "prominent disclosure"): Skip is hidden there and
+ * jumps to it from earlier pages instead of finishing, so consent can never
+ * be bypassed. Agreeing sets [KEY_ONBOARDING_DONE] + [KEY_DATA_CONSENT] and
+ * moves on to [MainActivity]; [isOnboardingDone] lets the launcher decide
+ * whether to show this screen at all.
  */
 class OnboardingActivity : AppCompatActivity() {
 
@@ -58,7 +62,16 @@ class OnboardingActivity : AppCompatActivity() {
                 getString(R.string.onboarding_care_title),
                 getString(R.string.onboarding_care_body),
             ),
+            // Blocking consent page — always last; Agree is the only way out.
+            OnboardingPage(
+                R.raw.onboarding_diagnose,
+                getString(R.string.consent_title),
+                getString(R.string.consent_body),
+                linkText = getString(R.string.consent_privacy_link),
+                linkUrl = getString(R.string.consent_privacy_url),
+            ),
         )
+        val consentIndex = pages.size - 1
 
         binding.viewPager.adapter = OnboardingAdapter(pages)
         setupIndicators(pages.size)
@@ -67,25 +80,30 @@ class OnboardingActivity : AppCompatActivity() {
         binding.viewPager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
             override fun onPageSelected(position: Int) {
                 updateIndicators(position)
-                binding.btnNext.text = if (position == pages.size - 1) {
-                    getString(R.string.onboarding_start)
+                val onConsent = position == consentIndex
+                binding.btnNext.text = if (onConsent) {
+                    getString(R.string.consent_agree)
                 } else {
                     getString(R.string.onboarding_next)
                 }
+                // The consent page cannot be skipped (prominent disclosure).
+                binding.btnSkip.visibility = if (onConsent) View.GONE else View.VISIBLE
             }
         })
 
         binding.btnNext.setOnClickListener {
             val current = binding.viewPager.currentItem
-            if (current < pages.size - 1) {
+            if (current < consentIndex) {
                 binding.viewPager.currentItem = current + 1
             } else {
                 finishOnboarding()
             }
         }
 
+        // Skip fast-forwards the tour but still lands on the consent page —
+        // the onboarding-done flag is only ever written behind Agree.
         binding.btnSkip.setOnClickListener {
-            finishOnboarding()
+            binding.viewPager.currentItem = consentIndex
         }
     }
 
@@ -155,9 +173,14 @@ class OnboardingActivity : AppCompatActivity() {
     }
 
     private fun finishOnboarding() {
+        // Reaching here means the user pressed Agree on the consent page
+        // (it's the only finishing affordance), so both flags are written
+        // together — the upgrade-path dialog in MainActivity covers installs
+        // that completed onboarding before the consent page existed.
         getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
             .edit()
             .putBoolean(KEY_ONBOARDING_DONE, true)
+            .putBoolean(KEY_DATA_CONSENT, true)
             .apply()
         startActivity(Intent(this, MainActivity::class.java))
         finish()
@@ -168,19 +191,36 @@ class OnboardingActivity : AppCompatActivity() {
     companion object {
         const val PREFS_NAME = "plantdiseases_prefs"
         const val KEY_ONBOARDING_DONE = "onboarding_done"
+        const val KEY_DATA_CONSENT = "data_consent_given"
 
         fun isOnboardingDone(context: Context): Boolean {
             return context.getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
                 .getBoolean(KEY_ONBOARDING_DONE, false)
         }
+
+        fun isDataConsentGiven(context: Context): Boolean {
+            return context.getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .getBoolean(KEY_DATA_CONSENT, false)
+        }
+
+        fun setDataConsentGiven(context: Context) {
+            context.getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .edit()
+                .putBoolean(KEY_DATA_CONSENT, true)
+                .apply()
+        }
     }
 }
 
-/** One onboarding slide: a Lottie animation plus its title and body copy. */
+/** One onboarding slide: a Lottie animation plus its title and body copy.
+ *  [linkText]/[linkUrl] render a tappable link (the consent page's privacy
+ *  policy) when set. */
 data class OnboardingPage(
     val lottieRes: Int,
     val title: String,
-    val description: String
+    val description: String,
+    val linkText: String? = null,
+    val linkUrl: String? = null,
 )
 
 /** Binds [OnboardingPage]s into the onboarding pager, playing each Lottie animation. */
@@ -205,6 +245,18 @@ class OnboardingAdapter(
             lottieAnimation.playAnimation()
             tvTitle.text = page.title
             tvDescription.text = page.description
+            if (page.linkText != null && page.linkUrl != null) {
+                tvLink.text = page.linkText
+                tvLink.visibility = View.VISIBLE
+                tvLink.setOnClickListener {
+                    it.context.startActivity(
+                        Intent(Intent.ACTION_VIEW, android.net.Uri.parse(page.linkUrl)),
+                    )
+                }
+            } else {
+                tvLink.visibility = View.GONE
+                tvLink.setOnClickListener(null)
+            }
         }
     }
 

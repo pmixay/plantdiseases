@@ -2,7 +2,12 @@
 <navigation xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/nav_graph"
-    app:startDestination="@id/cameraFragment">
+    app:startDestination="@id/homeFragment">
+
+    <fragment
+        android:id="@+id/homeFragment"
+        android:name="com.plantdiseases.app.ui.home.HomeFragment"
+        android:label="@string/tab_home" />
 
     <fragment
         android:id="@+id/cameraFragment"
@@ -19,6 +24,8 @@
         android:name="com.plantdiseases.app.ui.garden.GardenFragment"
         android:label="@string/tab_garden" />
 
+    <!-- No longer a bottom tab: reached from the Home page's tools grid
+         (navigate(R.id.guideFragment)); the bar keeps its last selection. -->
     <fragment
         android:id="@+id/guideFragment"
         android:name="com.plantdiseases.app.ui.guide.GuideFragment"

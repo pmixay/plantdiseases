@@ -9,7 +9,6 @@ from PIL import Image
 
 import labeling
 from ingest import pipeline as ingest_pipeline
-from ingest.disjoint import is_disjoint
 from ingest.imagefilter import is_near_dup, valid_image_bytes
 
 
@@ -17,26 +16,6 @@ def _jpeg(size=(400, 400), color=(0, 200, 0)) -> bytes:
     buf = io.BytesIO()
     Image.new("RGB", size, color).save(buf, format="JPEG")
     return buf.getvalue()
-
-
-def test_disjointness_rejects_training_sources():
-    for bad in [
-        "https://www.inaturalist.org/observations/1",
-        "https://static.inaturalist.org/photos/x.jpg",
-        "https://www.kaggle.com/datasets/abdulahad0296/indoor",
-        "https://example.com/plantvillage/leaf.jpg",
-        "https://upload.wikimedia.org/x.jpg",
-        "https://en.wikipedia.org/wiki/Botrytis",
-        "kaggle:usmanafzaal/strawberry/gm.jpg",
-    ]:
-        assert is_disjoint(bad) is False, bad
-    for ok in [
-        "https://extension.university.edu/chlorosis.jpg",
-        "https://live.staticflickr.com/123/x.jpg",
-        "kaggle:maxayyt5/houseplant-disease-eval-supplement/nd_1.jpg",
-        None,
-    ]:
-        assert is_disjoint(ok) is True, ok
 
 
 def test_valid_image_bytes_minside_gate():
@@ -62,13 +41,30 @@ def labdb():
     return labeling
 
 
+def _distinct_jpegs(tmp_path, n):
+    """n visually distinct images (distinct pHash so dedup keeps them all)."""
+    from PIL import ImageDraw
+    paths = []
+    for i in range(n):
+        p = tmp_path / f"c{i}.jpg"
+        img = Image.new("RGB", (400, 400), (20, 190, 40))
+        d = ImageDraw.Draw(img)
+        d.rectangle(
+            [20 + i * 90, 20, 120 + i * 110, 200 + i * 50],
+            fill=(200, 60 + i * 60, 30),
+        )
+        img.save(p, format="JPEG")
+        paths.append(str(p))
+    return paths
+
+
 def test_run_ingestion_deficit_driven(labdb, tmp_path, monkeypatch):
-    # one green candidate per class via a stubbed probe (no network)
+    # one candidate per class via a stubbed probe (no network / Kaggle)
     def fake_probe(cls, slug, target_classes):
         p = tmp_path / f"{cls}.jpg"
         p.write_bytes(_jpeg(color=(20, 190, 40)))
-        yield {"local_path": str(p), "source": "openverse",
-               "source_url": "https://example.com/x", "subject_plant": None}
+        yield {"local_path": str(p), "source": "kaggle_supplement",
+               "source_url": f"kaggle:test/{cls}/x.jpg", "subject_plant": None}
 
     monkeypatch.setattr(ingest_pipeline, "probe_class", fake_probe)
     targets = {"nutrient_deficiency": 2, "leaf_spot": 0}  # leaf_spot weight 0 → skipped
@@ -81,22 +77,13 @@ def test_run_ingestion_deficit_driven(labdb, tmp_path, monkeypatch):
 
 
 def test_run_ingestion_auto_labels(labdb, tmp_path, monkeypatch):
-    # 3 VISUALLY DISTINCT candidates (distinct pHash so dedup keeps all 3);
-    # the classifier routes them yes/no/pending.
-    from PIL import ImageDraw
-    paths = []
-    for i in range(3):
-        p = tmp_path / f"c{i}.jpg"
-        img = Image.new("RGB", (400, 400), (20, 190, 40))
-        d = ImageDraw.Draw(img)
-        d.rectangle([20 + i * 90, 20, 120 + i * 110, 200 + i * 50], fill=(200, 60 + i * 60, 30))
-        img.save(p, format="JPEG")
-        paths.append(str(p))
+    # 3 distinct candidates; the classifier routes them yes/no/pending.
+    paths = _distinct_jpegs(tmp_path, 3)
 
     def fake_probe(cls, slug, target_classes):
         for p in paths:
-            yield {"local_path": p, "source": "openverse",
-                   "source_url": f"https://example.com/{p}", "subject_plant": None}
+            yield {"local_path": p, "source": "kaggle_supplement",
+                   "source_url": f"kaggle:test/x/{p}", "subject_plant": None}
 
     routes = iter([
         ("auto_yes", "nutrient_deficiency", 0.9, ["nutrient_deficiency"]),
@@ -111,8 +98,46 @@ def test_run_ingestion_auto_labels(labdb, tmp_path, monkeypatch):
     targets = {"nutrient_deficiency": 10}
     ingest_pipeline.run_ingestion(targets, None, tmp_path / "img", classify=classify)
     st = labeling.stats(targets)["per_class"]["nutrient_deficiency"]
-    assert st["auto_yes"] == 1 and st["pending"] == 1   # auto_no was dropped
+    assert st["auto_yes"] == 1 and st["pending"] == 1
+    # auto_no rows are KEPT (hard-negative preservation), but don't count
+    # toward the target / validated supply.
+    assert st["auto_no"] == 1
     assert st["validated"] == 1                          # auto_yes counts as approved
+
+
+def test_run_ingestion_audit_sampling(labdb, tmp_path, monkeypatch):
+    # audit_rate=1.0 → every confident call lands pending with audit=1
+    paths = _distinct_jpegs(tmp_path, 2)
+
+    def fake_probe(cls, slug, target_classes):
+        for p in paths:
+            yield {"local_path": p, "source": "kaggle_supplement",
+                   "source_url": f"kaggle:test/x/{p}", "subject_plant": None}
+
+    def classify(img, proposed):
+        return ("auto_yes", proposed, 0.95, [proposed])
+
+    monkeypatch.setattr(ingest_pipeline, "probe_class", fake_probe)
+    targets = {"nutrient_deficiency": 10}
+    ingest_pipeline.run_ingestion(
+        targets, None, tmp_path / "img", classify=classify, audit_rate=1.0,
+    )
+    st = labeling.stats(targets)["per_class"]["nutrient_deficiency"]
+    assert st["pending"] == 2 and st["auto_yes"] == 0
+    with labeling._connect() as conn:
+        audits = conn.execute(
+            "SELECT COUNT(*) FROM candidates WHERE audit=1"
+        ).fetchone()[0]
+    assert audits == 2
+    # audit_rate=0 → none re-routed (fresh DB)
+    labeling.LABELING_DB_PATH.unlink()
+    labeling._initialised = False
+    labeling.init_db()
+    ingest_pipeline.run_ingestion(
+        targets, None, tmp_path / "img2", classify=classify, audit_rate=0.0,
+    )
+    st = labeling.stats(targets)["per_class"]["nutrient_deficiency"]
+    assert st["auto_yes"] == 2 and st["pending"] == 0
 
 
 def test_run_ingestion_skips_satisfied(labdb, tmp_path, monkeypatch):

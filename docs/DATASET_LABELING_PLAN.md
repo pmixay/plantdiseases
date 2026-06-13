@@ -1,155 +1,224 @@
-# Dataset labeling plan — model-trust active learning
+# Dataset & labeling plan — the closed data loop
 
-**Supersedes** the old human-labels-everything plan (`EVAL_DATASET_PLAN.md`, deleted).
-**Goal:** supply the thin classes with enough trustworthy data to make a **high-confidence
-production model**, while cutting human effort to the **uncertain minority only**.
+**Supersedes** the scrape-on-the-server plan (this file's previous revision)
+and the old human-labels-everything plan (`EVAL_DATASET_PLAN.md`, deleted).
+**Goal:** a self-reinforcing loop — offline collection → Kaggle dataset →
+server ingestion → production scan recording → user feedback → human
+verification of the uncertain minority → export → next dataset version →
+retrain — with hard eval-integrity guarantees and near-zero wasted human
+effort. The roadmap context (which classes/defects this loop must fix and
+why) lives in `docs/ROADMAP.md`.
 
-## Context
+## The loop, end to end
 
-The thin classes (`nutrient_deficiency`, `leaf_scorch_underwatering`, `gray_mold_botrytis`,
-and the lighter `powdery_mildew`) are eval-supply-bound. The first approach asked a human to
-verify **every** scraped/Kaggle candidate — thousands of cards, most of them obvious. That
-doesn't scale and wastes humans on images the model already understands.
+```
+            (1) OFFLINE COLLECTION (maintainer, external)
+   scrape → disjointness → phash dedup → per-creator cap → vision-agent judge
+                         │  manifest.csv, verified_by=agent_vision
+                         ▼
+            (2) KAGGLE DATASET  maxayyt5/houseplant-disease-eval-supplement
+                         │  server polls version; ingests on change only
+                         ▼
+            (3) SERVER INGESTION  (Kaggle-only; model auto-routes)
+                auto_yes (confident) / pending (human) / auto_no (kept!)
+                         ▼
+            (4) PRODUCTION SCANS  /api/analyze → anonymized recording
+                route_scan(): confident → auto_yes, suspicious → pending
+                         ▼
+            (5) USER FEEDBACK  → top-priority pending cards
+                         ▼
+            (6) HUMAN LABELING  (3-source queue + audit samples)
+                         ▼
+            (7) EXPORT BUNDLE  (split-aware manifest, hard negatives)
+                 │ admin downloads, uploads to Kaggle manually
+                 └────────► feeds (1): dedup index + judge exemplars
+```
 
-The model is **calibrated**: temperature scaling + inductive conformal prediction (RAPS) +
-an embedding/MaxLogit OOD gate (`server/pipeline.py` `analyze()` → `class_name`, calibrated
-`confidence`, `all_probs`, `prediction_set`, OOD). So it can be **trusted to label the easy
-majority itself** and to **flag what it's unsure about**. This is textbook **active learning
-(uncertainty sampling)**: the model auto-labels confident cases; humans adjudicate only the
-confusing ones.
+## (1) Offline collection — acceptance criteria (the code stays external)
 
-## The core idea
+The maintainer's scraping/judging pipeline is NOT in this repo; the server
+only consumes its published output. For dataset versions to stay consistent,
+every published version must satisfy:
 
-Each candidate carries a **proposed class** (the folder/scrape query it came from). We run it
-through the calibrated gamma classifier and use the **conformal prediction set** (primary) plus
-the temperature-calibrated `confidence` and OOD gate to route it:
+- **Folder layout:** `<class>/<image>` per the 9 canonical classes; a
+  `manifest.csv` with `filename, class, source_url, verified_by` (the vision
+  agent writes `verified_by=agent_vision`, confidence optional).
+- **Source disjointness (anti-leakage, mandatory):** no image may originate
+  from a training corpus source. Banned origins: iNaturalist (any host),
+  PlantDoc, PlantVillage, the Kaggle training slugs
+  (`abdulahad0296`, `pappu54`, `usmanafzaal`, `guy007`,
+  `alexanderuzhinskiy`), and Wikimedia/Wikipedia (label quality). A held-out
+  image that is secretly a training image inflates the ship gate.
+- **Image gates:** real photos, short side ≥ 384 px, pHash near-dup removal
+  (Hamming ≤ 6), per-creator cap to bound correlated content.
+- **Vision-agent judging:** every image is kept/rejected by the agent with
+  the exported reference exemplars (see §7) as its calibration anchors.
+- **Domain gate (v2 onward):** subject must be a **houseplant / indoor
+  plant** in a plausible indoor context. v1 is accepted as-is and contains
+  agricultural/field imagery (grape Botrytis, orchard fruit) — a known
+  limitation and a likely contributor to weak-class errors on real phone
+  photos.
+- **Hard negatives (v2 onward, ROADMAP-driven):** ~300 scorch-lookalike
+  NEGATIVES (healthy plants with dry brown tips/edges; non-plant brown
+  papery textures; fallen leaves) — the shipped model's #1 defect is
+  leaf_scorch PRECISION (0.52), so it needs lookalike negatives, not more
+  positives. Place them under `healthy/` / `not_a_plant/` as appropriate.
 
-| Model vs. proposed class | Status | Becomes |
+## (2)→(3) Server ingestion — Kaggle-only, version-gated
+
+`server/ingest/` pulls ONLY from the Kaggle supplement (no in-server
+scraping; `openverse`/HTTP probes and the runtime disjointness gate were
+removed — disjointness is now an offline criterion above).
+
+- **Version gate:** each cycle polls the dataset's `currentVersionNumber`
+  (cheap metadata call, download credentials only); a full ingestion runs
+  only when the version changed (or first run). State lives in the
+  `labeling.db` `meta` table (`last_ingested_dataset_version`).
+- **Gates kept:** decode + min-side 384, SHA dedup, pHash near-dup.
+- **Model auto-routing** (`labeling_auto.classify_candidate`): conformal-set
+  primary, `labeling_conf_high` fallback —
+  `auto_yes` (confident agree) / `auto_no` (confident disagree) /
+  `pending` (uncertain → human).
+- **`auto_no` rows are KEPT** (row + image): confident disagreements are
+  exactly where model false positives hide. They don't count toward targets
+  but stay auditable and exportable as hard negatives after human review.
+- **Audit sampling (`labeling_audit_rate`, default 0.05):** a deterministic
+  (by SHA) fraction of confident calls is re-routed to the human queue with
+  `audit=1` — humans spot-check the model's confident calls, so auto
+  pre-filtering can never silently bury its blind spots.
+
+## (4) Production scan recording — anonymized
+
+Every `/api/analyze` result except `not_a_plant` (which also covers the blur
+gate's synthetic NAP) is recorded AFTER the response is sent
+(BackgroundTasks; zero hot-path latency), subject to consent + caps:
+
+- **Anonymization by construction:** the decoded image is re-encoded
+  (JPEG q88, no EXIF — GPS/metadata dropped), downscaled to ≤1024 px. No
+  user id, IP, or filename is ever passed in. The ONLY linkage is the
+  response `scan_id`; the user↔scan_id join lives solely in `feedback.db`
+  and is swept by the GDPR delete cascade.
+- **Routing:** `route_scan()` over the already-computed result — singleton
+  conformal set == top-1 ⇒ `auto_yes`; otherwise `pending` (suspicious →
+  human queue). `auto_no` is impossible for scans (the model's own
+  prediction is the proposed class).
+- **Class-balanced caps:** suspicious scans and weak-class (target>0) scans
+  are always kept; confident common-class scans are sampled at
+  `scan_common_keep_rate` (0.1) decided deterministically by SHA; per-class
+  daily cap (`scan_daily_cap_per_class`) + global `scan_max_images` bound
+  disk.
+- **Retention / prune order (protects hard cases):** unreviewed `pending`
+  scans die after `scan_retention_days` (90); over the global cap, redundant
+  `auto_yes` common-class scans are pruned first, then weak-class
+  `auto_yes`; `user_feedback` rows and human-verdict rows are NEVER pruned.
+- **Consent:** disclosed via the blocking first-launch consent page
+  (Android onboarding; upgrade installs get a one-time blocking dialog) and
+  `website/privacy.html`. See `docs/PLAY_DATA_SAFETY.md`.
+
+## (5) Feedback → the labeling queue
+
+- Negative feedback re-opens the recorded candidate (even an `auto_yes` one)
+  as `pending` under `source='user_feedback'`, retargeted at the user's
+  corrected class, carrying their note — the canonical false-positive
+  signal, served at top queue priority. It never overrides a human verdict.
+- Positive feedback stamps `user_correct=1` and promotes a still-`pending`
+  scan to `auto_yes` when the user confirms the model's own prediction.
+- If the scan was never recorded (old install / recording off / disputed
+  NAP), the negative-feedback image upload builds the candidate from the
+  uploaded bytes via the same anonymize helper. **Known gap:** negative
+  feedback with no image and no recorded scan has no pixels — nothing can be
+  enqueued.
+- **GDPR:** `/api/community/user/{id}` delete cascades community rows,
+  feedback rows AND labeling candidates keyed by that user's scan_ids.
+  Plain `user_scan` rows are unreachable by design (no user linkage exists).
+
+## (6) Human labeling — 3 prioritised sources
+
+`/api/label/next` serves `pending` cards in priority order **feedback →
+dataset → scans** (filterable via `?source=`). Target gating (skip
+satisfied/weight-0 classes) applies ONLY to the dataset group — a feedback
+correction for a satisfied class must still surface. Audit cards show the
+model's verdict so the human knows they're auditing. `/api/label/stats`
+adds a per-source block.
+
+### Per-class targets (`labeling_targets`) — retargeted on model v2.5.0 evidence
+
+| class | target | rationale (real-world eval, n=1938) |
 |---|---|---|
-| **Agrees, confident** — conformal set is the singleton `{proposed}` (or proposed == top-1 with `conf ≥ τ_high`), not OOD | `auto_yes` | **approved** (model-trusted, no human) |
-| **Confidently disagrees** — proposed ∉ conformal set and top-1 is a different in-domain class at `conf ≥ τ_high`; or OOD/not-a-plant for a disease class | `auto_no` | discarded |
-| **Uncertain / confusing** — proposed ∈ a multi-class conformal set, or `conf ∈ [τ_low, τ_high]`, or top-1 ≠ proposed but proposed still plausible | `pending` → human `yes/no/not_sure` | **approved** iff human `yes` |
-
-**Trust-the-model routing (maintainer's choice).** Approved = `auto_yes` (model) + human `yes`
-(the confusing tail). The whole approved pool is exported as **one eval-eligible dataset** and
-the notebook's existing group-split seeds both train and eval from it — exactly how `doctorp` is
-handled today. Humans only ever touch the uncertain minority.
-
-> **Caveat (accepted):** because model-auto-labeled images feed the eval slice too, the ship gate
-> partly measures the model on its own confident calls — a mild optimistic bias. This is the
-> explicit "trust the model" trade for near-zero human effort. Two cheap honesty guards remain:
-> the conformal set is *calibrated* (a singleton set genuinely means low error at the chosen α),
-> and humans still supply the decision-boundary (eval-hardest) cases. If the gate later looks
-> inflated, flip `labeling_auto_to_eval=false` to make `auto_yes` train-only again.
-
-The signal is the **conformal prediction set** (`labeling_trust_conformal=true`): auto-accept only
-when the calibrated set is the singleton `{proposed}`. Raw `τ_high`/`τ_low` are the fallback when
-conformal is disabled or unavailable.
-
-## Per-class targets (unchanged, config-driven `LABELING_TARGETS`)
-
-| class | weight (target approved) | notes |
-|---|---|---|
-| nutrient_deficiency | 600 | thinnest eval |
-| leaf_scorch_underwatering | 600 | over-triggers; needs clean boundary cases |
-| gray_mold_botrytis | 400 | hardest to source (best-effort) |
-| powdery_mildew | 150 | modest top-up; needs its own source (not in the Kaggle set) |
+| nutrient_deficiency | 600 | eval support only 25 — the bottleneck is *verified eval volume*, which production-scan verification feeds directly |
+| leaf_scorch_underwatering | 600 | precision **0.52** — over-triggers on healthy + not-a-plant; fix = hard negatives (§1) + boundary positives |
+| gray_mold_botrytis | 400 | precision 0.75, supply-limited (239/400 in dataset v1) |
+| powdery_mildew | **0** | solved: precision 0.97 / recall 0.91 — the old 150 target is stale |
 | others | 0 | not collected |
 
-Targets now count **approved = `auto_yes` (train) + human `yes` (eval)**, reported split so we
-can see "train auto-labeled" vs "eval human-verified" progress separately.
+**Human verification priority:** nutrient_deficiency, leaf_scorch and
+gray_mold scans first — their eval supports (25/45/53) are the trust
+bottleneck for the next ship gate.
 
-## Sources & gates (carried over, condensed)
+## (7) Export → next dataset version (and back into §1)
 
-Ingestion (`server/ingest/`) is unchanged in spirit:
+`POST /api/label/export` builds a Kaggle-ready zip of verified images; the
+admin downloads it and updates the Kaggle dataset **manually** (`kaggle
+datasets version …`). The server has download-only Kaggle access and NEVER
+uploads.
 
-- **Sources:** the maintainer's Kaggle eval-supplement (`kaggle_supplement`, primary) + Openverse
-  (fallback). De-prioritize Wikimedia (often mislabeled).
-- **Image gates:** real photo, short side ≥ 384 px, low-green floor 0.04 (keeps brown scorch /
-  yellow chlorosis), SHA + perceptual-hash dedup.
-- **Source-disjointness (anti-leakage, mandatory):** reject any candidate whose origin is a
-  training source (iNaturalist / PlantDoc / PlantVillage / Kaggle training slugs). Without it a
-  held-out image could secretly be a training image.
-- **Deficit-driven:** only scrape classes under target; idle otherwise; log every source's
-  yield (no silent failures).
-
-## Server refactor (`server/labeling.py` + `server/ingest/` + `main.py`)
-
-1. **`candidates` schema** — add `model_pred TEXT`, `model_conf REAL`, `model_set TEXT`
-   (JSON conformal set) for provenance/audit; extend `status` to
-   `{pending, auto_yes, auto_no, yes, no, not_sure}`. (Idempotent `ALTER TABLE ADD COLUMN`,
-   mirroring `feedback.py`.)
-2. **Auto-label step** — new `server/labeling_auto.py` `classify_candidate(image, proposed) ->
-   (status, pred, conf, set)` that calls the already-loaded `pipeline.classifier` (gamma) and
-   applies the routing table (conformal set first, τ fallback, OOD guard). Runs in the ingestion
-   worker thread, right after the image gates, before the row is committed. Each candidate is
-   inserted with its computed status + model provenance. Fail-soft: if the pipeline is
-   unavailable, fall back to `status='pending'` (human) so nothing is lost.
-3. **Human queue = the confusing set, automatically.** `claim_next` already serves only
-   `status='pending'` → no change; humans now only ever see uncertain cards.
-4. **`stats`** — per class report `{target, auto_yes, human_yes (yes), pending (confusing),
-   auto_no, validated = auto_yes+yes, satisfied: validated ≥ target}`.
-5. **Export** — one **approved** bundle (`status IN ('auto_yes','yes')`) organised `<class>/…`
-   with `manifest.csv` carrying `verified_by` = `model` (auto_yes) vs `human` (yes) and the
-   model `pred/conf/set` for audit. The notebook §9 wires it as an **eval-eligible** source
-   (like `doctorp`); the group-split seeds both train and eval.
-6. **Re-score on model update (optional)** — admin endpoint to re-run `classify_candidate` over
-   existing rows when a new model ships (a candidate the new model is now sure about leaves the
-   human queue). Cheap (cached images).
-7. **Config (`config.example.json` security.*):** `labeling_auto_enabled` (true),
-   `labeling_trust_conformal` (true — conformal set primary), `labeling_conf_high` (τ_high 0.85),
-   `labeling_conf_low` (τ_low 0.55), `labeling_auto_to_eval` (true — `auto_yes` counts toward the
-   approved/eval pool; flip to make auto-labels train-only and require human `yes` for eval).
-
-## App refactor — minimum human contribution
-
-The app already serves only `pending` (confusing) cards, so the change is **reframing + speed**,
-not new screens:
-
-- **Banner:** "The model auto-labeled the easy ones. You only see the cases it's unsure about."
-- **Show the model's read on each card:** its top guess + confidence, and the conformal
-  alternatives as chips (e.g. *"model: leaf_spot 0.46 · nutrient_deficiency 0.39"*). The human
-  instantly sees *why* it's ambiguous.
-- **One-tap resolution:** keep Yes / No / Not-sure, but add the conformal-set classes as
-  quick-pick chips so the human can pick the *correct* class in one tap when the proposed one is
-  wrong (captured as a correction for future routing; the verdict itself stays yes/no/not_sure
-  against the proposed class for the eval slice).
-- **Stats:** surface "auto-labeled N (train) · you resolved M ambiguous (eval) · K left" so the
-  human sees their effort is small and targeted.
-- Keep the prior fixes (window insets, class switcher, satisfied-gating, exit).
+- **Manifest columns:** `filename, class, source, source_url, subject_plant,
+  verified_by, split, sha256, phash, notes`. `verified_by` ∈ `model`
+  (auto_yes), `model+user` (auto_yes + positive feedback), `human` (yes).
+  **No scan_id, no feedback text, no user data.**
+- **Eval-integrity rule (mechanical in the `split` column):** the model must
+  never grade or calibrate itself on its own confident calls. Every
+  `auto_yes` row (`verified_by` model or model+user) is `split=train`,
+  always. Held-out splits draw ONLY from human-verified rows: a
+  deterministic ~20% (by sha) of human-verified **production** scans gets
+  `split=calibration` (real phone photos are exactly what temperature
+  scaling + RAPS need), all other human-verified rows get `split=eval`. The
+  training notebook routes the manifest `split` accordingly; its group-split
+  keeps eval source-disjoint from train.
+- **Near-dup sweep at build time:** pHash Hamming ≤ 6 across bundle items;
+  the strongest provenance wins (`human` > `model+user` > `model`), dropped
+  rows are listed in `skipped_dups.csv` (DB rows untouched).
+- **Hard negatives:** `?include=hard_negatives` adds a
+  `hard_negatives/<proposed_class>/` tree of human-`no` rows (confirmed
+  false positives), `split=hard_negative`. Excluded by default so training
+  bundles stay positives-only.
+- **Closing the loop:** once per-class targets are admin-verified, the
+  bundle feeds the next offline collection run — `sha256`/`phash` columns
+  are the scrape dedup index (never re-collect what's verified), verified
+  positives are reference exemplars and the hard-negative tree gives the
+  vision-agent judge reference *rejects*.
 
 ## Verification
 
-1. Server unit tests: routing table (`classify_candidate` → auto_yes/auto_no/pending for
-   confident-agree / confident-disagree / uncertain, using a stub classifier returning crafted
-   `prediction_set`/`confidence`); export produces split `train/` + `eval/` bundles; stats split;
-   disjointness + dedup unchanged. `ruff` + full suite green; regenerate `openapi.json`.
-2. Live dry-run: ingest a batch → confirm most land `auto_yes` (train) and only the genuinely
-   ambiguous land `pending`; `/api/label/next` returns only confusing cards; `/stats` shows the
-   train/eval split; export yields two manifests.
-3. Android: `lintDebug testDebugUnitTest assembleRelease` green; manual — banner + model chips
-   render, one-tap resolution works, stats show the auto/human split.
-4. Anti-circularity check: confirm `auto_yes` rows are train-routed and never enter the eval
-   bundle; eval bundle is human-only.
+- Server: `ruff check .` + `pytest tests -q` (routing, recording,
+  feedback wiring, source queues, export splits, versioned ingestion are all
+  covered — see `tests/test_scan_recording.py`,
+  `tests/test_feedback_labeling_wiring.py`, `tests/test_label_sources.py`).
+- Android: `./gradlew lintDebug testDebugUnitTest assembleRelease`; manual —
+  fresh install ends onboarding on the consent page (Skip jumps to it,
+  Agree required), labeling source chips filter/badge correctly.
+- Live: scan → row in `candidates` with `source='user_scan'`; negative
+  feedback → card at top of `/api/label/next`; export manifest carries
+  `split` per the rule above and no scan_ids.
 
 ## Risks
 
-- **Circularity** — addressed by the train/eval routing (eval = human-verified uncertain cases
-  only; the model never self-certifies its own eval slice).
-- **Calibration drift** — trust rides on temperature/conformal being calibrated; re-fit on each
-  model ship (already done in notebook §6). If `prediction_set` looks miscalibrated, fall back to
-  raw `τ_high`/`τ_low` (config switch).
-- **Model blind spots** — a class the model systematically mislabels would auto-route its hard
-  cases to humans (good) but might auto-`no` true positives it's confident-wrong about. Mitigate
-  with a periodic human **audit sample** of `auto_yes`/`auto_no` (small random %), surfaced in the
-  same app queue.
-- **powdery_mildew** has no Kaggle source and Openverse is sparse — still needs a dedicated
-  dataset, or it stays at 0 regardless of the labeling method.
+- **Calibration drift** — trust rides on temperature/conformal staying
+  calibrated; both are re-fit on every model ship (notebook §6), and
+  calibration draws only from human-verified production items.
+- **Model blind spots** — mitigated three ways now: audit sampling of
+  confident calls, kept `auto_no` rows, and negative feedback always
+  reaching the queue at top priority.
+- **Consent/regulatory** — recording is consent-gated and anonymized;
+  `docs/PLAY_DATA_SAFETY.md` keeps the Play form answers in sync.
 
-## Actions needed from you
+## Maintainer actions (outside this repo)
 
-- Confirm the routing thresholds (τ_high 0.85 / τ_low 0.55) and that **auto-labeled → train,
-  human → eval** is the split you want (vs. requiring a human audit % of auto-labels).
-- A source for `powdery_mildew` if you want that class filled.
-- On approval I implement the server routing + schema, the split-aware export, and the app
-  reframe, then verify end-to-end against the live model.
+- Add the v2 houseplant-domain gate + scorch-lookalike hard negatives to the
+  offline pipeline, then publish dataset **v2** (more gray_mold ~160, no
+  powdery_mildew needed) — the server ingests it automatically on the
+  version bump.
+- Upload export bundles to Kaggle when notified; wire the manifest `split`
+  column in the training notebook (auto-labeled → train only).
+- Feed each export bundle back into the offline pipeline (dedup index +
+  judge exemplars).

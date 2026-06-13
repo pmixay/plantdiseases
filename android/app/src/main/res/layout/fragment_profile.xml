@@ -717,7 +717,10 @@
         </com.google.android.material.card.MaterialCardView>
 
         <!-- Footer: version. The "clear all history" action moved to the
-             Gallery tab's top-app-bar basket, next to the scans it wipes. -->
+             Gallery tab's top-app-bar basket, next to the scans it wipes.
+             The version row doubles as the HIDDEN admin entry: 7 quick taps
+             open the data-labeling password gate (dev-options pattern; the
+             visible button was removed for the Play release). -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -730,17 +733,9 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_xs"
+                android:padding="@dimen/space_sm"
                 android:textSize="@dimen/text_caption"
                 android:textColor="@color/on_surface_secondary" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_data_labeling"
-                style="@style/Widget.Material3.Button.TextButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_xs"
-                android:textSize="@dimen/text_caption"
-                android:text="@string/label_admin_entry" />
 
         </LinearLayout>
 

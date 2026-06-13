@@ -21,6 +21,12 @@ data class LabelCard(
     @SerializedName("model_pred") val modelPred: String? = null,
     @SerializedName("model_conf") val modelConf: Double? = null,
     @SerializedName("model_set") val modelSet: List<String> = emptyList(),
+    // User-feedback context (null for dataset/scan cards): true = thumbs-up,
+    // false = thumbs-down ("user proposed X / model said Y"), plus the note.
+    @SerializedName("scan_feedback") val scanFeedback: Boolean? = null,
+    @SerializedName("feedback_note") val feedbackNote: String? = null,
+    // true ⇒ spot-check of a confident model call (audit sampling).
+    val audit: Boolean = false,
 )
 
 data class LabelNextResponse(
@@ -45,9 +51,18 @@ data class LabelClassStat(
     val remaining: Int = 0,
 )
 
+data class LabelSourceStat(
+    val pending: Int = 0,
+    val claimed: Int = 0,
+    val resolved: Int = 0,
+)
+
 data class LabelStatsResponse(
     @SerializedName("per_class") val perClass: Map<String, LabelClassStat> = emptyMap(),
     val totals: Map<String, Int> = emptyMap(),
+    // Per-source-group counts ("feedback" / "dataset" / "scans"); empty when
+    // talking to an older server (Gson default keeps back-compat).
+    val sources: Map<String, LabelSourceStat> = emptyMap(),
 )
 
 data class LabelClueItem(

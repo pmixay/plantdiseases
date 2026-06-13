@@ -106,6 +106,13 @@
     <string name="onboarding_care_title">Care</string>
     <string name="onboarding_care_body">Get bilingual treatment, prevention tips and a watering / light plan tailored to the diagnosis.</string>
 
+    <!-- Data-use consent (blocking; Play prominent disclosure) -->
+    <string name="consent_title">Your data &amp; our models</string>
+    <string name="consent_body">Photos you scan and the feedback you give are used to train and improve our diagnosis models. Data is anonymized before storage — no account, name, precise location or device identifiers are attached, and photo metadata (EXIF, including GPS) is removed. You can delete your contributions at any time from Profile.</string>
+    <string name="consent_agree">Agree</string>
+    <string name="consent_privacy_link">Privacy policy</string>
+    <string name="consent_privacy_url" translatable="false">https://pdis.arbuz.lol/privacy.html</string>
+
     <!-- Result -->
     <string name="new_scan">New Scan</string>
     <string name="heatmap_label">Detection Area</string>
@@ -769,4 +776,131 @@
     <string name="label_empty">No more cards for this class.</string>
     <string name="label_model_hint">Model: %1$s %2$d%%, likely: %3$s</string>
     <string name="label_error">Something went wrong.</string>
+
+    <!-- Home -->
+    <string name="tab_home">Home</string>
+    <string name="home_greeting_morning">Good morning 🌿</string>
+    <string name="home_greeting_day">Good afternoon 🌿</string>
+    <string name="home_greeting_evening">Good evening 🌿</string>
+    <string name="home_greeting_night">Late-night plant care 🌙</string>
+    <string name="home_subtitle">What shall we do for your plants today?</string>
+    <string name="home_scan_title">Scan health</string>
+    <string name="home_scan_sub">Diagnose a disease from a photo</string>
+    <string name="home_identify_title">Identify plant</string>
+    <string name="home_identify_sub">What species is this?</string>
+    <string name="home_tools">Tools</string>
+    <string name="home_tool_light">Light meter</string>
+    <string name="home_tool_water">Watering helper</string>
+    <string name="home_tool_symptom">Symptom check</string>
+    <string name="home_tool_guide">Disease guide</string>
+    <string name="home_trending">Trending nearby</string>
+    <string name="home_trending_global">Worldwide</string>
+    <string name="home_trending_species_chip">%1$s · %2$d</string>
+    <string name="home_trending_disease_row">%1$s — %2$d scans this week</string>
+    <string name="home_open_community">Open community</string>
+    <string name="home_stats_title">Your stats &amp; tips</string>
+    <string name="home_stats_summary">%1$d scans · %2$d healthy · %3$d plants in garden</string>
+    <string name="home_popular_diseases">Popular diseases</string>
+    <string name="home_disease_guide">Disease guide</string>
+    <string name="home_see_all">See all</string>
+    <string name="home_guide_tag">Guide</string>
+    <plurals name="home_species_count">
+        <item quantity="one">%d scan</item>
+        <item quantity="other">%d scans</item>
+    </plurals>
+    <plurals name="home_disease_count">
+        <item quantity="one">%d scan this week</item>
+        <item quantity="other">%d scans this week</item>
+    </plurals>
+
+    <!-- Guide / disease detail -->
+    <string name="guide_detail_scan">Scan a plant for this</string>
+
+    <!-- Stats charts -->
+    <string name="stats_scans_label">scans</string>
+    <string name="stats_last_7_days">Scans this week</string>
+    <string name="stats_legend_healthy">Healthy · %1$d</string>
+    <string name="stats_legend_diseased">Issues · %1$d</string>
+    <plurals name="stats_garden_plants_value">
+        <item quantity="one">%d plant in your garden</item>
+        <item quantity="other">%d plants in your garden</item>
+    </plurals>
+    <string-array name="weekday_initials">
+        <item>Su</item>
+        <item>Mo</item>
+        <item>Tu</item>
+        <item>We</item>
+        <item>Th</item>
+        <item>Fr</item>
+        <item>Sa</item>
+    </string-array>
+
+    <!-- Identify species -->
+    <string name="identify_title">Identify plant</string>
+    <string name="identify_take_photo">Take photo</string>
+    <string name="identify_pick_gallery">From gallery</string>
+    <string name="identify_organ">What\'s in the photo?</string>
+    <string name="identify_organ_leaf">Leaf</string>
+    <string name="identify_organ_flower">Flower</string>
+    <string name="identify_organ_fruit">Fruit</string>
+    <string name="identify_organ_bark">Stem / bark</string>
+    <string name="identify_go">Identify</string>
+    <string name="identify_unavailable">Species identification isn\'t available on this server right now.</string>
+    <string name="identify_no_match">No confident match — try a closer, well-lit photo of a single leaf or flower.</string>
+    <string name="identify_failed">Something went wrong. Check your connection and try again.</string>
+    <string name="identify_photo_failed">Couldn\'t read that photo.</string>
+    <string name="identify_candidate_row">%1$s (%2$s) · %3$d%%</string>
+    <string name="identify_family">family %1$s</string>
+    <string name="identify_loading">Loading…</string>
+    <string name="identify_no_info">No encyclopedia entry found for this species.</string>
+    <string name="identify_wikipedia">Read on Wikipedia</string>
+    <string name="identify_care_title">Care at a glance</string>
+    <string name="identify_light_tier">Light: %1$s</string>
+    <string name="identify_light_low">low light</string>
+    <string name="identify_light_medium">medium light</string>
+    <string name="identify_light_bright_indirect">bright indirect light</string>
+    <string name="identify_light_direct">direct sun</string>
+    <string name="identify_water_days">Water about every %1$d days</string>
+    <string name="identify_water_as_needed">Water when the top soil is dry</string>
+    <string name="identify_humidity">Humidity: %1$s</string>
+    <string name="identify_toxic_pets">⚠ Toxic to pets</string>
+    <string name="identify_add_garden">Add to garden</string>
+    <string name="identify_scan_health">Scan health</string>
+    <string name="identify_added_garden">Added to your garden</string>
+
+    <!-- Stats & Tips -->
+    <string name="stats_tips_title">Stats &amp; tips</string>
+    <string name="stats_section">Your stats</string>
+    <string name="tips_section">Guides &amp; tips</string>
+    <string name="stats_total_scans">Plant scans</string>
+    <string name="stats_healthy_share">Healthy results</string>
+    <string name="stats_healthy_share_value">%1$d%% (%2$d)</string>
+    <string name="stats_issues_found">Issues found</string>
+    <string name="stats_garden_plants">Plants in garden</string>
+    <string name="stats_top_issues">Your most frequent issues</string>
+    <string name="stats_empty">No scans yet — your stats will appear after the first scan.</string>
+    <string name="tip_scanning_title">How to take a good scan photo</string>
+    <string name="tip_scanning_body">Fill the frame with a single leaf, use daylight, and hold the phone steady — the scanner auto-fires when the frame is sharp. Avoid backlight and wet, glossy reflections; photograph the most affected leaf, including some healthy tissue for contrast.</string>
+    <string name="tip_results_title">Understanding your results</string>
+    <string name="tip_results_body">The confidence score is calibrated: when the app isn\'t sure it shows several candidate conditions instead of guessing. Treat the result as guidance, check the alternatives card, and use a second photo or the symptom checker when the model says it\'s uncertain.</string>
+    <string name="tip_watering_title">Watering basics</string>
+    <string name="tip_watering_body">Overwatering kills more houseplants than drought. Check the top 2–3 cm of soil with a finger — water only when it\'s dry, then water thoroughly until it drains. Use the Watering helper for a per-plant starting point and adjust by season.</string>
+    <string name="tip_light_title">Light basics</string>
+    <string name="tip_light_body">Most houseplants want bright indirect light: near a window but out of harsh midday sun. Sudden moves from shade to sun cause scorch — acclimate over a week. Use the Light meter at the plant\'s spot to measure what it actually gets.</string>
+    <string name="tip_seasonal_title">Seasonal care</string>
+    <string name="tip_seasonal_body">In autumn and winter most plants rest: water less often, stop fertilising, and keep leaves away from cold glass and radiators. Resume feeding in spring when new growth appears.</string>
+    <string name="tip_repotting_title">Repotting</string>
+    <string name="tip_repotting_body">Repot when roots circle the pot or grow out of the drainage holes — usually every 1–2 years, in spring. Go up only one pot size; an oversized pot holds water and invites root rot.</string>
+    <string name="tip_pests_title">Preventing pests</string>
+    <string name="tip_pests_body">Quarantine new plants for two weeks, inspect leaf undersides when you water, and wipe dust off foliage. Sticky residue, fine webbing or white fluff are early signs — scan the plant and isolate it before treating.</string>
+    <string name="tip_community_title">Community &amp; your data</string>
+    <string name="tip_community_body">Share scans to see what\'s spreading near you and get second opinions from other growers. Photos are anonymized (metadata stripped) and you can delete everything you\'ve shared from Profile at any time.</string>
+    <string name="label_source_all">All</string>
+    <string name="label_source_feedback">Feedback</string>
+    <string name="label_source_dataset">Dataset</string>
+    <string name="label_source_scans">Scans</string>
+    <string name="label_audit_badge">Audit</string>
+    <string name="label_feedback_ctx">User proposed %1$s — model said %2$s</string>
+    <string name="label_stats_sources">By source</string>
+    <string name="label_stats_classes">By class</string>
 </resources>

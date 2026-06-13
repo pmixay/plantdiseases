@@ -15,6 +15,9 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.navigation.fragment.NavHostFragment
+import androidx.navigation.ui.AppBarConfiguration
+import androidx.navigation.ui.navigateUp
+import androidx.navigation.ui.setupActionBarWithNavController
 import androidx.navigation.ui.setupWithNavController
 import com.plantdiseases.app.databinding.ActivityMainBinding
 import com.plantdiseases.app.ui.onboarding.OnboardingActivity
@@ -24,6 +27,7 @@ import kotlinx.coroutines.launch
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
+    private lateinit var appBarConfiguration: AppBarConfiguration
 
     // Single batched request for every startup permission we care
     // about (camera + coarse location + notifications on 13+). Before
@@ -74,6 +78,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         maybeRequestStartupPermissions()
+        maybeShowConsentDialog()
 
         // Edge-to-edge display
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -144,6 +149,22 @@ class MainActivity : AppCompatActivity() {
         // app uses. The destination-changed listener it installs is separate
         // and survives this override, so the checked tab still stays in sync
         // with programmatic navigations (e.g. the profile/gallery CTAs).
+        // The five bottom-nav tabs are the top-level destinations (no Up
+        // arrow). Anything reached *from* a tab — e.g. the disease guide,
+        // now opened from the Home tools grid rather than its own tab —
+        // is non-top-level, so setupActionBarWithNavController shows a back
+        // arrow on the shared toolbar and onSupportNavigateUp pops it.
+        appBarConfiguration = AppBarConfiguration(
+            setOf(
+                R.id.homeFragment,
+                R.id.cameraFragment,
+                R.id.gardenFragment,
+                R.id.galleryFragment,
+                R.id.profileFragment,
+            ),
+        )
+        setupActionBarWithNavController(navController, appBarConfiguration)
+
         binding.bottomNavigation.setupWithNavController(navController)
         binding.bottomNavigation.setOnItemSelectedListener { item ->
             val navOptions = androidx.navigation.NavOptions.Builder()
@@ -221,6 +242,39 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** Upgrade path for installs that completed onboarding before the consent
+     *  page existed: a one-time BLOCKING dialog with the same disclosure +
+     *  Agree button (no decline path — Play "prominent disclosure" pattern,
+     *  same as the onboarding consent page new installs see). */
+    private fun maybeShowConsentDialog() {
+        if (OnboardingActivity.isDataConsentGiven(this)) return
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.consent_title)
+            .setMessage(R.string.consent_body)
+            .setCancelable(false)
+            .setPositiveButton(R.string.consent_agree) { _, _ ->
+                OnboardingActivity.setDataConsentGiven(this)
+            }
+            .setNeutralButton(R.string.consent_privacy_link, null)
+            .create()
+            .apply {
+                setOnShowListener {
+                    // Keep the dialog open when the privacy link is tapped —
+                    // the default neutral handler would dismiss it and let
+                    // the user bypass Agree.
+                    getButton(android.app.AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                        startActivity(
+                            Intent(
+                                Intent.ACTION_VIEW,
+                                android.net.Uri.parse(getString(R.string.consent_privacy_url)),
+                            ),
+                        )
+                    }
+                }
+            }
+            .show()
+    }
+
     private fun warmRegionCache() {
         val app = application as PlantDiseasesApp
         app.appScope.launch {
@@ -230,11 +284,19 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // Up arrow on non-top-level destinations (e.g. the disease guide opened
+    // from Home) pops the nav back stack via the shared toolbar.
+    override fun onSupportNavigateUp(): Boolean {
+        val navController = (supportFragmentManager
+            .findFragmentById(R.id.nav_host_fragment) as NavHostFragment).navController
+        return navController.navigateUp(appBarConfiguration) || super.onSupportNavigateUp()
+    }
+
     // Bounce animation on Scan tab icon
     private fun bounceScanIcon() {
         val menuView = binding.bottomNavigation.getChildAt(0) as? android.view.ViewGroup ?: return
-        if (menuView.childCount > 0) {
-            val scanItem = menuView.getChildAt(0) // First item = Scan
+        if (menuView.childCount > 1) {
+            val scanItem = menuView.getChildAt(1) // Second item = Scan (Home is first)
             scanItem.scaleX = 0.8f
             scanItem.scaleY = 0.8f
             scanItem.animate()
