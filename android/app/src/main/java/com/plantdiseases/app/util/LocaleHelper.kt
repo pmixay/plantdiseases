@@ -71,12 +71,4 @@ object LocaleHelper {
 
     /** True when the persisted language is Russian — used to pick RU vs EN copy. */
     fun isRussian(context: Context): Boolean = getSavedLanguage(context) == "ru"
-
-    /** Flips between "en" and "ru", persists it, and returns the new language. */
-    fun toggleLanguage(context: Context): String {
-        val current = getSavedLanguage(context)
-        val newLang = if (current == "ru") "en" else "ru"
-        setLocale(context, newLang)
-        return newLang
-    }
 }

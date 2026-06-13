@@ -166,14 +166,6 @@ interface ApiService {
         @Query("user_pseudo_id") userPseudoId: String? = null,
     ): retrofit2.Response<CommunityScansResponse>
 
-    /** Download a community thumbnail by filename. The full URL is
-     *  built relative to ``ServerConfig.baseUrl`` — the Android client
-     *  never gets an absolute URL from the server. */
-    @GET("api/community/thumb/{filename}")
-    suspend fun communityScanThumb(
-        @Path("filename") filename: String,
-    ): retrofit2.Response<ResponseBody>
-
     @DELETE("api/community/user/{user_pseudo_id}")
     suspend fun communityScanDeleteUser(
         @Path("user_pseudo_id") userPseudoId: String,
