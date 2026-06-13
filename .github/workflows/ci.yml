@@ -74,8 +74,10 @@ jobs:
       # Restores the Gradle home (dependencies + local build cache) and reuses
       # it across runs, so unchanged modules/tasks aren't recompiled. Replaces
       # the hand-rolled actions/cache step and manages the Gradle daemon.
+      # Pinned to v6 (latest): v5+ runs on Node 24, clearing the Node 20
+      # runtime deprecation warning that v4 emitted.
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Grant gradlew execute permission
         run: chmod +x gradlew

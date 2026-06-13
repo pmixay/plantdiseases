@@ -15,6 +15,9 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.navigation.fragment.NavHostFragment
+import androidx.navigation.ui.AppBarConfiguration
+import androidx.navigation.ui.navigateUp
+import androidx.navigation.ui.setupActionBarWithNavController
 import androidx.navigation.ui.setupWithNavController
 import com.plantdiseases.app.databinding.ActivityMainBinding
 import com.plantdiseases.app.ui.onboarding.OnboardingActivity
@@ -24,6 +27,7 @@ import kotlinx.coroutines.launch
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
+    private lateinit var appBarConfiguration: AppBarConfiguration
 
     // Single batched request for every startup permission we care
     // about (camera + coarse location + notifications on 13+). Before
@@ -145,6 +149,22 @@ class MainActivity : AppCompatActivity() {
         // app uses. The destination-changed listener it installs is separate
         // and survives this override, so the checked tab still stays in sync
         // with programmatic navigations (e.g. the profile/gallery CTAs).
+        // The five bottom-nav tabs are the top-level destinations (no Up
+        // arrow). Anything reached *from* a tab — e.g. the disease guide,
+        // now opened from the Home tools grid rather than its own tab —
+        // is non-top-level, so setupActionBarWithNavController shows a back
+        // arrow on the shared toolbar and onSupportNavigateUp pops it.
+        appBarConfiguration = AppBarConfiguration(
+            setOf(
+                R.id.homeFragment,
+                R.id.cameraFragment,
+                R.id.gardenFragment,
+                R.id.galleryFragment,
+                R.id.profileFragment,
+            ),
+        )
+        setupActionBarWithNavController(navController, appBarConfiguration)
+
         binding.bottomNavigation.setupWithNavController(navController)
         binding.bottomNavigation.setOnItemSelectedListener { item ->
             val navOptions = androidx.navigation.NavOptions.Builder()
@@ -262,6 +282,14 @@ class MainActivity : AppCompatActivity() {
                 com.plantdiseases.app.util.RegionResolver.resolveRegion(this@MainActivity)
             }
         }
+    }
+
+    // Up arrow on non-top-level destinations (e.g. the disease guide opened
+    // from Home) pops the nav back stack via the shared toolbar.
+    override fun onSupportNavigateUp(): Boolean {
+        val navController = (supportFragmentManager
+            .findFragmentById(R.id.nav_host_fragment) as NavHostFragment).navController
+        return navController.navigateUp(appBarConfiguration) || super.onSupportNavigateUp()
     }
 
     // Bounce animation on Scan tab icon
