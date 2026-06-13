@@ -5,24 +5,24 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.LinearLayout
-import android.widget.TextView
+import android.widget.ImageView
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
+import androidx.recyclerview.widget.LinearLayoutManager
+import com.bumptech.glide.Glide
 import com.google.android.material.bottomnavigation.BottomNavigationView
-import com.google.android.material.chip.Chip
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.TrendingResponse
 import com.plantdiseases.app.databinding.FragmentHomeBinding
-import com.plantdiseases.app.databinding.ItemHomeToolBinding
 import com.plantdiseases.app.ui.camera.LightMeterActivity
 import com.plantdiseases.app.ui.camera.WaterCalculatorActivity
-import com.plantdiseases.app.ui.community.NearbyScansActivity
-import com.plantdiseases.app.ui.identify.SpeciesIdentifyActivity
+import com.plantdiseases.app.ui.guide.GuideDetailActivity
+import com.plantdiseases.app.ui.species.SpeciesDetailActivity
 import com.plantdiseases.app.ui.stats.StatsTipsActivity
 import com.plantdiseases.app.ui.symptom.SymptomCheckerActivity
+import com.plantdiseases.app.util.DiseaseCatalog
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.RegionResolver
 import kotlinx.coroutines.launch
@@ -30,11 +30,11 @@ import java.util.Calendar
 import java.util.Locale
 
 /**
- * Home — the app's front door (start destination). Two hero actions
- * (scan health / identify species), the tools grid (light meter, watering
- * helper, symptom check, disease guide), the community "trending nearby"
- * module and a Stats & Tips teaser. Everything here is a *launcher*: the
- * features themselves live in their own activities/fragments.
+ * Home — a visual discovery feed (start destination). Two hero actions, a
+ * compact tools row, then the carousels that are the centerpiece: trending
+ * species nearby (Wikipedia photos), popular diseases, and the disease
+ * guide. A slim Stats & Tips teaser sits at the bottom. Tapping a card opens
+ * a dedicated detail screen (SpeciesDetailActivity / GuideDetailActivity).
  */
 class HomeFragment : Fragment() {
 
@@ -42,6 +42,24 @@ class HomeFragment : Fragment() {
     private val binding get() = _binding!!
 
     private val isRu: Boolean get() = Locale.getDefault().language == "ru"
+    private val locale: String get() = if (isRu) "ru" else "en"
+
+    private val speciesAdapter by lazy {
+        SpeciesCarouselAdapter(
+            onClick = { SpeciesDetailActivity.start(requireContext(), it.species, null) },
+            loadImage = ::loadSpeciesImage,
+        )
+    }
+    private val popularAdapter by lazy {
+        DiseaseCarouselAdapter { GuideDetailActivity.start(requireContext(), it.guideId) }
+    }
+    private val guideAdapter by lazy {
+        DiseaseCarouselAdapter { GuideDetailActivity.start(requireContext(), it.guideId) }
+    }
+
+    // Memoised Wikipedia image URLs so re-binding a species card (or a
+    // refresh) doesn't re-hit /api/species-info for a name already resolved.
+    private val speciesImageCache = mutableMapOf<String, String?>()
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?,
@@ -56,28 +74,36 @@ class HomeFragment : Fragment() {
 
         binding.cardScan.setOnClickListener { openScanTab() }
         binding.cardIdentify.setOnClickListener {
-            startActivity(Intent(requireContext(), SpeciesIdentifyActivity::class.java))
+            startActivity(Intent(requireContext(), com.plantdiseases.app.ui.identify.SpeciesIdentifyActivity::class.java))
         }
 
-        bindTool(binding.toolLight, R.drawable.ic_light, R.string.home_tool_light) {
+        binding.tileLight.setOnClickListener {
             startActivity(Intent(requireContext(), LightMeterActivity::class.java))
         }
-        bindTool(binding.toolWater, R.drawable.ic_watering, R.string.home_tool_water) {
+        binding.tileWater.setOnClickListener {
             startActivity(Intent(requireContext(), WaterCalculatorActivity::class.java))
         }
-        bindTool(binding.toolSymptom, R.drawable.ic_disease, R.string.home_tool_symptom) {
+        binding.tileSymptom.setOnClickListener {
             startActivity(Intent(requireContext(), SymptomCheckerActivity::class.java))
         }
-        bindTool(binding.toolGuide, R.drawable.ic_guide, R.string.home_tool_guide) {
-            findNavController().navigate(R.id.guideFragment)
-        }
+        binding.tileGuide.setOnClickListener { findNavController().navigate(R.id.guideFragment) }
+        binding.tvGuideAll.setOnClickListener { findNavController().navigate(R.id.guideFragment) }
 
-        binding.btnTrendingCommunity.setOnClickListener {
-            startActivity(Intent(requireContext(), NearbyScansActivity::class.java))
-        }
         binding.cardStats.setOnClickListener {
             startActivity(Intent(requireContext(), StatsTipsActivity::class.java))
         }
+
+        binding.rvSpecies.layoutManager =
+            LinearLayoutManager(requireContext(), LinearLayoutManager.HORIZONTAL, false)
+        binding.rvSpecies.adapter = speciesAdapter
+        binding.rvPopular.layoutManager =
+            LinearLayoutManager(requireContext(), LinearLayoutManager.HORIZONTAL, false)
+        binding.rvPopular.adapter = popularAdapter
+        binding.rvGuide.layoutManager =
+            LinearLayoutManager(requireContext(), LinearLayoutManager.HORIZONTAL, false)
+        binding.rvGuide.adapter = guideAdapter
+
+        bindDiseaseGuide()
     }
 
     override fun onResume() {
@@ -110,12 +136,17 @@ class HomeFragment : Fragment() {
         )
     }
 
-    private fun bindTool(
-        tool: ItemHomeToolBinding, icon: Int, title: Int, onClick: () -> Unit,
-    ) {
-        tool.toolIcon.setImageResource(icon)
-        tool.toolTitle.setText(title)
-        tool.root.setOnClickListener { onClick() }
+    // ── Disease guide carousel (local, always available) ────────────
+    private fun bindDiseaseGuide() {
+        val items = DiseaseCatalog.diseaseGuideItems().map { gi ->
+            DiseaseCarouselAdapter.Item(
+                guideId = gi.id,
+                iconRes = gi.iconRes,
+                title = if (isRu) gi.titleRu else gi.titleEn,
+                subtitle = getString(R.string.home_guide_tag),
+            )
+        }
+        guideAdapter.submit(items)
     }
 
     // ── Stats teaser ────────────────────────────────────────────────
@@ -133,30 +164,59 @@ class HomeFragment : Fragment() {
         }
     }
 
-    // ── Trending nearby ─────────────────────────────────────────────
+    // ── Trending carousels ──────────────────────────────────────────
     private fun loadTrending() {
         val app = requireActivity().application as PlantDiseasesApp
         val appContext = requireContext().applicationContext
         viewLifecycleOwner.lifecycleScope.launch {
-            val region = runCatching { RegionResolver.resolveRegion(appContext) }
-                .getOrNull()
+            val region = runCatching { RegionResolver.resolveRegion(appContext) }.getOrNull()
             val trending = runCatching {
                 app.apiClient.apiService.communityTrending(
                     country = region?.country, region = region?.locality,
                 ).body()
             }.getOrNull()
             val b = _binding ?: return@launch
-            if (trending == null || trending.total <= 0 ||
-                (trending.topSpecies.isEmpty() && trending.topDiseases.isEmpty())
-            ) {
-                b.cardTrending.visibility = View.GONE
+            if (trending == null) {
+                b.sectionSpecies.visibility = View.GONE
+                b.sectionPopular.visibility = View.GONE
                 return@launch
             }
-            b.cardTrending.visibility = View.VISIBLE
-            b.tvTrendingScope.text = scopeLabel(trending)
-            renderTrendingSpecies(trending)
-            renderTrendingDiseases(trending)
+            renderSpecies(b, trending)
+            renderPopular(b, trending)
         }
+    }
+
+    private fun renderSpecies(b: FragmentHomeBinding, t: TrendingResponse) {
+        if (t.topSpecies.isEmpty()) {
+            b.sectionSpecies.visibility = View.GONE
+            return
+        }
+        b.sectionSpecies.visibility = View.VISIBLE
+        b.tvTrendingScope.text = scopeLabel(t)
+        speciesAdapter.submit(t.topSpecies)
+    }
+
+    private fun renderPopular(b: FragmentHomeBinding, t: TrendingResponse) {
+        // Only diseases we have a bundled doc for — guarantees the card has
+        // an icon + localized name and the tap opens a real detail screen.
+        val items = t.topDiseases.mapNotNull { d ->
+            val gi = DiseaseCatalog.guideItemForClass(d.disease) ?: return@mapNotNull null
+            DiseaseCarouselAdapter.Item(
+                guideId = gi.id,
+                iconRes = gi.iconRes,
+                title = DiseaseLabels.displayName(d.disease, isRu)
+                    ?: (if (isRu) gi.titleRu else gi.titleEn),
+                subtitle = resources.getQuantityString(
+                    R.plurals.home_disease_count, d.count, d.count,
+                ),
+            )
+        }
+        if (items.isEmpty()) {
+            b.sectionPopular.visibility = View.GONE
+            return
+        }
+        b.sectionPopular.visibility = View.VISIBLE
+        popularAdapter.submit(items)
     }
 
     private fun scopeLabel(t: TrendingResponse): String = when (t.scope) {
@@ -165,43 +225,25 @@ class HomeFragment : Fragment() {
         else -> getString(R.string.home_trending_global)
     }
 
-    private fun renderTrendingSpecies(t: TrendingResponse) {
-        val group = binding.chipsTrendingSpecies
-        group.removeAllViews()
-        group.visibility = if (t.topSpecies.isEmpty()) View.GONE else View.VISIBLE
-        t.topSpecies.forEach { s ->
-            group.addView(Chip(requireContext()).apply {
-                text = getString(R.string.home_trending_species_chip, s.species, s.count)
-                isClickable = true
-                setOnClickListener {
-                    startActivity(
-                        Intent(requireContext(), NearbyScansActivity::class.java),
-                    )
-                }
-            })
+    /** Resolve + cache a Wikipedia lead photo for a species, then load it
+     *  into the card's ImageView. No-ops if the view was recycled away. */
+    private fun loadSpeciesImage(scientificName: String, target: ImageView) {
+        val cached = speciesImageCache[scientificName]
+        if (cached != null) {
+            Glide.with(target).load(cached).placeholder(R.drawable.ic_plant_placeholder).into(target)
+            return
         }
-    }
-
-    private fun renderTrendingDiseases(t: TrendingResponse) {
-        val list = binding.listTrendingDiseases
-        list.removeAllViews()
-        val max = t.topDiseases.maxOfOrNull { it.count } ?: return
-        t.topDiseases.take(3).forEach { d ->
-            val label = DiseaseLabels.displayName(d.disease, isRu) ?: d.disease
-            list.addView(TextView(requireContext()).apply {
-                text = getString(R.string.home_trending_disease_row, label, d.count)
-                textSize = 13f
-                setPadding(0, 6, 0, 6)
-                setTextColor(
-                    requireContext().getColor(
-                        if (d.count == max) R.color.on_surface else R.color.on_surface_secondary,
-                    ),
-                )
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                )
-            })
+        if (speciesImageCache.containsKey(scientificName)) return // resolved to null (no photo)
+        val app = requireActivity().application as PlantDiseasesApp
+        viewLifecycleOwner.lifecycleScope.launch {
+            val url = runCatching {
+                app.apiClient.apiService.speciesInfo(scientificName, locale).body()?.imageUrl
+            }.getOrNull()
+            speciesImageCache[scientificName] = url
+            if (url != null) {
+                Glide.with(target).load(url)
+                    .placeholder(R.drawable.ic_plant_placeholder).into(target)
+            }
         }
     }
 }

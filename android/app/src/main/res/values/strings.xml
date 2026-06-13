@@ -800,6 +800,40 @@
     <string name="home_open_community">Open community</string>
     <string name="home_stats_title">Your stats &amp; tips</string>
     <string name="home_stats_summary">%1$d scans · %2$d healthy · %3$d plants in garden</string>
+    <string name="home_popular_diseases">Popular diseases</string>
+    <string name="home_disease_guide">Disease guide</string>
+    <string name="home_see_all">See all</string>
+    <string name="home_guide_tag">Guide</string>
+    <plurals name="home_species_count">
+        <item quantity="one">%d scan</item>
+        <item quantity="other">%d scans</item>
+    </plurals>
+    <plurals name="home_disease_count">
+        <item quantity="one">%d scan this week</item>
+        <item quantity="other">%d scans this week</item>
+    </plurals>
+
+    <!-- Guide / disease detail -->
+    <string name="guide_detail_scan">Scan a plant for this</string>
+
+    <!-- Stats charts -->
+    <string name="stats_scans_label">scans</string>
+    <string name="stats_last_7_days">Scans this week</string>
+    <string name="stats_legend_healthy">Healthy · %1$d</string>
+    <string name="stats_legend_diseased">Issues · %1$d</string>
+    <plurals name="stats_garden_plants_value">
+        <item quantity="one">%d plant in your garden</item>
+        <item quantity="other">%d plants in your garden</item>
+    </plurals>
+    <string-array name="weekday_initials">
+        <item>Su</item>
+        <item>Mo</item>
+        <item>Tu</item>
+        <item>We</item>
+        <item>Th</item>
+        <item>Fr</item>
+        <item>Sa</item>
+    </string-array>
 
     <!-- Identify species -->
     <string name="identify_title">Identify plant</string>

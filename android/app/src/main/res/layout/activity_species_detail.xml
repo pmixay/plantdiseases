@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Full-screen species detail, opened from the Home "Trending species"
+    carousel (and reusable elsewhere). A large Wikipedia lead photo under a
+    gradient toolbar, the common/scientific name, the encyclopedia blurb, a
+    care-at-a-glance block (filled from /api/care-plan), and add-to-garden /
+    scan-health / Wikipedia actions.
+-->
+<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/background">
+
+    <com.google.android.material.appbar.AppBarLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_toolbar_gradient"
+        app:elevation="0dp">
+
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/species_toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="64dp"
+            app:navigationIcon="@drawable/ic_back"
+            app:navigationIconTint="@color/toolbar_title"
+            app:titleTextColor="@color/toolbar_title" />
+    </com.google.android.material.appbar.AppBarLayout>
+
+    <androidx.core.widget.NestedScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clipToPadding="false"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingBottom="@dimen/space_3xl">
+
+            <ImageView
+                android:id="@+id/iv_species_hero"
+                android:layout_width="match_parent"
+                android:layout_height="220dp"
+                android:background="#11000000"
+                android:scaleType="centerCrop"
+                android:src="@drawable/ic_plant_placeholder"
+                android:contentDescription="@null" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingHorizontal="@dimen/space_lg"
+                android:paddingTop="@dimen/space_lg">
+
+                <TextView
+                    android:id="@+id/tv_species_title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="sans-serif-medium"
+                    android:textColor="@color/on_surface"
+                    android:textSize="@dimen/text_headline" />
+
+                <TextView
+                    android:id="@+id/tv_species_scientific"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/on_surface_secondary"
+                    android:textSize="@dimen/text_body_sm"
+                    android:textStyle="italic" />
+
+                <ProgressBar
+                    android:id="@+id/progress"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_md"
+                    android:visibility="gone" />
+
+                <TextView
+                    android:id="@+id/tv_species_extract"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_md"
+                    android:lineSpacingExtra="3dp"
+                    android:textColor="@color/on_surface"
+                    android:textSize="@dimen/text_body" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_wikipedia"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_xs"
+                    android:text="@string/identify_wikipedia"
+                    android:visibility="gone" />
+
+                <!-- Care at a glance -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/card_care"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_md"
+                    android:visibility="gone"
+                    app:cardBackgroundColor="@color/surface_variant"
+                    app:cardCornerRadius="@dimen/radius_md"
+                    app:cardElevation="0dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="@dimen/space_lg">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/identify_care_title"
+                            android:fontFamily="sans-serif-medium"
+                            android:textColor="@color/on_surface"
+                            android:textSize="@dimen/text_body" />
+
+                        <TextView
+                            android:id="@+id/tv_care_body"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/space_xs"
+                            android:lineSpacingExtra="3dp"
+                            android:textColor="@color/on_surface_secondary"
+                            android:textSize="@dimen/text_body_sm" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_lg"
+                    android:orientation="horizontal">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_add_garden"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="@dimen/space_sm"
+                        android:text="@string/identify_add_garden" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_scan_health"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/space_sm"
+                        android:text="@string/identify_scan_health" />
+                </LinearLayout>
+            </LinearLayout>
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

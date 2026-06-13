@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Stats & Tips — personal stats on top (rows filled by StatsTipsActivity
-    from local scan/garden data), then the documentation library: expandable
-    tip sections (built programmatically from the tips string table).
+    Stats & Tips. Top: a graph-driven stats card (a healthy/diseased donut
+    with a legend, a 7-day scans bar chart, and top-issue bars) filled by
+    StatsTipsActivity from local scan/garden data. Below: the expandable
+    bilingual tips/documentation library.
 -->
 <androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -40,6 +41,17 @@
             android:paddingTop="@dimen/space_lg"
             android:paddingBottom="@dimen/space_3xl">
 
+            <!-- Empty state (no scans yet) -->
+            <TextView
+                android:id="@+id/tv_stats_empty"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="@dimen/space_md"
+                android:text="@string/stats_empty"
+                android:textColor="@color/on_surface_secondary"
+                android:textSize="@dimen/text_body"
+                android:visibility="gone" />
+
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -57,16 +69,115 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:text="@string/stats_section"
-                        android:textStyle="bold"
+                        android:textColor="@color/on_surface"
                         android:textSize="@dimen/text_title_sm"
-                        android:textColor="@color/on_surface" />
+                        android:textStyle="bold" />
+
+                    <!-- Donut + legend -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_md"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <com.plantdiseases.app.ui.widget.DonutChartView
+                            android:id="@+id/donut_health"
+                            android:layout_width="130dp"
+                            android:layout_height="130dp" />
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginStart="@dimen/space_lg"
+                            android:orientation="vertical">
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal"
+                                android:layout_marginBottom="@dimen/space_sm">
+
+                                <View
+                                    android:layout_width="12dp"
+                                    android:layout_height="12dp"
+                                    android:background="@drawable/dot_healthy" />
+
+                                <TextView
+                                    android:id="@+id/tv_legend_healthy"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginStart="@dimen/space_sm"
+                                    android:textColor="@color/on_surface"
+                                    android:textSize="@dimen/text_body_sm" />
+                            </LinearLayout>
+
+                            <LinearLayout
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal">
+
+                                <View
+                                    android:layout_width="12dp"
+                                    android:layout_height="12dp"
+                                    android:background="@drawable/dot_diseased" />
+
+                                <TextView
+                                    android:id="@+id/tv_legend_diseased"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginStart="@dimen/space_sm"
+                                    android:textColor="@color/on_surface"
+                                    android:textSize="@dimen/text_body_sm" />
+                            </LinearLayout>
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <!-- 7-day bar chart -->
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_lg"
+                        android:text="@string/stats_last_7_days"
+                        android:textColor="@color/on_surface"
+                        android:textSize="@dimen/text_body"
+                        android:textStyle="bold" />
+
+                    <com.plantdiseases.app.ui.widget.BarChartView
+                        android:id="@+id/bar_week"
+                        android:layout_width="match_parent"
+                        android:layout_height="120dp"
+                        android:layout_marginTop="@dimen/space_sm" />
+
+                    <!-- Top issues -->
+                    <TextView
+                        android:id="@+id/tv_top_issues_title"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_lg"
+                        android:text="@string/stats_top_issues"
+                        android:textColor="@color/on_surface"
+                        android:textSize="@dimen/text_body"
+                        android:textStyle="bold"
+                        android:visibility="gone" />
 
                     <LinearLayout
-                        android:id="@+id/list_stats"
+                        android:id="@+id/list_top_issues"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_sm"
                         android:orientation="vertical" />
+
+                    <TextView
+                        android:id="@+id/tv_garden_count"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_md"
+                        android:textColor="@color/on_surface_secondary"
+                        android:textSize="@dimen/text_body_sm" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
@@ -75,9 +186,9 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_xl"
                 android:text="@string/tips_section"
-                android:textStyle="bold"
+                android:textColor="@color/on_surface"
                 android:textSize="@dimen/text_title_sm"
-                android:textColor="@color/on_surface" />
+                android:textStyle="bold" />
 
             <LinearLayout
                 android:id="@+id/list_tips"

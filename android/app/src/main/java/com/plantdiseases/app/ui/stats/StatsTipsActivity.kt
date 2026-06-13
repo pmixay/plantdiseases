@@ -1,6 +1,7 @@
 package com.plantdiseases.app.ui.stats
 
 import android.content.Context
+import android.graphics.Typeface
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
@@ -8,6 +9,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -16,16 +18,20 @@ import androidx.lifecycle.lifecycleScope
 import com.google.android.material.card.MaterialCardView
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
+import com.plantdiseases.app.data.model.ScanHistoryItem
 import com.plantdiseases.app.databinding.ActivityStatsTipsBinding
+import com.plantdiseases.app.ui.widget.BarChartView
+import com.plantdiseases.app.ui.widget.DonutChartView
 import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.launch
+import java.util.Calendar
 import java.util.Locale
 
 /**
- * Stats & Tips — the combined personal-stats + documentation page opened
- * from the Home teaser card. Stats come from local data only (scan history
- * + garden); the tips library is a static bilingual string table rendered
- * as expandable cards.
+ * Stats & Tips — graph-driven personal stats (healthy/diseased donut, a
+ * 7-day scans bar chart, top-issue bars) from local scan history + garden,
+ * plus an expandable bilingual tips library. No chart dependency: the charts
+ * are custom Canvas views (see [DonutChartView] / [BarChartView]).
  */
 class StatsTipsActivity : AppCompatActivity() {
 
@@ -64,67 +70,132 @@ class StatsTipsActivity : AppCompatActivity() {
             val real = scans.filter { !it.isNotAPlant }
             val healthy = real.count { it.isHealthy }
             val diseased = real.size - healthy
-            val healthyPct =
-                if (real.isEmpty()) 0 else (healthy * 100.0 / real.size).toInt()
 
-            val list = binding.listStats
-            list.removeAllViews()
-            statRow(list, getString(R.string.stats_total_scans), real.size.toString())
-            statRow(
-                list, getString(R.string.stats_healthy_share),
-                getString(R.string.stats_healthy_share_value, healthyPct, healthy),
+            binding.tvStatsEmpty.visibility = if (real.isEmpty()) View.VISIBLE else View.GONE
+
+            // Donut: healthy vs diseased, total in the center.
+            binding.donutHealth.setTextColors(
+                color(R.color.on_surface), color(R.color.on_surface_secondary),
             )
-            statRow(list, getString(R.string.stats_issues_found), diseased.toString())
-            statRow(list, getString(R.string.stats_garden_plants), plants.size.toString())
+            binding.donutHealth.setSegments(
+                listOf(
+                    DonutChartView.Segment(healthy.toFloat(), color(R.color.healthy_green)),
+                    DonutChartView.Segment(diseased.toFloat(), color(R.color.disease_red)),
+                ),
+                centerText = real.size.toString(),
+                centerSubText = getString(R.string.stats_scans_label),
+            )
+            binding.tvLegendHealthy.text =
+                getString(R.string.stats_legend_healthy, healthy)
+            binding.tvLegendDiseased.text =
+                getString(R.string.stats_legend_diseased, diseased)
 
-            // Top issues: most frequent disease verdicts in the history.
-            val top = real.filter { !it.isHealthy }
-                .groupingBy { if (isRu) it.diseaseNameRu else it.diseaseName }
-                .eachCount().entries.sortedByDescending { it.value }.take(3)
-            if (top.isNotEmpty()) {
-                sectionHeader(list, getString(R.string.stats_top_issues))
-                top.forEach { (name, n) -> statRow(list, name, n.toString()) }
-            }
-            if (real.isEmpty()) {
-                list.addView(TextView(this@StatsTipsActivity).apply {
-                    text = getString(R.string.stats_empty)
-                    textSize = 13f
-                    setTextColor(getColor(R.color.on_surface_secondary))
-                    setPadding(0, dp(8), 0, 0)
-                })
-            }
+            // 7-day bar chart.
+            binding.barWeek.setBars(
+                weeklyBars(real),
+                barColor = color(R.color.primary),
+                labelColor = color(R.color.on_surface_secondary),
+                valueColor = color(R.color.on_surface),
+            )
+
+            // Top issues as horizontal bars.
+            renderTopIssues(real)
+
+            binding.tvGardenCount.text =
+                resources.getQuantityString(
+                    R.plurals.stats_garden_plants_value, plants.size, plants.size,
+                )
         }
     }
 
-    private fun statRow(parent: LinearLayout, label: String, value: String) {
-        parent.addView(LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(6), 0, dp(6))
-            addView(TextView(this@StatsTipsActivity).apply {
-                text = label
-                textSize = 14f
-                setTextColor(getColor(R.color.on_surface_secondary))
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            })
-            addView(TextView(this@StatsTipsActivity).apply {
-                text = value
-                textSize = 14f
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
-                setTextColor(getColor(R.color.on_surface))
-            })
-        })
+    /** Count of real scans per day for the last 7 days (oldest → today). */
+    private fun weeklyBars(scans: List<ScanHistoryItem>): List<BarChartView.Bar> {
+        val cal = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }
+        val labels = resources.getStringArray(R.array.weekday_initials)
+        val days = ArrayList<Pair<Long, Long>>(7) // [start, end) per day
+        val dayLabels = ArrayList<String>(7)
+        val start = cal.clone() as Calendar
+        start.add(Calendar.DAY_OF_YEAR, -6)
+        for (i in 0 until 7) {
+            val dayStart = start.timeInMillis
+            start.add(Calendar.DAY_OF_YEAR, 1)
+            days.add(dayStart to start.timeInMillis)
+            val dow = ((start.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, -1) })
+                .get(Calendar.DAY_OF_WEEK) // 1=Sun..7=Sat
+            dayLabels.add(labels[dow - 1])
+        }
+        return days.mapIndexed { i, (s, e) ->
+            BarChartView.Bar(
+                dayLabels[i],
+                scans.count { it.timestamp in s until e },
+            )
+        }
     }
 
-    private fun sectionHeader(parent: LinearLayout, title: String) {
-        parent.addView(TextView(this).apply {
-            text = title
-            textSize = 13f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setTextColor(getColor(R.color.on_surface))
-            setPadding(0, dp(12), 0, dp(2))
-        })
+    private fun renderTopIssues(scans: List<ScanHistoryItem>) {
+        val list = binding.listTopIssues
+        list.removeAllViews()
+        val top = scans.filter { !it.isHealthy }
+            .groupingBy { if (isRu) it.diseaseNameRu else it.diseaseName }
+            .eachCount().entries
+            .sortedByDescending { it.value }
+            .take(4)
+        binding.tvTopIssuesTitle.visibility = if (top.isEmpty()) View.GONE else View.VISIBLE
+        if (top.isEmpty()) return
+        val max = top.first().value
+        top.forEach { (name, n) -> list.addView(issueBar(name, n, max)) }
     }
+
+    /** One horizontal "issue" bar: label over a proportional fill track. */
+    private fun issueBar(name: String, value: Int, max: Int): View {
+        val column = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(6), 0, dp(6))
+        }
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        header.addView(TextView(this).apply {
+            text = name
+            textSize = 13f
+            setTextColor(color(R.color.on_surface))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        header.addView(TextView(this).apply {
+            text = value.toString()
+            textSize = 13f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(color(R.color.on_surface))
+        })
+        column.addView(header)
+
+        // Track + proportional fill.
+        val track = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setBackgroundColor(0x14000000)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(8),
+            ).apply { topMargin = dp(4) }
+        }
+        val fillWeight = value.toFloat() / max.coerceAtLeast(1)
+        track.addView(View(this).apply {
+            setBackgroundColor(color(R.color.disease_red))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, fillWeight)
+        })
+        track.addView(View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.MATCH_PARENT, (1f - fillWeight).coerceAtLeast(0f),
+            )
+        })
+        column.addView(track)
+        return column
+    }
+
+    private fun color(res: Int): Int = ContextCompat.getColor(this, res)
 
     // ── Tips / documentation library ────────────────────────────────
     private fun buildTips() {
@@ -145,7 +216,7 @@ class StatsTipsActivity : AppCompatActivity() {
         val card = MaterialCardView(this).apply {
             radius = dp(16).toFloat()
             cardElevation = dp(1).toFloat()
-            setCardBackgroundColor(getColor(R.color.surface))
+            setCardBackgroundColor(color(R.color.surface))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -159,14 +230,14 @@ class StatsTipsActivity : AppCompatActivity() {
             text = getString(bodyRes)
             textSize = 14f
             setLineSpacing(dp(3).toFloat(), 1f)
-            setTextColor(getColor(R.color.on_surface_secondary))
+            setTextColor(color(R.color.on_surface_secondary))
             setPadding(0, dp(8), 0, 0)
             visibility = View.GONE
         }
         val chevron = ImageView(this).apply {
             setImageResource(R.drawable.ic_chevron_down)
             imageTintList = android.content.res.ColorStateList.valueOf(
-                getColor(R.color.on_surface_secondary),
+                color(R.color.on_surface_secondary),
             )
         }
         val headerRow = LinearLayout(this).apply {
@@ -175,8 +246,8 @@ class StatsTipsActivity : AppCompatActivity() {
             addView(TextView(this@StatsTipsActivity).apply {
                 text = getString(titleRes)
                 textSize = 15f
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
-                setTextColor(getColor(R.color.on_surface))
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(color(R.color.on_surface))
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
             addView(chevron)

@@ -792,6 +792,46 @@
     <string name="home_open_community">Открыть сообщество</string>
     <string name="home_stats_title">Ваша статистика и советы</string>
     <string name="home_stats_summary">%1$d сканов · %2$d здоровых · %3$d растений в саду</string>
+    <string name="home_popular_diseases">Частые болезни</string>
+    <string name="home_disease_guide">Справочник болезней</string>
+    <string name="home_see_all">Все</string>
+    <string name="home_guide_tag">Справка</string>
+    <plurals name="home_species_count">
+        <item quantity="one">%d скан</item>
+        <item quantity="few">%d скана</item>
+        <item quantity="many">%d сканов</item>
+        <item quantity="other">%d сканов</item>
+    </plurals>
+    <plurals name="home_disease_count">
+        <item quantity="one">%d скан за неделю</item>
+        <item quantity="few">%d скана за неделю</item>
+        <item quantity="many">%d сканов за неделю</item>
+        <item quantity="other">%d сканов за неделю</item>
+    </plurals>
+
+    <!-- Справочник / детали болезни -->
+    <string name="guide_detail_scan">Отсканировать растение</string>
+
+    <!-- Графики статистики -->
+    <string name="stats_scans_label">сканов</string>
+    <string name="stats_last_7_days">Сканы за неделю</string>
+    <string name="stats_legend_healthy">Здоровые · %1$d</string>
+    <string name="stats_legend_diseased">Проблемы · %1$d</string>
+    <plurals name="stats_garden_plants_value">
+        <item quantity="one">%d растение в саду</item>
+        <item quantity="few">%d растения в саду</item>
+        <item quantity="many">%d растений в саду</item>
+        <item quantity="other">%d растений в саду</item>
+    </plurals>
+    <string-array name="weekday_initials">
+        <item>Вс</item>
+        <item>Пн</item>
+        <item>Вт</item>
+        <item>Ср</item>
+        <item>Чт</item>
+        <item>Пт</item>
+        <item>Сб</item>
+    </string-array>
 
     <!-- Определение вида -->
     <string name="identify_title">Определить растение</string>

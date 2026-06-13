@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Home — the app's front door. A greeting, two hero actions (identify
-    species / scan health), a tools grid (light meter, watering helper,
-    symptom check, disease guide), the community "trending nearby" module
-    (species chips + disease rows, filled by HomeFragment), and a
-    Stats & Tips teaser card.
+    Home — a visual discovery feed. Greeting, two hero actions (scan health /
+    identify species), a compact tools row, then the image carousels that are
+    the centerpiece: Trending species nearby (Wikipedia photos), Popular
+    diseases, and the Disease guide. A slim Stats & Tips teaser sits at the
+    bottom. Carousels are horizontal RecyclerViews filled by HomeFragment;
+    the species/popular sections hide themselves when there's no data.
 -->
 <androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -17,7 +18,6 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:paddingHorizontal="@dimen/space_lg"
         android:paddingTop="@dimen/space_lg"
         android:paddingBottom="@dimen/space_3xl">
 
@@ -26,25 +26,28 @@
             android:id="@+id/tv_greeting"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textSize="@dimen/text_headline"
+            android:paddingHorizontal="@dimen/space_lg"
+            android:fontFamily="sans-serif-medium"
             android:textColor="@color/on_surface"
-            android:fontFamily="sans-serif-medium" />
+            android:textSize="@dimen/text_headline" />
 
         <TextView
             android:id="@+id/tv_greeting_sub"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
-            android:textSize="@dimen/text_body"
+            android:paddingHorizontal="@dimen/space_lg"
+            android:text="@string/home_subtitle"
             android:textColor="@color/on_surface_secondary"
-            android:text="@string/home_subtitle" />
+            android:textSize="@dimen/text_body" />
 
         <!-- Hero actions -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/space_lg"
-            android:orientation="horizontal">
+            android:orientation="horizontal"
+            android:paddingHorizontal="@dimen/space_lg">
 
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/card_scan"
@@ -65,8 +68,8 @@
                     android:padding="@dimen/space_lg">
 
                     <ImageView
-                        android:layout_width="32dp"
-                        android:layout_height="32dp"
+                        android:layout_width="30dp"
+                        android:layout_height="30dp"
                         android:src="@drawable/ic_scan"
                         app:tint="@android:color/white"
                         android:contentDescription="@string/home_scan_title" />
@@ -108,8 +111,8 @@
                     android:padding="@dimen/space_lg">
 
                     <ImageView
-                        android:layout_width="32dp"
-                        android:layout_height="32dp"
+                        android:layout_width="30dp"
+                        android:layout_height="30dp"
                         android:src="@drawable/ic_plant_placeholder"
                         app:tint="@color/primary"
                         android:contentDescription="@string/home_identify_title" />
@@ -133,140 +136,172 @@
             </com.google.android.material.card.MaterialCardView>
         </LinearLayout>
 
-        <!-- Tools -->
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_xl"
-            android:text="@string/home_tools"
-            android:textStyle="bold"
-            android:textSize="@dimen/text_title_sm"
-            android:textColor="@color/on_surface" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_sm"
-            android:orientation="horizontal">
-
-            <include
-                android:id="@+id/tool_light"
-                layout="@layout/item_home_tool"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="@dimen/space_sm" />
-
-            <include
-                android:id="@+id/tool_water"
-                layout="@layout/item_home_tool"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="@dimen/space_sm" />
-        </LinearLayout>
-
+        <!-- Compact tools row -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/space_md"
-            android:orientation="horizontal">
+            android:orientation="horizontal"
+            android:paddingHorizontal="@dimen/space_lg">
 
-            <include
-                android:id="@+id/tool_symptom"
-                layout="@layout/item_home_tool"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginEnd="@dimen/space_sm" />
+            <LinearLayout
+                android:id="@+id/tile_light"
+                style="@style/HomeToolTile">
 
-            <include
-                android:id="@+id/tool_guide"
-                layout="@layout/item_home_tool"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="@dimen/space_sm" />
+                <ImageView style="@style/HomeToolTileIcon" android:src="@drawable/ic_light" />
+
+                <TextView style="@style/HomeToolTileLabel" android:text="@string/home_tool_light" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/tile_water"
+                style="@style/HomeToolTile">
+
+                <ImageView style="@style/HomeToolTileIcon" android:src="@drawable/ic_watering" />
+
+                <TextView style="@style/HomeToolTileLabel" android:text="@string/home_tool_water" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/tile_symptom"
+                style="@style/HomeToolTile">
+
+                <ImageView style="@style/HomeToolTileIcon" android:src="@drawable/ic_disease" />
+
+                <TextView style="@style/HomeToolTileLabel" android:text="@string/home_tool_symptom" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/tile_guide"
+                style="@style/HomeToolTile">
+
+                <ImageView style="@style/HomeToolTileIcon" android:src="@drawable/ic_guide" />
+
+                <TextView style="@style/HomeToolTileLabel" android:text="@string/home_tool_guide" />
+            </LinearLayout>
         </LinearLayout>
 
-        <!-- Trending nearby -->
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/card_trending"
+        <!-- Trending species nearby -->
+        <LinearLayout
+            android:id="@+id/section_species"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/space_xl"
-            android:visibility="gone"
-            app:cardBackgroundColor="@color/surface"
-            app:cardCornerRadius="@dimen/radius_lg"
-            app:cardElevation="1dp">
+            android:orientation="vertical"
+            android:visibility="gone">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="@dimen/space_lg">
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingHorizontal="@dimen/space_lg">
 
-                <LinearLayout
-                    android:layout_width="match_parent"
+                <TextView
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical">
+                    android:layout_weight="1"
+                    android:text="@string/home_trending"
+                    android:textColor="@color/on_surface"
+                    android:textSize="@dimen/text_title_sm"
+                    android:textStyle="bold" />
 
-                    <TextView
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="@string/home_trending"
-                        android:textStyle="bold"
-                        android:textSize="@dimen/text_title_sm"
-                        android:textColor="@color/on_surface" />
-
-                    <TextView
-                        android:id="@+id/tv_trending_scope"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:textSize="@dimen/text_caption"
-                        android:textColor="@color/on_surface_secondary" />
-                </LinearLayout>
-
-                <!-- Species strip -->
-                <HorizontalScrollView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_sm"
-                    android:scrollbars="none">
-
-                    <com.google.android.material.chip.ChipGroup
-                        android:id="@+id/chips_trending_species"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        app:singleLine="true" />
-                </HorizontalScrollView>
-
-                <!-- Disease activity rows (filled programmatically) -->
-                <LinearLayout
-                    android:id="@+id/list_trending_diseases"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_sm"
-                    android:orientation="vertical" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btn_trending_community"
-                    style="@style/Widget.Material3.Button.TextButton"
+                <TextView
+                    android:id="@+id/tv_trending_scope"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_gravity="end"
-                    android:text="@string/home_open_community" />
+                    android:textColor="@color/on_surface_secondary"
+                    android:textSize="@dimen/text_caption" />
             </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/rv_species"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_sm"
+                android:clipToPadding="false"
+                android:orientation="horizontal"
+                android:paddingHorizontal="@dimen/space_lg" />
+        </LinearLayout>
+
+        <!-- Popular diseases -->
+        <LinearLayout
+            android:id="@+id/section_popular"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_xl"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingHorizontal="@dimen/space_lg"
+                android:text="@string/home_popular_diseases"
+                android:textColor="@color/on_surface"
+                android:textSize="@dimen/text_title_sm"
+                android:textStyle="bold" />
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/rv_popular"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_sm"
+                android:clipToPadding="false"
+                android:orientation="horizontal"
+                android:paddingHorizontal="@dimen/space_lg" />
+        </LinearLayout>
+
+        <!-- Disease guide -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_xl"
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingHorizontal="@dimen/space_lg">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/home_disease_guide"
+                    android:textColor="@color/on_surface"
+                    android:textSize="@dimen/text_title_sm"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tv_guide_all"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/home_see_all"
+                    android:textColor="@color/primary"
+                    android:textSize="@dimen/text_caption"
+                    android:fontFamily="sans-serif-medium" />
+            </LinearLayout>
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/rv_guide"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_sm"
+                android:clipToPadding="false"
+                android:orientation="horizontal"
+                android:paddingHorizontal="@dimen/space_lg" />
+        </LinearLayout>
 
         <!-- Stats & Tips teaser -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/card_stats"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_lg"
+            android:layout_marginTop="@dimen/space_xl"
+            android:layout_marginHorizontal="@dimen/space_lg"
             android:clickable="true"
             android:focusable="true"
             app:cardBackgroundColor="@color/surface"
@@ -276,8 +311,8 @@
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
                 android:gravity="center_vertical"
+                android:orientation="horizontal"
                 android:padding="@dimen/space_lg">
 
                 <LinearLayout
@@ -290,17 +325,17 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:text="@string/home_stats_title"
-                        android:textStyle="bold"
+                        android:textColor="@color/on_surface"
                         android:textSize="@dimen/text_title_sm"
-                        android:textColor="@color/on_surface" />
+                        android:textStyle="bold" />
 
                     <TextView
                         android:id="@+id/tv_stats_summary"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="2dp"
-                        android:textSize="@dimen/text_caption"
-                        android:textColor="@color/on_surface_secondary" />
+                        android:textColor="@color/on_surface_secondary"
+                        android:textSize="@dimen/text_caption" />
                 </LinearLayout>
 
                 <ImageView
