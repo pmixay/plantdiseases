@@ -49,7 +49,16 @@ The production artefact is an ONNX graph and the runtime is
 **architecture-neutral** — it serves whatever backbone+head the shipped
 bundle declares (`classes.json -> architecture`):
 
-- **v2.5.x (current, `gamma`):** frozen **DINOv2 ViT-S/14** backbone +
+- **v2.6.x (current, `gamma`):** same recipe as v2.5 (below) plus the
+  **in-domain Kaggle eval-supplement** (`maxayyt5/houseplant-disease-eval-supplement`,
+  source `supplement`) wired into `train_notebook.ipynb` §2 as an
+  **eval-eligible** source — a held-out fraction seeds `val_realworld` /
+  `val_indomain` / the calibration splits, thickening the thin weak-class eval
+  slices (esp. `nutrient_deficiency`, eval n≈25). The rows are agent-judged
+  (`verified_by=agent_vision`), not human-verified, so the gate measured on them
+  is a **proxy** until verified production volume exists (see
+  `docs/DATASET_LABELING_PLAN.md`).
+- **v2.5.x (`gamma`):** frozen **DINOv2 ViT-S/14** backbone +
   LoRA on the later blocks (rank 16 / last 8 blocks, unchanged since v2.4
   — the §3 probe showed the *features*, not the head, cap weak-class
   recall) + a small MLP head, **no distillation**. v2.5 ships **per-class

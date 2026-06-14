@@ -97,6 +97,16 @@ Internal pHash dedup is clean (0 near-dups/class); the resolution gate passes
    `CC0-1.0`. For web-scraped imagery either record a per-image license or set
    the dataset license honestly.
 
+> **Training-time use (v2.6):** the same supplement is now also pulled directly
+> by `train_notebook.ipynb` §2 (`fetch_kaggle_supplement`, source `supplement`)
+> and is **eval-eligible** there — a held-out fraction seeds `val_realworld` /
+> `val_indomain` / the calibration splits to thicken the thin weak-class eval
+> slices. It reads whatever canonical-class folders the dataset ships, so the
+> `healthy/` + `not_a_plant/` hard-negative folders (gap 1 above) are picked up
+> automatically once added. Because these rows are agent-judged, the notebook
+> ship gate measured on them is a **proxy** until verified production volume
+> exists — keep an eye on it once real human-verified scans accumulate.
+
 ## (2)→(3) Server ingestion — Kaggle-only, version-gated
 
 `server/ingest/` pulls ONLY from the Kaggle supplement (no in-server
