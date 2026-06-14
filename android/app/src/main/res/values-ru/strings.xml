@@ -834,21 +834,10 @@
     </string-array>
 
     <!-- Определение вида -->
-    <string name="identify_title">Определить растение</string>
-    <string name="identify_take_photo">Сделать фото</string>
-    <string name="identify_pick_gallery">Из галереи</string>
-    <string name="identify_organ">Что на фото?</string>
-    <string name="identify_organ_leaf">Лист</string>
-    <string name="identify_organ_flower">Цветок</string>
-    <string name="identify_organ_fruit">Плод</string>
-    <string name="identify_organ_bark">Стебель / кора</string>
-    <string name="identify_go">Определить</string>
     <string name="identify_unavailable">Определение вида сейчас недоступно на этом сервере.</string>
     <string name="identify_no_match">Уверенного совпадения нет — попробуйте более близкое фото одного листа или цветка при хорошем свете.</string>
     <string name="identify_failed">Что-то пошло не так. Проверьте соединение и повторите.</string>
-    <string name="identify_photo_failed">Не удалось прочитать это фото.</string>
     <string name="identify_candidate_row">%1$s (%2$s) · %3$d%%</string>
-    <string name="identify_family">семейство %1$s</string>
     <string name="identify_loading">Загрузка…</string>
     <string name="identify_no_info">Энциклопедической статьи об этом виде не найдено.</string>
     <string name="identify_wikipedia">Читать в Википедии</string>
@@ -865,6 +854,8 @@
     <string name="identify_add_garden">В мой сад</string>
     <string name="identify_scan_health">Проверить здоровье</string>
     <string name="identify_added_garden">Добавлено в ваш сад</string>
+    <string name="identify_pick_candidate">Какое из них ваше растение?</string>
+    <string name="identify_retake">Переснять</string>
     <string name="species_common_problems">Частые проблемы этого вида</string>
     <string name="species_problems_ai_note">Наиболее вероятны для этого вида — нажмите, чтобы открыть руководство.</string>
     <string name="species_problems_guide_note">Болезни комнатных растений, которые умеет распознавать приложение, — нажмите, чтобы узнать больше.</string>

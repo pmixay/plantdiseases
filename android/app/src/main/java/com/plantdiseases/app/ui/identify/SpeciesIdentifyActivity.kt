@@ -1,69 +1,50 @@
 package com.plantdiseases.app.ui.identify
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.net.Uri
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.view.View
-import android.widget.LinearLayout
 import android.widget.TextView
-import android.widget.Toast
+import androidx.activity.addCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.FileProvider
+import androidx.core.content.ContextCompat
+import androidx.core.os.bundleOf
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
-import com.bumptech.glide.Glide
-import com.google.android.material.chip.Chip
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.SpeciesCandidate
 import com.plantdiseases.app.databinding.ActivitySpeciesIdentifyBinding
+import com.plantdiseases.app.ui.camera.CameraFragment
 import com.plantdiseases.app.ui.species.SpeciesDetailActivity
 import com.plantdiseases.app.util.LocaleHelper
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
- * "Identify my plant" — the species-first entry point (see docs/ROADMAP.md
- * §3). Take/pick a photo, choose the photographed organ, identify via the
- * server's PlantNet proxy, then tap a candidate to open the full, scan-like
- * [SpeciesDetailActivity] (reference photos, encyclopedia blurb, care summary,
- * common problems with guide links, add-to-garden / scan-health).
+ * "Identify my plant" — a full live-camera screen that mirrors the disease
+ * scanner. It hosts the shared [CameraFragment] in identify mode (same
+ * preview, shutter, gallery, flash, grid, pinch-zoom, tap-to-focus, crop);
+ * when a photo is captured the fragment hands the cropped path back here, we
+ * run PlantNet identification, and the candidate picker slides up over the
+ * camera. Tapping a candidate opens the rich [SpeciesDetailActivity].
  */
 class SpeciesIdentifyActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivitySpeciesIdentifyBinding
 
-    private var photoFile: File? = null
-    private var pendingCameraUri: Uri? = null
-    private var selectedOrgan: String = "leaf"
-
     private val isRu: Boolean get() = Locale.getDefault().language == "ru"
     private val locale: String get() = if (isRu) "ru" else "en"
 
-    private val takePicture =
-        registerForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
-            val uri = pendingCameraUri
-            if (ok && uri != null) onPhotoChosen(uri)
-        }
-
-    private val pickImage =
-        registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-            if (uri != null) onPhotoChosen(uri)
-        }
-
     private val requestCamera =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            if (granted) launchCamera()
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+            // No-op: CameraFragment.onResume starts the preview once granted.
         }
 
     override fun attachBaseContext(newBase: Context) {
@@ -75,110 +56,65 @@ class SpeciesIdentifyActivity : AppCompatActivity() {
         binding = ActivitySpeciesIdentifyBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        // Edge-to-edge with the camera framed inside the safe area (black bars
+        // behind the system bars), matching how the scan camera is framed.
         WindowCompat.setDecorFitsSystemWindows(window, false)
-        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, insets ->
+        ViewCompat.setOnApplyWindowInsetsListener(binding.identifyRoot) { v, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            // Pad the app-bar container (not the fixed-height toolbar) so the
-            // toolbar sits fully below the status bar instead of being squeezed.
-            binding.appbar.updatePadding(top = bars.top)
+            v.updatePadding(bars.left, bars.top, bars.right, bars.bottom)
             insets
         }
 
-        binding.identifyToolbar.setNavigationOnClickListener { finish() }
-        binding.btnCamera.setOnClickListener { ensureCameraThenLaunch() }
-        binding.btnGallery.setOnClickListener { pickImage.launch("image/*") }
-        binding.btnIdentify.setOnClickListener { identify() }
-        buildOrganChips()
-    }
+        binding.btnClose.setOnClickListener { finish() }
+        binding.btnRetake.setOnClickListener { hideCandidates() }
 
-    // ── Photo acquisition ───────────────────────────────────────────
-    private fun ensureCameraThenLaunch() {
-        if (checkSelfPermission(android.Manifest.permission.CAMERA) ==
-            android.content.pm.PackageManager.PERMISSION_GRANTED
-        ) {
-            launchCamera()
-        } else {
-            requestCamera.launch(android.Manifest.permission.CAMERA)
-        }
-    }
-
-    private fun launchCamera() {
-        val file = File(cacheDir, "identify_capture.jpg")
-        val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
-        pendingCameraUri = uri
-        takePicture.launch(uri)
-    }
-
-    /** Copy + downscale the chosen image into a cache file the repository
-     *  can upload (PlantNet doesn't need more than ~1600px). */
-    private fun onPhotoChosen(uri: Uri) {
-        lifecycleScope.launch {
-            val file = withContext(Dispatchers.IO) {
-                runCatching {
-                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                    contentResolver.openInputStream(uri)?.use {
-                        BitmapFactory.decodeStream(it, null, bounds)
-                    }
-                    var sample = 1
-                    while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= 1600) {
-                        sample *= 2
-                    }
-                    val opts = BitmapFactory.Options().apply { inSampleSize = sample }
-                    val bmp = contentResolver.openInputStream(uri)?.use {
-                        BitmapFactory.decodeStream(it, null, opts)
-                    } ?: return@runCatching null
-                    val out = File(cacheDir, "identify_upload.jpg")
-                    out.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 90, it) }
-                    out
-                }.getOrNull()
+        // Back dismisses the candidate panel (return to the live camera)
+        // before leaving the screen.
+        onBackPressedDispatcher.addCallback(this) {
+            if (binding.candidatesPanel.visibility == View.VISIBLE) {
+                hideCandidates()
+            } else {
+                isEnabled = false
+                onBackPressedDispatcher.onBackPressed()
             }
-            if (file == null) {
-                Toast.makeText(
-                    this@SpeciesIdentifyActivity,
-                    R.string.identify_photo_failed, Toast.LENGTH_SHORT,
-                ).show()
-                return@launch
-            }
-            photoFile = file
-            binding.btnIdentify.isEnabled = true
-            binding.listCandidates.removeAllViews()
-            Glide.with(this@SpeciesIdentifyActivity).load(file)
-                .skipMemoryCache(true)
-                .diskCacheStrategy(com.bumptech.glide.load.engine.DiskCacheStrategy.NONE)
-                .into(binding.ivPhoto)
         }
+
+        if (savedInstanceState == null) {
+            supportFragmentManager.beginTransaction()
+                .replace(
+                    R.id.camera_container,
+                    CameraFragment().apply {
+                        arguments = bundleOf(CameraFragment.ARG_IDENTIFY_MODE to true)
+                    },
+                )
+                .commit()
+        }
+
+        // Receive the captured+cropped photo from the camera fragment.
+        supportFragmentManager.setFragmentResultListener(
+            CameraFragment.RESULT_IDENTIFY_CAPTURE, this,
+        ) { _, result ->
+            result.getString(CameraFragment.RESULT_PATH)?.let { runIdentify(File(it)) }
+        }
+
+        ensureCameraPermission()
     }
 
-    // ── Organ chips ─────────────────────────────────────────────────
-    private fun buildOrganChips() {
-        val organs = listOf(
-            "leaf" to R.string.identify_organ_leaf,
-            "flower" to R.string.identify_organ_flower,
-            "fruit" to R.string.identify_organ_fruit,
-            "bark" to R.string.identify_organ_bark,
-        )
-        organs.forEach { (key, label) ->
-            binding.chipsOrgan.addView(Chip(this).apply {
-                text = getString(label)
-                isCheckable = true
-                isChecked = key == selectedOrgan
-                setOnClickListener { selectedOrgan = key }
-            })
-        }
+    private fun ensureCameraPermission() {
+        val granted = ContextCompat.checkSelfPermission(
+            this, android.Manifest.permission.CAMERA,
+        ) == PackageManager.PERMISSION_GRANTED
+        if (!granted) requestCamera.launch(android.Manifest.permission.CAMERA)
     }
 
     // ── Identify ────────────────────────────────────────────────────
-    private fun identify() {
-        val file = photoFile ?: return
+    private fun runIdentify(file: File) {
         val app = application as PlantDiseasesApp
-        binding.progress.visibility = View.VISIBLE
-        binding.tvStatus.visibility = View.GONE
-        binding.btnIdentify.isEnabled = false
-        binding.listCandidates.removeAllViews()
+        binding.candidatesPanel.visibility = View.GONE
+        binding.identifyProgress.visibility = View.VISIBLE
         lifecycleScope.launch {
-            val result = app.scanRepository.identifySpecies(file, selectedOrgan, locale)
-            binding.progress.visibility = View.GONE
-            binding.btnIdentify.isEnabled = true
+            val result = app.scanRepository.identifySpecies(file, "auto", locale)
+            binding.identifyProgress.visibility = View.GONE
             result.onSuccess { resp ->
                 when {
                     !resp.available -> showStatus(getString(R.string.identify_unavailable))
@@ -191,17 +127,13 @@ class SpeciesIdentifyActivity : AppCompatActivity() {
         }
     }
 
-    private fun showStatus(msg: String) {
-        binding.tvStatus.text = msg
-        binding.tvStatus.visibility = View.VISIBLE
-    }
-
     private fun renderCandidates(candidates: List<SpeciesCandidate>) {
-        binding.listCandidates.removeAllViews()
+        binding.candidatesStatus.visibility = View.GONE
+        binding.candidatesList.removeAllViews()
         candidates.forEach { c ->
             val sci = c.scientificName ?: return@forEach
             val row = layoutInflater.inflate(
-                R.layout.item_home_tool, binding.listCandidates, false,
+                R.layout.item_home_tool, binding.candidatesList, false,
             )
             row.findViewById<android.widget.ImageView>(R.id.tool_icon)
                 .setImageResource(R.drawable.ic_plant_placeholder)
@@ -211,12 +143,28 @@ class SpeciesIdentifyActivity : AppCompatActivity() {
                 sci,
                 (c.score * 100).roundToInt(),
             )
-            (row.layoutParams as? LinearLayout.LayoutParams)?.topMargin =
-                (8 * resources.displayMetrics.density).toInt()
             row.setOnClickListener {
                 SpeciesDetailActivity.start(this, sci, c.displayCommonName)
             }
-            binding.listCandidates.addView(row)
+            binding.candidatesList.addView(row)
         }
+        showCandidates()
+    }
+
+    /** Show the panel with a status line instead of candidate rows (no match,
+     *  unavailable, or an error). */
+    private fun showStatus(msg: String) {
+        binding.candidatesList.removeAllViews()
+        binding.candidatesStatus.text = msg
+        binding.candidatesStatus.visibility = View.VISIBLE
+        showCandidates()
+    }
+
+    private fun showCandidates() {
+        binding.candidatesPanel.visibility = View.VISIBLE
+    }
+
+    private fun hideCandidates() {
+        binding.candidatesPanel.visibility = View.GONE
     }
 }

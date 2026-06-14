@@ -34,6 +34,7 @@ import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.core.os.bundleOf
 import androidx.core.view.MenuProvider
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
@@ -70,6 +71,14 @@ class CameraFragment : Fragment() {
 
     private var captureInFlight = false
 
+    /** When true, the camera runs as the species-identification front-end
+     *  (hosted by SpeciesIdentifyActivity): no model picker / scan-tips /
+     *  community menu, and a captured+cropped photo is handed back to the
+     *  host via [RESULT_IDENTIFY_CAPTURE] instead of opening disease analysis.
+     *  Defaults to false, so the disease scan tab is unaffected. */
+    private val identifyMode: Boolean
+        get() = arguments?.getBoolean(ARG_IDENTIFY_MODE, false) ?: false
+
     /** Destination file for the in-flight crop. We give the cropper an
      *  explicit unique output file so each scan produces a distinct path
      *  — both for the preview (Glide caches by path) and analysis. */
@@ -92,8 +101,17 @@ class CameraFragment : Fragment() {
     private val KEY_GRID_OVERLAY = "grid_overlay_enabled"
     private val KEY_TIPS_SEEN = "scan_tips_seen"
 
-    private companion object {
+    companion object {
         const val TAG = "CameraFragment"
+
+        /** Set in the fragment arguments to run the camera as a species
+         *  identification front-end (see [identifyMode]). */
+        const val ARG_IDENTIFY_MODE = "identify_mode"
+
+        /** Fragment-result key the host listens on; the bundle carries the
+         *  cropped photo path under [RESULT_PATH]. */
+        const val RESULT_IDENTIFY_CAPTURE = "camera_identify_capture"
+        const val RESULT_PATH = "path"
     }
 
     private val permissionLauncher = registerForActivityResult(
@@ -137,19 +155,25 @@ class CameraFragment : Fragment() {
         // crop with bytes on disk advances to analysis.
         val cropped = pendingCropFile
         if (result.isSuccessful && cropped != null && cropped.exists() && cropped.length() > 0L) {
-            // Autosave the kept (cropped) photo to the device gallery when the
-            // user opted in AND this scan came from the camera, not a gallery
-            // import. Fire-and-forget off the main thread so a slow MediaStore
-            // write never stalls the hop into analysis.
-            if (pendingFromCamera && AutosavePrefs.enabled(requireContext())) {
-                val toSave = cropped
-                val appContext = requireContext().applicationContext
-                val album = getString(R.string.autosave_album)
-                viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
-                    ImageUtils.saveImageToGallery(appContext, toSave, album)
+            if (identifyMode) {
+                // Hand the cropped photo back to the host (SpeciesIdentify-
+                // Activity) to run species identification on it.
+                deliverIdentifyCapture(cropped.absolutePath)
+            } else {
+                // Autosave the kept (cropped) photo to the device gallery when the
+                // user opted in AND this scan came from the camera, not a gallery
+                // import. Fire-and-forget off the main thread so a slow MediaStore
+                // write never stalls the hop into analysis.
+                if (pendingFromCamera && AutosavePrefs.enabled(requireContext())) {
+                    val toSave = cropped
+                    val appContext = requireContext().applicationContext
+                    val album = getString(R.string.autosave_album)
+                    viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+                        ImageUtils.saveImageToGallery(appContext, toSave, album)
+                    }
                 }
+                navigateToAnalysis(cropped.absolutePath)
             }
-            navigateToAnalysis(cropped.absolutePath)
             // The crop succeeded; the raw original is no longer needed.
             clearPendingSource()
         } else {
@@ -186,7 +210,9 @@ class CameraFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
 
         setupUI()
-        setupToolbarMenu()
+        // The community "scans near you" action is disease-tab specific and
+        // assumes the MainActivity toolbar host; skip it in identify mode.
+        if (!identifyMode) setupToolbarMenu()
         setupPinchToZoom()
         checkCameraPermission()
         registerNetworkCallback()
@@ -230,20 +256,26 @@ class CameraFragment : Fragment() {
             permissionLauncher.launch(Manifest.permission.CAMERA)
         }
 
-        refreshModelFamilyChip()
-        // Fragment Result instead of a lambda field on the sheet: the
-        // chip-refresh signal survives a config-change recreation while the
-        // picker is open (re-registered here on every view creation).
-        childFragmentManager.setFragmentResultListener(
-            ModelPickerSheet.REQUEST_KEY, viewLifecycleOwner,
-        ) { _, _ ->
-            if (_binding != null) refreshModelFamilyChip()
+        // The diagnosis-model picker is meaningless for species ID, so hide
+        // the chip and skip its wiring in identify mode.
+        if (identifyMode) {
+            binding.btnModelFamily.visibility = View.GONE
+        } else {
+            refreshModelFamilyChip()
+            // Fragment Result instead of a lambda field on the sheet: the
+            // chip-refresh signal survives a config-change recreation while the
+            // picker is open (re-registered here on every view creation).
+            childFragmentManager.setFragmentResultListener(
+                ModelPickerSheet.REQUEST_KEY, viewLifecycleOwner,
+            ) { _, _ ->
+                if (_binding != null) refreshModelFamilyChip()
+            }
+            binding.btnModelFamily.setOnClickListener {
+                Haptics.tick(requireContext())
+                ModelPickerSheet.show(childFragmentManager)
+            }
+            syncModelCapabilities()
         }
-        binding.btnModelFamily.setOnClickListener {
-            Haptics.tick(requireContext())
-            ModelPickerSheet.show(childFragmentManager)
-        }
-        syncModelCapabilities()
 
         binding.cameraPreview.setOnTouchListener { _, event ->
             scaleGestureDetector.onTouchEvent(event)
@@ -454,6 +486,12 @@ class CameraFragment : Fragment() {
     /** Explicit shutter click. Shows the pre-scan tips sheet the
      *  first time, otherwise falls straight through to capture. */
     private fun onCaptureClicked() {
+        // The first-run scan-tips sheet is disease-scan guidance; identify
+        // mode goes straight to capture.
+        if (identifyMode) {
+            continueCaptureFlow()
+            return
+        }
         val prefs = requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         if (!prefs.getBoolean(KEY_TIPS_SEEN, false)) {
             // The Continue tap is handled by the Fragment Result listener
@@ -642,6 +680,14 @@ class CameraFragment : Fragment() {
         pendingSourceFile = null
     }
 
+    /** Identify-mode counterpart of [navigateToAnalysis]: return the cropped
+     *  photo path to the host activity, which runs species identification. */
+    private fun deliverIdentifyCapture(imagePath: String) {
+        parentFragmentManager.setFragmentResult(
+            RESULT_IDENTIFY_CAPTURE, bundleOf(RESULT_PATH to imagePath),
+        )
+    }
+
     private fun navigateToAnalysis(imagePath: String) {
         captureInFlight = true
         val intent = Intent(requireContext(), AnalysisActivity::class.java).apply {
@@ -683,8 +729,9 @@ class CameraFragment : Fragment() {
         // Re-sync the model-family chip from the persisted selection. Covers
         // the case where the picker sheet's callback was lost to a
         // config-change recreation while it was open — the chip would
-        // otherwise keep showing the previously-selected family.
-        if (_binding != null) refreshModelFamilyChip()
+        // otherwise keep showing the previously-selected family. (No chip in
+        // identify mode.)
+        if (_binding != null && !identifyMode) refreshModelFamilyChip()
         // If MainActivity's startup permission batch just finished and
         // CAMERA flipped to granted, start the preview now — onResume
         // is the first point we're sure the system dialog has been
