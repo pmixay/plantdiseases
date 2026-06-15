@@ -50,8 +50,8 @@
         "quota_daily": 500
       }
     },
+    "_labeling_note": "Admin review of user feedback + recorded user scans only (no dataset ingestion/export). A BLANK admin password refuses every login, so the feature is safe to leave enabled.",
     "labeling_enabled": true,
-    "labeling_auto_enabled": true,
     "labeling_trust_conformal": true,
     "labeling_conf_high": 0.85,
     "labeling_admin_password": "",
@@ -60,13 +60,7 @@
     "labeling_claim_lease_seconds": 900,
     "labeling_login_max_attempts": 10,
     "labeling_login_window_seconds": 300,
-    "labeling_ingest_enabled": true,
-    "_labeling_ingest_note": "Ingestion is Kaggle-only and version-gated: each cycle polls the dataset metadata and re-ingests only when the published version number changed, so the interval is just the poll cadence.",
-    "labeling_ingest_interval_seconds": 86400,
-    "labeling_kaggle_supplement_slug": "maxayyt5/houseplant-disease-eval-supplement",
-    "_labeling_audit_note": "Deterministic fraction of confident (auto_yes/auto_no) dataset candidates re-routed to the human queue as audits, so auto pre-filtering can't silently bury model false positives. 0 disables.",
-    "labeling_audit_rate": 0.05,
-    "_labeling_targets_note": "powdery_mildew retargeted to 0 after model v2.5.0 (real-world precision 0.97 / recall 0.91 — solved); leaf_scorch's defect is PRECISION, fixed by hard negatives (see docs/ROADMAP.md + DATASET_LABELING_PLAN.md), not by more positives.",
+    "_labeling_targets_note": "target>0 marks weak classes whose recorded scans are always retained + prioritised for human review (scan recording, not dataset collection). powdery_mildew is 0 (solved); see docs/ROADMAP.md.",
     "labeling_targets": {
       "nutrient_deficiency": 600,
       "leaf_scorch_underwatering": 600,

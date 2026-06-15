@@ -57,7 +57,7 @@ class LabelingActivity : AppCompatActivity() {
     private var loading = false
     private var stats: LabelStatsResponse? = null
 
-    private val sourceKeys = listOf("feedback", "dataset", "scans")
+    private val sourceKeys = listOf("feedback", "scans")
 
     private val lang: String get() = if (Locale.getDefault().language == "ru") "ru" else "en"
     private val base: String get() = ServerConfig.baseUrl.trimEnd('/')
@@ -98,10 +98,9 @@ class LabelingActivity : AppCompatActivity() {
         refreshStats(thenLoad = true)
     }
 
-    // ── Source switcher (All ▸ Feedback ▸ Dataset ▸ Scans) ──────────
+    // ── Source switcher (All ▸ Feedback ▸ Scans) ──────────
     private fun sourceLabel(key: String): String = when (key) {
         "feedback" -> getString(R.string.label_source_feedback)
-        "dataset" -> getString(R.string.label_source_dataset)
         else -> getString(R.string.label_source_scans)
     }
 

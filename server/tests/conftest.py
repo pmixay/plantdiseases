@@ -118,9 +118,8 @@ class FakePipeline:
 @pytest.fixture(autouse=True, scope="session")
 def _stub_pipeline_for_lifespan(tmp_path_factory):
     """Replace ``PlantDiseasePipeline`` with the fake before lifespan runs, and
-    keep the labeling tool hermetic: disable its background ingestion (no live
-    scraping in CI) and point its DB/dirs at a session tmp dir so tests never
-    write into ``server/``."""
+    keep the labeling tool hermetic: point its DB/dirs at a session tmp dir so
+    tests never write into ``server/``."""
     import labeling
     import main as server_main
     import pipeline as pipeline_module
@@ -128,11 +127,9 @@ def _stub_pipeline_for_lifespan(tmp_path_factory):
     server_main.PlantDiseasePipeline = FakePipeline  # type: ignore[assignment]
     pipeline_module.PlantDiseasePipeline = FakePipeline  # type: ignore[assignment]
 
-    server_main.LABELING_INGEST_ENABLED = False
     lab_dir = tmp_path_factory.mktemp("labeling")
     labeling.LABELING_DB_PATH = lab_dir / "labeling.db"
     labeling.LABELING_IMG_DIR = lab_dir / "images"
-    labeling.LABELING_EXPORT_DIR = lab_dir / "exports"
     labeling._initialised = False
     yield
 

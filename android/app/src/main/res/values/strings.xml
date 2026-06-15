@@ -891,7 +891,6 @@
     <string name="tip_community_body">Share scans to see what\'s spreading near you and get second opinions from other growers. Photos are anonymized (metadata stripped) and you can delete everything you\'ve shared from Profile at any time.</string>
     <string name="label_source_all">All</string>
     <string name="label_source_feedback">Feedback</string>
-    <string name="label_source_dataset">Dataset</string>
     <string name="label_source_scans">Scans</string>
     <string name="label_audit_badge">Audit</string>
     <string name="label_feedback_ctx">User proposed %1$s — model said %2$s</string>
