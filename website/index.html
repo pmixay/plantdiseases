@@ -73,7 +73,7 @@
         <a class="btn btn-light" href="#pipeline" data-ru="Как это работает" data-en="How it works">Как это работает</a>
       </div>
       <div class="hero-stats">
-        <div class="st"><div class="v">90.4%</div><div class="l" data-ru="общая точность" data-en="overall accuracy">общая точность</div></div>
+        <div class="st"><div class="v">91.1%</div><div class="l" data-ru="общая точность" data-en="overall accuracy">общая точность</div></div>
         <div class="st"><div class="v">9</div><div class="l" data-ru="классов диагноза" data-en="diagnosis classes">классов диагноза</div></div>
         <div class="st"><div class="v">~8<span style="font-size:18px"> мс</span></div><div class="l" data-ru="инференс gamma" data-en="gamma inference">инференс gamma</div></div>
         <div class="st"><div class="v">EN·RU</div><div class="l" data-ru="двуязычный уход" data-en="bilingual care">двуязычный уход</div></div>
@@ -291,7 +291,7 @@
         <div class="fhead"><span class="fname">Aqua</span><span class="tag proj" data-ru="проекция" data-en="projection">проекция</span></div>
         <div class="fsub" data-ru="на устройстве · офлайн" data-en="on-device · offline">на устройстве · офлайн</div>
         <div class="frow"><span class="k" data-ru="Бэкбон" data-en="Backbone">Бэкбон</span><span class="v">MobileNetV3-S</span></div>
-        <div class="frow"><span class="k">Macro-F1 · real</span><span class="v big">≈70%</span></div>
+        <div class="frow"><span class="k">Macro-F1 · real</span><span class="v big">≈80%</span></div>
         <div class="frow"><span class="k" data-ru="Размер" data-en="Size">Размер</span><span class="v">≈6 МБ</span></div>
         <div class="frow"><span class="k" data-ru="Среда" data-en="Runtime">Среда</span><span class="v">Android · TFLite</span></div>
       </div>
@@ -299,7 +299,7 @@
         <div class="fhead"><span class="fname">Gamma</span><span class="tag measured" data-ru="● измерено" data-en="● measured">● измерено</span></div>
         <div class="fsub" data-ru="текущий прод · баланс" data-en="current prod · balance">текущий прод · баланс</div>
         <div class="frow"><span class="k" data-ru="Бэкбон" data-en="Backbone">Бэкбон</span><span class="v">DINOv2 ViT-S/14</span></div>
-        <div class="frow"><span class="k">Macro-F1 · real</span><span class="v big">77.4%</span></div>
+        <div class="frow"><span class="k">Macro-F1 · real</span><span class="v big">86.5%</span></div>
         <div class="frow"><span class="k" data-ru="Размер" data-en="Size">Размер</span><span class="v">22.5 МБ</span></div>
         <div class="frow"><span class="k" data-ru="Среда" data-en="Runtime">Среда</span><span class="v">сервер CPU/GPU</span></div>
       </div>
@@ -307,7 +307,7 @@
         <div class="fhead"><span class="fname">Frontier</span><span class="tag proj" data-ru="проекция" data-en="projection">проекция</span></div>
         <div class="fsub" data-ru="высокая ёмкость · GPU" data-en="high capacity · GPU">высокая ёмкость · GPU</div>
         <div class="frow"><span class="k" data-ru="Бэкбон" data-en="Backbone">Бэкбон</span><span class="v">DINOv2 ViT-B/14</span></div>
-        <div class="frow"><span class="k">Macro-F1 · real</span><span class="v big">≈83%</span></div>
+        <div class="frow"><span class="k">Macro-F1 · real</span><span class="v big">≈90%</span></div>
         <div class="frow"><span class="k" data-ru="Размер" data-en="Size">Размер</span><span class="v">≈90 МБ</span></div>
         <div class="frow"><span class="k" data-ru="Среда" data-en="Runtime">Среда</span><span class="v" data-ru="сервер GPU (выкл.)" data-en="server GPU (off)">сервер GPU (выкл.)</span></div>
       </div>
@@ -319,14 +319,14 @@
 <section class="section" id="metrics">
   <div class="wrap">
     <span class="eyebrow reveal" data-ru="Качество модели" data-en="Model quality">Качество модели</span>
-    <h2 class="head reveal" data-ru="90.4% общей точности на реальных «садовых» фото" data-en="90.4% overall accuracy on real 'garden' photos">90.4% общей точности на реальных «садовых» фото</h2>
+    <h2 class="head reveal" data-ru="91.1% общей точности на реальных «садовых» фото" data-en="91.1% overall accuracy on real 'garden' photos">91.1% общей точности на реальных «садовых» фото</h2>
     <p class="lede reveal" data-ru="Оценка тира gamma на отложенной выборке реальных фото (val_realworld) — не студийный датасет." data-en="The gamma tier evaluated on a held-out set of real photos (val_realworld) — not a studio dataset.">Оценка тира gamma на отложенной выборке реальных фото (val_realworld) — не студийный датасет.</p>
     <div class="kpi-grid">
-      <div class="kpi reveal"><div class="kl">Macro-F1 · real</div><div class="kv" style="color:var(--acc-green)">77.4%</div><div class="ks" data-ru="болезни, без healthy / NaP" data-en="diseases, excl. healthy / NaP">болезни, без healthy / NaP</div></div>
-      <div class="kpi reveal d1"><div class="kl">Macro-F1 · in-domain</div><div class="kv" style="color:var(--acc-green)">86.1%</div><div class="ks" data-ru="доменная выборка" data-en="in-domain set">доменная выборка</div></div>
-      <div class="kpi reveal d2"><div class="kl" data-ru="Общая точность" data-en="Overall accuracy">Общая точность</div><div class="kv" style="color:var(--acc-green)">90.4%</div><div class="ks" data-ru="9 классов · real-world" data-en="9 classes · real-world">9 классов · real-world</div></div>
+      <div class="kpi reveal"><div class="kl">Macro-F1 · real</div><div class="kv" style="color:var(--acc-green)">86.5%</div><div class="ks" data-ru="болезни, без healthy / NaP" data-en="diseases, excl. healthy / NaP">болезни, без healthy / NaP</div></div>
+      <div class="kpi reveal d1"><div class="kl">Macro-F1 · in-domain</div><div class="kv" style="color:var(--acc-green)">85.8%</div><div class="ks" data-ru="доменная выборка" data-en="in-domain set">доменная выборка</div></div>
+      <div class="kpi reveal d2"><div class="kl" data-ru="Общая точность" data-en="Overall accuracy">Общая точность</div><div class="kv" style="color:var(--acc-green)">91.1%</div><div class="ks" data-ru="9 классов · real-world" data-en="9 classes · real-world">9 классов · real-world</div></div>
       <div class="kpi reveal d3"><div class="kl">Healthy-bias</div><div class="kv" style="color:var(--acc-blue)">0.90</div><div class="ks" data-ru="норма < 1.5 — нет перекоса" data-en="norm < 1.5 — no skew">норма &lt; 1.5 — нет перекоса</div></div>
-      <div class="kpi reveal"><div class="kl" data-ru="Покрытие conformal" data-en="Conformal coverage">Покрытие conformal</div><div class="kv" style="color:var(--acc-purple)">96.6%</div><div class="ks" data-ru="цель ≥ 90% · набор 1.86" data-en="target ≥ 90% · set 1.86">цель ≥ 90% · набор 1.86</div></div>
+      <div class="kpi reveal"><div class="kl" data-ru="Покрытие conformal" data-en="Conformal coverage">Покрытие conformal</div><div class="kv" style="color:var(--acc-purple)">96.9%</div><div class="ks" data-ru="цель ≥ 90% · набор 1.89" data-en="target ≥ 90% · set 1.89">цель ≥ 90% · набор 1.89</div></div>
       <div class="kpi reveal d1"><div class="kl" data-ru="«Не растение» (OOD)" data-en="'Not a plant' (OOD)">«Не растение» (OOD)</div><div class="kv" style="color:var(--acc-blue)">97.5%</div><div class="ks" data-ru="защита от посторонних фото" data-en="rejects off-topic photos">защита от посторонних фото</div></div>
       <div class="kpi reveal d2"><div class="kl" data-ru="Размер · INT8" data-en="Size · INT8">Размер · INT8</div><div class="kv" style="color:var(--acc-amber)">22.5 МБ</div><div class="ks" data-ru="fp32 87.3 МБ · дрейф −0.2%" data-en="fp32 87.3 MB · drift −0.2%">fp32 87.3 МБ · дрейф −0.2%</div></div>
       <div class="kpi reveal d3"><div class="kl" data-ru="Детектор · mAP50" data-en="Detector · mAP50">Детектор · mAP50</div><div class="kv" style="color:var(--acc-green)">82.0%</div><div class="ks">Stage-1 · YOLOv8n</div></div>
@@ -363,7 +363,7 @@
       <figure class="viz reveal d1">
         <figcaption>
           <h4 data-ru="Полнота + 95% ДИ" data-en="Recall + 95% CI">Полнота + 95% ДИ</h4>
-          <p data-ru="Бутстрэп n=1937 · широкий интервал = узкое место по данным, не по архитектуре." data-en="Bootstrap n=1937 · a wide interval means a data bottleneck, not an architecture one.">Бутстрэп n=1937 · широкий интервал = узкое место по данным, не по архитектуре.</p>
+          <p data-ru="Бутстрэп n=2213 · широкий интервал = узкое место по данным, не по архитектуре." data-en="Bootstrap n=2213 · a wide interval means a data bottleneck, not an architecture one.">Бутстрэп n=2213 · широкий интервал = узкое место по данным, не по архитектуре.</p>
         </figcaption>
         <div class="viz-body" id="chart-recall"></div>
       </figure>
@@ -397,7 +397,7 @@
     <h2 class="head reveal" style="color:#fff" data-ru="Модель знает, когда она не уверена" data-en="The model knows when it's unsure">Модель знает, когда она не уверена</h2>
     <div class="unc-grid">
       <div class="unc reveal"><div class="uv" style="color:var(--acc-blue)">97.5%</div><h4 data-ru="Голова-отказ (OOD)" data-en="Rejection head (OOD)">Голова-отказ (OOD)</h4><p data-ru="Отсекает посторонние кадры вместо ложного диагноза." data-en="Rejects off-topic frames instead of a false diagnosis.">Отсекает посторонние кадры вместо ложного диагноза.</p></div>
-      <div class="unc reveal d1"><div class="uv" style="color:var(--acc-purple)">96.6%</div><h4 data-ru="Конформное покрытие" data-en="Conformal coverage">Конформное покрытие</h4><p data-ru="Топ-3 альтернативы с гарантией покрытия ≥ 90%." data-en="Top-3 alternatives with a ≥90% coverage guarantee.">Топ-3 альтернативы с гарантией покрытия ≥ 90%.</p></div>
+      <div class="unc reveal d1"><div class="uv" style="color:var(--acc-purple)">96.9%</div><h4 data-ru="Конформное покрытие" data-en="Conformal coverage">Конформное покрытие</h4><p data-ru="Топ-3 альтернативы с гарантией покрытия ≥ 90%." data-en="Top-3 alternatives with a ≥90% coverage guarantee.">Топ-3 альтернативы с гарантией покрытия ≥ 90%.</p></div>
       <div class="unc reveal d2"><div class="uv" style="color:var(--acc-amber)" data-ru="Лаплас" data-en="Laplace">Лаплас</div><h4 data-ru="Фильтр размытия" data-en="Blur gate">Фильтр размытия</h4><p data-ru="Нечёткие кадры сразу отправляются на пересъёмку." data-en="Unfocused frames go straight back for a re-take.">Нечёткие кадры сразу отправляются на пересъёмку.</p></div>
       <div class="unc reveal d3"><div class="uv" style="color:var(--acc-green)">0.90</div><h4 data-ru="Healthy-bias в норме" data-en="Healthy-bias in range">Healthy-bias в норме</h4><p data-ru="Нет перекоса в «здорово» — болезни не маскируются." data-en="No skew toward 'healthy' — diseases aren't masked.">Нет перекоса в «здорово» — болезни не маскируются.</p></div>
     </div>
@@ -412,14 +412,14 @@
     <div class="road-grid">
       <div class="road-col reveal">
         <div class="ch"><span class="ic ok">✓</span><span data-ru="Что уже работает" data-en="What works today">Что уже работает</span></div>
-        <div class="rli"><span class="rk">90.4%</span><span class="rt"><b data-ru="Общая точность" data-en="Overall accuracy">Общая точность</b> <span data-ru="на 9 классах, реальные фото" data-en="across 9 classes, real photos">на 9 классах, реальные фото</span></span></div>
+        <div class="rli"><span class="rk">91.1%</span><span class="rt"><b data-ru="Общая точность" data-en="Overall accuracy">Общая точность</b> <span data-ru="на 9 классах, реальные фото" data-en="across 9 classes, real photos">на 9 классах, реальные фото</span></span></div>
         <div class="rli"><span class="rk">97.5%</span><span class="rt"><b data-ru="Защита от посторонних фото" data-en="Off-topic rejection">Защита от посторонних фото</b> <span data-ru="(класс «не растение»)" data-en="(the 'not a plant' class)">(класс «не растение»)</span></span></div>
         <div class="rli"><span class="rk">22.5 МБ</span><span class="rt"><b data-ru="Офлайн-модель INT8" data-en="Offline INT8 model">Офлайн-модель INT8</b> <span data-ru="прямо на устройстве" data-en="right on the device">прямо на устройстве</span></span></div>
         <div class="rli"><span class="rk">EN/RU</span><span class="rt"><b data-ru="Двуязычные планы ухода" data-en="Bilingual care plans">Двуязычные планы ухода</b> <span data-ru="и личный сад с напоминаниями" data-en="and a garden with reminders">и личный сад с напоминаниями</span></span></div>
       </div>
       <div class="road-col work reveal d1">
         <div class="ch"><span class="ic work">↗</span><span data-ru="Над чем работаем" data-en="What we're improving">Над чем работаем</span></div>
-        <div class="rli"><span class="rk">64–76%</span><span class="rt"><b data-ru="Краевой ожог и дефицит питания" data-en="Leaf scorch & nutrient deficiency">Краевой ожог и дефицит питания</b> <span data-ru="— расширить датасет этих классов" data-en="— grow the dataset for these classes">— расширить датасет этих классов</span></span></div>
+        <div class="rli"><span class="rk">71–72%</span><span class="rt"><b data-ru="Краевой ожог и дефицит питания" data-en="Leaf scorch & nutrient deficiency">Краевой ожог и дефицит питания</b> <span data-ru="— расширить датасет этих классов" data-en="— grow the dataset for these classes">— расширить датасет этих классов</span></span></div>
         <div class="rli"><span class="rk" data-ru="Классы" data-en="Classes">Классы</span><span class="rt"><b data-ru="Разделить" data-en="Split">Разделить</b> <span data-ru="пятнистость и вредителей на подклассы при росте данных" data-en="leaf spot and pests into subclasses as data grows">пятнистость и вредителей на подклассы при росте данных</span></span></div>
         <div class="rli"><span class="rk">frontier</span><span class="rt"><b data-ru="ViT-B/14 на GPU-хосте" data-en="ViT-B/14 on a GPU host">ViT-B/14 на GPU-хосте</b> <span data-ru="— следующий уровень точности" data-en="— the next accuracy tier">— следующий уровень точности</span></span></div>
         <div class="rli"><span class="rk" data-ru="Поле" data-en="Field">Поле</span><span class="rt"><b data-ru="Больше «полевых» фото" data-en="More 'field' photos">Больше «полевых» фото</b> <span data-ru="для устойчивости в реальных условиях" data-en="for robustness in the wild">для устойчивости в реальных условиях</span></span></div>
