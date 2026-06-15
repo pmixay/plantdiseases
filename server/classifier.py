@@ -216,10 +216,6 @@ class DiseaseClassifier:
                 f"Failed to load ONNX classifier {onnx_path}: {e}"
             ) from e
 
-    @property
-    def is_loaded(self) -> bool:
-        return bool(self.backend)
-
     # ── loader ───────────────────────────────────────────────────────
 
     def _load_onnx(self, path: Path) -> None:

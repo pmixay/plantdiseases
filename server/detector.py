@@ -136,10 +136,6 @@ class LeafDetector:
         except Exception as e:
             raise DetectorLoadError(f"Failed to load YOLO ONNX detector {resolved}: {e}") from e
 
-    @property
-    def is_loaded(self) -> bool:
-        return self.model is not None
-
     def _load_model(self, path: Path) -> None:
         import onnxruntime as ort
 

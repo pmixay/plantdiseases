@@ -13,7 +13,7 @@ import java.security.MessageDigest
  *  - `aqua_classifier.tflite` — the model bytes
  *  - `aqua_classes.json`      — the sidecar (class order, input size, norm)
  *
- * The installed model's sha256 + version are tracked in prefs so the app
+ * The installed model's sha256 is tracked in prefs so the app
  * re-downloads only when the server publishes new bytes. [AquaClassifier]
  * reads the model from here; if nothing is installed it reports unavailable
  * and the app uses the server model.
@@ -25,7 +25,6 @@ object AquaModelManager {
     const val CLASSES_FILE = "aqua_classes.json"
     private const val PREFS = "plantdiseases_aqua"
     private const val KEY_SHA = "model_sha256"
-    private const val KEY_VERSION = "model_version"
 
     fun modelDir(context: Context): File =
         File(context.filesDir, DIR).apply { if (!exists()) mkdirs() }
@@ -39,9 +38,6 @@ object AquaModelManager {
 
     fun installedSha(context: Context): String? =
         prefs(context).getString(KEY_SHA, null)
-
-    fun installedVersion(context: Context): String? =
-        prefs(context).getString(KEY_VERSION, null)
 
     /** True when the installed bytes already match the server's sha. */
     fun isUpToDate(context: Context, serverSha: String?): Boolean =
@@ -89,7 +85,6 @@ object AquaModelManager {
             }
             prefs(context).edit()
                 .putString(KEY_SHA, actualSha)
-                .putString(KEY_VERSION, version)
                 .apply()
             Log.i(TAG, "Aqua model installed (version=$version, sha=$actualSha)")
             true

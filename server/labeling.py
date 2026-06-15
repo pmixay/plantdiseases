@@ -187,10 +187,6 @@ def init_db() -> None:
         _initialised = True
 
 
-# Statuses that count as an approved (validated) image: a model auto-accept
-# or a human "yes". Both feed the exported dataset.
-APPROVED_STATUSES = ("yes", "auto_yes")
-
 # Statuses set by a human verdict — these rows are never auto-rerouted,
 # pruned, or overridden by feedback.
 HUMAN_STATUSES = VERDICTS
@@ -608,20 +604,6 @@ def apply_auto_status(
             (status, pred, conf, set_json, int(candidate_id)),
         )
         return bool(cur.rowcount)
-
-
-def delete_candidate(candidate_id: int) -> None:
-    """Remove a candidate + its image (used when a re-score yields auto_no)."""
-    with _write_lock, _connect() as conn:
-        row = conn.execute(
-            "SELECT image_path FROM candidates WHERE id=?", (int(candidate_id),)
-        ).fetchone()
-        conn.execute("DELETE FROM candidates WHERE id=?", (int(candidate_id),))
-    if row:
-        try:
-            (LABELING_IMG_DIR / row["image_path"]).unlink(missing_ok=True)
-        except OSError:
-            pass
 
 
 def image_path_for(candidate_id: int) -> Path | None:

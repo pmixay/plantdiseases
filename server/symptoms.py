@@ -14,22 +14,6 @@ compatible.
 """
 from __future__ import annotations
 
-# Canonical disease classes this triage can surface (a subset of
-# DISEASES_DATABASE — the ones distinguishable from symptoms alone).
-_CLASSES = {
-    "powdery_mildew",
-    "gray_mold_botrytis",
-    "leaf_spot",
-    "viral_disease",
-    "edema",
-    "sunburn_or_scorch",
-    "leaf_scorch_underwatering",
-    "nutrient_deficiency",
-    "pests",
-    "mealybug",
-    "scale",
-}
-
 # question_id -> option_id -> {disease_class: weight}
 SYMPTOM_WEIGHTS: dict[str, dict[str, dict[str, float]]] = {
     "part": {
