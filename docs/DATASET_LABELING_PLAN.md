@@ -64,48 +64,49 @@ every published version must satisfy:
   leaf_scorch PRECISION (0.52), so it needs lookalike negatives, not more
   positives. Place them under `healthy/` / `not_a_plant/` as appropriate.
 
-### Audited state of the live supplement — v1 (audited 2026-06-13)
+### Audited state of the live supplement — v2 (audited 2026-06-15)
 
-`maxayyt5/houseplant-disease-eval-supplement` **v1**: 1248 images, every row
-`verified_by=agent_vision`, manifest carries the required columns plus
-`phash`/`confidence`/`query`/`observed`. Measured against the §1 gates:
+`maxayyt5/houseplant-disease-eval-supplement` **v2**: 1647 images, every row
+`verified_by=agent_vision`, manifest now also carries a `subject_domain` column.
+Measured against the §1 gates:
 
-| class | n | short-side ≥384 | houseplant domain (keyword sniff) | verdict |
+| class | n | ≥384px | domain (subject_domain / sniff) | verdict |
 |---|---|---|---|---|
-| `leaf_scorch_underwatering` | 505 | 100% | ~90% houseplant (25 crop) | domain OK — **but all POSITIVES; see gap 1** |
-| `nutrient_deficiency` | 504 | 100% | ~50% houseplant / ~50% crop | **half crop — tighten domain gate** |
-| `gray_mold_botrytis` | 239 | 100% | ~5% (105/239 are grape/strawberry/fruit) | **fails domain gate — re-collect on houseplants** |
+| `nutrient_deficiency` | 617 | 100% | 402 houseplant / 110 crop / 30 orchard / rest | ✅ eval volume met; ~25% crop residue |
+| `leaf_scorch_underwatering` | 501 | 100% | ~90% houseplant (boundary positives, e.g. calathea/dracaena crispy tips) | ✅ good positives; ~20 crop |
+| `not_a_plant` | 249 | 100% | brown straw/hay/burlap/cardboard/fallen-leaf textures | ✅ **excellent scorch-lookalike negatives** |
+| `healthy` | 160 | 100% | houseplant — but ~150 generic lush-green, only ~10 brown-tipped | ⚠️ **generic healthy, not the boundary negative** |
+| `gray_mold_botrytis` | 120 | 100% | 120 tagged houseplant (de-cropped) | ⚠️ clean now but **thin (was 239)** |
 
-Internal pHash dedup is clean (0 near-dups/class); the resolution gate passes
-100%. So the *image* gates hold — the gaps are **domain** and **label intent**:
+pHash dedup clean (0 near-dups/class); resolution gate 100%.
 
-1. **leaf_scorch needs NEGATIVES, not more positives.** The #1 model defect is
-   leaf_scorch *precision* (0.52); 505 positives do not move it. Collect the
-   ~300 scorch-lookalike negatives (per the bullet above) into `healthy/` and
-   `not_a_plant/` folders — v1 contains neither folder yet.
-2. **gray_mold is field/orchard imagery (grapes, strawberries, fruit), not
-   houseplants** — the v1 agricultural-leakage limitation, now quantified.
-   Re-run the houseplant-domain gate on this class; foliar houseplant Botrytis
-   is what the model actually serves.
-3. **nutrient_deficiency is ~50% crop (rice/maize/tomato N-P-K).** Crop nutrient
-   proxies already train via CoLeaf/MPLD/rice (down-weighted, train-only), so
-   prioritise real houseplant interveinal-chlorosis over more crop rows.
-4. **18 banned-origin rows present** (wikimedia 9, wikipedia 8, plantvillage 1)
-   — drop them; they violate the §1 disjointness / label-quality ban.
-5. **License hygiene:** rows carry an empty `license` and the dataset license is
-   "Other", yet the export `dataset-metadata.json` (`labeling.py`) hard-codes
-   `CC0-1.0`. For web-scraped imagery either record a per-image license or set
-   the dataset license honestly.
+**Resolved since v1:** banned-origin rows removed (0, was 18); `gray_mold`
+de-cropped (was 105/239 grape/strawberry); `subject_domain` column added;
+`not_a_plant` brown-texture negatives added; `nutrient_deficiency` eval volume
+met and now ~65% houseplant.
 
-> **Training-time use (v2.6):** the same supplement is now also pulled directly
-> by `train_notebook.ipynb` §2 (`fetch_kaggle_supplement`, source `supplement`)
-> and is **eval-eligible** there — a held-out fraction seeds `val_realworld` /
-> `val_indomain` / the calibration splits to thicken the thin weak-class eval
-> slices. It reads whatever canonical-class folders the dataset ships, so the
-> `healthy/` + `not_a_plant/` hard-negative folders (gap 1 above) are picked up
-> automatically once added. Because these rows are agent-judged, the notebook
-> ship gate measured on them is a **proxy** until verified production volume
-> exists — keep an eye on it once real human-verified scans accumulate.
+**Remaining gaps before a confident ship gate:**
+1. **leaf_scorch healthy-side FPs still under-served.** The v2.5.0 FPs split
+   healthy(11) / not-a-plant(11). The `not_a_plant` half is now strongly covered;
+   the **healthy half is not** — only ~10 of 160 `healthy` rows are
+   healthy-WITH-dry-brown-tips boundary cases (the rest are generic lush-green).
+   Collect ~100–150 more *brown-tipped / edge-scorched but otherwise-healthy*
+   houseplants into `healthy/` (this is the specific fix for healthy→scorch FPs).
+2. **gray_mold is thin (120).** Clean-domain but below the 400 target and below
+   v1's 239 — its per-class CIs will be wide. Backfill foliar houseplant Botrytis
+   toward ≥250 (genuinely scarce; iNat genus + DoctorP are the realistic supply).
+3. **Minor:** ~25% of `nutrient_deficiency` and a few `leaf_scorch` rows are crop;
+   `subject_domain` is blank on all `leaf_scorch` rows; `license` is empty on
+   ~98% of rows while the export hard-codes `CC0-1.0` (`labeling.py`).
+
+> **Training-time use (v2.6):** the same supplement is pulled directly by
+> `train_notebook.ipynb` §2 (`fetch_kaggle_supplement`, source `supplement`) and
+> is **eval-eligible** — a held-out fraction seeds `val_realworld` /
+> `val_indomain` / the calibration splits, thickening the thin weak-class eval
+> slices (nutrient_deficiency projects ~25 → ~100). It reads whatever
+> canonical-class folders ship, so v2's `healthy/` + `not_a_plant/` folders are
+> already picked up. Because rows are agent-judged, the gate measured on them is
+> a **proxy** until verified production volume exists.
 
 ## (2)→(3) Server ingestion — Kaggle-only, version-gated
 
