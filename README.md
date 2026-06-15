@@ -33,7 +33,7 @@ pipeline and live benchmark charts.
 | 🪴 | **Personal garden** — Room-backed scan history, multi-plant tracking, watering / fertilising reminders via WorkManager. |
 | 🤖 | **AI plant doctor** — opt-in OpenRouter chat scoped to your scan's diagnosis for follow-up questions. |
 | 🔎 | **Species identification** — PlantNet integration (optional) auto-fills the plant species from the scan photo. |
-| 📊 | **Honest uncertainty** — top-3 alternatives, conformal prediction sets, weak-healthy reroute, severity scoring + soft warnings (`uncertain_healthy`, `detector_classifier_mismatch`, `blurry_image`). |
+| 📊 | **Honest uncertainty** — top-3 alternatives, conformal prediction sets, weak-healthy reroute, severity scoring + soft warnings (`uncertain_healthy`, `low_confidence`, `blurry_image`). |
 
 ---
 
@@ -53,16 +53,20 @@ pipeline and live benchmark charts.
 │                      │         │   │ frozen DINOv2 ViT-S/14    │   │
 │                      │         │   │ + LoRA + MLP head         │   │
 │                      │         │   │ 9 classes incl. NaP head │   │
-│                      │         │   │ + MaxLogit OOD gate      │   │
+│                      │         │   │ + embedding-kNN OOD gate │   │
 │                      │         │   │ + blur (var-Laplacian)   │   │
 │                      │         │   └──────────────────────────┘   │
 └──────────────────────┘         └──────────────────────────────────┘
 ```
 
 Why two stages — letting YOLOv8n find the leaf first means the
-classifier sees a tight crop instead of a whole room. The MaxLogit OOD
-gate ([`pipeline.py`](server/pipeline.py)) catches the residual case
-where Stage 1 fires weakly on a non-leaf texture. The blur gate
+classifier sees a tight crop instead of a whole room. The OOD AND-gate
+([`pipeline.py`](server/pipeline.py)) catches the residual case where
+Stage 1 fires weakly on a non-leaf texture: it fires only when detector
+confidence **and** a classifier-side OOD signal both agree. The OOD
+signal is an embedding-space k-NN distance on the DINOv2 CLS vector
+([`ood.py`](server/ood.py)) when the bundle ships a memory bank, falling
+back to the legacy MaxLogit floor otherwise. The blur gate
 (variance-of-Laplacian) short-circuits unfocused shots to a
 `not_a_plant` verdict so the user re-takes instead of getting a fake
 diagnosis.

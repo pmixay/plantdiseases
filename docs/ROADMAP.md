@@ -3,18 +3,22 @@
 Compiled June 2026, grounded in two evidence sources: the **shipped model
 bundle v2.5.0** (trained 2026-06-09; per-class real-world metrics below) and
 a **competitor survey** (PictureThis, PlantIn, Planta, Greg, Plantix/Agrio;
-sources at the bottom). Companion docs: `DATASET_LABELING_PLAN.md` (the data
-loop this roadmap depends on), `PLAY_DATA_SAFETY.md` (store submission),
+sources at the bottom). The follow-up **v2.5.1** shipped data-quality and
+Aqua-TFLite-export-robustness fixes (original-capture-first dataset
+sampling, Aqua export hardening) on top of the same gamma recipe, so the
+per-class gamma eval below still stands as the planning baseline. Companion
+docs: `DATASET_LABELING_PLAN.md` (the data loop this roadmap depends on),
 `ANDROID_RELEASE.md` (signing/build).
 
 ## 1. Where we are
 
 **App today:** photo diagnosis (9 classes, conformal uncertainty, severity
 scoring, on-device Aqua + server Gamma models), bilingual care plans (EN/RU),
-AI chat doctor, no-photo symptom triage, community nearby-scans feed with
-second opinions, plant garden tracker + care reminders, disease guide with
-example photos, pet-toxicity warnings, progression tracking, species ID as
-background enrichment (PlantNet), GDPR export/delete.
+AI chat doctor, no-photo symptom triage, light meter + watering calculator,
+community nearby-scans feed with second opinions, plant garden tracker + care
+reminders, disease guide with example photos, pet-toxicity warnings,
+progression tracking, species ID as a Home-tab headline feature (PlantNet),
+GDPR export/delete.
 
 **Model v2.5.0, real-world eval (n=1938, 95% CIs in the model card):**
 
@@ -61,10 +65,9 @@ calibrated uncertainty, no account, no trial traps, privacy-respecting
 
 ## 3. Must-have before release
 
-1. **Consent + privacy (DONE in this refactor):** blocking consent screen +
-   upgrade-path dialog, `website/privacy.html`, GDPR cascade,
-   `PLAY_DATA_SAFETY.md` answers. Required by Play's prominent-disclosure
-   and 2025 health-content policies.
+1. **Consent + privacy (DONE):** blocking consent screen +
+   upgrade-path dialog, `website/privacy.html`, GDPR cascade. Required by
+   Play's prominent-disclosure and 2025 health-content policies.
 2. **Species ID as a first-class feature** (user-approved decision, DONE):
    the Home tab's "Identify plant" hero card opens a dedicated flow —
    camera/gallery photo + organ choice → PlantNet candidates with
@@ -87,14 +90,16 @@ calibrated uncertainty, no account, no trial traps, privacy-respecting
    care plan → community), short/full descriptions **without accuracy
    guarantees** — "AI-assisted guidance, not a substitute for professional
    advice" disclaimer (Play health-claims policy + honest positioning).
-6. **Data Safety form** filled from `PLAY_DATA_SAFETY.md` (photos collected
-   not shared, optional coarse region, deletion path).
+6. **Data Safety form** (Play Console): photos collected, **not shared**,
+   anonymized (EXIF/GPS stripped, downscaled, no account/device IDs);
+   optional coarse region for the community feed; messages/UGC (feedback
+   notes, community comments) collected not shared; in-app deletion path.
+   No advertising ID, no device identifiers. Encrypted in transit (HTTPS).
+   Keep it in sync with `server/main.py` scan recording and
+   `website/privacy.html`.
 
 ## 4. Nice-to-have / post-launch
 
-- Light meter + watering calculator (the two most-paywalled competitor
-  utilities — strong free differentiators later; need sensor calibration
-  work).
 - Edema + sunburn class activation (content cards already exist in
   `diseases_data.py`; deferred until the 9 current classes are stable).
 - Overwatering/root-rot class (the #1 houseplant killer; visually

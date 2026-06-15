@@ -571,6 +571,145 @@ def chat_metrics_snapshot() -> dict:
         }
 
 
+# ── Species common-diseases (OpenRouter, structured) ────────────────
+#
+# Powers the species-detail screen's "common problems" section. There is
+# no per-species disease dataset in the project, so we ask the chat model
+# for the conditions a species is most commonly affected by indoors and
+# return a small STRUCTURED list. Each item may carry a ``doc_key`` from
+# the app's guide taxonomy so the client renders a tappable link into its
+# offline disease guide; unknown keys are dropped to null (plain text).
+#
+# Best-effort and additive: no API key (or any failure) returns
+# ``{"available": False}`` and the client falls back to its offline guide
+# list, so the section is never empty.
+
+SPECIES_DISEASES_CACHE_SIZE = get_int("SPECIES_DISEASES_CACHE_SIZE", 256)
+SPECIES_DISEASES_MAX_TOKENS = get_int("SPECIES_DISEASES_MAX_TOKENS", 400)
+_SPECIES_DISEASES_CACHE = _LRU(SPECIES_DISEASES_CACHE_SIZE)
+
+# Disease-guide keys the Android client can deep-link (mirrors the app's
+# DiseaseCatalog). The model may tag an item with one of these; anything
+# else becomes null so the client shows the item as plain text.
+_GUIDE_DOC_KEYS = frozenset({
+    "gray_mold_botrytis", "leaf_scorch_underwatering", "leaf_spot",
+    "nutrient_deficiency", "pests", "powdery_mildew", "viral_disease",
+    "edema", "sunburn_or_scorch",
+})
+
+_SPECIES_DISEASES_SYSTEM = """You are a houseplant pathology assistant. Given a plant \
+species, list the problems (diseases, sap-sucking pests, physiological disorders) that \
+species is MOST commonly affected by when grown indoors, most common first.
+
+Return ONLY a JSON object, no prose, of exactly this shape:
+{"diseases": [{"name": "<short condition name>", "doc_key": "<an allowed key or null>", \
+"note": "<one short sentence: how it shows on this plant + the single most useful first action>"}]}
+
+Allowed doc_key values (use the closest match, otherwise null):
+gray_mold_botrytis, leaf_scorch_underwatering, leaf_spot, nutrient_deficiency, pests, \
+powdery_mildew, viral_disease, edema, sunburn_or_scorch
+
+Rules:
+- 3 to 5 items, most common first.
+- Write "name" and "note" in the requested language.
+- Keep each "note" under 20 words. Never name fungicide trade names — generic actives only.
+- Only conditions plausible for that species indoors; do not invent exotic pathogens.
+- Output the JSON object only, nothing before or after it."""
+
+
+def _parse_species_diseases(text: str) -> list[dict]:
+    """Extract + sanitise the diseases list from the model's JSON reply.
+
+    Tolerant of code fences / leading prose (grabs the first ``{...}``
+    block). Drops malformed items and caps lengths so a misbehaving model
+    can't push junk to the client. Returns ``[]`` on any problem.
+    """
+    raw = (text or "").strip()
+    if not raw:
+        return []
+    match = re.search(r"\{.*\}", raw, re.DOTALL)
+    if not match:
+        return []
+    try:
+        data = json.loads(match.group(0))
+    except (ValueError, TypeError):
+        return []
+    items = data.get("diseases") if isinstance(data, dict) else None
+    if not isinstance(items, list):
+        return []
+    out: list[dict] = []
+    for it in items[:5]:
+        if not isinstance(it, dict):
+            continue
+        name = str(it.get("name") or "").strip()
+        if not name or len(name) > 80:
+            continue
+        note = str(it.get("note") or "").strip()
+        if len(note) > 240:
+            note = note[:240].rstrip()
+        doc_key = it.get("doc_key")
+        doc_key = doc_key if doc_key in _GUIDE_DOC_KEYS else None
+        out.append({"name": name, "doc_key": doc_key, "note": note})
+    return out
+
+
+def species_common_diseases(
+    scientific_name: str | None,
+    *,
+    common_name: str | None = None,
+    lang: str = "en",
+) -> dict:
+    """Conditions a species is commonly affected by indoors (best-effort, AI).
+
+    Returns ``{"available": True, "species", "diseases": [...]}`` where each
+    disease is ``{"name", "doc_key"|None, "note"}``. Returns
+    ``{"available": False, "diseases": []}`` when no OpenRouter key is set or
+    on any failure — the client then renders its offline disease guide, so the
+    species screen's "common problems" section is never empty. Never raises.
+    """
+    name = (scientific_name or "").strip()
+    if not name:
+        return {"available": False, "diseases": [], "source": "no_species"}
+    lang = "ru" if _is_russian(lang) else "en"
+    if not _chat_api_key_present():
+        return {"available": False, "diseases": [], "source": "no_api_key"}
+
+    cache_key = f"{name.lower()}:{lang}"
+    cached = _SPECIES_DISEASES_CACHE.get(cache_key)
+    if cached is not None:
+        return {**copy.deepcopy(cached), "cached": True}
+
+    lang_word = "Russian" if lang == "ru" else "English"
+    common = (common_name or "").strip()
+    subject = name + (f" (commonly known as {common})" if common else "")
+    user = (
+        f"Species: {subject}\n"
+        f"Write the names and notes in {lang_word}.\n"
+        "Return the JSON object now."
+    )
+    try:
+        text, _tin, _tout = _call_openrouter(
+            _SPECIES_DISEASES_SYSTEM,
+            [{"role": "user", "content": user}],
+            max_tokens=SPECIES_DISEASES_MAX_TOKENS,
+        )
+    except Exception as e:  # noqa: BLE001 — never propagate to the client
+        logger.warning("species_common_diseases failed: %s", e)
+        return {"available": False, "diseases": [], "source": "api_error"}
+
+    diseases = _parse_species_diseases(text)
+    if not diseases:
+        return {"available": False, "diseases": [], "source": "empty"}
+    response = {
+        "available": True,
+        "species": name,
+        "diseases": diseases,
+        "source": "openrouter",
+    }
+    _SPECIES_DISEASES_CACHE.put(cache_key, response)
+    return response
+
+
 # ── Care plan ───────────────────────────────────────────────────────
 #
 # The care-plan generator is the only deterministic surface in this

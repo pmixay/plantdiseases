@@ -50,7 +50,9 @@ class StatsTipsActivity : AppCompatActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            binding.statsToolbar.updatePadding(top = bars.top)
+            // Pad the app-bar container so the toolbar sits fully below the
+            // status bar instead of being squeezed inside its fixed height.
+            binding.appbar.updatePadding(top = bars.top)
             insets
         }
         binding.statsToolbar.setNavigationOnClickListener { finish() }

@@ -63,6 +63,7 @@ try:
         compare_progression_history,
         generate_care_plan,
         identify_species,
+        species_common_diseases,
     )
     from .community import (
         COMMUNITY_THUMB_DIR,
@@ -193,6 +194,7 @@ except ImportError:
         compare_progression_history,
         generate_care_plan,
         identify_species,
+        species_common_diseases,
     )
     from community import (
         COMMUNITY_THUMB_DIR,
@@ -3439,6 +3441,26 @@ async def species_info_endpoint(name: str, locale: str = "en"):
     if info is None:
         return JSONResponse(content={"available": False})
     return JSONResponse(content={"available": True, **info})
+
+
+@api_router.get("/species-diseases")
+async def species_diseases_endpoint(name: str, common: str = "", locale: str = "en"):
+    """Common conditions a species is affected by indoors (AI, best-effort).
+
+    Graceful ``{"available": False, "diseases": []}`` when no OpenRouter key
+    is configured or on any failure — the client then renders its bundled
+    disease guide, so the species screen's "common problems" section is never
+    empty. Results are cached server-side per (species, language).
+    """
+    n = (name or "").strip()
+    if not n or len(n) > 128:
+        raise HTTPException(status_code=422, detail="Invalid species name")
+    lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
+    common_name = (common or "").strip()[:128] or None
+    data = await asyncio.get_running_loop().run_in_executor(
+        None, lambda: species_common_diseases(n, common_name=common_name, lang=lang),
+    )
+    return JSONResponse(content=data)
 
 
 def _cached_image_response(

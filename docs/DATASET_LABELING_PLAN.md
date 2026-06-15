@@ -157,7 +157,7 @@ gate's synthetic NAP) is recorded AFTER the response is sent
   `auto_yes`; `user_feedback` rows and human-verdict rows are NEVER pruned.
 - **Consent:** disclosed via the blocking first-launch consent page
   (Android onboarding; upgrade installs get a one-time blocking dialog) and
-  `website/privacy.html`. See `docs/PLAY_DATA_SAFETY.md`.
+  `website/privacy.html`.
 
 ## (5) Feedback → the labeling queue
 
@@ -254,7 +254,8 @@ uploads.
   confident calls, kept `auto_no` rows, and negative feedback always
   reaching the queue at top priority.
 - **Consent/regulatory** — recording is consent-gated and anonymized;
-  `docs/PLAY_DATA_SAFETY.md` keeps the Play form answers in sync.
+  `website/privacy.html` and the in-app consent screen are the canonical
+  disclosure.
 
 ## Maintainer actions (outside this repo)
 

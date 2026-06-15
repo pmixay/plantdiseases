@@ -21,6 +21,7 @@ import com.plantdiseases.app.data.model.CommunityViewRequest
 import com.plantdiseases.app.data.model.PushRegisterRequest
 import com.plantdiseases.app.data.model.CommunityScanCountsRequest
 import com.plantdiseases.app.data.model.CommunityScanCountsResponse
+import com.plantdiseases.app.data.model.SpeciesDiseasesResponse
 import com.plantdiseases.app.data.model.SpeciesInfoResponse
 import com.plantdiseases.app.data.model.FeedbackRequest
 import com.plantdiseases.app.data.model.FeedbackResponse
@@ -166,14 +167,6 @@ interface ApiService {
         @Query("user_pseudo_id") userPseudoId: String? = null,
     ): retrofit2.Response<CommunityScansResponse>
 
-    /** Download a community thumbnail by filename. The full URL is
-     *  built relative to ``ServerConfig.baseUrl`` — the Android client
-     *  never gets an absolute URL from the server. */
-    @GET("api/community/thumb/{filename}")
-    suspend fun communityScanThumb(
-        @Path("filename") filename: String,
-    ): retrofit2.Response<ResponseBody>
-
     @DELETE("api/community/user/{user_pseudo_id}")
     suspend fun communityScanDeleteUser(
         @Path("user_pseudo_id") userPseudoId: String,
@@ -249,6 +242,16 @@ interface ApiService {
         @Query("name") name: String,
         @Query("locale") locale: String = "en",
     ): retrofit2.Response<SpeciesInfoResponse>
+
+    /** Common conditions a species is affected by indoors (AI, best-effort).
+     *  `available=false` is graceful — the client falls back to the bundled
+     *  disease guide. */
+    @GET("api/species-diseases")
+    suspend fun speciesDiseases(
+        @Query("name") name: String,
+        @Query("common") common: String? = null,
+        @Query("locale") locale: String = "en",
+    ): retrofit2.Response<SpeciesDiseasesResponse>
 
     /** Community scans of one species (scientific name), across regions. */
     @GET("api/community/by-species")
