@@ -9,6 +9,16 @@ retrain — with hard eval-integrity guarantees and near-zero wasted human
 effort. The roadmap context (which classes/defects this loop must fix and
 why) lives in `docs/ROADMAP.md`.
 
+> **Current status (2026-06-15).** Local/offline collection (§1, agent-driven)
+> is the **active, main** data source: the published Kaggle supplement feeds
+> `train_notebook.ipynb` **directly** ("Training-time use" below) — that's how
+> v2.6.0 was built. The **server-side** stages of this loop — Kaggle ingestion
+> (§2→3) and the export bundle (§7) — are a **later phase** and are NOT in the
+> server today (that code was removed). What the server runs now: anonymized
+> production-scan recording + user feedback into the labeling DB, served to the
+> admin queue (§4–6, **feedback + scans only**). The dataset ingestion/queue
+> and export bundle return when the server phase is activated.
+
 ## The loop, end to end
 
 ```
@@ -64,7 +74,75 @@ every published version must satisfy:
   leaf_scorch PRECISION (0.52), so it needs lookalike negatives, not more
   positives. Place them under `healthy/` / `not_a_plant/` as appropriate.
 
-## (2)→(3) Server ingestion — Kaggle-only, version-gated
+### Audited state of the live supplement — v2 (audited 2026-06-15)
+
+`maxayyt5/houseplant-disease-eval-supplement` **v2**: 1647 images, every row
+`verified_by=agent_vision`, manifest now also carries a `subject_domain` column.
+Measured against the §1 gates:
+
+| class | n | ≥384px | domain (subject_domain / sniff) | verdict |
+|---|---|---|---|---|
+| `nutrient_deficiency` | 617 | 100% | 402 houseplant / 110 crop / 30 orchard / rest | ✅ eval volume met; ~25% crop residue |
+| `leaf_scorch_underwatering` | 501 | 100% | ~90% houseplant (boundary positives, e.g. calathea/dracaena crispy tips) | ✅ good positives; ~20 crop |
+| `not_a_plant` | 249 | 100% | brown straw/hay/burlap/cardboard/fallen-leaf textures | ✅ **excellent scorch-lookalike negatives** |
+| `healthy` | 160 | 100% | houseplant — but ~150 generic lush-green, only ~10 brown-tipped | ⚠️ **generic healthy, not the boundary negative** |
+| `gray_mold_botrytis` | 120 | 100% | 120 tagged houseplant (de-cropped) | ⚠️ clean now but **thin (was 239)** |
+
+pHash dedup clean (0 near-dups/class); resolution gate 100%.
+
+**Resolved since v1:** banned-origin rows removed (0, was 18); `gray_mold`
+de-cropped (was 105/239 grape/strawberry); `subject_domain` column added;
+`not_a_plant` brown-texture negatives added; `nutrient_deficiency` eval volume
+met and now ~65% houseplant.
+
+### v2.6.0 run outcome — supplement v2's first training use (2026-06-15)
+
+The aqua run (which also exports the DINOv2 teacher as the production
+`gamma` bundle) trained on supplement v2 and **PASSED the ship gate** —
+disease macro-F1 **0.865** on `val_realworld` (n=2213), INT8 drift
+−0.0014 (paired bootstrap not significant). The supplement worked as
+designed: it grew the weak-class eval 3–5× and recovered the two acute
+v2.5.0 defects.
+
+| class | precision v2.5.0 → v2.6.0 | recall v2.5.0 → v2.6.0 | eval n 2.5.0 → 2.6.0 |
+|---|---|---|---|
+| `leaf_scorch_underwatering` | 0.52 → **0.71** | 0.76 → 0.86 | 45 → 121 |
+| `nutrient_deficiency` | 0.74 → 0.72 | 0.80 → **0.92** | 25 → 122 |
+| `gray_mold_botrytis` | 0.75 → 0.84 | 0.81 → 0.86 | 53 → 71 |
+
+The not_a_plant brown-texture + scorch boundary negatives paid off
+(leaf_scorch precision +0.19); nutrient eval volume target is met and its
+recall jumped to 0.92.
+
+**Remaining gaps for v3 (precision- and supply-driven now, not eval-volume):**
+1. **gray_mold supply — the top v3 data priority.** Thinnest eval (n=71)
+   and thinnest supplement (120, below v1's 239), so its CIs stay the
+   widest of any class. Backfill foliar houseplant Botrytis toward ≥250
+   (genuinely scarce; iNat genus + DoctorP are the realistic supply).
+2. **Residual over-triggering on the two recovered classes.** Both still
+   predict more than their support (leaf_scorch 146 predicted vs 121
+   actual; nutrient 156 vs 122 → P ≈ 0.72). The fix is *disambiguating
+   negatives*, not more positives: healthy-with-dry-brown-tips for scorch,
+   and scorch↔nutrient / healthy↔nutrient boundary cases for nutrient.
+3. **Minor data hygiene:** ~25% of `nutrient_deficiency` and a few
+   `leaf_scorch` rows are crop, not houseplant; `subject_domain` is blank
+   on all `leaf_scorch` rows; `license` is empty on ~98% of rows while the
+   export hard-codes `CC0-1.0` (`labeling.py`).
+
+> **Training-time use (v2.6):** the same supplement is pulled directly by
+> `train_notebook.ipynb` §2 (`fetch_kaggle_supplement`, source `supplement`) and
+> is **eval-eligible** — a held-out fraction seeds `val_realworld` /
+> `val_indomain` / the calibration splits, thickening the thin weak-class eval
+> slices (realized in the v2.6.0 run: nutrient_deficiency 25 → 122,
+> leaf_scorch 45 → 121, gray_mold 53 → 71). It reads whatever
+> canonical-class folders ship, so v2's `healthy/` + `not_a_plant/` folders are
+> already picked up. Because rows are agent-judged, the gate measured on them is
+> a **proxy** until verified production volume exists.
+
+## (2)→(3) Server ingestion — Kaggle-only, version-gated  *(later phase)*
+
+> *Not in the server today — the training notebook consumes the Kaggle dataset
+> directly for now. The design below returns when the server phase is activated.*
 
 `server/ingest/` pulls ONLY from the Kaggle supplement (no in-server
 scraping; `openverse`/HTTP probes and the runtime disjointness gate were
@@ -135,27 +213,35 @@ gate's synthetic NAP) is recorded AFTER the response is sent
 ## (6) Human labeling — 3 prioritised sources
 
 `/api/label/next` serves `pending` cards in priority order **feedback →
-dataset → scans** (filterable via `?source=`). Target gating (skip
-satisfied/weight-0 classes) applies ONLY to the dataset group — a feedback
-correction for a satisfied class must still surface. Audit cards show the
-model's verdict so the human knows they're auditing. `/api/label/stats`
-adds a per-source block.
+[dataset] → scans** (filterable via `?source=`). **Today only feedback +
+scans are active**; the `dataset` source, its target-gating and the audit
+cards belong to the later server-ingestion phase. `/api/label/stats` adds a
+per-source block.
 
-### Per-class targets (`labeling_targets`) — retargeted on model v2.5.0 evidence
+### Per-class targets (`labeling_targets`) — retargeted on model v2.6.0 evidence
 
-| class | target | rationale (real-world eval, n=1938) |
+After the v2.6.0 run (above) the targets are precision-/supply-driven,
+not eval-volume-driven: the eval-volume crisis on nutrient/scorch is over,
+so the remaining work is hardening precision and backfilling the one class
+that is still genuinely supply-limited.
+
+| class | target | rationale (real-world eval, n=2213) |
 |---|---|---|
-| nutrient_deficiency | 600 | eval support only 25 — the bottleneck is *verified eval volume*, which production-scan verification feeds directly |
-| leaf_scorch_underwatering | 600 | precision **0.52** — over-triggers on healthy + not-a-plant; fix = hard negatives (§1) + boundary positives |
-| gray_mold_botrytis | 400 | precision 0.75, supply-limited (239/400 in dataset v1) |
-| powdery_mildew | **0** | solved: precision 0.97 / recall 0.91 — the old 150 target is stale |
+| gray_mold_botrytis | 400 | **top data-supply priority** — eval n only 71, supplement just 120; P 0.84 / R 0.86 but the widest CIs of any class. Scarce (iNat genus + DoctorP). |
+| nutrient_deficiency | 300 | eval-volume bottleneck **resolved** (25 → 122); now precision-limited (P 0.72, predicts 156 vs 122) — fix = scorch↔nutrient + healthy↔nutrient disambiguating negatives, not more positives |
+| leaf_scorch_underwatering | 300 | precision recovered **0.52 → 0.71** (R 0.86); residual over-trigger (predicts 146 vs 121) → keep healthy-with-brown-tips boundary negatives at lower volume |
+| powdery_mildew | **0** | solved: precision 0.95 / recall 0.93 |
 | others | 0 | not collected |
 
-**Human verification priority:** nutrient_deficiency, leaf_scorch and
-gray_mold scans first — their eval supports (25/45/53) are the trust
-bottleneck for the next ship gate.
+**Human verification priority:** gray_mold scans first (thinnest eval,
+n=71, widest CIs), then nutrient_deficiency and leaf_scorch precision FPs
+(both still over-predict) — these are the trust bottleneck for tightening
+the next ship gate.
 
-## (7) Export → next dataset version (and back into §1)
+## (7) Export → next dataset version (and back into §1)  *(later phase)*
+
+> *Not in the server today (the export endpoint + bundle builder were removed).
+> Returns with the server phase; until then verified rows simply stay in the DB.*
 
 `POST /api/label/export` builds a Kaggle-ready zip of verified images; the
 admin downloads it and updates the Kaggle dataset **manually** (`kaggle
@@ -190,36 +276,39 @@ uploads.
 
 ## Verification
 
-- Server: `ruff check .` + `pytest tests -q` (routing, recording,
-  feedback wiring, source queues, export splits, versioned ingestion are all
-  covered — see `tests/test_scan_recording.py`,
-  `tests/test_feedback_labeling_wiring.py`, `tests/test_label_sources.py`).
+- Server: `ruff check .` + `pytest tests -q` (scan recording, `route_scan`,
+  feedback wiring, and the active feedback+scans queue are covered — see
+  `tests/test_scan_recording.py`, `tests/test_feedback_labeling_wiring.py`,
+  `tests/test_label_sources.py`, `tests/test_labeling.py`). Ingestion/export
+  tests return with the later server phase.
 - Android: `./gradlew lintDebug testDebugUnitTest assembleRelease`; manual —
   fresh install ends onboarding on the consent page (Skip jumps to it,
-  Agree required), labeling source chips filter/badge correctly.
+  Agree required), labeling source chips show **Feedback / Scans**.
 - Live: scan → row in `candidates` with `source='user_scan'`; negative
-  feedback → card at top of `/api/label/next`; export manifest carries
-  `split` per the rule above and no scan_ids.
+  feedback → card at top of `/api/label/next`.
 
 ## Risks
 
 - **Calibration drift** — trust rides on temperature/conformal staying
   calibrated; both are re-fit on every model ship (notebook §6), and
   calibration draws only from human-verified production items.
-- **Model blind spots** — mitigated three ways now: audit sampling of
-  confident calls, kept `auto_no` rows, and negative feedback always
-  reaching the queue at top priority.
+- **Model blind spots** — mitigated by negative feedback always reaching the
+  queue at top priority and suspicious scans always being kept (audit sampling
+  + kept `auto_no` rows return with the server-ingestion phase).
 - **Consent/regulatory** — recording is consent-gated and anonymized;
   `website/privacy.html` and the in-app consent screen are the canonical
   disclosure.
 
 ## Maintainer actions (outside this repo)
 
-- Add the v2 houseplant-domain gate + scorch-lookalike hard negatives to the
-  offline pipeline, then publish dataset **v2** (more gray_mold ~160, no
-  powdery_mildew needed) — the server ingests it automatically on the
-  version bump.
-- Upload export bundles to Kaggle when notified; wire the manifest `split`
-  column in the training notebook (auto-labeled → train only).
-- Feed each export bundle back into the offline pipeline (dedup index +
-  judge exemplars).
+- **v2 shipped and trained cleanly (v2.6.0, gate passed).** For dataset
+  **v3**, shift from eval-volume to precision + the one supply-limited class:
+  backfill gray_mold foliar houseplant Botrytis toward ≥250 (now the binding
+  constraint), and add scorch↔nutrient / healthy↔nutrient and
+  healthy-with-brown-tips disambiguating negatives. Publish to Kaggle; the
+  **training notebook pulls v3 directly** on the next run (server auto-ingestion
+  is the later phase).
+- Keep the agent-collection pipeline as the primary source: scrape →
+  disjointness → pHash dedup → per-creator cap → vision-agent judge (§1).
+- When the server phase is activated, the export bundle (§7) feeds back into
+  the offline pipeline as the dedup index + judge exemplars.

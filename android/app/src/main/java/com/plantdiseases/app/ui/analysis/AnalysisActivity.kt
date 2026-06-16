@@ -189,11 +189,26 @@ class AnalysisActivity : AppCompatActivity() {
                                 getString(R.string.server_not_responding),
                                 getString(R.string.server_not_responding_detail),
                             )
-                        is com.plantdiseases.app.data.repository.ScanRepository.NoNetworkException ->
-                            showError(
-                                getString(R.string.no_network),
-                                getString(R.string.no_network_detail),
-                            )
+                        is com.plantdiseases.app.data.repository.ScanRepository.NoNetworkException -> {
+                            // Offline — but if the on-device Aqua model is
+                            // installed, answer with it instead of failing.
+                            // (Had Aqua been the selected family we'd have run
+                            // it above; reaching here means a server family was
+                            // picked while offline, e.g. the default gamma.)
+                            val offline = if (AquaClassifier.isAvailable(this@AnalysisActivity)) {
+                                runAquaOnDevice(imagePath)
+                            } else {
+                                null
+                            }
+                            if (offline != null) {
+                                proceedWithResult(imagePath, offline)
+                            } else {
+                                showError(
+                                    getString(R.string.no_network),
+                                    getString(R.string.no_network_detail),
+                                )
+                            }
+                        }
                         is com.plantdiseases.app.data.repository.ScanRepository.RateLimitException ->
                             showError(getString(R.string.server_busy), getString(R.string.server_busy_detail))
                         is com.plantdiseases.app.data.repository.ScanRepository.ServerStartingException ->

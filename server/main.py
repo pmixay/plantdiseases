@@ -437,28 +437,15 @@ FRONTIER_MODELS_DIR = Path(get_str("FRONTIER_MODELS_DIR", str(MODELS_DIR / "fron
 FRONTIER_CLASSIFIER_PATH = FRONTIER_MODELS_DIR / "classifier.onnx"
 
 # ── Data-labeling admin tool ─────────────────────────────────────────
-# Human-in-the-loop filtering of candidate images for the classes still short
-# on supply. Enabled + prepared by default; a BLANK admin password refuses
-# every login, so "enabled" is safe out of the box (operator sets the password
-# in config.json). See server/labeling.py + server/ingest/.
+# Human admin review of user feedback + recorded user scans. Enabled by
+# default; a BLANK admin password refuses every login, so "enabled" is safe out
+# of the box (operator sets the password in config.json). See server/labeling.py.
 LABELING_ENABLED = get_bool("LABELING_ENABLED", True)
-LABELING_INGEST_ENABLED = get_bool("LABELING_INGEST_ENABLED", True)
-# Model-trust auto-labeling: the calibrated classifier labels the confident
-# majority; humans only see the uncertain tail. See DATASET_LABELING_PLAN.md.
-LABELING_AUTO_ENABLED = get_bool("LABELING_AUTO_ENABLED", True)
+# route_scan trust knobs: confident scans (singleton conformal set, or high
+# calibrated confidence when conformal is off) are auto-accepted at record
+# time; the uncertain tail goes to the human admin queue.
 LABELING_TRUST_CONFORMAL = get_bool("LABELING_TRUST_CONFORMAL", True)
 LABELING_CONF_HIGH = get_float("LABELING_CONF_HIGH", 0.85)
-LABELING_KAGGLE_SLUG = get_str(
-    "LABELING_KAGGLE_SUPPLEMENT_SLUG", "maxayyt5/houseplant-disease-eval-supplement")
-LABELING_EXPORT_SLUG = get_str(
-    "LABELING_EXPORT_SLUG", LABELING_KAGGLE_SLUG)
-# The ingest loop only re-ingests when the Kaggle dataset VERSION changes, so
-# the interval is just the metadata-poll cadence (daily is plenty).
-LABELING_INGEST_INTERVAL = get_int("LABELING_INGEST_INTERVAL_SECONDS", 86400)
-# Deterministic fraction of confident (auto_yes/auto_no) dataset candidates
-# re-routed to the human queue as an audit — spot-checks of the model's
-# confident calls so auto pre-filtering can't silently bury false positives.
-LABELING_AUDIT_RATE = get_float("LABELING_AUDIT_RATE", 0.05)
 # Per-class "required-data weight" (target approved count). 0 ⇒ not collected.
 # powdery_mildew dropped to 0 after model v2.5.0 (precision 0.97 / recall
 # 0.91 on real-world eval — solved); see docs/ROADMAP.md for the evidence.
@@ -1179,21 +1166,11 @@ async def lifespan(app: FastAPI):
     # Cancelled cleanly on shutdown so the lifespan exit doesn't
     # leak the task.
     prune_task = asyncio.create_task(_prune_loop())
-    # Candidate ingestion for the labeling tool. Default-enabled but
-    # deficit-driven (idles when every weighted class has met its target), and
-    # fail-soft — a scraping error must never abort boot.
-    labeling_ingest_task = None
-    if LABELING_ENABLED and LABELING_INGEST_ENABLED:
-        labeling_ingest_task = asyncio.create_task(_labeling_ingest_loop())
     try:
         yield
     finally:
         logger.info("Server shutting down")
         prune_task.cancel()
-        if labeling_ingest_task is not None:
-            labeling_ingest_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await labeling_ingest_task
         with contextlib.suppress(asyncio.CancelledError, Exception):
             await prune_task
         with _executor_lock:
@@ -1252,46 +1229,6 @@ async def _prune_loop() -> None:
                 logger.warning("User-scan prune failed: %s", exc)
         try:
             await asyncio.sleep(PRUNE_INTERVAL_SECONDS)
-        except asyncio.CancelledError:
-            raise
-
-
-async def _labeling_ingest_loop() -> None:
-    """Version-gated candidate ingestion: each cycle polls the Kaggle dataset
-    metadata (cheap call) and runs a full ingestion only when the published
-    version number changed (or on first run). Does no work when all targets
-    are met. Fully fail-soft: errors are logged and retried next cycle.
-    """
-    try:  # local import keeps boot light if unused; dual package/script form
-        from .ingest.pipeline import run_ingestion_versioned
-        from .labeling_auto import classify_candidate
-    except ImportError:
-        from ingest.pipeline import run_ingestion_versioned
-        from labeling_auto import classify_candidate
-
-    loop = asyncio.get_running_loop()
-    while True:
-        # Build the model auto-labeler from the loaded gamma pipeline (if any).
-        classify = None
-        if LABELING_AUTO_ENABLED and pipeline is not None:
-            def classify(image, proposed, _p=pipeline):
-                return classify_candidate(
-                    _p, image, proposed,
-                    trust_conformal=LABELING_TRUST_CONFORMAL, conf_high=LABELING_CONF_HIGH,
-                )
-        try:
-            added = await loop.run_in_executor(
-                None, run_ingestion_versioned, LABELING_TARGETS,
-                LABELING_KAGGLE_SLUG, None, classify, LABELING_AUDIT_RATE,
-            )
-            if added:
-                logger.info("Labeling ingestion added: %s", added)
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Labeling ingestion pass failed: %s", exc)
-        try:
-            await asyncio.sleep(LABELING_INGEST_INTERVAL)
         except asyncio.CancelledError:
             raise
 
@@ -1427,17 +1364,13 @@ def _anonymise_scan_image(img: Image.Image) -> tuple[bytes, str, str | None]:
     """Re-encode a decoded PIL image for labeling storage: downscale to
     ``SCAN_IMG_MAX_SIDE``, JPEG q88 WITHOUT exif — all EXIF/GPS metadata is
     dropped by construction. Returns ``(jpeg_bytes, sha256, phash)``."""
-    try:
-        from .ingest.imagefilter import phash_bytes
-    except ImportError:  # pragma: no cover - script mode
-        from ingest.imagefilter import phash_bytes
     img = img.convert("RGB")
     if max(img.size) > SCAN_IMG_MAX_SIDE:
         img.thumbnail((SCAN_IMG_MAX_SIDE, SCAN_IMG_MAX_SIDE), Image.LANCZOS)
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=88)  # no exif= ⇒ metadata stripped
     body = buf.getvalue()
-    return body, _sha256_hex(body), phash_bytes(body)
+    return body, _sha256_hex(body), labeling.phash_bytes(body)
 
 
 def _scan_keep_sampled(sha: str, rate: float) -> bool:
@@ -3767,12 +3700,12 @@ async def label_next(
     request: Request,
     count: int = 20,
     klass: str | None = Query(default=None, alias="class"),
-    source: Literal["feedback", "dataset", "scans"] | None = Query(default=None),
+    source: Literal["feedback", "scans"] | None = Query(default=None),
 ):
     sid = _require_labeling_session(request)
     classes = [klass] if klass else None
     cards = await _run(
-        labeling.claim_next, sid, count, LABELING_TARGETS, classes,
+        labeling.claim_next, sid, count, classes,
         labeling._CLAIM_LEASE, source,
     )
     return JSONResponse(content={
@@ -3833,84 +3766,6 @@ async def label_image(candidate_id: int, request: Request):
     return _cached_image_response(
         request, path, media_type="image/jpeg", cache_control="private, max-age=600",
     )
-
-
-@api_router.post("/label/rescore")
-async def label_rescore(request: Request, limit: int = 300):
-    """Re-run the model auto-labeler over pending cards and re-route the
-    confident ones out of the human queue (e.g. after a model update, or to
-    auto-clear a backlog ingested before auto-labeling existed)."""
-    _require_labeling_session(request)
-    if not LABELING_AUTO_ENABLED or pipeline is None:
-        raise HTTPException(status_code=409, detail="auto-labeling unavailable")
-
-    def _rescore() -> dict:
-        try:
-            from .labeling_auto import classify_candidate
-        except ImportError:
-            from labeling_auto import classify_candidate
-        from PIL import Image
-        rows = labeling.pending_candidates(min(max(int(limit), 1), 1000))
-        out = {"auto_yes": 0, "auto_no": 0, "pending": 0}
-        for r in rows:
-            p = labeling.LABELING_IMG_DIR / r["image_path"]
-            if not p.is_file():
-                continue
-            try:
-                img = Image.open(p).convert("RGB")
-            except Exception:  # noqa: BLE001
-                continue
-            status, pred, conf, mset = classify_candidate(
-                pipeline, img, r["class"],
-                trust_conformal=LABELING_TRUST_CONFORMAL, conf_high=LABELING_CONF_HIGH,
-            )
-            # auto_no rows are KEPT (row + image) — confident disagreements
-            # are where model false positives hide; they stay auditable and
-            # exportable as hard negatives once a human confirms.
-            labeling.apply_auto_status(r["id"], status, pred, conf, mset)
-            out[status] += 1
-        return out
-
-    result = await _run(_rescore)
-    return JSONResponse(content={"rescored": result})
-
-
-@api_router.post("/label/export")
-async def label_export(
-    request: Request,
-    include: Literal["hard_negatives"] | None = Query(default=None),
-):
-    """Build the Kaggle-ready bundle of verified images. The admin downloads
-    it and uploads to Kaggle manually — the server itself never uploads.
-    ``?include=hard_negatives`` adds the human-rejected false positives as a
-    ``hard_negatives/<class>/`` tree (reference rejects for the offline
-    collection workflow); default exports stay positives-only."""
-    _require_labeling_session(request)
-    bundle = await _run(
-        labeling.build_export_bundle, LABELING_EXPORT_SLUG,
-        include == "hard_negatives",
-    )
-    if bundle is None:
-        raise HTTPException(status_code=409, detail="no approved images to export")
-    name = bundle.name
-    return JSONResponse(content={
-        "bundle": name,
-        "download_url": f"/api/label/export/{name}",
-        "kaggle_command": (
-            f"kaggle datasets version -p . -m 'labeling export {name}' -r zip --dir-mode zip"
-        ),
-    })
-
-
-@api_router.get("/label/export/{bundle}")
-async def label_export_download(bundle: str, request: Request):
-    _require_labeling_session(request)
-    if "/" in bundle or "\\" in bundle or ".." in bundle:
-        raise HTTPException(status_code=400, detail="bad bundle name")
-    path = labeling.LABELING_EXPORT_DIR / bundle
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail="bundle not found")
-    return FileResponse(path, media_type="application/zip", filename=bundle)
 
 
 app.include_router(api_router, prefix="/api")

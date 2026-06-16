@@ -18,7 +18,7 @@
         app:titleTextColor="?attr/colorOnPrimary"
         app:menu="@menu/menu_labeling" />
 
-    <!-- Source filter: All / Feedback / Dataset / Scans (server priority order) -->
+    <!-- Source filter: All / Feedback / Scans (server priority order) -->
     <HorizontalScrollView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

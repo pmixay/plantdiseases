@@ -1,15 +1,12 @@
 """
-Human data-labeling store + session auth + Kaggle export bundle.
+Human data-labeling store + session auth.
 
-A "Tinder-style" admin tool fed from three prioritised sources: user feedback
-(``source='user_feedback'``, top priority), dataset candidates ingested from
-the maintainer's Kaggle supplement (``ingest`` package), and recorded
-anonymized user scans (``source='user_scan'``, deferred last). The model
-auto-routes the confident majority (``auto_yes``/``auto_no``); admins verify
-the uncertain tail (yes / no / not_sure) from the app, and verified images
-export as a Kaggle-ready bundle for the next dataset version. See
-``docs/DATASET_LABELING_PLAN.md`` for the why and the acceptance/leakage
-gates this operationalises.
+A "Tinder-style" admin tool fed from two prioritised sources: user feedback
+(``source='user_feedback'``, top priority) and recorded anonymized user scans
+(``source='user_scan'``, deferred last). Confident scans are auto-accepted
+(``auto_yes``) by ``route_scan`` at record time; admins verify the uncertain
+tail (yes / no / not_sure) from the app. See ``docs/DATASET_LABELING_PLAN.md``
+for the why and the anonymization/GDPR guarantees this operationalises.
 
 Storage mirrors ``feedback.py`` / ``community.py`` exactly: a module-level
 ``_write_lock`` (RLock) serialises writers, short-lived WAL connections, an
@@ -25,16 +22,14 @@ value used ONLY for claim de-duplication, never for attribution.
 
 from __future__ import annotations
 
-import csv
 import hmac
-import io
 import json
 import secrets
 import sqlite3
 import threading
 import time
-import zipfile
 from hashlib import sha256
+from io import BytesIO
 from pathlib import Path
 
 try:  # package vs. script import (mirrors main.py / feedback.py)
@@ -52,9 +47,20 @@ except ImportError:  # pragma: no cover
 _MODULE_DIR = Path(__file__).resolve().parent
 LABELING_DB_PATH = Path(get_str("LABELING_DB_PATH", "") or str(_MODULE_DIR / "labeling.db"))
 LABELING_IMG_DIR = Path(get_str("LABELING_IMG_DIR", "") or str(_MODULE_DIR / "labeling_images"))
-LABELING_EXPORT_DIR = Path(
-    get_str("LABELING_EXPORT_DIR", "") or str(_MODULE_DIR / "labeling_exports")
-)
+
+
+def phash_bytes(body: bytes) -> str | None:
+    """Perceptual hash of JPEG bytes (near-dup signal stored with each
+    candidate). Returns None if imagehash is unavailable or decode fails."""
+    try:
+        import imagehash
+        from PIL import Image
+    except Exception:  # noqa: BLE001 - declared deps; degrade to no phash
+        return None
+    try:
+        return str(imagehash.phash(Image.open(BytesIO(body)).convert("RGB")))
+    except Exception:  # noqa: BLE001
+        return None
 
 # Authentication / session
 _SESSION_TTL = get_int("LABELING_SESSION_TTL_SECONDS", 28800)  # 8h
@@ -80,17 +86,6 @@ def _session_secret() -> bytes:
 _PROCESS_SECRET = secrets.token_bytes(32)
 
 VERDICTS = ("yes", "no", "not_sure")
-CLAIM_PREFIX = {  # export filename prefixes per class
-    "nutrient_deficiency": "nd",
-    "leaf_scorch_underwatering": "ls",
-    "gray_mold_botrytis": "gm",
-    "powdery_mildew": "pm",
-    "viral_disease": "vd",
-    "leaf_spot": "lsp",
-    "pests": "pe",
-    "healthy": "he",
-    "not_a_plant": "nap",
-}
 
 
 # ── SQLite store (feedback.py idiom) ────────────────────────────────
@@ -152,7 +147,6 @@ def init_db() -> None:
             return
         LABELING_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
         LABELING_IMG_DIR.mkdir(parents=True, exist_ok=True)
-        LABELING_EXPORT_DIR.mkdir(parents=True, exist_ok=True)
         with _connect() as conn:
             conn.executescript(_SCHEMA)
             # Model-auto-labeling provenance (DATASET_LABELING_PLAN.md): added via
@@ -166,9 +160,9 @@ def init_db() -> None:
             _add_column_if_missing(conn, "candidates", "scan_id", "TEXT")
             _add_column_if_missing(conn, "candidates", "feedback_note", "TEXT")
             _add_column_if_missing(conn, "candidates", "user_correct", "INTEGER")
-            # Audit sampling: a deterministic fraction of would-be auto_yes /
-            # auto_no dataset candidates is routed to the human queue with
-            # audit=1 so confident model calls get spot-checked.
+            # Vestigial audit flag — kept for schema back-compat with existing
+            # DBs; the dataset audit-sampling that populated it was removed, so
+            # new rows leave it NULL.
             _add_column_if_missing(conn, "candidates", "audit", "INTEGER")
             # Partial unique index: one candidate per scan, and a race-safe
             # anchor for the feedback→candidate linkage.
@@ -180,10 +174,6 @@ def init_db() -> None:
                 "CREATE INDEX IF NOT EXISTS ix_candidates_source_status "
                 "ON candidates(source, status)"
             )
-            # Tiny key-value table (e.g. last ingested Kaggle dataset version).
-            conn.execute(
-                "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)"
-            )
         _initialised = True
 
 
@@ -191,42 +181,11 @@ def init_db() -> None:
 # pruned, or overridden by feedback.
 HUMAN_STATUSES = VERDICTS
 
-# Card-source groups (admin queue priority order: feedback → dataset → scans).
-SCAN_SOURCES = ("user_scan", "user_feedback")
-
-
 # main.py imports this under the init_*_db convention.
 init_labeling_db = init_db
 
 
-# ── Meta key-value store ─────────────────────────────────────────────
-def get_meta(key: str) -> str | None:
-    init_db()
-    with _connect() as conn:
-        row = conn.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
-    return row["value"] if row else None
-
-
-def set_meta(key: str, value: str) -> None:
-    init_db()
-    with _write_lock, _connect() as conn:
-        conn.execute(
-            "INSERT INTO meta (key, value) VALUES (?,?) "
-            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-            (key, str(value)),
-        )
-
-
-# ── Targets / supply accounting ─────────────────────────────────────
-def _validated_counts(conn: sqlite3.Connection) -> dict[str, int]:
-    rows = conn.execute(
-        "SELECT class, COUNT(*) AS n FROM candidates "
-        "WHERE status IN ('yes','auto_yes') GROUP BY class"
-    ).fetchall()
-    return {r["class"]: int(r["n"]) for r in rows}
-
-
-# ── Ingestion writes ────────────────────────────────────────────────
+# ── Candidate writes ────────────────────────────────────────────────
 def insert_candidate(
     *, cls: str, image_path: str, source: str, source_url: str | None,
     subject_plant: str | None, sha: str, phash: str | None,
@@ -434,35 +393,21 @@ def requeue_expired_claims(lease_seconds: int = _CLAIM_LEASE) -> int:
         return int(cur.rowcount or 0)
 
 
-def _eligible_classes(conn: sqlite3.Connection, targets: dict[str, int]) -> list[str]:
-    """Weighted (target>0) classes that are NOT yet satisfied."""
-    validated = _validated_counts(conn)
-    out = []
-    for cls, target in targets.items():
-        t = int(target or 0)
-        if t > 0 and int(validated.get(cls, 0)) < t:
-            out.append(cls)
-    return out
-
-
 # `?source=` group filters for claim_next / the admin UI chips.
-SOURCE_GROUPS = ("feedback", "dataset", "scans")
+SOURCE_GROUPS = ("feedback", "scans")
 
 
 def claim_next(
-    session_id: str, count: int, targets: dict[str, int],
+    session_id: str, count: int,
     classes: list[str] | None = None, lease_seconds: int = _CLAIM_LEASE,
     source: str | None = None,
 ) -> list[dict]:
     """Atomically lease up to ``count`` pending cards for this session.
 
-    Cards come from three groups served in priority order — user feedback
-    first, dataset candidates second, recorded user scans deferred last.
-    Target gating (skip satisfied / weight-0 classes) applies ONLY to the
-    dataset group: a feedback correction or a suspicious scan for a satisfied
-    class must still surface. ``classes`` (a single chosen class, or list)
-    narrows the pool; ``source`` ('feedback'|'dataset'|'scans') restricts to
-    one group; ``None`` = all groups in priority order.
+    Cards come from two groups served in priority order — user feedback first,
+    recorded user scans deferred last. ``classes`` (a single chosen class, or
+    list) narrows the pool; ``source`` ('feedback'|'scans') restricts to one
+    group; ``None`` = both groups in priority order.
     """
     init_db()
     count = max(1, min(int(count), 100))
@@ -474,29 +419,15 @@ def claim_next(
             "claimed_at=NULL WHERE status='claimed' AND claimed_at < ?",
             (now - int(lease_seconds),),
         )
-        eligible = _eligible_classes(conn, targets)
         params: list = []
-        # Per-group predicates. Dataset rows stay target-gated; feedback /
-        # scan rows bypass gating (they carry their own review value).
         feedback_pred = "source='user_feedback'"
         scans_pred = "source='user_scan'"
-        if eligible:
-            ph = ",".join("?" * len(eligible))
-            dataset_pred = (
-                f"(source NOT IN ('user_scan','user_feedback') AND class IN ({ph}))"
-            )
-            dataset_params = list(eligible)
-        else:
-            dataset_pred, dataset_params = "0", []
         if source == "feedback":
-            where, params = feedback_pred, []
+            where = feedback_pred
         elif source == "scans":
-            where, params = scans_pred, []
-        elif source == "dataset":
-            where, params = dataset_pred, dataset_params
+            where = scans_pred
         else:
-            where = f"({feedback_pred} OR {dataset_pred} OR {scans_pred})"
-            params = dataset_params
+            where = f"({feedback_pred} OR {scans_pred})"
         if classes:
             wanted = [classes] if isinstance(classes, str) else list(classes)
             ph = ",".join("?" * len(wanted))
@@ -578,34 +509,6 @@ def record_verdicts(session_id: str, items: list[tuple[int, str]]) -> int:
     return applied
 
 
-def pending_candidates(limit: int = 500) -> list[dict]:
-    """Pending (human-queue) rows for re-scoring against the current model."""
-    init_db()
-    with _connect() as conn:
-        rows = conn.execute(
-            "SELECT id, class, image_path FROM candidates WHERE status='pending' "
-            "ORDER BY id LIMIT ?",
-            (int(limit),),
-        ).fetchall()
-    return [dict(r) for r in rows]
-
-
-def apply_auto_status(
-    candidate_id: int, status: str, pred: str | None,
-    conf: float | None, mset: list[str] | None,
-) -> bool:
-    """Re-route a still-pending candidate after a model re-score. Only touches
-    rows still ``pending`` (never overrides a human verdict)."""
-    set_json = json.dumps(mset) if mset is not None else None
-    with _write_lock, _connect() as conn:
-        cur = conn.execute(
-            "UPDATE candidates SET status=?, model_pred=?, model_conf=?, model_set=? "
-            "WHERE id=? AND status='pending'",
-            (status, pred, conf, set_json, int(candidate_id)),
-        )
-        return bool(cur.rowcount)
-
-
 def image_path_for(candidate_id: int) -> Path | None:
     with _connect() as conn:
         row = conn.execute(
@@ -653,13 +556,14 @@ def stats(targets: dict[str, int]) -> dict:
         totals["validated"] += validated
         totals["pending"] += pending
         totals["target"] += t
-    # Additive per-source-group block (feedback / dataset / scans). The
-    # pre-existing shape above is unchanged for Android back-compat.
+    # Additive per-source-group block (feedback / scans). The pre-existing
+    # shape above is unchanged for Android back-compat.
     with _connect() as conn:
         srows = conn.execute(
             "SELECT CASE source WHEN 'user_feedback' THEN 'feedback' "
-            "                   WHEN 'user_scan' THEN 'scans' ELSE 'dataset' END AS grp, "
-            "status, COUNT(*) AS n FROM candidates GROUP BY grp, status"
+            "                   WHEN 'user_scan' THEN 'scans' END AS grp, "
+            "status, COUNT(*) AS n FROM candidates "
+            "WHERE source IN ('user_feedback','user_scan') GROUP BY grp, status"
         ).fetchall()
     sources: dict[str, dict[str, int]] = {
         g: {"pending": 0, "claimed": 0, "resolved": 0} for g in SOURCE_GROUPS
@@ -677,7 +581,6 @@ def stats(targets: dict[str, int]) -> dict:
         "totals": totals,
         "sources": sources,
         "feedback_pending": sources["feedback"]["pending"],
-        "dataset_pending": sources["dataset"]["pending"],
         "scan_pending": sources["scans"]["pending"],
     }
 
@@ -741,182 +644,3 @@ def verify_session_token(token: str | None) -> str | None:
     except ValueError:
         return None
     return sid
-
-
-# ── Kaggle export bundle ────────────────────────────────────────────
-# The bundle is BOTH the next dataset version's payload and the offline
-# collection workflow's reference set: ``sha256``/``phash`` columns act as a
-# dedup index (the scraper never re-collects what's already verified) and the
-# verified positives (+ optional hard negatives) serve as reference exemplars
-# for the offline vision-agent judge. No scan_id / feedback text / user data
-# ever reaches a bundle.
-
-# Calibration fraction of human-verified PRODUCTION items (real phone photos
-# are exactly what temperature scaling + RAPS conformal calibration need).
-_CALIBRATION_PCT = 20
-
-
-def _verified_by(row: dict) -> str:
-    if row.get("status") == "auto_yes":
-        return "model+user" if row.get("user_correct") == 1 else "model"
-    return "human"
-
-
-# Strongest provenance wins the near-dup sweep.
-_PROVENANCE_RANK = {"human": 0, "model+user": 1, "model": 2}
-
-
-def _split_for(row: dict) -> str:
-    """Eval-integrity rule, made mechanical (DATASET_LABELING_PLAN.md):
-    auto-labeled rows (any ``auto_yes`` — the model grading itself) are
-    train-ONLY. Held-out splits draw exclusively from human-verified rows;
-    a deterministic ~20% (by sha) of human-verified production scans goes to
-    ``calibration``, the rest of the human-verified rows to ``eval``."""
-    if row.get("status") == "auto_yes":
-        return "train"
-    if row.get("source") in SCAN_SOURCES:
-        bucket = int((row.get("sha") or "0" * 8)[:8], 16) % 100
-        if bucket < _CALIBRATION_PCT:
-            return "calibration"
-    return "eval"
-
-
-def approved_for_export() -> list[dict]:
-    with _connect() as conn:
-        rows = conn.execute(
-            "SELECT id, class, image_path, source, source_url, subject_plant, "
-            "status, model_pred, model_conf, sha, phash, user_correct "
-            "FROM candidates WHERE status IN ('yes','auto_yes') ORDER BY class, id"
-        ).fetchall()
-    return [dict(r) for r in rows]
-
-
-def hard_negatives_for_export() -> list[dict]:
-    """Human-``no`` rows: confirmed false positives of their proposed class —
-    reference *rejects* for the offline vision-agent judge."""
-    with _connect() as conn:
-        rows = conn.execute(
-            "SELECT id, class, image_path, source, source_url, subject_plant, "
-            "status, model_pred, model_conf, sha, phash, user_correct "
-            "FROM candidates WHERE status='no' ORDER BY class, id"
-        ).fetchall()
-    return [dict(r) for r in rows]
-
-
-def _near_dup_sweep(rows: list[dict]) -> tuple[list[dict], list[dict]]:
-    """Drop pHash near-dups (Hamming ≤ 6) at bundle build, keeping the row
-    with the strongest provenance (human > model+user > model). Returns
-    ``(kept, skipped)``. Rows stay in the DB — this only shapes the bundle."""
-    try:
-        import imagehash
-    except Exception:  # noqa: BLE001 - declared dep; degrade to no sweep
-        return rows, []
-    ordered = sorted(
-        rows, key=lambda r: (_PROVENANCE_RANK.get(_verified_by(r), 3), r["id"]),
-    )
-    kept: list[dict] = []
-    kept_hashes: list = []
-    skipped: list[dict] = []
-    for r in ordered:
-        ph = r.get("phash")
-        h = None
-        if ph:
-            try:
-                h = imagehash.hex_to_hash(ph)
-            except Exception:  # noqa: BLE001
-                h = None
-        if h is not None and any(h - k <= 6 for k in kept_hashes):
-            skipped.append(r)
-            continue
-        kept.append(r)
-        if h is not None:
-            kept_hashes.append(h)
-    kept.sort(key=lambda r: (r["class"], r["id"]))
-    return kept, skipped
-
-
-def build_export_bundle(slug: str, include_hard_negatives: bool = False) -> Path | None:
-    """Zip all approved images as ``<class>/<prefix>_NNNN.jpg`` + manifest.csv +
-    dataset-metadata.json. With ``include_hard_negatives`` a
-    ``hard_negatives/<proposed_class>/`` tree of human-rejected rows is added
-    (flagged ``split='hard_negative'`` in the manifest) — excluded by default
-    so training bundles stay positives-only. Returns the zip path, or None if
-    nothing approved."""
-    init_db()
-    rows = approved_for_export()
-    if not rows:
-        return None
-    rows, skipped = _near_dup_sweep(rows)
-    negatives = hard_negatives_for_export() if include_hard_negatives else []
-    ts = time.strftime("%Y%m%d_%H%M%S", time.gmtime())
-    bundle = LABELING_EXPORT_DIR / f"labeling_export_{ts}.zip"
-    LABELING_EXPORT_DIR.mkdir(parents=True, exist_ok=True)
-
-    manifest = io.StringIO()
-    writer = csv.writer(manifest)
-    writer.writerow(
-        ["filename", "class", "source", "source_url", "subject_plant",
-         "verified_by", "split", "sha256", "phash", "notes"]
-    )
-
-    def _note_for(r: dict) -> str:
-        note = r.get("source") or ""
-        if r.get("model_pred"):
-            note = f"{note}; model={r.get('model_pred')}@{r.get('model_conf')}"
-        return note
-
-    per_class_n: dict[str, int] = {}
-    with zipfile.ZipFile(bundle, "w", zipfile.ZIP_DEFLATED) as zf:
-        for r in rows:
-            cls = r["class"]
-            src_img = LABELING_IMG_DIR / r["image_path"]
-            if not src_img.is_file():
-                continue
-            per_class_n[cls] = per_class_n.get(cls, 0) + 1
-            prefix = CLAIM_PREFIX.get(cls, cls[:3])
-            ext = src_img.suffix.lower() or ".jpg"
-            arc = f"{cls}/{prefix}_{per_class_n[cls]:04d}{ext}"
-            zf.write(src_img, arc)
-            writer.writerow(
-                [arc, cls, r.get("source") or "", r.get("source_url") or "",
-                 r.get("subject_plant") or "", _verified_by(r), _split_for(r),
-                 r.get("sha") or "", r.get("phash") or "", _note_for(r)]
-            )
-        for r in negatives:
-            cls = r["class"]
-            src_img = LABELING_IMG_DIR / r["image_path"]
-            if not src_img.is_file():
-                continue
-            key = f"hn_{cls}"
-            per_class_n[key] = per_class_n.get(key, 0) + 1
-            ext = src_img.suffix.lower() or ".jpg"
-            arc = f"hard_negatives/{cls}/hn_{per_class_n[key]:04d}{ext}"
-            zf.write(src_img, arc)
-            writer.writerow(
-                [arc, cls, r.get("source") or "", r.get("source_url") or "",
-                 r.get("subject_plant") or "", "human", "hard_negative",
-                 r.get("sha") or "", r.get("phash") or "", _note_for(r)]
-            )
-        zf.writestr("manifest.csv", manifest.getvalue())
-        if skipped:
-            sk = io.StringIO()
-            sw = csv.writer(sk)
-            sw.writerow(["class", "sha256", "phash", "verified_by", "reason"])
-            for r in skipped:
-                sw.writerow(
-                    [r["class"], r.get("sha") or "", r.get("phash") or "",
-                     _verified_by(r), "near_dup"]
-                )
-            zf.writestr("skipped_dups.csv", sk.getvalue())
-        zf.writestr(
-            "dataset-metadata.json",
-            json.dumps(
-                {
-                    "title": "Houseplant Disease Eval Supplement",
-                    "id": slug,
-                    "licenses": [{"name": "CC0-1.0"}],
-                },
-                indent=2,
-            ),
-        )
-    return bundle

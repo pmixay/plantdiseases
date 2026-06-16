@@ -3,7 +3,7 @@
   "info": {
     "title": "PlantDiseases API",
     "description": "AI-powered plant disease detection — two-stage pipeline",
-    "version": "2.2"
+    "version": "2.5.0"
   },
   "paths": {
     "/api/health": {
@@ -1459,7 +1459,6 @@
                 {
                   "enum": [
                     "feedback",
-                    "dataset",
                     "scans"
                   ],
                   "type": "string"
@@ -1605,128 +1604,6 @@
             "schema": {
               "type": "integer",
               "title": "Candidate Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/label/rescore": {
-      "post": {
-        "summary": "Label Rescore",
-        "description": "Re-run the model auto-labeler over pending cards and re-route the\nconfident ones out of the human queue (e.g. after a model update, or to\nauto-clear a backlog ingested before auto-labeling existed).",
-        "operationId": "label_rescore_api_label_rescore_post",
-        "parameters": [
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "default": 300,
-              "title": "Limit"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/label/export": {
-      "post": {
-        "summary": "Label Export",
-        "description": "Build the Kaggle-ready bundle of verified images. The admin downloads\nit and uploads to Kaggle manually — the server itself never uploads.\n``?include=hard_negatives`` adds the human-rejected false positives as a\n``hard_negatives/<class>/`` tree (reference rejects for the offline\ncollection workflow); default exports stay positives-only.",
-        "operationId": "label_export_api_label_export_post",
-        "parameters": [
-          {
-            "name": "include",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "const": "hard_negatives",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Include"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/label/export/{bundle}": {
-      "get": {
-        "summary": "Label Export Download",
-        "operationId": "label_export_download_api_label_export__bundle__get",
-        "parameters": [
-          {
-            "name": "bundle",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Bundle"
             }
           }
         ],

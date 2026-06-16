@@ -115,16 +115,16 @@ calibrated uncertainty, no account, no trial traps, privacy-respecting
 ## 5. How the data/model loop gets us there
 
 ```
-this refactor (recording + feedback + export loop)        [shipped]
+recording + feedback admin-review loop                    [shipped]
         │
 offline collection v2: houseplant domain gate,
   ~300 scorch hard negatives, gray_mold +160, NO powdery   [maintainer]
-        │  publish Kaggle v2 → server auto-ingests (version gate)
+        │  publish Kaggle v2 → the training notebook pulls it directly
         ▼
 production beta (closed track): real scans flow in,
   suspicious + feedback cards verified by admins
   (priority: nutrient_deficiency, leaf_scorch, gray_mold)
-        │  export bundle: train/calibration/eval splits
+        │  notebook splits verified scans: train / calibration / eval
         ▼
 retrain (notebook): auto-labeled→train only;
   human-verified production scans → calibration + eval

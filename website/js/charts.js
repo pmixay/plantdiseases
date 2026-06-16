@@ -1,7 +1,7 @@
 /* ============================================================
    PlantDiseases — native, interactive metric charts
    Hand-built SVG / CSS visualisations (no image assets, no libs).
-   Data: PlantVision 2.5.0 gamma · evaluation on val_realworld.
+   Data: PlantVision 2.6.0 gamma · evaluation on val_realworld.
    ============================================================ */
 (function () {
   'use strict';
@@ -32,56 +32,57 @@
   /* ---------- data (from the evaluation report) ---------- */
   // precision / recall / f1 / n  ·  per-class on real-world photos
   var PERCLASS = [
-    { k: 'notplant', p: 98.4, r: 97.5, f: 97.9, n: 552 },
-    { k: 'powdery',  p: 100,  r: 95.5, f: 97.7, n: 67 },
-    { k: 'pests',    p: 93.0, r: 95.1, f: 94.0, n: 265 },
-    { k: 'healthy',  p: 96.4, r: 87.2, f: 91.5, n: 576 },
-    { k: 'leafspot', p: 91.5, r: 84.7, f: 88.0, n: 216 },
-    { k: 'viral',    p: 82.8, r: 87.0, f: 84.8, n: 138 },
-    { k: 'graymold', p: 66.2, r: 84.9, f: 74.4, n: 53 },
-    { k: 'nutrient', p: 43.2, r: 76.0, f: 55.1, n: 25 },
-    { k: 'scorch',   p: 37.7, r: 64.4, f: 47.5, n: 45 }
+    { k: 'notplant', p: 99.1, r: 96.2, f: 97.6, n: 599 },
+    { k: 'powdery',  p: 94.9, r: 92.5, f: 93.7, n: 80 },
+    { k: 'pests',    p: 90.5, r: 96.6, f: 93.4, n: 265 },
+    { k: 'healthy',  p: 96.6, r: 87.4, f: 91.8, n: 554 },
+    { k: 'viral',    p: 85.1, r: 91.7, f: 88.3, n: 168 },
+    { k: 'leafspot', p: 91.1, r: 83.7, f: 87.2, n: 233 },
+    { k: 'graymold', p: 83.6, r: 85.9, f: 84.7, n: 71 },
+    { k: 'nutrient', p: 71.8, r: 91.8, f: 80.6, n: 122 },
+    { k: 'scorch',   p: 71.2, r: 86.0, f: 77.9, n: 121 }
   ];
 
   // recall + 95% bootstrap CI (low/high) · sorted desc by recall
   var RECALL_CI = [
-    { k: 'notplant', r: 97.5, lo: 96, hi: 99,  n: 552 },
-    { k: 'powdery',  r: 95.5, lo: 90, hi: 100, n: 67 },
-    { k: 'pests',    r: 95.1, lo: 92, hi: 98,  n: 265 },
-    { k: 'viral',    r: 87.0, lo: 81, hi: 93,  n: 138 },
-    { k: 'healthy',  r: 87.2, lo: 84, hi: 90,  n: 576 },
-    { k: 'graymold', r: 84.9, lo: 75, hi: 94,  n: 53 },
-    { k: 'leafspot', r: 84.7, lo: 80, hi: 89,  n: 216 },
-    { k: 'nutrient', r: 76.0, lo: 58, hi: 92,  n: 25 },
-    { k: 'scorch',   r: 64.4, lo: 50, hi: 78,  n: 45 }
+    { k: 'pests',    r: 96.6, lo: 94, hi: 99,  n: 265 },
+    { k: 'notplant', r: 96.2, lo: 95, hi: 98,  n: 599 },
+    { k: 'powdery',  r: 92.5, lo: 86, hi: 98,  n: 80 },
+    { k: 'nutrient', r: 91.8, lo: 87, hi: 97,  n: 122 },
+    { k: 'viral',    r: 91.7, lo: 87, hi: 96,  n: 168 },
+    { k: 'healthy',  r: 87.4, lo: 85, hi: 90,  n: 554 },
+    { k: 'scorch',   r: 86.0, lo: 80, hi: 92,  n: 121 },
+    { k: 'graymold', r: 85.9, lo: 78, hi: 93,  n: 71 },
+    { k: 'leafspot', r: 83.7, lo: 79, hi: 89,  n: 233 }
   ];
 
-  // in-domain recall vs real-world recall (in-domain read from the report figure)
+  // in-domain recall vs real-world recall (both from the val_indomain /
+  // val_realworld eval slices of the same run)
   var DOMAIN = [
-    { k: 'notplant', ind: 98.0, real: 97.5 },
-    { k: 'powdery',  ind: 97.5, real: 95.5 },
-    { k: 'pests',    ind: 98.0, real: 95.1 },
-    { k: 'healthy',  ind: 92.0, real: 87.2 },
-    { k: 'viral',    ind: 96.5, real: 87.0 },
-    { k: 'graymold', ind: 91.5, real: 84.9 },
-    { k: 'leafspot', ind: 81.5, real: 84.7 },
-    { k: 'nutrient', ind: 79.0, real: 76.0 },
-    { k: 'scorch',   ind: 88.0, real: 64.4 }
+    { k: 'notplant', ind: 94.8, real: 96.2 },
+    { k: 'powdery',  ind: 92.9, real: 92.5 },
+    { k: 'pests',    ind: 95.3, real: 96.6 },
+    { k: 'healthy',  ind: 86.6, real: 87.4 },
+    { k: 'viral',    ind: 93.9, real: 91.7 },
+    { k: 'graymold', ind: 92.7, real: 85.9 },
+    { k: 'leafspot', ind: 71.2, real: 83.7 },
+    { k: 'nutrient', ind: 92.8, real: 91.8 },
+    { k: 'scorch',   ind: 89.7, real: 86.0 }
   ];
 
   // confusion matrix · row-normalised % · order = rows == cols
   // diagonals equal the per-class recalls exactly.
   var CM_ORDER = ['graymold','healthy','scorch','leafspot','notplant','nutrient','pests','powdery','viral'];
   var CM = {
-    graymold: { graymold:85, healthy:2, scorch:2, leafspot:2, notplant:5, nutrient:0, pests:0, powdery:4, viral:0 },
-    healthy:  { graymold:2, healthy:87, scorch:4, leafspot:1, notplant:0, nutrient:1, pests:1, powdery:1, viral:3 },
-    scorch:   { graymold:1, healthy:7, scorch:64, leafspot:2, notplant:4, nutrient:18, pests:2, powdery:0, viral:2 },
-    leafspot: { graymold:2, healthy:1, scorch:2, leafspot:85, notplant:1, nutrient:1, pests:2, powdery:0, viral:4 },
-    notplant: { graymold:0, healthy:0, scorch:0, leafspot:1, notplant:97, nutrient:0, pests:1, powdery:1, viral:0 },
-    nutrient: { graymold:0, healthy:16, scorch:6, leafspot:0, notplant:0, nutrient:76, pests:0, powdery:0, viral:2 },
-    pests:    { graymold:1, healthy:1, scorch:0, leafspot:1, notplant:1, nutrient:0, pests:95, powdery:1, viral:0 },
-    powdery:  { graymold:1, healthy:1, scorch:0, leafspot:0, notplant:0, nutrient:0, pests:1, powdery:96, viral:0 },
-    viral:    { graymold:1, healthy:2, scorch:0, leafspot:4, notplant:4, nutrient:5, pests:0, powdery:0, viral:87 }
+    graymold: { graymold:86, healthy:1, scorch:6, leafspot:1, notplant:0, nutrient:0, pests:4, powdery:1, viral:0 },
+    healthy:  { graymold:1, healthy:87, scorch:2, leafspot:1, notplant:1, nutrient:3, pests:2, powdery:0, viral:2 },
+    scorch:   { graymold:1, healthy:1, scorch:86, leafspot:2, notplant:0, nutrient:10, pests:0, powdery:0, viral:0 },
+    leafspot: { graymold:2, healthy:0, scorch:4, leafspot:84, notplant:0, nutrient:2, pests:1, powdery:0, viral:7 },
+    notplant: { graymold:0, healthy:1, scorch:1, leafspot:0, notplant:96, nutrient:0, pests:1, powdery:0, viral:0 },
+    nutrient: { graymold:0, healthy:3, scorch:3, leafspot:0, notplant:0, nutrient:92, pests:1, powdery:0, viral:1 },
+    pests:    { graymold:0, healthy:0, scorch:2, leafspot:1, notplant:0, nutrient:0, pests:97, powdery:0, viral:0 },
+    powdery:  { graymold:0, healthy:0, scorch:1, leafspot:0, notplant:0, nutrient:1, pests:5, powdery:92, viral:0 },
+    viral:    { graymold:0, healthy:3, scorch:0, leafspot:2, notplant:0, nutrient:4, pests:0, powdery:0, viral:92 }
   };
 
   /* ---------- tooltip ---------- */

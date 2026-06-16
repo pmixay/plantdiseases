@@ -145,6 +145,7 @@ jobs:
             android/app/build/reports/lint-results-*.html
             android/app/build/reports/lint-results-*.xml
           if-no-files-found: ignore
+          retention-days: 7
 
       - name: Upload unit test report
         if: always()
@@ -155,6 +156,7 @@ jobs:
             android/app/build/reports/tests/testDebugUnitTest/**
             android/app/build/test-results/testDebugUnitTest/**
           if-no-files-found: ignore
+          retention-days: 7
 
       - name: Upload build reports on failure
         if: failure()
@@ -165,6 +167,7 @@ jobs:
             android/app/build/reports/**
             android/app/build/outputs/logs/**
           if-no-files-found: ignore
+          retention-days: 7
 
       - name: Upload release APK (R8, signed with release or debug key)
         if: success()
@@ -173,6 +176,7 @@ jobs:
           name: app-release-apk
           path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: warn
+          retention-days: 14
 
   server:
     name: Server tests & lint
