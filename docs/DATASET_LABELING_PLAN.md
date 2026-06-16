@@ -117,20 +117,8 @@ The not_a_plant brown-texture + scorch boundary negatives paid off
 (leaf_scorch precision +0.19); nutrient eval volume target is met and its
 recall jumped to 0.92.
 
-**Remaining gaps for v3 (precision- and supply-driven now, not eval-volume):**
-1. **gray_mold supply — the top v3 data priority.** Thinnest eval (n=71)
-   and thinnest supplement (120, below v1's 239), so its CIs stay the
-   widest of any class. Backfill foliar houseplant Botrytis toward ≥250
-   (genuinely scarce; iNat genus + DoctorP are the realistic supply).
-2. **Residual over-triggering on the two recovered classes.** Both still
-   predict more than their support (leaf_scorch 146 predicted vs 121
-   actual; nutrient 156 vs 122 → P ≈ 0.72). The fix is *disambiguating
-   negatives*, not more positives: healthy-with-dry-brown-tips for scorch,
-   and scorch↔nutrient / healthy↔nutrient boundary cases for nutrient.
-3. **Minor data hygiene:** ~25% of `nutrient_deficiency` and a few
-   `leaf_scorch` rows are crop, not houseplant; `subject_domain` is blank
-   on all `leaf_scorch` rows; `license` is empty on ~98% of rows while the
-   notebook's reference exemplars assume `CC0-1.0`.
+The v2.6.0 evidence sets the **v3 path** (precision- and supply-driven, not
+eval-volume) — see the dedicated section below.
 
 > **Training-time use (v2.6):** the supplement is pulled directly by
 > `train_notebook.ipynb` §2 (`fetch_kaggle_supplement`, source `supplement`) and
@@ -141,6 +129,77 @@ recall jumped to 0.92.
 > canonical-class folders ship, so v2's `healthy/` + `not_a_plant/` folders are
 > already picked up. Because rows are agent-judged, the gate measured on them is
 > a **proxy** until verified production volume exists.
+
+## v3 path — what to collect, what to change
+
+> **Grounded in two checks (2026-06-16).** (a) The live Kaggle supplement is
+> still **v2** — 1647 rows, re-counted straight from `manifest.csv` below.
+> (b) The shipped **v2.6.0 `gamma` bundle** was validated end-to-end: ZIP CRCs
+> intact, all four ONNX graphs load and run in onnxruntime (gamma →
+> `logits[9]` + DINOv2 `embedding[384]`, YOLOv8n detector → `[1,5,8400]`, aqua
+> student → `[9]`), the reported metrics **recompute exactly**, and it **passes
+> every `val_realworld` ship-gate criterion** (disease macro-F1 0.865, min
+> disease recall 0.84, healthy-bias 0.90, healthy recall 0.87). So v3 is **not**
+> a rescue release — it is precision-hardening plus one supply-limited class.
+
+### Current supplement (v2, re-counted from `manifest.csv`)
+
+| class | n | subject_domain split | v2.6.0 realworld eval | the v3 problem |
+|---|---|---|---|---|
+| `nutrient_deficiency` | 617 | 402 houseplant / 110 field_crop / 30 orchard / 51 other / 12 n-a-p / 12 blank | P **0.72** / R 0.92 — predicts 156 vs 122 | over-triggers → disambiguating negatives + de-crop |
+| `leaf_scorch_underwatering` | 501 | **100% blank** | P **0.71** / R 0.86 — predicts 146 vs 121 | over-triggers → brown-tip negatives; backfill domain |
+| `not_a_plant` | 249 | 249 not_a_plant | (negatives) | keep; extend brown-texture lookalikes |
+| `healthy` | 160 | 160 houseplant (~150 generic, ~10 brown-tipped) | (negatives) | needs boundary healthy, not generic lush-green |
+| `gray_mold_botrytis` | 120 | 120 houseplant | P 0.84 / R 0.86 — eval n **71**, widest CIs | **top supply gap** — thin positives |
+
+All 1647 rows are `verified_by=agent_vision` (no human-verified rows yet);
+`license` is populated on only **30 / 1647**.
+
+### (A) Per-class collection targets for v3
+
+| class | now | v3 target | add | kind / where to get it |
+|---|---|---|---|---|
+| `gray_mold_botrytis` | 120 | **≥250** | +130 positives | foliar **houseplant** Botrytis — genuinely scarce (iNat genus + DoctorP). The #1 v3 job. |
+| `healthy` (boundary) | ~10 brown-tipped | **+140** | boundary negatives | healthy houseplants with **dry brown tips/edges** — the scorch-precision negative the set lacks |
+| `leaf_scorch` (negatives) | — | **+100** | disambiguating negatives | scorch↔nutrient boundary + non-scorch brown (not more positives) |
+| `nutrient_deficiency` (negatives) | — | **+100** | disambiguating negatives | scorch↔nutrient + healthy↔nutrient boundary (not more positives) |
+| `not_a_plant` | 249 | **+50** | lookalike negatives | brown straw / paper / cardboard / fallen-leaf textures |
+
+Volume is no longer the constraint — **precision is**. Apart from gray_mold, the
+bulk of v3 is *negatives* that tighten the two over-triggering classes.
+
+### (B) What needs changing in the existing rows (manifest hygiene)
+
+Mechanical fixes that block a clean v3:
+
+1. **Backfill `subject_domain` on all 501 `leaf_scorch` rows** (today 100%
+   blank) — the domain gate can't be enforced on a blank column.
+2. **De-crop `nutrient_deficiency`:** ~140 rows are `field_crop`/`orchard_fruit`
+   (110 + 30). Drop them (or hard down-weight) to honour the houseplant domain
+   gate — they dilute the houseplant signal real phone photos need.
+3. **Populate `license`** (only 30/1647 today). v3 should require a real
+   per-row license; the blank default is a hygiene/compliance gap.
+4. **Promote ~140 generic `healthy` rows** toward the brown-tipped boundary
+   variant (see A) — generic lush-green doesn't serve scorch precision.
+
+### (C) Acceptance-criteria deltas (tighten §1 for v3)
+
+- **Domain gate becomes hard, not advisory:** every row carries a non-blank
+  `subject_domain ∈ {houseplant, not_a_plant}`; `field_crop`/`orchard_fruit`
+  are rejected (the v1/v2 grandfathering of agricultural imagery ends).
+- **Per-row `license` required.**
+- **Hard-negative folders are first-class:** the brown-tipped `healthy/` and the
+  `not_a_plant/` lookalikes are split-tagged so they never inflate positive
+  recall (they exist to raise precision).
+
+### (D) Fold in human-verified production rows
+
+v3 is the first version that can use real production signal: human-verified
+`user_feedback` + `user_scan` verdicts from `labeling.db` (§6) merge in under
+the eval-integrity split rules. They are the **only** non-proxy rows — until
+they exist the supplement gate stays a proxy (every supplement row is
+agent-judged). Verification priority mirrors the model's weak spots: gray_mold
+first, then leaf_scorch / nutrient precision false-positives.
 
 ## (2) No server ingestion — by design
 
@@ -282,11 +341,12 @@ eval:
 
 ## Maintainer actions (outside this repo)
 
-- **v2 shipped and trained cleanly (v2.6.0, gate passed).** For dataset
-  **v3**, shift from eval-volume to precision + the one supply-limited class:
-  backfill gray_mold foliar houseplant Botrytis toward ≥250 (now the binding
-  constraint), and add scorch↔nutrient / healthy↔nutrient and
-  healthy-with-brown-tips disambiguating negatives.
+- **v2 shipped and trained cleanly (v2.6.0, gate passed — bundle validated
+  2026-06-16).** The concrete **v3 path** (per-class targets, the manifest
+  hygiene fixes, and the tightened acceptance criteria) is the
+  "v3 path — what to collect, what to change" section above; in one line:
+  precision-harden the two over-triggering classes with disambiguating
+  negatives and backfill gray_mold positives to ≥250.
 - Collect and judge **locally** (scrape → disjointness → pHash dedup →
   per-creator cap → vision-agent judge, §1), publish the supplement to Kaggle,
   and the **training notebook pulls it directly** on the next run. The server
