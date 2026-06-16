@@ -1,54 +1,57 @@
-# Dataset & labeling plan — the closed data loop
+# Dataset & labeling plan — local collection + server review
 
-**Supersedes** the scrape-on-the-server plan (this file's previous revision)
+**Supersedes** the scrape-on-the-server plan (this file's earlier revisions)
 and the old human-labels-everything plan (`EVAL_DATASET_PLAN.md`, deleted).
-**Goal:** a self-reinforcing loop — offline collection → Kaggle dataset →
-server ingestion → production scan recording → user feedback → human
-verification of the uncertain minority → export → next dataset version →
-retrain — with hard eval-integrity guarantees and near-zero wasted human
-effort. The roadmap context (which classes/defects this loop must fix and
-why) lives in `docs/ROADMAP.md`.
+The roadmap context (which classes/defects this work must fix and why) lives
+in `docs/ROADMAP.md`.
 
-> **Current status (2026-06-15).** Local/offline collection (§1, agent-driven)
-> is the **active, main** data source: the published Kaggle supplement feeds
-> `train_notebook.ipynb` **directly** ("Training-time use" below) — that's how
-> v2.6.0 was built. The **server-side** stages of this loop — Kaggle ingestion
-> (§2→3) and the export bundle (§7) — are a **later phase** and are NOT in the
-> server today (that code was removed). What the server runs now: anonymized
-> production-scan recording + user feedback into the labeling DB, served to the
-> admin queue (§4–6, **feedback + scans only**). The dataset ingestion/queue
-> and export bundle return when the server phase is activated.
+**Two independent halves, by design:**
 
-## The loop, end to end
+1. **Local dataset collection & judging (maintainer, offline).** Scrape →
+   source disjointness → pHash dedup → per-creator cap → vision-agent judge →
+   publish a Kaggle supplement. `train_notebook.ipynb` pulls that supplement
+   **directly** — that is how v2.6.0 was built. None of this runs on the
+   server.
+2. **Server review of production signal.** The server records anonymized
+   production scans + user feedback into `labeling.db` and serves them to a
+   human admin queue (**feedback + scans only**). It does **not** fetch,
+   ingest, route, or export any Kaggle dataset.
+
+> **No server-side dataset loop — by design, not "later."** The Kaggle
+> auto-fetch / version-gated ingestion, the model auto-router, the audit
+> sampling, and the export-bundle builder were removed and are **not** a
+> deferred server phase. Dataset collection and judging are done **locally**,
+> where the maintainer has the tooling; the server's only data job is to
+> surface real user feedback + uncertain scans for human review. Claude checks
+> the locally collected dataset when asked and keeps this plan in sync — it
+> does not re-introduce server ingestion.
+
+## The shape of it
 
 ```
-            (1) OFFLINE COLLECTION (maintainer, external)
-   scrape → disjointness → phash dedup → per-creator cap → vision-agent judge
-                         │  manifest.csv, verified_by=agent_vision
-                         ▼
-            (2) KAGGLE DATASET  maxayyt5/houseplant-disease-eval-supplement
-                         │  server polls version; ingests on change only
-                         ▼
-            (3) SERVER INGESTION  (Kaggle-only; model auto-routes)
-                auto_yes (confident) / pending (human) / auto_no (kept!)
-                         ▼
-            (4) PRODUCTION SCANS  /api/analyze → anonymized recording
-                route_scan(): confident → auto_yes, suspicious → pending
-                         ▼
-            (5) USER FEEDBACK  → top-priority pending cards
-                         ▼
-            (6) HUMAN LABELING  (3-source queue + audit samples)
-                         ▼
-            (7) EXPORT BUNDLE  (split-aware manifest, hard negatives)
-                 │ admin downloads, uploads to Kaggle manually
-                 └────────► feeds (1): dedup index + judge exemplars
+   LOCAL (maintainer, offline)                  SERVER (production)
+   ───────────────────────────                  ───────────────────
+   scrape → disjointness → phash dedup          /api/analyze
+   → per-creator cap → vision-agent judge            │ anonymized scan recording
+        │  manifest.csv (verified_by=agent_vision)   ▼
+        ▼                                        route_scan(): confident → auto_yes,
+   Kaggle supplement                             suspicious → pending
+   maxayyt5/houseplant-disease-eval-supplement        │
+        │  pulled directly by                         ▼
+        ▼                                        user feedback → top-priority pending
+   train_notebook.ipynb ──► model bundle              │
+        ▲                                             ▼
+        │                                        human admin queue (feedback + scans)
+        │                                             │ verified verdicts stay in labeling.db
+        └─────────────────────────────────────────────┘
+   maintainer folds verified production rows into the next local dataset version
 ```
 
-## (1) Offline collection — acceptance criteria (the code stays external)
+## (1) Local collection — acceptance criteria (the code stays external)
 
-The maintainer's scraping/judging pipeline is NOT in this repo; the server
-only consumes its published output. For dataset versions to stay consistent,
-every published version must satisfy:
+The maintainer's scraping/judging pipeline is NOT in this repo, and is NOT on
+the server; both consume its published output. For dataset versions to stay
+consistent, every published version must satisfy:
 
 - **Folder layout:** `<class>/<image>` per the 9 canonical classes; a
   `manifest.csv` with `filename, class, source_url, verified_by` (the vision
@@ -62,7 +65,7 @@ every published version must satisfy:
 - **Image gates:** real photos, short side ≥ 384 px, pHash near-dup removal
   (Hamming ≤ 6), per-creator cap to bound correlated content.
 - **Vision-agent judging:** every image is kept/rejected by the agent with
-  the exported reference exemplars (see §7) as its calibration anchors.
+  exported reference exemplars (see §6) as its calibration anchors.
 - **Domain gate (v2 onward):** subject must be a **houseplant / indoor
   plant** in a plausible indoor context. v1 is accepted as-is and contains
   agricultural/field imagery (grape Botrytis, orchard fruit) — a known
@@ -127,9 +130,9 @@ recall jumped to 0.92.
 3. **Minor data hygiene:** ~25% of `nutrient_deficiency` and a few
    `leaf_scorch` rows are crop, not houseplant; `subject_domain` is blank
    on all `leaf_scorch` rows; `license` is empty on ~98% of rows while the
-   export hard-codes `CC0-1.0` (`labeling.py`).
+   notebook's reference exemplars assume `CC0-1.0`.
 
-> **Training-time use (v2.6):** the same supplement is pulled directly by
+> **Training-time use (v2.6):** the supplement is pulled directly by
 > `train_notebook.ipynb` §2 (`fetch_kaggle_supplement`, source `supplement`) and
 > is **eval-eligible** — a held-out fraction seeds `val_realworld` /
 > `val_indomain` / the calibration splits, thickening the thin weak-class eval
@@ -139,33 +142,17 @@ recall jumped to 0.92.
 > already picked up. Because rows are agent-judged, the gate measured on them is
 > a **proxy** until verified production volume exists.
 
-## (2)→(3) Server ingestion — Kaggle-only, version-gated  *(later phase)*
+## (2) No server ingestion — by design
 
-> *Not in the server today — the training notebook consumes the Kaggle dataset
-> directly for now. The design below returns when the server phase is activated.*
+There is **no** server-side dataset path: no Kaggle auto-fetch, no version
+polling, no `server/ingest/`, no model auto-router (`classify_candidate`), no
+audit sampling. The training notebook consumes the Kaggle supplement directly
+(§1), and the server independently records production scans + feedback (§3–5).
+This is the intended end state, not a stub awaiting a "server phase." If a
+server-side ingestion loop is ever wanted again it would be a deliberate new
+design, not a revival of the removed code.
 
-`server/ingest/` pulls ONLY from the Kaggle supplement (no in-server
-scraping; `openverse`/HTTP probes and the runtime disjointness gate were
-removed — disjointness is now an offline criterion above).
-
-- **Version gate:** each cycle polls the dataset's `currentVersionNumber`
-  (cheap metadata call, download credentials only); a full ingestion runs
-  only when the version changed (or first run). State lives in the
-  `labeling.db` `meta` table (`last_ingested_dataset_version`).
-- **Gates kept:** decode + min-side 384, SHA dedup, pHash near-dup.
-- **Model auto-routing** (`labeling_auto.classify_candidate`): conformal-set
-  primary, `labeling_conf_high` fallback —
-  `auto_yes` (confident agree) / `auto_no` (confident disagree) /
-  `pending` (uncertain → human).
-- **`auto_no` rows are KEPT** (row + image): confident disagreements are
-  exactly where model false positives hide. They don't count toward targets
-  but stay auditable and exportable as hard negatives after human review.
-- **Audit sampling (`labeling_audit_rate`, default 0.05):** a deterministic
-  (by SHA) fraction of confident calls is re-routed to the human queue with
-  `audit=1` — humans spot-check the model's confident calls, so auto
-  pre-filtering can never silently bury its blind spots.
-
-## (4) Production scan recording — anonymized
+## (3) Production scan recording — anonymized
 
 Every `/api/analyze` result except `not_a_plant` (which also covers the blur
 gate's synthetic NAP) is recorded AFTER the response is sent
@@ -193,7 +180,7 @@ gate's synthetic NAP) is recorded AFTER the response is sent
   (Android onboarding; upgrade installs get a one-time blocking dialog) and
   `website/privacy.html`.
 
-## (5) Feedback → the labeling queue
+## (4) Feedback → the labeling queue
 
 - Negative feedback re-opens the recorded candidate (even an `auto_yes` one)
   as `pending` under `source='user_feedback'`, retargeted at the user's
@@ -210,20 +197,21 @@ gate's synthetic NAP) is recorded AFTER the response is sent
   feedback rows AND labeling candidates keyed by that user's scan_ids.
   Plain `user_scan` rows are unreachable by design (no user linkage exists).
 
-## (6) Human labeling — 3 prioritised sources
+## (5) Human labeling — 2 prioritised sources
 
 `/api/label/next` serves `pending` cards in priority order **feedback →
-[dataset] → scans** (filterable via `?source=`). **Today only feedback +
-scans are active**; the `dataset` source, its target-gating and the audit
-cards belong to the later server-ingestion phase. `/api/label/stats` adds a
+scans** (filterable via `?source=`). These are the only two sources: there is
+no `dataset` source (`?source=dataset` returns 422). `/api/label/stats` adds a
 per-source block.
 
 ### Per-class targets (`labeling_targets`) — retargeted on model v2.6.0 evidence
 
-After the v2.6.0 run (above) the targets are precision-/supply-driven,
-not eval-volume-driven: the eval-volume crisis on nutrient/scorch is over,
-so the remaining work is hardening precision and backfilling the one class
-that is still genuinely supply-limited.
+`target>0` marks weak classes whose recorded scans are **always retained and
+prioritised for human review** (scan recording + review, not dataset
+collection). After the v2.6.0 run the targets are precision-/supply-driven,
+not eval-volume-driven: the eval-volume crisis on nutrient/scorch is over, so
+the remaining work is hardening precision and backfilling the one class that
+is still genuinely supply-limited.
 
 | class | target | rationale (real-world eval, n=2213) |
 |---|---|---|
@@ -238,49 +226,43 @@ n=71, widest CIs), then nutrient_deficiency and leaf_scorch precision FPs
 (both still over-predict) — these are the trust bottleneck for tightening
 the next ship gate.
 
-## (7) Export → next dataset version (and back into §1)  *(later phase)*
+## (6) Verified production rows → next dataset version (local / manual)
 
-> *Not in the server today (the export endpoint + bundle builder were removed).
-> Returns with the server phase; until then verified rows simply stay in the DB.*
+There is **no server export endpoint**. Human-verified feedback/scan verdicts
+simply stay in `labeling.db`; when the maintainer builds the next local
+dataset version they extract the verified rows directly from the DB and fold
+them into the offline collection (§1). The rules below are what that local
+step must honour so production signal can be reused without corrupting the
+eval:
 
-`POST /api/label/export` builds a Kaggle-ready zip of verified images; the
-admin downloads it and updates the Kaggle dataset **manually** (`kaggle
-datasets version …`). The server has download-only Kaggle access and NEVER
-uploads.
-
-- **Manifest columns:** `filename, class, source, source_url, subject_plant,
-  verified_by, split, sha256, phash, notes`. `verified_by` ∈ `model`
-  (auto_yes), `model+user` (auto_yes + positive feedback), `human` (yes).
-  **No scan_id, no feedback text, no user data.**
-- **Eval-integrity rule (mechanical in the `split` column):** the model must
-  never grade or calibrate itself on its own confident calls. Every
-  `auto_yes` row (`verified_by` model or model+user) is `split=train`,
-  always. Held-out splits draw ONLY from human-verified rows: a
-  deterministic ~20% (by sha) of human-verified **production** scans gets
-  `split=calibration` (real phone photos are exactly what temperature
-  scaling + RAPS need), all other human-verified rows get `split=eval`. The
-  training notebook routes the manifest `split` accordingly; its group-split
-  keeps eval source-disjoint from train.
-- **Near-dup sweep at build time:** pHash Hamming ≤ 6 across bundle items;
-  the strongest provenance wins (`human` > `model+user` > `model`), dropped
-  rows are listed in `skipped_dups.csv` (DB rows untouched).
-- **Hard negatives:** `?include=hard_negatives` adds a
-  `hard_negatives/<proposed_class>/` tree of human-`no` rows (confirmed
-  false positives), `split=hard_negative`. Excluded by default so training
-  bundles stay positives-only.
-- **Closing the loop:** once per-class targets are admin-verified, the
-  bundle feeds the next offline collection run — `sha256`/`phash` columns
-  are the scrape dedup index (never re-collect what's verified), verified
-  positives are reference exemplars and the hard-negative tree gives the
-  vision-agent judge reference *rejects*.
+- **What a verified row carries:** `class, source, source_url, subject_plant,
+  verified_by, sha256, phash`, plus the verdict provenance. `verified_by` ∈
+  `model` (auto_yes), `model+user` (auto_yes + positive feedback), `human`
+  (admin yes). **No scan_id, no feedback text, no user data leaves the DB.**
+- **Eval-integrity rule (mandatory):** the model must never grade or calibrate
+  itself on its own confident calls. Every `auto_yes` row (`verified_by` model
+  or model+user) is **train-only**. Held-out splits draw ONLY from
+  human-verified rows: a deterministic ~20% (by sha) of human-verified
+  **production** scans is calibration (real phone photos are exactly what
+  temperature scaling + RAPS need), the rest is eval. The training notebook's
+  group-split keeps eval source-disjoint from train.
+- **Near-dup sweep:** pHash Hamming ≤ 6 when merging into §1; strongest
+  provenance wins (`human` > `model+user` > `model`).
+- **Hard negatives:** human-`no` rows (confirmed false positives) are kept as
+  hard negatives for the vision-agent judge's reference *rejects*, not mixed
+  into positive folders.
+- **Closing the loop (local):** verified positives become reference exemplars
+  for the §1 vision-agent judge and their `sha256`/`phash` become the scrape
+  dedup index (never re-collect what's verified).
 
 ## Verification
 
 - Server: `ruff check .` + `pytest tests -q` (scan recording, `route_scan`,
-  feedback wiring, and the active feedback+scans queue are covered — see
+  feedback wiring, and the feedback+scans queue are covered — see
   `tests/test_scan_recording.py`, `tests/test_feedback_labeling_wiring.py`,
-  `tests/test_label_sources.py`, `tests/test_labeling.py`). Ingestion/export
-  tests return with the later server phase.
+  `tests/test_label_sources.py`, `tests/test_labeling.py`).
+  `tests/test_label_sources.py` also asserts the removal: `dataset` is not a
+  valid source group (422) and never appears in `/api/label/stats`.
 - Android: `./gradlew lintDebug testDebugUnitTest assembleRelease`; manual —
   fresh install ends onboarding on the consent page (Skip jumps to it,
   Agree required), labeling source chips show **Feedback / Scans**.
@@ -293,8 +275,7 @@ uploads.
   calibrated; both are re-fit on every model ship (notebook §6), and
   calibration draws only from human-verified production items.
 - **Model blind spots** — mitigated by negative feedback always reaching the
-  queue at top priority and suspicious scans always being kept (audit sampling
-  + kept `auto_no` rows return with the server-ingestion phase).
+  queue at top priority and suspicious scans always being kept.
 - **Consent/regulatory** — recording is consent-gated and anonymized;
   `website/privacy.html` and the in-app consent screen are the canonical
   disclosure.
@@ -305,10 +286,10 @@ uploads.
   **v3**, shift from eval-volume to precision + the one supply-limited class:
   backfill gray_mold foliar houseplant Botrytis toward ≥250 (now the binding
   constraint), and add scorch↔nutrient / healthy↔nutrient and
-  healthy-with-brown-tips disambiguating negatives. Publish to Kaggle; the
-  **training notebook pulls v3 directly** on the next run (server auto-ingestion
-  is the later phase).
-- Keep the agent-collection pipeline as the primary source: scrape →
-  disjointness → pHash dedup → per-creator cap → vision-agent judge (§1).
-- When the server phase is activated, the export bundle (§7) feeds back into
-  the offline pipeline as the dedup index + judge exemplars.
+  healthy-with-brown-tips disambiguating negatives.
+- Collect and judge **locally** (scrape → disjointness → pHash dedup →
+  per-creator cap → vision-agent judge, §1), publish the supplement to Kaggle,
+  and the **training notebook pulls it directly** on the next run. The server
+  is never in this path.
+- Fold human-verified production rows from `labeling.db` into the next local
+  version under the §6 eval-integrity rules.
