@@ -1,0 +1,64 @@
+name: cleanup-artifacts
+
+# Frees Actions storage by deleting build artifacts. The free tier caps
+# Actions storage at 0.5 GB, and ci.yml uploads an APK (+lint/test reports)
+# on every push — a handful within the retention window fills the quota and
+# new uploads start failing with "Artifact storage quota has been hit".
+#
+# Triggers:
+#   - push to this cleanup branch -> deletes ALL existing artifacts now
+#     (DAYS=0). Artifacts uploaded *after* the job starts survive, so a
+#     concurrent ci run's fresh outputs are kept.
+#   - workflow_dispatch -> manual run with a custom age (default 0 = all).
+#   - schedule (daily 04:00 UTC) -> ongoing safety net, deletes >7 days.
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "Delete artifacts older than this many days (0 = all)"
+        default: "0"
+        required: false
+  push:
+    branches: ["claude/wonderful-cori-xjizzj"]
+  schedule:
+    - cron: "0 4 * * *"   # daily 04:00 UTC
+
+permissions:
+  actions: write   # required to DELETE artifacts
+
+concurrency:
+  group: cleanup-artifacts
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete artifacts older than N days
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          # push -> 0 (all), schedule -> 7, dispatch -> input (default 0)
+          DAYS: ${{ github.event.inputs.days || (github.event_name == 'schedule' && '7' || '0') }}
+        run: |
+          set -euo pipefail
+          cutoff=$(date -u -d "-${DAYS} days" +%s)
+          echo "Deleting artifacts created before $(date -u -d "@${cutoff}") (>${DAYS}d) in ${REPO}"
+          # Collect first (deleting shifts pagination), then remove.
+          mapfile -t rows < <(gh api --paginate \
+            "repos/${REPO}/actions/artifacts" \
+            --jq ".artifacts[] | select((.created_at|fromdateiso8601) < ${cutoff}) | \"\(.id)\t\(.size_in_bytes)\t\(.name)\t\(.created_at)\"")
+          echo "Found ${#rows[@]} artifact(s) to delete."
+          freed=0
+          for row in "${rows[@]:-}"; do
+            [ -z "${row}" ] && continue
+            id=$(cut -f1 <<<"$row"); size=$(cut -f2 <<<"$row")
+            name=$(cut -f3 <<<"$row"); created=$(cut -f4 <<<"$row")
+            echo "  delete id=${id} name=${name} created=${created} size=$((size/1024/1024))MB"
+            if gh api -X DELETE "repos/${REPO}/actions/artifacts/${id}"; then
+              freed=$((freed + size))
+            else
+              echo "  (skip: already gone or not deletable)"
+            fi
+          done
+          echo "Done. Freed ~$((freed/1024/1024)) MB across ${#rows[@]} artifact(s)."
