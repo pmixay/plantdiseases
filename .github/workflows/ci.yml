@@ -97,7 +97,10 @@ jobs:
       - name: Lint, test & assemble release APK (R8)
         env:
           RELEASE_STORE_FILE: ${{ env.RELEASE_KEYSTORE_BASE64 != '' && format('{0}/release.keystore', runner.temp) || '' }}
-        run: ./gradlew lintDebug testDebugUnitTest assembleRelease --build-cache --stacktrace
+        # --configuration-cache reuses the resolved task graph across runs (the
+        # cache itself is restored by gradle/actions/setup-gradle), skipping the
+        # configuration phase when nothing structural changed.
+        run: ./gradlew lintDebug testDebugUnitTest assembleRelease --build-cache --configuration-cache --stacktrace
 
       # Prove the published APK is signed with the release key (when one is
       # configured) instead of silently falling back to the debug key, and
@@ -177,6 +180,9 @@ jobs:
           path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: warn
           retention-days: 14
+          # An APK is already a compressed zip; re-zipping it at the default
+          # level 6 burns CPU for ~no size gain, so skip recompression.
+          compression-level: 0
 
   server:
     name: Server tests & lint
@@ -198,13 +204,10 @@ jobs:
             server/requirements.txt
             server/requirements-dev.txt
 
-      - name: Install CPU-only PyTorch
+      - name: Install server + dev dependencies
         run: |
           pip install --upgrade pip
-          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-
-      - name: Install server + dev dependencies
-        run: pip install -r requirements-dev.txt
+          pip install -r requirements-dev.txt
 
       - name: Lint (ruff)
         run: ruff check .
