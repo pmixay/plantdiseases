@@ -144,15 +144,17 @@ negatives**.
 - **pHash dedup — MET** (100% populated; 0 near-dups at Hamming ≤ 6 within class).
 - **Resolution ≥384px — MET** (sampled clean). Source-disjointness asserted in the
   dataset README (banned origins swept).
-- **Per-row `license` — NOT MET.** **1676/1825 (91.8%) blank**; only 149 carry a
-  license. The README is honest (dataset license = `other`, "do not relabel
-  CC0"), but §C's "per-row license required" is the one acceptance criterion still
-  unsatisfied.
+- **Per-row `license` — N/A (not required).** 149/1825 rows carry one; the rest
+  are blank. Fine by decision (2026-06-18): the supplement is collected by keyless
+  image search where per-image licenses are mostly unavailable, and the dataset
+  license is honestly `other`. Per-row licensing is **not** a supplement gate.
 - **`source_url`/`image_url` dropped from the manifest** (README: intentional). v3
-  keeps a `source` host + `engine`/`query`; this weakens manifest-level
-  disjointness *re-auditability* (the README says it was enforced at collect time).
-- **Human-verified rows — none yet** (all `verified_by=agent_vision`), so the gate
-  on this supplement stays a **proxy** (expected per §D).
+  keeps a `source` host + `engine`/`query`; manifest-level disjointness was
+  enforced at collect time (README), not re-auditable from the manifest alone.
+- **Human-verified rows — none, by design.** The supplement is `agent_vision`
+  only; human verification runs **only on production user-feedback + scans**
+  (§D/§6), never on the supplement. Its gate is a deliberate **proxy**, not an
+  unmet target.
 
 **Notebook alignment — OK, no code change needed.** `fetch_kaggle_supplement`
 reads the 5 canonical-class folders generically; the `healthy/` + `not_a_plant/`
@@ -162,10 +164,23 @@ do their job implicitly. The `role`/`hn_kind` columns are informational for the
 maintainer. (The stale v2 caveat in §2 about `gray_mold` carrying field/orchard
 imagery was refreshed — the v3 hard gate removed it.)
 
-**Verdict:** v3 substantially delivers the precision-hardening intent (hard domain
-gate, boundary negatives, de-crop, dedup, split-tagging). Two residual gaps for a
-v3.x top-up: (1) **`gray_mold` 228 < 250** positives; (2) **per-row `license`**
-(92% blank).
+**Verdict — v3 meets the plan.** It delivers the precision-hardening intent (hard
+domain gate, boundary negatives, de-crop, dedup, split-tagging). The only
+carry-over is **`gray_mold` 228 < 250** positives (the supply class). Per-row
+license and human-verified supplement rows are **not** requirements (see above),
+so they are not gaps.
+
+### v4 — wait for the v3 training run before collecting
+
+v3 is **collected but not yet trained**. v3's own targets were grounded in the
+**v2.6.0 run evidence**; v4's should be grounded in the **v3 run evidence**, which
+doesn't exist yet. **Recommendation: hold v4 collection until you train on v3 and
+share the per-class `val_realworld` metrics.** The one thing safe to do now is the
+small **`gray_mold` +22 positives** top-up (228 → ≥250) — it carries over
+regardless of what the v3 run shows. Everything else (more scorch/nutrient
+negatives? did boundary negatives actually close the precision gap? is gray_mold
+recall fixed?) is evidence-pending — the v3 run is what answers it. Defining v4
+targets before then is guessing.
 
 > **Training-time use (v2.6):** the supplement is pulled directly by
 > `train_notebook.ipynb` §2 (`fetch_kaggle_supplement`, source `supplement`) and
@@ -177,7 +192,7 @@ v3.x top-up: (1) **`gray_mold` 228 < 250** positives; (2) **per-row `license`**
 > already picked up. Because rows are agent-judged, the gate measured on them is
 > a **proxy** until verified production volume exists.
 
-## v3 path — what to collect, what to change
+## v3 path — what to collect, what to change ✅ DONE (shipped as supplement v3, 2026-06-18; see the v3 audit above)
 
 > **Grounded in two checks (2026-06-16).** (a) The live Kaggle supplement is
 > still **v2** — 1647 rows, re-counted straight from `manifest.csv` below.
@@ -224,8 +239,9 @@ Mechanical fixes that block a clean v3:
 2. **De-crop `nutrient_deficiency`:** ~140 rows are `field_crop`/`orchard_fruit`
    (110 + 30). Drop them (or hard down-weight) to honour the houseplant domain
    gate — they dilute the houseplant signal real phone photos need.
-3. **Populate `license`** (only 30/1647 today). v3 should require a real
-   per-row license; the blank default is a hygiene/compliance gap.
+3. ~~**Populate `license`**~~ — **dropped as a requirement (2026-06-18).** Keyless
+   image search rarely exposes a per-image license; the dataset license is honestly
+   `other`. Per-row licensing is not a supplement gate.
 4. **Promote ~140 generic `healthy` rows** toward the brown-tipped boundary
    variant (see A) — generic lush-green doesn't serve scorch precision.
 
@@ -234,7 +250,8 @@ Mechanical fixes that block a clean v3:
 - **Domain gate becomes hard, not advisory:** every row carries a non-blank
   `subject_domain ∈ {houseplant, not_a_plant}`; `field_crop`/`orchard_fruit`
   are rejected (the v1/v2 grandfathering of agricultural imagery ends).
-- **Per-row `license` required.**
+- ~~Per-row `license` required.~~ **Dropped (2026-06-18)** — not a supplement gate;
+  dataset license is honestly `other`.
 - **Hard-negative folders are first-class:** the brown-tipped `healthy/` and the
   `not_a_plant/` lookalikes are split-tagged so they never inflate positive
   recall (they exist to raise precision).

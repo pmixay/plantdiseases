@@ -1,8 +1,8 @@
 # Class-coverage research — houseplant diseases vs. our taxonomy & competitors
 
 > **Research report only — no class/dataset changes were made.** Scope: indoor
-> houseplants, phone photos. Companions: `ROADMAP.md` (release plan + competitor
-> survey), `DATASET_LABELING_PLAN.md` (the data loop). Requested 2026-06-18 to
+> houseplants, phone photos. Companions: `ROADMAP.md` (project status + next
+> steps), `DATASET_LABELING_PLAN.md` (the data loop). Requested 2026-06-18 to
 > decide what (if anything) to add/remove for the next dataset version.
 >
 > Grounding: repo state is read from `server/diseases_data.py`,
@@ -63,7 +63,7 @@ Canonical classes (`server/diseases_data.py` / notebook §1): `gray_mold_botryti
 
 - **Well-covered:** `powdery_mildew` (P 0.97/R 0.91, "solved"), `leaf_spot`
   (0.90/0.89), `healthy` (0.94), `not_a_plant` (0.99), `pests` (0.94/0.96).
-  Metrics from `ROADMAP.md` v2.5.0 eval.
+  Metrics from the v2.5.0 model card (per-class `val_realworld` eval).
 - **Covered but coarse/weak:** `pests` lumps mealybugs+scale and **drops spider
   mites** (the #2/#3 indoor pests); `leaf_spot` merges fungal+bacterial (defensible);
   `nutrient_deficiency` over-triggers (P 0.72); `leaf_scorch_underwatering` is the
@@ -82,7 +82,7 @@ leaf photo (§1, §4).
 
 ## 3. Competitor coverage
 
-Sources: app marketing/store/help pages (cited) + `ROADMAP.md` §2. Marketing
+Sources: app marketing/store/help pages (cited inline). Marketing
 overstates ("100 diseases") — treat counts skeptically; unenumerated cells are
 low-confidence.
 
