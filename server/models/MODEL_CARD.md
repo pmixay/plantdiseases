@@ -8,6 +8,23 @@
 > (the server does not auto-download them). This file is a stable,
 > version-agnostic overview and carries **no run-specific numbers** by
 > design.
+>
+> `model_card.json` also carries a `benchmark` block (notebook §6): batch-1
+> inference latency (p50/p95/mean ms) + on-disk size for the shipped
+> classifier ONNX and — on an `aqua` run — the on-device TFLite student.
+> `cpu_1thread` is the canonical cross-tier number (single-core server
+> budget) and includes hflip-TTA when enabled; a `cuda` timing is added when
+> a GPU provider is present (the `frontier` tier serves on GPU).
+>
+> §6b packs one **per-training-mode** archive,
+> `models/plantvision_<family>_v<version>.tar` (e.g. `…_aqua_…`,
+> `…_gamma_…`, `…_frontier_…`). Server drop-in artefacts (ONNX, `classes.json`,
+> `temperature.json`, `conformal.json`, `ood_embedding.npz`) sit at the archive
+> **root**; analysis/research artefacts (`model_card.json` incl. benchmarks,
+> `training_metrics.json`, `run_log.jsonl`) ride along; and the on-device
+> `aqua/` subdir (`aqua_classifier.tflite` + its `classes.json`) is included
+> when an `aqua` run produced it. Heavy torch checkpoints are intentionally
+> excluded (runtime is ONNX/TFLite-only).
 
 ## Pipeline
 

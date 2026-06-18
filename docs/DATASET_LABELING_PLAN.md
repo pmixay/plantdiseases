@@ -120,6 +120,53 @@ recall jumped to 0.92.
 The v2.6.0 evidence sets the **v3 path** (precision- and supply-driven, not
 eval-volume) — see the dedicated section below.
 
+### Audited state of the live supplement — v3 (audited 2026-06-18)
+
+`maxayyt5/houseplant-disease-eval-supplement` is now **v3** (live): **1825
+images** (was 1647), pulled and counted straight from `manifest.csv`. v3 adds
+`role` (positive | hard_negative), `hn_kind` (boundary | generic | texture) and a
+fully-populated `subject_domain` column. Split: **1036 positives / 789 hard
+negatives**.
+
+| class | role | v3 n | v3 target | verdict |
+|---|---|---|---|---|
+| `gray_mold_botrytis` | positive | **228** | ≥250 | ⚠️ **22 short** (~91%) — the "#1 v3 job" not fully met |
+| `leaf_scorch_underwatering` | positive | 406 | de-noise + negatives | positives trimmed (501→406); negatives moved to `healthy/boundary` |
+| `nutrient_deficiency` | positive | 402 | de-crop | ✅ de-cropped (617→402; **no field/orchard rows remain**) |
+| `healthy` | hard_negative | 414 | +140 boundary | ✅ boundary=135 (generic 273 / boundary 135 / other 6) |
+| `not_a_plant` | hard_negative | 375 | +50 → 299 | ✅ exceeds (texture lookalikes) |
+
+**Acceptance criteria (§C) status:**
+- **Hard domain gate — MET.** `subject_domain ∈ {houseplant: 1450, not_a_plant:
+  375}`, 100% populated (v2's 501 blank `leaf_scorch` rows are backfilled); **no
+  `field_crop`/`orchard_fruit` rows ship** (dropped, not down-weighted).
+- **Hard negatives first-class + split-tagged — MET** (`role`/`hn_kind`).
+- **pHash dedup — MET** (100% populated; 0 near-dups at Hamming ≤ 6 within class).
+- **Resolution ≥384px — MET** (sampled clean). Source-disjointness asserted in the
+  dataset README (banned origins swept).
+- **Per-row `license` — NOT MET.** **1676/1825 (91.8%) blank**; only 149 carry a
+  license. The README is honest (dataset license = `other`, "do not relabel
+  CC0"), but §C's "per-row license required" is the one acceptance criterion still
+  unsatisfied.
+- **`source_url`/`image_url` dropped from the manifest** (README: intentional). v3
+  keeps a `source` host + `engine`/`query`; this weakens manifest-level
+  disjointness *re-auditability* (the README says it was enforced at collect time).
+- **Human-verified rows — none yet** (all `verified_by=agent_vision`), so the gate
+  on this supplement stays a **proxy** (expected per §D).
+
+**Notebook alignment — OK, no code change needed.** `fetch_kaggle_supplement`
+reads the 5 canonical-class folders generically; the `healthy/` + `not_a_plant/`
+hard-negative rows correctly load as their own class (a brown-tipped healthy plant
+*is* `healthy`; a texture lookalike *is* `not_a_plant`), so the boundary negatives
+do their job implicitly. The `role`/`hn_kind` columns are informational for the
+maintainer. (The stale v2 caveat in §2 about `gray_mold` carrying field/orchard
+imagery was refreshed — the v3 hard gate removed it.)
+
+**Verdict:** v3 substantially delivers the precision-hardening intent (hard domain
+gate, boundary negatives, de-crop, dedup, split-tagging). Two residual gaps for a
+v3.x top-up: (1) **`gray_mold` 228 < 250** positives; (2) **per-row `license`**
+(92% blank).
+
 > **Training-time use (v2.6):** the supplement is pulled directly by
 > `train_notebook.ipynb` §2 (`fetch_kaggle_supplement`, source `supplement`) and
 > is **eval-eligible** — a held-out fraction seeds `val_realworld` /
