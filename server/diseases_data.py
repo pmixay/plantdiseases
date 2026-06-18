@@ -619,7 +619,8 @@ def lookup_pet_toxicity(species: str | None) -> dict:
 # Powers the labeling tool's clue card/detail: the similar classes a labeler
 # might confuse with the suggested one (shown as "defer to" references), and
 # the per-class accept ("pass") / reject ("drop") guidance derived from
-# docs/DATASET_LABELING_PLAN.md §4. Keys map to existing static/guide/*.png stems.
+# docs/DATASET_LABELING_PLAN.md (collection + human-labeling criteria). Keys
+# map to existing static/guide/*.png stems.
 CONFUSABLE_CLASSES: dict[str, list[str]] = {
     "nutrient_deficiency": ["leaf_scorch_underwatering", "leaf_spot", "viral_disease"],
     "leaf_scorch_underwatering": ["sunburn_or_scorch", "nutrient_deficiency", "leaf_spot"],

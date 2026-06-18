@@ -523,7 +523,14 @@ INFERENCE_TIMEOUT = get_float("INFERENCE_TIMEOUT", 30.0)
 # client render a friendly "you saw this one earlier" banner. The
 # cache is intentionally in-memory only: it loses state on restart,
 # which is the right behaviour while the model itself is in flux.
-ANALYZE_CACHE_TTL_SECONDS = get_int("ANALYZE_CACHE_TTL_SECONDS", 3600)
+#
+# Matching is exact-bytes only (the SHA-256 key): a re-encoded or
+# resized re-upload is treated as a fresh photo on purpose, so a
+# perceptually-similar but genuinely different image can never be served
+# someone else's diagnosis. The TTL is 12h — long enough that the same
+# scan re-opened later in the day still hits, short enough that a reship
+# of the model isn't masked by stale verdicts for more than half a day.
+ANALYZE_CACHE_TTL_SECONDS = get_int("ANALYZE_CACHE_TTL_SECONDS", 12 * 3600)
 ANALYZE_CACHE_MAX_ENTRIES = get_int("ANALYZE_CACHE_MAX_ENTRIES", 512)
 _analyze_cache: "OrderedDict[str, tuple[float, dict]]" = OrderedDict()
 _analyze_cache_lock = threading.Lock()
