@@ -139,8 +139,13 @@ jobs:
             echo "No release keystore secret set; debug-signed fallback is expected."
           fi
 
+      # Diagnostic-report uploads are BEST-EFFORT: continue-on-error so a
+      # transient Actions storage-quota block (the quota meter only
+      # recalculates every 6-12h, so a recent cleanup may not show yet) can
+      # never fail an Android build that already passed lint/test/assemble.
       - name: Upload lint report
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: lint-report
@@ -152,6 +157,7 @@ jobs:
 
       - name: Upload unit test report
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: unit-test-report
@@ -163,6 +169,7 @@ jobs:
 
       - name: Upload build reports on failure
         if: failure()
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: build-reports
@@ -174,12 +181,18 @@ jobs:
 
       - name: Upload release APK (R8, signed with release or debug key)
         if: success()
+        # Best-effort too: don't fail the build if artifact storage is
+        # momentarily over quota — the APK is rebuildable from the run. The
+        # APK (~7 MB) uploaded on every push is the main storage driver, so
+        # keep its retention short to stop the 0.5 GB included storage
+        # refilling.
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: app-release-apk
           path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 5
           # An APK is already a compressed zip; re-zipping it at the default
           # level 6 burns CPU for ~no size gain, so skip recompression.
           compression-level: 0
