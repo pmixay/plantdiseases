@@ -207,6 +207,35 @@ The run answered the open questions, so v4 is now concrete (not "wait"):
 Everything else is unchanged: domain gate hard, hard-negatives split-tagged, no
 per-row license requirement, human verification only on production feedback/scans.
 
+### v4 audit addendum (2026-06-19) — fix the training source, not just the supplement
+
+A pipeline + data-flow audit (manifest pulled and re-counted independently from
+the live Kaggle dataset — still **v3**, 1825 rows, counts match the v3 audit above
+exactly: gray_mold 228 / nutrient 402 / scorch 406 / healthy-HN 414 / not_a_plant-HN
+375; domain gate clean, 0 pHash collisions) surfaced three things the
+collection-only v4 plan under-weighted:
+
+1. **The training notebook was contradicting the supplement de-crop.** While the
+   supplement drops all field/orchard nutrient rows, `train_notebook.ipynb` was still
+   injecting **200 rice field-crop** images (`guy007/nutrientdeficiencysymptomsinrice`)
+   straight into `nutrient_deficiency` — the *weakest* class (P 0.743). **Fixed in
+   code:** `kaggle_nutrient` is now an opt-in (`INCLUDE_KAGGLE_NUTRIENT_CROP=False`,
+   mirrors the `kaggle_species` gate); the dead `coleaf` weights were removed (the
+   fetcher is never called); COCO `not_a_plant` was halved 1500→750 (the class is
+   P 0.99/R 0.97 — over-served — and the OOD bank still draws from the green-texture /
+   partial-plant hard-negs). So part of the nutrient fix is **source hygiene at train
+   time**, not only new disambiguating negatives.
+2. **gray_mold is a *quality* gap, not only a +22 count gap.** The manifest's agent
+   `confidence` column (not previously audited) shows **73 of 228** gray_mold positives
+   (32%) at conf < 0.80 — and because the supplement is eval-eligible, that noise lands
+   in the very weak-class eval slices the ship gate reads. v4's gray_mold top-off should
+   prefer **clean (conf ≥ 0.80) houseplant positives**, not just any rows to reach 250.
+   (Same caveat, smaller: nutrient 115/402 and scorch 122/406 are conf < 0.80.)
+3. **Two unflagged drifts to monitor (not collect for yet):** `viral_disease` recall
+   **0.854** (under-triggers, pred 196 < 219, but P 0.954) and `powdery_mildew`
+   precision **0.875** (was "solved" at 0.97; n=71). Both are small-support drift —
+   watch them in the next run before any data action.
+
 > **Training-time use (v2.6):** the supplement is pulled directly by
 > `train_notebook.ipynb` §2 (`fetch_kaggle_supplement`, source `supplement`) and
 > is **eval-eligible** — a held-out fraction seeds `val_realworld` /

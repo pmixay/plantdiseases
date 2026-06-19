@@ -39,9 +39,15 @@ landed: **leaf_scorch precision 0.71→0.774**, gray_mold eval n 71→91.
 - [x] **leaf_scorch precision** — v3 boundary negatives held: **0.71 → 0.774**
       (≥ 0.75 target met; over-trigger 1.21×→1.08×)
 - [ ] **nutrient_deficiency precision** — still the laggard (P **0.743**, over-triggers
-      1.21×) → more scorch↔nutrient / healthy↔nutrient disambiguating negatives
+      1.21×) → more scorch↔nutrient / healthy↔nutrient disambiguating negatives. Also a
+      **train-source fix landed** (2026-06-19 audit): the 200 rice field-crop
+      `kaggle_nutrient` images that were diluting this class are now gated off, dead
+      `coleaf` weights removed, COCO not_a_plant halved 1500→750 — see
+      `DATASET_LABELING_PLAN.md` "v4 audit addendum".
 - [ ] **gray_mold supply** — top off positives 228 → ≥ 250 (v4 carry-over; point
-      P/R flat but CIs now tighter at eval n 91)
+      P/R flat, CIs tighter at eval n 91). Now a **quality** target too: 32% of the
+      supplement's gray_mold positives are agent-conf < 0.80 → collect clean (≥0.80)
+      houseplant positives, don't just hit the count.
 - [ ] **INT8 regressed on v3** (paired-bootstrap significantly worse → shipped FP32
       87.3 MB) — investigate static-quant / per-channel before reclaiming the 4× size win
 - [ ] Fold human-verified production feedback/scans into the next dataset version
