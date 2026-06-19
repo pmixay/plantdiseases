@@ -73,24 +73,67 @@ def test_taxonomy_is_v2x_disease_only():
         )
 
 
-def test_healthy_gate_reroutes_on_narrow_gap_even_above_floor():
-    """Tight-margin healthy verdicts above the absolute reroute floor
-    must still reroute under the gap-based gate. Mirrors the production
-    error band the user surfaced: top-1 healthy at ~0.55 with a
-    disease alternative at ~0.45 is essentially a coin flip, even
-    though the absolute floor (0.50) wouldn't catch it. The gap
-    floor (HEALTHY_GAP_MARGIN=0.30) does.
+def test_borderline_healthy_above_floor_is_not_force_converted():
+    """THE FALSE-POSITIVE FIX. A confident-plurality healthy (at/above
+    HEALTHY_REROUTE_FLOOR) with a NEARBY disease must NOT be force-converted
+    to that disease. The old gap gate fired here and manufactured disease
+    false positives on healthy plants (top-1 healthy ~0.54 / disease ~0.40
+    flipped to the disease). Now the verdict stays healthy and the suspected
+    disease is surfaced via the soft ``uncertain_healthy`` /
+    ``disease_suspected`` warnings (and top_k) WITHOUT asserting it.
     """
-    from pipeline import HEALTHY_GAP_MARGIN, _apply_postprocessing_rules
+    from pipeline import HEALTHY_REROUTE_FLOOR, _apply_postprocessing_rules
 
     probs = {n: 0.01 for n in EXPECTED_CLASSES}
-    probs["healthy"] = 0.60
-    probs["leaf_spot"] = 0.52
+    probs["healthy"] = 0.62
+    probs["leaf_spot"] = 0.46     # close behind, but healthy keeps the majority
     s = sum(probs.values())
     probs = {k: v / s for k, v in probs.items()}
-    assert probs["healthy"] > 0.50  # absolute floor wouldn't trigger
-    gap = probs["healthy"] - probs["leaf_spot"]
-    assert gap < HEALTHY_GAP_MARGIN  # gap floor must trigger
+    assert probs["healthy"] >= HEALTHY_REROUTE_FLOOR   # confident plurality
+    assert probs["healthy"] - probs["leaf_spot"] < 0.30  # narrow gap
+
+    classification = {
+        "class_name": "healthy",
+        "confidence": probs["healthy"],
+        "all_probs": probs,
+        "low_confidence": False,
+    }
+    out = _apply_postprocessing_rules(classification, list(probs.keys()))
+
+    assert out["class_name"] == "healthy", (
+        "borderline healthy with a nearby disease must NOT be force-converted "
+        "(that manufactured false positives on healthy plants)"
+    )
+    assert "weak_healthy_rerouted" not in out["warnings"]
+    # Detection signal is NOT lost — the suspected disease is still surfaced.
+    assert "uncertain_healthy" in out["warnings"]
+    assert any(w == "disease_suspected:leaf_spot" for w in out["warnings"]), (
+        f"suspected disease must still ride along, got {out['warnings']}"
+    )
+
+
+def test_below_majority_healthy_still_reroutes_for_detection():
+    """Counterpart guard: detection efficiency is preserved. When healthy
+    drops below the majority floor and the strongest disease is competitive
+    (≥ HEALTHY_REROUTE_DISEASE_FLOOR), the hard reroute STILL fires — a
+    genuinely sick plant the model under-reads as weak healthy is surfaced
+    as the disease, just honestly low-confidence.
+    """
+    from pipeline import (
+        HEALTHY_REROUTE_DISEASE_FLOOR,
+        HEALTHY_REROUTE_FLOOR,
+        _apply_postprocessing_rules,
+    )
+
+    probs = {n: 0.0 for n in EXPECTED_CLASSES}
+    probs["healthy"] = 0.44       # below the majority floor
+    probs["leaf_spot"] = 0.34     # competitive disease
+    leftover = 1.0 - (0.44 + 0.34)
+    others = [n for n in probs if n not in ("healthy", "leaf_spot")]
+    for n in others:
+        probs[n] = leftover / len(others)
+    assert probs["healthy"] < HEALTHY_REROUTE_FLOOR
+    assert probs["leaf_spot"] >= HEALTHY_REROUTE_DISEASE_FLOOR
 
     classification = {
         "class_name": "healthy",
@@ -101,7 +144,7 @@ def test_healthy_gate_reroutes_on_narrow_gap_even_above_floor():
     out = _apply_postprocessing_rules(classification, list(probs.keys()))
 
     assert out["class_name"] == "leaf_spot", (
-        "narrow-gap healthy must reroute to the strongest disease"
+        "sub-majority healthy with a competitive disease must still reroute"
     )
     assert "weak_healthy_rerouted" in out["warnings"]
 
