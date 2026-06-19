@@ -8,10 +8,12 @@ now; this stays an internal/beta build. Companions: `DATASET_LABELING_PLAN.md`
 
 ## Where we are
 
-Model **v2.6.0 `gamma`** shipped (frozen DINOv2 ViT-S/14 + MLP head), on-device
-**`aqua`** TFLite student, YOLOv8n leaf detector. Disease macro-F1 **0.865** on
-`val_realworld` (n=2213); passes the ship gate. Dataset **supplement v3** is
-collected (1825 imgs, hard houseplant-domain gate) but **not yet trained**.
+Model **v2.6.5 `gamma`** shipped (frozen DINOv2 ViT-S/14 + LoRA + MLP head),
+trained on **dataset supplement v3**; on-device **`aqua`** TFLite student
+(1.71 MB), YOLOv8n leaf detector (mAP50 0.814). `val_realworld` (n=2334): disease
+macro-F1 **0.865**, overall accuracy **91.9%**, healthy-bias 0.97 — ship gate
+passed. Shipped **FP32** (INT8 regressed this run). The v3 precision-hardening
+landed: **leaf_scorch precision 0.71→0.774**, gray_mold eval n 71→91.
 
 9 classes: `gray_mold_botrytis`, `healthy`, `leaf_spot`, `not_a_plant`, `pests`,
 `powdery_mildew`, `viral_disease`, `leaf_scorch_underwatering`,
@@ -33,13 +35,15 @@ collected (1825 imgs, hard houseplant-domain gate) but **not yet trained**.
 
 ## Model / data — next ⏳
 
-- [ ] **Train on supplement v3** → read per-class `val_realworld` metrics (this is
-      the gate that decides everything below)
-- [ ] **leaf_scorch precision** — confirm v3 boundary negatives held the gain
-      (0.52 → 0.71); push toward ≥ 0.75
-- [ ] **nutrient_deficiency precision** — still over-triggers (P 0.72) → disambiguating
-      negatives, not more positives
-- [ ] **gray_mold supply** — top off positives 228 → ≥ 250 (the v3 carry-over)
+- [x] **Train on supplement v3** → shipped as **v2.6.5** (`val_realworld` n=2334)
+- [x] **leaf_scorch precision** — v3 boundary negatives held: **0.71 → 0.774**
+      (≥ 0.75 target met; over-trigger 1.21×→1.08×)
+- [ ] **nutrient_deficiency precision** — still the laggard (P **0.743**, over-triggers
+      1.21×) → more scorch↔nutrient / healthy↔nutrient disambiguating negatives
+- [ ] **gray_mold supply** — top off positives 228 → ≥ 250 (v4 carry-over; point
+      P/R flat but CIs now tighter at eval n 91)
+- [ ] **INT8 regressed on v3** (paired-bootstrap significantly worse → shipped FP32
+      87.3 MB) — investigate static-quant / per-channel before reclaiming the 4× size win
 - [ ] Fold human-verified production feedback/scans into the next dataset version
       (the only non-proxy rows; weak classes first)
 

@@ -1,7 +1,7 @@
 /* ============================================================
    PlantDiseases — native, interactive metric charts
    Hand-built SVG / CSS visualisations (no image assets, no libs).
-   Data: PlantVision 2.6.0 gamma · evaluation on val_realworld.
+   Data: PlantVision 2.6.5 gamma (dataset v3) · evaluation on val_realworld.
    ============================================================ */
 (function () {
   'use strict';
@@ -32,57 +32,57 @@
   /* ---------- data (from the evaluation report) ---------- */
   // precision / recall / f1 / n  ·  per-class on real-world photos
   var PERCLASS = [
-    { k: 'notplant', p: 99.1, r: 96.2, f: 97.6, n: 599 },
-    { k: 'powdery',  p: 94.9, r: 92.5, f: 93.7, n: 80 },
-    { k: 'pests',    p: 90.5, r: 96.6, f: 93.4, n: 265 },
-    { k: 'healthy',  p: 96.6, r: 87.4, f: 91.8, n: 554 },
-    { k: 'viral',    p: 85.1, r: 91.7, f: 88.3, n: 168 },
-    { k: 'leafspot', p: 91.1, r: 83.7, f: 87.2, n: 233 },
-    { k: 'graymold', p: 83.6, r: 85.9, f: 84.7, n: 71 },
-    { k: 'nutrient', p: 71.8, r: 91.8, f: 80.6, n: 122 },
-    { k: 'scorch',   p: 71.2, r: 86.0, f: 77.9, n: 121 }
+    { k: 'notplant', p: 99.0, r: 97.0, f: 98.0, n: 625 },
+    { k: 'pests',    p: 91.7, r: 95.5, f: 93.6, n: 265 },
+    { k: 'healthy',  p: 94.1, r: 91.8, f: 92.9, n: 631 },
+    { k: 'viral',    p: 95.4, r: 85.4, f: 90.1, n: 219 },
+    { k: 'powdery',  p: 87.5, r: 88.7, f: 88.1, n: 71 },
+    { k: 'leafspot', p: 84.9, r: 88.1, f: 86.5, n: 236 },
+    { k: 'graymold', p: 84.0, r: 86.8, f: 85.4, n: 91 },
+    { k: 'nutrient', p: 74.3, r: 90.0, f: 81.4, n: 90 },
+    { k: 'scorch',   p: 77.4, r: 84.0, f: 80.6, n: 106 }
   ];
 
   // recall + 95% bootstrap CI (low/high) · sorted desc by recall
   var RECALL_CI = [
-    { k: 'pests',    r: 96.6, lo: 94, hi: 99,  n: 265 },
-    { k: 'notplant', r: 96.2, lo: 95, hi: 98,  n: 599 },
-    { k: 'powdery',  r: 92.5, lo: 86, hi: 98,  n: 80 },
-    { k: 'nutrient', r: 91.8, lo: 87, hi: 97,  n: 122 },
-    { k: 'viral',    r: 91.7, lo: 87, hi: 96,  n: 168 },
-    { k: 'healthy',  r: 87.4, lo: 85, hi: 90,  n: 554 },
-    { k: 'scorch',   r: 86.0, lo: 80, hi: 92,  n: 121 },
-    { k: 'graymold', r: 85.9, lo: 78, hi: 93,  n: 71 },
-    { k: 'leafspot', r: 83.7, lo: 79, hi: 89,  n: 233 }
+    { k: 'notplant', r: 97.0, lo: 96, hi: 98,  n: 625 },
+    { k: 'pests',    r: 95.5, lo: 93, hi: 98,  n: 265 },
+    { k: 'healthy',  r: 91.8, lo: 90, hi: 94,  n: 631 },
+    { k: 'nutrient', r: 90.0, lo: 84, hi: 96,  n: 90 },
+    { k: 'powdery',  r: 88.7, lo: 81, hi: 96,  n: 71 },
+    { k: 'leafspot', r: 88.1, lo: 84, hi: 92,  n: 236 },
+    { k: 'graymold', r: 86.8, lo: 79, hi: 93,  n: 91 },
+    { k: 'viral',    r: 85.4, lo: 81, hi: 90,  n: 219 },
+    { k: 'scorch',   r: 84.0, lo: 77, hi: 91,  n: 106 }
   ];
 
   // in-domain recall vs real-world recall (both from the val_indomain /
   // val_realworld eval slices of the same run)
   var DOMAIN = [
-    { k: 'notplant', ind: 94.8, real: 96.2 },
-    { k: 'powdery',  ind: 92.9, real: 92.5 },
-    { k: 'pests',    ind: 95.3, real: 96.6 },
-    { k: 'healthy',  ind: 86.6, real: 87.4 },
-    { k: 'viral',    ind: 93.9, real: 91.7 },
-    { k: 'graymold', ind: 92.7, real: 85.9 },
-    { k: 'leafspot', ind: 71.2, real: 83.7 },
-    { k: 'nutrient', ind: 92.8, real: 91.8 },
-    { k: 'scorch',   ind: 89.7, real: 86.0 }
+    { k: 'notplant', ind: 97.1, real: 97.0 },
+    { k: 'powdery',  ind: 95.6, real: 88.7 },
+    { k: 'pests',    ind: 93.3, real: 95.5 },
+    { k: 'healthy',  ind: 94.5, real: 91.8 },
+    { k: 'viral',    ind: 94.6, real: 85.4 },
+    { k: 'graymold', ind: 78.4, real: 86.8 },
+    { k: 'leafspot', ind: 79.2, real: 88.1 },
+    { k: 'nutrient', ind: 90.2, real: 90.0 },
+    { k: 'scorch',   ind: 86.7, real: 84.0 }
   ];
 
   // confusion matrix · row-normalised % · order = rows == cols
   // diagonals equal the per-class recalls exactly.
   var CM_ORDER = ['graymold','healthy','scorch','leafspot','notplant','nutrient','pests','powdery','viral'];
   var CM = {
-    graymold: { graymold:86, healthy:1, scorch:6, leafspot:1, notplant:0, nutrient:0, pests:4, powdery:1, viral:0 },
-    healthy:  { graymold:1, healthy:87, scorch:2, leafspot:1, notplant:1, nutrient:3, pests:2, powdery:0, viral:2 },
-    scorch:   { graymold:1, healthy:1, scorch:86, leafspot:2, notplant:0, nutrient:10, pests:0, powdery:0, viral:0 },
-    leafspot: { graymold:2, healthy:0, scorch:4, leafspot:84, notplant:0, nutrient:2, pests:1, powdery:0, viral:7 },
-    notplant: { graymold:0, healthy:1, scorch:1, leafspot:0, notplant:96, nutrient:0, pests:1, powdery:0, viral:0 },
-    nutrient: { graymold:0, healthy:3, scorch:3, leafspot:0, notplant:0, nutrient:92, pests:1, powdery:0, viral:1 },
-    pests:    { graymold:0, healthy:0, scorch:2, leafspot:1, notplant:0, nutrient:0, pests:97, powdery:0, viral:0 },
-    powdery:  { graymold:0, healthy:0, scorch:1, leafspot:0, notplant:0, nutrient:1, pests:5, powdery:92, viral:0 },
-    viral:    { graymold:0, healthy:3, scorch:0, leafspot:2, notplant:0, nutrient:4, pests:0, powdery:0, viral:92 }
+    graymold: { graymold:87, healthy:3, scorch:0, leafspot:2, notplant:0, nutrient:0, pests:5, powdery:2, viral:0 },
+    healthy:  { graymold:0, healthy:92, scorch:2, leafspot:3, notplant:0, nutrient:2, pests:1, powdery:0, viral:0 },
+    scorch:   { graymold:4, healthy:2, scorch:84, leafspot:4, notplant:0, nutrient:4, pests:2, powdery:1, viral:0 },
+    leafspot: { graymold:1, healthy:3, scorch:2, leafspot:88, notplant:0, nutrient:1, pests:2, powdery:1, viral:3 },
+    notplant: { graymold:1, healthy:0, scorch:1, leafspot:0, notplant:97, nutrient:0, pests:0, powdery:0, viral:0 },
+    nutrient: { graymold:0, healthy:6, scorch:2, leafspot:0, notplant:0, nutrient:90, pests:0, powdery:1, viral:1 },
+    pests:    { graymold:1, healthy:1, scorch:0, leafspot:1, notplant:2, nutrient:0, pests:95, powdery:0, viral:0 },
+    powdery:  { graymold:1, healthy:3, scorch:0, leafspot:1, notplant:0, nutrient:0, pests:6, powdery:89, viral:0 },
+    viral:    { graymold:0, healthy:6, scorch:0, leafspot:5, notplant:0, nutrient:4, pests:0, powdery:0, viral:85 }
   };
 
   /* ---------- tooltip ---------- */
@@ -282,21 +282,21 @@
     root.innerHTML = '';
     var box = el('div', 'cf-box');
     // radial gauge — 96.6% coverage
-    var pct = 96.6;
+    var pct = 98.1;
     var gauge = el('div', 'cf-gauge');
     gauge.innerHTML =
       '<svg viewBox="0 0 120 120">' +
         '<circle class="cf-bg" cx="60" cy="60" r="52"></circle>' +
         '<circle class="cf-fill" cx="60" cy="60" r="52" data-pct="' + pct + '"></circle>' +
       '</svg>' +
-      '<div class="cf-center"><div class="cf-pct">96.6%</div><div class="cf-cap">' + t('покрытие','coverage') + '</div></div>';
+      '<div class="cf-center"><div class="cf-pct">98.1%</div><div class="cf-cap">' + t('покрытие','coverage') + '</div></div>';
     box.appendChild(gauge);
     var stats = el('div', 'cf-stats');
     [[t('Цель','Target'), '≥ 90%', 'ok'],
-     [t('Средний размер','Avg. set size'), '1.86 ' + t('класса','classes'), ''],
+     [t('Средний размер','Avg. set size'), '1.84 ' + t('класса','classes'), ''],
      [t('Метод','Method'), 'RAPS · α=0.2', ''],
-     [t('Калибровка','Calibration'), '940 ' + t('фото','photos'), ''],
-     [t('Температура','Temperature'), 'T = 0.791', '']].forEach(function (s) {
+     [t('Калибровка','Calibration'), '1063 ' + t('фото','photos'), ''],
+     [t('Температура','Temperature'), 'T = 0.727', '']].forEach(function (s) {
       var r = el('div', 'cf-row');
       r.innerHTML = '<span class="cf-k">' + s[0] + '</span><span class="cf-v ' + s[2] + '">' + s[1] + '</span>';
       stats.appendChild(r);

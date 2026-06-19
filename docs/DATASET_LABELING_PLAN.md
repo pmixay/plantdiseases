@@ -170,17 +170,42 @@ carry-over is **`gray_mold` 228 < 250** positives (the supply class). Per-row
 license and human-verified supplement rows are **not** requirements (see above),
 so they are not gaps.
 
-### v4 — wait for the v3 training run before collecting
+### v3 run outcome — model v2.6.5 (trained 2026-06-19)
 
-v3 is **collected but not yet trained**. v3's own targets were grounded in the
-**v2.6.0 run evidence**; v4's should be grounded in the **v3 run evidence**, which
-doesn't exist yet. **Recommendation: hold v4 collection until you train on v3 and
-share the per-class `val_realworld` metrics.** The one thing safe to do now is the
-small **`gray_mold` +22 positives** top-up (228 → ≥250) — it carries over
-regardless of what the v3 run shows. Everything else (more scorch/nutrient
-negatives? did boundary negatives actually close the precision gap? is gray_mold
-recall fixed?) is evidence-pending — the v3 run is what answers it. Defining v4
-targets before then is guessing.
+The aqua run (gamma teacher + aqua student from one A100 pass) trained on
+supplement v3 and **PASSED the ship gate** — disease macro-F1 **0.865** on
+`val_realworld` (n=2334), overall accuracy 91.9%, healthy-bias 0.97. Shipped
+**FP32** (`classifier.onnx`, 87.3 MB): INT8 was significantly worse this run
+(paired-bootstrap CI [−0.025, −0.004] excludes 0). The v3 precision-hardening
+worked as designed:
+
+| class | P/R v2.6.0 → v2.6.5 | eval n 2.6.0 → 2.6.5 | note |
+|---|---|---|---|
+| `leaf_scorch_underwatering` | P 0.71→**0.774** / R 0.86→0.84 | 121 → 106 | **over-trigger 1.21×→1.08×** — the v3 win |
+| `nutrient_deficiency` | P 0.72→**0.743** / R 0.92→0.90 | 122 → 90 | still the laggard (over-triggers 1.21×) |
+| `gray_mold_botrytis` | P 0.84→0.84 / R 0.86→**0.87** | 71 → **91** | point-flat, CIs tighter |
+
+Calibration re-fit: T=0.727, RAPS α=0.2 → coverage 0.981, mean set size 1.84.
+Aqua student distilled to 1.71 MB TFLite (≈17 ms/img CPU-1-thread). Full per-class
+CIs + the new latency/size benchmark ship in the bundle's `model_card.json`.
+
+### v4 — what to collect (grounded in the v2.6.5 run)
+
+The run answered the open questions, so v4 is now concrete (not "wait"):
+
+- **`nutrient_deficiency` is the priority.** It stayed the weakest class
+  (P **0.743**, predicts 109 vs 90) — the v3 boundary negatives helped leaf_scorch,
+  not nutrient. v4 needs **scorch↔nutrient + healthy↔nutrient disambiguating
+  negatives** specifically, plus a few cleaner in-domain positives.
+- **`gray_mold` +22 positives** (228 → ≥250) — the standing carry-over; point
+  metrics are fine, this just keeps tightening the CIs.
+- **leaf_scorch — hold, don't over-collect.** Precision target (≥0.75) is met;
+  keep the boundary negatives, no new push.
+- **No INT8 data fix needed** — INT8's regression is a quantisation issue
+  (investigate per-channel/static PTQ), not a dataset one.
+
+Everything else is unchanged: domain gate hard, hard-negatives split-tagged, no
+per-row license requirement, human verification only on production feedback/scans.
 
 > **Training-time use (v2.6):** the supplement is pulled directly by
 > `train_notebook.ipynb` §2 (`fetch_kaggle_supplement`, source `supplement`) and
@@ -405,12 +430,12 @@ eval:
 
 ## Maintainer actions (outside this repo)
 
-- **v2 shipped and trained cleanly (v2.6.0, gate passed — bundle validated
-  2026-06-16).** The concrete **v3 path** (per-class targets, the manifest
-  hygiene fixes, and the tightened acceptance criteria) is the
-  "v3 path — what to collect, what to change" section above; in one line:
-  precision-harden the two over-triggering classes with disambiguating
-  negatives and backfill gray_mold positives to ≥250.
+- **v3 shipped and trained cleanly (model v2.6.5, gate passed 2026-06-19 — see
+  "v3 run outcome" above).** v3 precision-hardened leaf_scorch (P 0.71→0.774) and
+  tightened gray_mold; `nutrient_deficiency` stayed the laggard. The concrete
+  **v4 path** is the "v4 — what to collect" section above; in one line: target
+  `nutrient_deficiency` disambiguating negatives and finish the gray_mold backfill
+  to ≥250.
 - Collect and judge **locally** (scrape → disjointness → pHash dedup →
   per-creator cap → vision-agent judge, §1), publish the supplement to Kaggle,
   and the **training notebook pulls it directly** on the next run. The server
