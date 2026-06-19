@@ -58,6 +58,9 @@
     <string name="status_not_a_plant">Не растение</string>
     <string name="not_a_plant_diagnosis_name">В кадре нет растения</string>
     <string name="not_a_plant_result_body">Модель не нашла лист растения на фото. Попробуйте сделать снимок так, чтобы лист занимал большую часть кадра, при ровном освещении и без дрожания.</string>
+    <string name="status_blurry_or_not_a_plant">Не удалось распознать</string>
+    <string name="blurry_or_not_a_plant_diagnosis_name">Размытое фото или не растение</string>
+    <string name="blurry_or_not_a_plant_result_body">Снимок слишком размыт, чтобы поставить диагноз, — либо в кадре нет растения. Если вы фотографировали растение, подойдите ближе, держите камеру неподвижно, дождитесь автофокуса и сделайте чёткий снимок одного листа при хорошем освещении.</string>
     <string name="description_label">Описание</string>
     <string name="result_learn_more">Открыть полное руководство</string>
     <string name="treatment_label">Лечение</string>

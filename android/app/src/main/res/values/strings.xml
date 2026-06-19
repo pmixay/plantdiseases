@@ -57,6 +57,9 @@
     <string name="status_not_a_plant">Not a Plant</string>
     <string name="not_a_plant_diagnosis_name">Not a plant in frame</string>
     <string name="not_a_plant_result_body">The model couldn\'t find a plant leaf in this photo. Try retaking the picture so the leaf fills most of the frame, with steady hands and good lighting.</string>
+    <string name="status_blurry_or_not_a_plant">Couldn\'t analyze</string>
+    <string name="blurry_or_not_a_plant_diagnosis_name">Blurry photo or not a plant</string>
+    <string name="blurry_or_not_a_plant_result_body">The photo is too blurry to read — or there\'s no plant in frame. If you photographed a plant, move a little closer, hold steady, wait for autofocus, and retake a sharp, well-lit shot of a single leaf.</string>
     <string name="description_label">Description</string>
     <string name="result_learn_more">Read the full guide</string>
     <string name="treatment_label">Treatment</string>

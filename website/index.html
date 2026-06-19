@@ -67,13 +67,13 @@
       <span class="hero-badge" data-ru="Samsung IT Campus · Innovation 2026" data-en="Samsung IT Campus · Innovation 2026">Samsung IT Campus · Innovation 2026</span>
       <h1 data-ru="Болезнь растения —<br>по одному фото" data-en="Diagnose a plant<br>from one photo">Болезнь растения —<br>по одному фото</h1>
       <p class="sub" data-ru="Наведи камеру на лист — получишь диагноз за секунды и понятный план ухода. ИИ-фитопатолог в кармане." data-en="Point your camera at a leaf — get a diagnosis in seconds and a clear care plan. An AI plant doctor in your pocket.">Наведи камеру на лист — получишь диагноз за секунды и понятный план ухода. ИИ-фитопатолог в кармане.</p>
-      <span class="modeltag">PlantVision 2.6.0 · DINOv2 ViT-S/14 + LoRA · <span data-ru="9 классов" data-en="9 classes">9 классов</span></span>
+      <span class="modeltag">PlantVision 2.6.5 · DINOv2 ViT-S/14 + LoRA · <span data-ru="9 классов" data-en="9 classes">9 классов</span></span>
       <div class="hero-cta">
         <a class="btn btn-white" href="#features" data-ru="Что умеет приложение" data-en="What the app does">Что умеет приложение</a>
         <a class="btn btn-light" href="#pipeline" data-ru="Как это работает" data-en="How it works">Как это работает</a>
       </div>
       <div class="hero-stats">
-        <div class="st"><div class="v">91.1%</div><div class="l" data-ru="общая точность" data-en="overall accuracy">общая точность</div></div>
+        <div class="st"><div class="v">91.9%</div><div class="l" data-ru="общая точность" data-en="overall accuracy">общая точность</div></div>
         <div class="st"><div class="v">9</div><div class="l" data-ru="классов диагноза" data-en="diagnosis classes">классов диагноза</div></div>
         <div class="st"><div class="v">~8<span style="font-size:18px"> мс</span></div><div class="l" data-ru="инференс gamma" data-en="gamma inference">инференс gamma</div></div>
         <div class="st"><div class="v">EN·RU</div><div class="l" data-ru="двуязычный уход" data-en="bilingual care">двуязычный уход</div></div>
@@ -291,8 +291,8 @@
         <div class="fhead"><span class="fname">Aqua</span><span class="tag proj" data-ru="проекция" data-en="projection">проекция</span></div>
         <div class="fsub" data-ru="на устройстве · офлайн" data-en="on-device · offline">на устройстве · офлайн</div>
         <div class="frow"><span class="k" data-ru="Бэкбон" data-en="Backbone">Бэкбон</span><span class="v">MobileNetV3-S</span></div>
-        <div class="frow"><span class="k">Macro-F1 · real</span><span class="v big">≈80%</span></div>
-        <div class="frow"><span class="k" data-ru="Размер" data-en="Size">Размер</span><span class="v">≈6 МБ</span></div>
+        <div class="frow"><span class="k">Macro-F1 · real</span><span class="v big">≈84%</span></div>
+        <div class="frow"><span class="k" data-ru="Размер" data-en="Size">Размер</span><span class="v">1.7 МБ · 17 мс</span></div>
         <div class="frow"><span class="k" data-ru="Среда" data-en="Runtime">Среда</span><span class="v">Android · TFLite</span></div>
       </div>
       <div class="fam cur reveal d1">
@@ -300,7 +300,7 @@
         <div class="fsub" data-ru="текущий прод · баланс" data-en="current prod · balance">текущий прод · баланс</div>
         <div class="frow"><span class="k" data-ru="Бэкбон" data-en="Backbone">Бэкбон</span><span class="v">DINOv2 ViT-S/14</span></div>
         <div class="frow"><span class="k">Macro-F1 · real</span><span class="v big">86.5%</span></div>
-        <div class="frow"><span class="k" data-ru="Размер" data-en="Size">Размер</span><span class="v">22.5 МБ</span></div>
+        <div class="frow"><span class="k" data-ru="Размер" data-en="Size">Размер</span><span class="v">87.3 МБ</span></div>
         <div class="frow"><span class="k" data-ru="Среда" data-en="Runtime">Среда</span><span class="v">сервер CPU/GPU</span></div>
       </div>
       <div class="fam reveal d2">
@@ -319,17 +319,17 @@
 <section class="section" id="metrics">
   <div class="wrap">
     <span class="eyebrow reveal" data-ru="Качество модели" data-en="Model quality">Качество модели</span>
-    <h2 class="head reveal" data-ru="91.1% общей точности на реальных «садовых» фото" data-en="91.1% overall accuracy on real 'garden' photos">91.1% общей точности на реальных «садовых» фото</h2>
+    <h2 class="head reveal" data-ru="91.9% общей точности на реальных «садовых» фото" data-en="91.9% overall accuracy on real 'garden' photos">91.9% общей точности на реальных «садовых» фото</h2>
     <p class="lede reveal" data-ru="Оценка тира gamma на отложенной выборке реальных фото (val_realworld) — не студийный датасет." data-en="The gamma tier evaluated on a held-out set of real photos (val_realworld) — not a studio dataset.">Оценка тира gamma на отложенной выборке реальных фото (val_realworld) — не студийный датасет.</p>
     <div class="kpi-grid">
       <div class="kpi reveal"><div class="kl">Macro-F1 · real</div><div class="kv" style="color:var(--acc-green)">86.5%</div><div class="ks" data-ru="болезни, без healthy / NaP" data-en="diseases, excl. healthy / NaP">болезни, без healthy / NaP</div></div>
-      <div class="kpi reveal d1"><div class="kl">Macro-F1 · in-domain</div><div class="kv" style="color:var(--acc-green)">85.8%</div><div class="ks" data-ru="доменная выборка" data-en="in-domain set">доменная выборка</div></div>
-      <div class="kpi reveal d2"><div class="kl" data-ru="Общая точность" data-en="Overall accuracy">Общая точность</div><div class="kv" style="color:var(--acc-green)">91.1%</div><div class="ks" data-ru="9 классов · real-world" data-en="9 classes · real-world">9 классов · real-world</div></div>
-      <div class="kpi reveal d3"><div class="kl">Healthy-bias</div><div class="kv" style="color:var(--acc-blue)">0.90</div><div class="ks" data-ru="норма < 1.5 — нет перекоса" data-en="norm < 1.5 — no skew">норма &lt; 1.5 — нет перекоса</div></div>
-      <div class="kpi reveal"><div class="kl" data-ru="Покрытие conformal" data-en="Conformal coverage">Покрытие conformal</div><div class="kv" style="color:var(--acc-purple)">96.9%</div><div class="ks" data-ru="цель ≥ 90% · набор 1.89" data-en="target ≥ 90% · set 1.89">цель ≥ 90% · набор 1.89</div></div>
-      <div class="kpi reveal d1"><div class="kl" data-ru="«Не растение» (OOD)" data-en="'Not a plant' (OOD)">«Не растение» (OOD)</div><div class="kv" style="color:var(--acc-blue)">97.5%</div><div class="ks" data-ru="защита от посторонних фото" data-en="rejects off-topic photos">защита от посторонних фото</div></div>
-      <div class="kpi reveal d2"><div class="kl" data-ru="Размер · INT8" data-en="Size · INT8">Размер · INT8</div><div class="kv" style="color:var(--acc-amber)">22.5 МБ</div><div class="ks" data-ru="fp32 87.3 МБ · дрейф −0.2%" data-en="fp32 87.3 MB · drift −0.2%">fp32 87.3 МБ · дрейф −0.2%</div></div>
-      <div class="kpi reveal d3"><div class="kl" data-ru="Детектор · mAP50" data-en="Detector · mAP50">Детектор · mAP50</div><div class="kv" style="color:var(--acc-green)">82.0%</div><div class="ks">Stage-1 · YOLOv8n</div></div>
+      <div class="kpi reveal d1"><div class="kl">Macro-F1 · in-domain</div><div class="kv" style="color:var(--acc-green)">87.6%</div><div class="ks" data-ru="доменная выборка" data-en="in-domain set">доменная выборка</div></div>
+      <div class="kpi reveal d2"><div class="kl" data-ru="Общая точность" data-en="Overall accuracy">Общая точность</div><div class="kv" style="color:var(--acc-green)">91.9%</div><div class="ks" data-ru="9 классов · real-world" data-en="9 classes · real-world">9 классов · real-world</div></div>
+      <div class="kpi reveal d3"><div class="kl">Healthy-bias</div><div class="kv" style="color:var(--acc-blue)">0.97</div><div class="ks" data-ru="норма < 1.5 — нет перекоса" data-en="norm < 1.5 — no skew">норма &lt; 1.5 — нет перекоса</div></div>
+      <div class="kpi reveal"><div class="kl" data-ru="Покрытие conformal" data-en="Conformal coverage">Покрытие conformal</div><div class="kv" style="color:var(--acc-purple)">98.1%</div><div class="ks" data-ru="цель ≥ 90% · набор 1.84" data-en="target ≥ 90% · set 1.84">цель ≥ 90% · набор 1.84</div></div>
+      <div class="kpi reveal d1"><div class="kl" data-ru="«Не растение» (OOD)" data-en="'Not a plant' (OOD)">«Не растение» (OOD)</div><div class="kv" style="color:var(--acc-blue)">97.0%</div><div class="ks" data-ru="защита от посторонних фото" data-en="rejects off-topic photos">защита от посторонних фото</div></div>
+      <div class="kpi reveal d2"><div class="kl" data-ru="Размер · gamma" data-en="Size · gamma">Размер · gamma</div><div class="kv" style="color:var(--acc-amber)">87.3 МБ</div><div class="ks" data-ru="FP32 · INT8 на 1.4% хуже (отброшен)" data-en="FP32 · INT8 worse by 1.4% (dropped)">FP32 · INT8 worse by 1.4% (dropped)</div></div>
+      <div class="kpi reveal d3"><div class="kl" data-ru="Детектор · mAP50" data-en="Detector · mAP50">Детектор · mAP50</div><div class="kv" style="color:var(--acc-green)">81.4%</div><div class="ks">Stage-1 · YOLOv8n</div></div>
     </div>
   </div>
 </section>
@@ -386,7 +386,7 @@
         <div class="viz-body" id="chart-conformal"></div>
       </figure>
     </div>
-    <p class="viz-note reveal center" data-ru="Все графики построены нативно в браузере из данных отчёта об оценке PlantVision 2.6.0 · gamma." data-en="Every chart is rendered natively in the browser from the PlantVision 2.6.0 · gamma evaluation report.">Все графики построены нативно в браузере из данных отчёта об оценке PlantVision 2.6.0 · gamma.</p>
+    <p class="viz-note reveal center" data-ru="Все графики построены нативно в браузере из данных отчёта об оценке PlantVision 2.6.5 · gamma." data-en="Every chart is rendered natively in the browser from the PlantVision 2.6.5 · gamma evaluation report.">Все графики построены нативно в браузере из данных отчёта об оценке PlantVision 2.6.5 · gamma.</p>
   </div>
 </section>
 
@@ -396,10 +396,10 @@
     <span class="eyebrow reveal" data-ru="Честная неопределённость" data-en="Honest uncertainty">Честная неопределённость</span>
     <h2 class="head reveal" style="color:#fff" data-ru="Модель знает, когда она не уверена" data-en="The model knows when it's unsure">Модель знает, когда она не уверена</h2>
     <div class="unc-grid">
-      <div class="unc reveal"><div class="uv" style="color:var(--acc-blue)">97.5%</div><h4 data-ru="Голова-отказ (OOD)" data-en="Rejection head (OOD)">Голова-отказ (OOD)</h4><p data-ru="Отсекает посторонние кадры вместо ложного диагноза." data-en="Rejects off-topic frames instead of a false diagnosis.">Отсекает посторонние кадры вместо ложного диагноза.</p></div>
-      <div class="unc reveal d1"><div class="uv" style="color:var(--acc-purple)">96.9%</div><h4 data-ru="Конформное покрытие" data-en="Conformal coverage">Конформное покрытие</h4><p data-ru="Топ-3 альтернативы с гарантией покрытия ≥ 90%." data-en="Top-3 alternatives with a ≥90% coverage guarantee.">Топ-3 альтернативы с гарантией покрытия ≥ 90%.</p></div>
+      <div class="unc reveal"><div class="uv" style="color:var(--acc-blue)">97.0%</div><h4 data-ru="Голова-отказ (OOD)" data-en="Rejection head (OOD)">Голова-отказ (OOD)</h4><p data-ru="Отсекает посторонние кадры вместо ложного диагноза." data-en="Rejects off-topic frames instead of a false diagnosis.">Отсекает посторонние кадры вместо ложного диагноза.</p></div>
+      <div class="unc reveal d1"><div class="uv" style="color:var(--acc-purple)">98.1%</div><h4 data-ru="Конформное покрытие" data-en="Conformal coverage">Конформное покрытие</h4><p data-ru="Топ-3 альтернативы с гарантией покрытия ≥ 90%." data-en="Top-3 alternatives with a ≥90% coverage guarantee.">Топ-3 альтернативы с гарантией покрытия ≥ 90%.</p></div>
       <div class="unc reveal d2"><div class="uv" style="color:var(--acc-amber)" data-ru="Лаплас" data-en="Laplace">Лаплас</div><h4 data-ru="Фильтр размытия" data-en="Blur gate">Фильтр размытия</h4><p data-ru="Нечёткие кадры сразу отправляются на пересъёмку." data-en="Unfocused frames go straight back for a re-take.">Нечёткие кадры сразу отправляются на пересъёмку.</p></div>
-      <div class="unc reveal d3"><div class="uv" style="color:var(--acc-green)">0.90</div><h4 data-ru="Healthy-bias в норме" data-en="Healthy-bias in range">Healthy-bias в норме</h4><p data-ru="Нет перекоса в «здорово» — болезни не маскируются." data-en="No skew toward 'healthy' — diseases aren't masked.">Нет перекоса в «здорово» — болезни не маскируются.</p></div>
+      <div class="unc reveal d3"><div class="uv" style="color:var(--acc-green)">0.97</div><h4 data-ru="Healthy-bias в норме" data-en="Healthy-bias in range">Healthy-bias в норме</h4><p data-ru="Нет перекоса в «здорово» — болезни не маскируются." data-en="No skew toward 'healthy' — diseases aren't masked.">Нет перекоса в «здорово» — болезни не маскируются.</p></div>
     </div>
   </div>
 </section>
@@ -412,9 +412,9 @@
     <div class="road-grid">
       <div class="road-col reveal">
         <div class="ch"><span class="ic ok">✓</span><span data-ru="Что уже работает" data-en="What works today">Что уже работает</span></div>
-        <div class="rli"><span class="rk">91.1%</span><span class="rt"><b data-ru="Общая точность" data-en="Overall accuracy">Общая точность</b> <span data-ru="на 9 классах, реальные фото" data-en="across 9 classes, real photos">на 9 классах, реальные фото</span></span></div>
-        <div class="rli"><span class="rk">97.5%</span><span class="rt"><b data-ru="Защита от посторонних фото" data-en="Off-topic rejection">Защита от посторонних фото</b> <span data-ru="(класс «не растение»)" data-en="(the 'not a plant' class)">(класс «не растение»)</span></span></div>
-        <div class="rli"><span class="rk">22.5 МБ</span><span class="rt"><b data-ru="Офлайн-модель INT8" data-en="Offline INT8 model">Офлайн-модель INT8</b> <span data-ru="прямо на устройстве" data-en="right on the device">прямо на устройстве</span></span></div>
+        <div class="rli"><span class="rk">91.9%</span><span class="rt"><b data-ru="Общая точность" data-en="Overall accuracy">Общая точность</b> <span data-ru="на 9 классах, реальные фото" data-en="across 9 classes, real photos">на 9 классах, реальные фото</span></span></div>
+        <div class="rli"><span class="rk">97.0%</span><span class="rt"><b data-ru="Защита от посторонних фото" data-en="Off-topic rejection">Защита от посторонних фото</b> <span data-ru="(класс «не растение»)" data-en="(the 'not a plant' class)">(класс «не растение»)</span></span></div>
+        <div class="rli"><span class="rk">1.7 МБ</span><span class="rt"><b data-ru="Офлайн-модель Aqua" data-en="Offline Aqua model">Офлайн-модель Aqua</b> <span data-ru="TFLite · 17 мс на устройстве" data-en="TFLite · 17 ms on-device">TFLite · 17 мс на устройстве</span></span></div>
         <div class="rli"><span class="rk">EN/RU</span><span class="rt"><b data-ru="Двуязычные планы ухода" data-en="Bilingual care plans">Двуязычные планы ухода</b> <span data-ru="и личный сад с напоминаниями" data-en="and a garden with reminders">и личный сад с напоминаниями</span></span></div>
       </div>
       <div class="road-col work reveal d1">
@@ -484,7 +484,7 @@
         <span class="tile" aria-hidden="true"><svg viewBox="0 0 64 64"><path d="M32 58V26" stroke="#fff" stroke-width="3.6" stroke-linecap="round" fill="none"/><path d="M32 30c-7-4-7-13 0-19 7 6 7 15 0 19zM32 42c-7-4-7-13 0-19" fill="#fff"/></svg></span>
         PlantDiseases
       </a>
-      <p data-ru="ИИ-определение болезней комнатных растений по фото. PlantVision 2.6.0 · DINOv2 ViT-S/14 + LoRA · 9 классов." data-en="AI houseplant disease detection from a photo. PlantVision 2.6.0 · DINOv2 ViT-S/14 + LoRA · 9 classes.">ИИ-определение болезней комнатных растений по фото. PlantVision 2.6.0 · DINOv2 ViT-S/14 + LoRA · 9 классов.</p>
+      <p data-ru="ИИ-определение болезней комнатных растений по фото. PlantVision 2.6.5 · DINOv2 ViT-S/14 + LoRA · 9 классов." data-en="AI houseplant disease detection from a photo. PlantVision 2.6.5 · DINOv2 ViT-S/14 + LoRA · 9 classes.">ИИ-определение болезней комнатных растений по фото. PlantVision 2.6.5 · DINOv2 ViT-S/14 + LoRA · 9 классов.</p>
     </div>
     <div class="foot-col">
       <h4 data-ru="Проект" data-en="Project">Проект</h4>

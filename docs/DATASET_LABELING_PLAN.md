@@ -120,6 +120,93 @@ recall jumped to 0.92.
 The v2.6.0 evidence sets the **v3 path** (precision- and supply-driven, not
 eval-volume) — see the dedicated section below.
 
+### Audited state of the live supplement — v3 (audited 2026-06-18)
+
+`maxayyt5/houseplant-disease-eval-supplement` is now **v3** (live): **1825
+images** (was 1647), pulled and counted straight from `manifest.csv`. v3 adds
+`role` (positive | hard_negative), `hn_kind` (boundary | generic | texture) and a
+fully-populated `subject_domain` column. Split: **1036 positives / 789 hard
+negatives**.
+
+| class | role | v3 n | v3 target | verdict |
+|---|---|---|---|---|
+| `gray_mold_botrytis` | positive | **228** | ≥250 | ⚠️ **22 short** (~91%) — the "#1 v3 job" not fully met |
+| `leaf_scorch_underwatering` | positive | 406 | de-noise + negatives | positives trimmed (501→406); negatives moved to `healthy/boundary` |
+| `nutrient_deficiency` | positive | 402 | de-crop | ✅ de-cropped (617→402; **no field/orchard rows remain**) |
+| `healthy` | hard_negative | 414 | +140 boundary | ✅ boundary=135 (generic 273 / boundary 135 / other 6) |
+| `not_a_plant` | hard_negative | 375 | +50 → 299 | ✅ exceeds (texture lookalikes) |
+
+**Acceptance criteria (§C) status:**
+- **Hard domain gate — MET.** `subject_domain ∈ {houseplant: 1450, not_a_plant:
+  375}`, 100% populated (v2's 501 blank `leaf_scorch` rows are backfilled); **no
+  `field_crop`/`orchard_fruit` rows ship** (dropped, not down-weighted).
+- **Hard negatives first-class + split-tagged — MET** (`role`/`hn_kind`).
+- **pHash dedup — MET** (100% populated; 0 near-dups at Hamming ≤ 6 within class).
+- **Resolution ≥384px — MET** (sampled clean). Source-disjointness asserted in the
+  dataset README (banned origins swept).
+- **Per-row `license` — N/A (not required).** 149/1825 rows carry one; the rest
+  are blank. Fine by decision (2026-06-18): the supplement is collected by keyless
+  image search where per-image licenses are mostly unavailable, and the dataset
+  license is honestly `other`. Per-row licensing is **not** a supplement gate.
+- **`source_url`/`image_url` dropped from the manifest** (README: intentional). v3
+  keeps a `source` host + `engine`/`query`; manifest-level disjointness was
+  enforced at collect time (README), not re-auditable from the manifest alone.
+- **Human-verified rows — none, by design.** The supplement is `agent_vision`
+  only; human verification runs **only on production user-feedback + scans**
+  (§D/§6), never on the supplement. Its gate is a deliberate **proxy**, not an
+  unmet target.
+
+**Notebook alignment — OK, no code change needed.** `fetch_kaggle_supplement`
+reads the 5 canonical-class folders generically; the `healthy/` + `not_a_plant/`
+hard-negative rows correctly load as their own class (a brown-tipped healthy plant
+*is* `healthy`; a texture lookalike *is* `not_a_plant`), so the boundary negatives
+do their job implicitly. The `role`/`hn_kind` columns are informational for the
+maintainer. (The stale v2 caveat in §2 about `gray_mold` carrying field/orchard
+imagery was refreshed — the v3 hard gate removed it.)
+
+**Verdict — v3 meets the plan.** It delivers the precision-hardening intent (hard
+domain gate, boundary negatives, de-crop, dedup, split-tagging). The only
+carry-over is **`gray_mold` 228 < 250** positives (the supply class). Per-row
+license and human-verified supplement rows are **not** requirements (see above),
+so they are not gaps.
+
+### v3 run outcome — model v2.6.5 (trained 2026-06-19)
+
+The aqua run (gamma teacher + aqua student from one A100 pass) trained on
+supplement v3 and **PASSED the ship gate** — disease macro-F1 **0.865** on
+`val_realworld` (n=2334), overall accuracy 91.9%, healthy-bias 0.97. Shipped
+**FP32** (`classifier.onnx`, 87.3 MB): INT8 was significantly worse this run
+(paired-bootstrap CI [−0.025, −0.004] excludes 0). The v3 precision-hardening
+worked as designed:
+
+| class | P/R v2.6.0 → v2.6.5 | eval n 2.6.0 → 2.6.5 | note |
+|---|---|---|---|
+| `leaf_scorch_underwatering` | P 0.71→**0.774** / R 0.86→0.84 | 121 → 106 | **over-trigger 1.21×→1.08×** — the v3 win |
+| `nutrient_deficiency` | P 0.72→**0.743** / R 0.92→0.90 | 122 → 90 | still the laggard (over-triggers 1.21×) |
+| `gray_mold_botrytis` | P 0.84→0.84 / R 0.86→**0.87** | 71 → **91** | point-flat, CIs tighter |
+
+Calibration re-fit: T=0.727, RAPS α=0.2 → coverage 0.981, mean set size 1.84.
+Aqua student distilled to 1.71 MB TFLite (≈17 ms/img CPU-1-thread). Full per-class
+CIs + the new latency/size benchmark ship in the bundle's `model_card.json`.
+
+### v4 — what to collect (grounded in the v2.6.5 run)
+
+The run answered the open questions, so v4 is now concrete (not "wait"):
+
+- **`nutrient_deficiency` is the priority.** It stayed the weakest class
+  (P **0.743**, predicts 109 vs 90) — the v3 boundary negatives helped leaf_scorch,
+  not nutrient. v4 needs **scorch↔nutrient + healthy↔nutrient disambiguating
+  negatives** specifically, plus a few cleaner in-domain positives.
+- **`gray_mold` +22 positives** (228 → ≥250) — the standing carry-over; point
+  metrics are fine, this just keeps tightening the CIs.
+- **leaf_scorch — hold, don't over-collect.** Precision target (≥0.75) is met;
+  keep the boundary negatives, no new push.
+- **No INT8 data fix needed** — INT8's regression is a quantisation issue
+  (investigate per-channel/static PTQ), not a dataset one.
+
+Everything else is unchanged: domain gate hard, hard-negatives split-tagged, no
+per-row license requirement, human verification only on production feedback/scans.
+
 > **Training-time use (v2.6):** the supplement is pulled directly by
 > `train_notebook.ipynb` §2 (`fetch_kaggle_supplement`, source `supplement`) and
 > is **eval-eligible** — a held-out fraction seeds `val_realworld` /
@@ -130,7 +217,7 @@ eval-volume) — see the dedicated section below.
 > already picked up. Because rows are agent-judged, the gate measured on them is
 > a **proxy** until verified production volume exists.
 
-## v3 path — what to collect, what to change
+## v3 path — what to collect, what to change ✅ DONE (shipped as supplement v3, 2026-06-18; see the v3 audit above)
 
 > **Grounded in two checks (2026-06-16).** (a) The live Kaggle supplement is
 > still **v2** — 1647 rows, re-counted straight from `manifest.csv` below.
@@ -177,8 +264,9 @@ Mechanical fixes that block a clean v3:
 2. **De-crop `nutrient_deficiency`:** ~140 rows are `field_crop`/`orchard_fruit`
    (110 + 30). Drop them (or hard down-weight) to honour the houseplant domain
    gate — they dilute the houseplant signal real phone photos need.
-3. **Populate `license`** (only 30/1647 today). v3 should require a real
-   per-row license; the blank default is a hygiene/compliance gap.
+3. ~~**Populate `license`**~~ — **dropped as a requirement (2026-06-18).** Keyless
+   image search rarely exposes a per-image license; the dataset license is honestly
+   `other`. Per-row licensing is not a supplement gate.
 4. **Promote ~140 generic `healthy` rows** toward the brown-tipped boundary
    variant (see A) — generic lush-green doesn't serve scorch precision.
 
@@ -187,7 +275,8 @@ Mechanical fixes that block a clean v3:
 - **Domain gate becomes hard, not advisory:** every row carries a non-blank
   `subject_domain ∈ {houseplant, not_a_plant}`; `field_crop`/`orchard_fruit`
   are rejected (the v1/v2 grandfathering of agricultural imagery ends).
-- **Per-row `license` required.**
+- ~~Per-row `license` required.~~ **Dropped (2026-06-18)** — not a supplement gate;
+  dataset license is honestly `other`.
 - **Hard-negative folders are first-class:** the brown-tipped `healthy/` and the
   `not_a_plant/` lookalikes are split-tagged so they never inflate positive
   recall (they exist to raise precision).
@@ -341,12 +430,12 @@ eval:
 
 ## Maintainer actions (outside this repo)
 
-- **v2 shipped and trained cleanly (v2.6.0, gate passed — bundle validated
-  2026-06-16).** The concrete **v3 path** (per-class targets, the manifest
-  hygiene fixes, and the tightened acceptance criteria) is the
-  "v3 path — what to collect, what to change" section above; in one line:
-  precision-harden the two over-triggering classes with disambiguating
-  negatives and backfill gray_mold positives to ≥250.
+- **v3 shipped and trained cleanly (model v2.6.5, gate passed 2026-06-19 — see
+  "v3 run outcome" above).** v3 precision-hardened leaf_scorch (P 0.71→0.774) and
+  tightened gray_mold; `nutrient_deficiency` stayed the laggard. The concrete
+  **v4 path** is the "v4 — what to collect" section above; in one line: target
+  `nutrient_deficiency` disambiguating negatives and finish the gray_mold backfill
+  to ≥250.
 - Collect and judge **locally** (scrape → disjointness → pHash dedup →
   per-creator cap → vision-agent judge, §1), publish the supplement to Kaggle,
   and the **training notebook pulls it directly** on the next run. The server

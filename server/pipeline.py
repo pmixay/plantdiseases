@@ -26,12 +26,15 @@ Behaviour summary:
   the room).
 * **Size filter** drops tiny detections (<32 px or <0.5 % image area)
   before classification.
-* **Weak-healthy reroute** — when top-1 is ``healthy`` but the
-  margin to the strongest disease is too narrow, we surface the
-  disease instead so the UI doesn't reassure on an obviously-sick
-  plant. (Symmetric "weak-disease → healthy" downgrade was removed
-  in favour of an honest low-confidence flag — see the comment in
-  ``_pick_primary``.)
+* **Weak-healthy reroute** — when top-1 is ``healthy`` but **below a
+  majority** (``HEALTHY_REROUTE_FLOOR``) while a disease is competitive,
+  we swap to the disease so the UI doesn't reassure on an obviously-sick
+  plant. A confident-plurality ``healthy`` is **never** force-converted —
+  the suspected disease is surfaced via ``top_k`` + the soft
+  ``uncertain_healthy`` / ``disease_suspected`` warnings instead, so we
+  never manufacture a disease false positive on a healthy plant.
+  (Symmetric "weak-disease → healthy" downgrade was removed in favour of
+  an honest low-confidence flag — see the comment in ``_pick_primary``.)
 * **Temperature scaling** — when ``temperature.json`` is present, we
   recalibrate probabilities before voting; otherwise T=1.0 (no-op).
 * **OOD gating** — combines detector confidence with a **MaxLogit**
@@ -83,30 +86,37 @@ HEALTHY_MARGIN = 0.10
 # ``uncertain_healthy`` warning + the suspected disease in top_k.
 HEALTHY_DISEASE_FLOOR = 0.12
 
-# Hard reroute — when top-1 = healthy but the confidence is below this
-# floor, the model is essentially guessing. We swap the verdict to the
-# strongest disease class so the UI doesn't reassure the user about an
-# obviously-unhealthy plant. Companion rule: if there's no disease
-# alternative meeting ``HEALTHY_DISEASE_FLOOR`` we keep ``healthy`` but
-# attach the ``low_confidence`` warning so the UI demotes the verdict.
+# Hard reroute — swap a top-1 ``healthy`` verdict to the strongest
+# disease class ONLY when healthy is below this floor, i.e. healthy did
+# not even win a majority and the model is genuinely guessing. Above the
+# floor healthy is a confident plurality and the verdict is KEPT — the
+# suspected disease is still surfaced (top_k + the soft ``uncertain_healthy``
+# / ``disease_suspected`` warnings) WITHOUT asserting it.
 #
-# Tightened from 0.50 → 0.65 after a feedback-screenshot review where
-# the model was happily emitting "Healthy 55–61 %" on visibly dead
-# / dried plants (the head doesn't carry leaf-scorch / nutrient-
-# deficiency yet, so damage signal collapses to the weakest healthy).
-# 0.65 is the empirical knee — below it the in-frame disease class
-# is reliable enough to swap to; above it we leave the verdict alone
-# and let the soft ``uncertain_healthy`` warning carry the demotion.
-HEALTHY_REROUTE_FLOOR = 0.65
+# Set back to 0.50 from an over-aggressive 0.65. At 0.65 any healthy below
+# 65 % with a disease ≥ 0.25 — the COMMON real-healthy band — was force-
+# converted, manufacturing disease false positives on healthy plants (the
+# head lacks leaf-scorch / nutrient classes, so a little benign damage
+# signal leaks onto the next disease). That traded a small dead-plant catch
+# for a large healthy-precision loss — the behaviour most likely to cost
+# points with a jury. 0.50 is the principled line: healthy must win an
+# outright majority to stand as the verdict; below it the in-frame disease
+# is at least as plausible and a (then honestly low-confidence-demoted)
+# reroute is defensible. A genuinely sick plant the model reads as healthy
+# in the 0.50–0.75 band is NOT silently passed — it still gets the soft
+# disease-suspected warning + the disease in top_k, so detection signal is
+# preserved; only the false assertion is dropped.
+HEALTHY_REROUTE_FLOOR = 0.50
 
-# Second healthy-reroute gate, this time keyed on the *margin* between
-# healthy and the strongest disease class rather than the absolute
-# confidence. Caught a class of errors the absolute floor missed:
-# top1=healthy at e.g. 0.55 with disease at 0.35 is essentially a
-# coin flip but slips past ``HEALTHY_REROUTE_FLOOR``. Threshold
-# pulled from feedback-row analysis: error rows had next-diseased
-# gaps of 0.06 / 0.20 / 0.42; <0.30 catches the 0.06 and 0.20 cases.
-# Companion ``HEALTHY_GAP_DISEASE_FLOOR`` keeps the gate from firing
+# Second healthy-reroute gate, keyed on the *margin* between healthy and
+# the strongest disease rather than absolute confidence. It is GATED on the
+# same reroute floor (see the gap_hit guard in
+# ``_apply_postprocessing_rules``): it only fires once healthy is already
+# sub-majority, where it catches low-spread coin-flips no single disease
+# class reaches the 0.25 absolute floor for — e.g. healthy 0.29 /
+# leaf_spot 0.24. Threshold pulled from feedback-row analysis: error rows
+# had next-disease gaps of 0.06 / 0.20 / 0.42; <0.30 catches the 0.06 and
+# 0.20 cases. Companion ``HEALTHY_GAP_DISEASE_FLOOR`` keeps it from firing
 # when the strongest disease is itself just noise (e.g. 0.05).
 HEALTHY_GAP_MARGIN = 0.30
 HEALTHY_GAP_DISEASE_FLOOR = 0.10
@@ -1083,15 +1093,18 @@ def _apply_postprocessing_rules(
     """Soft postprocessing + weak-healthy reroute.
 
     Checks, in order:
-      * **weak-healthy reroute** — top-1 = healthy but confidence is
-        below ``HEALTHY_REROUTE_FLOOR`` AND a disease class meets
-        ``HEALTHY_DISEASE_FLOOR``. We swap the verdict to the
-        strongest disease so the UI doesn't say "Healthy" on what is
-        plainly a sick plant. Attaches a ``weak_healthy_rerouted``
-        warning so the client can render the demotion explicitly.
-      * ``uncertain_healthy`` — top-1 is healthy, no disease above the
-        reroute threshold, but confidence/margin still below the soft
-        thresholds. Surfaces alternatives, no class swap.
+      * **weak-healthy reroute** — top-1 = healthy but **below a majority**
+        (``HEALTHY_REROUTE_FLOOR``) while a disease is competitive (absolute
+        or gap trigger). Only then do we swap to the strongest disease so the
+        UI doesn't say "Healthy" on what is plainly a sick plant, and attach a
+        ``weak_healthy_rerouted`` warning. A confident-plurality healthy is
+        never converted — that manufactured disease false positives — so it
+        falls through to the soft path below.
+      * ``uncertain_healthy`` — top-1 is healthy and kept (above the majority
+        floor, or no competitive disease) but confidence/margin is below the
+        soft thresholds, or a disease clears ``HEALTHY_DISEASE_FLOOR``.
+        Surfaces the suspected disease (``disease_suspected:<class>``) +
+        alternatives, no class swap.
       * ``low_confidence`` — top-1 below the healthy threshold.
     """
     probs = classification["all_probs"]
@@ -1112,22 +1125,22 @@ def _apply_postprocessing_rules(
             key=lambda kv: kv[1],
             default=(None, 0.0),
         )
-        # Two parallel triggers, either of which is enough on its own:
+        # Hard reroute fires ONLY when healthy is below the reroute floor
+        # (HEALTHY_REROUTE_FLOOR = 0.50) — i.e. healthy did not win a
+        # majority. A confident-plurality healthy is NEVER force-converted:
+        # it falls through to the soft ``uncertain_healthy`` /
+        # ``disease_suspected`` path below, which surfaces the suspected
+        # disease without asserting it. That is the false-positive fix —
+        # borderline-healthy plants are no longer manufactured into disease
+        # verdicts. Within the sub-floor band, two triggers each suffice:
         #
-        #   * absolute floor — top1 confidence < HEALTHY_REROUTE_FLOOR
-        #     (0.65) with the strongest disease at or above
+        #   * absolute — strongest disease at/above
         #     HEALTHY_REROUTE_DISEASE_FLOOR (0.25). The 0.25 floor blocks
-        #     reroutes onto sub-quarter-confidence noise: a 0.54 healthy
-        #     vs 0.12 disease should stay healthy, with the soft
-        #     `disease_suspected` warning carrying the alert.
-        #   * gap floor — healthy is winning but only by < GAP_MARGIN
-        #     (0.30) over the strongest disease, and that disease has
-        #     at least GAP_DISEASE_FLOOR (0.10) mass.
-        #
-        # The gap floor catches the "healthy 0.29 / leaf_spot 0.24"
-        # visibly-dead-plant screenshot where the model is essentially
-        # a coin flip and the absolute floor's 0.25 disease threshold
-        # is intentionally just out of reach.
+        #     reroutes onto sub-quarter-confidence noise.
+        #   * gap — strongest disease has ≥ HEALTHY_GAP_DISEASE_FLOOR (0.10)
+        #     mass and trails healthy by < HEALTHY_GAP_MARGIN (0.30). Catches
+        #     the low-spread "healthy 0.29 / leaf_spot 0.24" dead-plant
+        #     coin-flip the absolute path's 0.25 disease threshold just misses.
         absolute_hit = (
             top1_prob < HEALTHY_REROUTE_FLOOR
             and worst_disease[1] >= HEALTHY_REROUTE_DISEASE_FLOOR
@@ -1135,6 +1148,7 @@ def _apply_postprocessing_rules(
         gap = top1_prob - worst_disease[1] if worst_disease[0] is not None else float("inf")
         gap_hit = (
             worst_disease[0] is not None
+            and top1_prob < HEALTHY_REROUTE_FLOOR
             and worst_disease[1] >= HEALTHY_GAP_DISEASE_FLOOR
             and gap < HEALTHY_GAP_MARGIN
         )

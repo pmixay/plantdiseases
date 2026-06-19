@@ -325,7 +325,16 @@ class ResultActivity : AppCompatActivity() {
         // Plant" while the description and stored `diseaseName`
         // still said fungal — the cause of the screenshot bug.
         val isHealthyVerdict = scan.isHealthy
+        // A not_a_plant verdict that carries the blur warning is really
+        // "couldn't read the photo", not a confident "this isn't a plant".
+        // Present it as blurry-or-NAP so a user who scanned a genuine but
+        // blurry plant isn't told it isn't one (and doesn't think the app is
+        // broken). The blur gate always routes to not_a_plant, so this is a
+        // strict subset of isNotAPlant.
+        val isBlurryReject = isNotAPlant &&
+            "blurry_image" in repository.parseWarnings(scan.warnings)
         val diseaseName = when {
+            isBlurryReject -> getString(R.string.blurry_or_not_a_plant_diagnosis_name)
             isNotAPlant -> getString(R.string.not_a_plant_diagnosis_name)
             isRu -> scan.diseaseNameRu
             else -> scan.diseaseName
@@ -486,6 +495,13 @@ class ResultActivity : AppCompatActivity() {
             }
 
             when {
+                isBlurryReject -> {
+                    cardStatus.setCardBackgroundColor(getColor(R.color.neutral_blue_bg))
+                    tvStatusLabel.text = getString(R.string.status_blurry_or_not_a_plant)
+                    tvStatusLabel.setTextColor(getColor(R.color.neutral_blue))
+                    ivStatusIcon.setImageResource(R.drawable.ic_warning)
+                    ivStatusIcon.setColorFilter(getColor(R.color.neutral_blue))
+                }
                 isNotAPlant -> {
                     cardStatus.setCardBackgroundColor(getColor(R.color.neutral_blue_bg))
                     tvStatusLabel.text = getString(R.string.status_not_a_plant)
@@ -512,7 +528,10 @@ class ResultActivity : AppCompatActivity() {
             // Description: for NAP we replace it with a dedicated retry hint
             // and silence the disease-only sections below.
             if (isNotAPlant) {
-                tvDescription.text = getString(R.string.not_a_plant_result_body)
+                tvDescription.text = getString(
+                    if (isBlurryReject) R.string.blurry_or_not_a_plant_result_body
+                    else R.string.not_a_plant_result_body,
+                )
                 cardTreatmentPrevention.visibility = View.GONE
                 cardAlternatives.visibility = View.GONE
                 cardSpecies.visibility = View.GONE

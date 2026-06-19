@@ -8,6 +8,23 @@
 > (the server does not auto-download them). This file is a stable,
 > version-agnostic overview and carries **no run-specific numbers** by
 > design.
+>
+> `model_card.json` also carries a `benchmark` block (notebook §6): batch-1
+> inference latency (p50/p95/mean ms) + on-disk size for the shipped
+> classifier ONNX and — on an `aqua` run — the on-device TFLite student.
+> `cpu_1thread` is the canonical cross-tier number (single-core server
+> budget) and includes hflip-TTA when enabled; a `cuda` timing is added when
+> a GPU provider is present (the `frontier` tier serves on GPU).
+>
+> §6b packs one **per-training-mode** archive,
+> `models/plantvision_<family>_v<version>.tar` (e.g. `…_aqua_…`,
+> `…_gamma_…`, `…_frontier_…`). Server drop-in artefacts (ONNX, `classes.json`,
+> `temperature.json`, `conformal.json`, `ood_embedding.npz`) sit at the archive
+> **root**; analysis/research artefacts (`model_card.json` incl. benchmarks,
+> `training_metrics.json`, `run_log.jsonl`) ride along; and the on-device
+> `aqua/` subdir (`aqua_classifier.tflite` + its `classes.json`) is included
+> when an `aqua` run produced it. Heavy torch checkpoints are intentionally
+> excluded (runtime is ONNX/TFLite-only).
 
 ## Pipeline
 
@@ -49,7 +66,22 @@ The production artefact is an ONNX graph and the runtime is
 **architecture-neutral** — it serves whatever backbone+head the shipped
 bundle declares (`classes.json -> architecture`):
 
-- **v2.6.x (current, `gamma`):** same recipe as v2.5 (below) plus the
+- **v2.6.5 (current, `gamma`; trained on dataset supplement v3):** same recipe
+  as v2.6.x, retrained on **eval-supplement v3** (1825 rows: hard houseplant-
+  domain gate, boundary hard-negatives for the over-triggering classes, gray_mold
+  backfill 120→228 — see `docs/DATASET_LABELING_PLAN.md`). Headline `val_realworld`
+  (n=2334): disease macro-F1 **0.865**, overall accuracy **91.9%**, healthy-bias
+  0.97. The v3 precision-hardening landed: **leaf_scorch precision 0.71→0.774**
+  (over-trigger 1.21×→1.08×), gray_mold eval n 71→91 (tighter CIs). **Shipped
+  FP32** (`classifier.onnx`, 87.3 MB): INT8 was *significantly* worse this run
+  (paired-bootstrap CI [−0.025, −0.004] excludes 0), so the export gated back to
+  FP32 — the server has the CPU headroom. Calibration re-fit: T=0.727, RAPS α=0.2
+  → coverage 0.981, mean set size 1.84. The aqua on-device student distilled to
+  **1.71 MB** TFLite (≈17 ms/img CPU single-thread; gamma ONNX ≈299 ms with TTA —
+  both in `model_card.json -> benchmark`). Rows remain agent-judged
+  (`verified_by=agent_vision`), so the gate is a **proxy** until verified
+  production volume exists.
+- **v2.6.x (`gamma`):** same recipe as v2.5 (below) plus the
   **in-domain Kaggle eval-supplement** (`maxayyt5/houseplant-disease-eval-supplement`,
   source `supplement`) wired into `train_notebook.ipynb` §2 as an
   **eval-eligible** source — a held-out fraction seeds `val_realworld` /
