@@ -220,11 +220,13 @@ collection-only v4 plan under-weighted:
    injecting **200 rice field-crop** images (`guy007/nutrientdeficiencysymptomsinrice`)
    straight into `nutrient_deficiency` — the *weakest* class (P 0.743). **Fixed in
    code:** `kaggle_nutrient` is now an opt-in (`INCLUDE_KAGGLE_NUTRIENT_CROP=False`,
-   mirrors the `kaggle_species` gate); the dead `coleaf` weights were removed (the
-   fetcher is never called); COCO `not_a_plant` was halved 1500→750 (the class is
-   P 0.99/R 0.97 — over-served — and the OOD bank still draws from the green-texture /
-   partial-plant hard-negs). So part of the nutrient fix is **source hygiene at train
-   time**, not only new disambiguating negatives.
+   mirrors the `kaggle_species` gate); COCO `not_a_plant` was halved 1500→750 (the
+   class is P 0.99/R 0.97 — over-served — and the OOD bank still draws from the
+   green-texture / partial-plant hard-negs). `coleaf`/`mpld` stay as down-weighted,
+   prior-decoupled crop proxies — *not* dead config: their fetchers are dormant but
+   the weights are a contract guarded by `test_data_invariants.py`. So part of the
+   nutrient fix is **source hygiene at train time**, not only new disambiguating
+   negatives.
 2. **gray_mold is a *quality* gap, not only a +22 count gap.** The manifest's agent
    `confidence` column (not previously audited) shows **73 of 228** gray_mold positives
    (32%) at conf < 0.80 — and because the supplement is eval-eligible, that noise lands
