@@ -17,6 +17,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
+import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.google.android.material.card.MaterialCardView
 import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.PlantDiseasesApp
@@ -108,6 +109,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 info.imageUrl?.let { url ->
                     Glide.with(this@SpeciesDetailActivity).load(url)
                         .placeholder(R.drawable.ic_plant_placeholder)
+                        .diskCacheStrategy(DiskCacheStrategy.ALL)
                         .into(binding.ivSpeciesHero)
                 }
                 renderPhotos(info.images)
@@ -170,7 +172,8 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 scaleType = ImageView.ScaleType.CENTER_CROP
                 contentDescription = null
             }
-            Glide.with(this).load(url).placeholder(R.drawable.ic_plant_placeholder).into(iv)
+            Glide.with(this).load(url).placeholder(R.drawable.ic_plant_placeholder)
+                .diskCacheStrategy(DiskCacheStrategy.ALL).into(iv)
             card.addView(iv)
             binding.photoStrip.addView(card)
         }
