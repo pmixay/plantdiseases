@@ -1,4 +1,16 @@
-# Dataset & labeling plan — local collection + server review
+# Dataset & labeling plan — local collection + offline export
+
+> **Architecture change (2026-06-20): the human admin labeling queue was
+> removed.** There is no `/api/label/*` review surface, no claim/verdict/auth,
+> no in-app admin tool. The server still *records* anonymized production scans +
+> feedback (with the model's prediction as a **weak label prior**), but it is no
+> longer reviewed on the server. Instead the maintainer **exports** all three
+> stores offline (`server/tools/export_data.py`) and judges the images with the
+> same vision-agent that grades scraped images. App scans — friends scanning
+> known houseplants, and internet images scanned from the gallery — are now a
+> first-class image source feeding that offline judge, alongside scraping.
+> The sections below that describe a server review queue are superseded by §5.
+
 
 **Supersedes** the scrape-on-the-server plan (this file's earlier revisions)
 and the old human-labels-everything plan (`EVAL_DATASET_PLAN.md`, deleted).
@@ -12,17 +24,18 @@ in `docs/ROADMAP.md`.
    publish a Kaggle supplement. `train_notebook.ipynb` pulls that supplement
    **directly** — that is how v2.6.0 was built. None of this runs on the
    server.
-2. **Server review of production signal.** The server records anonymized
-   production scans + user feedback into `labeling.db` and serves them to a
-   human admin queue (**feedback + scans only**). It does **not** fetch,
-   ingest, route, or export any Kaggle dataset.
+2. **Server-side production-signal collection (no review).** The server records
+   anonymized production scans + user feedback into `labeling.db`, each carrying
+   the model's prediction as a weak label prior. There is **no** server review
+   queue; the maintainer exports the store offline (`tools/export_data.py`) and
+   folds it into the same local collect→judge pipeline as scraped images.
 
 > **No server-side dataset loop — by design, not "later."** The Kaggle
 > auto-fetch / version-gated ingestion, the model auto-router, the audit
 > sampling, and the export-bundle builder were removed and are **not** a
 > deferred server phase. Dataset collection and judging are done **locally**,
 > where the maintainer has the tooling; the server's only data job is to
-> surface real user feedback + uncertain scans for human review. Claude checks
+> record real user feedback + uncertain/disease scans for offline export. Claude checks
 > the locally collected dataset when asked and keeps this plan in sync — it
 > does not re-introduce server ingestion.
 
@@ -41,10 +54,10 @@ in `docs/ROADMAP.md`.
         ▼                                        user feedback → top-priority pending
    train_notebook.ipynb ──► model bundle              │
         ▲                                             ▼
-        │                                        human admin queue (feedback + scans)
-        │                                             │ verified verdicts stay in labeling.db
+        │                                        tools/export_data.py (offline pull)
+        │                                             │ all 3 stores → one archive
         └─────────────────────────────────────────────┘
-   maintainer folds verified production rows into the next local dataset version
+   maintainer judges exported scans offline (vision-agent) + folds them in
 ```
 
 ## (1) Local collection — acceptance criteria (the code stays external)
@@ -346,11 +359,11 @@ gate's synthetic NAP) is recorded AFTER the response is sent
   conformal set == top-1 ⇒ `auto_yes`; otherwise `pending` (suspicious →
   human queue). `auto_no` is impossible for scans (the model's own
   prediction is the proposed class).
-- **Class-balanced caps:** suspicious scans and weak-class (target>0) scans
-  are always kept; confident common-class scans are sampled at
-  `scan_common_keep_rate` (0.1) decided deterministically by SHA; per-class
-  daily cap (`scan_daily_cap_per_class`) + global `scan_max_images` bound
-  disk.
+- **Value-driven caps:** model-uncertain (`pending`) scans **and every disease
+  class** (the high training signal) are always kept; only the abundant easy
+  class (`healthy`) is sampled at `scan_common_keep_rate` (0.1) by SHA;
+  `not_a_plant` is dropped upstream. Per-class daily cap
+  (`scan_daily_cap_per_class`) + global `scan_max_images` bound disk.
 - **Retention / prune order (protects hard cases):** unreviewed `pending`
   scans die after `scan_retention_days` (90); over the global cap, redundant
   `auto_yes` common-class scans are pruned first, then weak-class
@@ -359,94 +372,91 @@ gate's synthetic NAP) is recorded AFTER the response is sent
   (Android onboarding; upgrade installs get a one-time blocking dialog) and
   `website/privacy.html`.
 
-## (4) Feedback → the labeling queue
+## (4) Feedback → the collection store
 
 - Negative feedback re-opens the recorded candidate (even an `auto_yes` one)
   as `pending` under `source='user_feedback'`, retargeted at the user's
-  corrected class, carrying their note — the canonical false-positive
-  signal, served at top queue priority. It never overrides a human verdict.
+  corrected class, carrying their note — the canonical false-positive signal
+  and the one place a user supplies a ground-truth label. Exported for offline
+  judging like every other row.
 - Positive feedback stamps `user_correct=1` and promotes a still-`pending`
   scan to `auto_yes` when the user confirms the model's own prediction.
 - If the scan was never recorded (old install / recording off / disputed
   NAP), the negative-feedback image upload builds the candidate from the
   uploaded bytes via the same anonymize helper. **Known gap:** negative
   feedback with no image and no recorded scan has no pixels — nothing can be
-  enqueued.
+  recorded.
 - **GDPR:** `/api/community/user/{id}` delete cascades community rows,
-  feedback rows AND labeling candidates keyed by that user's scan_ids.
+  feedback rows AND scan candidates keyed by that user's scan_ids.
   Plain `user_scan` rows are unreachable by design (no user linkage exists).
 
-## (5) Human labeling — 2 prioritised sources
+## (5) No human labeling queue — offline export + judge
 
-`/api/label/next` serves `pending` cards in priority order **feedback →
-scans** (filterable via `?source=`). These are the only two sources: there is
-no `dataset` source (`?source=dataset` returns 422). `/api/label/stats` adds a
-per-source block.
+The server-side review queue was removed (2026-06-20). The server only
+**records** scans + feedback; the maintainer pulls everything off the box with
+`server/tools/export_data.py` and judges the images offline with the same
+vision-agent that grades scraped images. App scans are just another image
+source for that judge — including friends scanning known houseplants and
+internet images scanned from the gallery.
 
-### Per-class targets (`labeling_targets`) — retargeted on model v2.6.0 evidence
+**Value-driven collection (no config, baked into `_record_scan_candidate`):**
+model-uncertain (`pending`) scans **and every disease class** are always kept
+(the high training signal); only confident `healthy` is sampled at
+`scan_common_keep_rate`; `not_a_plant`/blur are dropped upstream. The weak
+classes (gray_mold, nutrient, leaf_scorch) therefore land in full, but so do
+all other disease scans — the export is a broad disease corpus, judged offline.
 
-`target>0` marks weak classes whose recorded scans are **always retained and
-prioritised for human review** (scan recording + review, not dataset
-collection). After the v2.6.0 run the targets are precision-/supply-driven,
-not eval-volume-driven: the eval-volume crisis on nutrient/scorch is over, so
-the remaining work is hardening precision and backfilling the one class that
-is still genuinely supply-limited.
+**Export contents** (`tools/export_data.py`): `labeling.db` (scans + feedback
+corrections + images, model prediction as weak prior), `feedback.db` (raw
+corrections + the user_pseudo_id↔scan_id join), `community.db` (community scans
++ opinions + thumbnails) → one timestamped `tar.gz` of JSONL + images + a
+manifest. Read-only; no network.
 
-| class | target | rationale (real-world eval, n=2213) |
-|---|---|---|
-| gray_mold_botrytis | 400 | **top data-supply priority** — eval n only 71, supplement just 120; P 0.84 / R 0.86 but the widest CIs of any class. Scarce (iNat genus + DoctorP). |
-| nutrient_deficiency | 300 | eval-volume bottleneck **resolved** (25 → 122); now precision-limited (P 0.72, predicts 156 vs 122) — fix = scorch↔nutrient + healthy↔nutrient disambiguating negatives, not more positives |
-| leaf_scorch_underwatering | 300 | precision recovered **0.52 → 0.71** (R 0.86); residual over-trigger (predicts 146 vs 121) → keep healthy-with-brown-tips boundary negatives at lower volume |
-| powdery_mildew | **0** | solved: precision 0.95 / recall 0.93 |
-| others | 0 | not collected |
+## (6) Exported production rows → next dataset version (local / manual)
 
-**Human verification priority:** gray_mold scans first (thinnest eval,
-n=71, widest CIs), then nutrient_deficiency and leaf_scorch precision FPs
-(both still over-predict) — these are the trust bottleneck for tightening
-the next ship gate.
-
-## (6) Verified production rows → next dataset version (local / manual)
-
-There is **no server export endpoint**. Human-verified feedback/scan verdicts
-simply stay in `labeling.db`; when the maintainer builds the next local
-dataset version they extract the verified rows directly from the DB and fold
-them into the offline collection (§1). The rules below are what that local
-step must honour so production signal can be reused without corrupting the
-eval:
+There is **no server HTTP export endpoint**; the maintainer runs
+`tools/export_data.py` on the box to pull all three stores, then judges the
+exported scans offline (vision-agent) before folding the kept images into the
+local collection (§1). The model's prediction travels as a **weak prior** only
+— the offline judge assigns the real label, exactly as for scraped images. The
+rules below are what that local step must honour so production signal can be
+reused without corrupting the eval:
 
 - **What a verified row carries:** `class, source, source_url, subject_plant,
-  verified_by, sha256, phash`, plus the verdict provenance. `verified_by` ∈
-  `model` (auto_yes), `model+user` (auto_yes + positive feedback), `human`
-  (admin yes). **No scan_id, no feedback text, no user data leaves the DB.**
+  sha256, phash`, plus the model prior (`model_pred`/`model_conf`/`status`).
+  After the offline judge rules, `verified_by=agent_vision` (or `model+user`
+  where positive feedback confirmed the model). No user data leaves the box
+  beyond the anonymized image + the pseudo_id↔scan_id join needed for GDPR.
 - **Eval-integrity rule (mandatory):** the model must never grade or calibrate
   itself on its own confident calls. Every `auto_yes` row (`verified_by` model
   or model+user) is **train-only**. Held-out splits draw ONLY from
-  human-verified rows: a deterministic ~20% (by sha) of human-verified
+  vision-agent-judged rows: a deterministic ~20% (by sha) of judged
   **production** scans is calibration (real phone photos are exactly what
   temperature scaling + RAPS need), the rest is eval. The training notebook's
   group-split keeps eval source-disjoint from train.
 - **Near-dup sweep:** pHash Hamming ≤ 6 when merging into §1; strongest
-  provenance wins (`human` > `model+user` > `model`).
-- **Hard negatives:** human-`no` rows (confirmed false positives) are kept as
-  hard negatives for the vision-agent judge's reference *rejects*, not mixed
-  into positive folders.
+  provenance wins (`agent_vision` > `model+user` > `model`).
+- **Hard negatives:** negative-feedback rows (user-confirmed false positives)
+  are kept as hard negatives for the vision-agent judge's reference *rejects*,
+  not mixed into positive folders.
 - **Closing the loop (local):** verified positives become reference exemplars
   for the §1 vision-agent judge and their `sha256`/`phash` become the scrape
-  dedup index (never re-collect what's verified).
+  dedup index (never re-collect what's judged).
 
 ## Verification
 
 - Server: `ruff check .` + `pytest tests -q` (scan recording, `route_scan`,
-  feedback wiring, and the feedback+scans queue are covered — see
-  `tests/test_scan_recording.py`, `tests/test_feedback_labeling_wiring.py`,
-  `tests/test_label_sources.py`, `tests/test_labeling.py`).
-  `tests/test_label_sources.py` also asserts the removal: `dataset` is not a
-  valid source group (422) and never appears in `/api/label/stats`.
+  the value-driven keep gate, feedback fold-back, the collection store and the
+  offline export are covered — see `tests/test_scan_recording.py`,
+  `tests/test_feedback_labeling_wiring.py`, `tests/test_labeling.py`,
+  `tests/test_export_data.py`). The `/api/label/*` routes no longer exist
+  (`tests/test_openapi_contract.py` pins the path set).
 - Android: `./gradlew lintDebug testDebugUnitTest assembleRelease`; manual —
   fresh install ends onboarding on the consent page (Skip jumps to it,
-  Agree required), labeling source chips show **Feedback / Scans**.
-- Live: scan → row in `candidates` with `source='user_scan'`; negative
-  feedback → card at top of `/api/label/next`.
+  Agree required).
+- Live: scan → row in `candidates` with `source='user_scan'` carrying
+  `model_pred`; negative feedback → row flips to `source='user_feedback'`.
+- Export: `python -m server.tools.export_data` → `tar.gz` of all three stores.
 
 ## Risks
 

@@ -28,7 +28,6 @@ from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Literal
 
 from fastapi import (
     APIRouter,
@@ -140,9 +139,6 @@ try:
     from .config import get, get_bool, get_float, get_int, get_list, get_str
     from .diseases_data import (
         DISEASES_DATABASE,
-        class_display_name,
-        confusables_for,
-        labeling_guidance_for,
         lookup_pet_toxicity,
     )
     from .feedback import (
@@ -271,9 +267,6 @@ except ImportError:
     from config import get, get_bool, get_float, get_int, get_list, get_str
     from diseases_data import (
         DISEASES_DATABASE,
-        class_display_name,
-        confusables_for,
-        labeling_guidance_for,
         lookup_pet_toxicity,
     )
     from feedback import (
@@ -436,31 +429,22 @@ FRONTIER_ENABLED = get_bool("FRONTIER_ENABLED", False)
 FRONTIER_MODELS_DIR = Path(get_str("FRONTIER_MODELS_DIR", str(MODELS_DIR / "frontier")))
 FRONTIER_CLASSIFIER_PATH = FRONTIER_MODELS_DIR / "classifier.onnx"
 
-# ── Data-labeling admin tool ─────────────────────────────────────────
-# Human admin review of user feedback + recorded user scans. Enabled by
-# default; a BLANK admin password refuses every login, so "enabled" is safe out
-# of the box (operator sets the password in config.json). See server/labeling.py.
-LABELING_ENABLED = get_bool("LABELING_ENABLED", True)
-# route_scan trust knobs: confident scans (singleton conformal set, or high
-# calibrated confidence when conformal is off) are auto-accepted at record
-# time; the uncertain tail goes to the human admin queue.
+# ── Scan-collection trust knobs ──────────────────────────────────────
+# route_scan auto-accepts confident scans (singleton conformal set, or high
+# calibrated confidence when conformal is off) as ``auto_yes``; the uncertain
+# tail is tagged ``pending`` (model on the edge — high training value, always
+# kept). There is no human review queue: the store is exported and judged
+# offline (docs/DATASET_LABELING_PLAN.md, tools/export_data.py).
 LABELING_TRUST_CONFORMAL = get_bool("LABELING_TRUST_CONFORMAL", True)
 LABELING_CONF_HIGH = get_float("LABELING_CONF_HIGH", 0.85)
-# Per-class "required-data weight" (target approved count). 0 ⇒ not collected.
-# powdery_mildew dropped to 0 after model v2.5.0 (precision 0.97 / recall
-# 0.91 on real-world eval — solved); see docs/ROADMAP.md for the evidence.
-_LABELING_TARGETS_DEFAULT = {
-    "nutrient_deficiency": 600, "leaf_scorch_underwatering": 600,
-    "gray_mold_botrytis": 400, "powdery_mildew": 0,
-    "viral_disease": 0, "leaf_spot": 0, "pests": 0, "healthy": 0, "not_a_plant": 0,
+# Value-driven scan retention: every disease class is high training signal and
+# is always kept; the abundant easy class (healthy; not_a_plant is dropped
+# upstream) is sampled at SCAN_COMMON_KEEP_RATE so confident-healthy photos
+# can't drown the disease corpus.
+DISEASE_CLASSES = {
+    "gray_mold_botrytis", "leaf_spot", "leaf_scorch_underwatering",
+    "nutrient_deficiency", "pests", "powdery_mildew", "viral_disease",
 }
-_labeling_targets_raw = get("LABELING_TARGETS", _LABELING_TARGETS_DEFAULT)
-if isinstance(_labeling_targets_raw, str):
-    try:
-        _labeling_targets_raw = json.loads(_labeling_targets_raw)
-    except Exception:  # noqa: BLE001
-        _labeling_targets_raw = _LABELING_TARGETS_DEFAULT
-LABELING_TARGETS = {k: int(v) for k, v in (_labeling_targets_raw or {}).items()}
 
 # ── Production scan recording ────────────────────────────────────────
 # Every non-not_a_plant (and non-blur — the blur gate emits a synthetic NAP)
@@ -468,14 +452,14 @@ LABELING_TARGETS = {k: int(v) for k, v in (_labeling_targets_raw or {}).items()}
 # (EXIF/GPS dropped), downscaled, no user identifiers — the only linkage is
 # the response scan_id, and the user↔scan_id join lives solely in feedback.db
 # (which the GDPR delete cascade sweeps). Routed by route_scan(): confident →
-# auto_yes, suspicious → the admin labeling queue. Disclosed to users via the
+# auto_yes, suspicious → pending (kept for offline review). Disclosed via the
 # blocking first-launch consent screen (Android) + website/privacy.html.
 SCAN_RECORDING_ENABLED = get_bool("SCAN_RECORDING_ENABLED", True)
 SCAN_RETENTION_DAYS = get_int("SCAN_RETENTION_DAYS", 90)
 SCAN_MAX_IMAGES = get_int("SCAN_MAX_IMAGES", 20000)
-# Class-balanced caps: confident scans of classes with no collection target
-# are sampled at this rate so a flood of confident-healthy photos can't drown
-# the weak classes; per-class daily cap bounds disk regardless of class.
+# Value caps: confident scans of the abundant easy class (healthy) are sampled
+# at this rate so a flood of confident-healthy photos can't drown the disease
+# corpus; per-class daily cap bounds disk regardless of class.
 SCAN_COMMON_KEEP_RATE = get_float("SCAN_COMMON_KEEP_RATE", 0.1)
 SCAN_DAILY_CAP_PER_CLASS = get_int("SCAN_DAILY_CAP_PER_CLASS", 50)
 SCAN_IMG_MAX_SIDE = 1024  # anonymization downscale bound (not configurable)
@@ -1211,22 +1195,12 @@ async def _prune_loop() -> None:
             raise
         except Exception as exc:  # noqa: BLE001
             logger.warning("Prune pass failed (will retry tomorrow): %s", exc)
-        # Requeue abandoned label claims so a closed app doesn't strand cards.
-        try:
-            await asyncio.get_running_loop().run_in_executor(
-                None, labeling.requeue_expired_claims,
-            )
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Label claim requeue failed: %s", exc)
         # Bound the recorded-scan footprint (retention + class-balanced cap).
         if SCAN_RECORDING_ENABLED:
             try:
-                weak = {c for c, t in LABELING_TARGETS.items() if int(t or 0) > 0}
                 pruned = await asyncio.get_running_loop().run_in_executor(
                     None, labeling.prune_user_scans,
-                    SCAN_RETENTION_DAYS, SCAN_MAX_IMAGES, weak,
+                    SCAN_RETENTION_DAYS, SCAN_MAX_IMAGES, DISEASE_CLASSES,
                 )
                 if pruned:
                     logger.info("Pruned %d recorded user scans", pruned)
@@ -1415,11 +1389,11 @@ def _record_scan_candidate(
             trust_conformal=LABELING_TRUST_CONFORMAL, conf_high=LABELING_CONF_HIGH,
         )
         body, sha, ph = _anonymise_scan_image(img)
-        weak = class_name in {
-            c for c, t in LABELING_TARGETS.items() if int(t or 0) > 0
-        }
-        if status == "auto_yes" and not weak and not _scan_keep_sampled(
-            sha, SCAN_COMMON_KEEP_RATE,
+        # Always keep model-uncertain scans (pending) and every disease class;
+        # only the abundant easy class (healthy) is sampled down.
+        if (
+            status == "auto_yes" and class_name not in DISEASE_CLASSES
+            and not _scan_keep_sampled(sha, SCAN_COMMON_KEEP_RATE)
         ):
             return
         if labeling.count_user_scans_today(class_name) >= SCAN_DAILY_CAP_PER_CLASS:
@@ -2769,7 +2743,7 @@ async def feedback_endpoint(payload: FeedbackRequest, request: Request):
         logger.exception("Failed to record feedback: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to record feedback") from exc
 
-    # Fold the feedback into the labeling queue (fail-soft, off the event
+    # Fold the feedback into the collection store (fail-soft, off the event
     # loop): negative feedback re-opens the recorded scan candidate as a
     # top-priority pending card; positive feedback stamps user_correct and
     # can promote a pending card to auto_yes (model+user agreement).
@@ -2817,7 +2791,7 @@ async def feedback_image_upload(
     Privacy note: photo storage for model improvement is disclosed in
     the first-launch consent screen (and the feedback sheet copy); the
     image is also anonymized (EXIF-stripped, downscaled) before it
-    reaches the labeling queue. The community delete-for-user path
+    reaches the collection store. The community delete-for-user path
     cascades through feedback rows AND the labeling candidates keyed
     by this user's scan_ids, so "delete my data" purges these too.
     """
@@ -3652,127 +3626,6 @@ async def export_user_data(user_pseudo_id: str):
         "community_scans": community_data,
         "feedback_submissions": feedback_data,
     })
-
-
-# ── Data-labeling admin endpoints ────────────────────────────────────
-# Human-in-the-loop candidate filtering. Auth = shared password → stateless
-# session token (validated per-endpoint since the codebase has no Depends
-# auth convention). All blocking DB work runs in the inference executor.
-class LabelLoginRequest(BaseModel):
-    password: str
-
-
-class LabelVerdictItem(BaseModel):
-    id: int
-    verdict: Literal["yes", "no", "not_sure"]
-
-
-class LabelVerdictBatch(BaseModel):
-    verdicts: list[LabelVerdictItem]
-
-
-def _require_labeling_session(request: Request) -> str:
-    """404 when the feature is off (so it isn't advertised on a public deploy),
-    401 when the bearer session token is missing/invalid. Returns session id."""
-    if not LABELING_ENABLED:
-        raise HTTPException(status_code=404, detail="Not found")
-    # A dedicated header (NOT Authorization/x-api-key) so the session token
-    # doesn't collide with the global API-key check in RateLimitMiddleware.
-    sid = labeling.verify_session_token(request.headers.get("x-label-token"))
-    if not sid:
-        raise HTTPException(status_code=401, detail="labeling session invalid or expired")
-    return sid
-
-
-async def _run(fn, *args):
-    return await asyncio.get_running_loop().run_in_executor(
-        _get_inference_executor(), lambda: fn(*args)
-    )
-
-
-@api_router.post("/label/login")
-async def label_login(payload: LabelLoginRequest, request: Request):
-    if not LABELING_ENABLED:
-        raise HTTPException(status_code=404, detail="Not found")
-    if not labeling.login_allowed(_client_ip(request)):
-        raise HTTPException(status_code=429, detail="too many login attempts")
-    if not labeling.verify_admin_password(payload.password):
-        raise HTTPException(status_code=401, detail="invalid password")
-    token, exp = labeling.issue_session_token()
-    return JSONResponse(content={"token": token, "expires_at": exp})
-
-
-@api_router.get("/label/next")
-async def label_next(
-    request: Request,
-    count: int = 20,
-    klass: str | None = Query(default=None, alias="class"),
-    source: Literal["feedback", "scans"] | None = Query(default=None),
-):
-    sid = _require_labeling_session(request)
-    classes = [klass] if klass else None
-    cards = await _run(
-        labeling.claim_next, sid, count, classes,
-        labeling._CLAIM_LEASE, source,
-    )
-    return JSONResponse(content={
-        "cards": cards,
-        "lease_seconds": labeling._CLAIM_LEASE,
-    })
-
-
-@api_router.post("/label/verdict")
-async def label_verdict(payload: LabelVerdictBatch, request: Request):
-    sid = _require_labeling_session(request)
-    items = [(v.id, v.verdict) for v in payload.verdicts]
-    applied = await _run(labeling.record_verdicts, sid, items)
-    return JSONResponse(content={"applied": applied})
-
-
-@api_router.get("/label/stats")
-async def label_stats(request: Request):
-    _require_labeling_session(request)
-    data = await _run(labeling.stats, LABELING_TARGETS)
-    return JSONResponse(content=data)
-
-
-@api_router.get("/label/clue/{klass}")
-async def label_clue(klass: str, request: Request, lang: str = "en"):
-    _require_labeling_session(request)
-    if "/" in klass or "\\" in klass or ".." in klass:
-        raise HTTPException(status_code=400, detail="bad class")
-    if klass not in DISEASES_DATABASE:
-        raise HTTPException(status_code=404, detail="unknown class")
-
-    def _photo(stem: str) -> str | None:
-        return f"/api/guide/photo/{stem}" if (GUIDE_STATIC_DIR / f"{stem}.png").is_file() else None
-
-    guidance = labeling_guidance_for(klass, lang)
-    confus = [
-        {"class": c, "name": class_display_name(c, lang), "photo_url": _photo(c)}
-        for c in confusables_for(klass)
-    ]
-    return JSONResponse(content={
-        "suggested": {
-            "class": klass,
-            "name": class_display_name(klass, lang),
-            "photo_url": _photo("botrytis" if klass == "gray_mold_botrytis" else klass),
-        },
-        "pass": guidance["pass"],
-        "drop": guidance["drop"],
-        "confusables": confus,
-    })
-
-
-@api_router.get("/label/image/{candidate_id}")
-async def label_image(candidate_id: int, request: Request):
-    _require_labeling_session(request)
-    path = await _run(labeling.image_path_for, candidate_id)
-    if path is None:
-        raise HTTPException(status_code=404, detail="candidate image not found")
-    return _cached_image_response(
-        request, path, media_type="image/jpeg", cache_control="private, max-age=600",
-    )
 
 
 app.include_router(api_router, prefix="/api")

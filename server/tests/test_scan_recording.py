@@ -132,19 +132,18 @@ def test_stored_image_exif_stripped_and_downscaled(client, recdb):
 
 
 def test_common_class_auto_yes_sampled_out(client, recdb, monkeypatch):
-    # healthy has target 0 (common) → confident scans honour the keep rate
+    # healthy is the abundant easy class → confident scans honour the keep rate
     monkeypatch.setattr(server_main, "pipeline", ConfidentPipeline("healthy", 0.97))
     monkeypatch.setattr(server_main, "SCAN_COMMON_KEEP_RATE", 0.0)
-    monkeypatch.setattr(server_main, "LABELING_TARGETS", {"healthy": 0})
     _analyze(client, _jpeg())
     assert _rows() == []
 
 
-def test_weak_class_always_kept_despite_zero_keep_rate(client, recdb, monkeypatch):
+def test_disease_class_always_kept_despite_zero_keep_rate(client, recdb, monkeypatch):
+    # every disease class is high-value training signal → never sampled out
     monkeypatch.setattr(
         server_main, "pipeline", ConfidentPipeline("gray_mold_botrytis", 0.97))
     monkeypatch.setattr(server_main, "SCAN_COMMON_KEEP_RATE", 0.0)
-    monkeypatch.setattr(server_main, "LABELING_TARGETS", {"gray_mold_botrytis": 400})
     _analyze(client, _jpeg())
     rows = _rows()
     assert len(rows) == 1 and rows[0]["status"] == "auto_yes"

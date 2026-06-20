@@ -29,7 +29,9 @@ landed: **leaf_scorch precision 0.71→0.774**, gray_mold eval n 71→91.
 - [x] Community nearby-scans feed + second opinions, progression tracking
 - [x] Species ID (PlantNet) as a Home headline feature
 - [x] Disease guide with example photos, pet-toxicity warnings
-- [x] Anonymized scan recording + feedback → human labeling queue (consent-gated)
+- [x] Anonymized scan recording + feedback collection (consent-gated); value-driven
+      keep gate (uncertain + all disease classes kept) + offline data export
+      (`server/tools/export_data.py`) — the human admin review queue was removed
 - [x] GDPR export/delete; privacy page
 - [x] Per-run model card: per-class CIs, int8 paired-bootstrap, latency/size benchmark
 
@@ -50,8 +52,8 @@ landed: **leaf_scorch precision 0.71→0.774**, gray_mold eval n 71→91.
       houseplant positives, don't just hit the count.
 - [ ] **INT8 regressed on v3** (paired-bootstrap significantly worse → shipped FP32
       87.3 MB) — investigate static-quant / per-channel before reclaiming the 4× size win
-- [ ] Fold human-verified production feedback/scans into the next dataset version
-      (the only non-proxy rows; weak classes first)
+- [ ] Fold offline-judged production scans/feedback into the next dataset version
+      (export via `tools/export_data.py` → vision-agent judge; weak classes first)
 
 ## Differentiators — keep 🛡️
 
@@ -81,5 +83,5 @@ add nothing structural yet).
 - **No new disease classes** until the scorch/nutrient boundary is stable.
 - **Stay free + honest** — the product *is* calibrated, OOD-aware, free diagnosis.
 - **Data loop is local** — collect/judge offline → Kaggle supplement → the notebook
-  pulls it directly; the server only records production scans + feedback for human
-  review (`DATASET_LABELING_PLAN.md`).
+  pulls it directly; the server only records production scans + feedback for offline
+  export + judging (`DATASET_LABELING_PLAN.md`).

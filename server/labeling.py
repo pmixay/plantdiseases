@@ -1,46 +1,33 @@
 """
-Human data-labeling store + session auth.
+Anonymized production-scan + feedback collection store.
 
-A "Tinder-style" admin tool fed from two prioritised sources: user feedback
-(``source='user_feedback'``, top priority) and recorded anonymized user scans
-(``source='user_scan'``, deferred last). Confident scans are auto-accepted
-(``auto_yes``) by ``route_scan`` at record time; admins verify the uncertain
-tail (yes / no / not_sure) from the app. See ``docs/DATASET_LABELING_PLAN.md``
-for the why and the anonymization/GDPR guarantees this operationalises.
+Records every kept ``/api/analyze`` scan (``source='user_scan'``) and the
+false-positive corrections folded back from feedback (``source='user_feedback'``)
+into one SQLite table, with the model's own prediction kept as a weak label
+prior. There is **no** human admin review queue — the maintainer exports this
+store (``tools/export_data.py``) and judges the images offline with the same
+vision-agent that grades scraped images. See ``docs/DATASET_LABELING_PLAN.md``.
 
-Storage mirrors ``feedback.py`` / ``community.py`` exactly: a module-level
-``_write_lock`` (RLock) serialises writers, short-lived WAL connections, an
-idempotent ``init_db`` and ``INSERT OR IGNORE`` for idempotency. Concurrency
-across multiple admins is handled by an atomic claim/lease (``claim_next``):
-the SELECT+UPDATE runs inside one held write lock so two admins can never claim
-the same card, and abandoned claims requeue after a lease TTL.
-
-Auth is a single shared admin password (no per-admin identity) exchanged for a
-stateless HMAC-signed session token. The token's ``session_id`` is an ephemeral
-value used ONLY for claim de-duplication, never for attribution.
+Storage mirrors ``feedback.py`` / ``community.py``: a module-level ``_write_lock``
+(RLock) serialises writers, short-lived WAL connections, an idempotent
+``init_db`` and ``INSERT OR IGNORE`` for idempotency. The only user linkage is
+the response ``scan_id`` (the user↔scan_id join lives solely in feedback.db,
+swept by the GDPR delete cascade).
 """
 
 from __future__ import annotations
 
-import hmac
 import json
-import secrets
 import sqlite3
 import threading
 import time
-from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
 
 try:  # package vs. script import (mirrors main.py / feedback.py)
-    from .config import get_int, get_str
+    from .config import get_str
 except ImportError:  # pragma: no cover - exercised only in script mode
-    from config import get_int, get_str
-
-try:
-    from .feedback import hash_client_ip
-except ImportError:  # pragma: no cover
-    from feedback import hash_client_ip
+    from config import get_str
 
 
 # ── Paths & config ──────────────────────────────────────────────────
@@ -62,29 +49,8 @@ def phash_bytes(body: bytes) -> str | None:
     except Exception:  # noqa: BLE001
         return None
 
-# Authentication / session
-_SESSION_TTL = get_int("LABELING_SESSION_TTL_SECONDS", 28800)  # 8h
-_CLAIM_LEASE = get_int("LABELING_CLAIM_LEASE_SECONDS", 900)  # 15m
-_LOGIN_MAX_ATTEMPTS = get_int("LABELING_LOGIN_MAX_ATTEMPTS", 10)
-_LOGIN_WINDOW = get_int("LABELING_LOGIN_WINDOW_SECONDS", 300)
-
-
-def _admin_password() -> str:
-    """Read live so tests / config reloads see changes without re-import."""
-    return get_str("LABELING_ADMIN_PASSWORD", "")
-
-
-def _session_secret() -> bytes:
-    """HMAC signing key. A blank config value falls back to a per-process
-    random secret (sessions then don't survive a restart — acceptable)."""
-    configured = get_str("LABELING_SESSION_SECRET", "")
-    if configured:
-        return configured.encode()
-    return _PROCESS_SECRET
-
-
-_PROCESS_SECRET = secrets.token_bytes(32)
-
+# Legacy human-verdict statuses — no new rows take these (the admin queue was
+# removed), but existing DBs may carry them so mark_feedback still guards them.
 VERDICTS = ("yes", "no", "not_sure")
 
 
@@ -111,15 +77,6 @@ CREATE TABLE IF NOT EXISTS candidates (
 CREATE UNIQUE INDEX IF NOT EXISTS ux_candidates_sha ON candidates(sha);
 CREATE INDEX IF NOT EXISTS ix_candidates_class_status ON candidates(class, status);
 CREATE INDEX IF NOT EXISTS ix_candidates_claim ON candidates(status, claimed_at);
-
-CREATE TABLE IF NOT EXISTS verdicts (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    candidate_id INTEGER NOT NULL,
-    verdict      TEXT    NOT NULL,
-    session_id   TEXT,
-    created_at   INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS ix_verdicts_candidate ON verdicts(candidate_id);
 """
 
 
@@ -377,270 +334,3 @@ def existing_phashes() -> list[str]:
                 "SELECT phash FROM candidates WHERE phash IS NOT NULL"
             ).fetchall()
         ]
-
-
-# ── Claim / lease (the concurrency core) ────────────────────────────
-def requeue_expired_claims(lease_seconds: int = _CLAIM_LEASE) -> int:
-    """Return abandoned ``claimed`` rows to ``pending`` once their lease lapses."""
-    init_db()
-    cutoff = int(time.time()) - int(lease_seconds)
-    with _write_lock, _connect() as conn:
-        cur = conn.execute(
-            "UPDATE candidates SET status='pending', claimed_by_session=NULL, "
-            "claimed_at=NULL WHERE status='claimed' AND claimed_at < ?",
-            (cutoff,),
-        )
-        return int(cur.rowcount or 0)
-
-
-# `?source=` group filters for claim_next / the admin UI chips.
-SOURCE_GROUPS = ("feedback", "scans")
-
-
-def claim_next(
-    session_id: str, count: int,
-    classes: list[str] | None = None, lease_seconds: int = _CLAIM_LEASE,
-    source: str | None = None,
-) -> list[dict]:
-    """Atomically lease up to ``count`` pending cards for this session.
-
-    Cards come from two groups served in priority order — user feedback first,
-    recorded user scans deferred last. ``classes`` (a single chosen class, or
-    list) narrows the pool; ``source`` ('feedback'|'scans') restricts to one
-    group; ``None`` = both groups in priority order.
-    """
-    init_db()
-    count = max(1, min(int(count), 100))
-    now = int(time.time())
-    with _write_lock, _connect() as conn:
-        # lazy reclaim first so a fresh request can re-serve abandoned cards
-        conn.execute(
-            "UPDATE candidates SET status='pending', claimed_by_session=NULL, "
-            "claimed_at=NULL WHERE status='claimed' AND claimed_at < ?",
-            (now - int(lease_seconds),),
-        )
-        params: list = []
-        feedback_pred = "source='user_feedback'"
-        scans_pred = "source='user_scan'"
-        if source == "feedback":
-            where = feedback_pred
-        elif source == "scans":
-            where = scans_pred
-        else:
-            where = f"({feedback_pred} OR {scans_pred})"
-        if classes:
-            wanted = [classes] if isinstance(classes, str) else list(classes)
-            ph = ",".join("?" * len(wanted))
-            where = f"({where}) AND class IN ({ph})"
-            params += wanted
-        rows = conn.execute(
-            f"SELECT id FROM candidates WHERE status='pending' AND {where} "
-            "ORDER BY CASE source WHEN 'user_feedback' THEN 0 "
-            "                     WHEN 'user_scan' THEN 2 ELSE 1 END, "
-            "created_at LIMIT ?",
-            (*params, count),
-        ).fetchall()
-        ids = [int(r["id"]) for r in rows]
-        if not ids:
-            return []
-        idph = ",".join("?" * len(ids))
-        conn.execute(
-            f"UPDATE candidates SET status='claimed', claimed_by_session=?, claimed_at=? "
-            f"WHERE id IN ({idph}) AND status='pending'",
-            (session_id, now, *ids),
-        )
-        claimed = conn.execute(
-            f"SELECT id, class, source, source_url, model_pred, model_conf, model_set, "
-            f"feedback_note, user_correct, audit "
-            f"FROM candidates WHERE id IN ({idph}) "
-            "ORDER BY CASE source WHEN 'user_feedback' THEN 0 "
-            "                     WHEN 'user_scan' THEN 2 ELSE 1 END, created_at",
-            ids,
-        ).fetchall()
-        out = []
-        for r in claimed:
-            try:
-                mset = json.loads(r["model_set"]) if r["model_set"] else []
-            except Exception:  # noqa: BLE001
-                mset = []
-            out.append({
-                "id": int(r["id"]),
-                "class": r["class"],
-                "suggested_class": r["class"],
-                "source": r["source"],
-                "source_url": r["source_url"],
-                "image_url": f"/api/label/image/{int(r['id'])}",
-                "model_pred": r["model_pred"],
-                "model_conf": r["model_conf"],
-                "model_set": mset,
-                # user-feedback context (None for dataset/scan cards): lets the
-                # admin card show "user proposed X / model said Y" + the note.
-                "scan_feedback": (
-                    None if r["user_correct"] is None else bool(r["user_correct"])
-                ),
-                "feedback_note": r["feedback_note"],
-                # audit=true ⇒ this is a spot-check of a confident model call.
-                "audit": bool(r["audit"]),
-            })
-        return out
-
-
-def record_verdicts(session_id: str, items: list[tuple[int, str]]) -> int:
-    """Resolve only the caller's still-claimed cards. Returns rows applied."""
-    init_db()
-    now = int(time.time())
-    applied = 0
-    with _write_lock, _connect() as conn:
-        for cid, verdict in items:
-            if verdict not in VERDICTS:
-                continue
-            cur = conn.execute(
-                "UPDATE candidates SET status=? WHERE id=? AND claimed_by_session=? "
-                "AND status='claimed'",
-                (verdict, int(cid), session_id),
-            )
-            if cur.rowcount:
-                conn.execute(
-                    "INSERT INTO verdicts (candidate_id, verdict, session_id, created_at) "
-                    "VALUES (?,?,?,?)",
-                    (int(cid), verdict, session_id, now),
-                )
-                applied += 1
-    return applied
-
-
-def image_path_for(candidate_id: int) -> Path | None:
-    with _connect() as conn:
-        row = conn.execute(
-            "SELECT image_path FROM candidates WHERE id=?", (int(candidate_id),)
-        ).fetchone()
-    if not row:
-        return None
-    p = LABELING_IMG_DIR / row["image_path"]
-    return p if p.is_file() else None
-
-
-# ── Stats ───────────────────────────────────────────────────────────
-def stats(targets: dict[str, int]) -> dict:
-    """Per-class merged counts (train/val split is deferred) + goal + satisfied."""
-    init_db()
-    with _connect() as conn:
-        rows = conn.execute(
-            "SELECT class, status, COUNT(*) AS n FROM candidates GROUP BY class, status"
-        ).fetchall()
-    grid: dict[str, dict[str, int]] = {}
-    for r in rows:
-        grid.setdefault(r["class"], {})[r["status"]] = int(r["n"])
-    per_class: dict[str, dict] = {}
-    totals = {"validated": 0, "pending": 0, "target": 0}
-    for cls, target in targets.items():
-        t = int(target or 0)
-        g = grid.get(cls, {})
-        auto_yes = g.get("auto_yes", 0)
-        human_yes = g.get("yes", 0)
-        validated = auto_yes + human_yes
-        pending = g.get("pending", 0)
-        per_class[cls] = {
-            "weight": t,
-            "validated": validated,        # approved = model auto-accept + human yes
-            "auto_yes": auto_yes,          # model-trusted
-            "human_yes": human_yes,        # human-confirmed (the confusing tail)
-            "pending": pending,            # confusing, awaiting a human
-            "claimed": g.get("claimed", 0),
-            "auto_no": g.get("auto_no", 0),
-            "no": g.get("no", 0),
-            "not_sure": g.get("not_sure", 0),
-            "satisfied": (t > 0 and validated >= t),
-            "remaining": max(t - validated, 0),
-        }
-        totals["validated"] += validated
-        totals["pending"] += pending
-        totals["target"] += t
-    # Additive per-source-group block (feedback / scans). The pre-existing
-    # shape above is unchanged for Android back-compat.
-    with _connect() as conn:
-        srows = conn.execute(
-            "SELECT CASE source WHEN 'user_feedback' THEN 'feedback' "
-            "                   WHEN 'user_scan' THEN 'scans' END AS grp, "
-            "status, COUNT(*) AS n FROM candidates "
-            "WHERE source IN ('user_feedback','user_scan') GROUP BY grp, status"
-        ).fetchall()
-    sources: dict[str, dict[str, int]] = {
-        g: {"pending": 0, "claimed": 0, "resolved": 0} for g in SOURCE_GROUPS
-    }
-    for r in srows:
-        g = sources.setdefault(
-            r["grp"], {"pending": 0, "claimed": 0, "resolved": 0}
-        )
-        if r["status"] in ("pending", "claimed"):
-            g[r["status"]] += int(r["n"])
-        else:
-            g["resolved"] += int(r["n"])
-    return {
-        "per_class": per_class,
-        "totals": totals,
-        "sources": sources,
-        "feedback_pending": sources["feedback"]["pending"],
-        "scan_pending": sources["scans"]["pending"],
-    }
-
-
-# ── Login throttle (mirror main.py abuse machinery, kept local) ─────
-_login_lock = threading.Lock()
-_login_attempts: dict[str, tuple[float, int]] = {}  # ip_hash -> (window_reset, count)
-
-
-def login_allowed(client_ip: str | None) -> bool:
-    """Token-bucket-ish login throttle by hashed IP. False ⇒ over limit (429)."""
-    ident = hash_client_ip(client_ip) or "unknown"
-    now = time.time()
-    with _login_lock:
-        reset, count = _login_attempts.get(ident, (now + _LOGIN_WINDOW, 0))
-        if now > reset:
-            reset, count = now + _LOGIN_WINDOW, 0
-        count += 1
-        _login_attempts[ident] = (reset, count)
-        return count <= _LOGIN_MAX_ATTEMPTS
-
-
-# ── Session auth (shared password → stateless signed token) ─────────
-def feature_enabled() -> bool:
-    try:
-        from .config import get_bool
-    except ImportError:  # pragma: no cover
-        from config import get_bool
-    return get_bool("LABELING_ENABLED", True)
-
-
-def verify_admin_password(supplied: str | None) -> bool:
-    pw = _admin_password()
-    if not pw or not feature_enabled():
-        return False  # blank password / disabled feature ⇒ no access
-    return hmac.compare_digest((supplied or "").encode(), pw.encode())
-
-
-def _sign(payload: str) -> str:
-    return hmac.new(_session_secret(), payload.encode(), sha256).hexdigest()
-
-
-def issue_session_token() -> tuple[str, int]:
-    sid = secrets.token_urlsafe(16)
-    exp = int(time.time()) + _SESSION_TTL
-    payload = f"{sid}.{exp}"
-    return f"{payload}.{_sign(payload)}", exp
-
-
-def verify_session_token(token: str | None) -> str | None:
-    """Return the session_id if the token is well-formed, unexpired and signed."""
-    if not token or token.count(".") != 2:
-        return None
-    sid, exp, sig = token.split(".")
-    payload = f"{sid}.{exp}"
-    if not hmac.compare_digest(sig, _sign(payload)):
-        return None
-    try:
-        if int(exp) < int(time.time()):
-            return None
-    except ValueError:
-        return None
-    return sid
