@@ -515,7 +515,7 @@ INFERENCE_TIMEOUT = get_float("INFERENCE_TIMEOUT", 30.0)
 # someone else's diagnosis. The TTL is 12h — long enough that the same
 # scan re-opened later in the day still hits, short enough that a reship
 # of the model isn't masked by stale verdicts for more than half a day.
-ANALYZE_CACHE_TTL_SECONDS = get_int("ANALYZE_CACHE_TTL_SECONDS", 12 * 3600)
+ANALYZE_CACHE_TTL_SECONDS = get_int("ANALYZE_CACHE_TTL_SECONDS", 24 * 3600)
 ANALYZE_CACHE_MAX_ENTRIES = get_int("ANALYZE_CACHE_MAX_ENTRIES", 512)
 _analyze_cache: "OrderedDict[str, tuple[float, dict]]" = OrderedDict()
 _analyze_cache_lock = threading.Lock()

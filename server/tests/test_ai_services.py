@@ -61,6 +61,35 @@ def test_identify_species_default_organ_is_auto(monkeypatch):
     assert sent["data"] == {"organs": "auto"}
 
 
+def test_lru_ttl_expires_entry():
+    import time
+
+    import ai_services as ai
+
+    c = ai._LRU(4, ttl_seconds=100)
+    c.put("k", "v")
+    assert c.get("k") == "v"
+    with c._lock:                      # force the entry's expiry into the past
+        c._d["k"] = (time.time() - 1, "v")
+    assert c.get("k") is None          # lazily dropped on read
+    assert len(c) == 0
+
+
+def test_chat_session_hardcap_evicts_oldest(monkeypatch):
+    import ai_services as ai
+
+    monkeypatch.setattr(ai, "CHAT_SESSION_MAX_SESSIONS", 2)
+    ai._chat_sessions.clear()
+    for i in range(4):
+        sess = ai._ChatSession(f"s{i}")
+        sess.last_active = 1000.0 + i   # s0 oldest, s3 newest
+        ai._chat_sessions[f"s{i}"] = sess
+    ai._gc_chat_sessions(now=1000.0 + 3)   # within TTL — only the cap trims
+    assert len(ai._chat_sessions) == 2
+    assert set(ai._chat_sessions) == {"s2", "s3"}   # two most-recent survive
+    ai._chat_sessions.clear()
+
+
 def test_chat_reply_no_key_returns_offline_fallback():
     import ai_services as ai
 
