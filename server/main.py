@@ -13,6 +13,7 @@ Stage 2:  MobileNetV3-Large    — distilled student (KD from
 import asyncio
 import contextlib
 import copy
+import functools
 import hashlib
 import io
 import ipaddress
@@ -1671,7 +1672,7 @@ async def _species_identify_best_effort(
                 # keyword-only — run_in_executor only takes positional
                 # args, so we wrap in a lambda. Passing positionally
                 # raises TypeError at call time and surfaces as a 500.
-                lambda: identify_species(image_bytes, organ="leaf", lang=lang),
+                lambda: identify_species(image_bytes, organ="auto", lang=lang),
             ),
             timeout=timeout,
         )
@@ -2503,9 +2504,9 @@ async def identify_endpoint(
     except HTTPException:
         _record_error()
         raise
-    organ = (organ or "leaf").strip().lower()
+    organ = (organ or "auto").strip().lower()
     if organ not in ("leaf", "flower", "fruit", "bark", "habit", "auto"):
-        organ = "leaf"
+        organ = "auto"
     plantnet_lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
     loop = asyncio.get_running_loop()
     result = await loop.run_in_executor(
@@ -3512,24 +3513,17 @@ async def guide_photo(key: str, request: Request):
     )
 
 
-# Cache the model digest by (mtime, size) so we hash the (multi-MB) tflite
-# once per provisioned file instead of on every manifest poll.
-_aqua_sha_cache: dict[tuple, str] = {}
-
-
+# Cache the model digest by (path, mtime, size) so we hash the (multi-MB)
+# tflite once per provisioned file instead of on every manifest poll.
+# lru_cache is thread-safe and bounded (the previous hand-rolled dict had no
+# lock — concurrent manifest polls could interleave on it).
+@functools.lru_cache(maxsize=4)
 def _aqua_model_sha256(path: Path, mtime: float, size: int) -> str:
-    key = (str(path), mtime, size)
-    cached = _aqua_sha_cache.get(key)
-    if cached is not None:
-        return cached
     h = hashlib.sha256()
     with open(path, "rb") as f:
         for chunk in iter(lambda: f.read(1 << 20), b""):
             h.update(chunk)
-    digest = h.hexdigest()
-    _aqua_sha_cache.clear()  # only ever one current model
-    _aqua_sha_cache[key] = digest
-    return digest
+    return h.hexdigest()
 
 
 @api_router.get("/aqua/manifest")

@@ -37,7 +37,7 @@ def test_aqua_manifest_and_model_when_provisioned(client, monkeypatch, tmp_path)
         "inference": {"normalize_mean": [0.485, 0.456, 0.406]},
     }))
     monkeypatch.setattr(server_main, "AQUA_STATIC_DIR", tmp_path)
-    server_main._aqua_sha_cache.clear()
+    server_main._aqua_model_sha256.cache_clear()
 
     m = client.get("/api/aqua/manifest").json()
     assert m["available"] is True

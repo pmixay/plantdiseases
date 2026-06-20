@@ -33,6 +33,34 @@ def test_identify_species_no_key_returns_graceful_state():
     assert out["source"] == "no_api_key"
 
 
+def test_identify_species_default_organ_is_auto(monkeypatch):
+    """PlantNet identifies flower/fruit/leaf/whole-plant itself when organs=auto
+    — forcing 'leaf' on a non-leaf photo is a known wrong-species cause."""
+    import requests
+
+    import ai_services as ai
+
+    monkeypatch.setattr(ai, "PLANTNET_API_KEY", "test-key")
+    sent = {}
+
+    class _Resp:
+        status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"results": [], "remainingIdentificationRequests": 9}
+
+    def _fake_post(url, params=None, files=None, data=None, timeout=None):
+        sent["data"] = data
+        return _Resp()
+
+    monkeypatch.setattr(requests, "post", _fake_post)
+    ai.identify_species(b"\xff\xd8\xfffake-jpeg")  # organ omitted -> default
+    assert sent["data"] == {"organs": "auto"}
+
+
 def test_chat_reply_no_key_returns_offline_fallback():
     import ai_services as ai
 

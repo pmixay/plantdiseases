@@ -126,7 +126,7 @@ def _image_hash(image_bytes: bytes) -> str:
 
 
 def identify_species(
-    image_bytes: bytes, *, organ: str = "leaf", lang: str = "en",
+    image_bytes: bytes, *, organ: str = "auto", lang: str = "en",
 ) -> dict:
     """Identify the plant species via PlantNet.
 
@@ -165,6 +165,9 @@ def identify_species(
         url = f"https://my-api.plantnet.org/v2/identify/{PLANTNET_PROJECT}"
         params = {"api-key": PLANTNET_API_KEY, "lang": lang}
         files = {"images": ("plant.jpg", image_bytes, "image/jpeg")}
+        # organs="auto" lets PlantNet detect the actual organ (flower/fruit/
+        # leaf/whole-plant) — far more accurate than forcing "leaf" on a photo
+        # that is really a bloom or whole plant (PlantNet docs' own guidance).
         data = {"organs": organ}
         r = requests.post(
             url, params=params, files=files, data=data, timeout=PLANTNET_TIMEOUT

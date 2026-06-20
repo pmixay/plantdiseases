@@ -325,12 +325,3 @@ def prune_user_scans(
     return len(doomed)
 
 
-def existing_phashes() -> list[str]:
-    """All stored phashes — seed the in-memory near-dup set before a run."""
-    with _connect() as conn:
-        return [
-            r["phash"]
-            for r in conn.execute(
-                "SELECT phash FROM candidates WHERE phash IS NOT NULL"
-            ).fetchall()
-        ]
