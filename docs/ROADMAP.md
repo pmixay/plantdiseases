@@ -57,8 +57,11 @@ viral-precision dip (eval-slice-confounded). YOLOv8n detector mAP50 0.817.
 - [ ] **gray_mold** — precision improved **0.840→0.888** despite flat supply (232,
       31% conf<0.80, wide CIs at n=94) → production scans remain the real lever.
 - [ ] **aqua student regression (NEW)** — KD val_macroF1 0.838→**0.780**; teacher↔student
-      gap tripled (0.043→0.106). Investigate KD (feature distillation / longer schedule)
-      before relying on the on-device tier.
+      gap tripled (0.043→0.106); on hard real web photos it collapses toward
+      healthy/not_a_plant. **Fix queued for the next run:** feature distillation
+      added to §5 (`KD_BETA=0.5` — cosine-match the student's representation to the
+      teacher's DINOv2 CLS embedding) + clean teacher `eval()` targets, at the same
+      30-epoch budget (no added runtime). Validate the gap closes on the next run.
 - [ ] Fold offline-judged production scans/feedback into the next dataset version
       (export via `tools/export_data.py` → vision-agent judge; weak classes first)
 
