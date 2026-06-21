@@ -319,12 +319,11 @@ def test_crop_nutrient_supplement_train_only():
     make_*_split allowed_sources, or crop imagery would leak into the in-domain
     houseplant eval/cal splits and corrupt the metrics."""
     src = _notebook_source()
-    # CoLeaf is intentionally NOT actively fetched (Mendeley unreachable). The
-    # function may remain as a documented restore-path, but the call is gone so
-    # it can't 403-spam every run.
+    # CoLeaf was removed entirely (Mendeley 403s datacenter IPs incl. Colab, so
+    # it never downloaded). This guards against it being re-added.
     assert "_try_fetch('coleaf_nutrient_deficiency'" not in src, (
-        "CoLeaf must NOT be fetched — Mendeley 403s from Colab; mirror it to "
-        "Kaggle to restore"
+        "CoLeaf must NOT be fetched — it 403s from Colab; mirror it to Kaggle to "
+        "restore"
     )
     # MPLD is the active crop-nutrient supplement, fetched before dedup.
     assert "fetch_mpld_phosphorus_deficiency" in src, "MPLD supplement missing"
@@ -345,24 +344,18 @@ def test_crop_nutrient_supplement_train_only():
         )
 
 
-def test_coleaf_is_downweighted_and_excludes_healthy():
-    """CoLeaf is a CROP-domain supplement: it must be down-weighted in the
-    source-weighted sampler (< 1.0) so it doesn't pull the prior off the
-    houseplant target, and it must import only unambiguous single-nutrient
-    deficiency zips — never the 'healthy' or mixed 'more-deficiencies' zips
-    (which would mislabel the nutrient_deficiency class)."""
+def test_coleaf_removed_entirely():
+    """CoLeaf (Mendeley) was removed: it 403s datacenter IPs (incl. Colab) so it
+    never downloaded. No fetcher, no zip table, no sampler/prior weight may
+    remain — otherwise the dead code/config invites a re-add that 403-spams the
+    run. MPLD (Zenodo) is the surviving crop-nutrient supplement."""
     src = _notebook_source()
-    m = re.search(r"'coleaf'\s*:\s*([0-9.]+)", src)
-    assert m and float(m.group(1)) < 1.0, (
-        "'coleaf' must be down-weighted (<1.0) in SOURCE_WEIGHTS (crop domain gap)"
-    )
-    zips_block = re.search(r"COLEAF_DEFICIENCY_ZIPS\s*=\s*\{.*?\}", src, re.DOTALL)
-    assert zips_block, "COLEAF_DEFICIENCY_ZIPS table missing"
-    lowered = zips_block.group(0).lower()
-    assert "healthy" not in lowered and "more-deficiencies" not in lowered, (
-        "CoLeaf import must exclude healthy / mixed zips — every imported row "
-        "must be an unambiguous single-nutrient deficiency"
-    )
+    assert "def fetch_coleaf" not in src, "the CoLeaf fetcher must be gone"
+    assert "COLEAF_DEFICIENCY_ZIPS" not in src, "the CoLeaf zip table must be gone"
+    assert "_try_fetch('coleaf" not in src, "CoLeaf must never be fetched"
+    assert re.search(r"'coleaf'\s*:", src) is None, "no 'coleaf' SOURCE_WEIGHTS entry"
+    assert "PRIOR_SOURCE_WEIGHTS['coleaf']" not in src, "no 'coleaf' prior weight"
+
 
 
 def test_mpld_supplements_nutrient_deficiency_train_only():
@@ -439,8 +432,8 @@ def test_crop_supplements_capped_to_bound_prior_inflation():
 
 def test_la_prior_decoupled_from_crop_sampler_weight():
     """The logit-adjustment prior must track DEPLOYMENT frequency, not the
-    crop-inflated training count. Crop sources (coleaf, mpld) must enter the
-    LA prior at a SMALLER weight than their 0.5 sampler weight, and the LA
+    crop-inflated training count. The crop source (mpld) must enter the
+    LA prior at a SMALLER weight than its 0.5 sampler weight, and the LA
     prior helper must be fed PRIOR_SOURCE_WEIGHTS (not the raw sampler
     SOURCE_WEIGHTS) — otherwise nutrient_deficiency is treated as a head
     class and suppressed at inference."""
@@ -450,7 +443,7 @@ def test_la_prior_decoupled_from_crop_sampler_weight():
         r"class_priors_from_source_weights\(\s*train_ds,\s*PRIOR_SOURCE_WEIGHTS", src), (
         "the LA prior must be computed from PRIOR_SOURCE_WEIGHTS, not SOURCE_WEIGHTS"
     )
-    for crop in ("coleaf", "mpld"):
+    for crop in ("mpld",):
         m = re.search(rf"PRIOR_SOURCE_WEIGHTS\['{crop}'\]\s*=\s*([0-9.]+)", src)
         assert m and float(m.group(1)) < 0.5, (
             f"PRIOR_SOURCE_WEIGHTS['{crop}'] must be < its 0.5 sampler weight "
