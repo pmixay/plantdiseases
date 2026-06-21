@@ -30,12 +30,13 @@ object ResponseCache {
 
     // Per-entry TTLs. Policy: STABLE content (Wikipedia species blurbs,
     // LLM care plans) refreshes at 7d so server prompt/model/Wikipedia updates
-    // eventually reach cached keys; MOVING content (the trending feed) at 24h.
+    // eventually reach cached keys; the trending feed is short-lived (1h) so
+    // "trending nearby" stays fresh while still sparing repeat onResume fetches.
     // A TTL of 0 (the [put] default) means "never expires" — for any future
     // entry whose value is truly immutable.
     val TTL_SPECIES_MS: Long = TimeUnit.DAYS.toMillis(7)
     val TTL_CARE_PLAN_MS: Long = TimeUnit.DAYS.toMillis(7)
-    val TTL_TRENDING_MS: Long = TimeUnit.HOURS.toMillis(24)
+    val TTL_TRENDING_MS: Long = TimeUnit.HOURS.toMillis(1)
 
     /** On-disk envelope: the cached payload plus when it was stored and how
      *  long it stays fresh. */

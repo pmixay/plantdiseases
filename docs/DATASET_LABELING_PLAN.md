@@ -251,6 +251,38 @@ collection-only v4 plan under-weighted:
    precision **0.875** (was "solved" at 0.97; n=71). Both are small-support drift —
    watch them in the next run before any data action.
 
+### v4 live audit (2026-06-21) — published, not yet trained
+
+`maxayyt5/houseplant-disease-eval-supplement` is now **v4** (live): **1951 rows**
+(was 1825), audited straight from `manifest.csv`. v4 folds in the first
+production signal via the new app-scan → offline-vision-judge loop, plus
+keyless multi-engine sourcing (`engine ∈ ddg_*/openverse/local`).
+
+| class | role | v3 → v4 | v4 target | verdict |
+|---|---|---|---|---|
+| `gray_mold_botrytis` | positive | 228 → **232** | ≥250 | ⚠️ **18 short** ("open-web supply ceiling") **and still 31% conf<0.80** — the quality gap is unaddressed |
+| `nutrient_deficiency` | positive | 402 → 409 | de-noise + negatives | ✅ positives held; fix is in the negatives |
+| `leaf_scorch_underwatering` | positive | 406 → 406 | hold | ✅ held, as planned |
+| `healthy` | hard_negative | 414 → **528** | + boundary | ⚠️ +114, but only **+31 boundary** (166 total); +57 was *generic* — the disambiguating intent is only partly realized |
+| `not_a_plant` | hard_negative | 375 → 376 | keep | ✅ |
+
+**Quality gates — MET:** domain gate clean (1575 houseplant / 376 not_a_plant,
+**no field_crop**), pHash 0 collisions, all `agent_vision`.
+
+**Production loop — proven, small:** **73 `local` rows** (folded-in user scans +
+legacy), **median conf 0.90** (cleaner than the scraped weak-class rows), but 66/73
+are `healthy` — only 1 `gray_mold`, 5 `nutrient`. Early scans skew healthy, as
+expected.
+
+**Watch-items when v4 trains (the two weak classes may move less than hoped):**
+- **gray_mold** got only +4 rows at the *same* 31%-low-conf profile → its CIs
+  won't tighten much. The real lever is **production gray_mold scans**; the
+  value-driven scan gate already always-keeps every disease class, so prioritise
+  surfacing gray_mold scans in the next export.
+- **nutrient precision** rests on only **+31 boundary** negatives (the rest of the
+  healthy growth is generic) → expect a modest, not large, precision lift.
+
+
 > **Training-time use (v2.6):** the supplement is pulled directly by
 > `train_notebook.ipynb` §2 (`fetch_kaggle_supplement`, source `supplement`) and
 > is **eval-eligible** — a held-out fraction seeds `val_realworld` /
