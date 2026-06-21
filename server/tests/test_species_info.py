@@ -24,6 +24,23 @@ def _clear_cache():
     species_info._cache.clear()
 
 
+def test_cache_evicts_oldest_not_flush_all(monkeypatch):
+    """At the cap the cache drops the single oldest entry (LRU), it does NOT
+    flush everything (the old flush-all thrashed under many species in flight)."""
+    monkeypatch.setattr(species_info, "_CACHE_MAX", 3)
+    monkeypatch.setattr(species_info, "_fetch", lambda name, lang: {"title": name, "lang": lang})
+    for nm in ("Aaa", "Bbb", "Ccc"):
+        species_info.fetch_species_info(nm, "en")
+    assert len(species_info._cache) == 3
+    # touch the oldest so it's no longer the LRU victim
+    species_info.fetch_species_info("Aaa", "en")
+    species_info.fetch_species_info("Ddd", "en")           # cap exceeded -> evict 1
+    assert len(species_info._cache) == 3                   # not flushed to 0/1
+    assert ("bbb", "en") not in species_info._cache        # oldest-untouched evicted
+    assert ("aaa", "en") in species_info._cache            # recently touched survives
+    assert ("ddd", "en") in species_info._cache
+
+
 class _FakeResp:
     def __init__(self, status_code=200, payload=None):
         self.status_code = status_code

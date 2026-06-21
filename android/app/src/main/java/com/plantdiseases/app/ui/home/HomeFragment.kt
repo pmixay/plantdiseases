@@ -170,11 +170,20 @@ class HomeFragment : Fragment() {
         val appContext = requireContext().applicationContext
         viewLifecycleOwner.lifecycleScope.launch {
             val region = runCatching { RegionResolver.resolveRegion(appContext) }.getOrNull()
-            val trending = runCatching {
-                app.apiClient.apiService.communityTrending(
-                    country = region?.country, region = region?.locality,
-                ).body()
-            }.getOrNull()
+            // Trending is a "moving" feed — cache it 24h (ResponseCache policy) so
+            // every Home onResume doesn't re-hit the network for the same region.
+            val cacheKey = "trending:v1:${region?.country.orEmpty()}|${region?.locality.orEmpty()}"
+            val trending = com.plantdiseases.app.util.ResponseCache
+                .get(cacheKey, TrendingResponse::class.java)
+                ?: runCatching {
+                    app.apiClient.apiService.communityTrending(
+                        country = region?.country, region = region?.locality,
+                    ).body()
+                }.getOrNull()?.also {
+                    com.plantdiseases.app.util.ResponseCache.put(
+                        cacheKey, it, com.plantdiseases.app.util.ResponseCache.TTL_TRENDING_MS,
+                    )
+                }
             val b = _binding ?: return@launch
             if (trending == null) {
                 b.sectionSpecies.visibility = View.GONE

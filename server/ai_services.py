@@ -56,6 +56,9 @@ PLANTNET_PROJECT = get_str("PLANTNET_PROJECT", "all")
 # the daily budget on a single bad actor.
 PLANTNET_TIMEOUT = get_float("PLANTNET_TIMEOUT", 8.0)
 PLANTNET_CACHE_SIZE = get_int("PLANTNET_CACHE_SIZE", 256)
+# Stable content (a species ID for a fixed image) — 7-day TTL so a PlantNet
+# model update / reclassification eventually refreshes instead of forever.
+PLANTNET_CACHE_TTL_SECONDS = get_int("PLANTNET_CACHE_TTL_SECONDS", 7 * 24 * 3600)
 
 # OpenRouter chat backend (single provider so one key gates many models).
 OPENROUTER_API_KEY = get_str("OPENROUTER_API_KEY", "").strip()
@@ -76,6 +79,9 @@ CHAT_SESSION_MAX_MESSAGES = get_int("CHAT_SESSION_MAX_MESSAGES", 60)
 # How many recent messages we forward to the LLM each turn. Keeps the
 # context window predictable independent of total session history.
 CHAT_HISTORY_KEEP_LAST = get_int("CHAT_HISTORY_KEEP_LAST", 12)
+# Hardcap on live sessions: a client spamming unique session_ids must not grow
+# the map unbounded between the per-turn TTL sweeps.
+CHAT_SESSION_MAX_SESSIONS = get_int("CHAT_SESSION_MAX_SESSIONS", 10000)
 
 
 def _chat_api_key_present() -> bool:
@@ -86,27 +92,32 @@ def _chat_api_key_present() -> bool:
 
 
 class _LRU:
-    """Tiny thread-safe LRU. Keeps the dependency surface to stdlib only."""
+    """Tiny thread-safe LRU with an optional per-cache TTL. Stdlib only."""
 
-    def __init__(self, maxsize: int):
+    def __init__(self, maxsize: int, ttl_seconds: float | None = None):
         self.maxsize = max(1, int(maxsize))
-        self._d: OrderedDict[str, Any] = OrderedDict()
+        self.ttl = float(ttl_seconds) if ttl_seconds else None
+        self._d: OrderedDict[str, tuple[float, Any]] = OrderedDict()
         self._lock = threading.Lock()
 
     def get(self, key: str) -> Any | None:
         with self._lock:
-            v = self._d.get(key)
-            if v is not None:
-                self._d.move_to_end(key)
-            return v
+            item = self._d.get(key)
+            if item is None:
+                return None
+            expiry, value = item
+            if self.ttl is not None and expiry <= time.time():
+                del self._d[key]          # lazily drop the stale entry
+                return None
+            self._d.move_to_end(key)
+            return value
 
     def put(self, key: str, value: Any) -> None:
+        expiry = (time.time() + self.ttl) if self.ttl else 0.0
         with self._lock:
             if key in self._d:
                 self._d.move_to_end(key)
-                self._d[key] = value
-                return
-            self._d[key] = value
+            self._d[key] = (expiry, value)
             while len(self._d) > self.maxsize:
                 self._d.popitem(last=False)
 
@@ -115,7 +126,7 @@ class _LRU:
             return len(self._d)
 
 
-_PLANTNET_CACHE = _LRU(PLANTNET_CACHE_SIZE)
+_PLANTNET_CACHE = _LRU(PLANTNET_CACHE_SIZE, PLANTNET_CACHE_TTL_SECONDS)
 
 
 # ── PlantNet species identification ─────────────────────────────────
@@ -126,7 +137,7 @@ def _image_hash(image_bytes: bytes) -> str:
 
 
 def identify_species(
-    image_bytes: bytes, *, organ: str = "leaf", lang: str = "en",
+    image_bytes: bytes, *, organ: str = "auto", lang: str = "en",
 ) -> dict:
     """Identify the plant species via PlantNet.
 
@@ -165,6 +176,9 @@ def identify_species(
         url = f"https://my-api.plantnet.org/v2/identify/{PLANTNET_PROJECT}"
         params = {"api-key": PLANTNET_API_KEY, "lang": lang}
         files = {"images": ("plant.jpg", image_bytes, "image/jpeg")}
+        # organs="auto" lets PlantNet detect the actual organ (flower/fruit/
+        # leaf/whole-plant) — far more accurate than forcing "leaf" on a photo
+        # that is really a bloom or whole plant (PlantNet docs' own guidance).
         data = {"organs": organ}
         r = requests.post(
             url, params=params, files=files, data=data, timeout=PLANTNET_TIMEOUT
@@ -399,6 +413,14 @@ def _gc_chat_sessions(now: float) -> None:
     ]
     for sid in stale:
         del _chat_sessions[sid]
+    # Hardcap even within TTL: evict the least-recently-active beyond the cap
+    # so a flood of unique session_ids can't OOM the process before the sweep.
+    over = len(_chat_sessions) - CHAT_SESSION_MAX_SESSIONS
+    if over > 0:
+        for sid in sorted(
+            _chat_sessions, key=lambda s: _chat_sessions[s].last_active
+        )[:over]:
+            del _chat_sessions[sid]
 
 
 _DIAG_TOKEN_RE = re.compile(r"^[a-z][a-z0-9_]{0,40}(:[a-z0-9_]{1,40})?$")
@@ -585,8 +607,9 @@ def chat_metrics_snapshot() -> dict:
 # list, so the section is never empty.
 
 SPECIES_DISEASES_CACHE_SIZE = get_int("SPECIES_DISEASES_CACHE_SIZE", 256)
+SPECIES_DISEASES_CACHE_TTL_SECONDS = get_int("SPECIES_DISEASES_CACHE_TTL_SECONDS", 7 * 24 * 3600)
 SPECIES_DISEASES_MAX_TOKENS = get_int("SPECIES_DISEASES_MAX_TOKENS", 400)
-_SPECIES_DISEASES_CACHE = _LRU(SPECIES_DISEASES_CACHE_SIZE)
+_SPECIES_DISEASES_CACHE = _LRU(SPECIES_DISEASES_CACHE_SIZE, SPECIES_DISEASES_CACHE_TTL_SECONDS)
 
 # Disease-guide keys the Android client can deep-link (mirrors the app's
 # DiseaseCatalog). The model may tag an item with one of these; anything

@@ -66,7 +66,24 @@ The production artefact is an ONNX graph and the runtime is
 **architecture-neutral** — it serves whatever backbone+head the shipped
 bundle declares (`classes.json -> architecture`):
 
-- **v2.6.5 (current, `gamma`; trained on dataset supplement v3):** same recipe
+- **v2.6.6 (latest run, `gamma`; trained on dataset supplement v4 — ship-pending):**
+  same recipe as v2.6.5, retrained on **eval-supplement v4** (1951 rows: nutrient
+  disambiguating negatives + the first offline-judged production scans) with the
+  train-source de-crop landed (rice `kaggle_nutrient` + CoLeaf removed, COCO
+  not_a_plant trimmed). `val_realworld` (n=2150): disease macro-F1 **0.861** (flat
+  vs v2.6.5, within noise). **INT8 reclaimed** — this run's INT8 *beat* FP32
+  (+0.0057, paired-bootstrap CI [−0.003, +0.014], n.s.), so it ships
+  `classifier_int8.onnx` (22.5 MB) → 130 MB bundle, recovering the 4× size win.
+  Mixed weak-class result: powdery P **0.875→0.939**, gray_mold precision
+  **0.840→0.888**, but **leaf_scorch regressed** (F1 0.805→0.719 — v4's generic
+  healthy negatives over-corrected) and viral precision dipped (0.954→0.814,
+  eval-slice-confounded). Calibration: T=0.843, RAPS α=0.2 → coverage 0.984, set
+  size 1.89. **Aqua student regressed** (KD val-macroF1 0.838→0.780; on hard real
+  web photos it collapses toward healthy/not_a_plant — see the integrity probe).
+  **Caveats:** the exported artifact's `classes.json` still reads `model_version
+  2.6.5` (the version constant was bumped to 2.6.6 *after* this export — re-export
+  before shipping), and ship is pending the leaf_scorch fix (v5).
+- **v2.6.5 (`gamma`; trained on dataset supplement v3):** same recipe
   as v2.6.x, retrained on **eval-supplement v3** (1825 rows: hard houseplant-
   domain gate, boundary hard-negatives for the over-triggering classes, gray_mold
   backfill 120→228 — see `docs/DATASET_LABELING_PLAN.md`). Headline `val_realworld`

@@ -15,6 +15,7 @@ import logging
 import threading
 import time
 import urllib.parse
+from collections import OrderedDict
 
 logger = logging.getLogger("plantdiseases.species_info")
 
@@ -26,8 +27,10 @@ _USER_AGENT = (
 )
 _ALLOWED_LANGS = {"en", "ru"}
 
-# (lower-name, lang) -> (expiry_epoch, payload_or_None)
-_cache: dict[tuple[str, str], tuple[float, dict | None]] = {}
+# (lower-name, lang) -> (expiry_epoch, payload_or_None). OrderedDict so we
+# evict the single oldest entry at the cap instead of flushing the whole
+# cache (which thrashed under many distinct species in flight).
+_cache: "OrderedDict[tuple[str, str], tuple[float, dict | None]]" = OrderedDict()
 _lock = threading.Lock()
 
 
@@ -50,6 +53,7 @@ def fetch_species_info(scientific_name: str | None, lang: str = "en") -> dict | 
     with _lock:
         hit = _cache.get(key)
         if hit and hit[0] > now:
+            _cache.move_to_end(key)
             return hit[1]
 
     payload = _fetch(name, lang)
@@ -91,9 +95,10 @@ def fetch_species_info(scientific_name: str | None, lang: str = "en") -> dict | 
             }
 
     with _lock:
-        if len(_cache) >= _CACHE_MAX:
-            _cache.clear()
         _cache[key] = (now + _CACHE_TTL_S, payload)
+        _cache.move_to_end(key)
+        while len(_cache) > _CACHE_MAX:
+            _cache.popitem(last=False)
     return payload
 
 
