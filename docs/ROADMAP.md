@@ -8,12 +8,15 @@ now; this stays an internal/beta build. Companions: `DATASET_LABELING_PLAN.md`
 
 ## Where we are
 
-Model **v2.6.5 `gamma`** shipped (frozen DINOv2 ViT-S/14 + LoRA + MLP head),
-trained on **dataset supplement v3**; on-device **`aqua`** TFLite student
-(1.71 MB), YOLOv8n leaf detector (mAP50 0.814). `val_realworld` (n=2334): disease
-macro-F1 **0.865**, overall accuracy **91.9%**, healthy-bias 0.97 — ship gate
-passed. Shipped **FP32** (INT8 regressed this run). The v3 precision-hardening
-landed: **leaf_scorch precision 0.71→0.774**, gray_mold eval n 71→91.
+Last shipped: **v2.6.5 `gamma`** (frozen DINOv2 ViT-S/14 + LoRA + MLP head,
+supplement v3). **Latest run: v2.6.6** (supplement v4) — ship gate passed
+(`val_realworld` n=2150, disease macro-F1 **0.861** vs v2.6.5's 0.865, flat
+within noise) and **INT8 now ships** (it beat FP32 this run: +0.0057, n.s.) →
+**130 MB bundle / 22.5 MB classifier**, reclaiming the 4× size win v2.6.5 lost.
+But it's a **lateral move**: powdery F1 0.881→**0.939** and gray_mold precision
+0.840→**0.888**, offset by a **leaf_scorch regression** (F1 0.805→0.719) and a
+viral-precision dip (eval-slice-confounded). YOLOv8n detector mAP50 0.817.
+**Ship decision pending** — see "Model / data — next".
 
 9 classes: `gray_mold_botrytis`, `healthy`, `leaf_spot`, `not_a_plant`, `pests`,
 `powdery_mildew`, `viral_disease`, `leaf_scorch_underwatering`,
@@ -37,21 +40,25 @@ landed: **leaf_scorch precision 0.71→0.774**, gray_mold eval n 71→91.
 
 ## Model / data — next ⏳
 
-- [x] **Train on supplement v3** → shipped as **v2.6.5** (`val_realworld` n=2334)
-- [x] **leaf_scorch precision** — v3 boundary negatives held: **0.71 → 0.774**
-      (≥ 0.75 target met; over-trigger 1.21×→1.08×)
-- [ ] **nutrient_deficiency precision** — still the laggard (P **0.743**, over-triggers
-      1.21×) → more scorch↔nutrient / healthy↔nutrient disambiguating negatives. Also a
-      **train-source fix landed** (2026-06-19 audit): the 200 rice field-crop
-      `kaggle_nutrient` images that were diluting this class are now gated off and
-      COCO not_a_plant halved 1500→750 (`coleaf`/`mpld` stay — guarded crop proxies,
-      not dead config) — see `DATASET_LABELING_PLAN.md` "v4 audit addendum".
-- [ ] **gray_mold supply** — top off positives 228 → ≥ 250 (v4 carry-over; point
-      P/R flat, CIs tighter at eval n 91). Now a **quality** target too: 32% of the
-      supplement's gray_mold positives are agent-conf < 0.80 → collect clean (≥0.80)
-      houseplant positives, don't just hit the count.
-- [ ] **INT8 regressed on v3** (paired-bootstrap significantly worse → shipped FP32
-      87.3 MB) — investigate static-quant / per-channel before reclaiming the 4× size win
+- [x] **Trained v3 → v2.6.5**, then **v4 → v2.6.6** (`val_realworld` n=2150, F1 0.861)
+- [x] **INT8 reclaimed** — the v4 run's INT8 beat FP32 (+0.0057, n.s.); ships 22.5 MB
+      classifier / 130 MB bundle (v2.6.5 had to ship FP32 87 MB)
+- [x] **rice/coleaf de-crop verdict: NEUTRAL** — removing the 200 rice `kaggle_nutrient`
+      images (and `coleaf` entirely) left nutrient precision flat (0.743→0.750): they
+      were wrong-domain dead weight, not the cause. Keep removed; don't re-add.
+- [ ] **leaf_scorch regression (NEW, v4 run)** — F1 0.805→0.719 (P 0.774→0.703,
+      R 0.840→0.736) at the same eval n. Likely the v4 healthy hard-negatives (+114,
+      mostly *generic*; only +31 boundary) made the model under-call scorch → **v5: add
+      ONLY boundary brown-tip negatives, stop adding generic healthy.** Flagship fix,
+      don't ship-regress it silently.
+- [ ] **nutrient_deficiency precision** — still the laggard (P **0.750**, over-triggers
+      ~1.19×). Confirmed it's boundary confusion, not crop domain → v5 scorch↔nutrient /
+      healthy↔nutrient **boundary** negatives.
+- [ ] **gray_mold** — precision improved **0.840→0.888** despite flat supply (232,
+      31% conf<0.80, wide CIs at n=94) → production scans remain the real lever.
+- [ ] **aqua student regression (NEW)** — KD val_macroF1 0.838→**0.780**; teacher↔student
+      gap tripled (0.043→0.106). Investigate KD (feature distillation / longer schedule)
+      before relying on the on-device tier.
 - [ ] Fold offline-judged production scans/feedback into the next dataset version
       (export via `tools/export_data.py` → vision-agent judge; weak classes first)
 

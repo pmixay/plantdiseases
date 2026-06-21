@@ -92,12 +92,27 @@ consistent, every published version must satisfy:
 
 ## v5 — next dataset version (plan + expected gaps)
 
-> The live supplement is **v4** (1951 rows, published 2026-06-21) — **not yet
-> trained**. v5 targets below are grounded in the v4 manifest audit + the last
-> trained model (v2.6.5); **train v4 first** to confirm them before collecting.
-> Trajectory so far: v2 fixed eval-volume → v3 hardened leaf_scorch precision →
-> v4 added nutrient boundary negatives + the first production signal. v5 closes
-> the two standing gaps and leans on the production loop.
+> The live supplement is **v4** (1951 rows); it **trained as v2.6.6** — gate passed
+> (`val_realworld` F1 0.861, flat vs v2.6.5) and **INT8 reclaimed**, but it was a
+> lateral move with one clear data lesson (below). Trajectory: v2 fixed eval-volume
+> → v3 hardened leaf_scorch precision → v4 added nutrient negatives + first
+> production signal **but over-corrected leaf_scorch**. v5 fixes leaf_scorch,
+> finishes nutrient, and leans on the production loop for gray_mold.
+
+### v4-run outcome (model v2.6.6) — what v5 must react to
+
+- **leaf_scorch regressed (F1 0.805→0.719; P 0.774→0.703, R 0.840→0.736).** v4 grew
+  healthy hard-negatives +114 but only +31 *boundary* — the +57 *generic* lush-green
+  negatives pushed the model to under-call scorch. **v5: add ONLY boundary brown-tip
+  negatives; do NOT add generic healthy, and consider trimming some of v4's.**
+- **nutrient precision flat (0.743→0.750).** Removing the rice `kaggle_nutrient` +
+  `coleaf` was net-neutral — they were wrong-domain dead weight, not the cause.
+  Nutrient is a *boundary* problem → boundary negatives stay the priority.
+- **gray_mold precision rose (0.840→0.888)** despite flat supply, but CIs stay wide
+  (n=94, 31% conf<0.80) → production scans remain the lever.
+- **powdery recovered (P 0.875→0.939)** — that drift watch-item is resolved.
+- **viral precision dipped (0.954→0.814)** — partly eval-slice noise (n 219→150); watch.
+- **aqua student regressed (0.838→0.780)** — a distillation issue, not data; out of v5 scope.
 
 ### Priorities
 
@@ -105,8 +120,8 @@ consistent, every published version must satisfy:
 |---|---|---|---|---|
 | `gray_mold_botrytis` | 232 positives, **31% conf<0.80** | **250 clean** (≥0.80) | **production scans, not web** — open-web is at its ceiling; deliberately scan gray-mold cases and fold the high-conf `local` rows in | **HIGH** |
 | `nutrient_deficiency` | only **+31 boundary** negatives in v4 | **+~100 boundary** healthy↔nutrient + scorch↔nutrient | targeted web collection of brown-tipped / chlorotic-lookalike healthy (boundary, not generic) | LOW |
-| `leaf_scorch_underwatering` | 406, P 0.774 (met) | **hold** | no new push; keep the boundary negatives | — |
-| `healthy` / `not_a_plant` (HN) | 528 / 376 | maintain | keep texture + boundary lookalikes; stop adding *generic* healthy | LOW |
+| `leaf_scorch_underwatering` | 406; **regressed in v4 run** (P→0.703, R→0.736) | **recover** P≥0.75 + R | *fewer* generic healthy negatives — the v4 over-correction is the cause | **HIGH** |
+| `healthy` / `not_a_plant` (HN) | 528 / 376 (only 166 boundary) | **trim generic, keep boundary** | drop some of v4's +57 generic lush-green negatives; add only brown-tip boundary | MED |
 | production `local` rows | 73 @ median conf 0.90, 66/73 healthy | grow **weak-class-first** | export/judge prioritising gray_mold/nutrient/scorch scans over the healthy majority | MED |
 
 ### Expected gaps (what v5 likely will NOT fully solve)
@@ -122,16 +137,17 @@ consistent, every published version must satisfy:
   agent-judged offline — still not human ground-truth (by design, no in-app
   truth capture). Acceptable, but the ship gate measured on agent-judged rows
   remains a proxy.
-- **INT8 regression is not a data gap** — it is a quantisation issue
-  (investigate per-channel / static PTQ), unaffected by v5 collection.
+- **leaf_scorch is now a balance problem, not a volume one** — v5 can over-correct the
+  other way (too few healthy negatives → scorch over-triggers again). Tune the boundary
+  negatives carefully; this is the class most likely to seesaw between runs.
 
 ### Unchanged from prior versions
 
 9 classes stay (no structural add — see `CLASS_COVERAGE_RESEARCH.md`); hard
 houseplant domain gate; hard-negatives split-tagged (`role`/`hn_kind`); no per-row
-license requirement; `agent_vision` + offline judge only. Confirm the v4 run's
-two drift watch-items first — `viral_disease` recall (0.854) and `powdery_mildew`
-precision (0.875) — before any v5 action on them.
+license requirement; `agent_vision` + offline judge only. INT8 is resolved (the v4
+run shipped INT8). Remaining drift watch-item: `viral_disease` precision (0.814,
+eval-slice-confounded) — confirm on the next run before acting.
 
 > **Training-time use:** the supplement is pulled directly by
 > `train_notebook.ipynb` §2 (`fetch_kaggle_supplement`, source `supplement`) and
