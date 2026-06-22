@@ -76,6 +76,18 @@ pytest tests/test_endpoints.py::test_name -q   # single test
 Push-only, triggers on `main`/`master`/`claude/**`. A `paths-filter` job runs the
 **android** and **server** jobs only when their trees (or the workflow) change.
 
+## ML work — use the bundled skill
+
+For anything touching the model (the notebook, the two-stage pipeline, the model
+families, training/eval/calibration, ONNX/TFLite export + INT8, the ship gate, the
+`models/` bundle, or the feedback→retraining loop) there's a project skill at
+`.claude/skills/houseplant-disease-ml/` (`SKILL.md` + `references/` + runnable
+`scripts/`). Lean on its discipline (group-aware splits, paired-bootstrap ship gates,
+calibration + conformal, honest-uncertainty refusal) instead of ad-hoc ML reasoning.
+Two helpers worth knowing: `scripts/nbtool.py list|section N|grep PATTERN` navigates the
+huge `train_notebook.ipynb` without reading it whole, and `scripts/check_bundle.py
+server/models/` validates a bundle against the fail-fast boot contract.
+
 ## Architecture — the big picture
 
 **Two-stage inference pipeline** (`server/pipeline.py` orchestrates):
