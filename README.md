@@ -6,6 +6,8 @@
 
 **AI-powered houseplant disease detection — on-device camera, cloud inference, bilingual care plans.**
 
+[![CI](https://github.com/pmixay/plantdiseases/actions/workflows/ci.yml/badge.svg)](https://github.com/pmixay/plantdiseases/actions/workflows/ci.yml)
+
 Two-stage ML pipeline (YOLOv8 leaf detector → frozen DINOv2 ViT-S/14
 backbone + LoRA + MLP head classifier) hosted behind a hardened FastAPI
 service, paired with a Kotlin Android client that ships scan history,
