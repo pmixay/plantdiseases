@@ -34,7 +34,12 @@ object ReminderManager {
         reminderId: Long = 0L,
     ) {
         enqueuePeriodic(
-            context, plantId, plantName, type, intervalDays, reminderId,
+            context,
+            plantId,
+            plantName,
+            type,
+            intervalDays,
+            reminderId,
             initialDelayMs = CareSchedule.initialDelayMs(hour, minute),
         )
     }
@@ -42,8 +47,13 @@ object ReminderManager {
     /** Convenience overload for the generic-reminder list UI. */
     fun schedule(context: Context, reminder: PlantReminderEntity, plantName: String) =
         schedule(
-            context, reminder.plantId, plantName, reminder.type,
-            reminder.intervalDays, reminder.hour, reminder.minute,
+            context,
+            reminder.plantId,
+            plantName,
+            reminder.type,
+            reminder.intervalDays,
+            reminder.hour,
+            reminder.minute,
             reminderId = reminder.id,
         )
 
@@ -65,7 +75,12 @@ object ReminderManager {
         reminderId: Long = 0L,
     ) {
         enqueuePeriodic(
-            context, plantId, plantName, type, intervalDays, reminderId,
+            context,
+            plantId,
+            plantName,
+            type,
+            intervalDays,
+            reminderId,
             initialDelayMs = CareSchedule.delayAfterCareMs(hour, minute, intervalDays),
         )
     }
@@ -87,7 +102,8 @@ object ReminderManager {
             .build()
 
         val request = PeriodicWorkRequestBuilder<PlantReminderWorker>(
-            intervalDays.toLong(), TimeUnit.DAYS,
+            intervalDays.toLong(),
+            TimeUnit.DAYS,
         )
             .setInputData(inputData)
             .setInitialDelay(initialDelayMs, TimeUnit.MILLISECONDS)

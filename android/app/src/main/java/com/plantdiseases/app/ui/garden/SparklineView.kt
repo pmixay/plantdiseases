@@ -98,6 +98,8 @@ class SparklineView @JvmOverloads constructor(
     }
 
     private fun dp(v: Float): Float = TypedValue.applyDimension(
-        TypedValue.COMPLEX_UNIT_DIP, v, resources.displayMetrics,
+        TypedValue.COMPLEX_UNIT_DIP,
+        v,
+        resources.displayMetrics,
     )
 }

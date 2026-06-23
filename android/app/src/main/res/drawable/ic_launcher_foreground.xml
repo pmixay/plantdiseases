@@ -1,35 +1,47 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Launcher foreground: a plant sprig — an upright central leaf over a stem
+     with two pairs of side leaves (white on the right, pale green on the left).
+     Content sits inside the central 72x72 safe zone (18..90 on the 108 grid).
+     Each leaf is the same almond path (base at the local origin, tip up at
+     0,-24) placed by a <group> that translates the base onto the stem and
+     rotates it outward. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Foreground content fits within central 72x72 safe zone (18..90 on 108) -->
-
-    <!-- Leaf body -->
+    <!-- Stem -->
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M54,30 C54,30 32,44 32,62 C32,75 42,84 54,84 C66,84 76,75 76,62 C76,44 54,30 54,30 Z" />
-
-    <!-- Leaf vein and ribs -->
-    <path
-        android:strokeColor="#1F7A3F"
-        android:strokeWidth="2.5"
-        android:fillColor="#00000000"
-        android:pathData="M54,36 L54,80 M54,48 L43,57 M54,56 L65,48 M54,64 L44,70 M54,70 L64,62" />
-
-    <!-- Magnifier ring -->
-    <path
-        android:fillColor="#00000000"
-        android:strokeColor="#757575"
-        android:strokeWidth="3"
-        android:pathData="M64,62 m-9,0 a9,9 0 1,0 18,0 a9,9 0 1,0 -18,0" />
-
-    <!-- Magnifier handle -->
-    <path
-        android:strokeColor="#757575"
-        android:strokeWidth="3"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="4.5"
         android:strokeLineCap="round"
-        android:pathData="M70,68 L77,75" />
+        android:fillColor="#00000000"
+        android:pathData="M54,48 L54,86" />
+
+    <!-- Lower-left leaf (pale green) -->
+    <group android:translateX="54" android:translateY="68" android:rotation="-72">
+        <path android:fillColor="#C2E6CC"
+            android:pathData="M0,0 C7,-6 7,-18 0,-24 C-7,-18 -7,-6 0,0 Z" />
+    </group>
+    <!-- Lower-right leaf (white) -->
+    <group android:translateX="54" android:translateY="64" android:rotation="72">
+        <path android:fillColor="#FFFFFF"
+            android:pathData="M0,0 C7,-6 7,-18 0,-24 C-7,-18 -7,-6 0,0 Z" />
+    </group>
+    <!-- Upper-left leaf (pale green) -->
+    <group android:translateX="54" android:translateY="56" android:rotation="-42">
+        <path android:fillColor="#C2E6CC"
+            android:pathData="M0,0 C7,-6 7,-18 0,-24 C-7,-18 -7,-6 0,0 Z" />
+    </group>
+    <!-- Upper-right leaf (white) -->
+    <group android:translateX="54" android:translateY="52" android:rotation="42">
+        <path android:fillColor="#FFFFFF"
+            android:pathData="M0,0 C7,-6 7,-18 0,-24 C-7,-18 -7,-6 0,0 Z" />
+    </group>
+    <!-- Top central leaf (white) -->
+    <group android:translateX="54" android:translateY="46">
+        <path android:fillColor="#FFFFFF"
+            android:pathData="M0,0 C7,-6 7,-18 0,-26 C-7,-18 -7,-6 0,0 Z" />
+    </group>
 </vector>

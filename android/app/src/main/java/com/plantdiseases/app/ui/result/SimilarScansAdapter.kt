@@ -62,7 +62,8 @@ class SimilarScansAdapter(
             wantsOpinion.visibility = if (item.wantsOpinion) View.VISIBLE else View.GONE
             if (item.opinionCount > 0) {
                 opinions.text = itemView.context.getString(
-                    R.string.community_opinions_badge, item.opinionCount,
+                    R.string.community_opinions_badge,
+                    item.opinionCount,
                 )
                 opinions.visibility = View.VISIBLE
             } else {
@@ -71,8 +72,11 @@ class SimilarScansAdapter(
 
             // ServerConfig.baseUrl ends with `/`; relative path appended.
             val thumb = item.thumbPath
-            val url = if (thumb.isNullOrBlank()) null
-                else "${ServerConfig.baseUrl}api/community/thumb/$thumb"
+            val url = if (thumb.isNullOrBlank()) {
+                null
+            } else {
+                "${ServerConfig.baseUrl}api/community/thumb/$thumb"
+            }
             ThumbLoader.load(shimmer, image, url)
         }
 
@@ -95,7 +99,9 @@ class SimilarScansAdapter(
             // then "Xm / Xh / Xd ago" — saves us hand-rolling thresholds
             // and translates with the device locale.
             return DateUtils.getRelativeTimeSpanString(
-                createdMs, now, DateUtils.MINUTE_IN_MILLIS,
+                createdMs,
+                now,
+                DateUtils.MINUTE_IN_MILLIS,
                 DateUtils.FORMAT_ABBREV_RELATIVE,
             ).toString()
         }

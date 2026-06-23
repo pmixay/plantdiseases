@@ -29,12 +29,13 @@ class GalleryAdapter(
     private val onDelete: (ScanHistoryItem) -> Unit
 ) : ListAdapter<ScanHistoryItem, GalleryAdapter.ViewHolder>(DIFF_CALLBACK) {
 
-    inner class ViewHolder(val binding: ItemGalleryScanBinding) :
-        RecyclerView.ViewHolder(binding.root)
+    inner class ViewHolder(val binding: ItemGalleryScanBinding) : RecyclerView.ViewHolder(binding.root)
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
         val binding = ItemGalleryScanBinding.inflate(
-            LayoutInflater.from(parent.context), parent, false
+            LayoutInflater.from(parent.context),
+            parent,
+            false
         )
         return ViewHolder(binding)
     }
@@ -90,7 +91,8 @@ class GalleryAdapter(
             // live on the result screen's community activity line, not here.
             if (item.communityOpinions > 0) {
                 tvCommunityBadge.text = context.getString(
-                    R.string.gallery_community_badge, item.communityOpinions,
+                    R.string.gallery_community_badge,
+                    item.communityOpinions,
                 )
                 tvCommunityBadge.visibility = android.view.View.VISIBLE
             } else {

@@ -70,7 +70,8 @@ class NearbyScansAdapter(
 
             if (item.opinionCount > 0) {
                 opinions.text = itemView.context.getString(
-                    R.string.community_opinions_badge, item.opinionCount,
+                    R.string.community_opinions_badge,
+                    item.opinionCount,
                 )
                 opinions.visibility = View.VISIBLE
             } else {
@@ -83,8 +84,11 @@ class NearbyScansAdapter(
 
             // ServerConfig.baseUrl ends with `/`; relative path appended.
             val thumb = item.thumbPath
-            val url = if (thumb.isNullOrBlank()) null
-                else "${ServerConfig.baseUrl}api/community/thumb/$thumb"
+            val url = if (thumb.isNullOrBlank()) {
+                null
+            } else {
+                "${ServerConfig.baseUrl}api/community/thumb/$thumb"
+            }
             ThumbLoader.load(shimmer, photo, url)
         }
 
@@ -115,7 +119,9 @@ class NearbyScansAdapter(
             val createdMs = createdAtSec * 1000L
             val now = System.currentTimeMillis()
             return DateUtils.getRelativeTimeSpanString(
-                createdMs, now, DateUtils.MINUTE_IN_MILLIS,
+                createdMs,
+                now,
+                DateUtils.MINUTE_IN_MILLIS,
                 DateUtils.FORMAT_ABBREV_RELATIVE,
             ).toString()
         }

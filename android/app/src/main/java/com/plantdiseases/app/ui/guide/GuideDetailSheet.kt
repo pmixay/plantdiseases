@@ -15,7 +15,8 @@ class GuideDetailSheet : BottomSheetDialogFragment() {
     private val binding get() = _binding!!
 
     override fun onCreateView(
-        inflater: LayoutInflater, container: ViewGroup?,
+        inflater: LayoutInflater,
+        container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
         _binding = SheetGuideDetailBinding.inflate(inflater, container, false)
@@ -38,7 +39,8 @@ class GuideDetailSheet : BottomSheetDialogFragment() {
         // topic opens with "here's what it looks like" (omitted where none).
         GuideDataProvider.exampleImageUrl(item.id)?.let { url ->
             binding.llSections.addView(
-                GuideContentRenderer.heroPhoto(requireContext(), url, binding.tvTitle.text), 0,
+                GuideContentRenderer.heroPhoto(requireContext(), url, binding.tvTitle.text),
+                0,
             )
         }
     }
@@ -51,11 +53,9 @@ class GuideDetailSheet : BottomSheetDialogFragment() {
     companion object {
         private const val ARG_ITEM_ID = "item_id"
 
-        fun newInstance(itemId: String): GuideDetailSheet {
-            return GuideDetailSheet().apply {
-                arguments = Bundle().apply {
-                    putString(ARG_ITEM_ID, itemId)
-                }
+        fun newInstance(itemId: String): GuideDetailSheet = GuideDetailSheet().apply {
+            arguments = Bundle().apply {
+                putString(ARG_ITEM_ID, itemId)
             }
         }
     }

@@ -16,7 +16,9 @@ import kotlin.math.max
  * baseline and labels so the chart reads as empty rather than broken.
  */
 class BarChartView @JvmOverloads constructor(
-    context: Context, attrs: AttributeSet? = null, defStyle: Int = 0,
+    context: Context,
+    attrs: AttributeSet? = null,
+    defStyle: Int = 0,
 ) : View(context, attrs, defStyle) {
 
     data class Bar(val label: String, val value: Int)

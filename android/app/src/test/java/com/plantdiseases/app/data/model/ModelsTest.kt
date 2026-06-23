@@ -50,7 +50,9 @@ class ModelsTest {
     }
 
     private fun carePlan(species: String = "Ficus", watering: Any? = null) = CarePlanResponse(
-        species = species, disease = "leaf_spot", lightTier = "bright_indirect",
+        species = species,
+        disease = "leaf_spot",
+        lightTier = "bright_indirect",
         wateringDaysRaw = watering,
     )
 

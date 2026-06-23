@@ -46,7 +46,7 @@ object RegionResolver {
     private const val KEY_LOCALITY = "cached_locality"
     private const val KEY_REGION_TIMESTAMP = "cached_region_ts"
 
-    private const val CACHE_VALID_MS = 24L * 60L * 60L * 1000L  // refresh once a day
+    private const val CACHE_VALID_MS = 24L * 60L * 60L * 1000L // refresh once a day
 
     /** Persisted last-known country + locality, or ``null`` if
      *  we've never resolved. */
@@ -60,7 +60,8 @@ object RegionResolver {
     /** Permission probe — true when we hold ``ACCESS_COARSE_LOCATION``. */
     fun hasCoarsePermission(context: Context): Boolean =
         ContextCompat.checkSelfPermission(
-            context, Manifest.permission.ACCESS_COARSE_LOCATION,
+            context,
+            Manifest.permission.ACCESS_COARSE_LOCATION,
         ) == PackageManager.PERMISSION_GRANTED
 
     /**
@@ -122,7 +123,9 @@ object RegionResolver {
                 // also lets lifecycleScope cancel a pending lookup.
                 suspendCancellableCoroutine { cont ->
                     geocoder.getFromLocation(
-                        location.latitude, location.longitude, 1,
+                        location.latitude,
+                        location.longitude,
+                        1,
                         object : Geocoder.GeocodeListener {
                             override fun onGeocode(addresses: MutableList<Address>) {
                                 if (cont.isActive) cont.resume(formatRegion(addresses.firstOrNull()))
@@ -155,9 +158,11 @@ object RegionResolver {
         val country = address.countryCode?.trim()?.takeIf { it.isNotBlank() }
             ?: address.countryName?.trim()?.takeIf { it.isNotBlank() }
             ?: return null
-        val locality = (address.locality
-            ?: address.subAdminArea
-            ?: address.adminArea)
+        val locality = (
+            address.locality
+                ?: address.subAdminArea
+                ?: address.adminArea
+            )
             ?.trim()
             ?.take(80)
             ?.takeIf { it.isNotBlank() }

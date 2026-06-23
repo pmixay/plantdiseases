@@ -804,6 +804,8 @@
     <string name="home_stats_title">Your stats &amp; tips</string>
     <string name="home_stats_summary">%1$d scans · %2$d healthy · %3$d plants in garden</string>
     <string name="home_popular_diseases">Popular diseases</string>
+    <string name="home_popular_species">Popular houseplants</string>
+    <string name="home_species_popular_tag">Popular</string>
     <string name="home_disease_guide">Disease guide</string>
     <string name="home_see_all">See all</string>
     <string name="home_guide_tag">Guide</string>

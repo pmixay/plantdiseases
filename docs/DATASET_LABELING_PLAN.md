@@ -143,7 +143,7 @@ consistent, every published version must satisfy:
 
 ### Unchanged from prior versions
 
-9 classes stay (no structural add — see `CLASS_COVERAGE_RESEARCH.md`); hard
+9 classes stay (no structural add); hard
 houseplant domain gate; hard-negatives split-tagged (`role`/`hn_kind`); no per-row
 license requirement; `agent_vision` + offline judge only. INT8 is resolved (the v4
 run shipped INT8). Remaining drift watch-item: `viral_disease` precision (0.814,

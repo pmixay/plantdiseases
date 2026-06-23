@@ -94,10 +94,15 @@ class PlantDetailActivity : AppCompatActivity() {
     private val scanCameraPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
-        if (granted) launchCameraScan()
-        else Toast.makeText(
-            this, R.string.camera_permission_needed, Toast.LENGTH_SHORT,
-        ).show()
+        if (granted) {
+            launchCameraScan()
+        } else {
+            Toast.makeText(
+                this,
+                R.string.camera_permission_needed,
+                Toast.LENGTH_SHORT,
+            ).show()
+        }
     }
 
     /** Cover-photo picker — the picked URI is persisted on
@@ -108,8 +113,11 @@ class PlantDetailActivity : AppCompatActivity() {
         if (uri != null && tryPersistRead(uri)) {
             lifecycleScope.launch {
                 plantRepository.updateCoverPhoto(plantId, uri.toString())
-                Toast.makeText(this@PlantDetailActivity,
-                    R.string.cover_photo_updated, Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    this@PlantDetailActivity,
+                    R.string.cover_photo_updated,
+                    Toast.LENGTH_SHORT
+                ).show()
                 loadPlant()
             }
         }
@@ -353,10 +361,12 @@ class PlantDetailActivity : AppCompatActivity() {
             cardElevation = 0f
             shapeAppearanceModel = com.google.android.material.shape.ShapeAppearanceModel.builder()
                 .setBottomLeftCorner(
-                    com.google.android.material.shape.CornerFamily.ROUNDED, heroRadius,
+                    com.google.android.material.shape.CornerFamily.ROUNDED,
+                    heroRadius,
                 )
                 .setBottomRightCorner(
-                    com.google.android.material.shape.CornerFamily.ROUNDED, heroRadius,
+                    com.google.android.material.shape.CornerFamily.ROUNDED,
+                    heroRadius,
                 )
                 .build()
             layoutParams = LinearLayout.LayoutParams(
@@ -394,30 +404,34 @@ class PlantDetailActivity : AppCompatActivity() {
             setPadding(20.dp(), 22.dp(), 20.dp(), 20.dp())
             setBackgroundResource(R.drawable.bg_garden_hero)
         }
-        body.addView(TextView(this).apply {
-            text = plant.name
-            textSize = 30f
-            setTextColor(getColor(R.color.hero_stat_text))
-            // PictureThis-style bold hero on the vivid green gradient
-            // — medium read as undersized once the header sat on a
-            // saturated background.
-            typeface = android.graphics.Typeface.create("sans-serif-black", android.graphics.Typeface.NORMAL)
-            letterSpacing = -0.02f
-            maxLines = 2
-            ellipsize = android.text.TextUtils.TruncateAt.END
-        })
-        body.addView(TextView(this).apply {
-            text = plant.species?.takeIf { it.isNotBlank() } ?: getString(R.string.plant_species_unknown)
-            textSize = 15f
-            setTextColor(getColor(R.color.hero_stat_text))
-            alpha = 0.82f
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 4.dp() }
-        })
+        body.addView(
+            TextView(this).apply {
+                text = plant.name
+                textSize = 30f
+                setTextColor(getColor(R.color.hero_stat_text))
+                // PictureThis-style bold hero on the vivid green gradient
+                // — medium read as undersized once the header sat on a
+                // saturated background.
+                typeface = android.graphics.Typeface.create("sans-serif-black", android.graphics.Typeface.NORMAL)
+                letterSpacing = -0.02f
+                maxLines = 2
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            }
+        )
+        body.addView(
+            TextView(this).apply {
+                text = plant.species?.takeIf { it.isNotBlank() } ?: getString(R.string.plant_species_unknown)
+                textSize = 15f
+                setTextColor(getColor(R.color.hero_stat_text))
+                alpha = 0.82f
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = 4.dp() }
+            }
+        )
         val stats = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
@@ -444,18 +458,22 @@ class PlantDetailActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 .apply { if (endMargin) marginEnd = 8.dp() }
         }
-        box.addView(TextView(this).apply {
-            text = value
-            textSize = 18f
-            setTextColor(getColor(R.color.hero_stat_text))
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-        })
-        box.addView(TextView(this).apply {
-            text = label
-            textSize = 11f
-            setTextColor(getColor(R.color.hero_stat_text))
-            alpha = 0.82f
-        })
+        box.addView(
+            TextView(this).apply {
+                text = value
+                textSize = 18f
+                setTextColor(getColor(R.color.hero_stat_text))
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+            }
+        )
+        box.addView(
+            TextView(this).apply {
+                text = label
+                textSize = 11f
+                setTextColor(getColor(R.color.hero_stat_text))
+                alpha = 0.82f
+            }
+        )
         return box
     }
 
@@ -464,15 +482,15 @@ class PlantDetailActivity : AppCompatActivity() {
      *  for the rarer logs (Fertilise, Prune, Repot, Mist) and
      *  Reminders. Eight chips on screen at once was overwhelming;
      *  this collapses to four equal tiles. */
-    private fun buildActionRow(): View {
-        return actionRow(listOf(
+    private fun buildActionRow(): View = actionRow(
+        listOf(
             ActionSpec(R.string.log_watering, R.drawable.ic_watering) { showWateringDialog() },
             ActionSpec(R.string.add_note, R.drawable.ic_note_pencil) { showNoteDialog() },
             ActionSpec(R.string.new_scan, R.drawable.ic_scan) { requestNewScan() },
             ActionSpec(R.string.action_more, R.drawable.ic_clock) { showMoreActionsSheet() },
-        )).apply {
-            (layoutParams as LinearLayout.LayoutParams).topMargin = 12.dp()
-        }
+        )
+    ).apply {
+        (layoutParams as LinearLayout.LayoutParams).topMargin = 12.dp()
     }
 
     /** Bottom sheet for the secondary care actions (and Reminders).
@@ -503,41 +521,49 @@ class PlantDetailActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(8.dp(), 8.dp(), 8.dp(), 18.dp())
         }
-        container.addView(TextView(this).apply {
-            text = getString(R.string.action_more_title)
-            textSize = 13f
-            letterSpacing = 0.06f
-            setTextColor(getColor(R.color.on_surface_secondary))
-            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
-            setPadding(16.dp(), 8.dp(), 16.dp(), 10.dp())
-        })
+        container.addView(
+            TextView(this).apply {
+                text = getString(R.string.action_more_title)
+                textSize = 13f
+                letterSpacing = 0.06f
+                setTextColor(getColor(R.color.on_surface_secondary))
+                typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+                setPadding(16.dp(), 8.dp(), 16.dp(), 10.dp())
+            }
+        )
         items.forEach { spec ->
-            container.addView(LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                isClickable = true
-                foreground = selectable()
-                setPadding(16.dp(), 14.dp(), 16.dp(), 14.dp())
-                addView(ImageView(this@PlantDetailActivity).apply {
-                    setImageResource(spec.iconRes)
-                    setColorFilter(getColor(R.color.primary))
-                    layoutParams = LinearLayout.LayoutParams(24.dp(), 24.dp())
-                })
-                addView(TextView(this@PlantDetailActivity).apply {
-                    text = getString(spec.labelRes)
-                    textSize = 16f
-                    setTextColor(getColor(R.color.on_surface))
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                    ).apply { marginStart = 16.dp() }
-                })
-                setOnClickListener {
-                    Haptics.tick(this@PlantDetailActivity)
-                    sheet.dismiss()
-                    spec.onClick()
+            container.addView(
+                LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    isClickable = true
+                    foreground = selectable()
+                    setPadding(16.dp(), 14.dp(), 16.dp(), 14.dp())
+                    addView(
+                        ImageView(this@PlantDetailActivity).apply {
+                            setImageResource(spec.iconRes)
+                            setColorFilter(getColor(R.color.primary))
+                            layoutParams = LinearLayout.LayoutParams(24.dp(), 24.dp())
+                        }
+                    )
+                    addView(
+                        TextView(this@PlantDetailActivity).apply {
+                            text = getString(spec.labelRes)
+                            textSize = 16f
+                            setTextColor(getColor(R.color.on_surface))
+                            layoutParams = LinearLayout.LayoutParams(
+                                LinearLayout.LayoutParams.MATCH_PARENT,
+                                LinearLayout.LayoutParams.WRAP_CONTENT,
+                            ).apply { marginStart = 16.dp() }
+                        }
+                    )
+                    setOnClickListener {
+                        Haptics.tick(this@PlantDetailActivity)
+                        sheet.dismiss()
+                        spec.onClick()
+                    }
                 }
-            })
+            )
         }
         sheet.setContentView(container)
         sheet.show()
@@ -554,11 +580,13 @@ class PlantDetailActivity : AppCompatActivity() {
             )
         }
         specs.forEachIndexed { idx, spec ->
-            row.addView(actionTile(spec.labelRes, spec.iconRes, spec.onClick).apply {
-                layoutParams = LinearLayout.LayoutParams(0, 66.dp(), 1f).apply {
-                    if (idx > 0) marginStart = 8.dp()
+            row.addView(
+                actionTile(spec.labelRes, spec.iconRes, spec.onClick).apply {
+                    layoutParams = LinearLayout.LayoutParams(0, 66.dp(), 1f).apply {
+                        if (idx > 0) marginStart = 8.dp()
+                    }
                 }
-            })
+            )
         }
         return row
     }
@@ -577,43 +605,51 @@ class PlantDetailActivity : AppCompatActivity() {
                 Haptics.tick(this@PlantDetailActivity)
                 action()
             }
-            addView(LinearLayout(this@PlantDetailActivity).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER
-                layoutParams = FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                )
-                setPadding(4.dp(), 7.dp(), 4.dp(), 6.dp())
-                addView(ImageView(this@PlantDetailActivity).apply {
-                    setImageResource(iconRes)
-                    setColorFilter(getColor(R.color.primary))
-                    layoutParams = LinearLayout.LayoutParams(24.dp(), 24.dp())
-                })
-                addView(TextView(this@PlantDetailActivity).apply {
-                    text = getString(labelRes)
-                    textSize = 11f
+            addView(
+                LinearLayout(this@PlantDetailActivity).apply {
+                    orientation = LinearLayout.VERTICAL
                     gravity = Gravity.CENTER
-                    maxLines = 1
-                    ellipsize = android.text.TextUtils.TruncateAt.END
-                    setTextColor(getColor(R.color.on_surface))
-                    typeface = android.graphics.Typeface.create(
-                        "sans-serif-medium",
-                        android.graphics.Typeface.NORMAL,
+                    layoutParams = FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.MATCH_PARENT,
                     )
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                    ).apply { topMargin = 5.dp() }
-                })
-            })
+                    setPadding(4.dp(), 7.dp(), 4.dp(), 6.dp())
+                    addView(
+                        ImageView(this@PlantDetailActivity).apply {
+                            setImageResource(iconRes)
+                            setColorFilter(getColor(R.color.primary))
+                            layoutParams = LinearLayout.LayoutParams(24.dp(), 24.dp())
+                        }
+                    )
+                    addView(
+                        TextView(this@PlantDetailActivity).apply {
+                            text = getString(labelRes)
+                            textSize = 11f
+                            gravity = Gravity.CENTER
+                            maxLines = 1
+                            ellipsize = android.text.TextUtils.TruncateAt.END
+                            setTextColor(getColor(R.color.on_surface))
+                            typeface = android.graphics.Typeface.create(
+                                "sans-serif-medium",
+                                android.graphics.Typeface.NORMAL,
+                            )
+                            layoutParams = LinearLayout.LayoutParams(
+                                LinearLayout.LayoutParams.MATCH_PARENT,
+                                LinearLayout.LayoutParams.WRAP_CONTENT,
+                            ).apply { topMargin = 5.dp() }
+                        }
+                    )
+                }
+            )
         }
 
     /** Dialog kinds for the physiological-care journal actions. The
      *  existing watering / note / photo dialogs stay separate because
      *  each has its own bespoke flow (photo picker, etc.). */
     private enum class JournalAction(
-        val titleRes: Int, val hintRes: Int, val iconRes: Int,
+        val titleRes: Int,
+        val hintRes: Int,
+        val iconRes: Int,
     ) {
         FERTILISE(R.string.log_fertilising, R.string.fertilising_hint, R.drawable.ic_garden),
         PRUNE(R.string.log_pruning, R.string.pruning_hint, R.drawable.ic_garden),
@@ -714,7 +750,9 @@ class PlantDetailActivity : AppCompatActivity() {
                     showApplyToReminders = true,
                     onApplyToReminders = { applied ->
                         ReminderScheduleSheet.showWithCarePlanDefaults(
-                            supportFragmentManager, plant, applied,
+                            supportFragmentManager,
+                            plant,
+                            applied,
                         )
                     },
                 )
@@ -789,30 +827,36 @@ class PlantDetailActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(14.dp(), 12.dp(), 14.dp(), 12.dp())
         }
-        inner.addView(TextView(this).apply {
-            text = getString(
-                R.string.adaptive_watering_title,
-                s.currentIntervalDays, s.proposedIntervalDays,
-            )
-            textSize = 14f
-            typeface = android.graphics.Typeface.create(
-                "sans-serif-medium", android.graphics.Typeface.NORMAL,
-            )
-            setTextColor(getColor(R.color.on_surface))
-        })
-        inner.addView(TextView(this).apply {
-            text = getString(
-                R.string.adaptive_watering_subtitle,
-                s.samples,
-                String.format("%.1f", s.meanGapDays),
-            )
-            textSize = 12f
-            setTextColor(getColor(R.color.on_surface_secondary))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 2.dp() }
-        })
+        inner.addView(
+            TextView(this).apply {
+                text = getString(
+                    R.string.adaptive_watering_title,
+                    s.currentIntervalDays,
+                    s.proposedIntervalDays,
+                )
+                textSize = 14f
+                typeface = android.graphics.Typeface.create(
+                    "sans-serif-medium",
+                    android.graphics.Typeface.NORMAL,
+                )
+                setTextColor(getColor(R.color.on_surface))
+            }
+        )
+        inner.addView(
+            TextView(this).apply {
+                text = getString(
+                    R.string.adaptive_watering_subtitle,
+                    s.samples,
+                    String.format("%.1f", s.meanGapDays),
+                )
+                textSize = 12f
+                setTextColor(getColor(R.color.on_surface_secondary))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = 2.dp() }
+            }
+        )
         val actions = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(
@@ -820,56 +864,67 @@ class PlantDetailActivity : AppCompatActivity() {
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             ).apply { topMargin = 8.dp() }
         }
-        actions.addView(com.google.android.material.button.MaterialButton(
-            this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle,
-        ).apply {
-            text = getString(R.string.adaptive_watering_apply, s.proposedIntervalDays)
-            cornerRadius = 12.dp()
-            setOnClickListener {
-                Haptics.tick(this@PlantDetailActivity)
-                lifecycleScope.launch {
-                    val existing = plantRepository.getReminders(plant.id)
-                        .firstOrNull { it.type == s.type }
-                    val updated = (existing ?: com.plantdiseases.app.data.local.PlantReminderEntity(
-                        plantId = plant.id, type = s.type,
-                    )).copy(
-                        intervalDays = s.proposedIntervalDays,
-                        enabled = true,
-                    )
-                    val rid = plantRepository.saveReminder(updated)
-                    com.plantdiseases.app.util.ReminderManager.schedule(
-                        context = this@PlantDetailActivity,
-                        plantId = plant.id,
-                        plantName = plant.name,
-                        type = updated.type,
-                        intervalDays = updated.intervalDays,
-                        hour = updated.hour,
-                        minute = updated.minute,
-                        reminderId = rid,
-                    )
-                    Toast.makeText(
-                        this@PlantDetailActivity,
-                        getString(R.string.adaptive_watering_applied, s.proposedIntervalDays),
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                    wateringSuggestion = null
-                    loadPlant()
+        actions.addView(
+            com.google.android.material.button.MaterialButton(
+                this,
+                null,
+                com.google.android.material.R.attr.materialButtonOutlinedStyle,
+            ).apply {
+                text = getString(R.string.adaptive_watering_apply, s.proposedIntervalDays)
+                cornerRadius = 12.dp()
+                setOnClickListener {
+                    Haptics.tick(this@PlantDetailActivity)
+                    lifecycleScope.launch {
+                        val existing = plantRepository.getReminders(plant.id)
+                            .firstOrNull { it.type == s.type }
+                        val updated = (
+                            existing ?: com.plantdiseases.app.data.local.PlantReminderEntity(
+                                plantId = plant.id,
+                                type = s.type,
+                            )
+                            ).copy(
+                            intervalDays = s.proposedIntervalDays,
+                            enabled = true,
+                        )
+                        val rid = plantRepository.saveReminder(updated)
+                        com.plantdiseases.app.util.ReminderManager.schedule(
+                            context = this@PlantDetailActivity,
+                            plantId = plant.id,
+                            plantName = plant.name,
+                            type = updated.type,
+                            intervalDays = updated.intervalDays,
+                            hour = updated.hour,
+                            minute = updated.minute,
+                            reminderId = rid,
+                        )
+                        Toast.makeText(
+                            this@PlantDetailActivity,
+                            getString(R.string.adaptive_watering_applied, s.proposedIntervalDays),
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                        wateringSuggestion = null
+                        loadPlant()
+                    }
                 }
             }
-        })
-        actions.addView(com.google.android.material.button.MaterialButton(
-            this, null, com.google.android.material.R.attr.borderlessButtonStyle,
-        ).apply {
-            text = getString(R.string.adaptive_watering_dismiss)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { marginStart = 4.dp() }
-            setOnClickListener {
-                wateringSuggestion = null
-                card.visibility = View.GONE
+        )
+        actions.addView(
+            com.google.android.material.button.MaterialButton(
+                this,
+                null,
+                com.google.android.material.R.attr.borderlessButtonStyle,
+            ).apply {
+                text = getString(R.string.adaptive_watering_dismiss)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { marginStart = 4.dp() }
+                setOnClickListener {
+                    wateringSuggestion = null
+                    card.visibility = View.GONE
+                }
             }
-        })
+        )
         inner.addView(actions)
         card.addView(inner)
         return card
@@ -916,60 +971,74 @@ class PlantDetailActivity : AppCompatActivity() {
                     .newInstance(guideId)
                     .show(supportFragmentManager, "guide_detail")
             }
-            addView(LinearLayout(this@PlantDetailActivity).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(14.dp(), 12.dp(), 14.dp(), 12.dp())
-                addView(FrameLayout(this@PlantDetailActivity).apply {
-                    setBackgroundResource(R.drawable.bg_icon_circle)
-                    layoutParams = LinearLayout.LayoutParams(42.dp(), 42.dp())
-                    addView(ImageView(this@PlantDetailActivity).apply {
-                        setImageResource(R.drawable.ic_care)
-                        setColorFilter(getColor(R.color.primary))
-                        layoutParams = FrameLayout.LayoutParams(23.dp(), 23.dp(), Gravity.CENTER)
-                    })
-                })
-                addView(LinearLayout(this@PlantDetailActivity).apply {
-                    orientation = LinearLayout.VERTICAL
-                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                        .apply { marginStart = 12.dp() }
-                    addView(TextView(this@PlantDetailActivity).apply {
-                        text = getString(R.string.guide_link_title)
-                        textSize = 15f
-                        setTextColor(getColor(R.color.on_surface))
-                        typeface = android.graphics.Typeface.create(
-                            "sans-serif-medium",
-                            android.graphics.Typeface.NORMAL,
-                        )
-                    })
-                    addView(TextView(this@PlantDetailActivity).apply {
-                        text = getString(
-                            R.string.guide_link_subtitle,
-                            // RU UI shows the localised verdict — the EN
-                            // diseaseName leaked through here (same bug as
-                            // the garden card badge).
-                            if (LocaleHelper.isRussian(this@PlantDetailActivity)) {
-                                latest.diseaseNameRu
-                            } else {
-                                latest.diseaseName
-                            },
-                        )
-                        textSize = 12f
-                        setTextColor(getColor(R.color.on_surface_secondary))
-                        maxLines = 2
-                        ellipsize = android.text.TextUtils.TruncateAt.END
-                        layoutParams = LinearLayout.LayoutParams(
-                            LinearLayout.LayoutParams.MATCH_PARENT,
-                            LinearLayout.LayoutParams.WRAP_CONTENT,
-                        ).apply { topMargin = 2.dp() }
-                    })
-                })
-                addView(ImageView(this@PlantDetailActivity).apply {
-                    setImageResource(R.drawable.ic_chevron_right)
-                    setColorFilter(getColor(R.color.on_surface_secondary))
-                    layoutParams = LinearLayout.LayoutParams(22.dp(), 22.dp())
-                })
-            })
+            addView(
+                LinearLayout(this@PlantDetailActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(14.dp(), 12.dp(), 14.dp(), 12.dp())
+                    addView(
+                        FrameLayout(this@PlantDetailActivity).apply {
+                            setBackgroundResource(R.drawable.bg_icon_circle)
+                            layoutParams = LinearLayout.LayoutParams(42.dp(), 42.dp())
+                            addView(
+                                ImageView(this@PlantDetailActivity).apply {
+                                    setImageResource(R.drawable.ic_care)
+                                    setColorFilter(getColor(R.color.primary))
+                                    layoutParams = FrameLayout.LayoutParams(23.dp(), 23.dp(), Gravity.CENTER)
+                                }
+                            )
+                        }
+                    )
+                    addView(
+                        LinearLayout(this@PlantDetailActivity).apply {
+                            orientation = LinearLayout.VERTICAL
+                            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                                .apply { marginStart = 12.dp() }
+                            addView(
+                                TextView(this@PlantDetailActivity).apply {
+                                    text = getString(R.string.guide_link_title)
+                                    textSize = 15f
+                                    setTextColor(getColor(R.color.on_surface))
+                                    typeface = android.graphics.Typeface.create(
+                                        "sans-serif-medium",
+                                        android.graphics.Typeface.NORMAL,
+                                    )
+                                }
+                            )
+                            addView(
+                                TextView(this@PlantDetailActivity).apply {
+                                    text = getString(
+                                        R.string.guide_link_subtitle,
+                                        // RU UI shows the localised verdict — the EN
+                                        // diseaseName leaked through here (same bug as
+                                        // the garden card badge).
+                                        if (LocaleHelper.isRussian(this@PlantDetailActivity)) {
+                                            latest.diseaseNameRu
+                                        } else {
+                                            latest.diseaseName
+                                        },
+                                    )
+                                    textSize = 12f
+                                    setTextColor(getColor(R.color.on_surface_secondary))
+                                    maxLines = 2
+                                    ellipsize = android.text.TextUtils.TruncateAt.END
+                                    layoutParams = LinearLayout.LayoutParams(
+                                        LinearLayout.LayoutParams.MATCH_PARENT,
+                                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                                    ).apply { topMargin = 2.dp() }
+                                }
+                            )
+                        }
+                    )
+                    addView(
+                        ImageView(this@PlantDetailActivity).apply {
+                            setImageResource(R.drawable.ic_chevron_right)
+                            setColorFilter(getColor(R.color.on_surface_secondary))
+                            layoutParams = LinearLayout.LayoutParams(22.dp(), 22.dp())
+                        }
+                    )
+                }
+            )
         }
     }
 
@@ -1021,66 +1090,81 @@ class PlantDetailActivity : AppCompatActivity() {
                 )
                 startActivity(intent)
             }
-            addView(LinearLayout(this@PlantDetailActivity).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(14.dp(), 12.dp(), 14.dp(), 12.dp())
-                addView(FrameLayout(this@PlantDetailActivity).apply {
-                    setBackgroundResource(R.drawable.bg_icon_circle)
-                    layoutParams = LinearLayout.LayoutParams(42.dp(), 42.dp())
-                    addView(ImageView(this@PlantDetailActivity).apply {
-                        setImageResource(R.drawable.ic_light)
-                        setColorFilter(getColor(R.color.primary))
-                        layoutParams = FrameLayout.LayoutParams(23.dp(), 23.dp(), Gravity.CENTER)
-                    })
-                })
-                addView(LinearLayout(this@PlantDetailActivity).apply {
-                    orientation = LinearLayout.VERTICAL
-                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                        .apply { marginStart = 12.dp() }
-                    addView(TextView(this@PlantDetailActivity).apply {
-                        text = getString(R.string.light_meter_entry_title)
-                        textSize = 15f
-                        setTextColor(getColor(R.color.on_surface))
-                        typeface = android.graphics.Typeface.create(
-                            "sans-serif-medium",
-                            android.graphics.Typeface.NORMAL,
-                        )
-                    })
-                    addView(TextView(this@PlantDetailActivity).apply {
-                        // Surface the previously-recorded lux + when
-                        // it was measured if the user has run the
-                        // Light Meter on this plant before; otherwise
-                        // fall back to the generic invite copy.
-                        val measured = plant.measuredLux
-                        val measuredAt = plant.measuredLuxAt
-                        text = if (measured != null && measured > 0 && measuredAt != null) {
-                            getString(
-                                R.string.light_meter_entry_subtitle_recorded,
-                                measured,
-                                ImageUtils.formatRelativeDate(
-                                    this@PlantDetailActivity, measuredAt,
-                                ),
+            addView(
+                LinearLayout(this@PlantDetailActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(14.dp(), 12.dp(), 14.dp(), 12.dp())
+                    addView(
+                        FrameLayout(this@PlantDetailActivity).apply {
+                            setBackgroundResource(R.drawable.bg_icon_circle)
+                            layoutParams = LinearLayout.LayoutParams(42.dp(), 42.dp())
+                            addView(
+                                ImageView(this@PlantDetailActivity).apply {
+                                    setImageResource(R.drawable.ic_light)
+                                    setColorFilter(getColor(R.color.primary))
+                                    layoutParams = FrameLayout.LayoutParams(23.dp(), 23.dp(), Gravity.CENTER)
+                                }
                             )
-                        } else {
-                            getString(R.string.light_meter_entry_subtitle)
                         }
-                        textSize = 12f
-                        setTextColor(getColor(R.color.on_surface_secondary))
-                        maxLines = 2
-                        ellipsize = android.text.TextUtils.TruncateAt.END
-                        layoutParams = LinearLayout.LayoutParams(
-                            LinearLayout.LayoutParams.MATCH_PARENT,
-                            LinearLayout.LayoutParams.WRAP_CONTENT,
-                        ).apply { topMargin = 2.dp() }
-                    })
-                })
-                addView(ImageView(this@PlantDetailActivity).apply {
-                    setImageResource(R.drawable.ic_chevron_right)
-                    setColorFilter(getColor(R.color.on_surface_secondary))
-                    layoutParams = LinearLayout.LayoutParams(22.dp(), 22.dp())
-                })
-            })
+                    )
+                    addView(
+                        LinearLayout(this@PlantDetailActivity).apply {
+                            orientation = LinearLayout.VERTICAL
+                            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                                .apply { marginStart = 12.dp() }
+                            addView(
+                                TextView(this@PlantDetailActivity).apply {
+                                    text = getString(R.string.light_meter_entry_title)
+                                    textSize = 15f
+                                    setTextColor(getColor(R.color.on_surface))
+                                    typeface = android.graphics.Typeface.create(
+                                        "sans-serif-medium",
+                                        android.graphics.Typeface.NORMAL,
+                                    )
+                                }
+                            )
+                            addView(
+                                TextView(this@PlantDetailActivity).apply {
+                                    // Surface the previously-recorded lux + when
+                                    // it was measured if the user has run the
+                                    // Light Meter on this plant before; otherwise
+                                    // fall back to the generic invite copy.
+                                    val measured = plant.measuredLux
+                                    val measuredAt = plant.measuredLuxAt
+                                    text = if (measured != null && measured > 0 && measuredAt != null) {
+                                        getString(
+                                            R.string.light_meter_entry_subtitle_recorded,
+                                            measured,
+                                            ImageUtils.formatRelativeDate(
+                                                this@PlantDetailActivity,
+                                                measuredAt,
+                                            ),
+                                        )
+                                    } else {
+                                        getString(R.string.light_meter_entry_subtitle)
+                                    }
+                                    textSize = 12f
+                                    setTextColor(getColor(R.color.on_surface_secondary))
+                                    maxLines = 2
+                                    ellipsize = android.text.TextUtils.TruncateAt.END
+                                    layoutParams = LinearLayout.LayoutParams(
+                                        LinearLayout.LayoutParams.MATCH_PARENT,
+                                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                                    ).apply { topMargin = 2.dp() }
+                                }
+                            )
+                        }
+                    )
+                    addView(
+                        ImageView(this@PlantDetailActivity).apply {
+                            setImageResource(R.drawable.ic_chevron_right)
+                            setColorFilter(getColor(R.color.on_surface_secondary))
+                            layoutParams = LinearLayout.LayoutParams(22.dp(), 22.dp())
+                        }
+                    )
+                }
+            )
         }
 
     /** Water-calculator shortcut. Launches the standalone
@@ -1121,50 +1205,64 @@ class PlantDetailActivity : AppCompatActivity() {
                 }
                 startActivity(intent)
             }
-            addView(LinearLayout(this@PlantDetailActivity).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(14.dp(), 12.dp(), 14.dp(), 12.dp())
-                addView(FrameLayout(this@PlantDetailActivity).apply {
-                    setBackgroundResource(R.drawable.bg_icon_circle)
-                    layoutParams = LinearLayout.LayoutParams(42.dp(), 42.dp())
-                    addView(ImageView(this@PlantDetailActivity).apply {
-                        setImageResource(R.drawable.ic_watering)
-                        setColorFilter(getColor(R.color.primary))
-                        layoutParams = FrameLayout.LayoutParams(23.dp(), 23.dp(), Gravity.CENTER)
-                    })
-                })
-                addView(LinearLayout(this@PlantDetailActivity).apply {
-                    orientation = LinearLayout.VERTICAL
-                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                        .apply { marginStart = 12.dp() }
-                    addView(TextView(this@PlantDetailActivity).apply {
-                        text = getString(R.string.water_calc_entry_title)
-                        textSize = 15f
-                        setTextColor(getColor(R.color.on_surface))
-                        typeface = android.graphics.Typeface.create(
-                            "sans-serif-medium",
-                            android.graphics.Typeface.NORMAL,
-                        )
-                    })
-                    addView(TextView(this@PlantDetailActivity).apply {
-                        text = getString(R.string.water_calc_entry_subtitle)
-                        textSize = 12f
-                        setTextColor(getColor(R.color.on_surface_secondary))
-                        maxLines = 2
-                        ellipsize = android.text.TextUtils.TruncateAt.END
-                        layoutParams = LinearLayout.LayoutParams(
-                            LinearLayout.LayoutParams.MATCH_PARENT,
-                            LinearLayout.LayoutParams.WRAP_CONTENT,
-                        ).apply { topMargin = 2.dp() }
-                    })
-                })
-                addView(ImageView(this@PlantDetailActivity).apply {
-                    setImageResource(R.drawable.ic_chevron_right)
-                    setColorFilter(getColor(R.color.on_surface_secondary))
-                    layoutParams = LinearLayout.LayoutParams(22.dp(), 22.dp())
-                })
-            })
+            addView(
+                LinearLayout(this@PlantDetailActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(14.dp(), 12.dp(), 14.dp(), 12.dp())
+                    addView(
+                        FrameLayout(this@PlantDetailActivity).apply {
+                            setBackgroundResource(R.drawable.bg_icon_circle)
+                            layoutParams = LinearLayout.LayoutParams(42.dp(), 42.dp())
+                            addView(
+                                ImageView(this@PlantDetailActivity).apply {
+                                    setImageResource(R.drawable.ic_watering)
+                                    setColorFilter(getColor(R.color.primary))
+                                    layoutParams = FrameLayout.LayoutParams(23.dp(), 23.dp(), Gravity.CENTER)
+                                }
+                            )
+                        }
+                    )
+                    addView(
+                        LinearLayout(this@PlantDetailActivity).apply {
+                            orientation = LinearLayout.VERTICAL
+                            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                                .apply { marginStart = 12.dp() }
+                            addView(
+                                TextView(this@PlantDetailActivity).apply {
+                                    text = getString(R.string.water_calc_entry_title)
+                                    textSize = 15f
+                                    setTextColor(getColor(R.color.on_surface))
+                                    typeface = android.graphics.Typeface.create(
+                                        "sans-serif-medium",
+                                        android.graphics.Typeface.NORMAL,
+                                    )
+                                }
+                            )
+                            addView(
+                                TextView(this@PlantDetailActivity).apply {
+                                    text = getString(R.string.water_calc_entry_subtitle)
+                                    textSize = 12f
+                                    setTextColor(getColor(R.color.on_surface_secondary))
+                                    maxLines = 2
+                                    ellipsize = android.text.TextUtils.TruncateAt.END
+                                    layoutParams = LinearLayout.LayoutParams(
+                                        LinearLayout.LayoutParams.MATCH_PARENT,
+                                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                                    ).apply { topMargin = 2.dp() }
+                                }
+                            )
+                        }
+                    )
+                    addView(
+                        ImageView(this@PlantDetailActivity).apply {
+                            setImageResource(R.drawable.ic_chevron_right)
+                            setColorFilter(getColor(R.color.on_surface_secondary))
+                            layoutParams = LinearLayout.LayoutParams(22.dp(), 22.dp())
+                        }
+                    )
+                }
+            )
         }
 
     private fun buildDoctorEntry(plant: PlantEntity, scans: List<ScanEntity>): View =
@@ -1184,50 +1282,64 @@ class PlantDetailActivity : AppCompatActivity() {
                 Haptics.tick(this@PlantDetailActivity)
                 DoctorChatSheet.show(supportFragmentManager, plant)
             }
-            addView(LinearLayout(this@PlantDetailActivity).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(14.dp(), 12.dp(), 14.dp(), 12.dp())
-                addView(FrameLayout(this@PlantDetailActivity).apply {
-                    setBackgroundResource(R.drawable.bg_icon_circle)
-                    layoutParams = LinearLayout.LayoutParams(42.dp(), 42.dp())
-                    addView(ImageView(this@PlantDetailActivity).apply {
-                        setImageResource(R.drawable.ic_care)
-                        setColorFilter(getColor(R.color.primary))
-                        layoutParams = FrameLayout.LayoutParams(23.dp(), 23.dp(), Gravity.CENTER)
-                    })
-                })
-                addView(LinearLayout(this@PlantDetailActivity).apply {
-                    orientation = LinearLayout.VERTICAL
-                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                        .apply { marginStart = 12.dp() }
-                    addView(TextView(this@PlantDetailActivity).apply {
-                        text = getString(R.string.doctor_title)
-                        textSize = 15f
-                        setTextColor(getColor(R.color.on_surface))
-                        typeface = android.graphics.Typeface.create(
-                            "sans-serif-medium",
-                            android.graphics.Typeface.NORMAL,
-                        )
-                    })
-                    addView(TextView(this@PlantDetailActivity).apply {
-                        text = getString(R.string.doctor_stub_subtitle)
-                        textSize = 12f
-                        setTextColor(getColor(R.color.on_surface_secondary))
-                        maxLines = 1
-                        ellipsize = android.text.TextUtils.TruncateAt.END
-                        layoutParams = LinearLayout.LayoutParams(
-                            LinearLayout.LayoutParams.MATCH_PARENT,
-                            LinearLayout.LayoutParams.WRAP_CONTENT,
-                        ).apply { topMargin = 2.dp() }
-                    })
-                })
-                addView(ImageView(this@PlantDetailActivity).apply {
-                    setImageResource(R.drawable.ic_chevron_right)
-                    setColorFilter(getColor(R.color.on_surface_secondary))
-                    layoutParams = LinearLayout.LayoutParams(22.dp(), 22.dp())
-                })
-            })
+            addView(
+                LinearLayout(this@PlantDetailActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(14.dp(), 12.dp(), 14.dp(), 12.dp())
+                    addView(
+                        FrameLayout(this@PlantDetailActivity).apply {
+                            setBackgroundResource(R.drawable.bg_icon_circle)
+                            layoutParams = LinearLayout.LayoutParams(42.dp(), 42.dp())
+                            addView(
+                                ImageView(this@PlantDetailActivity).apply {
+                                    setImageResource(R.drawable.ic_care)
+                                    setColorFilter(getColor(R.color.primary))
+                                    layoutParams = FrameLayout.LayoutParams(23.dp(), 23.dp(), Gravity.CENTER)
+                                }
+                            )
+                        }
+                    )
+                    addView(
+                        LinearLayout(this@PlantDetailActivity).apply {
+                            orientation = LinearLayout.VERTICAL
+                            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                                .apply { marginStart = 12.dp() }
+                            addView(
+                                TextView(this@PlantDetailActivity).apply {
+                                    text = getString(R.string.doctor_title)
+                                    textSize = 15f
+                                    setTextColor(getColor(R.color.on_surface))
+                                    typeface = android.graphics.Typeface.create(
+                                        "sans-serif-medium",
+                                        android.graphics.Typeface.NORMAL,
+                                    )
+                                }
+                            )
+                            addView(
+                                TextView(this@PlantDetailActivity).apply {
+                                    text = getString(R.string.doctor_stub_subtitle)
+                                    textSize = 12f
+                                    setTextColor(getColor(R.color.on_surface_secondary))
+                                    maxLines = 1
+                                    ellipsize = android.text.TextUtils.TruncateAt.END
+                                    layoutParams = LinearLayout.LayoutParams(
+                                        LinearLayout.LayoutParams.MATCH_PARENT,
+                                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                                    ).apply { topMargin = 2.dp() }
+                                }
+                            )
+                        }
+                    )
+                    addView(
+                        ImageView(this@PlantDetailActivity).apply {
+                            setImageResource(R.drawable.ic_chevron_right)
+                            setColorFilter(getColor(R.color.on_surface_secondary))
+                            layoutParams = LinearLayout.LayoutParams(22.dp(), 22.dp())
+                        }
+                    )
+                }
+            )
         }
 
     private fun buildTabs(): View {
@@ -1267,11 +1379,13 @@ class PlantDetailActivity : AppCompatActivity() {
             .forEach { e -> e.photoUri?.let { items.add(PhotoItem(it, e.timestamp)) } }
         val ordered = items.sortedBy { it.timestamp }.distinctBy { it.uri }
         if (ordered.isEmpty()) {
-            photosContainer.addView(emptyState(
-                R.drawable.illustration_empty_reminders,
-                getString(R.string.plant_photos_empty_title),
-                getString(R.string.plant_photos_empty_hint),
-            ))
+            photosContainer.addView(
+                emptyState(
+                    R.drawable.illustration_empty_reminders,
+                    getString(R.string.plant_photos_empty_title),
+                    getString(R.string.plant_photos_empty_hint),
+                )
+            )
             return
         }
         // 3-column grid via plain LinearLayout rows. Each cell is a
@@ -1328,7 +1442,9 @@ class PlantDetailActivity : AppCompatActivity() {
         val candidates = allUris.filter { it != firstUri }
         if (candidates.isEmpty()) {
             Toast.makeText(
-                this, R.string.photo_compare_need_two, Toast.LENGTH_SHORT,
+                this,
+                R.string.photo_compare_need_two,
+                Toast.LENGTH_SHORT,
             ).show()
             return
         }
@@ -1338,7 +1454,9 @@ class PlantDetailActivity : AppCompatActivity() {
             .setTitle(R.string.photo_compare_pick_title)
             .setItems(labels) { _, which ->
                 PhotoCompareActivity.open(
-                    this, firstUri, candidates[which],
+                    this,
+                    firstUri,
+                    candidates[which],
                 )
             }
             .show()
@@ -1381,51 +1499,57 @@ class PlantDetailActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(14.dp())
         }
-        row.addView(ImageView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(72.dp(), 72.dp())
-            scaleType = ImageView.ScaleType.CENTER_CROP
-            Glide.with(this@PlantDetailActivity)
-                .load(File(scan.imagePath))
-                .transform(CenterCrop(), RoundedCorners(16.dp()))
-                .placeholder(R.drawable.ic_plant_placeholder)
-                .into(this)
-            isClickable = true
-            setOnClickListener {
-                lifecycleScope.launch {
-                    val all = plantRepository.getScansForPlant(plantId)
-                        .sortedBy { it.timestamp }
-                        .map { it.imagePath }
-                    val start = all.indexOf(scan.imagePath).coerceAtLeast(0)
-                    PhotoViewerActivity.open(this@PlantDetailActivity, all, start)
+        row.addView(
+            ImageView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(72.dp(), 72.dp())
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                Glide.with(this@PlantDetailActivity)
+                    .load(File(scan.imagePath))
+                    .transform(CenterCrop(), RoundedCorners(16.dp()))
+                    .placeholder(R.drawable.ic_plant_placeholder)
+                    .into(this)
+                isClickable = true
+                setOnClickListener {
+                    lifecycleScope.launch {
+                        val all = plantRepository.getScansForPlant(plantId)
+                            .sortedBy { it.timestamp }
+                            .map { it.imagePath }
+                        val start = all.indexOf(scan.imagePath).coerceAtLeast(0)
+                        PhotoViewerActivity.open(this@PlantDetailActivity, all, start)
+                    }
                 }
             }
-        })
+        )
         val text = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 .apply { marginStart = 12.dp() }
         }
         val isRu = LocaleHelper.isRussian(this)
-        text.addView(TextView(this).apply {
-            this.text = if (isRu) scan.diseaseNameRu else scan.diseaseName
-            textSize = 16f
-            setTextColor(getColor(R.color.on_surface))
-            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
-            maxLines = 2
-        })
-        text.addView(TextView(this).apply {
-            this.text = getString(
-                R.string.timeline_scan_meta,
-                ImageUtils.formatRelativeDate(this@PlantDetailActivity, scan.timestamp),
-                (scan.confidence * 100).toInt(),
-            )
-            textSize = 12f
-            setTextColor(getColor(R.color.on_surface_secondary))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 5.dp() }
-        })
+        text.addView(
+            TextView(this).apply {
+                this.text = if (isRu) scan.diseaseNameRu else scan.diseaseName
+                textSize = 16f
+                setTextColor(getColor(R.color.on_surface))
+                typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+                maxLines = 2
+            }
+        )
+        text.addView(
+            TextView(this).apply {
+                this.text = getString(
+                    R.string.timeline_scan_meta,
+                    ImageUtils.formatRelativeDate(this@PlantDetailActivity, scan.timestamp),
+                    (scan.confidence * 100).toInt(),
+                )
+                textSize = 12f
+                setTextColor(getColor(R.color.on_surface_secondary))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = 5.dp() }
+            }
+        )
         row.addView(text)
         card.addView(row)
         card.setOnClickListener {
@@ -1461,13 +1585,15 @@ class PlantDetailActivity : AppCompatActivity() {
         val imageFile = File(scan.imagePath)
         if (!imageFile.exists()) {
             // Image already gone — share text only.
-            startActivity(Intent.createChooser(
-                Intent(Intent.ACTION_SEND).apply {
-                    type = "text/plain"
-                    putExtra(Intent.EXTRA_TEXT, caption)
-                },
-                getString(R.string.share_scan_chooser),
-            ))
+            startActivity(
+                Intent.createChooser(
+                    Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, caption)
+                    },
+                    getString(R.string.share_scan_chooser),
+                )
+            )
             return
         }
         // Render the branded share image off the UI thread.
@@ -1476,38 +1602,42 @@ class PlantDetailActivity : AppCompatActivity() {
                 runCatching { composeShareImage(scan, isRu) }.getOrNull()
             }
             if (composed == null) {
-                startActivity(Intent.createChooser(
-                    Intent(Intent.ACTION_SEND).apply {
-                        type = "image/jpeg"
-                        putExtra(Intent.EXTRA_TEXT, caption)
-                        putExtra(
-                            Intent.EXTRA_STREAM,
-                            androidx.core.content.FileProvider.getUriForFile(
-                                this@PlantDetailActivity,
-                                "${packageName}.fileprovider",
-                                imageFile,
-                            ),
-                        )
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    },
-                    getString(R.string.share_scan_chooser),
-                ))
+                startActivity(
+                    Intent.createChooser(
+                        Intent(Intent.ACTION_SEND).apply {
+                            type = "image/jpeg"
+                            putExtra(Intent.EXTRA_TEXT, caption)
+                            putExtra(
+                                Intent.EXTRA_STREAM,
+                                androidx.core.content.FileProvider.getUriForFile(
+                                    this@PlantDetailActivity,
+                                    "$packageName.fileprovider",
+                                    imageFile,
+                                ),
+                            )
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        },
+                        getString(R.string.share_scan_chooser),
+                    )
+                )
                 return@launch
             }
             val uri = androidx.core.content.FileProvider.getUriForFile(
                 this@PlantDetailActivity,
-                "${packageName}.fileprovider",
+                "$packageName.fileprovider",
                 composed,
             )
-            startActivity(Intent.createChooser(
-                Intent(Intent.ACTION_SEND).apply {
-                    type = "image/jpeg"
-                    putExtra(Intent.EXTRA_TEXT, caption)
-                    putExtra(Intent.EXTRA_STREAM, uri)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                },
-                getString(R.string.share_scan_chooser),
-            ))
+            startActivity(
+                Intent.createChooser(
+                    Intent(Intent.ACTION_SEND).apply {
+                        type = "image/jpeg"
+                        putExtra(Intent.EXTRA_TEXT, caption)
+                        putExtra(Intent.EXTRA_STREAM, uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    },
+                    getString(R.string.share_scan_chooser),
+                )
+            )
         }
     }
 
@@ -1520,7 +1650,9 @@ class PlantDetailActivity : AppCompatActivity() {
         val footerH = 270
         val totalH = photoH + footerH
         val bitmap = android.graphics.Bitmap.createBitmap(
-            w, totalH, android.graphics.Bitmap.Config.ARGB_8888,
+            w,
+            totalH,
+            android.graphics.Bitmap.Config.ARGB_8888,
         )
         val canvas = android.graphics.Canvas(bitmap)
         canvas.drawColor(getColor(R.color.surface))
@@ -1545,7 +1677,8 @@ class PlantDetailActivity : AppCompatActivity() {
             color = getColor(R.color.on_surface)
             textSize = 64f
             typeface = android.graphics.Typeface.create(
-                "sans-serif-medium", android.graphics.Typeface.NORMAL,
+                "sans-serif-medium",
+                android.graphics.Typeface.NORMAL,
             )
         }
         val subPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
@@ -1556,7 +1689,8 @@ class PlantDetailActivity : AppCompatActivity() {
             color = getColor(R.color.primary)
             textSize = 32f
             typeface = android.graphics.Typeface.create(
-                "sans-serif-medium", android.graphics.Typeface.NORMAL,
+                "sans-serif-medium",
+                android.graphics.Typeface.NORMAL,
             )
         }
         val title = if (isRu) scan.diseaseNameRu else scan.diseaseName
@@ -1583,82 +1717,94 @@ class PlantDetailActivity : AppCompatActivity() {
             gravity = Gravity.TOP
             setPadding(14.dp())
         }
-        row.addView(FrameLayout(this).apply {
-            setBackgroundResource(R.drawable.bg_icon_circle)
-            layoutParams = LinearLayout.LayoutParams(46.dp(), 46.dp())
-            addView(ImageView(this@PlantDetailActivity).apply {
-                setImageResource(
-                    when (PlantRepository.JournalType.from(entry.type)) {
-                        PlantRepository.JournalType.NOTE -> R.drawable.ic_care
-                        PlantRepository.JournalType.PHOTO -> R.drawable.ic_gallery
-                        PlantRepository.JournalType.WATERING -> R.drawable.ic_watering
-                        PlantRepository.JournalType.FERTILISING -> R.drawable.ic_treatment
-                        PlantRepository.JournalType.REPOTTING -> R.drawable.ic_garden
-                        PlantRepository.JournalType.PRUNING -> R.drawable.ic_note_pencil
-                        PlantRepository.JournalType.MISTING -> R.drawable.ic_warning
+        row.addView(
+            FrameLayout(this).apply {
+                setBackgroundResource(R.drawable.bg_icon_circle)
+                layoutParams = LinearLayout.LayoutParams(46.dp(), 46.dp())
+                addView(
+                    ImageView(this@PlantDetailActivity).apply {
+                        setImageResource(
+                            when (PlantRepository.JournalType.from(entry.type)) {
+                                PlantRepository.JournalType.NOTE -> R.drawable.ic_care
+                                PlantRepository.JournalType.PHOTO -> R.drawable.ic_gallery
+                                PlantRepository.JournalType.WATERING -> R.drawable.ic_watering
+                                PlantRepository.JournalType.FERTILISING -> R.drawable.ic_treatment
+                                PlantRepository.JournalType.REPOTTING -> R.drawable.ic_garden
+                                PlantRepository.JournalType.PRUNING -> R.drawable.ic_note_pencil
+                                PlantRepository.JournalType.MISTING -> R.drawable.ic_warning
+                            }
+                        )
+                        setColorFilter(getColor(R.color.primary))
+                        layoutParams = FrameLayout.LayoutParams(24.dp(), 24.dp(), Gravity.CENTER)
                     }
                 )
-                setColorFilter(getColor(R.color.primary))
-                layoutParams = FrameLayout.LayoutParams(24.dp(), 24.dp(), Gravity.CENTER)
-            })
-        })
+            }
+        )
         val text = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 .apply { marginStart = 12.dp() }
         }
-        text.addView(TextView(this).apply {
-            this.text = when (PlantRepository.JournalType.from(entry.type)) {
-                PlantRepository.JournalType.NOTE -> getString(R.string.note_entry)
-                PlantRepository.JournalType.PHOTO -> getString(R.string.photo_entry)
-                PlantRepository.JournalType.WATERING -> getString(R.string.watering_entry)
-                PlantRepository.JournalType.FERTILISING -> getString(R.string.fertilising_entry)
-                PlantRepository.JournalType.REPOTTING -> getString(R.string.repotting_entry)
-                PlantRepository.JournalType.PRUNING -> getString(R.string.pruning_entry)
-                PlantRepository.JournalType.MISTING -> getString(R.string.misting_entry)
+        text.addView(
+            TextView(this).apply {
+                this.text = when (PlantRepository.JournalType.from(entry.type)) {
+                    PlantRepository.JournalType.NOTE -> getString(R.string.note_entry)
+                    PlantRepository.JournalType.PHOTO -> getString(R.string.photo_entry)
+                    PlantRepository.JournalType.WATERING -> getString(R.string.watering_entry)
+                    PlantRepository.JournalType.FERTILISING -> getString(R.string.fertilising_entry)
+                    PlantRepository.JournalType.REPOTTING -> getString(R.string.repotting_entry)
+                    PlantRepository.JournalType.PRUNING -> getString(R.string.pruning_entry)
+                    PlantRepository.JournalType.MISTING -> getString(R.string.misting_entry)
+                }
+                textSize = 15f
+                setTextColor(getColor(R.color.on_surface))
+                typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
             }
-            textSize = 15f
-            setTextColor(getColor(R.color.on_surface))
-            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
-        })
-        text.addView(TextView(this).apply {
-            this.text = ImageUtils.formatRelativeDate(this@PlantDetailActivity, entry.timestamp)
-            textSize = 12f
-            setTextColor(getColor(R.color.primary))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 2.dp() }
-        })
-        entry.text?.takeIf { it.isNotBlank() }?.let { body ->
-            text.addView(TextView(this).apply {
-                this.text = body
-                textSize = 14f
-                setTextColor(getColor(R.color.on_surface_secondary))
-                setLineSpacing(3.dp().toFloat(), 1f)
+        )
+        text.addView(
+            TextView(this).apply {
+                this.text = ImageUtils.formatRelativeDate(this@PlantDetailActivity, entry.timestamp)
+                textSize = 12f
+                setTextColor(getColor(R.color.primary))
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = 7.dp() }
-            })
+                ).apply { topMargin = 2.dp() }
+            }
+        )
+        entry.text?.takeIf { it.isNotBlank() }?.let { body ->
+            text.addView(
+                TextView(this).apply {
+                    this.text = body
+                    textSize = 14f
+                    setTextColor(getColor(R.color.on_surface_secondary))
+                    setLineSpacing(3.dp().toFloat(), 1f)
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ).apply { topMargin = 7.dp() }
+                }
+            )
         }
         entry.photoUri?.let { uri ->
-            text.addView(ImageView(this).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    160.dp(),
-                ).apply { topMargin = 10.dp() }
-                scaleType = ImageView.ScaleType.CENTER_CROP
-                Glide.with(this@PlantDetailActivity)
-                    .load(Uri.parse(uri))
-                    // RGB_565 for the photos-grid thumbnails; the full-screen
-                    // viewer (openJournalPhotoViewer) still loads at full quality.
-                    .format(DecodeFormat.PREFER_RGB_565)
-                    .transform(CenterCrop(), RoundedCorners(18.dp()))
-                    .into(this)
-                isClickable = true
-                setOnClickListener { openJournalPhotoViewer(uri) }
-            })
+            text.addView(
+                ImageView(this).apply {
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        160.dp(),
+                    ).apply { topMargin = 10.dp() }
+                    scaleType = ImageView.ScaleType.CENTER_CROP
+                    Glide.with(this@PlantDetailActivity)
+                        .load(Uri.parse(uri))
+                        // RGB_565 for the photos-grid thumbnails; the full-screen
+                        // viewer (openJournalPhotoViewer) still loads at full quality.
+                        .format(DecodeFormat.PREFER_RGB_565)
+                        .transform(CenterCrop(), RoundedCorners(18.dp()))
+                        .into(this)
+                    isClickable = true
+                    setOnClickListener { openJournalPhotoViewer(uri) }
+                }
+            )
         }
         row.addView(text)
         card.addView(row)
@@ -1678,10 +1824,12 @@ class PlantDetailActivity : AppCompatActivity() {
             setOnMenuItemClickListener { item ->
                 when (item.itemId) {
                     1 -> {
-                        showEditJournalDialog(entry); true
+                        showEditJournalDialog(entry)
+                        true
                     }
                     2 -> {
-                        confirmDeleteJournalEntry(entry); true
+                        confirmDeleteJournalEntry(entry)
+                        true
                     }
                     else -> false
                 }
@@ -1780,33 +1928,39 @@ class PlantDetailActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             setPadding(28.dp(), 24.dp(), 28.dp(), 28.dp())
-            addView(ImageView(this@PlantDetailActivity).apply {
-                setImageResource(imageRes)
-                layoutParams = LinearLayout.LayoutParams(180.dp(), 180.dp())
-            })
-            addView(TextView(this@PlantDetailActivity).apply {
-                text = title
-                textSize = 22f
-                gravity = Gravity.CENTER
-                setTextColor(getColor(R.color.on_surface))
-                typeface = android.graphics.Typeface.create("sans-serif-black", android.graphics.Typeface.NORMAL)
-                letterSpacing = -0.02f
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = 8.dp() }
-            })
-            addView(TextView(this@PlantDetailActivity).apply {
-                text = body
-                textSize = 14f
-                gravity = Gravity.CENTER
-                setTextColor(getColor(R.color.on_surface_secondary))
-                setLineSpacing(4.dp().toFloat(), 1f)
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = 8.dp() }
-            })
+            addView(
+                ImageView(this@PlantDetailActivity).apply {
+                    setImageResource(imageRes)
+                    layoutParams = LinearLayout.LayoutParams(180.dp(), 180.dp())
+                }
+            )
+            addView(
+                TextView(this@PlantDetailActivity).apply {
+                    text = title
+                    textSize = 22f
+                    gravity = Gravity.CENTER
+                    setTextColor(getColor(R.color.on_surface))
+                    typeface = android.graphics.Typeface.create("sans-serif-black", android.graphics.Typeface.NORMAL)
+                    letterSpacing = -0.02f
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ).apply { topMargin = 8.dp() }
+                }
+            )
+            addView(
+                TextView(this@PlantDetailActivity).apply {
+                    text = body
+                    textSize = 14f
+                    gravity = Gravity.CENTER
+                    setTextColor(getColor(R.color.on_surface_secondary))
+                    setLineSpacing(4.dp().toFloat(), 1f)
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ).apply { topMargin = 8.dp() }
+                }
+            )
         }
 
     private fun showNoteDialog() = showTextDialog(
@@ -2049,7 +2203,7 @@ class PlantDetailActivity : AppCompatActivity() {
                 .filter { it.type == PlantRepository.JournalType.PHOTO.value }
                 .mapNotNull { it.photoUri }
                 .sorted() // approximates chrono order; the journal-render
-                          // function already returns newest-first
+            // function already returns newest-first
             val ordered = photos.distinct()
             val start = ordered.indexOf(tappedUri).coerceAtLeast(0)
             PhotoViewerActivity.open(this@PlantDetailActivity, ordered, start)
@@ -2076,7 +2230,8 @@ class PlantDetailActivity : AppCompatActivity() {
     private fun fireProgressionAlert(plantName: String) {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
             androidx.core.content.ContextCompat.checkSelfPermission(
-                this, android.Manifest.permission.POST_NOTIFICATIONS,
+                this,
+                android.Manifest.permission.POST_NOTIFICATIONS,
             ) != android.content.pm.PackageManager.PERMISSION_GRANTED
         ) {
             return
@@ -2093,7 +2248,8 @@ class PlantDetailActivity : AppCompatActivity() {
         val title = getString(R.string.progression_alert_title, plantName)
         val body = getString(R.string.progression_alert_body)
         val builder = androidx.core.app.NotificationCompat.Builder(
-            this, com.plantdiseases.app.PlantDiseasesApp.CHANNEL_PLANT_REMINDERS,
+            this,
+            com.plantdiseases.app.PlantDiseasesApp.CHANNEL_PLANT_REMINDERS,
         )
             .setSmallIcon(R.drawable.ic_warning)
             .setContentTitle(title)
@@ -2118,7 +2274,8 @@ class PlantDetailActivity : AppCompatActivity() {
             .setPositiveButton(R.string.delete) { _, _ ->
                 lifecycleScope.launch {
                     com.plantdiseases.app.util.ReminderManager.cancelAll(
-                        this@PlantDetailActivity, plant.id,
+                        this@PlantDetailActivity,
+                        plant.id,
                         // Generic reminders cancel by row id — fetch
                         // before the CASCADE delete wipes them.
                         plantRepository.getReminders(plant.id),

@@ -101,7 +101,10 @@ class ImageUtilsTest {
         assertThat(outSmall.exists()).isTrue()
         assertThat(outSmall.length()).isGreaterThan(0L)
 
-        large.delete(); small.delete(); outLarge.delete(); outSmall.delete()
+        large.delete()
+        small.delete()
+        outLarge.delete()
+        outSmall.delete()
     }
 
     private fun writeBitmap(w: Int, h: Int): File {

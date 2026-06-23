@@ -87,9 +87,9 @@ data class ScanEntity(
     @ColumnInfo(name = "confidence") val confidence: Float,
     @ColumnInfo(name = "description") val description: String,
     @ColumnInfo(name = "description_ru") val descriptionRu: String,
-    @ColumnInfo(name = "treatment") val treatment: String,        // JSON array
-    @ColumnInfo(name = "treatment_ru") val treatmentRu: String,   // JSON array
-    @ColumnInfo(name = "prevention") val prevention: String,      // JSON array
+    @ColumnInfo(name = "treatment") val treatment: String, // JSON array
+    @ColumnInfo(name = "treatment_ru") val treatmentRu: String, // JSON array
+    @ColumnInfo(name = "prevention") val prevention: String, // JSON array
     @ColumnInfo(name = "prevention_ru") val preventionRu: String, // JSON array
     @ColumnInfo(name = "is_healthy") val isHealthy: Boolean,
     @ColumnInfo(name = "timestamp") val timestamp: Long = System.currentTimeMillis(),
@@ -271,18 +271,22 @@ interface PlantReminderEventDao {
     @Query("SELECT * FROM plant_reminder_events WHERE id = :id LIMIT 1")
     suspend fun getById(id: Long): PlantReminderEventEntity?
 
-    @Query("""
+    @Query(
+        """
         SELECT * FROM plant_reminder_events
         WHERE plant_id = :plantId
         ORDER BY fired_at DESC
         LIMIT :limit
-    """)
+    """
+    )
     suspend fun recentForPlant(plantId: Long, limit: Int = 50): List<PlantReminderEventEntity>
 
-    @Query("""
+    @Query(
+        """
         SELECT MAX(done_at) FROM plant_reminder_events
         WHERE plant_id = :plantId AND type = :type AND action = 'done'
-    """)
+    """
+    )
     suspend fun lastDoneAt(plantId: Long, type: String): Long?
 }
 
@@ -303,7 +307,7 @@ interface PlantReminderEventDao {
 data class ChatMessageEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     @ColumnInfo(name = "plant_id") val plantId: Long,
-    @ColumnInfo(name = "role") val role: String,       // "user" | "bot"
+    @ColumnInfo(name = "role") val role: String, // "user" | "bot"
     @ColumnInfo(name = "content") val content: String,
     @ColumnInfo(name = "timestamp") val timestamp: Long = System.currentTimeMillis(),
 )
@@ -342,7 +346,7 @@ interface ChatMessageDao {
 data class ScanChatMessageEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     @ColumnInfo(name = "scan_id") val scanId: Long,
-    @ColumnInfo(name = "role") val role: String,       // "user" | "bot"
+    @ColumnInfo(name = "role") val role: String, // "user" | "bot"
     @ColumnInfo(name = "content") val content: String,
     @ColumnInfo(name = "timestamp") val timestamp: Long = System.currentTimeMillis(),
 )
@@ -505,22 +509,20 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        fun getInstance(context: android.content.Context): AppDatabase {
-            return INSTANCE ?: synchronized(this) {
-                val instance = Room.databaseBuilder(
-                    context.applicationContext,
-                    AppDatabase::class.java,
-                    "plantdiseases_db"
-                )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
-                    // Room 2.7 deprecated the no-arg overload; `dropAllTables =
-                    // true` preserves the previous behaviour (wipe everything
-                    // when no migration path exists).
-                    .fallbackToDestructiveMigration(dropAllTables = true)
-                    .build()
-                INSTANCE = instance
-                instance
-            }
+        fun getInstance(context: android.content.Context): AppDatabase = INSTANCE ?: synchronized(this) {
+            val instance = Room.databaseBuilder(
+                context.applicationContext,
+                AppDatabase::class.java,
+                "plantdiseases_db"
+            )
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                // Room 2.7 deprecated the no-arg overload; `dropAllTables =
+                // true` preserves the previous behaviour (wipe everything
+                // when no migration path exists).
+                .fallbackToDestructiveMigration(dropAllTables = true)
+                .build()
+            INSTANCE = instance
+            instance
         }
     }
 }

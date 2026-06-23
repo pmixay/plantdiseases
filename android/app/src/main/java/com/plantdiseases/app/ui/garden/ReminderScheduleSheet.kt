@@ -157,15 +157,19 @@ class ReminderScheduleSheet : BottomSheetDialogFragment() {
         if (!::plant.isInitialized) return
         lifecycleScope.launch {
             val reminders = plantRepository.getReminders(plant.id)
-                .sortedWith(compareByDescending<PlantReminderEntity> { it.enabled }
-                    .thenBy { it.id })
+                .sortedWith(
+                    compareByDescending<PlantReminderEntity> { it.enabled }
+                        .thenBy { it.id }
+                )
             val b = _binding ?: return@launch
             b.reminderList.removeAllViews()
             b.reminderEmpty.visibility =
                 if (reminders.isEmpty()) View.VISIBLE else View.GONE
             reminders.forEach { reminder ->
                 val row = ItemReminderRowBinding.inflate(
-                    layoutInflater, b.reminderList, false,
+                    layoutInflater,
+                    b.reminderList,
+                    false,
                 )
                 bindRow(row, reminder)
                 b.reminderList.addView(row.root)
@@ -226,7 +230,11 @@ class ReminderScheduleSheet : BottomSheetDialogFragment() {
         val ctx = requireContext()
         val editor = DialogReminderEditorBinding.inflate(layoutInflater)
 
-        editor.editorInterval.apply { minValue = 1; maxValue = 30; value = 7 }
+        editor.editorInterval.apply {
+            minValue = 1
+            maxValue = 30
+            value = 7
+        }
         editor.editorHour.apply {
             minValue = 0
             maxValue = 23
@@ -249,8 +257,11 @@ class ReminderScheduleSheet : BottomSheetDialogFragment() {
         fun refreshSelection() {
             cells.forEach { (key, cell) ->
                 cell.setBackgroundResource(
-                    if (key == selectedIconKey) R.drawable.bg_icon_circle_selected
-                    else R.drawable.bg_icon_circle
+                    if (key == selectedIconKey) {
+                        R.drawable.bg_icon_circle_selected
+                    } else {
+                        R.drawable.bg_icon_circle
+                    }
                 )
             }
         }
@@ -266,11 +277,13 @@ class ReminderScheduleSheet : BottomSheetDialogFragment() {
                 isClickable = true
                 isFocusable = true
                 contentDescription = getString(preset.labelRes)
-                addView(ImageView(ctx).apply {
-                    setImageResource(preset.iconRes)
-                    setColorFilter(ctx.getColor(R.color.primary))
-                    layoutParams = FrameLayout.LayoutParams(22.dp(), 22.dp(), Gravity.CENTER)
-                })
+                addView(
+                    ImageView(ctx).apply {
+                        setImageResource(preset.iconRes)
+                        setColorFilter(ctx.getColor(R.color.primary))
+                        layoutParams = FrameLayout.LayoutParams(22.dp(), 22.dp(), Gravity.CENTER)
+                    }
+                )
                 setOnClickListener {
                     Haptics.tick(ctx)
                     selectedIconKey = preset.key
@@ -337,11 +350,13 @@ class ReminderScheduleSheet : BottomSheetDialogFragment() {
             }
             val description = editor.editorDescription.text?.toString()?.trim()
                 ?.takeIf { it.isNotEmpty() }
-            val entity = (existing ?: PlantReminderEntity(
-                plantId = plant.id,
-                type = selectedIconKey, // preset key, or "custom" for the bell
-                enabled = true,
-            )).copy(
+            val entity = (
+                existing ?: PlantReminderEntity(
+                    plantId = plant.id,
+                    type = selectedIconKey, // preset key, or "custom" for the bell
+                    enabled = true,
+                )
+                ).copy(
                 label = name,
                 description = description,
                 icon = selectedIconKey,
@@ -437,7 +452,9 @@ class ReminderScheduleSheet : BottomSheetDialogFragment() {
             defaults.forEach { entity ->
                 val savedId = plantRepository.saveReminder(entity)
                 ReminderManager.schedule(
-                    requireContext(), entity.copy(id = savedId), plant.name,
+                    requireContext(),
+                    entity.copy(id = savedId),
+                    plant.name,
                 )
             }
             if (defaults.isNotEmpty()) {
@@ -470,7 +487,9 @@ class ReminderScheduleSheet : BottomSheetDialogFragment() {
             ) != PackageManager.PERMISSION_GRANTED
 
     private fun Int.dp(): Int = TypedValue.applyDimension(
-        TypedValue.COMPLEX_UNIT_DIP, this.toFloat(), resources.displayMetrics
+        TypedValue.COMPLEX_UNIT_DIP,
+        this.toFloat(),
+        resources.displayMetrics
     ).toInt()
 
     companion object {

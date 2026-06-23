@@ -47,7 +47,8 @@ class GalleryFragment : Fragment() {
     enum class Filter { ALL, HEALTHY, DISEASED }
 
     override fun onCreateView(
-        inflater: LayoutInflater, container: ViewGroup?,
+        inflater: LayoutInflater,
+        container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
         _binding = FragmentGalleryBinding.inflate(inflater, container, false)
@@ -156,9 +157,14 @@ class GalleryFragment : Fragment() {
 
     private fun setupStaggerAnimation() {
         val scaleAnim = ScaleAnimation(
-            0.9f, 1.0f, 0.9f, 1.0f,
-            ScaleAnimation.RELATIVE_TO_SELF, 0.5f,
-            ScaleAnimation.RELATIVE_TO_SELF, 0.5f
+            0.9f,
+            1.0f,
+            0.9f,
+            1.0f,
+            ScaleAnimation.RELATIVE_TO_SELF,
+            0.5f,
+            ScaleAnimation.RELATIVE_TO_SELF,
+            0.5f
         )
         val alphaAnim = AlphaAnimation(0f, 1f)
         val animSet = AnimationSet(true).apply {

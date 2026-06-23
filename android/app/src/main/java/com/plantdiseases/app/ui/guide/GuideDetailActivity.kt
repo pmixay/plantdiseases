@@ -65,11 +65,13 @@ class GuideDetailActivity : AppCompatActivity() {
         }
 
         GuideContentRenderer.render(
-            binding.llGuideSections, if (isRu) item.contentRu else item.contentEn,
+            binding.llGuideSections,
+            if (isRu) item.contentRu else item.contentEn,
         )
         GuideDataProvider.exampleImageUrl(item.id)?.let { url ->
             binding.llGuideSections.addView(
-                GuideContentRenderer.heroPhoto(this, url, title), 0,
+                GuideContentRenderer.heroPhoto(this, url, title),
+                0,
             )
         }
 

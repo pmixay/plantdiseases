@@ -38,7 +38,8 @@ class ImageUtilsInstrumentedTest {
         // 1500 * (1024/2000) == 768
         assertEquals(768, minOf(bounds.first, bounds.second))
 
-        src.delete(); out.delete()
+        src.delete()
+        out.delete()
     }
 
     @Test
@@ -47,7 +48,8 @@ class ImageUtilsInstrumentedTest {
         val out = ImageUtils.prepareImageForUpload(ctx, src.absolutePath, maxSize = 1024)
         val bounds = decodeBounds(out)
         assertEquals(240, maxOf(bounds.first, bounds.second))
-        src.delete(); out.delete()
+        src.delete()
+        out.delete()
     }
 
     @Test
@@ -69,7 +71,8 @@ class ImageUtilsInstrumentedTest {
 
         assertTrue("flat should be near-zero variance, was $flatScore", flatScore < 50.0)
         assertTrue("sharp ($sharpScore) should exceed flat ($flatScore)", sharpScore > flatScore)
-        flat.delete(); sharp.delete()
+        flat.delete()
+        sharp.delete()
     }
 
     @Test
@@ -84,9 +87,11 @@ class ImageUtilsInstrumentedTest {
 
     private fun checkerboard(size: Int, block: Int): Bitmap {
         val pixels = IntArray(size * size)
-        for (y in 0 until size) for (x in 0 until size) {
-            val on = ((x / block) + (y / block)) % 2 == 0
-            pixels[y * size + x] = if (on) Color.WHITE else Color.BLACK
+        for (y in 0 until size) {
+            for (x in 0 until size) {
+                val on = ((x / block) + (y / block)) % 2 == 0
+                pixels[y * size + x] = if (on) Color.WHITE else Color.BLACK
+            }
         }
         return Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
             .apply { setPixels(pixels, 0, size, 0, 0, size, size) }

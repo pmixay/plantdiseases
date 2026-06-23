@@ -28,7 +28,9 @@ import com.plantdiseases.app.R
 class ScanTipsSheet : BottomSheetDialogFragment() {
 
     override fun onCreateView(
-        inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?
     ): View = inflater.inflate(R.layout.sheet_scan_tips, container, false)
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {

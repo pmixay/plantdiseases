@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<baseline version="1.0">
+    <file name="src/main/java/com/plantdiseases/app/data/local/Database.kt">
+        <error line="465" column="21" source="standard:property-naming" />
+    </file>
+    <file name="src/main/java/com/plantdiseases/app/ui/camera/CameraFragment.kt">
+        <error line="94" column="17" source="standard:property-naming" />
+        <error line="95" column="17" source="standard:property-naming" />
+        <error line="96" column="17" source="standard:property-naming" />
+    </file>
+    <file name="src/main/java/com/plantdiseases/app/ui/guide/GuideFragment.kt">
+        <error line="41" column="17" source="standard:property-naming" />
+        <error line="42" column="17" source="standard:property-naming" />
+        <error line="43" column="17" source="standard:property-naming" />
+    </file>
+</baseline>

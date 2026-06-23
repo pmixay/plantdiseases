@@ -258,7 +258,9 @@ class NearbyScansActivity : AppCompatActivity() {
             .sortedBy { diseaseLabel(it) }
             .forEach { key ->
                 val chip = buildTypeChip(
-                    sheet.cgType, DiseaseLabels.displayName(key, isRu) ?: key, key,
+                    sheet.cgType,
+                    DiseaseLabels.displayName(key, isRu) ?: key,
+                    key,
                 )
                 sheet.cgType.addView(chip)
                 if (key == typeFilter) checkedTypeId = chip.id

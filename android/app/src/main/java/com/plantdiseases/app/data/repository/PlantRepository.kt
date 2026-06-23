@@ -139,10 +139,12 @@ class PlantRepository(
     suspend fun updateMeasuredLux(id: Long, lux: Int) = withContext(Dispatchers.IO) {
         if (lux <= 0) return@withContext
         val existing = plantDao.getPlantById(id) ?: return@withContext
-        plantDao.update(existing.copy(
-            measuredLux = lux,
-            measuredLuxAt = System.currentTimeMillis(),
-        ))
+        plantDao.update(
+            existing.copy(
+                measuredLux = lux,
+                measuredLuxAt = System.currentTimeMillis(),
+            )
+        )
     }
 
     suspend fun assignScanToPlant(scanId: Long, plantId: Long?) = withContext(Dispatchers.IO) {
@@ -187,7 +189,9 @@ class PlantRepository(
         addTypedEntry(plantId, JournalType.MISTING, text)
 
     private suspend fun addTypedEntry(
-        plantId: Long, type: JournalType, text: String?,
+        plantId: Long,
+        type: JournalType,
+        text: String?,
     ) = addJournalEntry(
         PlantJournalEntity(
             plantId = plantId,
@@ -328,8 +332,10 @@ class PlantRepository(
         val meanGapDays = gaps.average()
         val deltaDays = meanGapDays - reminder.intervalDays.toDouble()
         if (kotlin.math.abs(deltaDays) < deltaThresholdDays) return@withContext null
-        val proposedInterval = (reminder.intervalDays + deltaDays.toInt()
-            .coerceIn(-maxDeltaDays, maxDeltaDays))
+        val proposedInterval = (
+            reminder.intervalDays + deltaDays.toInt()
+                .coerceIn(-maxDeltaDays, maxDeltaDays)
+            )
             .coerceIn(1, 30)
         if (proposedInterval == reminder.intervalDays) return@withContext null
         WateringSuggestion(
@@ -374,7 +380,7 @@ class PlantRepository(
      *  recently logged matching-type journal entry + reminder interval.
      *  ``dueAt`` is an absolute epoch-ms; the UI renders relative. */
     data class NextAction(
-        val type: String,           // "watering" / "fertilize" / …
+        val type: String, // "watering" / "fertilize" / …
         val dueAt: Long,
     )
 
