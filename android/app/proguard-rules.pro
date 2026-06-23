@@ -75,15 +75,18 @@
 -keep class com.airbnb.lottie.model.** { *; }
 -keep class com.airbnb.lottie.animation.** { *; }
 
-# TensorFlow Lite — the on-device Aqua classifier (AquaClassifier) reaches the
-# interpreter through JNI, and TFLite uses reflection internally for optional
-# delegates (GPU/NNAPI). R8 has no view into the native side, so keep the
-# public API surface and silence warnings about the optional delegate classes
-# this build doesn't bundle. Without this the release build can strip a class
-# the native layer expects and the offline scan crashes only in the minified
-# APK.
+# TensorFlow Lite / LiteRT — the on-device Aqua classifier (AquaClassifier)
+# reaches the interpreter through JNI, and the runtime uses reflection
+# internally for optional delegates (GPU/NNAPI). R8 has no view into the native
+# side, so keep the public API surface and silence warnings about the optional
+# delegate classes this build doesn't bundle. Without this the release build
+# can strip a class the native layer expects and the offline scan crashes only
+# in the minified APK. LiteRT retains the org.tensorflow.lite Interpreter API
+# but also ships classes under com.google.ai.edge.litert, so keep both.
 -keep class org.tensorflow.lite.** { *; }
 -dontwarn org.tensorflow.lite.**
+-keep class com.google.ai.edge.litert.** { *; }
+-dontwarn com.google.ai.edge.litert.**
 
 # Firebase Messaging ships its own consumer ProGuard rules, but it is
 # initialised manually here (no google-services plugin), so silence any

@@ -262,11 +262,15 @@ dependencies {
     // WorkManager (plant reminders)
     implementation("androidx.work:work-runtime-ktx:2.10.0")
 
-    // TensorFlow Lite — on-device inference for the Aqua model family.
+    // LiteRT (formerly TensorFlow Lite) — on-device inference for the Aqua
+    // model family. Migrated off org.tensorflow:tensorflow-lite:2.16.1, whose
+    // prebuilt .so libs aren't 16 KB page-aligned (Google Play's Nov 2025
+    // requirement). LiteRT keeps the org.tensorflow.lite Interpreter API, so
+    // AquaClassifier's code is unchanged; only the artefact coordinate moves.
     // The model artefact (assets/models/aqua_classifier.tflite) is provisioned
     // out of band like the server weights, never committed; AquaClassifier
     // gates on its presence and the app degrades to the server when absent.
-    implementation("org.tensorflow:tensorflow-lite:2.16.1")
+    implementation("com.google.ai.edge.litert:litert:2.1.0")
 
     // ─── Local JVM unit tests (./gradlew testDebugUnitTest) ───────────────
     // Robolectric lets the image / ML-diagnosis pipeline run on the JVM
