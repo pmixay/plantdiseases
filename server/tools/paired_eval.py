@@ -2,11 +2,11 @@
 """Paired model A/B on ONE fixed eval set — the trustworthy regression test.
 
 The point-estimate per-class numbers in two ``training_metrics.json`` files are
-NOT comparable: each run's ``val_realworld`` is a different draw (see
-``frozen_eval.py``). The only honest way to ask "did the candidate regress
-leaf_scorch?" is to run **both** model bundles over the **same** images and
-paired-bootstrap the difference (``tools/eval_bootstrap.py``: a delta is real
-only when its paired CI excludes zero).
+NOT comparable: each run's ``val_realworld`` is a different draw. The only honest
+way to ask "did the candidate regress leaf_scorch?" is to run **both** model
+bundles over the **same** images and paired-bootstrap the difference
+(``tools/eval_bootstrap.py``: a delta is real only when its paired CI excludes
+zero).
 
 This harness does exactly that, faithfully:
 
@@ -22,16 +22,18 @@ This harness does exactly that, faithfully:
   *moved*), a correct→wrong / wrong→correct flip analysis (McNemar), and
   per-class healthy-leak — so a real regression is not just flagged but located.
 
+The eval set is any ImageFolder tree (``<class>/<image>``) you point it at.
+
 Two modes:
   * two bundles:        ``--bundle-a DIR --bundle-b DIR``  (cross-version A/B)
   * quantization drift: ``--int8-vs-fp32 DIR``            (within-bundle, clean)
 
 CLI
 ---
-    python -m server.tools.paired_eval \\
-        --eval-root data/frozen_eval \\
+    python -m tools.paired_eval \\
+        --eval-root /path/to/eval_imagefolder \\
         --bundle-a models_prev --label-a v2.6.5 --classifier-a fp32 \\
-        --bundle-b models_new  --label-b v2.6.6 --classifier-b fp32 \\
+        --bundle-b models_new  --label-b v2.6.7 --classifier-b fp32 \\
         --out-json report.json --out-md report.md --focus leaf_scorch_underwatering
 """
 
@@ -52,9 +54,18 @@ if str(_SERVER_DIR) not in sys.path:
 
 from classifier import DiseaseClassifier  # noqa: E402
 from tools import eval_bootstrap as eb  # noqa: E402
-from tools.frozen_eval import IMAGE_EXTS, iter_class_images  # noqa: E402
 
 NON_DISEASE = ("healthy", "not_a_plant")
+IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".bmp", ".webp")
+
+
+def iter_class_images(root: Path):
+    """Yield ``(class_name, image_path)`` for an ImageFolder-style tree."""
+    root = Path(root)
+    for cls_dir in sorted(p for p in root.iterdir() if p.is_dir()):
+        for img in sorted(cls_dir.iterdir()):
+            if img.suffix.lower() in IMAGE_EXTS:
+                yield cls_dir.name, img
 
 
 # ── model loading (force a specific classifier variant) ─────────────────────
