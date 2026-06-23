@@ -54,12 +54,15 @@ android {
         buildConfigField("String", "FCM_SENDER_ID", "\"${fcmProp("FCM_SENDER_ID")}\"")
 
         // The Aqua family runs a TFLite model on-device. Limit the bundled
-        // native .so libs to the ABIs real devices use — dropping x86/mips
-        // keeps the APK from carrying interpreter libs no phone will load.
+        // native .so libs to the ABIs real phones use. x86_64 is dropped: it
+        // exists only for emulators/Chromebooks and the LiteRT interpreter lib
+        // for it is ~10 MB — on x86_64 the app simply degrades to server
+        // inference (the documented Aqua-absent fallback). LiteRT ships no
+        // armeabi-v7a lib, so 32-bit devices also degrade to the server.
         // (The model itself is downloaded from the server into filesDir, not
         // bundled in the APK — see AquaModelManager.)
         ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
     }
 
@@ -116,7 +119,13 @@ android {
 
     packaging {
         jniLibs {
-            // These prebuilt .so libs (DataStore, CameraX JNI, TFLite) can't be
+            // LiteRT ships an OpenCL GPU-delegate accelerator lib alongside the
+            // interpreter (~2.7 MB arm64 / 3.3 MB x86_64). AquaClassifier runs
+            // CPU-only (Interpreter.Options().setNumThreads(2), no GpuDelegate),
+            // so the accelerator is never dlopen'd — exclude it from the APK.
+            excludes += "**/libLiteRtOpenClAccelerator.so"
+
+            // These prebuilt .so libs (DataStore, CameraX JNI) can't be
             // stripped by the NDK strip tool, which logs a noisy "Unable to
             // strip the following libraries" warning every build. They are
             // packaged as-is either way, so declaring them here just keeps
@@ -126,7 +135,6 @@ android {
                 "**/libdatastore_shared_counter.so",
                 "**/libimage_processing_util_jni.so",
                 "**/libsurface_util_jni.so",
-                "**/libtensorflowlite_jni.so",
             )
         }
     }
@@ -230,15 +238,14 @@ dependencies {
     ksp("com.github.bumptech.glide:ksp:4.16.0")
 
     // Koin dependency injection. Replaces the hand-rolled `by lazy` singletons
-    // on PlantDiseasesApp with a Koin graph (di/AppModule.kt). The workmanager
-    // artefact ships the Koin WorkerFactory, but it is NOT wired in startKoin{}
-    // today: calling workManagerFactory() re-initialises WorkManager and
-    // collides with the default androidx.startup initializer (crash on launch —
-    // see PlantDiseasesApp.onCreate). Kept for the future Koin-injected-worker
-    // path documented there.
+    // on PlantDiseasesApp with a Koin graph (di/AppModule.kt). The
+    // koin-androidx-workmanager artefact (Koin WorkerFactory) is intentionally
+    // NOT depended on: wiring workManagerFactory() re-initialises WorkManager
+    // and collides with the default androidx.startup initializer (crash on
+    // launch — see PlantDiseasesApp.onCreate). A future Koin-injected worker
+    // would re-add it there and remove the startup initializer.
     implementation(platform("io.insert-koin:koin-bom:4.0.0"))
     implementation("io.insert-koin:koin-android")
-    implementation("io.insert-koin:koin-androidx-workmanager")
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
