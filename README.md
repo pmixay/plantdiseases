@@ -6,6 +6,8 @@
 
 **AI-powered houseplant disease detection — on-device camera, cloud inference, bilingual care plans.**
 
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=pmixay_plantdiseases&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=pmixay_plantdiseases)
+
 Two-stage ML pipeline (YOLOv8 leaf detector → frozen DINOv2 ViT-S/14
 backbone + LoRA + MLP head classifier) hosted behind a hardened FastAPI
 service, paired with a Kotlin Android client that ships scan history,
