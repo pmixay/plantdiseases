@@ -1,15 +1,25 @@
 package com.plantdiseases.app.data.model
 
 import com.google.gson.annotations.SerializedName
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+
+// NOTE (Ktor + kotlinx.serialization migration, step 2): the response models
+// reachable from /api/analyze are dual-annotated — @SerializedName keeps Gson
+// working for the endpoints still on Retrofit and for local persistence
+// (ScanRepository's Gson cache, ResultActivity intent payloads), while
+// @Serializable + @SerialName let the same classes deserialize through the new
+// Ktor client. The two annotations mirror each other 1:1.
 
 /** Single bounding box returned by the YOLOv8 detector (Stage 1). */
+@Serializable
 data class DetectionRegion(
-    @SerializedName("x") val x: Int,
-    @SerializedName("y") val y: Int,
-    @SerializedName("width") val width: Int,
-    @SerializedName("height") val height: Int,
-    @SerializedName("class") val className: String? = null,
-    @SerializedName("confidence") val confidence: Float? = null
+    @SerializedName("x") @SerialName("x") val x: Int,
+    @SerializedName("y") @SerialName("y") val y: Int,
+    @SerializedName("width") @SerialName("width") val width: Int,
+    @SerializedName("height") @SerialName("height") val height: Int,
+    @SerializedName("class") @SerialName("class") val className: String? = null,
+    @SerializedName("confidence") @SerialName("confidence") val confidence: Float? = null
 )
 
 /** Stage 1 detection result — list of boxes plus the one Stage 2 used.
@@ -19,29 +29,32 @@ data class DetectionRegion(
  * are in that space, so any overlay renderer must scale against these
  * dims rather than against the raw camera file's bitmap (which is
  * typically larger and may be EXIF-rotated). */
+@Serializable
 data class Detection(
-    @SerializedName("is_diseased") val isDiseased: Boolean = false,
-    @SerializedName("detector_confidence") val detectorConfidence: Float = 0f,
-    @SerializedName("image_width") val imageWidth: Int = 0,
-    @SerializedName("image_height") val imageHeight: Int = 0,
-    @SerializedName("regions") val regions: List<DetectionRegion> = emptyList(),
-    @SerializedName("primary_region") val primaryRegion: DetectionRegion? = null
+    @SerializedName("is_diseased") @SerialName("is_diseased") val isDiseased: Boolean = false,
+    @SerializedName("detector_confidence") @SerialName("detector_confidence") val detectorConfidence: Float = 0f,
+    @SerializedName("image_width") @SerialName("image_width") val imageWidth: Int = 0,
+    @SerializedName("image_height") @SerialName("image_height") val imageHeight: Int = 0,
+    @SerializedName("regions") @SerialName("regions") val regions: List<DetectionRegion> = emptyList(),
+    @SerializedName("primary_region") @SerialName("primary_region") val primaryRegion: DetectionRegion? = null
 )
 
 /** Single entry in the server-provided top-k candidate list. */
+@Serializable
 data class TopKEntry(
-    @SerializedName("class") val className: String = "",
-    @SerializedName("confidence") val confidence: Float = 0f,
-    @SerializedName("name_en") val nameEn: String? = null,
-    @SerializedName("name_ru") val nameRu: String? = null,
-    @SerializedName("is_healthy") val isHealthy: Boolean? = null
+    @SerializedName("class") @SerialName("class") val className: String = "",
+    @SerializedName("confidence") @SerialName("confidence") val confidence: Float = 0f,
+    @SerializedName("name_en") @SerialName("name_en") val nameEn: String? = null,
+    @SerializedName("name_ru") @SerialName("name_ru") val nameRu: String? = null,
+    @SerializedName("is_healthy") @SerialName("is_healthy") val isHealthy: Boolean? = null
 )
 
 /** One class inside a conformal prediction set, with bilingual labels. */
+@Serializable
 data class PredictionSetItem(
-    @SerializedName("class") val className: String = "",
-    @SerializedName("name_en") val nameEn: String? = null,
-    @SerializedName("name_ru") val nameRu: String? = null,
+    @SerializedName("class") @SerialName("class") val className: String = "",
+    @SerializedName("name_en") @SerialName("name_en") val nameEn: String? = null,
+    @SerializedName("name_ru") @SerialName("name_ru") val nameRu: String? = null,
 )
 
 /**
@@ -53,16 +66,17 @@ data class PredictionSetItem(
  * "feed me"). The result screen can then show both cards instead of forcing
  * the user to guess which one to act on. Empty for every other set.
  */
+@Serializable
 data class PredictionSetCareCard(
-    @SerializedName("class") val className: String = "",
-    @SerializedName("name_en") val nameEn: String? = null,
-    @SerializedName("name_ru") val nameRu: String? = null,
-    @SerializedName("description") val description: String = "",
-    @SerializedName("description_ru") val descriptionRu: String = "",
-    @SerializedName("treatment") val treatment: List<String> = emptyList(),
-    @SerializedName("treatment_ru") val treatmentRu: List<String> = emptyList(),
-    @SerializedName("prevention") val prevention: List<String> = emptyList(),
-    @SerializedName("prevention_ru") val preventionRu: List<String> = emptyList(),
+    @SerializedName("class") @SerialName("class") val className: String = "",
+    @SerializedName("name_en") @SerialName("name_en") val nameEn: String? = null,
+    @SerializedName("name_ru") @SerialName("name_ru") val nameRu: String? = null,
+    @SerializedName("description") @SerialName("description") val description: String = "",
+    @SerializedName("description_ru") @SerialName("description_ru") val descriptionRu: String = "",
+    @SerializedName("treatment") @SerialName("treatment") val treatment: List<String> = emptyList(),
+    @SerializedName("treatment_ru") @SerialName("treatment_ru") val treatmentRu: List<String> = emptyList(),
+    @SerializedName("prevention") @SerialName("prevention") val prevention: List<String> = emptyList(),
+    @SerializedName("prevention_ru") @SerialName("prevention_ru") val preventionRu: List<String> = emptyList(),
 )
 
 /**
@@ -70,29 +84,31 @@ data class PredictionSetCareCard(
  * the configured coverage level (e.g. 90 %). Surfaced honestly when
  * calibration data is loaded server-side; the field is null otherwise.
  */
+@Serializable
 data class PredictionSet(
-    @SerializedName("classes") val classes: List<String> = emptyList(),
-    @SerializedName("coverage") val coverage: Float = 0f,
-    @SerializedName("method") val method: String? = null,
-    @SerializedName("items") val items: List<PredictionSetItem> = emptyList(),
+    @SerializedName("classes") @SerialName("classes") val classes: List<String> = emptyList(),
+    @SerializedName("coverage") @SerialName("coverage") val coverage: Float = 0f,
+    @SerializedName("method") @SerialName("method") val method: String? = null,
+    @SerializedName("items") @SerialName("items") val items: List<PredictionSetItem> = emptyList(),
     /**
      * True until the conformal calibration set is large enough for the
      * coverage figure to carry a real statistical guarantee. When
      * `advisory`, the UI must render the set as "other candidates to
      * consider" rather than claiming "<coverage>% guaranteed coverage".
      */
-    @SerializedName("advisory") val advisory: Boolean = true,
+    @SerializedName("advisory") @SerialName("advisory") val advisory: Boolean = true,
     /**
      * True when the set is the ambiguous physiological-stress pair
      * (under-watering vs nutrient deficiency) and `careCards` carries both
      * full care cards so the UI can show "water me" AND "feed me" side by
      * side instead of only the top-1's advice.
      */
-    @SerializedName("dual_care") val dualCare: Boolean = false,
-    @SerializedName("care_cards") val careCards: List<PredictionSetCareCard> = emptyList(),
+    @SerializedName("dual_care") @SerialName("dual_care") val dualCare: Boolean = false,
+    @SerializedName("care_cards") @SerialName("care_cards") val careCards: List<PredictionSetCareCard> = emptyList(),
 )
 
 /** Response from the server after analyzing an image */
+@Serializable
 data class AnalysisResponse(
     // Canonical class key (e.g. ``leaf_spot``) the pipeline
     // landed on AFTER post-processing — this is what
@@ -102,51 +118,53 @@ data class AnalysisResponse(
     // ``className`` / ``diseaseName`` but leaves ``allProbs``
     // un-mutated; using argmax would poison server-side per-class
     // accuracy metrics.
-    @SerializedName("class_name") val classKey: String? = null,
+    @SerializedName("class_name") @SerialName("class_name") val classKey: String? = null,
     // Gson does not honour Kotlin non-null types, so missing/partial
     // server responses would otherwise inject 0f / null silently (and
     // NPE on first access for reference types). Give every
     // always-expected field a safe default so an older / partial
     // response degrades gracefully instead of crashing or showing 0%.
-    @SerializedName("disease_name") val diseaseName: String = "",
-    @SerializedName("disease_name_ru") val diseaseNameRu: String = "",
-    @SerializedName("confidence") val confidence: Float = 0f,
-    @SerializedName("description") val description: String = "",
-    @SerializedName("description_ru") val descriptionRu: String = "",
-    @SerializedName("treatment") val treatment: List<String> = emptyList(),
-    @SerializedName("treatment_ru") val treatmentRu: List<String> = emptyList(),
-    @SerializedName("prevention") val prevention: List<String> = emptyList(),
-    @SerializedName("prevention_ru") val preventionRu: List<String> = emptyList(),
-    @SerializedName("is_healthy") val isHealthy: Boolean = false,
+    // (kotlinx.serialization likewise falls back to the default for a
+    // missing key, so the two paths degrade identically.)
+    @SerializedName("disease_name") @SerialName("disease_name") val diseaseName: String = "",
+    @SerializedName("disease_name_ru") @SerialName("disease_name_ru") val diseaseNameRu: String = "",
+    @SerializedName("confidence") @SerialName("confidence") val confidence: Float = 0f,
+    @SerializedName("description") @SerialName("description") val description: String = "",
+    @SerializedName("description_ru") @SerialName("description_ru") val descriptionRu: String = "",
+    @SerializedName("treatment") @SerialName("treatment") val treatment: List<String> = emptyList(),
+    @SerializedName("treatment_ru") @SerialName("treatment_ru") val treatmentRu: List<String> = emptyList(),
+    @SerializedName("prevention") @SerialName("prevention") val prevention: List<String> = emptyList(),
+    @SerializedName("prevention_ru") @SerialName("prevention_ru") val preventionRu: List<String> = emptyList(),
+    @SerializedName("is_healthy") @SerialName("is_healthy") val isHealthy: Boolean = false,
     // Server-computed severity (low|medium|high). Authoritative — the
     // client must persist and forward this rather than re-deriving it
     // from a confidence heuristic (which can disagree with what the
     // pipeline actually scored).
-    @SerializedName("severity") val severity: String? = null,
-    @SerializedName("detection") val detection: Detection? = null,
-    @SerializedName("all_probs") val allProbs: Map<String, Float>? = null,
-    @SerializedName("top_k") val topK: List<TopKEntry>? = null,
-    @SerializedName("warnings") val warnings: List<String>? = null,
-    @SerializedName("prediction_set") val predictionSet: PredictionSet? = null,
+    @SerializedName("severity") @SerialName("severity") val severity: String? = null,
+    @SerializedName("detection") @SerialName("detection") val detection: Detection? = null,
+    @SerializedName("all_probs") @SerialName("all_probs") val allProbs: Map<String, Float>? = null,
+    @SerializedName("top_k") @SerialName("top_k") val topK: List<TopKEntry>? = null,
+    @SerializedName("warnings") @SerialName("warnings") val warnings: List<String>? = null,
+    @SerializedName("prediction_set") @SerialName("prediction_set") val predictionSet: PredictionSet? = null,
     /**
      * Toxic-to-pets surface. `toxicitySource` is `"db"` when the
      * server matched the species against its ASPCA-derived table,
      * `"unknown"` when we couldn't confirm — UI must NOT falsely
      * reassure on unknown.
      */
-    @SerializedName("toxic_to_pets") val toxicToPets: Boolean = false,
-    @SerializedName("toxic_species_list") val toxicSpeciesList: List<String> = emptyList(),
-    @SerializedName("toxicity_source") val toxicitySource: String = "unknown",
+    @SerializedName("toxic_to_pets") @SerialName("toxic_to_pets") val toxicToPets: Boolean = false,
+    @SerializedName("toxic_species_list") @SerialName("toxic_species_list") val toxicSpeciesList: List<String> = emptyList(),
+    @SerializedName("toxicity_source") @SerialName("toxicity_source") val toxicitySource: String = "unknown",
     /** Auto-detected species block from the server-side PlantNet
      *  fan-out. ``null`` when the upstream failed; ``available=false``
      *  when PlantNet isn't configured on this server. */
-    @SerializedName("species") val species: SpeciesBlock? = null,
-    @SerializedName("elapsed_ms") val elapsedMs: Float? = null,
+    @SerializedName("species") @SerialName("species") val species: SpeciesBlock? = null,
+    @SerializedName("elapsed_ms") @SerialName("elapsed_ms") val elapsedMs: Float? = null,
     // Server-minted scan_id from /api/analyse. We MUST echo this on
     // /api/feedback — the server rejects any scan_id it didn't issue
     // (422 "Unknown scan_id"). Optional in the type so older cached
     // responses without it still deserialise cleanly.
-    @SerializedName("scan_id") val scanId: String? = null,
+    @SerializedName("scan_id") @SerialName("scan_id") val scanId: String? = null,
     // Same-photo dedup signal from /api/analyse. ``isRepeat=true``
     // means the server replayed a previously-computed response from
     // its SHA-256 cache; the verdict is byte-identical to whatever
@@ -154,13 +172,13 @@ data class AnalysisResponse(
     // ``cachedAt`` is the epoch seconds of that first upload — the
     // client can render "you saw this one earlier today" without
     // pretending the diagnosis is fresh.
-    @SerializedName("is_repeat") val isRepeat: Boolean = false,
-    @SerializedName("cached_at") val cachedAt: Double? = null,
+    @SerializedName("is_repeat") @SerialName("is_repeat") val isRepeat: Boolean = false,
+    @SerializedName("cached_at") @SerialName("cached_at") val cachedAt: Double? = null,
     // Model tier that produced this verdict (aqua | gamma | frontier).
     // Echoed back by the server so the client can confirm which family
     // answered (and detect a server-side downgrade). On-device Aqua
     // results set this locally. Defaults to gamma for older responses.
-    @SerializedName("family") val family: String = "gamma",
+    @SerializedName("family") @SerialName("family") val family: String = "gamma",
 )
 
 /** Per-family availability advertised by GET /api/capabilities. The
@@ -212,17 +230,19 @@ data class AquaManifestResponse(
 )
 
 /** Species block carried inside AnalysisResponse. */
+@Serializable
 data class SpeciesBlock(
-    @SerializedName("available") val available: Boolean = false,
-    @SerializedName("source") val source: String? = null,
-    @SerializedName("best") val best: SpeciesMatch? = null,
-    @SerializedName("candidates") val candidates: List<SpeciesMatch> = emptyList(),
+    @SerializedName("available") @SerialName("available") val available: Boolean = false,
+    @SerializedName("source") @SerialName("source") val source: String? = null,
+    @SerializedName("best") @SerialName("best") val best: SpeciesMatch? = null,
+    @SerializedName("candidates") @SerialName("candidates") val candidates: List<SpeciesMatch> = emptyList(),
 )
 
+@Serializable
 data class SpeciesMatch(
-    @SerializedName("scientific_name") val scientificName: String? = null,
-    @SerializedName("common_name") val commonName: String? = null,
-    @SerializedName("score") val score: Float = 0f,
+    @SerializedName("scientific_name") @SerialName("scientific_name") val scientificName: String? = null,
+    @SerializedName("common_name") @SerialName("common_name") val commonName: String? = null,
+    @SerializedName("score") @SerialName("score") val score: Float = 0f,
 ) {
     /** Human-readable label preferring the common name. */
     val displayName: String?

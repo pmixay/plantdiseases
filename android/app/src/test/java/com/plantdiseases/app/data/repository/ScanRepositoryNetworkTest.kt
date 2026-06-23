@@ -13,10 +13,15 @@ import java.io.File
 
 /**
  * Integration coverage of the ML-diagnosis network hop driven against a
- * real [MockWebServer] (so OkHttp/Retrofit request building, multipart
+ * real [MockWebServer] (so OkHttp/Ktor request building, multipart
  * upload, the RetryInterceptor and the HTTP-status → typed-exception
  * mapping are all exercised) — without a device. Enabled by the
  * [PlantApiClient] base-URL test seam.
+ *
+ * `analyzeImage` has moved to the Ktor client (step 2). Ktor's
+ * ContentNegotiation only deserializes a response whose `Content-Type` is
+ * `application/json`, so success mocks declare it explicitly — the real
+ * server already sends it; Gson never required it.
  */
 class ScanRepositoryNetworkTest {
 
@@ -42,9 +47,11 @@ class ScanRepositoryNetworkTest {
     @Test
     fun analyze_success_parsesBodyAndBuildsMultipartPost() {
         server.enqueue(
-            MockResponse().setResponseCode(200).setBody(
-                """{"class_name":"leaf_spot","disease_name":"Leaf Spot","confidence":0.9}""",
-            ),
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(
+                    """{"class_name":"leaf_spot","disease_name":"Leaf Spot","confidence":0.9}""",
+                ),
         )
 
         val result = runBlocking { repo.analyzeImage(imageFile, locale = "en") }
@@ -61,7 +68,11 @@ class ScanRepositoryNetworkTest {
 
     @Test
     fun analyze_includesSpeciesHintQuery_whenProvided() {
-        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"disease_name":"Leaf Spot"}"""))
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"disease_name":"Leaf Spot"}"""),
+        )
         runBlocking { repo.analyzeImage(imageFile, speciesHint = "Ficus elastica", locale = "ru") }
         val request = server.takeRequest()
         assertThat(request.path).contains("species=Ficus")

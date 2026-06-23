@@ -24,6 +24,14 @@ import com.plantdiseases.app.data.model.ScanHistoryItem
 import com.plantdiseases.app.data.remote.ApiService
 import com.plantdiseases.app.data.remote.PlantApiClient
 import com.plantdiseases.app.util.AquaModelManager
+import io.ktor.client.call.body
+import io.ktor.client.request.forms.MultiPartFormDataContent
+import io.ktor.client.request.forms.formData
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.client.request.url
+import io.ktor.http.Headers
+import io.ktor.http.HttpHeaders
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -68,28 +76,55 @@ class ScanRepository(
     ): Result<AnalysisResponse> =
         withContext(Dispatchers.IO) {
             try {
-                val requestBody = imageFile.asRequestBody("image/jpeg".toMediaTypeOrNull())
-                val part = MultipartBody.Part.createFormData("image", imageFile.name, requestBody)
-                val response = apiService.analyzeImage(
-                    part,
-                    speciesHint?.takeIf { it.isNotBlank() },
-                    locale,
-                    family,
-                )
-                if (response.isSuccessful && response.body() != null) {
-                    Result.success(response.body()!!)
-                } else if (response.code() == 429 || response.code() == 403) {
+                // Ktor multipart over the shared OkHttp engine. Reading the
+                // bytes up front (rather than streaming the File) keeps the
+                // body re-writable, so the OkHttp RetryInterceptor can replay
+                // the POST once on an explicit 429/503 — the same behaviour the
+                // Retrofit File-backed body had.
+                val imageBytes = imageFile.readBytes()
+                val response = apiClient.httpClient.post("api/analyze") {
+                    url {
+                        speciesHint?.takeIf { it.isNotBlank() }?.let {
+                            parameters.append("species", it)
+                        }
+                        parameters.append("locale", locale)
+                        // Model tier (aqua | gamma | frontier). Aqua normally
+                        // never reaches here (on-device); gamma is the default;
+                        // frontier only when the operator enabled it.
+                        parameters.append("family", family)
+                    }
+                    setBody(
+                        MultiPartFormDataContent(
+                            formData {
+                                append(
+                                    "image",
+                                    imageBytes,
+                                    Headers.build {
+                                        append(HttpHeaders.ContentType, "image/jpeg")
+                                        append(
+                                            HttpHeaders.ContentDisposition,
+                                            "filename=\"${imageFile.name}\"",
+                                        )
+                                    },
+                                )
+                            },
+                        ),
+                    )
+                }
+                when (response.status.value) {
+                    in 200..299 -> Result.success(response.body<AnalysisResponse>())
                     // 403 = a temporary abuse-control cooldown (the server bans
                     // an IP that briefly burst past the rate limit). Treat it
                     // like 429: show the "server busy, retry shortly" card
                     // instead of a scary "Server error: 403".
-                    Result.failure(RateLimitException())
-                } else if (response.code() == 503) {
-                    Result.failure(ServerStartingException())
-                } else if (response.code() == 400 || response.code() == 415) {
-                    Result.failure(UnsupportedImageException())
-                } else {
-                    Result.failure(Exception("Server error: ${response.code()} ${response.message()}"))
+                    429, 403 -> Result.failure(RateLimitException())
+                    503 -> Result.failure(ServerStartingException())
+                    400, 415 -> Result.failure(UnsupportedImageException())
+                    else -> Result.failure(
+                        Exception(
+                            "Server error: ${response.status.value} ${response.status.description}",
+                        ),
+                    )
                 }
             } catch (e: SocketTimeoutException) {
                 Result.failure(ServerTimeoutException())

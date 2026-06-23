@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.serialization")
     id("com.google.devtools.ksp")
 }
 
@@ -195,11 +196,25 @@ dependencies {
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
 
-    // Retrofit + OkHttp
+    // Retrofit + OkHttp. Retrofit stays until the last endpoint/call-site has
+    // moved to the Ktor client below; Ktor reuses this same OkHttp engine.
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
+
+    // Ktor client + kotlinx.serialization — incrementally replaces Retrofit.
+    // Uses the OkHttp engine so the existing RetryInterceptor, logging and
+    // timeouts (configured on the shared OkHttpClient) carry over unchanged.
+    implementation(platform("io.ktor:ktor-bom:2.3.13"))
+    implementation("io.ktor:ktor-client-core")
+    implementation("io.ktor:ktor-client-okhttp")
+    implementation("io.ktor:ktor-client-content-negotiation")
+    implementation("io.ktor:ktor-serialization-kotlinx-json")
+    // Pinned to match the Kotlin 2.1.21 serialization compiler plugin (Ktor
+    // 2.3.13 bundles 1.6.3; overriding up keeps the generated serializers and
+    // the runtime in lockstep).
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
     // Firebase Cloud Messaging (push). No google-services plugin / json:
     // Firebase is initialised manually from BuildConfig.FCM_* at runtime, so
