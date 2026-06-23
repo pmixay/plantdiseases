@@ -138,7 +138,9 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
                 val txt = inputField.text?.toString()?.trim().orEmpty()
                 if (txt.isNotEmpty() && !isSending) sendMessage(txt)
                 true
-            } else false
+            } else {
+                false
+            }
         }
         ViewCompat.setOnApplyWindowInsetsListener(binding.chatInputRow) { v, insets ->
             val bottomInset = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom
@@ -416,26 +418,30 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
             )
         }
 
-        bubble.addView(TextView(requireContext()).apply {
-            text = applyMarkdown(content)
-            textSize = 15f
-            maxWidth = bubbleMaxWidth
-            setTextColor(requireContext().getColor(R.color.chat_bubble_text))
-            setLineSpacing(3.dp().toFloat(), 1f)
-            // Make [[doc:…]] citation links tappable.
-            movementMethod = LinkMovementMethod.getInstance()
-        })
-        bubble.addView(TextView(requireContext()).apply {
-            text = formatTime(timestamp)
-            textSize = 10f
-            setTextColor(requireContext().getColor(R.color.chat_bubble_text_secondary))
-            alpha = 0.85f
-            gravity = Gravity.END
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 4.dp() }
-        })
+        bubble.addView(
+            TextView(requireContext()).apply {
+                text = applyMarkdown(content)
+                textSize = 15f
+                maxWidth = bubbleMaxWidth
+                setTextColor(requireContext().getColor(R.color.chat_bubble_text))
+                setLineSpacing(3.dp().toFloat(), 1f)
+                // Make [[doc:…]] citation links tappable.
+                movementMethod = LinkMovementMethod.getInstance()
+            }
+        )
+        bubble.addView(
+            TextView(requireContext()).apply {
+                text = formatTime(timestamp)
+                textSize = 10f
+                setTextColor(requireContext().getColor(R.color.chat_bubble_text_secondary))
+                alpha = 0.85f
+                gravity = Gravity.END
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = 4.dp() }
+            }
+        )
 
         outer.addView(bubble)
         return outer
@@ -462,7 +468,9 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
                     sb.append(bold)
                     sb.setSpan(
                         StyleSpan(android.graphics.Typeface.BOLD),
-                        start, sb.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+                        start,
+                        sb.length,
+                        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
                     )
                 }
                 docKey.isNotEmpty() -> {
@@ -485,7 +493,9 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
                                     ds.isUnderlineText = true
                                 }
                             },
-                            start, sb.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+                            start,
+                            sb.length,
+                            Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
                         )
                     }
                 }
@@ -524,7 +534,9 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
         SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(timestamp))
 
     private fun Int.dp(): Int = TypedValue.applyDimension(
-        TypedValue.COMPLEX_UNIT_DIP, this.toFloat(), resources.displayMetrics
+        TypedValue.COMPLEX_UNIT_DIP,
+        this.toFloat(),
+        resources.displayMetrics
     ).toInt()
 
     companion object {
@@ -543,7 +555,8 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
 
         private fun bumpSessionEpoch(context: android.content.Context, ownerKey: String) {
             val prefs = context.getSharedPreferences(
-                PREFS_NAME, android.content.Context.MODE_PRIVATE,
+                PREFS_NAME,
+                android.content.Context.MODE_PRIVATE,
             )
             prefs.edit()
                 .putInt(

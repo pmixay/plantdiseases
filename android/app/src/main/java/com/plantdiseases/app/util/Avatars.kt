@@ -9,8 +9,14 @@ package com.plantdiseases.app.util
 object Avatars {
     // Pleasant, distinct hues that read on both light and dark cards.
     private val PALETTE = intArrayOf(
-        0xFF16A34A.toInt(), 0xFF2563EB.toInt(), 0xFFD97706.toInt(), 0xFFDC2626.toInt(),
-        0xFF7C3AED.toInt(), 0xFF0891B2.toInt(), 0xFFDB2777.toInt(), 0xFF65A30D.toInt(),
+        0xFF16A34A.toInt(),
+        0xFF2563EB.toInt(),
+        0xFFD97706.toInt(),
+        0xFFDC2626.toInt(),
+        0xFF7C3AED.toInt(),
+        0xFF0891B2.toInt(),
+        0xFFDB2777.toInt(),
+        0xFF65A30D.toInt(),
     )
 
     fun colorFor(token: String?): Int = PALETTE[stableHash(token) % PALETTE.size]

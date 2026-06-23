@@ -43,7 +43,8 @@ class GuideFragment : Fragment() {
     private val MAX_RECENT_SEARCHES = 5
 
     override fun onCreateView(
-        inflater: LayoutInflater, container: ViewGroup?,
+        inflater: LayoutInflater,
+        container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
         _binding = FragmentGuideBinding.inflate(inflater, container, false)
@@ -160,8 +161,8 @@ class GuideFragment : Fragment() {
                 val desc = if (isRu) item.descriptionRu else item.descriptionEn
                 val content = if (isRu) item.contentRu else item.contentEn
                 title.contains(query, ignoreCase = true) ||
-                desc.contains(query, ignoreCase = true) ||
-                content.contains(query, ignoreCase = true)
+                    desc.contains(query, ignoreCase = true) ||
+                    content.contains(query, ignoreCase = true)
             }
         }
         adapter.submitList(items)

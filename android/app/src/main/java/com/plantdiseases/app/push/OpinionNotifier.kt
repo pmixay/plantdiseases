@@ -48,7 +48,8 @@ object OpinionNotifier {
         // worker, which also guards on the runtime permission).
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(
-                ctx, Manifest.permission.POST_NOTIFICATIONS,
+                ctx,
+                Manifest.permission.POST_NOTIFICATIONS,
             ) != PackageManager.PERMISSION_GRANTED
         ) {
             return
@@ -74,7 +75,9 @@ object OpinionNotifier {
         }
         val notifId = (scanId.hashCode() and 0x7FFFFFFF)
         val pending = PendingIntent.getActivity(
-            ctx, notifId, intent,
+            ctx,
+            notifId,
+            intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 

@@ -20,6 +20,10 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.doOnAttach
+import androidx.core.view.updatePadding
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
@@ -65,13 +69,16 @@ class ProfileFragment : Fragment() {
             AutosavePrefs.setEnabled(requireContext(), false)
             binding.switchAutosave.isChecked = false
             Toast.makeText(
-                requireContext(), R.string.autosave_permission_needed, Toast.LENGTH_LONG,
+                requireContext(),
+                R.string.autosave_permission_needed,
+                Toast.LENGTH_LONG,
             ).show()
         }
     }
 
     override fun onCreateView(
-        inflater: LayoutInflater, container: ViewGroup?,
+        inflater: LayoutInflater,
+        container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
         _binding = FragmentProfileBinding.inflate(inflater, container, false)
@@ -81,6 +88,7 @@ class ProfileFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
+        applyStatusBarTopInset(binding.root)
         binding.tvAppVersion.text = "v${BuildConfig.VERSION_NAME}"
         setupSecretLabelingEntry()
 
@@ -159,10 +167,11 @@ class ProfileFragment : Fragment() {
         val pseudoId = TelemetryIds.userPseudoId(requireContext())
         lifecycleScope.launch {
             val result = app.scanRepository.deleteCommunityContributions(pseudoId)
-            val msg = if (result.isSuccess)
+            val msg = if (result.isSuccess) {
                 R.string.community_delete_done
-            else
+            } else {
                 R.string.community_delete_failed
+            }
             Toast.makeText(requireContext(), msg, Toast.LENGTH_SHORT).show()
         }
     }
@@ -245,42 +254,51 @@ class ProfileFragment : Fragment() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        head.addView(TextView(ctx).apply {
-            text = label
-            textSize = 13f
-            setTextColor(color(R.color.on_surface))
-            maxLines = 1
-            ellipsize = TextUtils.TruncateAt.END
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        })
-        head.addView(TextView(ctx).apply {
-            text = count.toString()
-            textSize = 13f
-            setTextColor(color(R.color.on_surface_secondary))
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { marginStart = 8.dp() }
-        })
+        head.addView(
+            TextView(ctx).apply {
+                text = label
+                textSize = 13f
+                setTextColor(color(R.color.on_surface))
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.END
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+        )
+        head.addView(
+            TextView(ctx).apply {
+                text = count.toString()
+                textSize = 13f
+                setTextColor(color(R.color.on_surface_secondary))
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { marginStart = 8.dp() }
+            }
+        )
 
         val track = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 8.dp(),
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                8.dp(),
             ).apply { topMargin = 5.dp() }
             background = pill(color(R.color.divider))
         }
         val fillWeight = count.toFloat().coerceAtLeast(0.0001f)
         val restWeight = (maxCount - count).toFloat().coerceAtLeast(0f)
-        track.addView(View(ctx).apply {
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, fillWeight)
-            background = pill(color(R.color.primary))
-        })
+        track.addView(
+            View(ctx).apply {
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, fillWeight)
+                background = pill(color(R.color.primary))
+            }
+        )
         if (restWeight > 0f) {
-            track.addView(View(ctx).apply {
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, restWeight)
-            })
+            track.addView(
+                View(ctx).apply {
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, restWeight)
+                }
+            )
         }
 
         root.addView(head)
@@ -299,37 +317,43 @@ class ProfileFragment : Fragment() {
             setPadding(0, v, 0, v)
         }
 
-        row.addView(View(ctx).apply {
-            layoutParams = LinearLayout.LayoutParams(8.dp(), 8.dp()).apply {
-                topMargin = 6.dp()
-                marginEnd = 10.dp()
+        row.addView(
+            View(ctx).apply {
+                layoutParams = LinearLayout.LayoutParams(8.dp(), 8.dp()).apply {
+                    topMargin = 6.dp()
+                    marginEnd = 10.dp()
+                }
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(color(R.color.primary))
+                }
             }
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(color(R.color.primary))
-            }
-        })
+        )
 
         val col = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        col.addView(TextView(ctx).apply {
-            text = label
-            textSize = 14f
-            setTextColor(color(R.color.on_surface))
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-        })
+        col.addView(
+            TextView(ctx).apply {
+                text = label
+                textSize = 14f
+                setTextColor(color(R.color.on_surface))
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            }
+        )
         if (op.note.isNotBlank()) {
-            col.addView(TextView(ctx).apply {
-                text = op.note
-                textSize = 13f
-                setTextColor(color(R.color.on_surface_secondary))
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = 2.dp() }
-            })
+            col.addView(
+                TextView(ctx).apply {
+                    text = op.note
+                    textSize = 13f
+                    setTextColor(color(R.color.on_surface_secondary))
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ).apply { topMargin = 2.dp() }
+                }
+            )
         }
         row.addView(col)
 
@@ -461,7 +485,8 @@ class ProfileFragment : Fragment() {
             if (isChecked) {
                 val needsLegacyPermission = Build.VERSION.SDK_INT <= Build.VERSION_CODES.P &&
                     ContextCompat.checkSelfPermission(
-                        requireContext(), Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                        requireContext(),
+                        Manifest.permission.WRITE_EXTERNAL_STORAGE,
                     ) != PackageManager.PERMISSION_GRANTED
                 if (needsLegacyPermission) {
                     storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
@@ -553,7 +578,9 @@ class ProfileFragment : Fragment() {
             // centre % animate up together.
             val ratePct = if (stats.totalScans > 0) {
                 stats.healthyCount * 100 / stats.totalScans
-            } else 0
+            } else {
+                0
+            }
             binding.tvHealthRate.text = if (stats.totalScans > 0) "$ratePct%" else "—"
             binding.progressHealthRing.max = 100
             binding.progressHealthRing.setProgressCompat(ratePct, true)
@@ -594,8 +621,11 @@ class ProfileFragment : Fragment() {
                 binding.tvServerStatus.text = getString(R.string.server_online)
                 setStatusIndicatorColor(R.color.healthy_green)
                 binding.tvDiagVersion.text = health.version.ifBlank { dash }
-                binding.tvDiagClasses.text = if (health.numClasses > 0)
-                    health.numClasses.toString() else dash
+                binding.tvDiagClasses.text = if (health.numClasses > 0) {
+                    health.numClasses.toString()
+                } else {
+                    dash
+                }
             }.onFailure {
                 binding.tvServerStatus.text = getString(R.string.server_offline)
                 setStatusIndicatorColor(R.color.disease_red)
@@ -622,5 +652,22 @@ class ProfileFragment : Fragment() {
         countAnimators.forEach { it.cancel() }
         countAnimators.clear()
         _binding = null
+    }
+
+    /** The shared toolbar is hidden on this tab (see MainActivity), so the
+     *  scroll content runs edge-to-edge under the status bar. Pad the scroll
+     *  view's top by the status-bar inset so the hero card drops below the
+     *  system clock (status bar over the dark background, card beneath it). */
+    private fun applyStatusBarTopInset(scroll: View) {
+        val baseTop = scroll.paddingTop
+        ViewCompat.setOnApplyWindowInsetsListener(scroll) { v, insets ->
+            val top = insets.getInsets(WindowInsetsCompat.Type.systemBars()).top
+            v.updatePadding(top = baseTop + top)
+            insets
+        }
+        // onViewCreated runs before the view is attached, so requesting insets
+        // now no-ops and a tab switched-to later never gets an inset pass — the
+        // hero then draws under the status bar. Request once attached instead.
+        scroll.doOnAttach { ViewCompat.requestApplyInsets(it) }
     }
 }

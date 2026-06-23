@@ -1,7 +1,6 @@
 package com.plantdiseases.app.data.remote
 
 import com.plantdiseases.app.BuildConfig
-import com.plantdiseases.app.data.model.AnalysisResponse
 import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.CarePlanResponse
 import com.plantdiseases.app.data.model.SymptomDiagnoseRequest
@@ -31,6 +30,13 @@ import com.plantdiseases.app.data.model.ProgressionRequest
 import com.plantdiseases.app.data.model.ProgressionResponse
 import com.plantdiseases.app.data.model.TrendingResponse
 import com.plantdiseases.app.util.ServerConfig
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.okhttp.OkHttp
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.plugins.defaultRequest
+import io.ktor.client.request.url
+import io.ktor.serialization.kotlinx.json.json
+import kotlinx.serialization.json.Json
 import okhttp3.Interceptor
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
@@ -63,17 +69,10 @@ import java.util.concurrent.TimeUnit
 
 interface ApiService {
 
-    @Multipart
-    @POST("api/analyze")
-    suspend fun analyzeImage(
-        @Part image: MultipartBody.Part,
-        @Query("species") species: String? = null,
-        @Query("locale") locale: String = "en",
-        // Model tier (aqua | gamma | frontier). Aqua normally never reaches
-        // here (it runs on-device); gamma is the default; frontier is only
-        // served when the operator enabled it (see /api/capabilities).
-        @Query("family") family: String = "gamma",
-    ): retrofit2.Response<AnalysisResponse>
+    // NOTE: /api/analyze has migrated to the Ktor client (see PlantApiClient
+    // .httpClient and ScanRepository.analyzeImage). Per the migration plan,
+    // a Retrofit endpoint is removed once its last call-site is gone — this
+    // was that endpoint's only caller.
 
     /** Per-family availability so the scan-screen picker can grey out a
      *  tier the server doesn't serve (notably frontier when disabled). */
@@ -403,5 +402,24 @@ class PlantApiClient(
             .addConverterFactory(GsonConverterFactory.create())
             .build()
             .create(ApiService::class.java)
+    }
+
+    /**
+     * Ktor client for endpoints migrated off Retrofit. It reuses the same
+     * preconfigured [client] (so the RetryInterceptor, logging and timeouts
+     * are shared, not duplicated) and resolves relative paths against the same
+     * [baseUrl] test seam. `expectSuccess = false` keeps non-2xx responses as
+     * values so the repository can map HTTP status → typed exceptions itself,
+     * exactly as it did with Retrofit's `Response`.
+     */
+    val httpClient: HttpClient by lazy {
+        HttpClient(OkHttp) {
+            engine { preconfigured = client }
+            expectSuccess = false
+            install(ContentNegotiation) {
+                json(Json { ignoreUnknownKeys = true })
+            }
+            defaultRequest { url(baseUrl) }
+        }
     }
 }

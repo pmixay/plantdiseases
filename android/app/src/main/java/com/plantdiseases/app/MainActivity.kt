@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.view.View
 import android.view.animation.OvershootInterpolator
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -113,14 +114,12 @@ class MainActivity : AppCompatActivity() {
             insets
         }
 
-        // Push fragment content above the bottom navigation using its real height
-        // (which now varies with the system gesture bar).
-        binding.bottomNavigation.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
-            val h = v.height
-            if (binding.navHostFragment.paddingBottom != h) {
-                binding.navHostFragment.updatePadding(bottom = h)
-            }
-        }
+        // NB: the nav host no longer needs bottom padding to clear the bottom
+        // navigation. The shell is a vertical LinearLayout (app bar / nav host /
+        // bottom nav), so the weight-1 nav host already ends exactly at the
+        // bottom nav's top edge. The old CoordinatorLayout drew the nav host
+        // *behind* the bottom nav, which is why it used to pad the nav host by
+        // the bar height — doing that here just adds an empty gap above the bar.
 
         setSupportActionBar(binding.toolbar)
         supportActionBar?.setDisplayShowTitleEnabled(true)
@@ -192,6 +191,14 @@ class MainActivity : AppCompatActivity() {
         }
 
         navController.addOnDestinationChangedListener { _, destination, _ ->
+            // Garden + Profile render their own full-bleed green hero as the
+            // header, so the shared toolbar bar is hidden there — otherwise it
+            // stacks a second title above the hero with a white gap (the
+            // "cut off" look). Every other destination keeps the toolbar.
+            binding.appBar.visibility = when (destination.id) {
+                R.id.gardenFragment, R.id.profileFragment -> View.GONE
+                else -> View.VISIBLE
+            }
             when (destination.id) {
                 R.id.cameraFragment -> supportActionBar?.title = getString(R.string.tab_scan)
                 R.id.galleryFragment -> {
@@ -236,8 +243,10 @@ class MainActivity : AppCompatActivity() {
             warmRegionCache()
         }
         if (ContextCompat.checkSelfPermission(
-                this, Manifest.permission.CAMERA,
-            ) != PackageManager.PERMISSION_GRANTED) {
+                this,
+                Manifest.permission.CAMERA,
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
             startupPermissionsLauncher.launch(arrayOf(Manifest.permission.CAMERA))
         }
     }
@@ -287,8 +296,10 @@ class MainActivity : AppCompatActivity() {
     // Up arrow on non-top-level destinations (e.g. the disease guide opened
     // from Home) pops the nav back stack via the shared toolbar.
     override fun onSupportNavigateUp(): Boolean {
-        val navController = (supportFragmentManager
-            .findFragmentById(R.id.nav_host_fragment) as NavHostFragment).navController
+        val navController = (
+            supportFragmentManager
+                .findFragmentById(R.id.nav_host_fragment) as NavHostFragment
+            ).navController
         return navController.navigateUp(appBarConfiguration) || super.onSupportNavigateUp()
     }
 
@@ -351,5 +362,4 @@ class MainActivity : AppCompatActivity() {
         /** Intent extra: bring MainActivity to front and switch to the scanner tab. */
         const val EXTRA_OPEN_SCANNER = "extra_open_scanner"
     }
-
 }

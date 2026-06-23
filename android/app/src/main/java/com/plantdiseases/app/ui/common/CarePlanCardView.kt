@@ -85,15 +85,19 @@ class CarePlanCardView @JvmOverloads constructor(
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        header.addView(FrameLayout(context).apply {
-            setBackgroundResource(R.drawable.bg_circle_semi)
-            layoutParams = LinearLayout.LayoutParams(44.dp(), 44.dp())
-            addView(ImageView(context).apply {
-                setImageResource(R.drawable.ic_care)
-                setColorFilter(context.getColor(R.color.on_hero))
-                layoutParams = FrameLayout.LayoutParams(24.dp(), 24.dp(), Gravity.CENTER)
-            })
-        })
+        header.addView(
+            FrameLayout(context).apply {
+                setBackgroundResource(R.drawable.bg_circle_semi)
+                layoutParams = LinearLayout.LayoutParams(44.dp(), 44.dp())
+                addView(
+                    ImageView(context).apply {
+                        setImageResource(R.drawable.ic_care)
+                        setColorFilter(context.getColor(R.color.on_hero))
+                        layoutParams = FrameLayout.LayoutParams(24.dp(), 24.dp(), Gravity.CENTER)
+                    }
+                )
+            }
+        )
         val titles = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(
@@ -135,22 +139,26 @@ class CarePlanCardView @JvmOverloads constructor(
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             visibility = View.GONE
-            addView(ProgressBar(context).apply {
-                isIndeterminate = true
-                indeterminateTintList = android.content.res.ColorStateList.valueOf(
-                    context.getColor(R.color.on_hero)
-                )
-                layoutParams = LinearLayout.LayoutParams(22.dp(), 22.dp())
-            })
-            addView(TextView(context).apply {
-                text = context.getString(R.string.care_plan_loading)
-                textSize = 14f
-                setTextColor(context.getColor(R.color.on_hero))
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { marginStart = 12.dp() }
-            })
+            addView(
+                ProgressBar(context).apply {
+                    isIndeterminate = true
+                    indeterminateTintList = android.content.res.ColorStateList.valueOf(
+                        context.getColor(R.color.on_hero)
+                    )
+                    layoutParams = LinearLayout.LayoutParams(22.dp(), 22.dp())
+                }
+            )
+            addView(
+                TextView(context).apply {
+                    text = context.getString(R.string.care_plan_loading)
+                    textSize = 14f
+                    setTextColor(context.getColor(R.color.on_hero))
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ).apply { marginStart = 12.dp() }
+                }
+            )
         }
         statusContainer.addView(loadingView)
 
@@ -166,7 +174,9 @@ class CarePlanCardView @JvmOverloads constructor(
             alpha = 0.92f
         }
         retryButton = MaterialButton(
-            context, null, com.google.android.material.R.attr.materialButtonOutlinedStyle,
+            context,
+            null,
+            com.google.android.material.R.attr.materialButtonOutlinedStyle,
         ).apply {
             text = context.getString(R.string.care_plan_retry)
             setTextColor(context.getColor(R.color.on_hero))
@@ -204,13 +214,15 @@ class CarePlanCardView @JvmOverloads constructor(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             ).apply { topMargin = 12.dp() }
         }
-        noteContainer.addView(TextView(context).apply {
-            text = context.getString(R.string.care_plan_disease_note)
-            textSize = 11f
-            setTextColor(context.getColor(R.color.on_hero_secondary))
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-            letterSpacing = 0.06f
-        })
+        noteContainer.addView(
+            TextView(context).apply {
+                text = context.getString(R.string.care_plan_disease_note)
+                textSize = 11f
+                setTextColor(context.getColor(R.color.on_hero_secondary))
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                letterSpacing = 0.06f
+            }
+        )
         noteBody = TextView(context).apply {
             textSize = 13f
             setTextColor(context.getColor(R.color.on_hero))
@@ -235,7 +247,9 @@ class CarePlanCardView @JvmOverloads constructor(
         statusContainer.addView(followUpView)
 
         applyToRemindersBtn = MaterialButton(
-            context, null, com.google.android.material.R.attr.materialButtonOutlinedStyle,
+            context,
+            null,
+            com.google.android.material.R.attr.materialButtonOutlinedStyle,
         ).apply {
             text = context.getString(R.string.care_plan_use_for_reminders)
             setTextColor(context.getColor(R.color.on_hero))
@@ -262,7 +276,9 @@ class CarePlanCardView @JvmOverloads constructor(
         // controls the section below). The details container itself
         // lives on the surface-colored section.
         detailsToggle = MaterialButton(
-            context, null, com.google.android.material.R.attr.borderlessButtonStyle,
+            context,
+            null,
+            com.google.android.material.R.attr.borderlessButtonStyle,
         ).apply {
             text = context.getString(R.string.care_plan_show_details)
             setTextColor(context.getColor(R.color.on_hero))
@@ -301,12 +317,18 @@ class CarePlanCardView @JvmOverloads constructor(
         val expanded = detailsContainer.visibility == View.VISIBLE
         detailsContainer.visibility = if (expanded) View.GONE else View.VISIBLE
         detailsToggle.text = context.getString(
-            if (expanded) R.string.care_plan_show_details
-            else R.string.care_plan_hide_details,
+            if (expanded) {
+                R.string.care_plan_show_details
+            } else {
+                R.string.care_plan_hide_details
+            },
         )
         detailsToggle.setIconResource(
-            if (expanded) R.drawable.ic_chevron_down
-            else R.drawable.ic_chevron_up,
+            if (expanded) {
+                R.drawable.ic_chevron_down
+            } else {
+                R.drawable.ic_chevron_up
+            },
         )
     }
 
@@ -385,35 +407,43 @@ class CarePlanCardView @JvmOverloads constructor(
         // Build pills
         pillsRow.removeAllViews()
         val pillsRowOne = horizontalRow()
-        pillsRowOne.addView(pill(
-            R.drawable.ic_watering,
-            context.getString(R.string.care_plan_watering),
-            wateringValueText(plan),
-            isFirstInRow = true,
-        ))
-        pillsRowOne.addView(pill(
-            R.drawable.ic_treatment,
-            context.getString(R.string.care_plan_fertilising),
-            context.resources.getString(R.string.care_plan_fertilising_weeks, plan.fertiliseWeeks),
-            isFirstInRow = false,
-        ))
+        pillsRowOne.addView(
+            pill(
+                R.drawable.ic_watering,
+                context.getString(R.string.care_plan_watering),
+                wateringValueText(plan),
+                isFirstInRow = true,
+            )
+        )
+        pillsRowOne.addView(
+            pill(
+                R.drawable.ic_treatment,
+                context.getString(R.string.care_plan_fertilising),
+                context.resources.getString(R.string.care_plan_fertilising_weeks, plan.fertiliseWeeks),
+                isFirstInRow = false,
+            )
+        )
         pillsRow.addView(pillsRowOne)
 
         val pillsRowTwo = horizontalRow().apply {
             (layoutParams as LinearLayout.LayoutParams).topMargin = 10.dp()
         }
-        pillsRowTwo.addView(pill(
-            R.drawable.ic_light,
-            context.getString(R.string.care_plan_light),
-            lightTierLabel(plan.lightTier),
-            isFirstInRow = true,
-        ))
-        pillsRowTwo.addView(pill(
-            R.drawable.ic_warning,
-            context.getString(R.string.care_plan_humidity),
-            plan.humidityTarget,
-            isFirstInRow = false,
-        ))
+        pillsRowTwo.addView(
+            pill(
+                R.drawable.ic_light,
+                context.getString(R.string.care_plan_light),
+                lightTierLabel(plan.lightTier),
+                isFirstInRow = true,
+            )
+        )
+        pillsRowTwo.addView(
+            pill(
+                R.drawable.ic_warning,
+                context.getString(R.string.care_plan_humidity),
+                plan.humidityTarget,
+                isFirstInRow = false,
+            )
+        )
         pillsRow.addView(pillsRowTwo)
         pillsRow.visibility = View.VISIBLE
 
@@ -427,7 +457,8 @@ class CarePlanCardView @JvmOverloads constructor(
         }
 
         followUpView.text = context.resources.getString(
-            R.string.care_plan_follow_up, plan.followUpDays
+            R.string.care_plan_follow_up,
+            plan.followUpDays
         )
         followUpView.visibility = View.VISIBLE
 
@@ -479,17 +510,25 @@ class CarePlanCardView @JvmOverloads constructor(
 
         // 3. TREATMENT CHECKLIST — what to actually do, in order.
         plan.treatment?.filter { it.isNotBlank() }?.takeIf { it.isNotEmpty() }?.let { items ->
-            detailsContainer.addView(checklistSection(
-                R.string.care_plan_detail_treatment, R.drawable.ic_treatment, items,
-            ))
+            detailsContainer.addView(
+                checklistSection(
+                    R.string.care_plan_detail_treatment,
+                    R.drawable.ic_treatment,
+                    items,
+                )
+            )
             any = true
         }
 
         // 4. SANITATION — secondary actions, still a checklist shape.
         plan.sanitation?.filter { it.isNotBlank() }?.takeIf { it.isNotEmpty() }?.let { items ->
-            detailsContainer.addView(checklistSection(
-                R.string.care_plan_detail_sanitation, R.drawable.ic_warning, items,
-            ))
+            detailsContainer.addView(
+                checklistSection(
+                    R.string.care_plan_detail_sanitation,
+                    R.drawable.ic_warning,
+                    items,
+                )
+            )
             any = true
         }
 
@@ -540,21 +579,26 @@ class CarePlanCardView @JvmOverloads constructor(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             ).apply { topMargin = 14.dp() }
         }
-        outer.addView(sectionHeader(
-            R.string.care_plan_detail_red_flags, R.drawable.ic_warning,
-            tint = context.getColor(R.color.disease_red),
-        ))
+        outer.addView(
+            sectionHeader(
+                R.string.care_plan_detail_red_flags,
+                R.drawable.ic_warning,
+                tint = context.getColor(R.color.disease_red),
+            )
+        )
         items.forEach { item ->
-            outer.addView(TextView(context).apply {
-                text = "•  $item"
-                textSize = 14f
-                setTextColor(context.getColor(R.color.disease_red))
-                setLineSpacing(3.dp().toFloat(), 1f)
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = 4.dp() }
-            })
+            outer.addView(
+                TextView(context).apply {
+                    text = "•  $item"
+                    textSize = 14f
+                    setTextColor(context.getColor(R.color.disease_red))
+                    setLineSpacing(3.dp().toFloat(), 1f)
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ).apply { topMargin = 4.dp() }
+                }
+            )
         }
         return outer
     }
@@ -565,18 +609,22 @@ class CarePlanCardView @JvmOverloads constructor(
     private fun climateChipRow(plan: CarePlanResponse): View? {
         val chips = mutableListOf<View>()
         plan.lightLuxTarget?.takeIf { it.min > 0 || it.max > 0 }?.let { lux ->
-            chips.add(metricChip(
-                R.drawable.ic_light,
-                context.getString(R.string.care_plan_light).uppercase(),
-                context.resources.getString(R.string.care_plan_lux_range, lux.min, lux.max),
-            ))
+            chips.add(
+                metricChip(
+                    R.drawable.ic_light,
+                    context.getString(R.string.care_plan_light).uppercase(),
+                    context.resources.getString(R.string.care_plan_lux_range, lux.min, lux.max),
+                )
+            )
         }
         plan.humidityBand?.takeIf { it.min > 0 || it.max > 0 }?.let { hum ->
-            chips.add(metricChip(
-                R.drawable.ic_warning,
-                context.getString(R.string.care_plan_humidity).uppercase(),
-                context.resources.getString(R.string.care_plan_humidity_range, hum.min, hum.max),
-            ))
+            chips.add(
+                metricChip(
+                    R.drawable.ic_warning,
+                    context.getString(R.string.care_plan_humidity).uppercase(),
+                    context.resources.getString(R.string.care_plan_humidity_range, hum.min, hum.max),
+                )
+            )
         }
         plan.temperatureC?.let { temp ->
             val day = temp.day?.takeIf { it.size == 2 }
@@ -586,11 +634,13 @@ class CarePlanCardView @JvmOverloads constructor(
                 night?.let { add(context.resources.getString(R.string.care_plan_temp_night, it[0], it[1])) }
             }
             if (parts.isNotEmpty()) {
-                chips.add(metricChip(
-                    R.drawable.ic_treatment,
-                    context.getString(R.string.care_plan_detail_temperature).uppercase(),
-                    parts.joinToString("  ·  "),
-                ))
+                chips.add(
+                    metricChip(
+                        R.drawable.ic_treatment,
+                        context.getString(R.string.care_plan_detail_temperature).uppercase(),
+                        parts.joinToString("  ·  "),
+                    )
+                )
             }
         }
         if (chips.isEmpty()) return null
@@ -626,33 +676,39 @@ class CarePlanCardView @JvmOverloads constructor(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             )
         }
-        row.addView(ImageView(context).apply {
-            setImageResource(iconRes)
-            setColorFilter(context.getColor(R.color.primary))
-            layoutParams = LinearLayout.LayoutParams(18.dp(), 18.dp())
-        })
+        row.addView(
+            ImageView(context).apply {
+                setImageResource(iconRes)
+                setColorFilter(context.getColor(R.color.primary))
+                layoutParams = LinearLayout.LayoutParams(18.dp(), 18.dp())
+            }
+        )
         val text = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 .apply { marginStart = 10.dp() }
         }
-        text.addView(TextView(context).apply {
-            this.text = label
-            textSize = 10f
-            letterSpacing = 0.08f
-            setTextColor(context.getColor(R.color.on_surface_secondary))
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-        })
-        text.addView(TextView(context).apply {
-            this.text = value
-            textSize = 14f
-            setTextColor(context.getColor(R.color.on_surface))
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 1.dp() }
-        })
+        text.addView(
+            TextView(context).apply {
+                this.text = label
+                textSize = 10f
+                letterSpacing = 0.08f
+                setTextColor(context.getColor(R.color.on_surface_secondary))
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            }
+        )
+        text.addView(
+            TextView(context).apply {
+                this.text = value
+                textSize = 14f
+                setTextColor(context.getColor(R.color.on_surface))
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = 1.dp() }
+            }
+        )
         row.addView(text)
         return row
     }
@@ -661,7 +717,9 @@ class CarePlanCardView @JvmOverloads constructor(
      *  colours throughout so it stays readable on the white / dark
      *  base surface, regardless of theme. */
     private fun checklistSection(
-        labelRes: Int, iconRes: Int, items: List<String>,
+        labelRes: Int,
+        iconRes: Int,
+        items: List<String>,
     ): View {
         val outer = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -672,16 +730,18 @@ class CarePlanCardView @JvmOverloads constructor(
         }
         outer.addView(sectionHeader(labelRes, iconRes))
         items.forEach { item ->
-            outer.addView(TextView(context).apply {
-                text = "•  $item"
-                textSize = 14f
-                setTextColor(context.getColor(R.color.on_surface))
-                setLineSpacing(3.dp().toFloat(), 1f)
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = 5.dp() }
-            })
+            outer.addView(
+                TextView(context).apply {
+                    text = "•  $item"
+                    textSize = 14f
+                    setTextColor(context.getColor(R.color.on_surface))
+                    setLineSpacing(3.dp().toFloat(), 1f)
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ).apply { topMargin = 5.dp() }
+                }
+            )
         }
         return outer
     }
@@ -733,11 +793,13 @@ class CarePlanCardView @JvmOverloads constructor(
             add(SetupRow(R.string.care_plan_detail_npk, R.drawable.ic_treatment, it))
         }
         plan.wateringMethod?.takeIf { it.isNotBlank() }?.let {
-            add(SetupRow(
-                R.string.care_plan_detail_watering_method,
-                R.drawable.ic_watering,
-                humanizeWateringMethod(it),
-            ))
+            add(
+                SetupRow(
+                    R.string.care_plan_detail_watering_method,
+                    R.drawable.ic_watering,
+                    humanizeWateringMethod(it),
+                )
+            )
         }
         plan.acclimation?.takeIf { it.isNotBlank() }?.let {
             add(SetupRow(R.string.care_plan_detail_acclimation, R.drawable.ic_clock, it))
@@ -752,9 +814,12 @@ class CarePlanCardView @JvmOverloads constructor(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             ).apply { topMargin = 16.dp() }
         }
-        outer.addView(sectionHeader(
-            R.string.care_plan_detail_setup, R.drawable.ic_garden,
-        ))
+        outer.addView(
+            sectionHeader(
+                R.string.care_plan_detail_setup,
+                R.drawable.ic_garden,
+            )
+        )
         rows.forEach { row ->
             outer.addView(setupRow(row))
         }
@@ -769,23 +834,27 @@ class CarePlanCardView @JvmOverloads constructor(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             ).apply { topMargin = 8.dp() }
         }
-        container.addView(TextView(context).apply {
-            text = context.getString(row.labelRes)
-            textSize = 11f
-            letterSpacing = 0.06f
-            setTextColor(context.getColor(R.color.on_surface_secondary))
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-        })
-        container.addView(TextView(context).apply {
-            text = row.value
-            textSize = 14f
-            setTextColor(context.getColor(R.color.on_surface))
-            setLineSpacing(2.dp().toFloat(), 1f)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 2.dp() }
-        })
+        container.addView(
+            TextView(context).apply {
+                text = context.getString(row.labelRes)
+                textSize = 11f
+                letterSpacing = 0.06f
+                setTextColor(context.getColor(R.color.on_surface_secondary))
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            }
+        )
+        container.addView(
+            TextView(context).apply {
+                text = row.value
+                textSize = 14f
+                setTextColor(context.getColor(R.color.on_surface))
+                setLineSpacing(2.dp().toFloat(), 1f)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = 2.dp() }
+            }
+        )
         return container
     }
 
@@ -799,9 +868,12 @@ class CarePlanCardView @JvmOverloads constructor(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             ).apply { topMargin = 16.dp() }
         }
-        outer.addView(sectionHeader(
-            R.string.care_plan_detail_checkpoints, R.drawable.ic_clock,
-        ))
+        outer.addView(
+            sectionHeader(
+                R.string.care_plan_detail_checkpoints,
+                R.drawable.ic_clock,
+            )
+        )
         items.forEach { cp ->
             val row = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -812,35 +884,41 @@ class CarePlanCardView @JvmOverloads constructor(
                 ).apply { topMargin = 8.dp() }
             }
             // Day badge — circular green pill with "D + N".
-            row.addView(TextView(context).apply {
-                text = context.resources.getString(R.string.care_plan_day_badge, cp.day)
-                textSize = 12f
-                setTextColor(context.getColor(R.color.on_primary))
-                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-                gravity = Gravity.CENTER
-                setPadding(0, 0, 0, 0)
-                minWidth = 42.dp()
-                background = android.graphics.drawable.GradientDrawable().apply {
-                    shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-                    cornerRadius = 999f
-                    setColor(context.getColor(R.color.primary))
+            row.addView(
+                TextView(context).apply {
+                    text = context.resources.getString(R.string.care_plan_day_badge, cp.day)
+                    textSize = 12f
+                    setTextColor(context.getColor(R.color.on_primary))
+                    typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                    gravity = Gravity.CENTER
+                    setPadding(0, 0, 0, 0)
+                    minWidth = 42.dp()
+                    background = android.graphics.drawable.GradientDrawable().apply {
+                        shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                        cornerRadius = 999f
+                        setColor(context.getColor(R.color.primary))
+                    }
+                    val v = 5.dp()
+                    setPadding(8.dp(), v, 8.dp(), v)
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    )
                 }
-                val v = 5.dp()
-                setPadding(8.dp(), v, 8.dp(), v)
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                )
-            })
-            row.addView(TextView(context).apply {
-                text = cp.check
-                textSize = 14f
-                setTextColor(context.getColor(R.color.on_surface))
-                setLineSpacing(2.dp().toFloat(), 1f)
-                layoutParams = LinearLayout.LayoutParams(
-                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f,
-                ).apply { marginStart = 12.dp() }
-            })
+            )
+            row.addView(
+                TextView(context).apply {
+                    text = cp.check
+                    textSize = 14f
+                    setTextColor(context.getColor(R.color.on_surface))
+                    setLineSpacing(2.dp().toFloat(), 1f)
+                    layoutParams = LinearLayout.LayoutParams(
+                        0,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        1f,
+                    ).apply { marginStart = 12.dp() }
+                }
+            )
             outer.addView(row)
         }
         return outer
@@ -859,28 +937,34 @@ class CarePlanCardView @JvmOverloads constructor(
     }
 
     private fun sectionHeader(
-        labelRes: Int, iconRes: Int, tint: Int = context.getColor(R.color.primary),
+        labelRes: Int,
+        iconRes: Int,
+        tint: Int = context.getColor(R.color.primary),
     ): View {
         val header = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        header.addView(ImageView(context).apply {
-            setImageResource(iconRes)
-            setColorFilter(tint)
-            layoutParams = LinearLayout.LayoutParams(16.dp(), 16.dp())
-        })
-        header.addView(TextView(context).apply {
-            text = context.getString(labelRes).uppercase()
-            textSize = 11f
-            letterSpacing = 0.08f
-            setTextColor(context.getColor(R.color.on_surface_secondary))
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { marginStart = 8.dp() }
-        })
+        header.addView(
+            ImageView(context).apply {
+                setImageResource(iconRes)
+                setColorFilter(tint)
+                layoutParams = LinearLayout.LayoutParams(16.dp(), 16.dp())
+            }
+        )
+        header.addView(
+            TextView(context).apply {
+                text = context.getString(labelRes).uppercase()
+                textSize = 11f
+                letterSpacing = 0.08f
+                setTextColor(context.getColor(R.color.on_surface_secondary))
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { marginStart = 8.dp() }
+            }
+        )
         return header
     }
 
@@ -911,46 +995,51 @@ class CarePlanCardView @JvmOverloads constructor(
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        labelRow.addView(ImageView(context).apply {
-            setImageResource(iconRes)
-            setColorFilter(context.getColor(R.color.on_hero))
-            layoutParams = LinearLayout.LayoutParams(15.dp(), 15.dp())
-        })
-        labelRow.addView(TextView(context).apply {
-            text = label.uppercase()
-            textSize = 10f
-            setTextColor(context.getColor(R.color.on_hero_secondary))
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-            letterSpacing = 0.08f
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { marginStart = 6.dp() }
-        })
+        labelRow.addView(
+            ImageView(context).apply {
+                setImageResource(iconRes)
+                setColorFilter(context.getColor(R.color.on_hero))
+                layoutParams = LinearLayout.LayoutParams(15.dp(), 15.dp())
+            }
+        )
+        labelRow.addView(
+            TextView(context).apply {
+                text = label.uppercase()
+                textSize = 10f
+                setTextColor(context.getColor(R.color.on_hero_secondary))
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                letterSpacing = 0.08f
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { marginStart = 6.dp() }
+            }
+        )
         box.addView(labelRow)
-        box.addView(TextView(context).apply {
-            text = value.ifBlank { "—" }
-            textSize = 15f
-            setTextColor(context.getColor(R.color.on_hero))
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-            maxLines = 2
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 6.dp() }
-        })
+        box.addView(
+            TextView(context).apply {
+                text = value.ifBlank { "—" }
+                textSize = 15f
+                setTextColor(context.getColor(R.color.on_hero))
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                maxLines = 2
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = 6.dp() }
+            }
+        )
         return box
     }
 
-    private fun wateringValueText(plan: CarePlanResponse): String {
-        return when {
-            plan.wateringDaysIsAsNeeded -> context.getString(R.string.care_plan_watering_as_needed)
-            plan.wateringDaysInt != null -> context.resources.getString(
-                R.string.care_plan_watering_days, plan.wateringDaysInt
-            )
-            else -> "—"
-        }
+    private fun wateringValueText(plan: CarePlanResponse): String = when {
+        plan.wateringDaysIsAsNeeded -> context.getString(R.string.care_plan_watering_as_needed)
+        plan.wateringDaysInt != null -> context.resources.getString(
+            R.string.care_plan_watering_days,
+            plan.wateringDaysInt
+        )
+        else -> "—"
     }
 
     private fun lightTierLabel(tier: String): String = when (tier) {
@@ -968,6 +1057,8 @@ class CarePlanCardView @JvmOverloads constructor(
         }
 
     private fun Int.dp(): Int = TypedValue.applyDimension(
-        TypedValue.COMPLEX_UNIT_DIP, this.toFloat(), resources.displayMetrics,
+        TypedValue.COMPLEX_UNIT_DIP,
+        this.toFloat(),
+        resources.displayMetrics,
     ).toInt()
 }

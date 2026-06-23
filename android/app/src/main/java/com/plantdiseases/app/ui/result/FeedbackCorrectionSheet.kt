@@ -37,7 +37,9 @@ import com.plantdiseases.app.R
 class FeedbackCorrectionSheet : BottomSheetDialogFragment() {
 
     override fun onCreateView(
-        inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?
     ): View = inflater.inflate(R.layout.sheet_feedback_correction, container, false)
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {

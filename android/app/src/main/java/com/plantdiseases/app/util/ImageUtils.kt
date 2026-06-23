@@ -35,7 +35,7 @@ object ImageUtils {
     fun createImageFile(context: Context): File {
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val storageDir = File(context.filesDir, "plant_images").apply { mkdirs() }
-        return File(storageDir, "PLANT_${timeStamp}.jpg")
+        return File(storageDir, "PLANT_$timeStamp.jpg")
     }
 
     /**
@@ -66,7 +66,8 @@ object ImageUtils {
                     put(MediaStore.Images.Media.IS_PENDING, 1)
                 }
                 val uri = resolver.insert(
-                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI, pending,
+                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                    pending,
                 ) ?: return false
                 resolver.openOutputStream(uri).use { out ->
                     if (out == null) {
@@ -78,7 +79,8 @@ object ImageUtils {
                 resolver.update(
                     uri,
                     ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) },
-                    null, null,
+                    null,
+                    null,
                 )
                 true
             } else {
@@ -90,7 +92,10 @@ object ImageUtils {
                 val dest = File(picturesDir, displayName)
                 source.copyTo(dest, overwrite = true)
                 MediaScannerConnection.scanFile(
-                    context, arrayOf(dest.absolutePath), arrayOf("image/jpeg"), null,
+                    context,
+                    arrayOf(dest.absolutePath),
+                    arrayOf("image/jpeg"),
+                    null,
                 )
                 true
             }
@@ -155,7 +160,9 @@ object ImageUtils {
                     (rot.height * ratio).toInt().coerceAtLeast(1),
                     true
                 )
-            } else rot
+            } else {
+                rot
+            }
             scaled = out
 
             val outputFile = File(context.cacheDir, "upload_${System.currentTimeMillis()}.jpg")
@@ -220,7 +227,8 @@ object ImageUtils {
                 while (s <= 32) {
                     try {
                         bmp = BitmapFactory.decodeFile(
-                            imagePath, BitmapFactory.Options().apply { inSampleSize = s },
+                            imagePath,
+                            BitmapFactory.Options().apply { inSampleSize = s },
                         )
                         break
                     } catch (e: OutOfMemoryError) {
@@ -239,7 +247,9 @@ object ImageUtils {
                         (decoded.height * ratio).toInt().coerceAtLeast(1),
                         true,
                     )
-                } else decoded
+                } else {
+                    decoded
+                }
                 try {
                     FileOutputStream(imagePath).use { stream ->
                         scaled.compress(Bitmap.CompressFormat.JPEG, 92, stream)
@@ -354,25 +364,23 @@ object ImageUtils {
      * Streams 8 KiB buffers so large images don't materialise in
      * memory. Must be called off the UI thread.
      */
-    fun sha256Hex(file: File): String? {
-        return try {
-            val digest = MessageDigest.getInstance("SHA-256")
-            FileInputStream(file).use { input ->
-                val buffer = ByteArray(8 * 1024)
-                while (true) {
-                    val read = input.read(buffer)
-                    if (read <= 0) break
-                    digest.update(buffer, 0, read)
-                }
+    fun sha256Hex(file: File): String? = try {
+        val digest = MessageDigest.getInstance("SHA-256")
+        FileInputStream(file).use { input ->
+            val buffer = ByteArray(8 * 1024)
+            while (true) {
+                val read = input.read(buffer)
+                if (read <= 0) break
+                digest.update(buffer, 0, read)
             }
-            digest.digest().joinToString("") { "%02x".format(it) }
-        } catch (e: IOException) {
-            Log.w(TAG, "sha256Hex failed for ${file.path}", e)
-            null
-        } catch (e: SecurityException) {
-            Log.w(TAG, "sha256Hex: permission denied for ${file.path}", e)
-            null
         }
+        digest.digest().joinToString("") { "%02x".format(it) }
+    } catch (e: IOException) {
+        Log.w(TAG, "sha256Hex failed for ${file.path}", e)
+        null
+    } catch (e: SecurityException) {
+        Log.w(TAG, "sha256Hex: permission denied for ${file.path}", e)
+        null
     }
 
     /**
@@ -409,10 +417,10 @@ object ImageUtils {
             for (y in 1 until h - 1) {
                 for (x in 1 until w - 1) {
                     val laplacian = pixels[(y - 1) * w + x] +
-                            pixels[(y + 1) * w + x] +
-                            pixels[y * w + (x - 1)] +
-                            pixels[y * w + (x + 1)] -
-                            4 * pixels[y * w + x]
+                        pixels[(y + 1) * w + x] +
+                        pixels[y * w + (x - 1)] +
+                        pixels[y * w + (x + 1)] -
+                        4 * pixels[y * w + x]
                     sum += laplacian
                     sumSq += laplacian.toDouble() * laplacian
                     count++
@@ -429,5 +437,4 @@ object ImageUtils {
             Double.MAX_VALUE // On error, assume sharp
         }
     }
-
 }

@@ -41,8 +41,6 @@ object ThemeHelper {
         applyTheme(mode)
     }
 
-    fun getSavedTheme(context: Context): Int {
-        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getInt(KEY_THEME, THEME_SYSTEM)
-    }
+    fun getSavedTheme(context: Context): Int = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .getInt(KEY_THEME, THEME_SYSTEM)
 }

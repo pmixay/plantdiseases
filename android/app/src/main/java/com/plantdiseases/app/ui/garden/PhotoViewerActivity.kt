@@ -128,7 +128,8 @@ class PhotoViewerActivity : AppCompatActivity() {
         }
 
         inner class PageHolder(
-            container: FrameLayout, val image: ZoomableImageView,
+            container: FrameLayout,
+            val image: ZoomableImageView,
         ) : RecyclerView.ViewHolder(container)
     }
 
@@ -165,17 +166,20 @@ class ZoomableImageView(context: Context) : androidx.appcompat.widget.AppCompatI
 
     init {
         scaleType = ScaleType.MATRIX
-        scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
-            override fun onScale(detector: ScaleGestureDetector): Boolean {
-                val factor = detector.scaleFactor
-                val newScale = (scale * factor).coerceIn(1f, 4f)
-                val realFactor = newScale / scale
-                scale = newScale
-                matrixCurrent.postScale(realFactor, realFactor, detector.focusX, detector.focusY)
-                imageMatrix = matrixCurrent
-                return true
+        scaleDetector = ScaleGestureDetector(
+            context,
+            object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                override fun onScale(detector: ScaleGestureDetector): Boolean {
+                    val factor = detector.scaleFactor
+                    val newScale = (scale * factor).coerceIn(1f, 4f)
+                    val realFactor = newScale / scale
+                    scale = newScale
+                    matrixCurrent.postScale(realFactor, realFactor, detector.focusX, detector.focusY)
+                    imageMatrix = matrixCurrent
+                    return true
+                }
             }
-        })
+        )
     }
 
     /** Reset transforms — called by the adapter on rebind so paging

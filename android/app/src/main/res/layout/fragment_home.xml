@@ -12,7 +12,8 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/background"
-    android:clipToPadding="false">
+    android:clipToPadding="false"
+    android:fillViewport="true">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -49,10 +50,14 @@
             android:orientation="horizontal"
             android:paddingHorizontal="@dimen/space_lg">
 
+            <!-- Both hero cards use match_parent height against a wrap_content
+                 row: a horizontal LinearLayout then stretches the shorter card
+                 to the taller one, so they stay equal height regardless of how
+                 many lines the title/subtitle wrap to (e.g. longer RU strings). -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/card_scan"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="match_parent"
                 android:layout_weight="1"
                 android:layout_marginEnd="@dimen/space_sm"
                 android:clickable="true"
@@ -95,7 +100,7 @@
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/card_identify"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="match_parent"
                 android:layout_weight="1"
                 android:layout_marginStart="@dimen/space_sm"
                 android:clickable="true"
@@ -198,6 +203,7 @@
                 android:paddingHorizontal="@dimen/space_lg">
 
                 <TextView
+                    android:id="@+id/tv_species_title"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
@@ -217,9 +223,10 @@
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/rv_species"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="184dp"
                 android:layout_marginTop="@dimen/space_sm"
                 android:clipToPadding="false"
+                android:nestedScrollingEnabled="false"
                 android:orientation="horizontal"
                 android:paddingHorizontal="@dimen/space_lg" />
         </LinearLayout>
@@ -245,9 +252,10 @@
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/rv_popular"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="166dp"
                 android:layout_marginTop="@dimen/space_sm"
                 android:clipToPadding="false"
+                android:nestedScrollingEnabled="false"
                 android:orientation="horizontal"
                 android:paddingHorizontal="@dimen/space_lg" />
         </LinearLayout>
@@ -288,9 +296,10 @@
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/rv_guide"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="166dp"
                 android:layout_marginTop="@dimen/space_sm"
                 android:clipToPadding="false"
+                android:nestedScrollingEnabled="false"
                 android:orientation="horizontal"
                 android:paddingHorizontal="@dimen/space_lg" />
         </LinearLayout>

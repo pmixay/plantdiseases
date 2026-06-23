@@ -26,14 +26,18 @@
         android:orientation="vertical"
         android:padding="@dimen/space_lg">
 
-        <!-- Hero: leaf-green gradient header, mirroring the Garden tab so
-             the two tabs share one production look (same bg_garden_hero,
-             bg_circle_semi, type ramp and on_hero palette). -->
+        <!-- Hero card: rounded leaf-green gradient panel, mirroring the Garden
+             tab (same bg_circle_semi chip, type ramp and on_hero palette). The
+             toolbar is hidden on this tab (see MainActivity), so ProfileFragment
+             pads the scroll view by the status-bar inset to drop the card below
+             the system clock; the parent's space_lg padding gives the side
+             margins. -->
         <LinearLayout
+            android:id="@+id/profile_hero"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:background="@drawable/bg_garden_hero"
+            android:background="@drawable/bg_hero_card"
             android:paddingHorizontal="@dimen/space_xl"
             android:paddingTop="@dimen/space_2xl"
             android:paddingBottom="@dimen/space_xl">

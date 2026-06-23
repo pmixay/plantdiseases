@@ -16,7 +16,9 @@ import kotlin.math.min
  * widget still reads as a chart on an empty history.
  */
 class DonutChartView @JvmOverloads constructor(
-    context: Context, attrs: AttributeSet? = null, defStyle: Int = 0,
+    context: Context,
+    attrs: AttributeSet? = null,
+    defStyle: Int = 0,
 ) : View(context, attrs, defStyle) {
 
     data class Segment(val value: Float, val color: Int)
