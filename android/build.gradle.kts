@@ -12,16 +12,6 @@ plugins {
     id("io.gitlab.arturbosch.detekt") version "1.23.8" apply false
 }
 
-// Make dependency resolution reproducible: lock every configuration so the
-// resolved versions (including transitive ones) are pinned in
-// `gradle.lockfile`. Regenerate after changing dependencies with:
-//   ./gradlew :app:dependencies --write-locks
-allprojects {
-    dependencyLocking {
-        lockAllConfigurations()
-    }
-}
-
 task("clean", Delete::class) {
     delete(rootProject.layout.buildDirectory)
 }
