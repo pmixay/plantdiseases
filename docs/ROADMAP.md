@@ -3,8 +3,7 @@
 Short status + next steps. **No app-store release planning** — licensing,
 verification and health-claims overhead put a public Play launch out of scope for
 now; this stays an internal/beta build. Companions: `DATASET_LABELING_PLAN.md`
-(data loop), `CLASS_COVERAGE_RESEARCH.md` (class add/remove research),
-`ANDROID_RELEASE.md` (build/signing mechanics).
+(data loop), `ANDROID_RELEASE.md` (build/signing mechanics).
 
 ## Where we are
 
@@ -74,8 +73,7 @@ edge for breadth.
 
 ## Later / maybe 💡
 
-Class-expansion research lives in `CLASS_COVERAGE_RESEARCH.md` (TL;DR: keep the 9,
-add nothing structural yet).
+Class-expansion stance: keep the 9 trainable classes, add nothing structural yet.
 
 - [ ] **Root rot / overwatering** — the most common houseplant problem, but nearly
       inseparable from nutrient/scorch on a leaf photo and no clean public data →

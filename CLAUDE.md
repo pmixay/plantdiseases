@@ -24,8 +24,8 @@ Three independent deliverables, each with its own toolchain:
 
 Key docs: `README.md` (overview + API table), `DEPLOYMENT.md` (production config),
 `docs/ROADMAP.md` (current model status + next steps), `docs/ANDROID_RELEASE.md`
-(signing/FCM), `docs/DATASET_LABELING_PLAN.md` + `docs/CLASS_COVERAGE_RESEARCH.md`
-(data loop), `server/models/MODEL_CARD.md`, `server/train_notebook.ipynb` (full
+(signing/FCM), `docs/DATASET_LABELING_PLAN.md` (data loop),
+`server/models/MODEL_CARD.md`, `server/train_notebook.ipynb` (full
 training recipe).
 
 ## Common commands
