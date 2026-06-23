@@ -28,10 +28,20 @@
 
         <!-- Hero: leaf-green gradient header, mirroring the Garden tab so
              the two tabs share one production look (same bg_garden_hero,
-             bg_circle_semi, type ramp and on_hero palette). -->
+             bg_circle_semi, type ramp and on_hero palette).
+
+             Negative margins cancel the parent's space_lg padding so the hero
+             is full-bleed (reaches the screen top + side edges); the shared
+             toolbar is hidden on this tab (see MainActivity) so the hero is the
+             sole header. ProfileFragment adds the status-bar inset to paddingTop
+             so the title clears the system clock. -->
         <LinearLayout
+            android:id="@+id/profile_hero"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginStart="-16dp"
+            android:layout_marginTop="-16dp"
+            android:layout_marginEnd="-16dp"
             android:orientation="vertical"
             android:background="@drawable/bg_garden_hero"
             android:paddingHorizontal="@dimen/space_xl"

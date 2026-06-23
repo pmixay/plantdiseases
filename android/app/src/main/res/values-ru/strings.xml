@@ -774,10 +774,10 @@
 
     <!-- Главная -->
     <string name="tab_home">Главная</string>
-    <string name="home_greeting_morning">Доброе утро 🌿</string>
-    <string name="home_greeting_day">Добрый день 🌿</string>
-    <string name="home_greeting_evening">Добрый вечер 🌿</string>
-    <string name="home_greeting_night">Ночная забота о растениях 🌙</string>
+    <string name="home_greeting_morning">Доброе утро</string>
+    <string name="home_greeting_day">Добрый день</string>
+    <string name="home_greeting_evening">Добрый вечер</string>
+    <string name="home_greeting_night">Ночная забота о растениях</string>
     <string name="home_subtitle">Чем займёмся с растениями сегодня?</string>
     <string name="home_scan_title">Проверить здоровье</string>
     <string name="home_scan_sub">Диагноз болезни по фото</string>

@@ -23,7 +23,6 @@ import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
 import org.koin.android.ext.koin.androidContext
 import org.koin.android.ext.koin.androidLogger
-import org.koin.androidx.workmanager.koin.workManagerFactory
 import org.koin.core.context.GlobalContext
 import org.koin.core.context.startKoin
 
@@ -68,14 +67,26 @@ class PlantDiseasesApp : Application() {
         // Start Koin before anything resolves an injected singleton. Guarded
         // with getOrNull() because Robolectric reinstantiates this Application
         // across test classes in one JVM, and a second startKoin() on the
-        // process-wide GlobalContext would throw. workManagerFactory() registers
-        // the Koin WorkerFactory for future Koin-injected workers; today's
-        // workers still use the default factory, so this is a no-op for them.
+        // process-wide GlobalContext would throw.
+        //
+        // NB: do NOT add workManagerFactory() here. It calls
+        // WorkManager.initialize(), but the default androidx.startup
+        // WorkManagerInitializer (still enabled — the manifest never removed it)
+        // already initialised WorkManager from the InitializationProvider that
+        // runs *before* Application.onCreate. The second init throws
+        // "WorkManager is already initialized" and crashes every launch on a
+        // real device. Robolectric doesn't run the startup provider, so the
+        // double-init never fired in unit tests — it only crashed on-device.
+        // Today's workers (OpinionCheckWorker, PlantReminderWorker) use the
+        // default WorkerFactory and resolve deps via `applicationContext as
+        // PlantDiseasesApp`, not Koin constructor injection, so the Koin
+        // WorkerFactory isn't needed. If a future worker needs it, re-add
+        // workManagerFactory() *and* remove the default WorkManagerInitializer
+        // in AndroidManifest.xml so only one party initialises WorkManager.
         if (GlobalContext.getOrNull() == null) {
             startKoin {
                 androidLogger()
                 androidContext(this@PlantDiseasesApp)
-                workManagerFactory()
                 modules(appModule)
             }
         }
@@ -86,11 +97,13 @@ class PlantDiseasesApp : Application() {
         // species info) — "fetched once, never fetched again".
         com.plantdiseases.app.util.ResponseCache.init(this)
         registerCropImageInsetFix()
-        // NB: do NOT touch WorkManager here. The app disables the default
-        // WorkManagerInitializer, so WorkManager.getInstance() in
-        // Application.onCreate throws (and breaks every Robolectric test that
-        // instantiates the app). Scheduling is kicked off from MainActivity
-        // instead — the same on-demand pattern ReminderManager uses.
+        // NB: do NOT touch WorkManager here. The default androidx.startup
+        // WorkManagerInitializer initialises it before onCreate, but calling
+        // WorkManager.getInstance()/initialize() from Application.onCreate
+        // breaks every Robolectric test that instantiates the app (the startup
+        // provider doesn't run under Robolectric). Scheduling is kicked off
+        // from MainActivity instead — the same on-demand pattern ReminderManager
+        // uses.
     }
 
     /**

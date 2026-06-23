@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.view.View
-import android.widget.TextView
 import androidx.activity.addCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -25,7 +24,6 @@ import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.launch
 import java.io.File
 import java.util.Locale
-import kotlin.math.roundToInt
 
 /**
  * "Identify my plant" — a full live-camera screen that mirrors the disease
@@ -119,7 +117,7 @@ class SpeciesIdentifyActivity : AppCompatActivity() {
                 when {
                     !resp.available -> showStatus(getString(R.string.identify_unavailable))
                     resp.results.isEmpty() -> showStatus(getString(R.string.identify_no_match))
-                    else -> renderCandidates(resp.results.take(5))
+                    else -> openTopCandidate(resp.results)
                 }
             }.onFailure {
                 showStatus(it.localizedMessage ?: getString(R.string.identify_failed))
@@ -127,34 +125,31 @@ class SpeciesIdentifyActivity : AppCompatActivity() {
         }
     }
 
-    private fun renderCandidates(candidates: List<SpeciesCandidate>) {
-        binding.candidatesStatus.visibility = View.GONE
-        binding.candidatesList.removeAllViews()
-        candidates.forEach { c ->
-            val sci = c.scientificName ?: return@forEach
-            val row = layoutInflater.inflate(
-                R.layout.item_home_tool, binding.candidatesList, false,
-            )
-            row.findViewById<android.widget.ImageView>(R.id.tool_icon)
-                .setImageResource(R.drawable.ic_plant_placeholder)
-            row.findViewById<TextView>(R.id.tool_title).text = getString(
-                R.string.identify_candidate_row,
-                c.displayCommonName ?: sci,
-                sci,
-                (c.score * 100).roundToInt(),
-            )
-            row.setOnClickListener {
-                SpeciesDetailActivity.start(this, sci, c.displayCommonName)
-            }
-            binding.candidatesList.addView(row)
+    /** Auto-open the single best match — no "which is yours?" picker, mirroring
+     *  how the disease scan jumps straight to its top diagnosis. Picks the
+     *  highest-scoring candidate with a usable scientific name; if none has one,
+     *  degrade to the no-match status (same as an empty result set). */
+    private fun openTopCandidate(candidates: List<SpeciesCandidate>) {
+        val top = candidates
+            .filter { !it.scientificName.isNullOrBlank() }
+            .maxByOrNull { it.score }
+        val sci = top?.scientificName
+        if (sci.isNullOrBlank()) {
+            showStatus(getString(R.string.identify_no_match))
+            return
         }
-        showCandidates()
+        // Return to the live camera underneath so backing out of the detail
+        // screen lands on a fresh capture, not a stale panel.
+        hideCandidates()
+        SpeciesDetailActivity.start(this, sci, top.displayCommonName)
     }
 
-    /** Show the panel with a status line instead of candidate rows (no match,
-     *  unavailable, or an error). */
+    /** Show the panel with a status line instead of opening a match (no match,
+     *  unavailable, or an error). The picker title is hidden — the panel is now
+     *  status-only. */
     private fun showStatus(msg: String) {
         binding.candidatesList.removeAllViews()
+        binding.candidatesTitle.visibility = View.GONE
         binding.candidatesStatus.text = msg
         binding.candidatesStatus.visibility = View.VISIBLE
         showCandidates()

@@ -230,8 +230,12 @@ dependencies {
     ksp("com.github.bumptech.glide:ksp:4.16.0")
 
     // Koin dependency injection. Replaces the hand-rolled `by lazy` singletons
-    // on PlantDiseasesApp with a Koin graph (di/AppModule.kt); the
-    // workmanager artefact provides the WorkerFactory wired in startKoin{}.
+    // on PlantDiseasesApp with a Koin graph (di/AppModule.kt). The workmanager
+    // artefact ships the Koin WorkerFactory, but it is NOT wired in startKoin{}
+    // today: calling workManagerFactory() re-initialises WorkManager and
+    // collides with the default androidx.startup initializer (crash on launch —
+    // see PlantDiseasesApp.onCreate). Kept for the future Koin-injected-worker
+    // path documented there.
     implementation(platform("io.insert-koin:koin-bom:4.0.0"))
     implementation("io.insert-koin:koin-android")
     implementation("io.insert-koin:koin-androidx-workmanager")

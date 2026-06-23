@@ -22,6 +22,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updatePadding
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
@@ -78,6 +79,7 @@ class GardenFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        applyHeroStatusBarInset(binding.gardenHero)
         binding.gardenAddFab.setOnClickListener {
             Haptics.medium(requireContext())
             showPlantDialog(null)
@@ -121,6 +123,20 @@ class GardenFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         if (_binding != null) loadPlants()
+    }
+
+    /** The shared toolbar is hidden on this tab (see MainActivity), so the
+     *  full-bleed hero now sits behind the status bar. Pad its top by the
+     *  status-bar inset (on top of the XML paddingTop) so the title clears the
+     *  system clock instead of drawing under it. */
+    private fun applyHeroStatusBarInset(hero: View) {
+        val baseTop = hero.paddingTop
+        ViewCompat.setOnApplyWindowInsetsListener(hero) { v, insets ->
+            val top = insets.getInsets(WindowInsetsCompat.Type.systemBars()).top
+            v.updatePadding(top = baseTop + top)
+            insets
+        }
+        ViewCompat.requestApplyInsets(hero)
     }
 
     override fun onDestroyView() {

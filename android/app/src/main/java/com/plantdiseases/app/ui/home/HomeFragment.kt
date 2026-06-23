@@ -2,11 +2,13 @@ package com.plantdiseases.app.ui.home
 
 import android.content.Intent
 import android.os.Bundle
+import android.provider.Settings
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 import androidx.fragment.app.Fragment
+import androidx.interpolator.view.animation.FastOutSlowInInterpolator
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -104,6 +106,42 @@ class HomeFragment : Fragment() {
         binding.rvGuide.adapter = guideAdapter
 
         bindDiseaseGuide()
+        maybePlayIntro(savedInstanceState)
+    }
+
+    /**
+     * Staggered entrance for the Home feed, played once per cold start (the
+     * static [introPlayed] flag lives for the process lifetime, so it fires on
+     * first install and every relaunch, but NOT on tab switches or config-change
+     * recreations within a session). Each visible top-level block rises a little
+     * and fades in, cascading top→bottom.
+     */
+    private fun maybePlayIntro(savedInstanceState: Bundle?) {
+        if (introPlayed || savedInstanceState != null) return
+        introPlayed = true
+        // Honour the system "remove animations" / reduced-motion setting.
+        val animScale = Settings.Global.getFloat(
+            requireContext().contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f,
+        )
+        if (animScale == 0f) return
+
+        val content = binding.root.getChildAt(0) as? ViewGroup ?: return
+        val dy = 24f * resources.displayMetrics.density
+        var shown = 0
+        for (i in 0 until content.childCount) {
+            val child = content.getChildAt(i)
+            if (child.visibility != View.VISIBLE) continue // skip gone carousels
+            child.translationY = dy
+            child.alpha = 0f
+            child.animate()
+                .translationY(0f)
+                .alpha(1f)
+                .setStartDelay(shown * 70L)
+                .setDuration(400L)
+                .setInterpolator(FastOutSlowInInterpolator())
+                .start()
+            shown++
+        }
     }
 
     override fun onResume() {
@@ -115,6 +153,14 @@ class HomeFragment : Fragment() {
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
+    }
+
+    private companion object {
+        /** Process-scoped: false at every cold start, set true after the intro
+         *  plays. Static lifetime means it survives fragment view recreation
+         *  (tab switches, config changes) so the animation fires once per
+         *  launch, then resets naturally when the process is recreated. */
+        var introPlayed = false
     }
 
     /** Switch the bottom bar to the Scan tab (same transition as a tap). */

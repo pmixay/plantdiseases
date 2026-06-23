@@ -782,10 +782,10 @@
 
     <!-- Home -->
     <string name="tab_home">Home</string>
-    <string name="home_greeting_morning">Good morning 🌿</string>
-    <string name="home_greeting_day">Good afternoon 🌿</string>
-    <string name="home_greeting_evening">Good evening 🌿</string>
-    <string name="home_greeting_night">Late-night plant care 🌙</string>
+    <string name="home_greeting_morning">Good morning</string>
+    <string name="home_greeting_day">Good afternoon</string>
+    <string name="home_greeting_evening">Good evening</string>
+    <string name="home_greeting_night">Late-night plant care</string>
     <string name="home_subtitle">What shall we do for your plants today?</string>
     <string name="home_scan_title">Scan health</string>
     <string name="home_scan_sub">Diagnose a disease from a photo</string>

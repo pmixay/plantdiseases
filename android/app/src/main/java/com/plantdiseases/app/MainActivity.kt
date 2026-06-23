@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.view.View
 import android.view.animation.OvershootInterpolator
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -192,6 +193,14 @@ class MainActivity : AppCompatActivity() {
         }
 
         navController.addOnDestinationChangedListener { _, destination, _ ->
+            // Garden + Profile render their own full-bleed green hero as the
+            // header, so the shared toolbar bar is hidden there — otherwise it
+            // stacks a second title above the hero with a white gap (the
+            // "cut off" look). Every other destination keeps the toolbar.
+            binding.appBar.visibility = when (destination.id) {
+                R.id.gardenFragment, R.id.profileFragment -> View.GONE
+                else -> View.VISIBLE
+            }
             when (destination.id) {
                 R.id.cameraFragment -> supportActionBar?.title = getString(R.string.tab_scan)
                 R.id.galleryFragment -> {
