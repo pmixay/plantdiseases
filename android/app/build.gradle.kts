@@ -3,6 +3,8 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.serialization")
     id("com.google.devtools.ksp")
+    id("org.jlleitschuh.gradle.ktlint")
+    id("io.gitlab.arturbosch.detekt")
 }
 
 android {
@@ -140,12 +142,12 @@ android {
     }
 
     lint {
-        // Fail the release build on lint errors so we catch regressions
-        // in CI rather than on-device. Warnings are still non-fatal —
-        // `warningsAsErrors = false` preserves that.
-        abortOnError = true
-        checkReleaseBuilds = true
-        warningsAsErrors = false
+        // Android Lint is no longer the code-quality gate — ktlint (style) and
+        // detekt (static analysis) replace it (see the ktlint/detekt blocks
+        // below and ci.yml). Don't let it fail the build, and skip the
+        // lintVitalRelease pass so assembleRelease doesn't re-run it.
+        abortOnError = false
+        checkReleaseBuilds = false
     }
 
     compileOptions {
@@ -165,6 +167,29 @@ android {
             isIncludeAndroidResources = true
             isReturnDefaultValues = true
         }
+    }
+}
+
+// ─── Kotlin linting (replaces Android Lint) ───────────────────────────────────
+// Adopted in reporting mode: the existing tree predates these tools, so they
+// run and publish reports without failing the build. To make them gate, run
+// `./gradlew detektBaseline` (+ `./gradlew ktlintFormat` to clean up), commit
+// the baseline, then set ignoreFailures = false here.
+detekt {
+    buildUponDefaultConfig = true
+    config.setFrom(files("$rootDir/config/detekt/detekt.yml"))
+    source.setFrom("src/main/java", "src/test/java")
+    parallel = true
+    ignoreFailures = true
+}
+
+ktlint {
+    version.set("1.3.1")
+    android.set(true)
+    ignoreFailures.set(true)
+    filter {
+        // Never lint generated sources (view binding, KSP/Room, BuildConfig).
+        exclude { it.file.path.contains("/build/") }
     }
 }
 

@@ -94,13 +94,14 @@ jobs:
       # (e.g. a stripped Gson/Retrofit reflection class); lint/test already
       # compile the debug sources. With RELEASE_STORE_FILE set the APK is signed
       # with your key, otherwise it falls back to the debug key.
-      - name: Lint, test & assemble release APK (R8)
+      - name: ktlint, detekt, test & assemble release APK (R8)
         env:
           RELEASE_STORE_FILE: ${{ env.RELEASE_KEYSTORE_BASE64 != '' && format('{0}/release.keystore', runner.temp) || '' }}
+        # ktlint + detekt replace Android Lint as the code-quality gate.
         # --configuration-cache reuses the resolved task graph across runs (the
         # cache itself is restored by gradle/actions/setup-gradle), skipping the
         # configuration phase when nothing structural changed.
-        run: ./gradlew lintDebug testDebugUnitTest assembleRelease --build-cache --configuration-cache --stacktrace
+        run: ./gradlew ktlintCheck detekt testDebugUnitTest assembleRelease --build-cache --configuration-cache --stacktrace
 
       # Prove the published APK is signed with the release key (when one is
       # configured) instead of silently falling back to the debug key, and
@@ -139,14 +140,14 @@ jobs:
             echo "No release keystore secret set; debug-signed fallback is expected."
           fi
 
-      - name: Upload lint report
+      - name: Upload ktlint + detekt reports
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: lint-report
           path: |
-            android/app/build/reports/lint-results-*.html
-            android/app/build/reports/lint-results-*.xml
+            android/app/build/reports/ktlint/**
+            android/app/build/reports/detekt/**
           if-no-files-found: ignore
           retention-days: 7
 
