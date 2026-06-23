@@ -158,6 +158,18 @@ eval-slice-confounded) — confirm on the next run before acting.
 > are agent-judged, the gate measured on them is a **proxy** until verified
 > production volume exists.
 
+> **Cross-version comparability (frozen eval).** Because the held-out splits are
+> drawn from the *current* pool (`make_group_split`), growing the supplement
+> silently changes `val_realworld` — so per-class numbers across two training
+> runs are measured on different images and a point-estimate "regression" can't
+> be told from eval churn (this is what muddied the v2.6.6 leaf_scorch call). To
+> fix it, §2 pins a committed, content-addressed **frozen eval set**
+> (`server/eval/frozen_eval_manifest.json`, keyed by sha256 + DCT pHash) into
+> `val_realworld` on every run, so two model versions are graded on the **same**
+> photos. Build it once with `tools/build_frozen_eval.py`; compare two bundles on
+> it with the paired bootstrap in `tools/paired_eval.py` (a per-class delta is
+> real only when its paired CI excludes zero). See `server/eval/README.md`.
+
 ## (2) No server ingestion — by design
 
 There is **no** server-side dataset path: no Kaggle auto-fetch, no version

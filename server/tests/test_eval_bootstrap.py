@@ -186,3 +186,32 @@ def test_per_class_precision_handles_never_predicted_class_without_crashing():
     assert nap["n_predicted"] == 0
     assert nap["n_boot_valid"] == 0
     assert np.isnan(nap["point"])
+
+
+def test_paired_per_class_precision_flags_real_and_ignores_noise():
+    # Build a shared test set where model A and model B differ on ONE class's
+    # precision in a clear, real way, and are identical elsewhere.
+    rng = np.random.default_rng(0)
+    n = 600
+    y_true = rng.integers(0, 4, size=n)
+    # Model A: 90% correct.
+    y_a = y_true.copy()
+    fa = rng.random(n) < 0.10
+    y_a[fa] = (y_true[fa] + rng.integers(1, 4, size=fa.sum())) % 4
+    # Model B = A, but additionally dumps many true-healthy(2) images onto
+    # disease_a(0) -> disease_a precision collapses for B (false positives),
+    # a real, paired precision regression on disease_a.
+    y_b = y_a.copy()
+    leak = (y_true == 2) & (rng.random(n) < 0.6)
+    y_b[leak] = 0
+
+    out = eb.paired_per_class_precision(y_true, y_a, y_b, CLASS_NAMES, n_boot=600, seed=1)
+    assert out["metric"] == "per_class_precision_diff"
+    da = out["classes"]["disease_a"]
+    # A − B precision on disease_a is strongly positive and significant.
+    assert da["diff_point"] > 0.1
+    assert da["significant"] is True
+    assert da["diff_ci_low"] > 0.0
+    # disease_b is untouched -> the delta straddles zero (noise).
+    db = out["classes"]["disease_b"]
+    assert db["significant"] is False
