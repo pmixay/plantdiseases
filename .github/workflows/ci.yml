@@ -180,9 +180,10 @@ jobs:
           path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: warn
           retention-days: 14
-          # An APK is already a compressed zip; re-zipping it at the default
-          # level 6 burns CPU for ~no size gain, so skip recompression.
-          compression-level: 0
+          # An APK is already a compressed zip, so the artifact wrapper's
+          # deflate buys very little. Use a light level (3) — most of the small
+          # gain at a fraction of the CPU of the default 6 — rather than 0.
+          compression-level: 3
 
   server:
     name: Server tests & lint
