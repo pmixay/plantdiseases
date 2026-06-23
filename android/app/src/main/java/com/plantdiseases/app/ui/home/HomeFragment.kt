@@ -27,6 +27,7 @@ import com.plantdiseases.app.ui.symptom.SymptomCheckerActivity
 import com.plantdiseases.app.util.DiseaseCatalog
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.RegionResolver
+import com.plantdiseases.app.util.SpeciesCatalog
 import kotlinx.coroutines.launch
 import java.util.Calendar
 import java.util.Locale
@@ -48,7 +49,7 @@ class HomeFragment : Fragment() {
 
     private val speciesAdapter by lazy {
         SpeciesCarouselAdapter(
-            onClick = { SpeciesDetailActivity.start(requireContext(), it.species, null) },
+            onClick = { SpeciesDetailActivity.start(requireContext(), it.scientific, it.title) },
             loadImage = ::loadSpeciesImage,
         )
     }
@@ -106,6 +107,10 @@ class HomeFragment : Fragment() {
         binding.rvGuide.adapter = guideAdapter
 
         bindDiseaseGuide()
+        // Show the bundled popular-species fallback right away so the carousel
+        // is present on first frame; loadTrending() (onResume) upgrades it to
+        // real trending data when the feed has any.
+        renderSpecies(binding, null)
         maybePlayIntro(savedInstanceState)
     }
 
@@ -231,24 +236,55 @@ class HomeFragment : Fragment() {
                     )
                 }
             val b = _binding ?: return@launch
-            if (trending == null) {
-                b.sectionSpecies.visibility = View.GONE
-                b.sectionPopular.visibility = View.GONE
-                return@launch
-            }
             renderSpecies(b, trending)
-            renderPopular(b, trending)
+            // Popular diseases is genuinely trending-only — no bundled fallback
+            // (the always-on Disease guide below already covers that need).
+            if (trending == null) {
+                b.sectionPopular.visibility = View.GONE
+            } else {
+                renderPopular(b, trending)
+            }
         }
     }
 
-    private fun renderSpecies(b: FragmentHomeBinding, t: TrendingResponse) {
-        if (t.topSpecies.isEmpty()) {
-            b.sectionSpecies.visibility = View.GONE
-            return
-        }
+    /**
+     * Render the species carousel. Trending species near the user take
+     * priority; when the feed has none (fresh install, sparse region, or the
+     * request failed) we fall back to a bundled "popular houseplants" list so
+     * the row is never empty — the same always-on contract the Disease guide
+     * has.
+     */
+    private fun renderSpecies(b: FragmentHomeBinding, t: TrendingResponse?) {
         b.sectionSpecies.visibility = View.VISIBLE
-        b.tvTrendingScope.text = scopeLabel(t)
-        speciesAdapter.submit(t.topSpecies)
+        if (t != null && t.topSpecies.isNotEmpty()) {
+            b.tvSpeciesTitle.setText(R.string.home_trending)
+            b.tvTrendingScope.text = scopeLabel(t)
+            b.tvTrendingScope.visibility = View.VISIBLE
+            speciesAdapter.submit(
+                t.topSpecies.map { s ->
+                    SpeciesCarouselAdapter.Item(
+                        scientific = s.species,
+                        title = s.species,
+                        subtitle = resources.getQuantityString(
+                            R.plurals.home_species_count, s.count, s.count,
+                        ),
+                    )
+                },
+            )
+        } else {
+            b.tvSpeciesTitle.setText(R.string.home_popular_species)
+            b.tvTrendingScope.visibility = View.GONE
+            val tag = getString(R.string.home_species_popular_tag)
+            speciesAdapter.submit(
+                SpeciesCatalog.popular.map { sp ->
+                    SpeciesCarouselAdapter.Item(
+                        scientific = sp.scientific,
+                        title = if (isRu) sp.commonRu else sp.commonEn,
+                        subtitle = tag,
+                    )
+                },
+            )
+        }
     }
 
     private fun renderPopular(b: FragmentHomeBinding, t: TrendingResponse) {
