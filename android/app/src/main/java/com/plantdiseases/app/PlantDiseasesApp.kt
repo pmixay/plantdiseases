@@ -13,33 +13,31 @@ import com.plantdiseases.app.data.remote.PlantApiClient
 import com.plantdiseases.app.data.repository.CommunityUploader
 import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
+import com.plantdiseases.app.di.appModule
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.ThemeHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import org.koin.android.ext.android.inject
+import org.koin.android.ext.koin.androidContext
+import org.koin.android.ext.koin.androidLogger
+import org.koin.androidx.workmanager.koin.workManagerFactory
+import org.koin.core.context.GlobalContext
+import org.koin.core.context.startKoin
 
 class PlantDiseasesApp : Application() {
 
-    val database: AppDatabase by lazy { AppDatabase.getInstance(this) }
-    val apiClient: PlantApiClient by lazy { PlantApiClient() }
-    val scanRepository: ScanRepository by lazy {
-        ScanRepository(database.scanDao(), apiClient, database.scanChatMessageDao())
-    }
-    val plantRepository: PlantRepository by lazy {
-        PlantRepository(
-            database.plantDao(),
-            database.plantJournalDao(),
-            database.scanDao(),
-            database.plantReminderDao(),
-            database.plantReminderEventDao(),
-            database.chatMessageDao(),
-        )
-    }
-    val communityUploader: CommunityUploader by lazy {
-        CommunityUploader(this, scanRepository)
-    }
+    // Safety net: these keep the exact same names/types as the former `by lazy`
+    // properties so every `application as PlantDiseasesApp` call site is
+    // untouched, but the instances now come from Koin (see di/AppModule.kt).
+    // `inject()` is lazy, so nothing resolves before startKoin() runs below.
+    val database: AppDatabase by inject()
+    val apiClient: PlantApiClient by inject()
+    val scanRepository: ScanRepository by inject()
+    val plantRepository: PlantRepository by inject()
+    val communityUploader: CommunityUploader by inject()
 
     /**
      * Application-scoped CoroutineScope for fire-and-forget work that
@@ -67,6 +65,20 @@ class PlantDiseasesApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // Start Koin before anything resolves an injected singleton. Guarded
+        // with getOrNull() because Robolectric reinstantiates this Application
+        // across test classes in one JVM, and a second startKoin() on the
+        // process-wide GlobalContext would throw. workManagerFactory() registers
+        // the Koin WorkerFactory for future Koin-injected workers; today's
+        // workers still use the default factory, so this is a no-op for them.
+        if (GlobalContext.getOrNull() == null) {
+            startKoin {
+                androidLogger()
+                androidContext(this@PlantDiseasesApp)
+                workManagerFactory()
+                modules(appModule)
+            }
+        }
         LocaleHelper.applyLocale(this)
         ThemeHelper.applySavedTheme(this)
         createNotificationChannels()
