@@ -97,7 +97,8 @@ consistent, every published version must satisfy:
 > lateral move with one clear data lesson (below). Trajectory: v2 fixed eval-volume
 > → v3 hardened leaf_scorch precision → v4 added nutrient negatives + first
 > production signal **but over-corrected leaf_scorch**. v5 fixes leaf_scorch,
-> finishes nutrient, and leans on the production loop for gray_mold.
+> finishes nutrient, and **pivots gray_mold to non-English / video channels —
+> the open (English) web is exhausted at its ceiling.**
 
 ### v4-run outcome (model v2.6.6) — what v5 must react to
 
@@ -105,6 +106,13 @@ consistent, every published version must satisfy:
   healthy hard-negatives +114 but only +31 *boundary* — the +57 *generic* lush-green
   negatives pushed the model to under-call scorch. **v5: add ONLY boundary brown-tip
   negatives; do NOT add generic healthy, and consider trimming some of v4's.**
+  **NB (paired re-eval):** running *both* bundles on one fixed set
+  (`tools/paired_eval.py`) did **not** reproduce a significant leaf_scorch
+  regression — recall Δ within noise, precision flat→up — because the v2.6.5 vs v4
+  per-class numbers above are measured on *different* eval draws. Treat the
+  "regression" as largely eval-slice churn: verify on a frozen held-out slice
+  before any data surgery, and trim healthy negatives *cautiously* — the precision
+  seesaw (scorch over-triggering) is the real risk, not recall.
 - **nutrient precision flat (0.743→0.750).** Removing the rice `kaggle_nutrient` +
   `coleaf` was net-neutral — they were wrong-domain dead weight, not the cause.
   Nutrient is a *boundary* problem → boundary negatives stay the priority.
@@ -118,7 +126,7 @@ consistent, every published version must satisfy:
 
 | class | v4 state | v5 target | lever | gap risk |
 |---|---|---|---|---|
-| `gray_mold_botrytis` | 232 positives, **31% conf<0.80** | **250 clean** (≥0.80) | **production scans, not web** — open-web is at its ceiling; deliberately scan gray-mold cases and fold the high-conf `local` rows in | **HIGH** |
+| `gray_mold_botrytis` | 232 positives, **31% conf<0.80** | **250 clean** (≥0.80) | **open (English) web EXHAUSTED → pivot channels, don't wait on production:** (1) **non-English / regional web** — RU *серая гниль*, ZH *灰霉病*, JA *灰色かび病*, DE *Grauschimmel* — the biggest untapped pool; (2) **video-frame extraction** from plant-rescue clips (pHash-dedup); (3) **deliberate Botrytis capture** on classic hosts (cyclamen, begonia, African violet, geranium, kept humid); (4) **Bugwood/IPM + university-extension** photo libraries, domain-gated | **HIGH** |
 | `nutrient_deficiency` | only **+31 boundary** negatives in v4 | **+~100 boundary** healthy↔nutrient + scorch↔nutrient | targeted web collection of brown-tipped / chlorotic-lookalike healthy (boundary, not generic) | LOW |
 | `leaf_scorch_underwatering` | 406; **regressed in v4 run** (P→0.703, R→0.736) | **recover** P≥0.75 + R | *fewer* generic healthy negatives — the v4 over-correction is the cause | **HIGH** |
 | `healthy` / `not_a_plant` (HN) | 528 / 376 (only 166 boundary) | **trim generic, keep boundary** | drop some of v4's +57 generic lush-green negatives; add only brown-tip boundary | MED |
@@ -126,10 +134,14 @@ consistent, every published version must satisfy:
 
 ### Expected gaps (what v5 likely will NOT fully solve)
 
-- **gray_mold supply is the structural gap.** Open-web scraping hit its ceiling at
-  ~232; production accrual is slow (1 gray_mold `local` row so far). Without
-  *deliberate* gray-mold scanning by the maintainer + friends, v5 gray_mold stays
-  short of 250 and keeps its wide CIs. This is the #1 unsolved item.
+- **gray_mold supply is the structural gap.** Open (English) web scraping is
+  exhausted at ~232 and production accrual is slow (1 `local` row). Reaching ≥250
+  clean now rides on the **non-English/regional web + video-frame channels** above
+  (the realistic path), with deliberate capture + extension libraries behind them;
+  passive production is the long tail, not the lever. **Fallback if it stays thin:**
+  do NOT chase the gray_mold point estimate — keep its temperature/conformal + the
+  OOD gate honest so the model *abstains* rather than over-/under-calls, and always
+  report the recall CI (n≈94) instead of the bare number. This is the #1 unsolved item.
 - **The production loop is healthy-skewed.** Real scans are mostly healthy plants,
   so the loop thickens `healthy` far faster than the disease classes. It only
   feeds the weak classes if disease cases are deliberately captured.
@@ -145,9 +157,12 @@ consistent, every published version must satisfy:
 
 9 classes stay (no structural add — see `CLASS_COVERAGE_RESEARCH.md`); hard
 houseplant domain gate; hard-negatives split-tagged (`role`/`hn_kind`); no per-row
-license requirement; `agent_vision` + offline judge only. INT8 is resolved (the v4
-run shipped INT8). Remaining drift watch-item: `viral_disease` precision (0.814,
-eval-slice-confounded) — confirm on the next run before acting.
+license requirement; `agent_vision` + offline judge only. INT8 ships, but a
+per-class paired check (`tools/paired_eval.py --int8-vs-fp32`) found a small but
+**real `nutrient_deficiency` recall drop under INT8** that the aggregate macro-F1
+gate misses — add a per-class INT8-drift check to the gate. Remaining drift
+watch-item: `viral_disease` precision (0.814, eval-slice-confounded) — confirm on
+the next run before acting.
 
 > **Training-time use:** the supplement is pulled directly by
 > `train_notebook.ipynb` §2 (`fetch_kaggle_supplement`, source `supplement`) and
