@@ -50,10 +50,14 @@
             android:orientation="horizontal"
             android:paddingHorizontal="@dimen/space_lg">
 
+            <!-- Both hero cards use match_parent height against a wrap_content
+                 row: a horizontal LinearLayout then stretches the shorter card
+                 to the taller one, so they stay equal height regardless of how
+                 many lines the title/subtitle wrap to (e.g. longer RU strings). -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/card_scan"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="match_parent"
                 android:layout_weight="1"
                 android:layout_marginEnd="@dimen/space_sm"
                 android:clickable="true"
@@ -96,7 +100,7 @@
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/card_identify"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="match_parent"
                 android:layout_weight="1"
                 android:layout_marginStart="@dimen/space_sm"
                 android:clickable="true"
