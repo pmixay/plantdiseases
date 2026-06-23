@@ -21,9 +21,6 @@ import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import android.view.LayoutInflater
-import android.view.Menu
-import android.view.MenuInflater
-import android.view.MenuItem
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
@@ -35,9 +32,7 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.core.os.bundleOf
-import androidx.core.view.MenuProvider
 import androidx.fragment.app.Fragment
-import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import com.canhub.cropper.CropImageContract
 import com.canhub.cropper.CropImageContractOptions
@@ -47,7 +42,6 @@ import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.databinding.FragmentCameraBinding
 import com.plantdiseases.app.ui.analysis.AnalysisActivity
-import com.plantdiseases.app.ui.community.NearbyScansActivity
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.AutosavePrefs
 import com.plantdiseases.app.util.ImageUtils
@@ -210,40 +204,10 @@ class CameraFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
 
         setupUI()
-        // The community "scans near you" action is disease-tab specific and
-        // assumes the MainActivity toolbar host; skip it in identify mode.
-        if (!identifyMode) setupToolbarMenu()
         setupPinchToZoom()
         checkCameraPermission()
         registerNetworkCallback()
         restoreGridOverlay()
-    }
-
-    /** Add the "scans near you" community action to the shared toolbar,
-     *  scoped to this fragment's RESUMED state so the people icon only
-     *  shows in the green top bar while the Scan tab is open. */
-    private fun setupToolbarMenu() {
-        requireActivity().addMenuProvider(
-            object : MenuProvider {
-                override fun onCreateMenu(menu: Menu, menuInflater: MenuInflater) {
-                    menuInflater.inflate(R.menu.camera_menu, menu)
-                    // Tint to match the toolbar title (theme-aware: white on the light
-                    // gradient, light on the dark surface bar). Menu icons
-                    // otherwise fall back to a default control colour.
-                    menu.findItem(R.id.action_nearby_scans)?.icon
-                        ?.setTint(ContextCompat.getColor(requireContext(), R.color.toolbar_title))
-                }
-
-                override fun onMenuItemSelected(item: MenuItem): Boolean {
-                    if (item.itemId != R.id.action_nearby_scans) return false
-                    Haptics.tick(requireContext())
-                    startActivity(Intent(requireContext(), NearbyScansActivity::class.java))
-                    return true
-                }
-            },
-            viewLifecycleOwner,
-            Lifecycle.State.RESUMED,
-        )
     }
 
     private fun setupUI() {

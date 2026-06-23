@@ -4,11 +4,17 @@ import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
 import android.view.LayoutInflater
+import android.view.Menu
+import android.view.MenuInflater
+import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
+import androidx.core.content.ContextCompat
+import androidx.core.view.MenuProvider
 import androidx.fragment.app.Fragment
 import androidx.interpolator.view.animation.FastOutSlowInInterpolator
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -20,12 +26,14 @@ import com.plantdiseases.app.data.model.TrendingResponse
 import com.plantdiseases.app.databinding.FragmentHomeBinding
 import com.plantdiseases.app.ui.camera.LightMeterActivity
 import com.plantdiseases.app.ui.camera.WaterCalculatorActivity
+import com.plantdiseases.app.ui.community.NearbyScansActivity
 import com.plantdiseases.app.ui.guide.GuideDetailActivity
 import com.plantdiseases.app.ui.species.SpeciesDetailActivity
 import com.plantdiseases.app.ui.stats.StatsTipsActivity
 import com.plantdiseases.app.ui.symptom.SymptomCheckerActivity
 import com.plantdiseases.app.util.DiseaseCatalog
 import com.plantdiseases.app.util.DiseaseLabels
+import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.RegionResolver
 import com.plantdiseases.app.util.SpeciesCatalog
 import kotlinx.coroutines.launch
@@ -75,6 +83,7 @@ class HomeFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         binding.tvGreeting.text = greeting()
 
+        setupCommunityMenu()
         binding.cardScan.setOnClickListener { openScanTab() }
         binding.cardIdentify.setOnClickListener {
             startActivity(Intent(requireContext(), com.plantdiseases.app.ui.identify.SpeciesIdentifyActivity::class.java))
@@ -173,6 +182,32 @@ class HomeFragment : Fragment() {
         requireActivity()
             .findViewById<BottomNavigationView>(R.id.bottom_navigation)
             ?.selectedItemId = R.id.cameraFragment
+    }
+
+    /** Add the "scans near you" community action to the shared toolbar, scoped
+     *  to this fragment's RESUMED state so the people icon only shows in the top
+     *  bar while the Home tab is open. */
+    private fun setupCommunityMenu() {
+        requireActivity().addMenuProvider(
+            object : MenuProvider {
+                override fun onCreateMenu(menu: Menu, menuInflater: MenuInflater) {
+                    menuInflater.inflate(R.menu.community_menu, menu)
+                    // Tint to match the toolbar title (theme-aware); menu icons
+                    // otherwise fall back to a default control colour.
+                    menu.findItem(R.id.action_nearby_scans)?.icon
+                        ?.setTint(ContextCompat.getColor(requireContext(), R.color.toolbar_title))
+                }
+
+                override fun onMenuItemSelected(item: MenuItem): Boolean {
+                    if (item.itemId != R.id.action_nearby_scans) return false
+                    Haptics.tick(requireContext())
+                    startActivity(Intent(requireContext(), NearbyScansActivity::class.java))
+                    return true
+                }
+            },
+            viewLifecycleOwner,
+            Lifecycle.State.RESUMED,
+        )
     }
 
     private fun greeting(): String {
