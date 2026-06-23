@@ -1,0 +1,120 @@
+package com.plantdiseases.app.ui.result
+
+import android.util.TypedValue
+import android.widget.LinearLayout
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
+import com.plantdiseases.app.PlantDiseasesApp
+import com.plantdiseases.app.R
+import com.plantdiseases.app.data.local.ScanEntity
+import com.plantdiseases.app.data.model.CarePlanRequest
+import com.plantdiseases.app.data.repository.ScanRepository
+import com.plantdiseases.app.databinding.ActivityResultBinding
+import com.plantdiseases.app.ui.common.CarePlanCardView
+import kotlinx.coroutines.launch
+
+/**
+ * Owns the server-side care-plan card (/api/care-plan): inserts it after the
+ * Treatment/Prevention card, fetches a species-specific plan (or a locally
+ * computed one for offline Aqua scans), and hands an accepted plan off to the
+ * reminder scheduler.
+ */
+class CarePlanController(
+    private val activity: AppCompatActivity,
+    private val binding: ActivityResultBinding,
+) {
+    private var card: CarePlanCardView? = null
+
+    fun bind(scan: ScanEntity, repository: ScanRepository, isRu: Boolean) {
+        val container = binding.contentLayout
+        val classKey = repository.topClassKey(scan)
+            ?: scan.diseaseName.lowercase().replace(' ', '_')
+
+        // Reuse a single card across re-binds, inserted just after the
+        // Treatment / Prevention card so the "what's wrong → how to treat →
+        // ongoing care" reading order stays intact.
+        val view = card ?: CarePlanCardView(activity).also { fresh ->
+            card = fresh
+            fresh.layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = 12.dpToPx() }
+            val anchorIdx = container.indexOfChild(binding.cardTreatmentPrevention)
+                .takeIf { it >= 0 } ?: (container.childCount - 1)
+            container.addView(fresh, anchorIdx + 1)
+        }
+
+        val app = activity.application as PlantDiseasesApp
+
+        // Offline (Aqua) scans never call the server: bind a basic,
+        // locally-computed plan instead, visually marked as offline.
+        if ("offline_aqua" in repository.parseWarnings(scan.warnings)) {
+            view.bind(
+                plan = com.plantdiseases.app.util.OfflineScanContent.localCarePlan(classKey, isRu),
+                speciesDisplay = null,
+                showApplyToReminders = scan.plantId != null,
+                onApplyToReminders = { applied -> applyToReminders(scan, applied) },
+                offlineBasic = true,
+            )
+            return
+        }
+
+        view.showLoading(null)
+
+        activity.lifecycleScope.launch {
+            // Prefer the species attached to the saved garden plant; otherwise
+            // fall back to the PlantNet species detected for this scan so the
+            // care plan is species-specific even before "Add to garden".
+            val plantSpecies = scan.plantId?.let { pid ->
+                val plant = app.plantRepository.getPlant(pid)
+                plant?.scientificName?.takeIf { it.isNotBlank() }
+                    ?: plant?.commonName?.takeIf { it.isNotBlank() }
+                    ?: plant?.species?.takeIf { it.isNotBlank() }
+            }
+                ?: scan.speciesScientific?.takeIf { it.isNotBlank() }
+                ?: scan.speciesCommon?.takeIf { it.isNotBlank() }
+            view.showLoading(plantSpecies)
+
+            val request = CarePlanRequest(
+                disease = classKey,
+                species = plantSpecies,
+                light = "bright_indirect",
+                locale = if (isRu) "ru" else "en",
+            )
+            app.scanRepository.fetchCarePlan(request).onSuccess { plan ->
+                view.bind(
+                    plan = plan,
+                    speciesDisplay = plantSpecies,
+                    showApplyToReminders = scan.plantId != null,
+                    onApplyToReminders = { applied -> applyToReminders(scan, applied) },
+                )
+            }.onFailure {
+                view.showError(onRetry = { bind(scan, repository, isRu) })
+            }
+        }
+    }
+
+    private fun applyToReminders(
+        scan: ScanEntity,
+        plan: com.plantdiseases.app.data.model.CarePlanResponse,
+    ) {
+        val plantId = scan.plantId ?: return
+        val app = activity.application as PlantDiseasesApp
+        activity.lifecycleScope.launch {
+            val plant = app.plantRepository.getPlant(plantId) ?: return@launch
+            com.plantdiseases.app.ui.garden.ReminderScheduleSheet.showWithCarePlanDefaults(
+                activity.supportFragmentManager, plant, plan,
+            )
+            Toast.makeText(
+                activity,
+                activity.getString(R.string.care_plan_reminders_applied),
+                Toast.LENGTH_SHORT,
+            ).show()
+        }
+    }
+
+    private fun Int.dpToPx(): Int = TypedValue.applyDimension(
+        TypedValue.COMPLEX_UNIT_DIP, this.toFloat(), activity.resources.displayMetrics,
+    ).toInt()
+}
