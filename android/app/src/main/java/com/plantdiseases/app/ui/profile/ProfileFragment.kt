@@ -85,7 +85,7 @@ class ProfileFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        applyHeroStatusBarInset(binding.profileHero)
+        applyStatusBarTopInset(binding.root)
         binding.tvAppVersion.text = "v${BuildConfig.VERSION_NAME}"
         setupSecretLabelingEntry()
 
@@ -630,19 +630,19 @@ class ProfileFragment : Fragment() {
     }
 
     /** The shared toolbar is hidden on this tab (see MainActivity), so the
-     *  full-bleed hero now sits behind the status bar. Pad its top by the
-     *  status-bar inset (on top of the XML paddingTop) so the title clears the
-     *  system clock instead of drawing under it. */
-    private fun applyHeroStatusBarInset(hero: View) {
-        val baseTop = hero.paddingTop
-        ViewCompat.setOnApplyWindowInsetsListener(hero) { v, insets ->
+     *  scroll content runs edge-to-edge under the status bar. Pad the scroll
+     *  view's top by the status-bar inset so the hero card drops below the
+     *  system clock (status bar over the dark background, card beneath it). */
+    private fun applyStatusBarTopInset(scroll: View) {
+        val baseTop = scroll.paddingTop
+        ViewCompat.setOnApplyWindowInsetsListener(scroll) { v, insets ->
             val top = insets.getInsets(WindowInsetsCompat.Type.systemBars()).top
             v.updatePadding(top = baseTop + top)
             insets
         }
-        // onViewCreated runs before the hero is attached, so requesting insets
-        // now no-ops and a tab switched-to later never gets an inset pass — its
-        // title then draws under the status bar. Request once attached instead.
-        hero.doOnAttach { ViewCompat.requestApplyInsets(it) }
+        // onViewCreated runs before the view is attached, so requesting insets
+        // now no-ops and a tab switched-to later never gets an inset pass — the
+        // hero then draws under the status bar. Request once attached instead.
+        scroll.doOnAttach { ViewCompat.requestApplyInsets(it) }
     }
 }

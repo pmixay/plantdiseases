@@ -12,7 +12,8 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/background"
-    android:clipToPadding="false">
+    android:clipToPadding="false"
+    android:fillViewport="true">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -218,9 +219,10 @@
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/rv_species"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="184dp"
                 android:layout_marginTop="@dimen/space_sm"
                 android:clipToPadding="false"
+                android:nestedScrollingEnabled="false"
                 android:orientation="horizontal"
                 android:paddingHorizontal="@dimen/space_lg" />
         </LinearLayout>
@@ -246,9 +248,10 @@
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/rv_popular"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="166dp"
                 android:layout_marginTop="@dimen/space_sm"
                 android:clipToPadding="false"
+                android:nestedScrollingEnabled="false"
                 android:orientation="horizontal"
                 android:paddingHorizontal="@dimen/space_lg" />
         </LinearLayout>
@@ -289,9 +292,10 @@
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/rv_guide"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="166dp"
                 android:layout_marginTop="@dimen/space_sm"
                 android:clipToPadding="false"
+                android:nestedScrollingEnabled="false"
                 android:orientation="horizontal"
                 android:paddingHorizontal="@dimen/space_lg" />
         </LinearLayout>
