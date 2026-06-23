@@ -16,6 +16,14 @@
 -dontwarn okhttp3.**
 -dontwarn okio.**
 
+# Ktor (new HTTP client) pulls in slf4j-api transitively. SLF4J 1.x's
+# LoggerFactory references an impl binder (org.slf4j.impl.StaticLoggerBinder)
+# that isn't on the classpath — no SLF4J backend is bundled and Ktor's own
+# logging is unused. R8 full mode treats the missing class as a hard error, so
+# silence it. (The @Serializable model classes and their generated serializers
+# are already kept by the com.plantdiseases.app.data.model.** rule below.)
+-dontwarn org.slf4j.**
+
 # Gson — keep all model classes for serialization.
 #
 # AGP 8 runs R8 in "full mode", which is more aggressive than the legacy
