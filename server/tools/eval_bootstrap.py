@@ -442,88 +442,6 @@ def paired_per_class_recall(
     }
 
 
-def paired_per_class_precision(
-    y_true,
-    y_pred_a,
-    y_pred_b,
-    class_names: list[str],
-    *,
-    n_boot: int = 5000,
-    ci: float = 0.95,
-    seed: int = 0,
-) -> dict[str, dict]:
-    """Paired bootstrap for ``A − B`` per-class precision on a shared test set.
-
-    The companion to :func:`paired_per_class_recall`. The weak classes this
-    repo seesaws on (``leaf_scorch_underwatering``, ``nutrient_deficiency``)
-    fail by **precision** as much as recall — they over-trigger — so an
-    honest regression test needs the paired precision delta too: a
-    precision change is only real when the CI of its difference excludes
-    zero. One resampled index vector per iteration is applied to BOTH
-    models so the difference reflects only the model gap, not the draw.
-
-    A bootstrap replicate where a class is predicted zero times by either
-    model yields ``nan`` for that replicate and is dropped from that
-    class's percentile computation (so a rarely-predicted class still gets
-    a CI from the replicates where both models predicted it).
-    """
-    y_true = _as_int_array(y_true)
-    y_pred_a = _as_int_array(y_pred_a)
-    y_pred_b = _as_int_array(y_pred_b)
-    if not (y_true.shape == y_pred_a.shape == y_pred_b.shape):
-        raise ValueError("y_true, y_pred_a and y_pred_b must have equal length")
-    n = y_true.shape[0]
-    if n == 0:
-        raise ValueError("empty prediction set")
-
-    prec_a = per_class_precision(y_true, y_pred_a, class_names)
-    prec_b = per_class_precision(y_true, y_pred_b, class_names)
-    support = {c: int(np.sum(y_true == i)) for i, c in enumerate(class_names)}
-    rng = np.random.default_rng(seed)
-    diffs = np.full((n_boot, len(class_names)), np.nan, dtype=np.float64)
-    for b in range(n_boot):
-        idx = rng.integers(0, n, size=n)
-        yt = y_true[idx]
-        pa = per_class_precision(yt, y_pred_a[idx], class_names)
-        pb = per_class_precision(yt, y_pred_b[idx], class_names)
-        # nan propagates: if either model didn't predict the class in this
-        # replicate the diff is undefined and dropped below.
-        diffs[b] = [pa[c] - pb[c] for c in class_names]
-
-    out: dict[str, dict] = {}
-    for i, c in enumerate(class_names):
-        col = diffs[:, i]
-        valid = col[~np.isnan(col)]
-        if valid.size == 0:
-            out[c] = {
-                "precision_a": prec_a[c], "precision_b": prec_b[c],
-                "diff_point": float("nan"), "diff_ci_low": float("nan"),
-                "diff_ci_high": float("nan"), "p_a_gt_b": float("nan"),
-                "significant": False, "support": support[c], "n_boot_valid": 0,
-            }
-            continue
-        lo, hi = _percentile_ci(valid, ci)
-        out[c] = {
-            "precision_a": prec_a[c],
-            "precision_b": prec_b[c],
-            "diff_point": prec_a[c] - prec_b[c],
-            "diff_ci_low": lo,
-            "diff_ci_high": hi,
-            "p_a_gt_b": float(np.mean(valid > 0.0)),
-            "significant": bool(lo > 0.0 or hi < 0.0),
-            "support": support[c],
-            "n_boot_valid": int(valid.size),
-        }
-    return {
-        "metric": "per_class_precision_diff",
-        "compared": "a_minus_b",
-        "ci_level": ci,
-        "n": int(n),
-        "n_boot": int(n_boot),
-        "classes": out,
-    }
-
-
 def _fmt(d: dict) -> str:
     return json.dumps(d, indent=2)
 
@@ -574,10 +492,6 @@ def main() -> None:
                 n_boot=args.n_boot, ci=args.ci, seed=args.seed,
             ),
             "per_class_recall": paired_per_class_recall(
-                y_true, y_pred_a, data["y_pred_b"], class_names,
-                n_boot=args.n_boot, ci=args.ci, seed=args.seed,
-            ),
-            "per_class_precision": paired_per_class_precision(
                 y_true, y_pred_a, data["y_pred_b"], class_names,
                 n_boot=args.n_boot, ci=args.ci, seed=args.seed,
             ),
