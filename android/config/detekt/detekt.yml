@@ -9,6 +9,13 @@ build:
   maxIssues: 0
   excludeCorrectable: false
 
+config:
+  # Don't fail the run if a rule/property name drifts between detekt versions —
+  # we adopt in reporting mode (ignoreFailures) and don't want a config-schema
+  # mismatch to break CI.
+  validation: false
+  warningsAsErrors: false
+
 comments:
   active: false
 
