@@ -16,8 +16,13 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
+import android.graphics.drawable.Drawable
 import com.bumptech.glide.Glide
+import com.bumptech.glide.load.DataSource
 import com.bumptech.glide.load.engine.DiskCacheStrategy
+import com.bumptech.glide.load.engine.GlideException
+import com.bumptech.glide.request.RequestListener
+import com.bumptech.glide.request.target.Target
 import com.google.android.material.card.MaterialCardView
 import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.PlantDiseasesApp
@@ -64,6 +69,10 @@ class SpeciesDetailActivity : AppCompatActivity() {
             // Pad the app-bar container (not the fixed-height toolbar) so the
             // toolbar sits fully below the status bar instead of being squeezed.
             binding.appbar.updatePadding(top = bars.top)
+            // And pad the scroll content past the nav bar — without this the
+            // bottom actions (Add to garden / Scan health) draw under the
+            // system navigation bar and can't be scrolled into reach.
+            binding.speciesScroll.updatePadding(bottom = bars.bottom)
             insets
         }
         binding.speciesToolbar.setNavigationOnClickListener { finish() }
@@ -172,8 +181,38 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 scaleType = ImageView.ScaleType.CENTER_CROP
                 contentDescription = null
             }
-            Glide.with(this).load(url).placeholder(R.drawable.ic_plant_placeholder)
-                .diskCacheStrategy(DiskCacheStrategy.ALL).into(iv)
+            Glide.with(this)
+                .load(url)
+                .placeholder(R.drawable.ic_plant_placeholder)
+                .diskCacheStrategy(DiskCacheStrategy.ALL)
+                // Decode straight to the 120dp thumbnail size instead of the
+                // full-resolution Wikipedia original — much faster to show and
+                // far lighter on memory across a six-card strip.
+                .override(size, size)
+                .centerCrop()
+                // Wikipedia media-lists can carry entries Glide can't render
+                // (SVG, non-image media) or dead URLs. Drop those cards rather
+                // than leaving a permanent placeholder so only real photos show.
+                .listener(object : RequestListener<Drawable> {
+                    override fun onLoadFailed(
+                        e: GlideException?,
+                        model: Any?,
+                        target: Target<Drawable>,
+                        isFirstResource: Boolean,
+                    ): Boolean {
+                        card.visibility = View.GONE
+                        return false
+                    }
+
+                    override fun onResourceReady(
+                        resource: Drawable,
+                        model: Any,
+                        target: Target<Drawable>,
+                        dataSource: DataSource,
+                        isFirstResource: Boolean,
+                    ): Boolean = false
+                })
+                .into(iv)
             card.addView(iv)
             binding.photoStrip.addView(card)
         }

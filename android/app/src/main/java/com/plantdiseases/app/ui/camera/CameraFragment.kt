@@ -787,6 +787,14 @@ class CameraFragment : Fragment() {
 
     override fun onDestroyView() {
         super.onDestroyView()
+        // Explicitly release the camera the moment the Scan tab's view is torn
+        // down (every tab switch, since the bottom nav destroys the inactive
+        // tab). Relying on the view-lifecycle auto-unbind alone left the sensor
+        // — and the OS camera-active indicator — held on the other tabs.
+        // startCamera() re-acquires it when the tab is reopened.
+        cameraProvider?.unbindAll()
+        cameraProvider = null
+        camera = null
         // Drain any pending zoom-pill hide before the binding goes — the
         // runnable null-checks _binding, but cancelling it avoids a
         // dangling Choreographer callback on the destroyed view.

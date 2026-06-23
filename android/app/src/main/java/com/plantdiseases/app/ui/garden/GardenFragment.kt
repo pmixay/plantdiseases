@@ -22,6 +22,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.doOnAttach
 import androidx.core.view.updatePadding
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
@@ -136,7 +137,10 @@ class GardenFragment : Fragment() {
             v.updatePadding(top = baseTop + top)
             insets
         }
-        ViewCompat.requestApplyInsets(hero)
+        // onViewCreated runs before the hero is attached, so requesting insets
+        // now no-ops and a tab switched-to later never gets an inset pass — its
+        // title then draws under the status bar. Request once attached instead.
+        hero.doOnAttach { ViewCompat.requestApplyInsets(it) }
     }
 
     override fun onDestroyView() {
