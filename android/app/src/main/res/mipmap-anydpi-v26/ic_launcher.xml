@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@drawable/ic_launcher_bg_gradient" />
-    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <!-- Full-bleed brand artwork (green gradient + plant sprig) lives in the
+         background layer so it fills the 108x108 grid edge to edge; the
+         launcher mask just rounds the corners. Foreground is empty to avoid
+         drawing the sprig twice. The vector sprig is kept for the themed
+         (monochrome) icon. -->
+    <background android:drawable="@mipmap/ic_launcher_image" />
+    <foreground android:drawable="@android:color/transparent" />
     <monochrome android:drawable="@drawable/ic_launcher_foreground" />
 </adaptive-icon>
