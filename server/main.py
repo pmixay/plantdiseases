@@ -1229,17 +1229,9 @@ ALLOWED_ORIGINS = get_list(
 if ALLOWED_ORIGINS == ["*"]:
     logger.warning("CORS_ORIGINS=* is insecure for production; restrict it in deployment.")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_methods=["GET", "POST"],
-    # Tightened — the Android client only sends Content-Type. Avoid
-    # the wildcard so a XS-Search via a custom header isn't trivially
-    # mountable from a malicious origin we forgot to exclude.
-    allow_headers=["Content-Type", "Accept"],
-)
-
-# Middleware order: outermost runs first.
+# Middleware order: Starlette wraps in reverse-registration order, so the
+# LAST middleware added is the OUTERMOST (runs first on the request, last
+# on the response).
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(
@@ -1251,6 +1243,20 @@ app.add_middleware(
 # Halving that on the wire matters more for slow mobile uplinks than
 # the ~10 µs CPU cost on the server side.
 app.add_middleware(GZipMiddleware, minimum_size=1024)
+# CORS is added LAST so it is the outermost layer: preflight (OPTIONS)
+# requests are answered before they reach the rate limiter, and the
+# Access-Control-* headers are attached even to error responses produced
+# by the inner middleware (rate-limit 429s, etc.) so the browser can read
+# them instead of reporting an opaque CORS failure.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_methods=["GET", "POST"],
+    # Tightened — the Android client only sends Content-Type. Avoid
+    # the wildcard so a XS-Search via a custom header isn't trivially
+    # mountable from a malicious origin we forgot to exclude.
+    allow_headers=["Content-Type", "Accept"],
+)
 
 
 def _validate_image_bytes(contents: bytes) -> None:
@@ -1414,7 +1420,7 @@ def _record_scan_candidate(
 
 # ── Endpoints ────────────────────────────────────────────────────────
 
-api_router = APIRouter()
+api_router = APIRouter(prefix="/api")
 
 @api_router.get("/health")
 async def health_check():
@@ -3622,7 +3628,7 @@ async def export_user_data(user_pseudo_id: str):
     })
 
 
-app.include_router(api_router, prefix="/api")
+app.include_router(api_router)
 
 
 if __name__ == "__main__":
