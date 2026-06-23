@@ -171,22 +171,25 @@ android {
 }
 
 // ─── Kotlin linting (replaces Android Lint) ───────────────────────────────────
-// Adopted in reporting mode: the existing tree predates these tools, so they
-// run and publish reports without failing the build. To make them gate, run
-// `./gradlew detektBaseline` (+ `./gradlew ktlintFormat` to clean up), commit
-// the baseline, then set ignoreFailures = false here.
+// Gating: ktlint (formatting/style) + detekt (static analysis) fail the build
+// on any NEW violation. The pre-existing tree is grandfathered via baselines
+// (config/ktlint/baseline.xml, config/detekt/baseline.xml) generated once with
+// `./gradlew ktlintGenerateBaseline detektBaseline` after a `./gradlew
+// ktlintFormat` cleanup, so only newly-introduced issues break CI.
 detekt {
     buildUponDefaultConfig = true
     config.setFrom(files("$rootDir/config/detekt/detekt.yml"))
+    baseline = file("$rootDir/config/detekt/baseline.xml")
     source.setFrom("src/main/java", "src/test/java")
     parallel = true
-    ignoreFailures = true
+    ignoreFailures = false
 }
 
 ktlint {
     version.set("1.3.1")
     android.set(true)
-    ignoreFailures.set(true)
+    ignoreFailures.set(false)
+    baseline.set(file("config/ktlint/baseline.xml"))
     filter {
         // Never lint generated sources (view binding, KSP/Room, BuildConfig).
         exclude { it.file.path.contains("/build/") }

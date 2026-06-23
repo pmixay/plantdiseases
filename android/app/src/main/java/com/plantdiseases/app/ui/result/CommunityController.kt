@@ -88,7 +88,9 @@ class CommunityController(
                     binding.btnViewOpinions.setOnClickListener {
                         // Owner viewing their OWN scan — read-only.
                         CommunityOpinionSheet.showForOwner(
-                            activity.supportFragmentManager, ownScanId, opinionName,
+                            activity.supportFragmentManager,
+                            ownScanId,
+                            opinionName,
                         )
                     }
                     // Arrived from a notification / a Gallery row with new
@@ -98,14 +100,17 @@ class CommunityController(
                         binding.scrollView.post {
                             binding.btnViewOpinions.requestRectangleOnScreen(
                                 Rect(
-                                    0, 0,
+                                    0,
+                                    0,
                                     binding.btnViewOpinions.width,
                                     binding.btnViewOpinions.height,
                                 ),
                                 false,
                             )
                             CommunityOpinionSheet.showForOwner(
-                                activity.supportFragmentManager, ownScanId, opinionName,
+                                activity.supportFragmentManager,
+                                ownScanId,
+                                opinionName,
                             )
                         }
                     }
@@ -127,7 +132,9 @@ class CommunityController(
 
         fun openReplies() {
             CommunityOpinionSheet.showForOwner(
-                activity.supportFragmentManager, scan.clientScanId, name,
+                activity.supportFragmentManager,
+                scan.clientScanId,
+                name,
             )
         }
         fun showViewReplies(count: Int) {
@@ -302,7 +309,9 @@ class CommunityController(
                     // all-disease total.
                     binding.tvSimilarSubtitle.text = activity.resources.getQuantityString(
                         R.plurals.similar_scans_subtitle_count,
-                        items.size, items.size, label,
+                        items.size,
+                        items.size,
+                        label,
                     )
                     rv.visibility = View.VISIBLE
                     empty.visibility = View.GONE

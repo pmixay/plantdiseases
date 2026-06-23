@@ -184,7 +184,8 @@ class CameraFragment : Fragment() {
         // sheet is open. Registering with `this` re-arms on recreation and the
         // FragmentManager replays any pending result to the new listener.
         parentFragmentManager.setFragmentResultListener(
-            ScanTipsSheet.REQUEST_KEY, this,
+            ScanTipsSheet.REQUEST_KEY,
+            this,
         ) { _, _ ->
             requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                 .edit().putBoolean(KEY_TIPS_SEEN, true).apply()
@@ -193,7 +194,8 @@ class CameraFragment : Fragment() {
     }
 
     override fun onCreateView(
-        inflater: LayoutInflater, container: ViewGroup?,
+        inflater: LayoutInflater,
+        container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
         _binding = FragmentCameraBinding.inflate(inflater, container, false)
@@ -230,7 +232,8 @@ class CameraFragment : Fragment() {
             // chip-refresh signal survives a config-change recreation while the
             // picker is open (re-registered here on every view creation).
             childFragmentManager.setFragmentResultListener(
-                ModelPickerSheet.REQUEST_KEY, viewLifecycleOwner,
+                ModelPickerSheet.REQUEST_KEY,
+                viewLifecycleOwner,
             ) { _, _ ->
                 if (_binding != null) refreshModelFamilyChip()
             }
@@ -283,24 +286,27 @@ class CameraFragment : Fragment() {
     }
 
     private fun setupPinchToZoom() {
-        scaleGestureDetector = ScaleGestureDetector(requireContext(), object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
-            override fun onScale(detector: ScaleGestureDetector): Boolean {
-                val cam = camera ?: return false
-                val currentZoomRatio = cam.cameraInfo.zoomState.value?.zoomRatio ?: 1f
-                val newZoomRatio = (currentZoomRatio * detector.scaleFactor)
-                    .coerceIn(
-                        cam.cameraInfo.zoomState.value?.minZoomRatio ?: 1f,
-                        cam.cameraInfo.zoomState.value?.maxZoomRatio ?: 4f
-                    )
-                cam.cameraControl.setZoomRatio(newZoomRatio)
+        scaleGestureDetector = ScaleGestureDetector(
+            requireContext(),
+            object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                override fun onScale(detector: ScaleGestureDetector): Boolean {
+                    val cam = camera ?: return false
+                    val currentZoomRatio = cam.cameraInfo.zoomState.value?.zoomRatio ?: 1f
+                    val newZoomRatio = (currentZoomRatio * detector.scaleFactor)
+                        .coerceIn(
+                            cam.cameraInfo.zoomState.value?.minZoomRatio ?: 1f,
+                            cam.cameraInfo.zoomState.value?.maxZoomRatio ?: 4f
+                        )
+                    cam.cameraControl.setZoomRatio(newZoomRatio)
 
-                binding.tvZoom.visibility = View.VISIBLE
-                binding.tvZoom.text = String.format(Locale.US, "%.1fx", newZoomRatio)
-                binding.tvZoom.removeCallbacks(hideZoomRunnable)
-                binding.tvZoom.postDelayed(hideZoomRunnable, 2000)
-                return true
+                    binding.tvZoom.visibility = View.VISIBLE
+                    binding.tvZoom.text = String.format(Locale.US, "%.1fx", newZoomRatio)
+                    binding.tvZoom.removeCallbacks(hideZoomRunnable)
+                    binding.tvZoom.postDelayed(hideZoomRunnable, 2000)
+                    return true
+                }
             }
-        })
+        )
     }
 
     private val hideZoomRunnable = Runnable {
@@ -381,7 +387,8 @@ class CameraFragment : Fragment() {
 
     private fun checkCameraPermission() {
         val granted = ContextCompat.checkSelfPermission(
-            requireContext(), Manifest.permission.CAMERA,
+            requireContext(),
+            Manifest.permission.CAMERA,
         ) == PackageManager.PERMISSION_GRANTED
         if (granted) {
             startCamera()
@@ -419,8 +426,10 @@ class CameraFragment : Fragment() {
                     it.setSurfaceProvider(binding.cameraPreview.surfaceProvider)
                 }
 
-            val rotation = (view?.display
-                ?: ContextCompat.getDisplayOrDefault(requireContext())).rotation
+            val rotation = (
+                view?.display
+                    ?: ContextCompat.getDisplayOrDefault(requireContext())
+                ).rotation
             imageCapture = ImageCapture.Builder()
                 .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
                 .setTargetRotation(rotation)
@@ -431,8 +440,10 @@ class CameraFragment : Fragment() {
             try {
                 cameraProvider?.unbindAll()
                 camera = cameraProvider?.bindToLifecycle(
-                    viewLifecycleOwner, cameraSelector,
-                    preview, imageCapture,
+                    viewLifecycleOwner,
+                    cameraSelector,
+                    preview,
+                    imageCapture,
                 )
 
                 // INVISIBLE (not GONE) when there's no flash unit so the
@@ -440,7 +451,6 @@ class CameraFragment : Fragment() {
                 // centered — btn_flash mirrors the gallery button.
                 binding.btnFlash.visibility =
                     if (camera?.cameraInfo?.hasFlashUnit() == true) View.VISIBLE else View.INVISIBLE
-
             } catch (e: Exception) {
                 Toast.makeText(requireContext(), getString(R.string.camera_error), Toast.LENGTH_SHORT).show()
             }
@@ -648,7 +658,8 @@ class CameraFragment : Fragment() {
      *  photo path to the host activity, which runs species identification. */
     private fun deliverIdentifyCapture(imagePath: String) {
         parentFragmentManager.setFragmentResult(
-            RESULT_IDENTIFY_CAPTURE, bundleOf(RESULT_PATH to imagePath),
+            RESULT_IDENTIFY_CAPTURE,
+            bundleOf(RESULT_PATH to imagePath),
         )
     }
 
@@ -703,8 +714,10 @@ class CameraFragment : Fragment() {
         if (_binding != null &&
             binding.permissionLayout.visibility == View.VISIBLE &&
             ContextCompat.checkSelfPermission(
-                requireContext(), Manifest.permission.CAMERA,
-            ) == PackageManager.PERMISSION_GRANTED) {
+                requireContext(),
+                Manifest.permission.CAMERA,
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
             startCamera()
         }
     }
@@ -770,5 +783,4 @@ class CameraFragment : Fragment() {
         networkCallback = null
         _binding = null
     }
-
 }

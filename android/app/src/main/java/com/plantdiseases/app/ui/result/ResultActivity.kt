@@ -96,7 +96,8 @@ class ResultActivity : AppCompatActivity() {
     private fun ensureNotificationPermission() {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
             androidx.core.content.ContextCompat.checkSelfPermission(
-                this, android.Manifest.permission.POST_NOTIFICATIONS,
+                this,
+                android.Manifest.permission.POST_NOTIFICATIONS,
             ) != android.content.pm.PackageManager.PERMISSION_GRANTED
         ) {
             notifPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
@@ -129,8 +130,7 @@ class ResultActivity : AppCompatActivity() {
         // height isn't known until layout — a static paddingBottom left the
         // last card hidden behind the buttons — so match it to the measured
         // height instead.
-        binding.bottomActionBar.addOnLayoutChangeListener {
-            _, _, _, _, _, _, _, _, _ ->
+        binding.bottomActionBar.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
             val h = binding.bottomActionBar.height
             if (h > 0 && binding.scrollView.paddingBottom != h) {
                 binding.scrollView.updatePadding(bottom = h)
@@ -185,15 +185,18 @@ class ResultActivity : AppCompatActivity() {
     }
 
     private fun setupPinchToZoom() {
-        scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
-            override fun onScale(detector: ScaleGestureDetector): Boolean {
-                scaleFactor *= detector.scaleFactor
-                scaleFactor = scaleFactor.coerceIn(1.0f, 3.0f)
-                binding.imageFrame.scaleX = scaleFactor
-                binding.imageFrame.scaleY = scaleFactor
-                return true
+        scaleGestureDetector = ScaleGestureDetector(
+            this,
+            object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                override fun onScale(detector: ScaleGestureDetector): Boolean {
+                    scaleFactor *= detector.scaleFactor
+                    scaleFactor = scaleFactor.coerceIn(1.0f, 3.0f)
+                    binding.imageFrame.scaleX = scaleFactor
+                    binding.imageFrame.scaleY = scaleFactor
+                    return true
+                }
             }
-        })
+        )
 
         binding.cardImage.setOnTouchListener { _, event ->
             scaleGestureDetector.onTouchEvent(event)
@@ -296,7 +299,10 @@ class ResultActivity : AppCompatActivity() {
                 val primaryIdx = scan.primaryRegionIndex ?: -1
                 val overlayBoxes = regions.mapIndexed { i, r ->
                     HeatmapOverlayView.Box(
-                        x = r.x, y = r.y, width = r.width, height = r.height,
+                        x = r.x,
+                        y = r.y,
+                        width = r.width,
+                        height = r.height,
                         diseased = true,
                         primary = i == primaryIdx,
                     )
@@ -392,8 +398,11 @@ class ResultActivity : AppCompatActivity() {
             // disease-only sections below.
             if (isNotAPlant) {
                 tvDescription.text = getString(
-                    if (isBlurryReject) R.string.blurry_or_not_a_plant_result_body
-                    else R.string.not_a_plant_result_body,
+                    if (isBlurryReject) {
+                        R.string.blurry_or_not_a_plant_result_body
+                    } else {
+                        R.string.not_a_plant_result_body
+                    },
                 )
                 cardTreatmentPrevention.visibility = View.GONE
                 cardAlternatives.visibility = View.GONE
@@ -524,6 +533,7 @@ class ResultActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_SCAN_ID = "extra_scan_id"
+
         /** When true, auto-open the community opinions for this scan once it
          *  loads — set from an opinion notification tap and from tapping a
          *  Gallery row that has new opinions. */

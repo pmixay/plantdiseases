@@ -261,7 +261,8 @@ class ScanRepository(
                 val response = apiService.carePlan(request)
                 if (response.isSuccessful && response.body() != null) {
                     com.plantdiseases.app.util.ResponseCache.put(
-                        cacheKey, response.body()!!,
+                        cacheKey,
+                        response.body()!!,
                         com.plantdiseases.app.util.ResponseCache.TTL_CARE_PLAN_MS,
                     )
                     Result.success(response.body()!!)
@@ -502,12 +503,17 @@ class ScanRepository(
             }
             val requestBody = imageFile.asRequestBody(mime.toMediaTypeOrNull())
             val part = MultipartBody.Part.createFormData(
-                "image", imageFile.name, requestBody,
+                "image",
+                imageFile.name,
+                requestBody,
             )
             val scanIdBody = scanId.toRequestBody("text/plain".toMediaTypeOrNull())
             val response = apiService.feedbackImage(scanIdBody, part)
-            if (response.isSuccessful) Result.success(Unit)
-            else Result.failure(Exception("Server error: ${response.code()}"))
+            if (response.isSuccessful) {
+                Result.success(Unit)
+            } else {
+                Result.failure(Exception("Server error: ${response.code()}"))
+            }
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -579,11 +585,16 @@ class ScanRepository(
             val detection = result.detection
             val regions = detection?.regions ?: emptyList()
             val primary = detection?.primaryRegion
-            val primaryIndex = if (primary == null) null
-                else regions.indexOfFirst {
-                    it.x == primary.x && it.y == primary.y &&
-                        it.width == primary.width && it.height == primary.height
+            val primaryIndex = if (primary == null) {
+                null
+            } else {
+                regions.indexOfFirst {
+                    it.x == primary.x &&
+                        it.y == primary.y &&
+                        it.width == primary.width &&
+                        it.height == primary.height
                 }.takeIf { it >= 0 }
+            }
             val warningsJson = result.warnings
                 ?.takeIf { it.isNotEmpty() }
                 ?.let { gson.toJson(it) }
@@ -692,8 +703,11 @@ class ScanRepository(
         withContext(Dispatchers.IO) {
             try {
                 val r = apiService.communityMyScanOpinions(pseudoId)
-                if (r.isSuccessful && r.body() != null) Result.success(r.body()!!)
-                else Result.failure(Exception("Server error: ${r.code()}"))
+                if (r.isSuccessful && r.body() != null) {
+                    Result.success(r.body()!!)
+                } else {
+                    Result.failure(Exception("Server error: ${r.code()}"))
+                }
             } catch (e: Exception) {
                 Result.failure(e)
             }
@@ -893,12 +907,10 @@ class ScanRepository(
     )
 
     /** Parse treatment/prevention JSON arrays */
-    fun parseStringList(json: String): List<String> {
-        return try {
-            gson.fromJson(json, Array<String>::class.java).toList()
-        } catch (e: Exception) {
-            emptyList()
-        }
+    fun parseStringList(json: String): List<String> = try {
+        gson.fromJson(json, Array<String>::class.java).toList()
+    } catch (e: Exception) {
+        emptyList()
     }
 
     /** Parse all_probs JSON map */
@@ -1041,7 +1053,8 @@ class ScanRepository(
                     // miss / rate-limit) — only a real hit is worth keeping.
                     if (body.available) {
                         com.plantdiseases.app.util.ResponseCache.put(
-                            cacheKey, body,
+                            cacheKey,
+                            body,
                             com.plantdiseases.app.util.ResponseCache.TTL_SPECIES_MS,
                         )
                     }
@@ -1082,8 +1095,11 @@ class ScanRepository(
         withContext(Dispatchers.IO) {
             try {
                 val response = apiService.communityScanDeleteUser(userPseudoId)
-                if (response.isSuccessful) Result.success(Unit)
-                else Result.failure(Exception("Community delete failed: ${response.code()}"))
+                if (response.isSuccessful) {
+                    Result.success(Unit)
+                } else {
+                    Result.failure(Exception("Community delete failed: ${response.code()}"))
+                }
             } catch (e: Exception) {
                 Result.failure(e)
             }

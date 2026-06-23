@@ -205,8 +205,11 @@ class GardenFragment : Fragment() {
         // the threshold check would hide it (e.g. a plant was just deleted).
         val query = currentQuery()
         binding.gardenSearchLayout.visibility =
-            if (all.size > searchVisibleThreshold || query.isNotEmpty()) View.VISIBLE
-            else View.GONE
+            if (all.size > searchVisibleThreshold || query.isNotEmpty()) {
+                View.VISIBLE
+            } else {
+                View.GONE
+            }
 
         renderPlantList(all.filter { matchesQuery(it, query) }, query, animate)
     }
@@ -221,13 +224,15 @@ class GardenFragment : Fragment() {
         if (plants.isEmpty() && query.isNotEmpty()) {
             // Search matched nothing — quiet inline message, NOT the big
             // empty-garden illustration (the garden itself isn't empty).
-            container.addView(TextView(requireContext()).apply {
-                text = getString(R.string.garden_search_empty, query)
-                textSize = 14f
-                setTextColor(requireContext().getColor(R.color.on_surface_secondary))
-                gravity = Gravity.CENTER
-                setPadding(8.dp(), 24.dp(), 8.dp(), 24.dp())
-            })
+            container.addView(
+                TextView(requireContext()).apply {
+                    text = getString(R.string.garden_search_empty, query)
+                    textSize = 14f
+                    setTextColor(requireContext().getColor(R.color.on_surface_secondary))
+                    gravity = Gravity.CENTER
+                    setPadding(8.dp(), 24.dp(), 8.dp(), 24.dp())
+                }
+            )
             return
         }
 
@@ -523,10 +528,12 @@ class GardenFragment : Fragment() {
             setOnMenuItemClickListener { item ->
                 when (item.itemId) {
                     1 -> {
-                        showPlantDialog(plant); true
+                        showPlantDialog(plant)
+                        true
                     }
                     2 -> {
-                        confirmDeletePlant(plant); true
+                        confirmDeletePlant(plant)
+                        true
                     }
                     else -> false
                 }
@@ -546,7 +553,8 @@ class GardenFragment : Fragment() {
                     // work name, so the rows must be fetched before the
                     // CASCADE delete wipes them.
                     ReminderManager.cancelAll(
-                        requireContext(), plant.id,
+                        requireContext(),
+                        plant.id,
                         plantRepository.getReminders(plant.id),
                     )
                     plantRepository.deletePlant(plant.id)
@@ -573,39 +581,52 @@ class GardenFragment : Fragment() {
             setPadding(18.dp(), 18.dp(), 18.dp(), 18.dp())
             setBackgroundResource(R.drawable.bg_garden_hero)
         }
-        header.addView(FrameLayout(requireContext()).apply {
-            setBackgroundResource(R.drawable.bg_circle_semi)
-            layoutParams = LinearLayout.LayoutParams(52.dp(), 52.dp())
-            addView(ImageView(requireContext()).apply {
-                setImageResource(R.drawable.ic_garden)
-                setColorFilter(requireContext().getColor(R.color.on_hero))
-                layoutParams = FrameLayout.LayoutParams(28.dp(), 28.dp(), Gravity.CENTER)
-            })
-        })
-        header.addView(LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                .apply { marginStart = 14.dp() }
-            addView(TextView(requireContext()).apply {
-                text = getString(if (existing == null) R.string.add_plant else R.string.edit_plant)
-                textSize = 20f
-                setTextColor(requireContext().getColor(R.color.on_hero))
-                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-            })
-            addView(TextView(requireContext()).apply {
-                text = getString(
-                    if (existing == null) R.string.plant_dialog_add_subtitle
-                    else R.string.plant_dialog_edit_subtitle
+        header.addView(
+            FrameLayout(requireContext()).apply {
+                setBackgroundResource(R.drawable.bg_circle_semi)
+                layoutParams = LinearLayout.LayoutParams(52.dp(), 52.dp())
+                addView(
+                    ImageView(requireContext()).apply {
+                        setImageResource(R.drawable.ic_garden)
+                        setColorFilter(requireContext().getColor(R.color.on_hero))
+                        layoutParams = FrameLayout.LayoutParams(28.dp(), 28.dp(), Gravity.CENTER)
+                    }
                 )
-                textSize = 13f
-                setTextColor(requireContext().getColor(R.color.on_hero_secondary))
-                setLineSpacing(3.dp().toFloat(), 1f)
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = 3.dp() }
-            })
-        })
+            }
+        )
+        header.addView(
+            LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    .apply { marginStart = 14.dp() }
+                addView(
+                    TextView(requireContext()).apply {
+                        text = getString(if (existing == null) R.string.add_plant else R.string.edit_plant)
+                        textSize = 20f
+                        setTextColor(requireContext().getColor(R.color.on_hero))
+                        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                    }
+                )
+                addView(
+                    TextView(requireContext()).apply {
+                        text = getString(
+                            if (existing == null) {
+                                R.string.plant_dialog_add_subtitle
+                            } else {
+                                R.string.plant_dialog_edit_subtitle
+                            }
+                        )
+                        textSize = 13f
+                        setTextColor(requireContext().getColor(R.color.on_hero_secondary))
+                        setLineSpacing(3.dp().toFloat(), 1f)
+                        layoutParams = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                        ).apply { topMargin = 3.dp() }
+                    }
+                )
+            }
+        )
 
         val fields = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.VERTICAL

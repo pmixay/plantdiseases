@@ -30,8 +30,14 @@ class AvatarsTest {
     @Test
     fun colorIsAlwaysOpaqueFromThePalette() {
         val palette = listOf(
-            0xFF16A34A, 0xFF2563EB, 0xFFD97706, 0xFFDC2626,
-            0xFF7C3AED, 0xFF0891B2, 0xFFDB2777, 0xFF65A30D,
+            0xFF16A34A,
+            0xFF2563EB,
+            0xFFD97706,
+            0xFFDC2626,
+            0xFF7C3AED,
+            0xFF0891B2,
+            0xFFDB2777,
+            0xFF65A30D,
         ).map { it.toInt() }
         for (t in listOf("a", "bb", "author-1", "author-2", "ζ-token", "12345")) {
             val c = Avatars.colorFor(t)

@@ -245,8 +245,10 @@ class MainActivity : AppCompatActivity() {
             warmRegionCache()
         }
         if (ContextCompat.checkSelfPermission(
-                this, Manifest.permission.CAMERA,
-            ) != PackageManager.PERMISSION_GRANTED) {
+                this,
+                Manifest.permission.CAMERA,
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
             startupPermissionsLauncher.launch(arrayOf(Manifest.permission.CAMERA))
         }
     }
@@ -296,8 +298,10 @@ class MainActivity : AppCompatActivity() {
     // Up arrow on non-top-level destinations (e.g. the disease guide opened
     // from Home) pops the nav back stack via the shared toolbar.
     override fun onSupportNavigateUp(): Boolean {
-        val navController = (supportFragmentManager
-            .findFragmentById(R.id.nav_host_fragment) as NavHostFragment).navController
+        val navController = (
+            supportFragmentManager
+                .findFragmentById(R.id.nav_host_fragment) as NavHostFragment
+            ).navController
         return navController.navigateUp(appBarConfiguration) || super.onSupportNavigateUp()
     }
 
@@ -360,5 +364,4 @@ class MainActivity : AppCompatActivity() {
         /** Intent extra: bring MainActivity to front and switch to the scanner tab. */
         const val EXTRA_OPEN_SCANNER = "extra_open_scanner"
     }
-
 }

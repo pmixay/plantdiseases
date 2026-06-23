@@ -73,7 +73,9 @@ class HomeFragment : Fragment() {
     private val speciesImageCache = mutableMapOf<String, String?>()
 
     override fun onCreateView(
-        inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?,
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?,
     ): View {
         _binding = FragmentHomeBinding.inflate(inflater, container, false)
         return binding.root
@@ -135,7 +137,9 @@ class HomeFragment : Fragment() {
         introPlayed = true
         // Honour the system "remove animations" / reduced-motion setting.
         val animScale = Settings.Global.getFloat(
-            requireContext().contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f,
+            requireContext().contentResolver,
+            Settings.Global.ANIMATOR_DURATION_SCALE,
+            1f,
         )
         if (animScale == 0f) return
 
@@ -263,11 +267,14 @@ class HomeFragment : Fragment() {
                 .get(cacheKey, TrendingResponse::class.java)
                 ?: runCatching {
                     app.apiClient.apiService.communityTrending(
-                        country = region?.country, region = region?.locality,
+                        country = region?.country,
+                        region = region?.locality,
                     ).body()
                 }.getOrNull()?.also {
                     com.plantdiseases.app.util.ResponseCache.put(
-                        cacheKey, it, com.plantdiseases.app.util.ResponseCache.TTL_TRENDING_MS,
+                        cacheKey,
+                        it,
+                        com.plantdiseases.app.util.ResponseCache.TTL_TRENDING_MS,
                     )
                 }
             val b = _binding ?: return@launch
@@ -301,7 +308,9 @@ class HomeFragment : Fragment() {
                         scientific = s.species,
                         title = s.species,
                         subtitle = resources.getQuantityString(
-                            R.plurals.home_species_count, s.count, s.count,
+                            R.plurals.home_species_count,
+                            s.count,
+                            s.count,
                         ),
                     )
                 },
@@ -333,7 +342,9 @@ class HomeFragment : Fragment() {
                 title = DiseaseLabels.displayName(d.disease, isRu)
                     ?: (if (isRu) gi.titleRu else gi.titleEn),
                 subtitle = resources.getQuantityString(
-                    R.plurals.home_disease_count, d.count, d.count,
+                    R.plurals.home_disease_count,
+                    d.count,
+                    d.count,
                 ),
             )
         }

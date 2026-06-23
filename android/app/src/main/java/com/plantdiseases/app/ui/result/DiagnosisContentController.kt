@@ -363,10 +363,14 @@ class DiagnosisContentController(
     private fun dpPx(v: Int): Int = (v * activity.resources.displayMetrics.density).toInt()
 
     private fun Int.dpToPx(): Int = TypedValue.applyDimension(
-        TypedValue.COMPLEX_UNIT_DIP, this.toFloat(), activity.resources.displayMetrics,
+        TypedValue.COMPLEX_UNIT_DIP,
+        this.toFloat(),
+        activity.resources.displayMetrics,
     ).toInt()
 
     private fun Float.dpToPxF(): Float = TypedValue.applyDimension(
-        TypedValue.COMPLEX_UNIT_DIP, this, activity.resources.displayMetrics,
+        TypedValue.COMPLEX_UNIT_DIP,
+        this,
+        activity.resources.displayMetrics,
     )
 }

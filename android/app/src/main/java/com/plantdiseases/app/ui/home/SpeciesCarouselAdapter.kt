@@ -36,12 +36,13 @@ class SpeciesCarouselAdapter(
         notifyDataSetChanged()
     }
 
-    inner class VH(val binding: ItemCarouselSpeciesBinding) :
-        RecyclerView.ViewHolder(binding.root)
+    inner class VH(val binding: ItemCarouselSpeciesBinding) : RecyclerView.ViewHolder(binding.root)
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
         val binding = ItemCarouselSpeciesBinding.inflate(
-            LayoutInflater.from(parent.context), parent, false,
+            LayoutInflater.from(parent.context),
+            parent,
+            false,
         )
         return VH(binding)
     }

@@ -104,7 +104,9 @@ class CarePlanController(
         activity.lifecycleScope.launch {
             val plant = app.plantRepository.getPlant(plantId) ?: return@launch
             com.plantdiseases.app.ui.garden.ReminderScheduleSheet.showWithCarePlanDefaults(
-                activity.supportFragmentManager, plant, plan,
+                activity.supportFragmentManager,
+                plant,
+                plan,
             )
             Toast.makeText(
                 activity,
@@ -115,6 +117,8 @@ class CarePlanController(
     }
 
     private fun Int.dpToPx(): Int = TypedValue.applyDimension(
-        TypedValue.COMPLEX_UNIT_DIP, this.toFloat(), activity.resources.displayMetrics,
+        TypedValue.COMPLEX_UNIT_DIP,
+        this.toFloat(),
+        activity.resources.displayMetrics,
     ).toInt()
 }

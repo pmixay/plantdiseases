@@ -35,11 +35,13 @@ class AnalysisActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityAnalysisBinding
     private var imagePath: String = ""
+
     // When set (≥0), the resulting scan is auto-attached to this plant after
     // save — used by the "New scan" affordance in PlantDetailActivity so the
     // photo lands in the plant's Photos/Timeline without a manual "Add to
     // garden" step. -1 ⇒ ordinary standalone scan.
     private var attachPlantId: Long = -1L
+
     // Held so onDestroy can dismiss the blurry-photo dialog — a config-change
     // recreate while it is showing would otherwise leak the dialog window.
     private var blurDialog: androidx.appcompat.app.AlertDialog? = null
@@ -177,7 +179,9 @@ class AnalysisActivity : AppCompatActivity() {
                 }
 
                 val result = app.scanRepository.analyzeImage(
-                    uploadFile, locale = locale, family = family.id,
+                    uploadFile,
+                    locale = locale,
+                    family = family.id,
                 )
 
                 result.onSuccess { response ->
@@ -314,6 +318,7 @@ class AnalysisActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_IMAGE_PATH = "extra_image_path"
+
         /** Optional plant id; when present the saved scan is auto-attached to
          *  that plant (see PlantDetailActivity's "New scan" action). */
         const val EXTRA_PLANT_ID = "extra_plant_id"

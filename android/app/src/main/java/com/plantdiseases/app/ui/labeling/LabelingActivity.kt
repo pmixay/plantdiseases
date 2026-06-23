@@ -52,8 +52,8 @@ class LabelingActivity : AppCompatActivity() {
     private val buffer = ArrayDeque<LabelCard>()
     private val pending = ArrayList<Pair<Long, String>>()
     private var current: LabelCard? = null
-    private var selectedClass: String? = null   // null = Any/random
-    private var selectedSource: String? = null  // null = All (server priority order)
+    private var selectedClass: String? = null // null = Any/random
+    private var selectedSource: String? = null // null = All (server priority order)
     private var loading = false
     private var stats: LabelStatsResponse? = null
 
@@ -79,13 +79,22 @@ class LabelingActivity : AppCompatActivity() {
 
         token = intent.getStringExtra(EXTRA_TOKEN).orEmpty()
         repo = LabelingRepository((application as PlantDiseasesApp).apiClient)
-        if (token.isBlank()) { finish(); return }
+        if (token.isBlank()) {
+            finish()
+            return
+        }
 
         binding.toolbar.setNavigationOnClickListener { exit() }
         binding.toolbar.setOnMenuItemClickListener { item ->
             when (item.itemId) {
-                R.id.action_stats -> { showStats(); true }
-                R.id.action_export -> { doExport(); true }
+                R.id.action_stats -> {
+                    showStats()
+                    true
+                }
+                R.id.action_export -> {
+                    doExport()
+                    true
+                }
                 else -> false
             }
         }
@@ -153,7 +162,7 @@ class LabelingActivity : AppCompatActivity() {
                 val chip = Chip(this).apply {
                     text = if (st.satisfied) "✓ $cls" else "$cls (${st.validated}/${st.weight})"
                     isCheckable = true
-                    isEnabled = !st.satisfied            // can't collect a satisfied class
+                    isEnabled = !st.satisfied // can't collect a satisfied class
                     isChecked = selectedClass == cls
                     setOnClickListener { selectClass(cls) }
                 }
@@ -207,7 +216,9 @@ class LabelingActivity : AppCompatActivity() {
             val conf = ((card.modelConf ?: 0.0) * 100).toInt()
             val alts = card.modelSet.joinToString(", ").ifBlank { card.modelPred }
             getString(R.string.label_model_hint, card.modelPred, conf, alts)
-        } else ""
+        } else {
+            ""
+        }
         renderSourceBadge(card)
         renderFeedbackContext(card)
         updateClue(card.suggestedClass ?: card.klass)
@@ -232,7 +243,8 @@ class LabelingActivity : AppCompatActivity() {
     /** Feedback cards: "user proposed X — model said Y" + the user's note. */
     private fun renderFeedbackContext(card: LabelCard) {
         val parts = ArrayList<String>()
-        if (card.scanFeedback == false && card.modelPred != null &&
+        if (card.scanFeedback == false &&
+            card.modelPred != null &&
             card.modelPred != card.klass
         ) {
             parts.add(getString(R.string.label_feedback_ctx, card.klass, card.modelPred))
@@ -255,13 +267,16 @@ class LabelingActivity : AppCompatActivity() {
         pending.clear()
         lifecycleScope.launch {
             repo.submit(token, batch).onSuccess { refreshStats() }
-                .onFailure { pending.addAll(batch) }  // retry later
+                .onFailure { pending.addAll(batch) } // retry later
         }
     }
 
     // ── Clue ────────────────────────────────────────────────────────
     private fun updateClue(cls: String?) {
-        if (cls == null) { binding.clueName.text = ""; return }
+        if (cls == null) {
+            binding.clueName.text = ""
+            return
+        }
         binding.clueName.text = cls
         lifecycleScope.launch {
             repo.clue(token, cls, lang).onSuccess { c ->
@@ -317,7 +332,9 @@ class LabelingActivity : AppCompatActivity() {
         val st = active?.let { s.perClass[it] }
         binding.tvProgress.text = if (st != null) {
             getString(R.string.label_progress_fmt, active, st.validated, st.weight)
-        } else ""
+        } else {
+            ""
+        }
     }
 
     private fun showStats() {
@@ -328,10 +345,12 @@ class LabelingActivity : AppCompatActivity() {
             root.addView(sectionTitle(getString(R.string.label_stats_sources)))
             sourceKeys.forEach { key ->
                 val st = s.sources[key] ?: return@forEach
-                root.addView(bullet(
-                    "${sourceLabel(key)} — pending ${st.pending}, " +
-                        "claimed ${st.claimed}, resolved ${st.resolved}",
-                ))
+                root.addView(
+                    bullet(
+                        "${sourceLabel(key)} — pending ${st.pending}, " +
+                            "claimed ${st.claimed}, resolved ${st.resolved}",
+                    )
+                )
             }
             root.addView(sectionTitle(getString(R.string.label_stats_classes)))
         }
@@ -362,7 +381,10 @@ class LabelingActivity : AppCompatActivity() {
         var downX = 0f
         binding.cardHolder.setOnTouchListener { v, e ->
             when (e.actionMasked) {
-                MotionEvent.ACTION_DOWN -> { downX = e.rawX; true }
+                MotionEvent.ACTION_DOWN -> {
+                    downX = e.rawX
+                    true
+                }
                 MotionEvent.ACTION_MOVE -> {
                     val dx = e.rawX - downX
                     v.translationX = dx
@@ -374,7 +396,9 @@ class LabelingActivity : AppCompatActivity() {
                     when {
                         dx > threshold -> verdict("yes")
                         dx < -threshold -> verdict("no")
-                        else -> { v.animate().translationX(0f).alpha(1f).setDuration(150).start() }
+                        else -> {
+                            v.animate().translationX(0f).alpha(1f).setDuration(150).start()
+                        }
                     }
                     true
                 }
@@ -395,7 +419,10 @@ class LabelingActivity : AppCompatActivity() {
 
     private fun showSheet(content: View) {
         val sv = ScrollView(this).apply { addView(content) }
-        BottomSheetDialog(this).apply { setContentView(sv); show() }
+        BottomSheetDialog(this).apply {
+            setContentView(sv)
+            show()
+        }
     }
 
     private fun header(text: String) = TextView(this).apply {
@@ -438,5 +465,8 @@ class LabelingActivity : AppCompatActivity() {
         super.onPause()
     }
 
-    override fun onSupportNavigateUp(): Boolean { exit(); return true }
+    override fun onSupportNavigateUp(): Boolean {
+        exit()
+        return true
+    }
 }

@@ -90,7 +90,8 @@ class SpeciesIdentifyActivity : AppCompatActivity() {
 
         // Receive the captured+cropped photo from the camera fragment.
         supportFragmentManager.setFragmentResultListener(
-            CameraFragment.RESULT_IDENTIFY_CAPTURE, this,
+            CameraFragment.RESULT_IDENTIFY_CAPTURE,
+            this,
         ) { _, result ->
             result.getString(CameraFragment.RESULT_PATH)?.let { runIdentify(File(it)) }
         }
@@ -100,7 +101,8 @@ class SpeciesIdentifyActivity : AppCompatActivity() {
 
     private fun ensureCameraPermission() {
         val granted = ContextCompat.checkSelfPermission(
-            this, android.Manifest.permission.CAMERA,
+            this,
+            android.Manifest.permission.CAMERA,
         ) == PackageManager.PERMISSION_GRANTED
         if (!granted) requestCamera.launch(android.Manifest.permission.CAMERA)
     }

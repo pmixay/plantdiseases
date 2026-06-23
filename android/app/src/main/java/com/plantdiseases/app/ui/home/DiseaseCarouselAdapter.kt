@@ -39,12 +39,13 @@ class DiseaseCarouselAdapter(
         notifyDataSetChanged()
     }
 
-    inner class VH(val binding: ItemCarouselDiseaseBinding) :
-        RecyclerView.ViewHolder(binding.root)
+    inner class VH(val binding: ItemCarouselDiseaseBinding) : RecyclerView.ViewHolder(binding.root)
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
         val binding = ItemCarouselDiseaseBinding.inflate(
-            LayoutInflater.from(parent.context), parent, false,
+            LayoutInflater.from(parent.context),
+            parent,
+            false,
         )
         return VH(binding)
     }

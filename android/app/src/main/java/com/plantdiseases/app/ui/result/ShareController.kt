@@ -115,7 +115,10 @@ class ShareController(private val activity: AppCompatActivity) {
         val finalBitmap = if (maxOf(result.width, result.height) > maxDim) {
             val ratio = maxDim.toFloat() / maxOf(result.width, result.height)
             val scaled = Bitmap.createScaledBitmap(
-                result, (result.width * ratio).toInt(), (result.height * ratio).toInt(), true,
+                result,
+                (result.width * ratio).toInt(),
+                (result.height * ratio).toInt(),
+                true,
             )
             result.recycle()
             scaled
@@ -145,7 +148,9 @@ class ShareController(private val activity: AppCompatActivity) {
 
                 val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
                 val gradient = android.graphics.RadialGradient(
-                    cx, cy, radius.coerceAtLeast(1f),
+                    cx,
+                    cy,
+                    radius.coerceAtLeast(1f),
                     intArrayOf(
                         android.graphics.Color.argb(120, 255, 0, 0),
                         android.graphics.Color.argb(80, 255, 165, 0),

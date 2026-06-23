@@ -44,7 +44,8 @@ class FeedbackController(
      */
     fun registerCorrectionListener(scanId: Long, currentScan: () -> ScanEntity?) {
         activity.supportFragmentManager.setFragmentResultListener(
-            FeedbackCorrectionSheet.REQUEST_KEY, activity,
+            FeedbackCorrectionSheet.REQUEST_KEY,
+            activity,
         ) { _, result ->
             val correctedClass = result.getString(FeedbackCorrectionSheet.RESULT_CORRECTED_CLASS)
             val reason = result.getString(FeedbackCorrectionSheet.RESULT_REASON)
@@ -241,6 +242,7 @@ class FeedbackController(
     private companion object {
         private const val FEEDBACK_PREFS = "plantdiseases_feedback_prefs"
         private const val FEEDBACK_KEY_PREFIX = "scan_"
+
         // Pinned to the classifier release in server/models/classes.json. When
         // the server exposes model_version in /api/analyze we'll trust that
         // value per-scan instead.

@@ -64,7 +64,8 @@ object PushManager {
                 app.appScope.launch {
                     runCatching {
                         app.scanRepository.registerPushToken(
-                            TelemetryIds.userPseudoId(ctx), token,
+                            TelemetryIds.userPseudoId(ctx),
+                            token,
                         )
                     }
                 }

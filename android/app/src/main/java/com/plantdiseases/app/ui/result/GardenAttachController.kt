@@ -27,7 +27,8 @@ class GardenAttachController(
 
     fun registerCreatePlantListener() {
         activity.supportFragmentManager.setFragmentResultListener(
-            CreatePlantSheet.REQUEST_KEY, activity,
+            CreatePlantSheet.REQUEST_KEY,
+            activity,
         ) { _, result -> onCreatePlantResult(result) }
     }
 

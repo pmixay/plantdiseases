@@ -30,8 +30,11 @@ object GuideContentRenderer {
         container.removeAllViews()
         parseSections(content).forEach { section ->
             container.addView(
-                if (section.header == null) introView(ctx, section.body)
-                else sectionCard(ctx, section.header, section.body),
+                if (section.header == null) {
+                    introView(ctx, section.body)
+                } else {
+                    sectionCard(ctx, section.header, section.body)
+                },
             )
         }
     }
@@ -46,17 +49,19 @@ object GuideContentRenderer {
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             ).apply { bottomMargin = dp(ctx, 16) }
         }
-        column.addView(TextView(ctx).apply {
-            text = ctx.getString(R.string.example_photos_label)
-            textSize = 12f
-            setTextColor(ContextCompat.getColor(ctx, R.color.primary))
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-            letterSpacing = 0.06f
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { bottomMargin = dp(ctx, 8) }
-        })
+        column.addView(
+            TextView(ctx).apply {
+                text = ctx.getString(R.string.example_photos_label)
+                textSize = 12f
+                setTextColor(ContextCompat.getColor(ctx, R.color.primary))
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                letterSpacing = 0.06f
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { bottomMargin = dp(ctx, 8) }
+            }
+        )
         val image = ImageView(ctx).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -92,23 +97,27 @@ object GuideContentRenderer {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(ctx, 16), dp(ctx, 14), dp(ctx, 16), dp(ctx, 14))
         }
-        col.addView(TextView(ctx).apply {
-            text = header.uppercase()
-            textSize = 12f
-            setTextColor(ContextCompat.getColor(ctx, R.color.primary))
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-            letterSpacing = 0.06f
-        })
-        col.addView(TextView(ctx).apply {
-            text = body
-            textSize = 15f
-            setTextColor(ContextCompat.getColor(ctx, R.color.on_surface))
-            setLineSpacing(dp(ctx, 3).toFloat(), 1f)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dp(ctx, 6) }
-        })
+        col.addView(
+            TextView(ctx).apply {
+                text = header.uppercase()
+                textSize = 12f
+                setTextColor(ContextCompat.getColor(ctx, R.color.primary))
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                letterSpacing = 0.06f
+            }
+        )
+        col.addView(
+            TextView(ctx).apply {
+                text = body
+                textSize = 15f
+                setTextColor(ContextCompat.getColor(ctx, R.color.on_surface))
+                setLineSpacing(dp(ctx, 3).toFloat(), 1f)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(ctx, 6) }
+            }
+        )
         return MaterialCardView(ctx).apply {
             radius = dp(ctx, 14).toFloat()
             cardElevation = 0f
@@ -140,8 +149,10 @@ object GuideContentRenderer {
             // e.g. "SYMPTOMS:" / "ЛЕЧЕНИЕ:". Bullets/numbered steps start with
             // a non-letter, so they never match.
             val lead = t.takeWhile { it.isLetter() }
-            val isHeader = t.endsWith(":") && t.length <= 48 &&
-                lead.length >= 3 && lead == lead.uppercase()
+            val isHeader = t.endsWith(":") &&
+                t.length <= 48 &&
+                lead.length >= 3 &&
+                lead == lead.uppercase()
             if (isHeader) {
                 flush()
                 header = t.removeSuffix(":").trim()
@@ -154,6 +165,8 @@ object GuideContentRenderer {
     }
 
     private fun dp(ctx: Context, v: Int): Int = TypedValue.applyDimension(
-        TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), ctx.resources.displayMetrics,
+        TypedValue.COMPLEX_UNIT_DIP,
+        v.toFloat(),
+        ctx.resources.displayMetrics,
     ).toInt()
 }

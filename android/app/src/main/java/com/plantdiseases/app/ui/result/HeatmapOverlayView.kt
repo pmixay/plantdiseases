@@ -119,7 +119,9 @@ class HeatmapOverlayView @JvmOverloads constructor(
             }
 
             val gradient = RadialGradient(
-                cx, cy, radius,
+                cx,
+                cy,
+                radius,
                 intArrayOf(
                     outerColor,
                     Color.argb(120, Color.red(outerColor), Color.green(outerColor), Color.blue(outerColor)),

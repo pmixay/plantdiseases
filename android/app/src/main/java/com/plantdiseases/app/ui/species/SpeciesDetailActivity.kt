@@ -271,7 +271,9 @@ class SpeciesDetailActivity : AppCompatActivity() {
 
     private fun addDiseaseRow(name: String, note: String?, iconRes: Int, guideId: String?) {
         val row = layoutInflater.inflate(
-            R.layout.item_species_disease, binding.listDiseases, false,
+            R.layout.item_species_disease,
+            binding.listDiseases,
+            false,
         ) as MaterialCardView
         row.findViewById<ImageView>(R.id.disease_icon).setImageResource(iconRes)
         row.findViewById<TextView>(R.id.disease_name).text = name
@@ -310,11 +312,15 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 )
             }.onSuccess {
                 Toast.makeText(
-                    this@SpeciesDetailActivity, R.string.identify_added_garden, Toast.LENGTH_SHORT,
+                    this@SpeciesDetailActivity,
+                    R.string.identify_added_garden,
+                    Toast.LENGTH_SHORT,
                 ).show()
             }.onFailure {
                 Toast.makeText(
-                    this@SpeciesDetailActivity, R.string.identify_failed, Toast.LENGTH_SHORT,
+                    this@SpeciesDetailActivity,
+                    R.string.identify_failed,
+                    Toast.LENGTH_SHORT,
                 ).show()
             }
         }

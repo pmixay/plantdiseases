@@ -149,13 +149,15 @@ class PlantDiseasesApp : Application() {
             val nm = getSystemService(NotificationManager::class.java)
             nm.createNotificationChannel(
                 NotificationChannel(
-                    CHANNEL_PLANT_REMINDERS, getString(R.string.channel_plant_reminders_name),
+                    CHANNEL_PLANT_REMINDERS,
+                    getString(R.string.channel_plant_reminders_name),
                     NotificationManager.IMPORTANCE_HIGH,
                 ).apply { description = getString(R.string.channel_plant_reminders_desc) },
             )
             nm.createNotificationChannel(
                 NotificationChannel(
-                    CHANNEL_COMMUNITY, getString(R.string.channel_community_name),
+                    CHANNEL_COMMUNITY,
+                    getString(R.string.channel_community_name),
                     NotificationManager.IMPORTANCE_DEFAULT,
                 ).apply { description = getString(R.string.channel_community_desc) },
             )
@@ -170,9 +172,12 @@ class PlantDiseasesApp : Application() {
      *  Quiet: notifies only on a genuinely new opinion — see OpinionCheckWorker. */
     fun scheduleOpinionChecks() {
         val request = androidx.work.PeriodicWorkRequestBuilder<
-            com.plantdiseases.app.worker.OpinionCheckWorker>(
-            1, java.util.concurrent.TimeUnit.HOURS,
-            15, java.util.concurrent.TimeUnit.MINUTES,
+            com.plantdiseases.app.worker.OpinionCheckWorker
+            >(
+            1,
+            java.util.concurrent.TimeUnit.HOURS,
+            15,
+            java.util.concurrent.TimeUnit.MINUTES,
         )
             .setConstraints(
                 androidx.work.Constraints.Builder()
@@ -194,7 +199,8 @@ class PlantDiseasesApp : Application() {
      *  if the expedited quota is spent. */
     fun checkOpinionsNow() {
         val request = androidx.work.OneTimeWorkRequestBuilder<
-            com.plantdiseases.app.worker.OpinionCheckWorker>()
+            com.plantdiseases.app.worker.OpinionCheckWorker
+            >()
             .setConstraints(
                 androidx.work.Constraints.Builder()
                     .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)

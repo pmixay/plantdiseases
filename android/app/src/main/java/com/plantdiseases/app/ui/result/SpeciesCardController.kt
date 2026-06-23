@@ -91,8 +91,11 @@ class SpeciesCardController(
                 if (!page.isNullOrBlank()) {
                     binding.tvSpeciesSource.visibility = View.VISIBLE
                     binding.tvSpeciesSource.text = activity.getString(
-                        if (info.translated) R.string.species_source_wikipedia_translated
-                        else R.string.species_source_wikipedia,
+                        if (info.translated) {
+                            R.string.species_source_wikipedia_translated
+                        } else {
+                            R.string.species_source_wikipedia
+                        },
                     )
                     binding.tvSpeciesSource.setOnClickListener {
                         runCatching { activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(page))) }
