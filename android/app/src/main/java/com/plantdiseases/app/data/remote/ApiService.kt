@@ -3,8 +3,6 @@ package com.plantdiseases.app.data.remote
 import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.CarePlanResponse
-import com.plantdiseases.app.data.model.SymptomDiagnoseRequest
-import com.plantdiseases.app.data.model.SymptomDiagnoseResponse
 import com.plantdiseases.app.data.model.ChatRequest
 import com.plantdiseases.app.data.model.ChatResponse
 import com.plantdiseases.app.data.model.CommunityOpinionRequest
@@ -21,7 +19,6 @@ import com.plantdiseases.app.data.model.CommunityScanCountsRequest
 import com.plantdiseases.app.data.model.CommunityScanCountsResponse
 import com.plantdiseases.app.data.model.SpeciesDiseasesResponse
 import com.plantdiseases.app.data.model.SpeciesInfoResponse
-import com.plantdiseases.app.data.model.FeedbackRequest
 import com.plantdiseases.app.data.model.FeedbackResponse
 import com.plantdiseases.app.data.model.IdentifyResponse
 import com.plantdiseases.app.data.model.ProgressionRequest
@@ -92,19 +89,12 @@ interface ApiService {
     @POST("api/care-plan")
     suspend fun carePlan(@Body request: CarePlanRequest): retrofit2.Response<CarePlanResponse>
 
-    /** No-photo symptom triage. Returns a ranked shortlist of likely
-     *  conditions (each a full bilingual care card) for the symptom
-     *  questionnaire shown when the camera/ML can't get a confident read. */
-    @POST("api/symptom-diagnose")
-    suspend fun symptomDiagnose(
-        @Body request: SymptomDiagnoseRequest,
-    ): retrofit2.Response<SymptomDiagnoseResponse>
+    // POST api/symptom-diagnose migrated to Ktor (ScanRepository.diagnoseSymptoms).
 
     @POST("api/progression")
     suspend fun progression(@Body request: ProgressionRequest): retrofit2.Response<ProgressionResponse>
 
-    @POST("api/feedback")
-    suspend fun feedback(@Body request: FeedbackRequest): retrofit2.Response<FeedbackResponse>
+    // POST api/feedback migrated to Ktor (ScanRepository.submitFeedback).
 
     /**
      * Upload the original image bytes for a negative-feedback row.

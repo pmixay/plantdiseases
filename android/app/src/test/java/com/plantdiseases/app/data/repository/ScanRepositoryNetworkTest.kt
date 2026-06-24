@@ -1,6 +1,8 @@
 package com.plantdiseases.app.data.repository
 
 import com.google.common.truth.Truth.assertThat
+import com.plantdiseases.app.data.model.FeedbackRequest
+import com.plantdiseases.app.data.model.SymptomDiagnoseRequest
 import com.plantdiseases.app.data.remote.PlantApiClient
 import com.plantdiseases.app.testutil.FakeScanDao
 import kotlinx.coroutines.runBlocking
@@ -190,5 +192,98 @@ class ScanRepositoryNetworkTest {
         val result = runBlocking { repo.checkServerHealth() }
         assertThat(result.isFailure).isTrue()
         assertThat(result.exceptionOrNull()?.message).contains("Server error")
+    }
+
+    // --- POST /api/symptom-diagnose (Ktor) ---
+
+    @Test
+    fun symptomDiagnose_success_parsesResultsAndPostsJsonBody() {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(
+                    """{"results":[{"class":"underwater","name_en":"Underwatering","score":0.8}],""" +
+                        """"answered":3,"low_confidence":false}""",
+                ),
+        )
+
+        val result = runBlocking {
+            repo.diagnoseSymptoms(SymptomDiagnoseRequest(answers = mapOf("color" to "yellow")))
+        }
+
+        assertThat(result.isSuccess).isTrue()
+        val body = result.getOrNull()!!
+        assertThat(body.answered).isEqualTo(3)
+        assertThat(body.results).hasSize(1)
+        assertThat(body.results[0].classKey).isEqualTo("underwater")
+
+        val request = server.takeRequest()
+        assertThat(request.method).isEqualTo("POST")
+        assertThat(request.path).isEqualTo("/api/symptom-diagnose")
+        assertThat(request.getHeader("Content-Type")).contains("application/json")
+        // JSON body carries the answers map under its wire key.
+        assertThat(request.body.readUtf8()).contains("\"answers\"")
+    }
+
+    @Test
+    fun symptomDiagnose_503_mapsToServerStarting() {
+        // POST retries an explicit 503 once, so enqueue two.
+        server.enqueue(MockResponse().setResponseCode(503))
+        server.enqueue(MockResponse().setResponseCode(503))
+        val result = runBlocking {
+            repo.diagnoseSymptoms(SymptomDiagnoseRequest(answers = emptyMap()))
+        }
+        assertThat(result.exceptionOrNull())
+            .isInstanceOf(ScanRepository.ServerStartingException::class.java)
+    }
+
+    // --- POST /api/feedback (Ktor) ---
+
+    @Test
+    fun feedback_success_parsesIdAndPostsJsonBody() {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"ok":true,"id":42}"""),
+        )
+
+        val result = runBlocking {
+            repo.submitFeedback(FeedbackRequest(scanId = "scan-1", correct = true))
+        }
+
+        assertThat(result.isSuccess).isTrue()
+        assertThat(result.getOrNull()?.id).isEqualTo(42L)
+
+        val request = server.takeRequest()
+        assertThat(request.method).isEqualTo("POST")
+        assertThat(request.path).isEqualTo("/api/feedback")
+        val sent = request.body.readUtf8()
+        assertThat(sent).contains("\"scan_id\":\"scan-1\"")
+        // explicitNulls is NOT set on the wired client, but optional null fields
+        // simply serialize as null — the key presence isn't asserted here.
+        assertThat(sent).contains("\"correct\":true")
+    }
+
+    @Test
+    fun feedback_429_mapsToRateLimit() {
+        // POST retries an explicit 429 once, so enqueue two.
+        server.enqueue(MockResponse().setResponseCode(429))
+        server.enqueue(MockResponse().setResponseCode(429))
+        val result = runBlocking {
+            repo.submitFeedback(FeedbackRequest(scanId = "s", correct = false))
+        }
+        assertThat(result.exceptionOrNull())
+            .isInstanceOf(ScanRepository.RateLimitException::class.java)
+    }
+
+    @Test
+    fun feedback_422_mapsToInvalidPayload() {
+        // 422 isn't retried, so a single response.
+        server.enqueue(MockResponse().setResponseCode(422))
+        val result = runBlocking {
+            repo.submitFeedback(FeedbackRequest(scanId = "s", correct = true))
+        }
+        assertThat(result.isFailure).isTrue()
+        assertThat(result.exceptionOrNull()?.message).contains("Invalid feedback payload")
     }
 }

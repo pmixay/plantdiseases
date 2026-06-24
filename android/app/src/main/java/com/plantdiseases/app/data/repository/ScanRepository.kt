@@ -31,8 +31,10 @@ import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.request.url
+import io.ktor.http.ContentType
 import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
+import io.ktor.http.contentType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -290,13 +292,16 @@ class ScanRepository(
     ): Result<com.plantdiseases.app.data.model.SymptomDiagnoseResponse> =
         withContext(Dispatchers.IO) {
             try {
-                val response = apiService.symptomDiagnose(request)
-                if (response.isSuccessful && response.body() != null) {
-                    Result.success(response.body()!!)
-                } else if (response.code() == 503) {
-                    Result.failure(ServerStartingException())
-                } else {
-                    Result.failure(Exception("Server error: ${response.code()}"))
+                val response = apiClient.httpClient.post("api/symptom-diagnose") {
+                    contentType(ContentType.Application.Json)
+                    setBody(request)
+                }
+                when (response.status.value) {
+                    in 200..299 -> Result.success(
+                        response.body<com.plantdiseases.app.data.model.SymptomDiagnoseResponse>(),
+                    )
+                    503 -> Result.failure(ServerStartingException())
+                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
                 }
             } catch (e: SocketTimeoutException) {
                 Result.failure(ServerTimeoutException())
@@ -457,17 +462,16 @@ class ScanRepository(
     suspend fun submitFeedback(request: FeedbackRequest): Result<FeedbackResponse> =
         withContext(Dispatchers.IO) {
             try {
-                val response = apiService.feedback(request)
-                if (response.isSuccessful && response.body() != null) {
-                    Result.success(response.body()!!)
-                } else if (response.code() == 429) {
-                    Result.failure(RateLimitException())
-                } else if (response.code() == 503) {
-                    Result.failure(ServerStartingException())
-                } else if (response.code() == 422) {
-                    Result.failure(Exception("Invalid feedback payload"))
-                } else {
-                    Result.failure(Exception("Server error: ${response.code()}"))
+                val response = apiClient.httpClient.post("api/feedback") {
+                    contentType(ContentType.Application.Json)
+                    setBody(request)
+                }
+                when (response.status.value) {
+                    in 200..299 -> Result.success(response.body<FeedbackResponse>())
+                    429 -> Result.failure(RateLimitException())
+                    503 -> Result.failure(ServerStartingException())
+                    422 -> Result.failure(Exception("Invalid feedback payload"))
+                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
                 }
             } catch (e: SocketTimeoutException) {
                 Result.failure(ServerTimeoutException())

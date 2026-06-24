@@ -584,32 +584,35 @@ data class CarePlanRequest(
 
 /** /api/symptom-diagnose request — a map of stable questionId → optionId
  *  (the question/option IDs ship in the app and are scored server-side). */
+@Serializable
 data class SymptomDiagnoseRequest(
-    @SerializedName("answers") val answers: Map<String, String>,
-    @SerializedName("locale") val locale: String = "en",
+    @SerializedName("answers") @SerialName("answers") val answers: Map<String, String>,
+    @SerializedName("locale") @SerialName("locale") val locale: String = "en",
 )
 
 /** One ranked result from the symptom checker — a full bilingual care card
  *  (same shape as the server's compact care card) plus its score/confidence. */
+@Serializable
 data class SymptomResult(
-    @SerializedName("class") val classKey: String = "",
-    @SerializedName("name_en") val nameEn: String = "",
-    @SerializedName("name_ru") val nameRu: String = "",
-    @SerializedName("description") val description: String = "",
-    @SerializedName("description_ru") val descriptionRu: String = "",
-    @SerializedName("treatment") val treatment: List<String> = emptyList(),
-    @SerializedName("treatment_ru") val treatmentRu: List<String> = emptyList(),
-    @SerializedName("prevention") val prevention: List<String> = emptyList(),
-    @SerializedName("prevention_ru") val preventionRu: List<String> = emptyList(),
-    @SerializedName("score") val score: Float = 0f,
-    @SerializedName("confidence") val confidence: Float = 0f,
-    @SerializedName("rank") val rank: Int = 0,
+    @SerializedName("class") @SerialName("class") val classKey: String = "",
+    @SerializedName("name_en") @SerialName("name_en") val nameEn: String = "",
+    @SerializedName("name_ru") @SerialName("name_ru") val nameRu: String = "",
+    @SerializedName("description") @SerialName("description") val description: String = "",
+    @SerializedName("description_ru") @SerialName("description_ru") val descriptionRu: String = "",
+    @SerializedName("treatment") @SerialName("treatment") val treatment: List<String> = emptyList(),
+    @SerializedName("treatment_ru") @SerialName("treatment_ru") val treatmentRu: List<String> = emptyList(),
+    @SerializedName("prevention") @SerialName("prevention") val prevention: List<String> = emptyList(),
+    @SerializedName("prevention_ru") @SerialName("prevention_ru") val preventionRu: List<String> = emptyList(),
+    @SerializedName("score") @SerialName("score") val score: Float = 0f,
+    @SerializedName("confidence") @SerialName("confidence") val confidence: Float = 0f,
+    @SerializedName("rank") @SerialName("rank") val rank: Int = 0,
 )
 
+@Serializable
 data class SymptomDiagnoseResponse(
-    @SerializedName("results") val results: List<SymptomResult> = emptyList(),
-    @SerializedName("answered") val answered: Int = 0,
-    @SerializedName("low_confidence") val lowConfidence: Boolean = false,
+    @SerializedName("results") @SerialName("results") val results: List<SymptomResult> = emptyList(),
+    @SerializedName("answered") @SerialName("answered") val answered: Int = 0,
+    @SerializedName("low_confidence") @SerialName("low_confidence") val lowConfidence: Boolean = false,
 )
 
 /**
@@ -763,39 +766,42 @@ data class ProgressionResponse(
  *  - `feedbackLatencyMs`   : wall-clock ms between scan + feedback.
  *  - `imageHash`           : optional SHA-256 of the original image.
  */
+@Serializable
 data class FeedbackRequest(
-    @SerializedName("scan_id") val scanId: String,
-    @SerializedName("correct") val correct: Boolean,
-    @SerializedName("corrected_class") val correctedClass: String? = null,
-    @SerializedName("reason") val reason: String? = null,
-    @SerializedName("note") val note: String? = null,
-    @SerializedName("predicted_class") val predictedClass: String? = null,
-    @SerializedName("predicted_confidence") val predictedConfidence: Float? = null,
-    @SerializedName("top3") val top3: List<TopProb>? = null,
-    @SerializedName("model_version") val modelVersion: String? = null,
-    @SerializedName("app_version") val appVersion: String? = null,
-    @SerializedName("locale") val locale: String? = null,
-    @SerializedName("platform") val platform: String? = null,
-    @SerializedName("user_pseudo_id") val userPseudoId: String? = null,
-    @SerializedName("region_count") val regionCount: Int? = null,
-    @SerializedName("primary_region_index") val primaryRegionIndex: Int? = null,
-    @SerializedName("feedback_latency_ms") val feedbackLatencyMs: Long? = null,
-    @SerializedName("image_hash") val imageHash: String? = null,
+    @SerializedName("scan_id") @SerialName("scan_id") val scanId: String,
+    @SerializedName("correct") @SerialName("correct") val correct: Boolean,
+    @SerializedName("corrected_class") @SerialName("corrected_class") val correctedClass: String? = null,
+    @SerializedName("reason") @SerialName("reason") val reason: String? = null,
+    @SerializedName("note") @SerialName("note") val note: String? = null,
+    @SerializedName("predicted_class") @SerialName("predicted_class") val predictedClass: String? = null,
+    @SerializedName("predicted_confidence") @SerialName("predicted_confidence") val predictedConfidence: Float? = null,
+    @SerializedName("top3") @SerialName("top3") val top3: List<TopProb>? = null,
+    @SerializedName("model_version") @SerialName("model_version") val modelVersion: String? = null,
+    @SerializedName("app_version") @SerialName("app_version") val appVersion: String? = null,
+    @SerializedName("locale") @SerialName("locale") val locale: String? = null,
+    @SerializedName("platform") @SerialName("platform") val platform: String? = null,
+    @SerializedName("user_pseudo_id") @SerialName("user_pseudo_id") val userPseudoId: String? = null,
+    @SerializedName("region_count") @SerialName("region_count") val regionCount: Int? = null,
+    @SerializedName("primary_region_index") @SerialName("primary_region_index") val primaryRegionIndex: Int? = null,
+    @SerializedName("feedback_latency_ms") @SerialName("feedback_latency_ms") val feedbackLatencyMs: Long? = null,
+    @SerializedName("image_hash") @SerialName("image_hash") val imageHash: String? = null,
     // Conformal prediction set from the analyse response that
     // produced this scan. Echoed back so the server can answer
     // "was the right answer in the 90 % set?" without joining
     // against the original analyse log.
-    @SerializedName("prediction_set") val predictionSet: List<String>? = null,
+    @SerializedName("prediction_set") @SerialName("prediction_set") val predictionSet: List<String>? = null,
 )
 
 /** One entry of the model's top-3 prediction set used by the feedback payload. */
+@Serializable
 data class TopProb(
-    @SerializedName("class") val classKey: String,
-    @SerializedName("prob") val prob: Float,
+    @SerializedName("class") @SerialName("class") val classKey: String,
+    @SerializedName("prob") @SerialName("prob") val prob: Float,
 )
 
 /** /api/feedback response. `id` is the new row id in the server's append-only DB. */
+@Serializable
 data class FeedbackResponse(
-    @SerializedName("ok") val ok: Boolean = false,
-    @SerializedName("id") val id: Long = 0,
+    @SerializedName("ok") @SerialName("ok") val ok: Boolean = false,
+    @SerializedName("id") @SerialName("id") val id: Long = 0,
 )
