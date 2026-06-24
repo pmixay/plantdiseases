@@ -21,7 +21,6 @@ import androidx.lifecycle.lifecycleScope
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.PlantEntity
 import com.plantdiseases.app.data.local.PlantReminderEntity
@@ -34,6 +33,7 @@ import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ReminderManager
 import com.plantdiseases.app.util.ReminderPresets
 import kotlinx.coroutines.launch
+import org.koin.android.ext.android.inject
 
 /**
  * Plant reminders bottom sheet — generic-reminder edition.
@@ -67,8 +67,7 @@ class ReminderScheduleSheet : BottomSheetDialogFragment() {
      */
     private var carePlanDefaults: CarePlanResponse? = null
 
-    private val plantRepository: PlantRepository
-        get() = (requireActivity().application as PlantDiseasesApp).plantRepository
+    private val plantRepository: PlantRepository by inject()
 
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()

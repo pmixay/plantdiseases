@@ -62,9 +62,8 @@ listed for provenance and to honour each dataset's terms.
 |---|---|
 | AndroidX (core, appcompat, activity, fragment, constraintlayout, recyclerview, swiperefreshlayout, navigation, camera/CameraX, room, lifecycle, viewpager2, datastore, exifinterface, work) | Apache-2.0 |
 | Google Material Components | Apache-2.0 |
-| Retrofit + converter-gson | Apache-2.0 |
 | OkHttp + logging-interceptor | Apache-2.0 |
-| Gson | Apache-2.0 |
+| Gson (Room field + response-cache JSON) | Apache-2.0 |
 | Ktor (client-core, okhttp, content-negotiation, serialization) | Apache-2.0 |
 | kotlinx.serialization, kotlinx.coroutines | Apache-2.0 |
 | Koin | Apache-2.0 |

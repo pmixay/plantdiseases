@@ -5,12 +5,14 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.ScanEntity
+import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.launch
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
 
 /**
  * Owns "add this scan to a garden plant": picking an existing plant or creating
@@ -21,9 +23,8 @@ import kotlinx.coroutines.launch
 class GardenAttachController(
     private val activity: AppCompatActivity,
     private val binding: ActivityResultBinding,
-) {
-    private val app: PlantDiseasesApp
-        get() = activity.application as PlantDiseasesApp
+) : KoinComponent {
+    private val plantRepository: PlantRepository by inject()
 
     fun registerCreatePlantListener() {
         activity.supportFragmentManager.setFragmentResultListener(
@@ -34,7 +35,7 @@ class GardenAttachController(
 
     fun showAddToGardenDialog(scan: ScanEntity) {
         activity.lifecycleScope.launch {
-            val plants = app.plantRepository.getPlants()
+            val plants = plantRepository.getPlants()
             if (plants.isEmpty()) {
                 showCreatePlantForScanDialog(scan)
                 return@launch
@@ -45,7 +46,7 @@ class GardenAttachController(
                 .setTitle(R.string.add_to_garden)
                 .setItems(labels) { _, which ->
                     activity.lifecycleScope.launch {
-                        app.plantRepository.assignScanToPlant(scan.id, plants[which].plant.id)
+                        plantRepository.assignScanToPlant(scan.id, plants[which].plant.id)
                         binding.btnAddToGarden.text = activity.getString(R.string.added_to_garden)
                         Toast.makeText(
                             activity,
@@ -77,13 +78,13 @@ class GardenAttachController(
         val scanId = result.getLong(CreatePlantSheet.RESULT_SCAN_ID, -1L)
         if (scanId <= 0L) return
         activity.lifecycleScope.launch {
-            val plantId = app.plantRepository.savePlant(
+            val plantId = plantRepository.savePlant(
                 name = plantName,
                 species = result.getString(CreatePlantSheet.RESULT_SPECIES),
                 scientificName = result.getString(CreatePlantSheet.RESULT_SCIENTIFIC),
                 commonName = result.getString(CreatePlantSheet.RESULT_COMMON),
             )
-            app.plantRepository.assignScanToPlant(scanId, plantId)
+            plantRepository.assignScanToPlant(scanId, plantId)
             binding.btnAddToGarden.text = activity.getString(R.string.added_to_garden)
             Toast.makeText(
                 activity,

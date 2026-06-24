@@ -232,10 +232,9 @@ dependencies {
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
 
-    // Retrofit + OkHttp. Retrofit stays until the last endpoint/call-site has
-    // moved to the Ktor client below; Ktor reuses this same OkHttp engine.
-    implementation("com.squareup.retrofit2:retrofit:2.11.0")
-    implementation("com.squareup.retrofit2:converter-gson:2.11.0")
+    // OkHttp — the engine the Ktor client runs on (shared RetryInterceptor +
+    // logging). Retrofit/converter-gson were removed once the last endpoint
+    // moved to the Ktor client; Gson itself stays for Room field + cache JSON.
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
 

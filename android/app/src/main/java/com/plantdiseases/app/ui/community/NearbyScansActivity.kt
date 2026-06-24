@@ -14,9 +14,9 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.StaggeredGridLayoutManager
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.chip.Chip
-import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.CommunityScanItem
+import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityNearbyScansBinding
 import com.plantdiseases.app.databinding.SheetNearbyFilterBinding
 import com.plantdiseases.app.ui.result.CommunityOpinionSheet
@@ -27,6 +27,7 @@ import com.plantdiseases.app.util.TelemetryIds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.koin.android.ext.android.inject
 
 /**
  * Social-style "Scans near you" feed. Resolves the user's approximate
@@ -42,6 +43,7 @@ class NearbyScansActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityNearbyScansBinding
     private lateinit var adapter: NearbyScansAdapter
+    private val scanRepository: ScanRepository by inject()
     private val isRu by lazy { LocaleHelper.isRussian(this) }
 
     // Full feed as returned by the server; filtered + sorted client-side
@@ -94,10 +96,9 @@ class NearbyScansActivity : AppCompatActivity() {
             onSecondOpinion = { item ->
                 // Opening someone else's scan counts as a view (deduped per
                 // viewer server-side).
-                val app = application as PlantDiseasesApp
                 val pseudoId = TelemetryIds.userPseudoId(this)
                 lifecycleScope.launch {
-                    app.scanRepository.recordCommunityView(item.scanId, pseudoId)
+                    scanRepository.recordCommunityView(item.scanId, pseudoId)
                 }
                 CommunityOpinionSheet.show(
                     supportFragmentManager,
@@ -150,9 +151,8 @@ class NearbyScansActivity : AppCompatActivity() {
                 return@launch
             }
 
-            val app = application as PlantDiseasesApp
             val pseudoId = TelemetryIds.userPseudoId(this@NearbyScansActivity)
-            val result = app.scanRepository.communityNearby(
+            val result = scanRepository.communityNearby(
                 country = resolved.country,
                 region = resolved.locality,
                 // No disease filter — the feed surfaces the whole region.
@@ -167,7 +167,7 @@ class NearbyScansActivity : AppCompatActivity() {
                 // under a previous install's pseudo-id (after a reinstall) would
                 // slip through — so we additionally hide any item whose globally
                 // unique scan_id matches one in this device's local history.
-                val mine = app.scanRepository.localClientScanIds()
+                val mine = scanRepository.localClientScanIds()
                 val others = response.items.filter { it.scanId !in mine }
                 if (others.isEmpty()) {
                     showState(getString(R.string.similar_scans_empty))

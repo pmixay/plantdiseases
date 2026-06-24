@@ -33,7 +33,6 @@ import com.bumptech.glide.load.resource.bitmap.RoundedCorners
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
-import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.PlantEntity
 import com.plantdiseases.app.data.local.ScanEntity
@@ -46,6 +45,7 @@ import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.ReminderManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.koin.android.ext.android.inject
 
 /**
  * Garden tab. The screen scaffold (hero, plant list container, empty
@@ -66,8 +66,7 @@ class GardenFragment : Fragment() {
     /** Plant count above which the search box appears. */
     private val searchVisibleThreshold = 6
 
-    private val plantRepository: PlantRepository
-        get() = (requireActivity().application as PlantDiseasesApp).plantRepository
+    private val plantRepository: PlantRepository by inject()
 
     override fun onCreateView(
         inflater: LayoutInflater,

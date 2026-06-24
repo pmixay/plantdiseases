@@ -15,12 +15,13 @@ import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
-import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.SpeciesCandidate
+import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.launch
+import org.koin.android.ext.android.inject
 import java.io.File
 
 /**
@@ -40,6 +41,8 @@ import java.io.File
  * the host so this fragment stays stateless across configuration changes.
  */
 class CreatePlantSheet : BottomSheetDialogFragment() {
+
+    private val scanRepository: ScanRepository by inject()
 
     private var scanId: Long = -1
     private var initialName: String? = null
@@ -95,10 +98,8 @@ class CreatePlantSheet : BottomSheetDialogFragment() {
         }
 
         identifyBtn.setOnClickListener {
-            val activity = activity ?: return@setOnClickListener
-            val app = activity.application as PlantDiseasesApp
             lifecycleScope.launch {
-                val scan = app.scanRepository.getScanById(scanId)
+                val scan = scanRepository.getScanById(scanId)
                 if (scan == null) {
                     statusText.text = getString(R.string.species_suggest_unavailable_body)
                     return@launch
@@ -113,7 +114,7 @@ class CreatePlantSheet : BottomSheetDialogFragment() {
                 candidateChips.removeAllViews()
                 candidateChips.visibility = View.GONE
                 val locale = if (LocaleHelper.isRussian(requireContext())) "ru" else "en"
-                val res = app.scanRepository.identifySpecies(file, locale = locale)
+                val res = scanRepository.identifySpecies(file, locale = locale)
                 identifyBtn.isEnabled = true
                 res.onSuccess { id ->
                     if (!id.available || id.results.isEmpty()) {

@@ -38,7 +38,6 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.tabs.TabLayout
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
-import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.PlantEntity
 import com.plantdiseases.app.data.local.PlantJournalEntity
@@ -46,6 +45,7 @@ import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.ProgressionRequest
 import com.plantdiseases.app.data.repository.PlantRepository
+import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityPlantDetailBinding
 import com.plantdiseases.app.util.ImageUtils.formatRelativeDate
 import com.plantdiseases.app.ui.common.CarePlanCardView
@@ -54,6 +54,7 @@ import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.launch
+import org.koin.android.ext.android.inject
 import java.io.File
 
 class PlantDetailActivity : AppCompatActivity() {
@@ -74,8 +75,8 @@ class PlantDetailActivity : AppCompatActivity() {
     private var restoredTabIndex = 0
     private var restoredScrollY = 0
 
-    private val plantRepository: PlantRepository
-        get() = (application as PlantDiseasesApp).plantRepository
+    private val plantRepository: PlantRepository by inject()
+    private val scanRepository: ScanRepository by inject()
 
     /** "New scan" → opens the camera, runs the capture through the normal
      *  disease-analysis flow ([AnalysisActivity]) and auto-attaches the
@@ -760,14 +761,13 @@ class PlantDetailActivity : AppCompatActivity() {
         val isRu = LocaleHelper.isRussian(this)
 
         lifecycleScope.launch {
-            val app = application as PlantDiseasesApp
             val request = CarePlanRequest(
                 disease = classKey,
                 species = speciesHint,
                 light = "bright_indirect",
                 locale = if (isRu) "ru" else "en",
             )
-            val result = app.scanRepository.fetchCarePlan(request)
+            val result = scanRepository.fetchCarePlan(request)
             result.onSuccess { plan ->
                 card.bind(
                     plan = plan,
@@ -801,8 +801,7 @@ class PlantDetailActivity : AppCompatActivity() {
      * back to a normalised lowercase of the human-readable name.
      */
     private fun resolveClassKey(scan: ScanEntity): String {
-        val app = application as PlantDiseasesApp
-        return app.scanRepository.parseAllProbs(scan.allProbs)
+        return scanRepository.parseAllProbs(scan.allProbs)
             .entries.maxByOrNull { it.value }?.key
             ?: scan.diseaseName.lowercase().replace(' ', '_')
     }
@@ -2164,15 +2163,14 @@ class PlantDetailActivity : AppCompatActivity() {
         trendChip.setTextColor(getColor(R.color.on_surface_secondary))
         meta.text = ""
 
-        val app = application as PlantDiseasesApp
         // Server expects oldest-first; cap to the 12 newest to keep
         // payloads bounded (Pydantic on the server doesn't, but the
         // device's network stack still has to upload them).
         val ordered = scans.sortedBy { it.timestamp }.takeLast(12)
-        val historyPayload = ordered.map { app.scanRepository.scanToProgressionPayload(it) }
+        val historyPayload = ordered.map { scanRepository.scanToProgressionPayload(it) }
         val newest = ordered.last()
         lifecycleScope.launch {
-            val res = app.scanRepository.fetchProgression(
+            val res = scanRepository.fetchProgression(
                 ProgressionRequest(history = historyPayload),
             )
             res.onSuccess { resp ->

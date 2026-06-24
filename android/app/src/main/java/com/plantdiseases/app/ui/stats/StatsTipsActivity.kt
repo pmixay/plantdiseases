@@ -16,14 +16,16 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.card.MaterialCardView
-import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.ScanHistoryItem
+import com.plantdiseases.app.data.repository.PlantRepository
+import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityStatsTipsBinding
 import com.plantdiseases.app.ui.widget.BarChartView
 import com.plantdiseases.app.ui.widget.DonutChartView
 import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.launch
+import org.koin.android.ext.android.inject
 import java.util.Calendar
 import java.util.Locale
 
@@ -37,6 +39,9 @@ class StatsTipsActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityStatsTipsBinding
     private val isRu: Boolean get() = Locale.getDefault().language == "ru"
+
+    private val scanRepository: ScanRepository by inject()
+    private val plantRepository: PlantRepository by inject()
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
@@ -63,11 +68,10 @@ class StatsTipsActivity : AppCompatActivity() {
 
     // ── Personal stats (local data only) ────────────────────────────
     private fun loadStats() {
-        val app = application as PlantDiseasesApp
         lifecycleScope.launch {
-            val scans = runCatching { app.scanRepository.getAllScans() }
+            val scans = runCatching { scanRepository.getAllScans() }
                 .getOrDefault(emptyList())
-            val plants = runCatching { app.plantRepository.getPlants() }
+            val plants = runCatching { plantRepository.getPlants() }
                 .getOrDefault(emptyList())
             val real = scans.filter { !it.isNotAPlant }
             val healthy = real.count { it.isHealthy }

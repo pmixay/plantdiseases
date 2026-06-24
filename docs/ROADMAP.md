@@ -19,11 +19,12 @@ server `gamma`; bilingual EN/RU throughout.
 - [ ] **Decompose `PlantDetailActivity`** (~2300 lines) into controllers following the
       `ui/result/` template (history / care / progress / header). The Activity becomes
       a thin coordinator.
-- [ ] **Finish the Koin DI rollout** — replace the remaining `application as
-      PlantDiseasesApp` lookups with `by inject()` / `by viewModel()` on the large
-      screens (Koin is already wired; the analyze path already runs through it).
-- [ ] **Finish Retrofit + Gson → Ktor + kotlinx.serialization** for any endpoints that
-      still use the Retrofit `ApiService` (the `/analyze` path is already on Ktor).
+- [x] **Koin DI rollout — done.** All `application as PlantDiseasesApp` lookups now use
+      direct injection (`by inject()` in Activities/Fragments, `KoinComponent` + `by inject()`
+      in controllers/workers/push); the Application's repository accessors were removed.
+- [x] **Retrofit + Gson → Ktor + kotlinx.serialization — done.** All endpoints run on the
+      Ktor `HttpClient` (over the shared OkHttp engine); the Retrofit `ApiService` interface
+      and `converter-gson` were removed. Gson stays only for Room field + response-cache JSON.
 - [ ] **RuStore release config** — manifest / signing / release wiring so the app is
       publishable to RuStore. No secrets in git.
 

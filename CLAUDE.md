@@ -19,7 +19,7 @@ Three independent deliverables, each with its own toolchain:
 | Dir | Stack | What it is |
 |---|---|---|
 | `server/` | Python 3.11, FastAPI, ONNX Runtime | ML inference API + the two-stage pipeline. The brains. |
-| `android/` | Kotlin, Gradle, Material 3 | The phone client (CameraX, Room, Retrofit). |
+| `android/` | Kotlin, Gradle, Material 3 | The phone client (CameraX, Room, Ktor + kotlinx.serialization, Koin DI). |
 | `website/` | Static HTML/CSS/JS | Marketing/benchmark showcase, no build step (`python3 -m http.server`). |
 
 Key docs: `README.md` (overview + API table), `DEPLOYMENT.md` (production config),
@@ -124,8 +124,10 @@ validation, metrics — and wires everything together):
 
 **Android structure** (`com.plantdiseases.app`): `ui/<feature>/` (camera, result,
 garden, gallery, guide, community, …) over `data/` (`repository/`, `remote/ApiService.kt`
-Retrofit, `local/Database.kt` Room), `util/` helpers (incl. `AquaClassifier`/`AquaInference`
-for on-device TFLite), `worker/` (WorkManager reminders/opinion polling). Bilingual via
+— now the **Ktor `PlantApiClient`** over an OkHttp engine; the Retrofit interface was removed,
+`local/Database.kt` Room), `di/AppModule.kt` (**Koin** singletons), `util/` helpers (incl.
+`AquaClassifier`/`AquaInference` for on-device TFLite), `worker/` (WorkManager reminders/opinion
+polling). DTOs in `data/model/Models.kt` are `@Serializable` (kotlinx). Bilingual via
 `res/values*/strings.xml`. The server URL is baked at build time into
 `BuildConfig.API_BASE_URL`.
 

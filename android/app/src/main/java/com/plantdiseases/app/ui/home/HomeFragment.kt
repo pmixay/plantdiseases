@@ -20,9 +20,9 @@ import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.bumptech.glide.Glide
 import com.google.android.material.bottomnavigation.BottomNavigationView
-import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.TrendingResponse
+import com.plantdiseases.app.data.remote.PlantApiClient
 import com.plantdiseases.app.databinding.FragmentHomeBinding
 import com.plantdiseases.app.ui.camera.LightMeterActivity
 import com.plantdiseases.app.ui.camera.WaterCalculatorActivity
@@ -36,6 +36,7 @@ import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.RegionResolver
 import com.plantdiseases.app.util.SpeciesCatalog
 import kotlinx.coroutines.launch
+import org.koin.android.ext.android.inject
 import java.util.Calendar
 import java.util.Locale
 
@@ -50,6 +51,8 @@ class HomeFragment : Fragment() {
 
     private var _binding: FragmentHomeBinding? = null
     private val binding get() = _binding!!
+
+    private val apiClient: PlantApiClient by inject()
 
     private val isRu: Boolean get() = Locale.getDefault().language == "ru"
     private val locale: String get() = if (isRu) "ru" else "en"
@@ -249,7 +252,6 @@ class HomeFragment : Fragment() {
 
     // ── Trending carousels ──────────────────────────────────────────
     private fun loadTrending() {
-        val app = requireActivity().application as PlantDiseasesApp
         val appContext = requireContext().applicationContext
         viewLifecycleOwner.lifecycleScope.launch {
             val region = runCatching { RegionResolver.resolveRegion(appContext) }.getOrNull()
@@ -259,10 +261,10 @@ class HomeFragment : Fragment() {
             val trending = com.plantdiseases.app.util.ResponseCache
                 .get(cacheKey, TrendingResponse::class.java)
                 ?: runCatching {
-                    app.apiClient.apiService.communityTrending(
+                    apiClient.communityTrending(
                         country = region?.country,
                         region = region?.locality,
-                    ).body()
+                    )
                 }.getOrNull()?.also {
                     com.plantdiseases.app.util.ResponseCache.put(
                         cacheKey,
@@ -364,10 +366,9 @@ class HomeFragment : Fragment() {
             return
         }
         if (speciesImageCache.containsKey(scientificName)) return // resolved to null (no photo)
-        val app = requireActivity().application as PlantDiseasesApp
         viewLifecycleOwner.lifecycleScope.launch {
             val url = runCatching {
-                app.apiClient.apiService.speciesInfo(scientificName, locale).body()?.imageUrl
+                apiClient.speciesInfo(scientificName, locale)?.imageUrl
             }.getOrNull()
             speciesImageCache[scientificName] = url
             if (url != null) {

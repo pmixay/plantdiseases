@@ -20,7 +20,6 @@ import com.bumptech.glide.load.resource.bitmap.CenterCrop
 import com.bumptech.glide.load.resource.bitmap.RoundedCorners
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.MainActivity
-import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.GuideDataProvider
 import com.plantdiseases.app.data.local.ScanEntity
@@ -32,6 +31,7 @@ import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.launch
+import org.koin.android.ext.android.inject
 import java.io.File
 
 /**
@@ -46,6 +46,8 @@ import java.io.File
 class ResultActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityResultBinding
+
+    private val scanRepository: ScanRepository by inject()
 
     private var scaleFactor = 1.0f
     private lateinit var scaleGestureDetector: ScaleGestureDetector
@@ -178,10 +180,9 @@ class ResultActivity : AppCompatActivity() {
             .setTitle(R.string.delete_scan)
             .setMessage(R.string.delete_scan_confirm)
             .setPositiveButton(R.string.delete) { _, _ ->
-                val app = application as PlantDiseasesApp
                 lifecycleScope.launch {
                     runCatching { File(scan.imagePath).delete() }
-                    app.scanRepository.deleteScan(scan.id)
+                    scanRepository.deleteScan(scan.id)
                     finish()
                 }
             }
@@ -223,15 +224,13 @@ class ResultActivity : AppCompatActivity() {
     }
 
     private fun loadResult(scanId: Long) {
-        val app = application as PlantDiseasesApp
-
         binding.skeletonLayout.visibility = View.VISIBLE
         binding.scrollView.visibility = View.GONE
         binding.bottomActionBar.visibility = View.GONE
         animateSkeleton()
 
         lifecycleScope.launch {
-            val scan = app.scanRepository.getScanById(scanId)
+            val scan = scanRepository.getScanById(scanId)
             if (scan == null) {
                 finish()
                 return@launch
@@ -242,7 +241,7 @@ class ResultActivity : AppCompatActivity() {
             binding.scrollView.visibility = View.VISIBLE
             binding.bottomActionBar.visibility = View.VISIBLE
 
-            displayResult(scan, app.scanRepository)
+            displayResult(scan, scanRepository)
             Haptics.success(this@ResultActivity)
         }
     }

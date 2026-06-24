@@ -6,7 +6,6 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
-import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.repository.CommunityUploader
@@ -22,6 +21,8 @@ import com.plantdiseases.app.util.TelemetryIds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
 
 /**
  * Owns every community-facing surface on the result screen: the "scans near
@@ -42,9 +43,9 @@ class CommunityController(
     // permission; whatever the outcome, it re-runs [rerun] to repopulate.
     private val onEnableCommunity: (rerun: () -> Unit) -> Unit,
     private val ensureNotificationPermission: () -> Unit,
-) {
-    private val repository: ScanRepository
-        get() = (activity.application as PlantDiseasesApp).scanRepository
+) : KoinComponent {
+    private val repository: ScanRepository by inject()
+    private val communityUploader: CommunityUploader by inject()
 
     private fun displayName(key: String, isRu: Boolean): String =
         DiseaseLabels.displayName(key, isRu) ?: key
@@ -157,12 +158,11 @@ class CommunityController(
                 btn.isEnabled = false
                 btn.setText(R.string.result_second_opinion_waiting)
                 ensureNotificationPermission()
-                val app = activity.application as PlantDiseasesApp
                 val pseudoId = TelemetryIds.userPseudoId(activity)
                 activity.lifecycleScope.launch {
                     // Ensure the scan is in the community corpus so others can
                     // see the ask (force = explicit consent).
-                    val outcome = app.communityUploader.uploadFromEntity(scan, force = true)
+                    val outcome = communityUploader.uploadFromEntity(scan, force = true)
                     if (outcome == CommunityUploader.UploadOutcome.NoRegion) {
                         showAsk()
                         Toast.makeText(
@@ -172,7 +172,7 @@ class CommunityController(
                         ).show()
                         return@launch
                     }
-                    app.scanRepository.requestSecondOpinion(scan.clientScanId, pseudoId)
+                    repository.requestSecondOpinion(scan.clientScanId, pseudoId)
                         .onSuccess {
                             showWaiting()
                             // Seed the notify baseline at 0 so the very next

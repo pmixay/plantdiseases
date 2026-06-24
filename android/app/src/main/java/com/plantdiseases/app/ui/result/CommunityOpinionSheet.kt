@@ -15,14 +15,15 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import com.google.android.material.textfield.TextInputEditText
-import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.CommunityOpinion
 import com.plantdiseases.app.data.model.CommunityOpinionRequest
 import com.plantdiseases.app.data.model.CommunityTopDisease
+import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.TelemetryIds
 import kotlinx.coroutines.launch
+import org.koin.android.ext.android.inject
 import android.widget.Toast
 
 /**
@@ -35,6 +36,8 @@ import android.widget.Toast
  * so a process-death restore reloads cleanly instead of crashing.
  */
 class CommunityOpinionSheet : BottomSheetDialogFragment() {
+
+    private val scanRepository: ScanRepository by inject()
 
     private var scanId: String = ""
     private var currentName: String? = null
@@ -146,9 +149,8 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
     }
 
     private fun loadOpinions() {
-        val repo = (requireActivity().application as PlantDiseasesApp).scanRepository
         viewLifecycleOwner.lifecycleScope.launch {
-            repo.getCommunityOpinions(scanId)
+            scanRepository.getCommunityOpinions(scanId)
                 .onSuccess { render(it.consensus, it.opinions) }
                 .onFailure { render(emptyList(), emptyList()) }
         }
@@ -163,7 +165,6 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         Haptics.tick(ctx)
         sendBtn?.isEnabled = false
 
-        val repo = (ctx.applicationContext as PlantDiseasesApp).scanRepository
         val request = CommunityOpinionRequest(
             scanId = scanId,
             userPseudoId = TelemetryIds.userPseudoId(ctx),
@@ -171,7 +172,7 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
             note = note,
         )
         viewLifecycleOwner.lifecycleScope.launch {
-            repo.submitCommunityOpinion(request)
+            scanRepository.submitCommunityOpinion(request)
                 .onSuccess { resp ->
                     Toast.makeText(ctx, R.string.community_opinion_thanks, Toast.LENGTH_SHORT).show()
                     // One opinion per scan — record it and lock the input.

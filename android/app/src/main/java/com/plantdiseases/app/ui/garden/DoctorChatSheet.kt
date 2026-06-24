@@ -24,7 +24,6 @@ import androidx.lifecycle.lifecycleScope
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.textfield.TextInputEditText
-import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.GuideDataProvider
 import com.plantdiseases.app.data.local.ChatMessageEntity
@@ -32,11 +31,14 @@ import com.plantdiseases.app.data.local.PlantEntity
 import com.plantdiseases.app.data.local.ScanChatMessageEntity
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.ChatRequest
+import com.plantdiseases.app.data.repository.PlantRepository
+import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.SheetDoctorChatBinding
 import com.plantdiseases.app.ui.guide.GuideDetailSheet
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.launch
+import org.koin.android.ext.android.inject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -45,6 +47,9 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
 
     private var _binding: SheetDoctorChatBinding? = null
     private val binding get() = _binding!!
+
+    private val plantRepository: PlantRepository by inject()
+    private val scanRepository: ScanRepository by inject()
 
     // The chat runs in one of two modes:
     //   * plant mode — launched from the Garden plant detail; chat history
@@ -174,10 +179,9 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
                 return
             }
             lifecycleScope.launch {
-                val app = requireActivity().application as PlantDiseasesApp
                 when {
-                    savedPlantId > 0L -> plant = app.plantRepository.getPlant(savedPlantId)
-                    savedScanId > 0L -> scan = app.scanRepository.getScanById(savedScanId)
+                    savedPlantId > 0L -> plant = plantRepository.getPlant(savedPlantId)
+                    savedScanId > 0L -> scan = scanRepository.getScanById(savedScanId)
                 }
                 if ((plant == null && scan == null) || _binding == null) {
                     dismissAllowingStateLoss()
@@ -200,14 +204,13 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
     }
 
     private fun loadMessages() {
-        val app = requireActivity().application as PlantDiseasesApp
         val pid = persistPlantId
         val sid = persistScanId
         lifecycleScope.launch {
             val msgs: List<Triple<String, String, Long>> = when {
-                pid != null -> app.plantRepository.getChatMessages(pid)
+                pid != null -> plantRepository.getChatMessages(pid)
                     .map { Triple(it.role, it.content, it.timestamp) }
-                sid != null -> app.scanRepository.getChatMessages(sid)
+                sid != null -> scanRepository.getChatMessages(sid)
                     .map { Triple(it.role, it.content, it.timestamp) }
                 else -> emptyList()
             }
@@ -238,9 +241,8 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
         inputField.setText("")
         suggestionsContainer.visibility = View.GONE
 
-        val app = requireActivity().application as PlantDiseasesApp
-        val plantRepo = app.plantRepository
-        val scanRepo = app.scanRepository
+        val plantRepo = plantRepository
+        val scanRepo = scanRepository
         val isRu = LocaleHelper.isRussian(requireContext())
         val now = System.currentTimeMillis()
 
@@ -508,7 +510,6 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
 
     private fun clearChat() {
         if (plant == null && scan == null) return
-        val app = requireActivity().application as PlantDiseasesApp
         val pid = persistPlantId
         val sid = persistScanId
         // Start a fresh server session so the per-session budget resets
@@ -516,8 +517,8 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
         bumpSessionEpoch(requireContext(), ownerKey)
         lifecycleScope.launch {
             when {
-                pid != null -> app.plantRepository.clearChat(pid)
-                sid != null -> app.scanRepository.clearChat(sid)
+                pid != null -> plantRepository.clearChat(pid)
+                sid != null -> scanRepository.clearChat(sid)
             }
             if (_binding != null) {
                 messagesLayout.removeAllViews()

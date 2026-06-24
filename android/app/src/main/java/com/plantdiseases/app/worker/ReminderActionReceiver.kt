@@ -4,11 +4,13 @@ import android.app.NotificationManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import com.plantdiseases.app.PlantDiseasesApp
+import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.util.ReminderManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
 
 /**
  * Handles the "Done" / "Snooze" action buttons on a reminder
@@ -20,14 +22,16 @@ import kotlinx.coroutines.launch
  * Runs on the system-managed broadcast thread; the actual repository
  * write hops onto Dispatchers.IO via [CoroutineScope].
  */
-class ReminderActionReceiver : BroadcastReceiver() {
+class ReminderActionReceiver : BroadcastReceiver(), KoinComponent {
+
+    private val plantRepository: PlantRepository by inject()
+
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.getStringExtra(EXTRA_ACTION) ?: return
         val eventId = intent.getLongExtra(EXTRA_EVENT_ID, -1L)
         val notificationId = intent.getIntExtra(EXTRA_NOTIFICATION_ID, -1)
         if (eventId < 0) return
 
-        val app = context.applicationContext as PlantDiseasesApp
         val resolution = when (action) {
             ACTION_DONE -> "done"
             ACTION_SNOOZE -> "snoozed"
@@ -59,7 +63,7 @@ class ReminderActionReceiver : BroadcastReceiver() {
         val pending = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                app.plantRepository.resolveReminderEvent(eventId, resolution)
+                plantRepository.resolveReminderEvent(eventId, resolution)
             } finally {
                 pending.finish()
             }

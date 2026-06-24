@@ -8,7 +8,6 @@ import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
-import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.repository.ScanRepository
@@ -16,6 +15,8 @@ import com.plantdiseases.app.util.ImageUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
 import java.io.File
 import java.io.FileOutputStream
 
@@ -24,7 +25,9 @@ import java.io.FileOutputStream
  * scan photo with the diseased region highlighted) plus a text summary, with a
  * graceful text-only fallback when the image can't be decoded/composed.
  */
-class ShareController(private val activity: AppCompatActivity) {
+class ShareController(private val activity: AppCompatActivity) : KoinComponent {
+
+    private val scanRepository: ScanRepository by inject()
 
     fun share(scan: ScanEntity, repository: ScanRepository, isRu: Boolean) {
         val shareText = buildString {
@@ -127,9 +130,8 @@ class ShareController(private val activity: AppCompatActivity) {
         }
 
         // Skip the red highlight when the verdict is healthy.
-        val repo = (activity.application as PlantDiseasesApp).scanRepository
-        if (!repo.isHealthyVerdict(scan)) {
-            val regions = repo.parseRegions(scan.regions)
+        if (!scanRepository.isHealthyVerdict(scan)) {
+            val regions = scanRepository.parseRegions(scan.regions)
             val primary = regions.getOrNull(scan.primaryRegionIndex ?: -1)
             if (primary != null) {
                 // Bbox coordinates live in the server's decoded image space

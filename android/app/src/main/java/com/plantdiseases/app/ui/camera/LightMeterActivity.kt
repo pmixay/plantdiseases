@@ -36,12 +36,15 @@ import kotlinx.coroutines.launch
 import kotlin.math.ln
 import kotlin.math.pow
 import java.util.concurrent.ExecutorService
+import com.plantdiseases.app.data.repository.PlantRepository
+import org.koin.android.ext.android.inject
 import java.util.concurrent.Executors
 
 class LightMeterActivity :
     AppCompatActivity(),
     SensorEventListener {
 
+    private val plantRepository: PlantRepository by inject()
     private lateinit var binding: ActivityLightMeterBinding
     private lateinit var tvLux: TextView
     private lateinit var tvStatus: TextView
@@ -506,7 +509,7 @@ class LightMeterActivity :
             // if the DB write ever stalled. appScope already exists for
             // exactly this "must outlive the Activity" work.
             app.appScope.launch {
-                app.plantRepository.updateMeasuredLux(plantId, peak)
+                plantRepository.updateMeasuredLux(plantId, peak)
             }
         }
     }

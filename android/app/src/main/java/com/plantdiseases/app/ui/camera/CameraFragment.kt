@@ -39,6 +39,7 @@ import com.canhub.cropper.CropImageContractOptions
 import com.canhub.cropper.CropImageOptions
 import com.canhub.cropper.CropImageView
 import com.plantdiseases.app.PlantDiseasesApp
+import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.R
 import com.plantdiseases.app.databinding.FragmentCameraBinding
 import com.plantdiseases.app.ui.analysis.AnalysisActivity
@@ -49,6 +50,7 @@ import com.plantdiseases.app.util.ModelFamilyPrefs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.koin.android.ext.android.inject
 import java.io.File
 import java.util.Locale
 
@@ -56,6 +58,8 @@ class CameraFragment : Fragment() {
 
     private var _binding: FragmentCameraBinding? = null
     private val binding get() = _binding!!
+
+    private val scanRepository: ScanRepository by inject()
 
     private var imageCapture: ImageCapture? = null
     private var cameraProvider: ProcessCameraProvider? = null
@@ -287,9 +291,11 @@ class CameraFragment : Fragment() {
      *  last-known state (frontier stays disabled; the existing Aqua model, if
      *  any, is untouched). */
     private fun syncModelCapabilities() {
+        // The Application is still needed here for appScope (an app-lifecycle
+        // CoroutineScope, not an injectable singleton).
         val app = requireActivity().application as PlantDiseasesApp
         viewLifecycleOwner.lifecycleScope.launch {
-            app.scanRepository.fetchCapabilities().onSuccess { caps ->
+            scanRepository.fetchCapabilities().onSuccess { caps ->
                 if (!isAdded) return@onSuccess
                 val frontier = caps.families.firstOrNull { it.id == "frontier" }?.available ?: false
                 ModelFamilyPrefs.setFrontierAvailable(requireContext(), frontier)
@@ -301,7 +307,7 @@ class CameraFragment : Fragment() {
             // Runs on the app scope so a tab switch mid-download doesn't cancel
             // it, and only transfers bytes when the sha actually changed.
             app.appScope.launch {
-                app.scanRepository.syncAquaModel(requireContext().applicationContext)
+                scanRepository.syncAquaModel(requireContext().applicationContext)
             }
         }
     }

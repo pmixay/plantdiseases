@@ -10,14 +10,16 @@ import com.bumptech.glide.Glide
 import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.bumptech.glide.load.resource.bitmap.CenterCrop
 import com.bumptech.glide.load.resource.bitmap.RoundedCorners
-import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.ScanEntity
+import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.TelemetryIds
 import kotlinx.coroutines.launch
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
 
 /**
  * Owns the detected-species card: the stored PlantNet best match, a localized
@@ -28,7 +30,9 @@ import kotlinx.coroutines.launch
 class SpeciesCardController(
     private val activity: AppCompatActivity,
     private val binding: ActivityResultBinding,
-) {
+) : KoinComponent {
+    private val scanRepository: ScanRepository by inject()
+
     fun bind(scan: ScanEntity) {
         // The card stays hidden when we have neither a scientific nor a common
         // name (PlantNet wasn't configured, or every candidate scored zero).
@@ -68,12 +72,11 @@ class SpeciesCardController(
     }
 
     private fun loadEnrichment(scientific: String) {
-        val repo = (activity.application as PlantDiseasesApp).scanRepository
         val isRu = LocaleHelper.isRussian(activity)
         val pseudoId = TelemetryIds.userPseudoId(activity)
 
         activity.lifecycleScope.launch {
-            repo.getSpeciesInfo(scientific, if (isRu) "ru" else "en").onSuccess { info ->
+            scanRepository.getSpeciesInfo(scientific, if (isRu) "ru" else "en").onSuccess { info ->
                 if (!info.available) return@onSuccess
                 info.extract?.takeIf { it.isNotBlank() }?.let {
                     binding.tvSpeciesBlurb.text = it
@@ -109,7 +112,7 @@ class SpeciesCardController(
             onClick = { item ->
                 if (item.scanId.isNotBlank() && pseudoId.isNotBlank()) {
                     activity.lifecycleScope.launch {
-                        repo.recordCommunityView(item.scanId, pseudoId)
+                        scanRepository.recordCommunityView(item.scanId, pseudoId)
                     }
                 }
                 CommunityOpinionSheet.show(
@@ -123,7 +126,7 @@ class SpeciesCardController(
             LinearLayoutManager(activity, LinearLayoutManager.HORIZONTAL, false)
         binding.rvSpeciesCommunity.adapter = adapter
         activity.lifecycleScope.launch {
-            repo.communityScansBySpecies(scientific, pseudoId).onSuccess { resp ->
+            scanRepository.communityScansBySpecies(scientific, pseudoId).onSuccess { resp ->
                 if (resp.items.isNotEmpty()) {
                     adapter.submit(resp.items)
                     binding.tvSpeciesCommunityLabel.text =
