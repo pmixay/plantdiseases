@@ -17,47 +17,54 @@ the ML, not the UI). Instead, modernize the guts and ship:
 > MetalRestrict is on a *different* track (full Compose migration — see the
 > `android-compose-migration` skill). This skill is plantdiseases-only and Compose-free.
 
-## Progress snapshot — PARTLY DONE on `main` (verify against code; don't redo finished work)
+## Progress snapshot — ✅ BOTH STEPS COMPLETE (verify against code before any new work)
 
-The build already wires Koin (koin-bom 4.0.0) + Ktor (ktor-bom 2.3.13) + the kotlinx
-serialization plugin. State as of this upgrade:
+Both modernization steps are finished and on green CI (`testDebugUnitTest` + `lintDebug` +
+R8 `assembleRelease`). The build wires Koin (koin-bom 4.0.0) + Ktor (ktor-bom 2.3.13) + the
+kotlinx serialization plugin.
 
-**Step 1 — Koin DI: ✅ graph wired, ⬜ call sites pending.**
-- `di/AppModule.kt` defines `appModule`, mirroring the former `by lazy` singletons 1:1
-  (`AppDatabase`, `PlantApiClient`, `ScanRepository`, `PlantRepository`, `CommunityUploader`).
-- `PlantDiseasesApp.onCreate` calls `startKoin{}`; the Application keeps its
-  `database/apiClient/scanRepository/...` accessors as `by inject()` — the **safety net**.
-- **Remaining:** migrate the **~54 `application as PlantDiseasesApp`** call sites to direct
-  injection (`by inject()` / constructor / `viewModel { }`), then delete the Application
-  accessors. `koin-androidx-workmanager` is intentionally NOT added yet (no Koin worker).
-- Details + the call-site procedure: [koin-di.md](references/koin-di.md).
+**Step 1 — Koin DI: ✅ DONE.**
+- `di/AppModule.kt` defines `appModule` (`AppDatabase`, `PlantApiClient`, `ScanRepository`,
+  `PlantRepository`, `CommunityUploader`); `PlantDiseasesApp.onCreate` calls `startKoin{}`.
+- All ~53 `application as PlantDiseasesApp` accessor call sites across 34 files migrated to
+  direct injection — Activities/Fragments via `org.koin.android.ext.android.inject`; plain
+  controllers/workers/receiver/push via `KoinComponent` + `org.koin.core.component.inject`.
+- The Application's repository accessors are deleted; only `communityUploader` remains
+  (private, used by `launchCommunityUpload`). `appScope`/`launchCommunityUpload`/the
+  opinion-scheduling helpers stay on the Application (not injectable). `koin-androidx-
+  workmanager` intentionally NOT added — workers are `KoinComponent`s, no Koin WorkerFactory.
 
-**Step 2 — Ktor + kotlinx.serialization: 🟡 scaffolded, analyze path migrated.**
-- `PlantApiClient` **lives at the END of `data/remote/ApiService.kt`** (≈ lines 377–425), NOT
-  a separate file. It builds **both** a Retrofit+Gson client **and** a Ktor `HttpClient` over
-  the **same OkHttp engine** (shared `RetryInterceptor`, **base-URL seam**,
-  `ContentNegotiation(Json)`, `expectSuccess = false`). Both transports coexist by design.
-- `/api/analyze` is **done**: `ScanRepository.analyzeImage` uses `apiClient.httpClient` (Ktor
-  multipart). **9 of 73 models** are `@Serializable` (the analyze path).
-- **Remaining: 31 Retrofit endpoints + 64 Gson-only models.** Full checklist with done/todo
-  status and the per-endpoint recipe: [endpoint-inventory.md](references/endpoint-inventory.md).
+**Step 2 — Ktor + kotlinx.serialization: ✅ DONE.**
+- `PlantApiClient` (at the END of `data/remote/ApiService.kt`) is now a **Ktor `HttpClient`**
+  over the OkHttp engine (shared `RetryInterceptor`, **base-URL seam**, `ContentNegotiation
+  (Json{ignoreUnknownKeys})`, `expectSuccess=false`). All 32 endpoints migrated; the Retrofit
+  `ApiService` interface + `converter-gson` removed. Gson the library STAYS (Room field JSON +
+  `ResponseCache`); the dual `@SerializedName` annotations were left in place (harmless, still
+  used by the Gson cache).
+- Notable custom serializers in `data/model/Models.kt`: `WateringDaysSerializer` (care-plan
+  int-or-string), `AnyMapSerializer`/`AnyMapListSerializer` (chat/progression `Map<String,Any?>`),
+  `GsonJsonObjectSerializer` (Aqua manifest `classes`). Streaming aqua/model download uses
+  `bodyAsChannel().toInputStream()`.
+- Full per-endpoint/model record: [endpoint-inventory.md](references/endpoint-inventory.md).
+
+> The `api/label/*` endpoints + `LabelingModels.kt` the older inventory listed were removed
+> upstream (commit 16da03c) and are not part of this migration.
 
 Stack: Kotlin **2.1.21**, AGP 8.13.2, compileSdk 35, minSdk 26, `build.gradle.kts`, single
 `:app`, signed releases, EN/RU (`values/` + `values-ru/`), `values-night` dark theme.
 
 ## Remaining-work order
 
-1. **Finish Ktor migration** endpoint-by-endpoint ([endpoint-inventory.md](references/endpoint-inventory.md)),
-   each with a test ([testing.md](references/testing.md)). Migrate a model's `@Serializable`
-   the first time an endpoint that returns it moves to Ktor. Keep Retrofit+Gson until the
-   **last** endpoint is migrated, then delete Retrofit/Gson + the dual `@SerializedName`.
-2. **Finish Koin** call-site migration ([koin-di.md](references/koin-di.md)) — can proceed in
-   parallel; it's mechanical and independent of networking.
+Nothing required — both steps are complete. Optional future cleanup only:
+- Strip the now-redundant dual `@SerializedName` from models the `ResponseCache` does NOT
+  cache (kept for now; removing them risks subtle Gson cache field-name changes — see
+  [ktor-migration.md](references/ktor-migration.md)).
+- Add a Koin `checkModules()` graph test if `koin-test` is added to the build.
 
-| Step | Reference | Status | Remaining effort |
-|---|---|---|---|
-| Koin DI | [koin-di.md](references/koin-di.md) | ✅ wired / ⬜ ~54 call sites | ~half a day, mechanical |
-| Ktor + Serialization | [ktor-migration.md](references/ktor-migration.md) · [endpoint-inventory.md](references/endpoint-inventory.md) | 🟡 1/32 endpoints, 9/73 models | ~a day w/ tests |
+| Step | Reference | Status |
+|---|---|---|
+| Koin DI | [koin-di.md](references/koin-di.md) | ✅ done (graph + all call sites + accessors removed) |
+| Ktor + Serialization | [ktor-migration.md](references/ktor-migration.md) · [endpoint-inventory.md](references/endpoint-inventory.md) | ✅ done (32/32 endpoints; Retrofit removed) |
 
 ## Hard constraints — do not violate
 
