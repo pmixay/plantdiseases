@@ -7,8 +7,17 @@ now; this stays an internal/beta build. Companions: `DATASET_LABELING_PLAN.md`
 
 ## Where we are
 
-Last shipped: **v2.6.5 `gamma`** (frozen DINOv2 ViT-S/14 + LoRA + MLP head,
-supplement v3). **Latest run: v2.6.6** (supplement v4) — ship gate passed
+> **Version scheme.** The **public/production** version is the one the live API
+> reports — currently **2.6.0** (`GET /api/health` → `version: 2.6.0`), the
+> deployed `gamma` bundle. The `v2.6.x` labels below are **internal
+> training-run identifiers** for successive dataset supplements, not separate
+> public releases. "Shipped" = what production serves = **2.6.0**.
+
+Production (public) version: **2.6.0 `gamma`** (the deployed bundle, supplement v3).
+Internal run identifiers below track successive dataset supplements.
+
+Last training run shipped to the bundle: **v2.6.5 `gamma`** (frozen DINOv2
+ViT-S/14 + LoRA + MLP head, supplement v3). **Latest run: v2.6.6** (supplement v4) — ship gate passed
 (`val_realworld` n=2150, disease macro-F1 **0.861** vs v2.6.5's 0.865, flat
 within noise) and **INT8 now ships** (it beat FP32 this run: +0.0057, n.s.) →
 **130 MB bundle / 22.5 MB classifier**, reclaiming the 4× size win v2.6.5 lost.

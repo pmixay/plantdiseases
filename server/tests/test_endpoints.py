@@ -92,6 +92,61 @@ def test_analyze_int8_flag_surfaced(client):
     assert "int8_artifact" in body
 
 
+def test_metrics_model_absent_is_graceful(client):
+    """`/api/metrics/model` must degrade gracefully when the bundle ships no
+    `model_card.json` (the default on a fresh checkout / in tests) — returning
+    a 200 with `available: false`, never a 500.
+    """
+    r = client.get("/api/metrics/model")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["available"] is False
+    assert "reason" in body
+
+
+def test_metrics_model_surfaces_per_class_ci(client, tmp_path, monkeypatch):
+    """When `model_card.json` is present, per-class precision/recall point
+    estimates and 95% CIs are surfaced from the notebook §6 keys."""
+    import json as _json
+
+    import main as server_main
+
+    card = {
+        "version": "2.6.0",
+        "per_class_recall_ci_realworld": {
+            "classes": {
+                "powdery_mildew": {"point": 0.91, "ci_low": 0.86, "ci_high": 0.95},
+                "viral_mosaic": {"point": 0.854, "ci_low": 0.80, "ci_high": 0.90},
+            }
+        },
+        "per_class_precision_ci_realworld": {
+            "classes": {
+                "powdery_mildew": {
+                    "point": 0.939,
+                    "ci_low": 0.90,
+                    "ci_high": 0.97,
+                    "n_predicted": 120,
+                },
+            }
+        },
+    }
+    (tmp_path / "model_card.json").write_text(_json.dumps(card), encoding="utf-8")
+    monkeypatch.setattr(server_main, "MODELS_DIR", tmp_path)
+
+    r = client.get("/api/metrics/model")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["available"] is True
+    assert body["eval_set"] == "val_realworld"
+    pm = body["per_class"]["powdery_mildew"]
+    assert pm["recall"] == {"point": 0.91, "ci_low": 0.86, "ci_high": 0.95}
+    assert pm["precision"]["point"] == 0.939
+    assert pm["precision"]["ci_high"] == 0.97
+    assert pm["n_predicted"] == 120
+    # A class with recall but no precision entry still resolves (precision None).
+    assert body["per_class"]["viral_mosaic"]["precision"] is None
+
+
 def test_analyze_inference_timeout_504(client, png_bytes):
     """A pipeline that takes longer than `INFERENCE_TIMEOUT` must yield
     a 504 (asyncio.wait_for path). We patch the live `pipeline.analyze`

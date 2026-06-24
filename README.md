@@ -254,3 +254,8 @@ plantdiseases/
 ## License
 
 [Unlicense](https://unlicense.org) — public domain, free for any use.
+
+The Unlicense covers first-party code. Third-party model weights (DINOv2,
+Ultralytics YOLOv8), datasets (PlantVillage, PlantDoc, iNaturalist, COCO,
+Open Images), and runtime libraries remain under their own licenses — see
+[`NOTICE`](NOTICE) and [`THIRD_PARTY.md`](THIRD_PARTY.md).

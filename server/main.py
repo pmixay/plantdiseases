@@ -927,6 +927,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             "/api/classes",
             "/api/metrics",
             "/api/metrics/prometheus",
+            "/api/metrics/model",
         ):
             return await call_next(request)
         # Static image assets + the tiny aqua manifest are also free.
@@ -1601,6 +1602,56 @@ async def metrics():
         "ai_doctor": chat_metrics_snapshot(),
         "feedback": feedback_counts(),
         "community": community_stats_snapshot(),
+    }
+
+
+@api_router.get("/metrics/model")
+async def metrics_model():
+    """Per-class model quality: precision/recall point estimates + 95% CI.
+
+    Sourced from the shipped ``model_card.json`` (notebook §6 keys
+    ``per_class_precision_ci_realworld`` / ``per_class_recall_ci_realworld``,
+    both measured on ``val_realworld``). Like the optional integrations, this
+    degrades gracefully: a bundle without a model card (tests, or a minimal
+    deploy) yields ``{"available": false}`` rather than an error, so dashboards
+    and the jury demo never see a 500.
+    """
+    if pipeline is None:
+        raise HTTPException(status_code=503, detail="Pipeline not ready")
+    try:
+        with open(MODELS_DIR / "model_card.json", encoding="utf-8") as fh:
+            card = json.load(fh)
+    except (OSError, ValueError):
+        return {"available": False, "reason": "no model_card.json in bundle"}
+
+    recall = (card.get("per_class_recall_ci_realworld") or {}).get("classes") or {}
+    precision = (card.get("per_class_precision_ci_realworld") or {}).get("classes") or {}
+
+    def _ci(d: object) -> dict | None:
+        if not isinstance(d, dict):
+            return None
+        return {
+            "point": d.get("point"),
+            "ci_low": d.get("ci_low"),
+            "ci_high": d.get("ci_high"),
+        }
+
+    per_class: dict[str, dict] = {}
+    for cls in sorted(set(recall) | set(precision)):
+        r = recall.get(cls)
+        p = precision.get(cls)
+        per_class[cls] = {
+            "precision": _ci(p),
+            "recall": _ci(r),
+            "n_predicted": p.get("n_predicted") if isinstance(p, dict) else None,
+        }
+
+    return {
+        "available": True,
+        "version": APP_VERSION,
+        "eval_set": "val_realworld",
+        "ci": "95% bootstrap",
+        "per_class": per_class,
     }
 
 
