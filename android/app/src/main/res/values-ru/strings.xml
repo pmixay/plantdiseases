@@ -292,7 +292,7 @@
     <string name="warning_disease_suspected_title">Замечена возможная проблема</string>
     <string name="warning_disease_suspected">Растение выглядит в основном здоровым, но модель также заметила признаки: %1$s. Понаблюдайте и переснимите, если симптомы усилятся.</string>
     <string name="warning_offline_scan_title">Офлайн-скан</string>
-    <string name="warning_offline_scan">Этот результат рассчитан на вашем устройстве без сервера. Он может быть менее точным, чем полный серверный анализ — пересканируйте онлайн для более подробного диагноза.</string>
+    <string name="warning_offline_scan">Рассчитано на телефоне, офлайн — без сервера. Пересканируйте онлайн для более точного диагноза.</string>
 
     <!-- Empty states -->
     <string name="first_scan_cta">Сделать первый скан</string>
@@ -751,26 +751,6 @@
     <string name="model_family_aqua_not_installed">Офлайн-модель ещё не установлена — пока используется облачная.</string>
     <string name="model_family_cd">Выбрать модель диагностики</string>
 
-    <!-- Admin data-labeling tool -->
-    <string name="label_admin_entry">Разметка данных (админ)</string>
-    <string name="label_title">Разметка данных</string>
-    <string name="label_password_hint">Пароль администратора</string>
-    <string name="label_unavailable">Разметка недоступна на этом сервере.</string>
-    <string name="label_login_failed">Неверный пароль или ошибка входа.</string>
-    <string name="label_clue_hint">Нажмите: что оставить / отбросить</string>
-    <string name="label_any_class">Любой (случайно)</string>
-    <string name="label_yes">Да</string>
-    <string name="label_no">Нет</string>
-    <string name="label_not_sure">Не уверен</string>
-    <string name="label_stats">Статистика</string>
-    <string name="label_export">Экспорт в Kaggle</string>
-    <string name="label_pass">Рекомендуется принять</string>
-    <string name="label_drop">Отбросить</string>
-    <string name="label_similar">Похожие классы</string>
-    <string name="label_progress_fmt">%1$s: %2$d / %3$d проверено</string>
-    <string name="label_empty">Больше нет карточек для этого класса.</string>
-    <string name="label_model_hint">Модель: %1$s %2$d%%, вероятно: %3$s</string>
-    <string name="label_error">Что-то пошло не так.</string>
 
     <!-- Главная -->
     <string name="tab_home">Главная</string>
@@ -892,11 +872,4 @@
     <string name="tip_pests_body">Держите новые растения на двухнедельном карантине, осматривайте нижнюю сторону листьев при поливе и протирайте пыль. Липкий налёт, тонкая паутина или белый пух — ранние признаки: отсканируйте растение и изолируйте его до обработки.</string>
     <string name="tip_community_title">Сообщество и ваши данные</string>
     <string name="tip_community_body">Делитесь сканами, чтобы видеть, что распространяется рядом, и получать вторые мнения от других цветоводов. Фото анонимизируются (метаданные удаляются), а всё опубликованное можно удалить в Профиле в любой момент.</string>
-    <string name="label_source_all">Все</string>
-    <string name="label_source_feedback">Отзывы</string>
-    <string name="label_source_scans">Сканы</string>
-    <string name="label_audit_badge">Аудит</string>
-    <string name="label_feedback_ctx">Пользователь: %1$s — модель: %2$s</string>
-    <string name="label_stats_sources">По источникам</string>
-    <string name="label_stats_classes">По классам</string>
 </resources>

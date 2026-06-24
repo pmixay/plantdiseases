@@ -29,7 +29,6 @@ import com.plantdiseases.app.ui.camera.WaterCalculatorActivity
 import com.plantdiseases.app.ui.community.NearbyScansActivity
 import com.plantdiseases.app.ui.guide.GuideDetailActivity
 import com.plantdiseases.app.ui.species.SpeciesDetailActivity
-import com.plantdiseases.app.ui.stats.StatsTipsActivity
 import com.plantdiseases.app.ui.symptom.SymptomCheckerActivity
 import com.plantdiseases.app.util.DiseaseCatalog
 import com.plantdiseases.app.util.DiseaseLabels
@@ -91,21 +90,12 @@ class HomeFragment : Fragment() {
             startActivity(Intent(requireContext(), com.plantdiseases.app.ui.identify.SpeciesIdentifyActivity::class.java))
         }
 
-        binding.tileLight.setOnClickListener {
-            startActivity(Intent(requireContext(), LightMeterActivity::class.java))
-        }
-        binding.tileWater.setOnClickListener {
-            startActivity(Intent(requireContext(), WaterCalculatorActivity::class.java))
-        }
+        binding.tileTools.setOnClickListener { showToolsSheet() }
         binding.tileSymptom.setOnClickListener {
             startActivity(Intent(requireContext(), SymptomCheckerActivity::class.java))
         }
         binding.tileGuide.setOnClickListener { findNavController().navigate(R.id.guideFragment) }
         binding.tvGuideAll.setOnClickListener { findNavController().navigate(R.id.guideFragment) }
-
-        binding.cardStats.setOnClickListener {
-            startActivity(Intent(requireContext(), StatsTipsActivity::class.java))
-        }
 
         binding.rvSpecies.layoutManager =
             LinearLayoutManager(requireContext(), LinearLayoutManager.HORIZONTAL, false)
@@ -164,7 +154,6 @@ class HomeFragment : Fragment() {
 
     override fun onResume() {
         super.onResume()
-        loadStatsSummary()
         loadTrending()
     }
 
@@ -186,6 +175,25 @@ class HomeFragment : Fragment() {
         requireActivity()
             .findViewById<BottomNavigationView>(R.id.bottom_navigation)
             ?.selectedItemId = R.id.cameraFragment
+    }
+
+    /** Group the light meter + water calculator behind a single "Tools" entry
+     *  so the home tool row stays uncluttered. The two utilities (logic in
+     *  LightMeterActivity / WaterCalculatorActivity, both unit-tested) are
+     *  unchanged — only the entry point is consolidated. */
+    private fun showToolsSheet() {
+        val sheet = com.google.android.material.bottomsheet.BottomSheetDialog(requireContext())
+        val view = layoutInflater.inflate(R.layout.sheet_tools, null)
+        view.findViewById<View>(R.id.row_light).setOnClickListener {
+            startActivity(Intent(requireContext(), LightMeterActivity::class.java))
+            sheet.dismiss()
+        }
+        view.findViewById<View>(R.id.row_water).setOnClickListener {
+            startActivity(Intent(requireContext(), WaterCalculatorActivity::class.java))
+            sheet.dismiss()
+        }
+        sheet.setContentView(view)
+        sheet.show()
     }
 
     /** Add the "scans near you" community action to the shared toolbar, scoped
@@ -237,21 +245,6 @@ class HomeFragment : Fragment() {
             )
         }
         guideAdapter.submit(items)
-    }
-
-    // ── Stats teaser ────────────────────────────────────────────────
-    private fun loadStatsSummary() {
-        val app = requireActivity().application as PlantDiseasesApp
-        viewLifecycleOwner.lifecycleScope.launch {
-            val scans = runCatching { app.scanRepository.getAllScans() }
-                .getOrDefault(emptyList())
-            val plants = runCatching { app.plantRepository.getPlants() }
-                .getOrDefault(emptyList())
-            val real = scans.filter { !it.isNotAPlant }
-            val healthy = real.count { it.isHealthy }
-            _binding?.tvStatsSummary?.text =
-                getString(R.string.home_stats_summary, real.size, healthy, plants.size)
-        }
     }
 
     // ── Trending carousels ──────────────────────────────────────────

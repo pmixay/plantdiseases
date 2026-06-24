@@ -1,7 +1,7 @@
 /* ============================================================
    PlantDiseases — native, interactive metric charts
    Hand-built SVG / CSS visualisations (no image assets, no libs).
-   Data: PlantVision 2.6.5 gamma (dataset v3) · evaluation on val_realworld.
+   Data: PlantVision 2.6.7 gamma (dataset v3) · evaluation on val_realworld.
    ============================================================ */
 (function () {
   'use strict';
@@ -281,7 +281,7 @@
   function renderConformal(root) {
     root.innerHTML = '';
     var box = el('div', 'cf-box');
-    // radial gauge — 96.6% coverage
+    // radial gauge — conformal coverage (matches model_card.json: 0.981)
     var pct = 98.1;
     var gauge = el('div', 'cf-gauge');
     gauge.innerHTML =

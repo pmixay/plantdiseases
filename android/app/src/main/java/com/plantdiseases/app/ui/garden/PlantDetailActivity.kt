@@ -69,6 +69,11 @@ class PlantDetailActivity : AppCompatActivity() {
     private var plantId: Long = -1L
     private var currentPlant: PlantEntity? = null
 
+    // UI state restored after rotation / process-death (the plant itself
+    // reloads from the repository by plantId).
+    private var restoredTabIndex = 0
+    private var restoredScrollY = 0
+
     private val plantRepository: PlantRepository
         get() = (application as PlantDiseasesApp).plantRepository
 
@@ -198,8 +203,28 @@ class PlantDetailActivity : AppCompatActivity() {
             finish()
             return
         }
+        restoredTabIndex = savedInstanceState?.getInt(KEY_TAB, 0) ?: 0
+        restoredScrollY = savedInstanceState?.getInt(KEY_SCROLL, 0) ?: 0
         buildLayout()
+        // Re-select the previously-active section tab (Timeline/Photos/Journal).
+        if (restoredTabIndex in 1 until tabLayout.tabCount) {
+            tabLayout.getTabAt(restoredTabIndex)?.select()
+        }
         loadPlant()
+        // Best-effort scroll restore once the content has been laid out.
+        if (restoredScrollY > 0) {
+            binding.detailScroll.post { binding.detailScroll.scrollTo(0, restoredScrollY) }
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        if (::tabLayout.isInitialized) {
+            outState.putInt(KEY_TAB, tabLayout.selectedTabPosition.coerceAtLeast(0))
+        }
+        if (::binding.isInitialized) {
+            outState.putInt(KEY_SCROLL, binding.detailScroll.scrollY)
+        }
     }
 
     override fun onRestart() {
@@ -2294,5 +2319,8 @@ class PlantDetailActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_PLANT_ID = "extra_plant_id"
+
+        private const val KEY_TAB = "plant_detail_tab"
+        private const val KEY_SCROLL = "plant_detail_scroll"
     }
 }

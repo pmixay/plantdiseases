@@ -258,5 +258,10 @@ plantdiseases/
 ## Лицензия
 
 [Unlicense](https://unlicense.org) — общественное достояние, свободно для любого использования.
+
+Unlicense распространяется на собственный код проекта. Сторонние веса моделей
+(DINOv2, Ultralytics YOLOv8), наборы данных (PlantVillage, PlantDoc,
+iNaturalist, COCO, Open Images) и runtime-библиотеки остаются под своими
+лицензиями — см. [`NOTICE`](NOTICE) и [`THIRD_PARTY.md`](THIRD_PARTY.md).
 </content>
 </invoke>

@@ -4,8 +4,6 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Typeface
-import android.text.InputType
-import android.widget.EditText
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
@@ -33,16 +31,12 @@ import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.GuideDataProvider
 import com.plantdiseases.app.data.model.CommunityOpinion
-import com.plantdiseases.app.data.repository.LabelingRepository
-import com.plantdiseases.app.data.repository.LabelingUnavailableException
 import com.plantdiseases.app.databinding.FragmentProfileBinding
-import com.plantdiseases.app.ui.labeling.LabelingActivity
 import com.plantdiseases.app.ui.result.CommunityOpinionSheet
 import com.plantdiseases.app.util.AutosavePrefs
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.TelemetryIds
 import com.plantdiseases.app.util.ThemeHelper
-import com.plantdiseases.app.util.expandTouchTarget
 import kotlinx.coroutines.launch
 
 class ProfileFragment : Fragment() {
@@ -90,7 +84,6 @@ class ProfileFragment : Fragment() {
 
         applyStatusBarTopInset(binding.root)
         binding.tvAppVersion.text = "v${BuildConfig.VERSION_NAME}"
-        setupSecretLabelingEntry()
 
         // "Clear all history" now lives on the Gallery tab's top-app-bar
         // basket, next to the scans it actually wipes.
@@ -105,25 +98,24 @@ class ProfileFragment : Fragment() {
             findNavController().navigate(R.id.cameraFragment)
         }
 
+        // Full stats & advice (relocated from Home; Home keeps a teaser).
+        binding.btnStatsAdvice.setOnClickListener {
+            startActivity(
+                Intent(requireContext(), com.plantdiseases.app.ui.stats.StatsTipsActivity::class.java)
+            )
+        }
+
         binding.langEn.setOnClickListener { setLanguage("en") }
         binding.langRu.setOnClickListener { setLanguage("ru") }
         highlightActiveLanguage()
-
-        binding.btnRefreshHealth.setOnClickListener {
-            checkServerHealth()
-        }
-        // Accessibility: grow the 40dp refresh icon's hit area to 48dp.
-        binding.btnRefreshHealth.expandTouchTarget()
 
         setupThemeChips()
         setupAutosaveToggle()
         setupCommunityControls()
         setupMyOpinionsFold()
-        // loadStats() + checkServerHealth() run in onResume(), which always
-        // fires immediately after this on first show and again on every return.
-        // Calling them here too issued a duplicate getStats() DB read and a
-        // duplicate /api/health request (with a visible status flicker) on
-        // every fragment creation.
+        // loadStats() runs in onResume(), which fires immediately after this on
+        // first show and again on every return — calling it here too would issue
+        // a duplicate getStats() DB read on every fragment creation.
     }
 
     private fun setupMyOpinionsFold() {
@@ -404,63 +396,6 @@ class ProfileFragment : Fragment() {
         )
     }
 
-    /** Admin data-labeling entry: password prompt → server login → screen.
-     *  The token lives only in memory (passed via intent), never persisted. */
-    /** Hidden admin entry (the visible labeling button was removed for the
-     *  Play release): 7 quick taps on the version row — the Android
-     *  developer-options pattern — open the password gate. Taps more than
-     *  2s apart reset the counter, so accidental touches never trigger it,
-     *  and there is deliberately NO toast countdown: the entry should stay
-     *  invisible to anyone who doesn't already know it exists. */
-    private var secretTapCount = 0
-    private var secretLastTapMs = 0L
-
-    private fun setupSecretLabelingEntry() {
-        binding.tvAppVersion.setOnClickListener {
-            val now = System.currentTimeMillis()
-            secretTapCount = if (now - secretLastTapMs <= 2_000) secretTapCount + 1 else 1
-            secretLastTapMs = now
-            if (secretTapCount >= 7) {
-                secretTapCount = 0
-                promptLabelingLogin()
-            }
-        }
-    }
-
-    private fun promptLabelingLogin() {
-        val ctx = requireContext()
-        val input = EditText(ctx).apply {
-            hint = getString(R.string.label_password_hint)
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-        }
-        MaterialAlertDialogBuilder(ctx)
-            .setTitle(R.string.label_admin_entry)
-            .setView(input)
-            .setPositiveButton(android.R.string.ok) { _, _ ->
-                val pw = input.text?.toString().orEmpty()
-                if (pw.isBlank()) return@setPositiveButton
-                val app = requireActivity().application as PlantDiseasesApp
-                val repo = LabelingRepository(app.apiClient)
-                lifecycleScope.launch {
-                    repo.login(pw).onSuccess { token ->
-                        startActivity(
-                            Intent(requireContext(), LabelingActivity::class.java)
-                                .putExtra(LabelingActivity.EXTRA_TOKEN, token)
-                        )
-                    }.onFailure {
-                        val msg = if (it is LabelingUnavailableException) {
-                            getString(R.string.label_unavailable)
-                        } else {
-                            getString(R.string.label_login_failed)
-                        }
-                        Toast.makeText(requireContext(), msg, Toast.LENGTH_LONG).show()
-                    }
-                }
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
-    }
-
     private fun setLanguage(lang: String) {
         if (LocaleHelper.getSavedLanguage(requireContext()) == lang) return
         // Locale is owned entirely by LocaleHelper: every activity's
@@ -604,47 +539,10 @@ class ProfileFragment : Fragment() {
         }
     }
 
-    private fun checkServerHealth() {
-        val app = requireActivity().application as PlantDiseasesApp
-
-        binding.tvServerStatus.text = getString(R.string.server_checking)
-        setStatusIndicatorColor(R.color.on_surface_secondary)
-        val dash = getString(R.string.diagnostics_value_dash)
-        binding.tvDiagVersion.text = dash
-        binding.tvDiagClasses.text = dash
-
-        lifecycleScope.launch {
-            val result = app.scanRepository.checkServerHealth()
-            if (_binding == null) return@launch
-
-            result.onSuccess { health ->
-                binding.tvServerStatus.text = getString(R.string.server_online)
-                setStatusIndicatorColor(R.color.healthy_green)
-                binding.tvDiagVersion.text = health.version.ifBlank { dash }
-                binding.tvDiagClasses.text = if (health.numClasses > 0) {
-                    health.numClasses.toString()
-                } else {
-                    dash
-                }
-            }.onFailure {
-                binding.tvServerStatus.text = getString(R.string.server_offline)
-                setStatusIndicatorColor(R.color.disease_red)
-                binding.tvDiagVersion.text = dash
-                binding.tvDiagClasses.text = dash
-            }
-        }
-    }
-
-    private fun setStatusIndicatorColor(colorRes: Int) {
-        val drawable = binding.serverStatusIndicator.background as? GradientDrawable
-        drawable?.setColor(ContextCompat.getColor(requireContext(), colorRes))
-    }
-
     override fun onResume() {
         super.onResume()
         loadStats()
         loadMyOpinions()
-        checkServerHealth()
     }
 
     override fun onDestroyView() {

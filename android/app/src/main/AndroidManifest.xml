@@ -132,11 +132,6 @@
             android:exported="false"
             android:screenOrientation="portrait" />
 
-        <activity
-            android:name=".ui.labeling.LabelingActivity"
-            android:exported="false"
-            android:screenOrientation="portrait" />
-
         <!-- Re-declare the cropper activity (merged with the library's
              entry) purely to give it an action-bar theme styled with the
              app gradient. Without an action-bar theme its Done/cancel

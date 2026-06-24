@@ -22,3 +22,13 @@ ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 OTHER DEALINGS IN THE SOFTWARE.
 
 For more information, please refer to <https://unlicense.org>
+
+---
+
+NOTE ON THIRD-PARTY COMPONENTS
+
+The Unlicense above covers first-party source code only. Third-party model
+weights (e.g. DINOv2, Ultralytics YOLOv8), training/evaluation datasets
+(PlantVillage, PlantDoc, iNaturalist, COCO, Open Images), and runtime
+libraries remain under their own licenses, which are not superseded by this
+file. See NOTICE and THIRD_PARTY.md for the full inventory and terms.

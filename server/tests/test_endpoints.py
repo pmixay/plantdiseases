@@ -15,32 +15,30 @@ def test_health_contract(client):
     assert body["uptime_seconds"] >= 0
 
 
-def test_version_contract(client):
-    r = client.get("/api/version")
-    assert r.status_code == 200
-    body = r.json()
-    assert body["detector_arch"] == "YOLOv8n (single-class plant_leaf, indoor-trained)"
-    assert isinstance(body["classifier_arch"], str) and body["classifier_arch"]
-    assert body["classifier_name"] == "plantvision"
-    assert body["stages"] == 2
-    assert body["focus"] == "houseplants"
-    # Capacity tier (aqua/gamma/frontier) declared by the bundle; defaults
-    # to "gamma" for bundles trained before the family field existed.
-    assert body["model_family"] in {"aqua", "gamma", "frontier"}
-
-
-def test_classes_contract(client):
+def test_capabilities_model_contract(client):
+    # /capabilities is the consolidated metadata endpoint: family availability
+    # plus a `model` block and the bilingual `classes` list (folding in what
+    # the separate /version and /classes endpoints used to return).
     from classifier import DEFAULT_CLASS_NAMES
 
-    r = client.get("/api/classes")
+    r = client.get("/api/capabilities")
     assert r.status_code == 200
     body = r.json()
-    assert body["count"] == len(DEFAULT_CLASS_NAMES)
+    assert body["version"]
+    model = body["model"]
+    assert model is not None
+    assert model["detector_arch"] == "YOLOv8n (single-class plant_leaf, indoor-trained)"
+    assert isinstance(model["classifier_arch"], str) and model["classifier_arch"]
+    assert model["classifier_name"] == "plantvision"
+    assert model["stages"] == 2
+    assert model["focus"] == "houseplants"
+    # Capacity tier (aqua/gamma/frontier) declared by the bundle; defaults
+    # to "gamma" for bundles trained before the family field existed.
+    assert model["model_family"] in {"aqua", "gamma", "frontier"}
+    # classes carried inline (the old /classes contract)
     assert len(body["classes"]) == len(DEFAULT_CLASS_NAMES)
-
     first = body["classes"][0]
     assert set(first.keys()) >= {"class", "name_en", "name_ru", "is_healthy"}
-    # "healthy" class must be present and flagged.
     healthy = [c for c in body["classes"] if c["class"] == "healthy"]
     assert len(healthy) == 1
     assert healthy[0]["is_healthy"] is True
@@ -77,19 +75,18 @@ def test_metrics_prometheus_format(client):
     assert "plantdiseases_build_info" in text
 
 
-def test_analyze_int8_flag_surfaced(client):
-    """`/api/version` must expose `int8_shipped` so operators can see
-    that the deployed `classifier_int8.onnx` is genuine INT8 (true) or
-    the FP32 ONNX renamed (false). The flag is read from
-    `models/model_card.json` at request time; it is OK for it to be
-    absent (-> false) on a fresh checkout.
+def test_capabilities_int8_flag_surfaced(client):
+    """`/api/capabilities` `model.int8_shipped` lets operators see whether the
+    deployed `classifier_int8.onnx` is genuine INT8 (true) or the FP32 ONNX
+    renamed (false). Read from `models/model_card.json`; absent -> false on a
+    fresh checkout.
     """
-    r = client.get("/api/version")
+    r = client.get("/api/capabilities")
     assert r.status_code == 200
-    body = r.json()
-    assert "int8_shipped" in body
-    assert isinstance(body["int8_shipped"], bool)
-    assert "int8_artifact" in body
+    model = r.json()["model"]
+    assert "int8_shipped" in model
+    assert isinstance(model["int8_shipped"], bool)
+    assert "int8_artifact" in model
 
 
 def test_analyze_inference_timeout_504(client, png_bytes):

@@ -923,8 +923,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         if path in (
             "/api/health",
-            "/api/version",
-            "/api/classes",
+            "/api/capabilities",
             "/api/metrics",
             "/api/metrics/prometheus",
         ):
@@ -1437,53 +1436,6 @@ async def health_check():
     }
 
 
-@api_router.get("/version")
-async def version():
-    """Server version and model architecture."""
-    if pipeline is None:
-        raise HTTPException(status_code=503, detail="Pipeline not ready")
-    # Read the int8 ship flag from model_card.json so operators can see at
-    # a glance whether the deployed classifier_int8.onnx is genuine INT8
-    # or the FP32 ONNX renamed (see MODEL_CARD.md, "Known caveats"). We
-    # default conservatively to false if the file is missing or malformed
-    # so that callers can never accidentally believe INT8 shipped.
-    int8_shipped = False
-    int8_artifact: str | None = None
-    try:
-        with open(MODELS_DIR / "model_card.json", encoding="utf-8") as fh:
-            card = json.load(fh)
-        int8_section = card.get("int8") or {}
-        int8_shipped = bool(int8_section.get("shipped", False))
-        artifact = int8_section.get("shipped_artifact")
-        if isinstance(artifact, str):
-            int8_artifact = artifact
-    except (OSError, ValueError):
-        pass
-    return {
-        "version": APP_VERSION,
-        "classifier_name": "plantvision",
-        # Capacity tier the loaded bundle declares (classes.json ->
-        # model_family): aqua (light/on-device) | gamma (current medium) |
-        # frontier (future high-capacity). Defaults to "gamma" for bundles
-        # trained before the family field existed.
-        "model_family": pipeline.classifier.model_family,
-        "detector_arch": "YOLOv8n (single-class plant_leaf, indoor-trained)",
-        # Report the architecture the loaded model actually declares
-        # (classes.json -> architecture, surfaced as classifier.architecture)
-        # rather than a hardcoded backbone name, so this stays correct
-        # across model swaps (the MobileNetV3 student and the frozen
-        # DINOv2 ViT-S/14 + head both flow through the same ONNX path).
-        "classifier_arch": (
-            f"PlantVision {pipeline.classifier.architecture} @ "
-            f"{pipeline.classifier.img_size} px / {pipeline.classifier.backend} backend"
-        ),
-        "stages": 2,
-        "focus": "houseplants",
-        "int8_shipped": int8_shipped,
-        "int8_artifact": int8_artifact,
-    }
-
-
 # The two physiological-stress classes whose care advice genuinely
 # diverges — under-watering (``leaf_scorch_underwatering``) says "water me"
 # / fix humidity & salts, nutrient deficiency says "feed me". When the
@@ -1531,23 +1483,6 @@ def _attach_dual_care(prediction_set: dict) -> None:
     ]
 
 
-@api_router.get("/classes")
-async def classes():
-    """List of known disease classes with bilingual names."""
-    if pipeline is None:
-        raise HTTPException(status_code=503, detail="Pipeline not ready")
-    items = []
-    for name in pipeline.classifier.CLASS_NAMES:
-        info = DISEASES_DATABASE.get(name, {})
-        items.append({
-            "class": name,
-            "name_en": info.get("name_en", name.replace("_", " ").title()),
-            "name_ru": info.get("name_ru", name),
-            "is_healthy": bool(info.get("is_healthy", False)),
-        })
-    return {"count": len(items), "classes": items}
-
-
 @api_router.get("/capabilities")
 async def capabilities():
     """Model-family availability for the scan-screen picker.
@@ -1583,10 +1518,55 @@ async def capabilities():
             ),
         },
     ]
+    # Consolidated model/version metadata (formerly /version and /classes).
+    # The int8 ship flag tells operators whether classifier_int8.onnx is genuine
+    # INT8 or the FP32 ONNX renamed; defaults to false when the card is missing
+    # or malformed.
+    int8_shipped = False
+    int8_artifact: str | None = None
+    try:
+        with open(MODELS_DIR / "model_card.json", encoding="utf-8") as fh:
+            _int8 = (json.load(fh).get("int8") or {})
+        int8_shipped = bool(_int8.get("shipped", False))
+        _artifact = _int8.get("shipped_artifact")
+        if isinstance(_artifact, str):
+            int8_artifact = _artifact
+    except (OSError, ValueError):
+        pass
+
+    model: dict | None = None
+    classes_list: list[dict] = []
+    if base_ready:
+        clf = pipeline.classifier
+        model = {
+            "classifier_name": "plantvision",
+            "model_family": clf.model_family,
+            "detector_arch": "YOLOv8n (single-class plant_leaf, indoor-trained)",
+            "classifier_arch": (
+                f"PlantVision {clf.architecture} @ "
+                f"{clf.img_size} px / {clf.backend} backend"
+            ),
+            "stages": 2,
+            "focus": "houseplants",
+            "int8_shipped": int8_shipped,
+            "int8_artifact": int8_artifact,
+        }
+        for name in clf.CLASS_NAMES:
+            info = DISEASES_DATABASE.get(name, {})
+            classes_list.append({
+                "class": name,
+                "name_en": info.get("name_en", name.replace("_", " ").title()),
+                "name_ru": info.get("name_ru", name),
+                "is_healthy": bool(info.get("is_healthy", False)),
+            })
+
     return {
         "default": DEFAULT_FAMILY,
         "families": families,
+        "version": APP_VERSION,
         "server_version": APP_VERSION,
+        "model": model,
+        "classes": classes_list,
     }
 
 
