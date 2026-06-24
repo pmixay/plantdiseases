@@ -48,7 +48,7 @@ ML-конвейера и живых графиков с метриками.
 │                      │ ──────► │                                  │
 │  • Съёмка CameraX    │         │   ┌──────────────────────────┐   │
 │  • История (Room)    │         │   │ Этап 1 — детектор листа  │   │
-│  • Retrofit + OkHttp │  JSON   │   │ YOLOv8n один класс        │   │
+│  • Ktor + OkHttp     │  JSON   │   │ YOLOv8n один класс        │   │
 │  • UI на Material 3  │ ◄────── │   └──────────┬───────────────┘   │
 │  • Строки EN / RU    │         │              │                   │
 │  • Воркер напоминаний│         │   ┌──────────▼───────────────┐   │
@@ -223,7 +223,7 @@ start.bat
 
 ```
 plantdiseases/
-├── android/                Приложение на Kotlin (Material 3, CameraX, Room, Retrofit)
+├── android/                Приложение на Kotlin (Material 3, CameraX, Room, Ktor, Koin DI)
 ├── server/                 FastAPI-сервер + ML-конвейер
 │   ├── main.py             HTTP-слой, middleware, валидация
 │   ├── pipeline.py         Двухэтапный конвейер + фильтры размытия/OOD

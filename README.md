@@ -47,7 +47,7 @@ pipeline and live benchmark charts.
 │                      │ ──────► │                                  │
 │  • CameraX capture   │         │   ┌──────────────────────────┐   │
 │  • Room scan history │         │   │ Stage 1 — leaf detector  │   │
-│  • Retrofit + OkHttp │  JSON   │   │ YOLOv8n single-class      │   │
+│  • Ktor + OkHttp     │  JSON   │   │ YOLOv8n single-class      │   │
 │  • Material 3 UI     │ ◄────── │   └──────────┬───────────────┘   │
 │  • EN / RU strings   │         │              │                   │
 │  • Reminders worker  │         │   ┌──────────▼───────────────┐   │
@@ -219,7 +219,7 @@ Response shapes and validation rules are documented inline in
 
 ```
 plantdiseases/
-├── android/                Kotlin app (Material 3, CameraX, Room, Retrofit)
+├── android/                Kotlin app (Material 3, CameraX, Room, Ktor, Koin DI)
 ├── server/                 FastAPI server + ML pipeline
 │   ├── main.py             HTTP layer, middleware, validation
 │   ├── pipeline.py         Two-stage pipeline + blur/OOD gates
