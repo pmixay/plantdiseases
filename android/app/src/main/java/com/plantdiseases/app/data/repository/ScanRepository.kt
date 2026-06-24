@@ -260,18 +260,22 @@ class ScanRepository(
                 .get(cacheKey, CarePlanResponse::class.java)
                 ?.let { return@withContext Result.success(it) }
             try {
-                val response = apiService.carePlan(request)
-                if (response.isSuccessful && response.body() != null) {
-                    com.plantdiseases.app.util.ResponseCache.put(
-                        cacheKey,
-                        response.body()!!,
-                        com.plantdiseases.app.util.ResponseCache.TTL_CARE_PLAN_MS,
-                    )
-                    Result.success(response.body()!!)
-                } else if (response.code() == 503) {
-                    Result.failure(ServerStartingException())
-                } else {
-                    Result.failure(Exception("Server error: ${response.code()}"))
+                val response = apiClient.httpClient.post("api/care-plan") {
+                    contentType(ContentType.Application.Json)
+                    setBody(request)
+                }
+                when (response.status.value) {
+                    in 200..299 -> {
+                        val body = response.body<CarePlanResponse>()
+                        com.plantdiseases.app.util.ResponseCache.put(
+                            cacheKey,
+                            body,
+                            com.plantdiseases.app.util.ResponseCache.TTL_CARE_PLAN_MS,
+                        )
+                        Result.success(body)
+                    }
+                    503 -> Result.failure(ServerStartingException())
+                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
                 }
             } catch (e: SocketTimeoutException) {
                 Result.failure(ServerTimeoutException())

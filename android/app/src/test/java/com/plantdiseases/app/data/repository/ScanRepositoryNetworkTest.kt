@@ -1,6 +1,7 @@
 package com.plantdiseases.app.data.repository
 
 import com.google.common.truth.Truth.assertThat
+import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.FeedbackRequest
 import com.plantdiseases.app.data.model.SymptomDiagnoseRequest
 import com.plantdiseases.app.data.remote.PlantApiClient
@@ -358,5 +359,54 @@ class ScanRepositoryNetworkTest {
         assertThat(req.path).contains("country=US")
         assertThat(req.path).contains("region=CA")
         assertThat(req.path).contains("days=7")
+    }
+
+    // --- POST /api/care-plan (Ktor, custom watering_days serializer) ---
+
+    @Test
+    fun carePlan_success_parsesIntWateringAndPostsBody() {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(
+                    """{"species":"Ficus","disease":"healthy","watering_days":7,""" +
+                        """"light_tier":"bright_indirect","light_lux_target":{"min":100,"max":300}}""",
+                ),
+        )
+        val plan = runBlocking {
+            client.carePlan(CarePlanRequest(disease = "healthy", species = "Ficus"))
+        }
+        // watering_days came off the wire as a JSON number → Int 7.
+        assertThat(plan?.wateringDaysInt).isEqualTo(7)
+        assertThat(plan?.wateringDaysIsAsNeeded).isFalse()
+        // v2 nested field decodes too (proves @SerialName on the nested type).
+        assertThat(plan?.lightLuxTarget?.max).isEqualTo(300)
+        val req = server.takeRequest()
+        assertThat(req.method).isEqualTo("POST")
+        assertThat(req.path).isEqualTo("/api/care-plan")
+        assertThat(req.getHeader("Content-Type")).contains("application/json")
+        assertThat(req.body.readUtf8()).contains("\"disease\":\"healthy\"")
+    }
+
+    @Test
+    fun carePlan_asNeededWatering_parsesString() {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"disease":"x","watering_days":"as_needed"}"""),
+        )
+        val plan = runBlocking { client.carePlan(CarePlanRequest(disease = "x")) }
+        // watering_days came off the wire as a string → as-needed, no int.
+        assertThat(plan?.wateringDaysIsAsNeeded).isTrue()
+        assertThat(plan?.wateringDaysInt).isNull()
+    }
+
+    @Test
+    fun carePlan_nonSuccess_returnsNull() {
+        // POST retries an explicit 503 once, so enqueue two.
+        server.enqueue(MockResponse().setResponseCode(503))
+        server.enqueue(MockResponse().setResponseCode(503))
+        val plan = runBlocking { client.carePlan(CarePlanRequest(disease = "x")) }
+        assertThat(plan).isNull()
     }
 }

@@ -1,8 +1,20 @@
 package com.plantdiseases.app.data.model
 
 import com.google.gson.annotations.SerializedName
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.descriptors.nullable
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.JsonDecoder
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.intOrNull
 
 // NOTE (Ktor + kotlinx.serialization migration, step 2): the response models
 // reachable from /api/analyze are dual-annotated — @SerializedName keeps Gson
@@ -579,13 +591,14 @@ data class SpeciesDiseaseItem(
 )
 
 /** /api/care-plan request body. */
+@Serializable
 data class CarePlanRequest(
-    @SerializedName("disease") val disease: String,
-    @SerializedName("species") val species: String? = null,
-    @SerializedName("light") val light: String = "bright_indirect",
-    @SerializedName("locale") val locale: String = "en",
+    @SerializedName("disease") @SerialName("disease") val disease: String,
+    @SerializedName("species") @SerialName("species") val species: String? = null,
+    @SerializedName("light") @SerialName("light") val light: String = "bright_indirect",
+    @SerializedName("locale") @SerialName("locale") val locale: String = "en",
     /** Optional season override — `null` lets the server pick from today's date. */
-    @SerializedName("season") val season: String? = null,
+    @SerializedName("season") @SerialName("season") val season: String? = null,
 )
 
 /** /api/symptom-diagnose request — a map of stable questionId → optionId
@@ -627,38 +640,46 @@ data class SymptomDiagnoseResponse(
  * `"as_needed"` for diseases where a fixed cadence is unsafe. Callers
  * should prefer the `wateringDaysInt` / `wateringDaysIsAsNeeded` helpers.
  */
+@Serializable
 data class CarePlanResponse(
-    @SerializedName("species") val species: String = "",
-    @SerializedName("disease") val disease: String = "",
-    @SerializedName("light_tier") val lightTier: String = "bright_indirect",
-    @SerializedName("watering_days") val wateringDaysRaw: Any? = null,
-    @SerializedName("fertilise_weeks") val fertiliseWeeks: Int = 0,
-    @SerializedName("humidity_target") val humidityTarget: String = "",
-    @SerializedName("key_action") val keyAction: String = "",
-    @SerializedName("follow_up_days") val followUpDays: Int = 14,
-    @SerializedName("summary_md") val summaryMd: String? = null,
-    @SerializedName("toxic_to_pets") val toxicToPets: Boolean = false,
-    @SerializedName("toxic_species_list") val toxicSpeciesList: List<String> = emptyList(),
-    @SerializedName("toxicity_source") val toxicitySource: String = "unknown",
+    @SerializedName("species") @SerialName("species") val species: String = "",
+    @SerializedName("disease") @SerialName("disease") val disease: String = "",
+    @SerializedName("light_tier") @SerialName("light_tier") val lightTier: String = "bright_indirect",
+    // `watering_days` is int-or-string on the wire (an interval, or the literal
+    // "as_needed"). The custom serializer normalizes it for the kotlinx/Ktor
+    // path; the field stays Any? so the Gson ResponseCache and the in-app
+    // OfflineScanContent.localCarePlan(Int) construction keep working unchanged.
+    @SerializedName("watering_days")
+    @SerialName("watering_days")
+    @Serializable(with = WateringDaysSerializer::class)
+    val wateringDaysRaw: Any? = null,
+    @SerializedName("fertilise_weeks") @SerialName("fertilise_weeks") val fertiliseWeeks: Int = 0,
+    @SerializedName("humidity_target") @SerialName("humidity_target") val humidityTarget: String = "",
+    @SerializedName("key_action") @SerialName("key_action") val keyAction: String = "",
+    @SerializedName("follow_up_days") @SerialName("follow_up_days") val followUpDays: Int = 14,
+    @SerializedName("summary_md") @SerialName("summary_md") val summaryMd: String? = null,
+    @SerializedName("toxic_to_pets") @SerialName("toxic_to_pets") val toxicToPets: Boolean = false,
+    @SerializedName("toxic_species_list") @SerialName("toxic_species_list") val toxicSpeciesList: List<String> = emptyList(),
+    @SerializedName("toxicity_source") @SerialName("toxicity_source") val toxicitySource: String = "unknown",
     /** v2 additive fields — older clients ignore them; new clients
      *  render a richer card with light bands, treatment checklist,
      *  checkpoints and red flags. All are optional so the v1 contract
      *  stays intact for clients on older server versions. */
-    @SerializedName("light_lux_target") val lightLuxTarget: LuxBand? = null,
-    @SerializedName("placement") val placement: String? = null,
-    @SerializedName("acclimation") val acclimation: String? = null,
-    @SerializedName("watering_method") val wateringMethod: String? = null,
-    @SerializedName("soil_mix") val soilMix: String? = null,
-    @SerializedName("fertiliser_npk") val fertiliserNpk: String? = null,
-    @SerializedName("humidity_band") val humidityBand: HumidityBand? = null,
-    @SerializedName("temperature_c") val temperatureC: TemperatureBand? = null,
-    @SerializedName("treatment") val treatment: List<String>? = null,
-    @SerializedName("sanitation") val sanitation: List<String>? = null,
-    @SerializedName("isolation") val isolation: Boolean = false,
-    @SerializedName("red_flags") val redFlags: List<String>? = null,
-    @SerializedName("checkpoints") val checkpoints: List<CarePlanCheckpoint>? = null,
-    @SerializedName("season") val season: String? = null,
-    @SerializedName("season_note") val seasonNote: String? = null,
+    @SerializedName("light_lux_target") @SerialName("light_lux_target") val lightLuxTarget: LuxBand? = null,
+    @SerializedName("placement") @SerialName("placement") val placement: String? = null,
+    @SerializedName("acclimation") @SerialName("acclimation") val acclimation: String? = null,
+    @SerializedName("watering_method") @SerialName("watering_method") val wateringMethod: String? = null,
+    @SerializedName("soil_mix") @SerialName("soil_mix") val soilMix: String? = null,
+    @SerializedName("fertiliser_npk") @SerialName("fertiliser_npk") val fertiliserNpk: String? = null,
+    @SerializedName("humidity_band") @SerialName("humidity_band") val humidityBand: HumidityBand? = null,
+    @SerializedName("temperature_c") @SerialName("temperature_c") val temperatureC: TemperatureBand? = null,
+    @SerializedName("treatment") @SerialName("treatment") val treatment: List<String>? = null,
+    @SerializedName("sanitation") @SerialName("sanitation") val sanitation: List<String>? = null,
+    @SerializedName("isolation") @SerialName("isolation") val isolation: Boolean = false,
+    @SerializedName("red_flags") @SerialName("red_flags") val redFlags: List<String>? = null,
+    @SerializedName("checkpoints") @SerialName("checkpoints") val checkpoints: List<CarePlanCheckpoint>? = null,
+    @SerializedName("season") @SerialName("season") val season: String? = null,
+    @SerializedName("season_note") @SerialName("season_note") val seasonNote: String? = null,
 ) {
     val wateringDaysInt: Int?
         get() = when (val v = wateringDaysRaw) {
@@ -674,25 +695,63 @@ data class CarePlanResponse(
         get() = species.isNotBlank() && !species.equals("unknown", ignoreCase = true)
 }
 
+@Serializable
 data class LuxBand(
-    @SerializedName("min") val min: Int = 0,
-    @SerializedName("max") val max: Int = 0,
+    @SerializedName("min") @SerialName("min") val min: Int = 0,
+    @SerializedName("max") @SerialName("max") val max: Int = 0,
 )
 
+@Serializable
 data class HumidityBand(
-    @SerializedName("min") val min: Int = 0,
-    @SerializedName("max") val max: Int = 0,
+    @SerializedName("min") @SerialName("min") val min: Int = 0,
+    @SerializedName("max") @SerialName("max") val max: Int = 0,
 )
 
+@Serializable
 data class TemperatureBand(
-    @SerializedName("day") val day: List<Int>? = null,
-    @SerializedName("night") val night: List<Int>? = null,
+    @SerializedName("day") @SerialName("day") val day: List<Int>? = null,
+    @SerializedName("night") @SerialName("night") val night: List<Int>? = null,
 )
 
+@Serializable
 data class CarePlanCheckpoint(
-    @SerializedName("day") val day: Int = 0,
-    @SerializedName("check") val check: String = "",
+    @SerializedName("day") @SerialName("day") val day: Int = 0,
+    @SerializedName("check") @SerialName("check") val check: String = "",
 )
+
+/**
+ * Reads `watering_days`, which the server sends as either an integer interval
+ * or the literal string `"as_needed"`, into the [CarePlanResponse.wateringDaysRaw]
+ * `Any?` slot (a number stays a Number, a string stays a String) so the
+ * existing `wateringDaysInt` / `wateringDaysIsAsNeeded` helpers — and the Gson
+ * ResponseCache round-trip — keep working unchanged. Only the kotlinx/Ktor
+ * transport path uses this; Gson uses @SerializedName as before.
+ */
+object WateringDaysSerializer : KSerializer<Any?> {
+    @OptIn(ExperimentalSerializationApi::class)
+    override val descriptor =
+        PrimitiveSerialDescriptor("watering_days", PrimitiveKind.STRING).nullable
+
+    override fun deserialize(decoder: Decoder): Any? {
+        val jsonDecoder = decoder as? JsonDecoder ?: return decoder.decodeString()
+        return when (val element = jsonDecoder.decodeJsonElement()) {
+            is JsonNull -> null
+            is JsonPrimitive ->
+                if (element.isString) element.content
+                else element.intOrNull ?: element.doubleOrNull ?: element.content
+            else -> null
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: Any?) {
+        when (value) {
+            null -> encoder.encodeNull()
+            is Int -> encoder.encodeInt(value)
+            is Number -> encoder.encodeDouble(value.toDouble())
+            else -> encoder.encodeString(value.toString())
+        }
+    }
+}
 
 /** Server health check response */
 @Serializable

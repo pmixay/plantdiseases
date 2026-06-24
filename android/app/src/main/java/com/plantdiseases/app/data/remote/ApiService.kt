@@ -32,7 +32,11 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
 import io.ktor.client.request.url
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
@@ -90,8 +94,8 @@ interface ApiService {
         @Query("locale") locale: String = "en",
     ): retrofit2.Response<IdentifyResponse>
 
-    @POST("api/care-plan")
-    suspend fun carePlan(@Body request: CarePlanRequest): retrofit2.Response<CarePlanResponse>
+    // POST api/care-plan migrated to Ktor (PlantApiClient.carePlan +
+    // repo fetchCarePlan, which keeps the ResponseCache + 503 mapping).
 
     // POST api/symptom-diagnose migrated to Ktor (ScanRepository.diagnoseSymptoms).
 
@@ -365,6 +369,18 @@ class PlantApiClient(
             parameter("name", name)
             common?.let { parameter("common", it) }
             parameter("locale", locale)
+        }
+        return if (response.status.isSuccess()) response.body() else null
+    }
+
+    /** Care plan for a (disease, species, light, locale). Best-effort
+     *  body-or-null, no caching (the repository's fetchCarePlan owns the
+     *  ResponseCache + status→exception mapping; this is the UI's direct,
+     *  uncached lookup on the species screen). */
+    suspend fun carePlan(request: CarePlanRequest): CarePlanResponse? {
+        val response = httpClient.post("api/care-plan") {
+            contentType(ContentType.Application.Json)
+            setBody(request)
         }
         return if (response.status.isSuccess()) response.body() else null
     }

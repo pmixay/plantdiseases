@@ -133,9 +133,9 @@ class SpeciesDetailActivity : AppCompatActivity() {
             }
 
             val plan = runCatching {
-                app.apiClient.apiService.carePlan(
+                app.apiClient.carePlan(
                     CarePlanRequest(disease = "healthy", species = scientificName, locale = locale),
-                ).body()
+                )
             }.getOrNull()
             if (plan != null) {
                 val watering = when {
