@@ -7,7 +7,6 @@ import com.plantdiseases.app.data.model.CommunityOpinionRequest
 import com.plantdiseases.app.data.model.CommunityOpinionsResponse
 import com.plantdiseases.app.data.model.CommunityRequestOpinionRequest
 import com.plantdiseases.app.data.model.CommunityRequestOpinionResponse
-import com.plantdiseases.app.data.model.AquaManifestResponse
 import com.plantdiseases.app.data.model.CommunityScansResponse
 import com.plantdiseases.app.data.model.MyScanOpinionsResponse
 import com.plantdiseases.app.data.model.CommunityViewRequest
@@ -45,7 +44,6 @@ import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.POST
-import retrofit2.http.Streaming
 import retrofit2.http.Path
 import retrofit2.http.Query
 import java.io.IOException
@@ -60,16 +58,9 @@ interface ApiService {
 
     // GET api/capabilities migrated to Ktor (ScanRepository.fetchCapabilities).
 
-    /** Manifest for the hosted Aqua on-device model (version + sha + sidecar),
-     *  so the app downloads/updates it only when the bytes change. */
-    @GET("api/aqua/manifest")
-    suspend fun aquaManifest(): retrofit2.Response<AquaManifestResponse>
-
-    /** Stream the Aqua TFLite model bytes (multi-MB — @Streaming avoids
-     *  buffering the whole body in memory). */
-    @Streaming
-    @GET("api/aqua/model")
-    suspend fun aquaModel(): retrofit2.Response<ResponseBody>
+    // GET api/aqua/manifest migrated to Ktor (ScanRepository.syncAquaModel).
+    // GET api/aqua/model (@Streaming) migrated to Ktor (ScanRepository.syncAquaModel,
+    // streamed via bodyAsChannel().toInputStream()).
 
     // GET api/health migrated to Ktor (ScanRepository.checkServerHealth).
 

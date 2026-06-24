@@ -31,6 +31,8 @@ import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.request.url
+import io.ktor.client.statement.bodyAsChannel
+import io.ktor.utils.io.jvm.javaio.toInputStream
 import io.ktor.http.ContentType
 import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
@@ -168,9 +170,13 @@ class ScanRepository(
     suspend fun syncAquaModel(context: android.content.Context): Result<Boolean> =
         withContext(Dispatchers.IO) {
             try {
-                val manifestResp = apiService.aquaManifest()
-                val manifest = manifestResp.body()
-                if (!manifestResp.isSuccessful || manifest == null || !manifest.available) {
+                val manifestResp = apiClient.httpClient.get("api/aqua/manifest")
+                if (manifestResp.status.value !in 200..299) {
+                    return@withContext Result.success(false)
+                }
+                val manifest =
+                    manifestResp.body<com.plantdiseases.app.data.model.AquaManifestResponse>()
+                if (!manifest.available) {
                     return@withContext Result.success(false)
                 }
                 val sha = manifest.sha256
@@ -188,14 +194,16 @@ class ScanRepository(
                     if (AquaModelManager.isUpToDate(context, sha)) {
                         return@withContext Result.success(false)
                     }
-                    val modelResp = apiService.aquaModel()
-                    val body = modelResp.body()
-                    if (!modelResp.isSuccessful || body == null) {
+                    val modelResp = apiClient.httpClient.get("api/aqua/model")
+                    if (modelResp.status.value !in 200..299) {
                         return@withContext Result.failure(
-                            Exception("Aqua model download failed: ${modelResp.code()}")
+                            Exception("Aqua model download failed: ${modelResp.status.value}"),
                         )
                     }
-                    val installed = body.byteStream().use { stream ->
+                    // Stream the multi-MB body through a channel-backed
+                    // InputStream rather than buffering it all in memory — the
+                    // Retrofit path used @Streaming for the same reason.
+                    val installed = modelResp.bodyAsChannel().toInputStream().use { stream ->
                         AquaModelManager.install(context, stream, sha, manifest.version, classes)
                     }
                     Result.success(installed)

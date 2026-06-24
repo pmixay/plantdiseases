@@ -12,6 +12,7 @@ import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.descriptors.nullable
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonElement
@@ -241,15 +242,19 @@ data class ScanOpinionItem(
 
 /** Describes the server-hosted Aqua on-device model (GET /api/aqua/manifest)
  *  so the app can download it once and re-download only when it changes. */
+@Serializable
 data class AquaManifestResponse(
-    @SerializedName("available") val available: Boolean = false,
-    @SerializedName("version") val version: String? = null,
-    @SerializedName("sha256") val sha256: String? = null,
-    @SerializedName("size_bytes") val sizeBytes: Long = 0,
+    @SerializedName("available") @SerialName("available") val available: Boolean = false,
+    @SerializedName("version") @SerialName("version") val version: String? = null,
+    @SerializedName("sha256") @SerialName("sha256") val sha256: String? = null,
+    @SerializedName("size_bytes") @SerialName("size_bytes") val sizeBytes: Long = 0,
     // The classes.json sidecar passed through verbatim — persisted next to the
     // downloaded .tflite so AquaClassifier reads the same metadata the server
     // shipped (class order, input size, normalisation).
-    @SerializedName("classes") val classes: com.google.gson.JsonObject? = null,
+    @SerializedName("classes")
+    @SerialName("classes")
+    @Serializable(with = GsonJsonObjectSerializer::class)
+    val classes: com.google.gson.JsonObject? = null,
 )
 
 /** Species block carried inside AnalysisResponse. */
@@ -834,6 +839,26 @@ object AnyMapListSerializer : KSerializer<List<Map<String, Any?>>> {
 
     override fun deserialize(decoder: Decoder): List<Map<String, Any?>> =
         delegate.deserialize(decoder)
+}
+
+/**
+ * Reads a JSON object straight into a Gson [com.google.gson.JsonObject] on the
+ * kotlinx/Ktor path, so the Aqua manifest's `classes` sidecar keeps flowing
+ * verbatim into `AquaModelManager.install` (which persists `classes.toString()`)
+ * without changing that signature off Gson.
+ */
+object GsonJsonObjectSerializer : KSerializer<com.google.gson.JsonObject> {
+    override val descriptor: SerialDescriptor = JsonObject.serializer().descriptor
+
+    override fun serialize(encoder: Encoder, value: com.google.gson.JsonObject) {
+        val jsonEncoder = encoder as JsonEncoder
+        jsonEncoder.encodeJsonElement(Json.parseToJsonElement(value.toString()))
+    }
+
+    override fun deserialize(decoder: Decoder): com.google.gson.JsonObject {
+        val element = (decoder as JsonDecoder).decodeJsonElement()
+        return com.google.gson.JsonParser.parseString(element.toString()).asJsonObject
+    }
 }
 
 /** Server health check response */

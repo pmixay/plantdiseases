@@ -29,14 +29,14 @@ at the **end of `ApiService.kt`, ≈ lines 377–425**) in `data/remote/`. Model
 > Gson `JsonObject` field must become `JsonObject` from `kotlinx.serialization.json` (or a typed
 > model). Flag these two when you reach them.
 
-## Table A — Endpoints (18 remaining on Retrofit, 14 done)
+## Table A — Endpoints (16 remaining on Retrofit, 16 done)
 
 | Endpoint | Function | Req → Resp | Status |
 |---|---|---|---|
 | POST /api/analyze (multipart) | `analyzeImage` (in ScanRepository) | image → AnalysisResponse | ✅ **Ktor** |
 | GET /api/capabilities | `fetchCapabilities` (in ScanRepository) | — → CapabilitiesResponse | ✅ **Ktor** |
-| GET /api/aqua/manifest | `aquaManifest` | — → AquaManifestResponse | ⬜ Retrofit |
-| GET /api/aqua/model (@Streaming) | `aquaModel` | — → ResponseBody (bytes) | ⬜ Retrofit ⚠ streaming |
+| GET /api/aqua/manifest | `syncAquaModel` (in ScanRepository) | — → AquaManifestResponse | ✅ **Ktor** |
+| GET /api/aqua/model (@Streaming) | `syncAquaModel` (in ScanRepository) | — → bytes (streamed) | ✅ **Ktor** |
 | GET /api/health | `checkServerHealth` (in ScanRepository) | — → HealthResponse | ✅ **Ktor** |
 | POST /api/chat | `sendChat` (in ScanRepository) | ChatRequest → ChatResponse | ✅ **Ktor** |
 | POST /api/identify (multipart) | `identifySpecies` (in ScanRepository) | image → IdentifyResponse | ✅ **Ktor** |
@@ -71,7 +71,7 @@ at the **end of `ApiService.kt`, ≈ lines 377–425**) in `data/remote/`. Model
 plain GET/POST first (capabilities, health, care-plan, chat, symptom, progression, feedback,
 trending, species-*), then path-param GETs, then the multipart/streaming/header ones, label-* last.
 
-## Table B — Models (39 of 73 migrated)
+## Table B — Models (40 of 73 migrated)
 
 **✅ `@Serializable` already (Models.kt):** DetectionRegion, Detection, TopKEntry,
 PredictionSetItem, PredictionSetCareCard, PredictionSet, AnalysisResponse, SpeciesBlock,
@@ -82,11 +82,12 @@ SpeciesDiseasesResponse, SpeciesDiseaseItem, CarePlanRequest, CarePlanResponse (
 via WateringDaysSerializer), LuxBand, HumidityBand, TemperatureBand, CarePlanCheckpoint,
 ChatRequest (diagnosis via AnyMapSerializer), ChatResponse, ChatUsage, ChatSession,
 ProgressionRequest (history via AnyMapListSerializer), ProgressionResponse, IdentifyResponse,
-SpeciesCandidate, CommunityScanUploadResponse.
+SpeciesCandidate, CommunityScanUploadResponse,
+AquaManifestResponse (classes via GsonJsonObjectSerializer).
 
 **⬜ Still Gson-only — migrate when their endpoint moves (Models.kt):**
 MyScanOpinionsResponse, ScanOpinionItem,
-AquaManifestResponse ⚠(JsonObject field), CommunityScansResponse, CommunityScanItem,
+CommunityScansResponse, CommunityScanItem,
 CommunityRegionSummary, CommunityTopDisease, CommunityTopRegion,
 CommunityOpinionRequest, CommunityRequestOpinionRequest, CommunityRequestOpinionResponse,
 CommunityOpinion, CommunityOpinionsResponse, PushRegisterRequest, CommunityViewRequest,
