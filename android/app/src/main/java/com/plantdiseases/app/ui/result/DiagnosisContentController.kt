@@ -17,15 +17,17 @@ import com.bumptech.glide.load.resource.bitmap.CenterCrop
 import com.bumptech.glide.load.resource.bitmap.RoundedCorners
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.tabs.TabLayout
-import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.ScanEntity
+import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.launch
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
 
 /**
  * Renders the static diagnosis body: the pipeline-warning banner, the
@@ -37,7 +39,9 @@ import kotlinx.coroutines.launch
 class DiagnosisContentController(
     private val activity: AppCompatActivity,
     private val binding: ActivityResultBinding,
-) {
+) : KoinComponent {
+    private val plantRepository: PlantRepository by inject()
+
     private fun displayName(key: String, isRu: Boolean): String? =
         DiseaseLabels.displayName(key, isRu)
 
@@ -292,9 +296,8 @@ class DiagnosisContentController(
         // still carries the diagnosis context.
         binding.btnAskDoctor.setOnClickListener {
             Haptics.tick(activity)
-            val app = activity.application as PlantDiseasesApp
             activity.lifecycleScope.launch {
-                val plant = scan.plantId?.let { app.plantRepository.getPlant(it) }
+                val plant = scan.plantId?.let { plantRepository.getPlant(it) }
                 if (plant != null) {
                     com.plantdiseases.app.ui.garden.DoctorChatSheet.show(activity.supportFragmentManager, plant)
                 } else {

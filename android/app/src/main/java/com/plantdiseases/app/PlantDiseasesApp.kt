@@ -8,11 +8,7 @@ import android.os.Build
 import android.os.Bundle
 import android.view.ViewGroup
 import com.canhub.cropper.CropImageActivity
-import com.plantdiseases.app.data.local.AppDatabase
-import com.plantdiseases.app.data.remote.PlantApiClient
 import com.plantdiseases.app.data.repository.CommunityUploader
-import com.plantdiseases.app.data.repository.PlantRepository
-import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.di.appModule
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.ThemeHelper
@@ -28,15 +24,12 @@ import org.koin.core.context.startKoin
 
 class PlantDiseasesApp : Application() {
 
-    // Safety net: these keep the exact same names/types as the former `by lazy`
-    // properties so every `application as PlantDiseasesApp` call site is
-    // untouched, but the instances now come from Koin (see di/AppModule.kt).
-    // `inject()` is lazy, so nothing resolves before startKoin() runs below.
-    val database: AppDatabase by inject()
-    val apiClient: PlantApiClient by inject()
-    val scanRepository: ScanRepository by inject()
-    val plantRepository: PlantRepository by inject()
-    val communityUploader: CommunityUploader by inject()
+    // All app-scoped singletons now live in Koin (see di/AppModule.kt) and are
+    // obtained at the call sites via direct injection. The Application only
+    // injects what it uses itself — the community uploader for
+    // [launchCommunityUpload]. `inject()` is lazy, so nothing resolves before
+    // startKoin() runs below.
+    private val communityUploader: CommunityUploader by inject()
 
     /**
      * Application-scoped CoroutineScope for fire-and-forget work that
@@ -78,11 +71,12 @@ class PlantDiseasesApp : Application() {
         // real device. Robolectric doesn't run the startup provider, so the
         // double-init never fired in unit tests — it only crashed on-device.
         // Today's workers (OpinionCheckWorker, PlantReminderWorker) use the
-        // default WorkerFactory and resolve deps via `applicationContext as
-        // PlantDiseasesApp`, not Koin constructor injection, so the Koin
-        // WorkerFactory isn't needed. If a future worker needs it, re-add
-        // workManagerFactory() *and* remove the default WorkManagerInitializer
-        // in AndroidManifest.xml so only one party initialises WorkManager.
+        // default WorkerFactory and resolve their deps as KoinComponents
+        // (`by inject()` off the global Koin), not Koin constructor injection,
+        // so the Koin WorkerFactory isn't needed. If a future worker needs
+        // constructor injection, re-add workManagerFactory() *and* remove the
+        // default WorkManagerInitializer in AndroidManifest.xml so only one
+        // party initialises WorkManager.
         if (GlobalContext.getOrNull() == null) {
             startKoin {
                 androidLogger()

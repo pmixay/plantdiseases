@@ -27,10 +27,10 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.BuildConfig
-import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.GuideDataProvider
 import com.plantdiseases.app.data.model.CommunityOpinion
+import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.FragmentProfileBinding
 import com.plantdiseases.app.ui.result.CommunityOpinionSheet
 import com.plantdiseases.app.util.AutosavePrefs
@@ -38,8 +38,11 @@ import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.TelemetryIds
 import com.plantdiseases.app.util.ThemeHelper
 import kotlinx.coroutines.launch
+import org.koin.android.ext.android.inject
 
 class ProfileFragment : Fragment() {
+
+    private val scanRepository: ScanRepository by inject()
 
     private var _binding: FragmentProfileBinding? = null
     private val binding get() = _binding!!
@@ -155,10 +158,9 @@ class ProfileFragment : Fragment() {
     }
 
     private fun deleteCommunityContributions() {
-        val app = requireActivity().application as PlantDiseasesApp
         val pseudoId = TelemetryIds.userPseudoId(requireContext())
         lifecycleScope.launch {
-            val result = app.scanRepository.deleteCommunityContributions(pseudoId)
+            val result = scanRepository.deleteCommunityContributions(pseudoId)
             val msg = if (result.isSuccess) {
                 R.string.community_delete_done
             } else {
@@ -173,11 +175,10 @@ class ProfileFragment : Fragment() {
      *  styled list of recent opinions. Failure / empty both collapse to the
      *  empty-state line. */
     private fun loadMyOpinions() {
-        val app = requireActivity().application as PlantDiseasesApp
         val pseudoId = TelemetryIds.userPseudoId(requireContext())
         val isRu = LocaleHelper.isRussian(requireContext())
         lifecycleScope.launch {
-            val result = app.scanRepository.getMyCommunityOpinions(pseudoId)
+            val result = scanRepository.getMyCommunityOpinions(pseudoId)
             val b = _binding ?: return@launch
             b.llMyOpinions.removeAllViews()
             b.llMyOpinionsChart.removeAllViews()
@@ -463,7 +464,6 @@ class ProfileFragment : Fragment() {
     }
 
     private fun loadStats() {
-        val app = requireActivity().application as PlantDiseasesApp
         val isRu = LocaleHelper.isRussian(requireContext())
 
         // Show shimmer on first load
@@ -477,7 +477,7 @@ class ProfileFragment : Fragment() {
         // continuation never resumes against a null binding (NPE on tab
         // switch / config change mid-query).
         viewLifecycleOwner.lifecycleScope.launch {
-            val stats = app.scanRepository.getStats()
+            val stats = scanRepository.getStats()
 
             // Hide shimmer
             if (isFirstLoad) {

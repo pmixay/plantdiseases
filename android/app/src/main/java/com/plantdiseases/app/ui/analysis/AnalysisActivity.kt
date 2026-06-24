@@ -18,6 +18,8 @@ import com.bumptech.glide.signature.ObjectKey
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
+import com.plantdiseases.app.data.repository.PlantRepository
+import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityAnalysisBinding
 import com.plantdiseases.app.ui.result.ResultActivity
 import com.plantdiseases.app.util.AquaClassifier
@@ -29,11 +31,14 @@ import com.plantdiseases.app.util.ModelFamilyPrefs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.koin.android.ext.android.inject
 import java.io.File
 
 class AnalysisActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityAnalysisBinding
+    private val scanRepository: ScanRepository by inject()
+    private val plantRepository: PlantRepository by inject()
     private var imagePath: String = ""
 
     // When set (≥0), the resulting scan is auto-attached to this plant after
@@ -133,8 +138,6 @@ class AnalysisActivity : AppCompatActivity() {
         binding.progressBar.visibility = View.VISIBLE
         binding.progressBar.playAnimation()
 
-        val app = application as PlantDiseasesApp
-
         lifecycleScope.launch {
             // Prepared lazily, only on the server path, so a successful
             // on-device Aqua scan doesn't pay for a decode+resize+re-encode it
@@ -178,7 +181,7 @@ class AnalysisActivity : AppCompatActivity() {
                     return@launch
                 }
 
-                val result = app.scanRepository.analyzeImage(
+                val result = scanRepository.analyzeImage(
                     uploadFile,
                     locale = locale,
                     family = family.id,
@@ -246,14 +249,16 @@ class AnalysisActivity : AppCompatActivity() {
         imagePath: String,
         response: com.plantdiseases.app.data.model.AnalysisResponse,
     ) {
+        // The Application is still needed here for launchCommunityUpload (an
+        // app-lifecycle helper, not an injectable singleton).
         val app = application as PlantDiseasesApp
-        val scanId = app.scanRepository.saveScan(imagePath, response)
+        val scanId = scanRepository.saveScan(imagePath, response)
 
         // Auto-attach to the originating plant when launched from
         // PlantDetailActivity's "New scan" affordance, so the scan appears in
         // that plant's Photos + Timeline without a manual "Add to garden".
         if (attachPlantId >= 0L) {
-            app.plantRepository.assignScanToPlant(scanId, attachPlantId)
+            plantRepository.assignScanToPlant(scanId, attachPlantId)
         }
 
         getSharedPreferences("plantdiseases_prefs", MODE_PRIVATE)
@@ -262,7 +267,7 @@ class AnalysisActivity : AppCompatActivity() {
         // Fire-and-forget community upload — runs on the application-scoped
         // supervisor so it survives this activity finish()ing to the result
         // screen.
-        val savedScan = app.scanRepository.getScanById(scanId)
+        val savedScan = scanRepository.getScanById(scanId)
         if (savedScan != null) {
             app.launchCommunityUpload(savedScan, response)
         }

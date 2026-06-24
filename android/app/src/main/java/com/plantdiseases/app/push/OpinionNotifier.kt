@@ -12,8 +12,11 @@ import androidx.core.content.ContextCompat
 import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
+import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.ui.result.ResultActivity
 import com.plantdiseases.app.util.DiseaseLabels
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
 import java.util.Locale
 
 /**
@@ -27,7 +30,9 @@ import java.util.Locale
  * The notification deep-links to the scan's result screen when the scan is
  * still in local history; otherwise it opens the app.
  */
-object OpinionNotifier {
+object OpinionNotifier : KoinComponent {
+
+    private val scanRepository: ScanRepository by inject()
 
     /**
      * @param disease the suggested-diagnosis class key (push) or the scan's
@@ -42,7 +47,6 @@ object OpinionNotifier {
         note: String? = null,
     ) {
         val ctx = context.applicationContext
-        val app = ctx as PlantDiseasesApp
         // On Android 13+ notify() silently no-ops without POST_NOTIFICATIONS —
         // bail before the DB lookup + notification build (matches the reminder
         // worker, which also guards on the runtime permission).
@@ -63,7 +67,7 @@ object OpinionNotifier {
 
         // community scan_id == the local scan's clientScanId — open it directly
         // if we still have it; otherwise drop into the app.
-        val localId = app.scanRepository.getScanByClientScanId(scanId)?.id
+        val localId = scanRepository.getScanByClientScanId(scanId)?.id
         val intent = if (localId != null) {
             Intent(ctx, ResultActivity::class.java)
                 .putExtra(ResultActivity.EXTRA_SCAN_ID, localId)

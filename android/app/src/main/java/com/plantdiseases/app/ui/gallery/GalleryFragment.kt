@@ -20,16 +20,19 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.GridLayoutManager
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.ScanHistoryItem
+import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.FragmentGalleryBinding
 import com.plantdiseases.app.ui.result.ResultActivity
 import com.plantdiseases.app.util.Haptics
 import android.widget.Toast
 import kotlinx.coroutines.launch
+import org.koin.android.ext.android.inject
 
 class GalleryFragment : Fragment() {
+
+    private val scanRepository: ScanRepository by inject()
 
     private var _binding: FragmentGalleryBinding? = null
     private val binding get() = _binding!!
@@ -147,9 +150,8 @@ class GalleryFragment : Fragment() {
     }
 
     private fun clearHistory() {
-        val app = requireActivity().application as PlantDiseasesApp
         viewLifecycleOwner.lifecycleScope.launch {
-            app.scanRepository.clearAll()
+            scanRepository.clearAll()
             Toast.makeText(requireContext(), R.string.history_cleared, Toast.LENGTH_SHORT).show()
             loadScans()
         }
@@ -222,8 +224,6 @@ class GalleryFragment : Fragment() {
     }
 
     private fun loadScans() {
-        val app = requireActivity().application as PlantDiseasesApp
-
         if (isFirstLoad) {
             binding.shimmerLayout.visibility = View.VISIBLE
             binding.shimmerLayout.startShimmer()
@@ -232,7 +232,7 @@ class GalleryFragment : Fragment() {
 
         viewLifecycleOwner.lifecycleScope.launch {
             binding.swipeRefresh.isRefreshing = !isFirstLoad
-            allScans = app.scanRepository.getAllScans()
+            allScans = scanRepository.getAllScans()
 
             if (isFirstLoad) {
                 binding.shimmerLayout.stopShimmer()
@@ -242,7 +242,7 @@ class GalleryFragment : Fragment() {
 
             binding.swipeRefresh.isRefreshing = false
             applyFilter()
-            loadCommunityBadges(app)
+            loadCommunityBadges()
         }
     }
 
@@ -252,12 +252,12 @@ class GalleryFragment : Fragment() {
      * community is off, nothing was shared, or the call fails, the list simply
      * stays unbadged.
      */
-    private fun loadCommunityBadges(app: PlantDiseasesApp) {
+    private fun loadCommunityBadges() {
         if (!com.plantdiseases.app.util.CommunityPrefs.uploadsEnabled(requireContext())) return
         val ids = allScans.map { it.clientScanId }.filter { it.isNotBlank() }
         if (ids.isEmpty()) return
         viewLifecycleOwner.lifecycleScope.launch {
-            val counts = app.scanRepository.getCommunityScanCounts(ids)
+            val counts = scanRepository.getCommunityScanCounts(ids)
             if (counts.isEmpty() || _binding == null) return@launch
             val ctx = requireContext()
             allScans = allScans.map { item ->
@@ -287,9 +287,8 @@ class GalleryFragment : Fragment() {
     }
 
     private fun deleteItem(id: Long) {
-        val app = requireActivity().application as PlantDiseasesApp
         viewLifecycleOwner.lifecycleScope.launch {
-            app.scanRepository.deleteScan(id)
+            scanRepository.deleteScan(id)
             loadScans()
         }
     }

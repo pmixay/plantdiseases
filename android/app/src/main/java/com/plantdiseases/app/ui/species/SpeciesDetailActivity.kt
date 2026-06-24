@@ -25,15 +25,17 @@ import com.bumptech.glide.request.RequestListener
 import com.bumptech.glide.request.target.Target
 import com.google.android.material.card.MaterialCardView
 import com.plantdiseases.app.MainActivity
-import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.SpeciesDiseaseItem
+import com.plantdiseases.app.data.remote.PlantApiClient
+import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.databinding.ActivitySpeciesDetailBinding
 import com.plantdiseases.app.ui.guide.GuideDetailActivity
 import com.plantdiseases.app.util.DiseaseCatalog
 import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.launch
+import org.koin.android.ext.android.inject
 import java.util.Locale
 
 /**
@@ -48,6 +50,8 @@ import java.util.Locale
 class SpeciesDetailActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivitySpeciesDetailBinding
+    private val apiClient: PlantApiClient by inject()
+    private val plantRepository: PlantRepository by inject()
     private val isRu: Boolean get() = Locale.getDefault().language == "ru"
     private val locale: String get() = if (isRu) "ru" else "en"
 
@@ -104,12 +108,11 @@ class SpeciesDetailActivity : AppCompatActivity() {
     }
 
     private fun loadDetail() {
-        val app = application as PlantDiseasesApp
         binding.progress.visibility = View.VISIBLE
         binding.tvSpeciesExtract.text = getString(R.string.identify_loading)
         lifecycleScope.launch {
             val info = runCatching {
-                app.apiClient.speciesInfo(scientificName, locale)
+                apiClient.speciesInfo(scientificName, locale)
             }.getOrNull()
             binding.progress.visibility = View.GONE
             if (info?.available == true) {
@@ -133,7 +136,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
             }
 
             val plan = runCatching {
-                app.apiClient.carePlan(
+                apiClient.carePlan(
                     CarePlanRequest(disease = "healthy", species = scientificName, locale = locale),
                 )
             }.getOrNull()
@@ -220,10 +223,9 @@ class SpeciesDetailActivity : AppCompatActivity() {
     }
 
     private fun loadDiseases() {
-        val app = application as PlantDiseasesApp
         lifecycleScope.launch {
             val resp = runCatching {
-                app.apiClient.speciesDiseases(scientificName, commonName, locale)
+                apiClient.speciesDiseases(scientificName, commonName, locale)
             }.getOrNull()
             val aiItems = if (resp?.available == true) {
                 resp.diseases.filter { it.name.isNotBlank() }
@@ -300,10 +302,9 @@ class SpeciesDetailActivity : AppCompatActivity() {
     }
 
     private fun addToGarden() {
-        val app = application as PlantDiseasesApp
         lifecycleScope.launch {
             runCatching {
-                app.plantRepository.savePlant(
+                plantRepository.savePlant(
                     name = commonName ?: scientificName,
                     species = scientificName,
                     scientificName = scientificName,

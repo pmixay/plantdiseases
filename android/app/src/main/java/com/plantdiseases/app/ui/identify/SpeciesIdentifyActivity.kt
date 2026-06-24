@@ -14,14 +14,15 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
-import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.SpeciesCandidate
+import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivitySpeciesIdentifyBinding
 import com.plantdiseases.app.ui.camera.CameraFragment
 import com.plantdiseases.app.ui.species.SpeciesDetailActivity
 import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.launch
+import org.koin.android.ext.android.inject
 import java.io.File
 import java.util.Locale
 
@@ -36,6 +37,8 @@ import java.util.Locale
 class SpeciesIdentifyActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivitySpeciesIdentifyBinding
+
+    private val scanRepository: ScanRepository by inject()
 
     private val isRu: Boolean get() = Locale.getDefault().language == "ru"
     private val locale: String get() = if (isRu) "ru" else "en"
@@ -109,11 +112,10 @@ class SpeciesIdentifyActivity : AppCompatActivity() {
 
     // ── Identify ────────────────────────────────────────────────────
     private fun runIdentify(file: File) {
-        val app = application as PlantDiseasesApp
         binding.candidatesPanel.visibility = View.GONE
         binding.identifyProgress.visibility = View.VISIBLE
         lifecycleScope.launch {
-            val result = app.scanRepository.identifySpecies(file, "auto", locale)
+            val result = scanRepository.identifySpecies(file, "auto", locale)
             binding.identifyProgress.visibility = View.GONE
             result.onSuccess { resp ->
                 when {

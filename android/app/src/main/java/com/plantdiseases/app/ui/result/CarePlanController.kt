@@ -5,14 +5,16 @@ import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
-import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.CarePlanRequest
+import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.ui.common.CarePlanCardView
 import kotlinx.coroutines.launch
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
 
 /**
  * Owns the server-side care-plan card (/api/care-plan): inserts it after the
@@ -23,7 +25,9 @@ import kotlinx.coroutines.launch
 class CarePlanController(
     private val activity: AppCompatActivity,
     private val binding: ActivityResultBinding,
-) {
+) : KoinComponent {
+    private val scanRepository: ScanRepository by inject()
+    private val plantRepository: PlantRepository by inject()
     private var card: CarePlanCardView? = null
 
     fun bind(scan: ScanEntity, repository: ScanRepository, isRu: Boolean) {
@@ -45,8 +49,6 @@ class CarePlanController(
             container.addView(fresh, anchorIdx + 1)
         }
 
-        val app = activity.application as PlantDiseasesApp
-
         // Offline (Aqua) scans never call the server: bind a basic,
         // locally-computed plan instead, visually marked as offline.
         if ("offline_aqua" in repository.parseWarnings(scan.warnings)) {
@@ -67,7 +69,7 @@ class CarePlanController(
             // fall back to the PlantNet species detected for this scan so the
             // care plan is species-specific even before "Add to garden".
             val plantSpecies = scan.plantId?.let { pid ->
-                val plant = app.plantRepository.getPlant(pid)
+                val plant = plantRepository.getPlant(pid)
                 plant?.scientificName?.takeIf { it.isNotBlank() }
                     ?: plant?.commonName?.takeIf { it.isNotBlank() }
                     ?: plant?.species?.takeIf { it.isNotBlank() }
@@ -82,7 +84,7 @@ class CarePlanController(
                 light = "bright_indirect",
                 locale = if (isRu) "ru" else "en",
             )
-            app.scanRepository.fetchCarePlan(request).onSuccess { plan ->
+            scanRepository.fetchCarePlan(request).onSuccess { plan ->
                 view.bind(
                     plan = plan,
                     speciesDisplay = plantSpecies,
@@ -100,9 +102,8 @@ class CarePlanController(
         plan: com.plantdiseases.app.data.model.CarePlanResponse,
     ) {
         val plantId = scan.plantId ?: return
-        val app = activity.application as PlantDiseasesApp
         activity.lifecycleScope.launch {
-            val plant = app.plantRepository.getPlant(plantId) ?: return@launch
+            val plant = plantRepository.getPlant(plantId) ?: return@launch
             com.plantdiseases.app.ui.garden.ReminderScheduleSheet.showWithCarePlanDefaults(
                 activity.supportFragmentManager,
                 plant,

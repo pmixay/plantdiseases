@@ -7,9 +7,12 @@ import com.google.firebase.FirebaseOptions
 import com.google.firebase.messaging.FirebaseMessaging
 import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.PlantDiseasesApp
+import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.TelemetryIds
 import kotlinx.coroutines.launch
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
 
 /**
  * Firebase Cloud Messaging bootstrap + token registration.
@@ -20,8 +23,10 @@ import kotlinx.coroutines.launch
  * — an unconfigured build — everything here no-ops and FCM stays dormant; the
  * WorkManager opinion poll remains the fallback.
  */
-object PushManager {
+object PushManager : KoinComponent {
     private const val TAG = "PushManager"
+
+    private val scanRepository: ScanRepository by inject()
 
     private fun isConfigured(): Boolean =
         BuildConfig.FCM_APP_ID.isNotBlank() &&
@@ -57,13 +62,14 @@ object PushManager {
         val ctx = context.applicationContext
         if (!CommunityPrefs.uploadsEnabled(ctx)) return
         if (!ensureFirebase(ctx)) return
+        // The Application is still needed for appScope (an app-lifecycle scope).
         val app = ctx as PlantDiseasesApp
         FirebaseMessaging.getInstance().token
             .addOnSuccessListener { token ->
                 if (token.isNullOrBlank()) return@addOnSuccessListener
                 app.appScope.launch {
                     runCatching {
-                        app.scanRepository.registerPushToken(
+                        scanRepository.registerPushToken(
                             TelemetryIds.userPseudoId(ctx),
                             token,
                         )

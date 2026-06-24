@@ -17,14 +17,15 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
-import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.SymptomDiagnoseRequest
 import com.plantdiseases.app.data.model.SymptomResult
+import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivitySymptomCheckerBinding
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.launch
+import org.koin.android.ext.android.inject
 
 /**
  * No-photo symptom checker — the fallback shown when the camera/ML pipeline
@@ -39,6 +40,8 @@ import kotlinx.coroutines.launch
 class SymptomCheckerActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivitySymptomCheckerBinding
+
+    private val scanRepository: ScanRepository by inject()
 
     // Selected option per question id. The submit button enables at >= 2.
     private val answers = linkedMapOf<String, String>()
@@ -218,10 +221,9 @@ class SymptomCheckerActivity : AppCompatActivity() {
         Haptics.tick(this)
         binding.symptomSubmit.isEnabled = false
         binding.symptomProgress.visibility = View.VISIBLE
-        val app = application as PlantDiseasesApp
         val locale = LocaleHelper.getSavedLanguage(this)
         lifecycleScope.launch {
-            val result = app.scanRepository.diagnoseSymptoms(
+            val result = scanRepository.diagnoseSymptoms(
                 SymptomDiagnoseRequest(answers = LinkedHashMap(answers), locale = locale),
             )
             if (isFinishing || isDestroyed) return@launch
