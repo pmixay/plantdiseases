@@ -100,19 +100,44 @@ consistent, every published version must satisfy:
 > finishes nutrient, and **pivots gray_mold to non-English / video channels —
 > the open (English) web is exhausted at its ceiling.**
 
+### v5 mechanism — stable train/test split + weak-class top-up (wired into §2)
+
+Two correctness changes are wired into `train_notebook.ipynb` for v5:
+
+- **Stable held-out test split (`make_test_split`, §2).** Before the random
+  `make_*_split` val carves, a deterministic, **group-aware** partition is moved to
+  `val/test`: each `(source, plant_id)` group's side is fixed by a content hash of
+  the group id, so a plant is *always* test or *always* train **across dataset
+  versions** — a reproducible benchmark, disjoint from train AND from the drifting
+  `val_*` splits. This is what the **"split the supplement into train/test"** idea
+  resolved to: the supplement (and the other real-photo sources) are carved by the
+  same hash, so ~18% becomes a fixed test slice and the rest trains. The shipped
+  model is graded on it as `final test` in §6 (next to `val_realworld`). It is still
+  *in-distribution* (same sources as train) — a stable, richer `val_realworld`, not
+  an out-of-distribution gate; true OOD still needs production photos. *(Wired but
+  unrun here — confirm "test split populated" + "final test" on the next Colab run.)*
+- **Pre-v5 weak-class top-up (the correction I'd make).** The supply-bound classes
+  have unused headroom in *existing* sources, so v5 raises two caps to pull it:
+  `kaggle_strawberry_graymold cap 250→500` (more Botrytis for the binding gray_mold
+  class) and `kaggle_ornamental per_class_cap 300→600` (more scorch/viral/powdery/
+  nutrient — ornamental holds 1000–1680 images per class vs the old 300 cap). This
+  thickens the weak classes in *both* train and the carved test slice, offsetting the
+  ~18% the split removes. gray_mold still won't reach 250 *clean houseplant* rows
+  this way (strawberry is agricultural Botrytis) — production remains its only path.
+
 ### v4-run outcome (model v2.6.6) — what v5 must react to
 
 - **leaf_scorch regressed (F1 0.805→0.719; P 0.774→0.703, R 0.840→0.736).** v4 grew
   healthy hard-negatives +114 but only +31 *boundary* — the +57 *generic* lush-green
   negatives pushed the model to under-call scorch. **v5: add ONLY boundary brown-tip
   negatives; do NOT add generic healthy, and consider trimming some of v4's.**
-  **NB (paired re-eval):** running *both* bundles on one fixed set
-  (`tools/paired_eval.py`) did **not** reproduce a significant leaf_scorch
-  regression — recall Δ within noise, precision flat→up — because the v2.6.5 vs v4
-  per-class numbers above are measured on *different* eval draws. Treat the
-  "regression" as largely eval-slice churn: verify on a frozen held-out slice
-  before any data surgery, and trim healthy negatives *cautiously* — the precision
-  seesaw (scorch over-triggering) is the real risk, not recall.
+  **NB (paired re-eval):** grading *both* bundles on one fixed set did **not**
+  reproduce a significant leaf_scorch regression — recall Δ within noise, precision
+  flat→up — because the v2.6.5 vs v4 per-class numbers above are measured on
+  *different* eval draws. Treat the "regression" as largely eval-slice churn: verify
+  on the new `final test` held-out slice (§2 `make_test_split`) before any data
+  surgery, and trim healthy negatives *cautiously* — the precision seesaw (scorch
+  over-triggering) is the real risk, not recall.
 - **nutrient precision flat (0.743→0.750).** Removing the rice `kaggle_nutrient` +
   `coleaf` was net-neutral — they were wrong-domain dead weight, not the cause.
   Nutrient is a *boundary* problem → boundary negatives stay the priority.
@@ -158,11 +183,11 @@ consistent, every published version must satisfy:
 9 classes stay (no structural add — see `CLASS_COVERAGE_RESEARCH.md`); hard
 houseplant domain gate; hard-negatives split-tagged (`role`/`hn_kind`); no per-row
 license requirement; `agent_vision` + offline judge only. INT8 ships, but a
-per-class paired check (`tools/paired_eval.py --int8-vs-fp32`) found a small but
-**real `nutrient_deficiency` recall drop under INT8** that the aggregate macro-F1
-gate misses — add a per-class INT8-drift check to the gate. Remaining drift
-watch-item: `viral_disease` precision (0.814, eval-slice-confounded) — confirm on
-the next run before acting.
+per-class paired INT8-vs-FP32 check found a small but **real `nutrient_deficiency`
+recall drop under INT8** that the aggregate macro-F1 gate misses — add a per-class
+INT8-drift check to the §6 gate (run it on the new `final test` slice). Remaining
+drift watch-item: `viral_disease` precision (0.814, eval-slice-confounded) — confirm
+on the next run before acting.
 
 > **Training-time use:** the supplement is pulled directly by
 > `train_notebook.ipynb` §2 (`fetch_kaggle_supplement`, source `supplement`) and
@@ -171,7 +196,10 @@ the next run before acting.
 > slices. It reads whatever canonical-class folders ship, so the `healthy/` +
 > `not_a_plant/` hard-negative folders are picked up automatically. Because rows
 > are agent-judged, the gate measured on them is a **proxy** until verified
-> production volume exists.
+> production volume exists. **As of v5** the supplement (and the other real-photo
+> sources) are *also* carved by `make_test_split` into the stable `val/test` slice
+> *before* the val splits, so a fixed ~18% is held out as the cross-version
+> benchmark while the remainder feeds train + the drifting `val_*`.
 
 ## (2) No server ingestion — by design
 
