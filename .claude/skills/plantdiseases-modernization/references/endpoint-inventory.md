@@ -29,7 +29,7 @@ at the **end of `ApiService.kt`, ≈ lines 377–425**) in `data/remote/`. Model
 > Gson `JsonObject` field must become `JsonObject` from `kotlinx.serialization.json` (or a typed
 > model). Flag these two when you reach them.
 
-## Table A — Endpoints (16 remaining on Retrofit, 16 done)
+## Table A — Endpoints (11 remaining on Retrofit, 21 done)
 
 | Endpoint | Function | Req → Resp | Status |
 |---|---|---|---|
@@ -46,20 +46,20 @@ at the **end of `ApiService.kt`, ≈ lines 377–425**) in `data/remote/`. Model
 | POST /api/feedback | `submitFeedback` (in ScanRepository) | FeedbackRequest → FeedbackResponse | ✅ **Ktor** |
 | POST /api/feedback/image (multipart) | `uploadFeedbackImage` (in ScanRepository) | image + scanId → Unit | ✅ **Ktor** |
 | POST /api/community/scan (multipart) | `uploadCommunityScan` (in ScanRepository) | image? + fields → CommunityScanUploadResponse | ✅ **Ktor** |
-| GET /api/community/nearby | `communityScanNearby` | — → CommunityScansResponse | ⬜ Retrofit |
+| GET /api/community/nearby | `communityNearby` (in ScanRepository) | — → CommunityScansResponse | ✅ **Ktor** |
 | DELETE /api/community/user/{id} | `communityScanDeleteUser` | — → FeedbackResponse | ⬜ Retrofit ⚠ path |
 | POST /api/community/opinion | `communitySubmitOpinion` | CommunityOpinionRequest → CommunityOpinionsResponse | ⬜ Retrofit |
 | POST /api/community/request-opinion | `communityRequestOpinion` | CommunityRequestOpinionRequest → CommunityRequestOpinionResponse | ⬜ Retrofit |
-| GET /api/community/opinions/{scan_id} | `communityGetOpinions` | — → CommunityOpinionsResponse | ⬜ Retrofit ⚠ path |
-| GET /api/community/my-opinions/{id} | `communityMyOpinions` | — → CommunityOpinionsResponse | ⬜ Retrofit ⚠ path |
-| GET /api/community/my-scan-opinions/{id} | `communityMyScanOpinions` | — → MyScanOpinionsResponse | ⬜ Retrofit ⚠ path |
+| GET /api/community/opinions/{scan_id} | `getCommunityOpinions` (in ScanRepository) | — → CommunityOpinionsResponse | ✅ **Ktor** |
+| GET /api/community/my-opinions/{id} | `getMyCommunityOpinions` (in ScanRepository) | — → CommunityOpinionsResponse | ✅ **Ktor** |
+| GET /api/community/my-scan-opinions/{id} | `fetchMyScanOpinions` (in ScanRepository) | — → MyScanOpinionsResponse | ✅ **Ktor** |
 | POST /api/push/register | `registerPushToken` | PushRegisterRequest → ResponseBody | ⬜ Retrofit |
 | POST /api/community/view | `communityRecordView` | CommunityViewRequest → ResponseBody | ⬜ Retrofit |
 | POST /api/community/scan-counts | `communityScanCounts` | CommunityScanCountsRequest → CommunityScanCountsResponse | ⬜ Retrofit |
 | GET /api/community/trending | `communityTrending` (PlantApiClient) | — → TrendingResponse | ✅ **Ktor** |
 | GET /api/species-info | `speciesInfo` (PlantApiClient + repo getSpeciesInfo) | — → SpeciesInfoResponse | ✅ **Ktor** |
 | GET /api/species-diseases | `speciesDiseases` (PlantApiClient) | — → SpeciesDiseasesResponse | ✅ **Ktor** |
-| GET /api/community/by-species | `communityBySpecies` | — → CommunityScansResponse | ⬜ Retrofit |
+| GET /api/community/by-species | `communityScansBySpecies` (in ScanRepository) | — → CommunityScansResponse | ✅ **Ktor** |
 | POST /api/label/login | `labelLogin` | LabelLoginRequest → LabelLoginResponse | ⬜ Retrofit |
 | GET /api/label/next | `labelNext` | — (X-Label-Token) → LabelNextResponse | ⬜ Retrofit ⚠ header |
 | POST /api/label/verdict | `labelVerdict` | LabelVerdictBatch → LabelVerdictResponse | ⬜ Retrofit |
@@ -71,7 +71,7 @@ at the **end of `ApiService.kt`, ≈ lines 377–425**) in `data/remote/`. Model
 plain GET/POST first (capabilities, health, care-plan, chat, symptom, progression, feedback,
 trending, species-*), then path-param GETs, then the multipart/streaming/header ones, label-* last.
 
-## Table B — Models (40 of 73 migrated)
+## Table B — Models (49 of 73 migrated)
 
 **✅ `@Serializable` already (Models.kt):** DetectionRegion, Detection, TopKEntry,
 PredictionSetItem, PredictionSetCareCard, PredictionSet, AnalysisResponse, SpeciesBlock,
@@ -83,14 +83,13 @@ via WateringDaysSerializer), LuxBand, HumidityBand, TemperatureBand, CarePlanChe
 ChatRequest (diagnosis via AnyMapSerializer), ChatResponse, ChatUsage, ChatSession,
 ProgressionRequest (history via AnyMapListSerializer), ProgressionResponse, IdentifyResponse,
 SpeciesCandidate, CommunityScanUploadResponse,
-AquaManifestResponse (classes via GsonJsonObjectSerializer).
+AquaManifestResponse (classes via GsonJsonObjectSerializer), MyScanOpinionsResponse,
+ScanOpinionItem, CommunityScansResponse, CommunityScanItem, CommunityRegionSummary,
+CommunityTopDisease, CommunityTopRegion, CommunityOpinion, CommunityOpinionsResponse.
 
 **⬜ Still Gson-only — migrate when their endpoint moves (Models.kt):**
-MyScanOpinionsResponse, ScanOpinionItem,
-CommunityScansResponse, CommunityScanItem,
-CommunityRegionSummary, CommunityTopDisease, CommunityTopRegion,
 CommunityOpinionRequest, CommunityRequestOpinionRequest, CommunityRequestOpinionResponse,
-CommunityOpinion, CommunityOpinionsResponse, PushRegisterRequest, CommunityViewRequest,
+PushRegisterRequest, CommunityViewRequest,
 CommunityScanCountsRequest, CommunityScanCount, CommunityScanCountsResponse, GuideItem,
 GuideCategory (enum), ScanHistoryItem.
 

@@ -7,8 +7,6 @@ import com.plantdiseases.app.data.model.CommunityOpinionRequest
 import com.plantdiseases.app.data.model.CommunityOpinionsResponse
 import com.plantdiseases.app.data.model.CommunityRequestOpinionRequest
 import com.plantdiseases.app.data.model.CommunityRequestOpinionResponse
-import com.plantdiseases.app.data.model.CommunityScansResponse
-import com.plantdiseases.app.data.model.MyScanOpinionsResponse
 import com.plantdiseases.app.data.model.CommunityViewRequest
 import com.plantdiseases.app.data.model.PushRegisterRequest
 import com.plantdiseases.app.data.model.CommunityScanCountsRequest
@@ -80,15 +78,7 @@ interface ApiService {
     // POST api/feedback/image (multipart) migrated to Ktor (ScanRepository.uploadFeedbackImage).
     // POST api/community/scan (multipart) migrated to Ktor (ScanRepository.uploadCommunityScan).
 
-    @GET("api/community/nearby")
-    suspend fun communityScanNearby(
-        @Query("country") country: String,
-        @Query("region") region: String? = null,
-        @Query("disease") disease: String? = null,
-        @Query("species") species: String? = null,
-        @Query("limit") limit: Int = 12,
-        @Query("user_pseudo_id") userPseudoId: String? = null,
-    ): retrofit2.Response<CommunityScansResponse>
+    // GET api/community/nearby migrated to Ktor (ScanRepository.communityNearby).
 
     @DELETE("api/community/user/{user_pseudo_id}")
     suspend fun communityScanDeleteUser(
@@ -108,24 +98,9 @@ interface ApiService {
         @Body request: CommunityRequestOpinionRequest,
     ): retrofit2.Response<CommunityRequestOpinionResponse>
 
-    /** List community opinions + consensus tally for a shared scan. */
-    @GET("api/community/opinions/{scan_id}")
-    suspend fun communityGetOpinions(
-        @Path("scan_id") scanId: String,
-    ): retrofit2.Response<CommunityOpinionsResponse>
-
-    /** List the second opinions this install has authored. */
-    @GET("api/community/my-opinions/{user_pseudo_id}")
-    suspend fun communityMyOpinions(
-        @Path("user_pseudo_id") userPseudoId: String,
-    ): retrofit2.Response<CommunityOpinionsResponse>
-
-    /** Opinion counts on the user's OWN shared scans — polled to notify when
-     *  someone leaves a second opinion on a scan they shared. */
-    @GET("api/community/my-scan-opinions/{user_pseudo_id}")
-    suspend fun communityMyScanOpinions(
-        @Path("user_pseudo_id") userPseudoId: String,
-    ): retrofit2.Response<MyScanOpinionsResponse>
+    // GET api/community/opinions/{scan_id} migrated to Ktor (ScanRepository.getCommunityOpinions).
+    // GET api/community/my-opinions/{id} migrated to Ktor (ScanRepository.getMyCommunityOpinions).
+    // GET api/community/my-scan-opinions/{id} migrated to Ktor (ScanRepository.fetchMyScanOpinions).
 
     /** Register this install's FCM token so the server can push opinion
      *  notifications to a closed / idle device. */
@@ -152,13 +127,7 @@ interface ApiService {
     // migrated to Ktor (PlantApiClient.communityTrending / .speciesInfo /
     // .speciesDiseases — best-effort body-or-null wrappers used by UI).
 
-    /** Community scans of one species (scientific name), across regions. */
-    @GET("api/community/by-species")
-    suspend fun communityBySpecies(
-        @Query("species") species: String,
-        @Query("limit") limit: Int = 12,
-        @Query("user_pseudo_id") userPseudoId: String? = null,
-    ): retrofit2.Response<CommunityScansResponse>
+    // GET api/community/by-species migrated to Ktor (ScanRepository.communityScansBySpecies).
 }
 
 /**

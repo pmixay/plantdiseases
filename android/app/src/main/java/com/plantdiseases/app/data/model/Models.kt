@@ -226,18 +226,20 @@ data class FamilyCapability(
 /** Opinion counts on the user's OWN shared scans (GET /api/community/
  *  my-scan-opinions/{id}). Polled by OpinionCheckWorker to notify the user
  *  when someone leaves a second opinion. */
+@Serializable
 data class MyScanOpinionsResponse(
-    @SerializedName("scans") val scans: List<ScanOpinionItem> = emptyList(),
-    @SerializedName("total_opinions") val totalOpinions: Int = 0,
-    @SerializedName("total_views") val totalViews: Int = 0,
+    @SerializedName("scans") @SerialName("scans") val scans: List<ScanOpinionItem> = emptyList(),
+    @SerializedName("total_opinions") @SerialName("total_opinions") val totalOpinions: Int = 0,
+    @SerializedName("total_views") @SerialName("total_views") val totalViews: Int = 0,
 )
 
+@Serializable
 data class ScanOpinionItem(
-    @SerializedName("scan_id") val scanId: String = "",
-    @SerializedName("disease") val disease: String = "",
-    @SerializedName("opinion_count") val opinionCount: Int = 0,
-    @SerializedName("latest_at") val latestAt: Long = 0,
-    @SerializedName("view_count") val viewCount: Int = 0,
+    @SerializedName("scan_id") @SerialName("scan_id") val scanId: String = "",
+    @SerializedName("disease") @SerialName("disease") val disease: String = "",
+    @SerializedName("opinion_count") @SerialName("opinion_count") val opinionCount: Int = 0,
+    @SerializedName("latest_at") @SerialName("latest_at") val latestAt: Long = 0,
+    @SerializedName("view_count") @SerialName("view_count") val viewCount: Int = 0,
 )
 
 /** Describes the server-hosted Aqua on-device model (GET /api/aqua/manifest)
@@ -284,52 +286,57 @@ data class SpeciesMatch(
  * own past scans) chose to share. ``thumbPath`` is the filename to
  * pass to /api/community/thumb/<filename> — never a full URL.
  */
+@Serializable
 data class CommunityScansResponse(
-    @SerializedName("items") val items: List<CommunityScanItem> = emptyList(),
-    @SerializedName("summary") val summary: CommunityRegionSummary? = null,
+    @SerializedName("items") @SerialName("items") val items: List<CommunityScanItem> = emptyList(),
+    @SerializedName("summary") @SerialName("summary") val summary: CommunityRegionSummary? = null,
 )
 
+@Serializable
 data class CommunityScanItem(
     // Non-null with safe defaults: Gson does not honour Kotlin non-null types,
     // so an item missing scan_id / disease would otherwise inject null and NPE
     // the whole feed render on first access (consumers pass these into non-null
     // String params). Defaulting degrades one bad row to blank instead.
-    @SerializedName("scan_id") val scanId: String = "",
-    @SerializedName("country") val country: String = "",
-    @SerializedName("region") val region: String = "",
-    @SerializedName("disease") val disease: String = "",
-    @SerializedName("confidence") val confidence: Float? = null,
-    @SerializedName("species") val species: String? = null,
-    @SerializedName("species_score") val speciesScore: Float? = null,
-    @SerializedName("thumb_path") val thumbPath: String? = null,
-    @SerializedName("locale") val locale: String? = null,
-    @SerializedName("created_at") val createdAt: Long = 0L,
-    @SerializedName("opinion_count") val opinionCount: Int = 0,
+    @SerializedName("scan_id") @SerialName("scan_id") val scanId: String = "",
+    @SerializedName("country") @SerialName("country") val country: String = "",
+    @SerializedName("region") @SerialName("region") val region: String = "",
+    @SerializedName("disease") @SerialName("disease") val disease: String = "",
+    @SerializedName("confidence") @SerialName("confidence") val confidence: Float? = null,
+    @SerializedName("species") @SerialName("species") val species: String? = null,
+    @SerializedName("species_score") @SerialName("species_score") val speciesScore: Float? = null,
+    @SerializedName("thumb_path") @SerialName("thumb_path") val thumbPath: String? = null,
+    @SerializedName("locale") @SerialName("locale") val locale: String? = null,
+    @SerializedName("created_at") @SerialName("created_at") val createdAt: Long = 0L,
+    @SerializedName("opinion_count") @SerialName("opinion_count") val opinionCount: Int = 0,
     // The scanner flagged this scan as wanting a community second opinion
     // (they were unsure and are waiting for others to weigh in).
-    @SerializedName("wants_opinion") val wantsOpinion: Boolean = false,
+    @SerializedName("wants_opinion") @SerialName("wants_opinion") val wantsOpinion: Boolean = false,
     // Stable, anonymous per-author token (a sha256 prefix of the pseudo id —
     // never the id itself). Same author ⇒ same token ⇒ same generated avatar.
-    @SerializedName("author_token") val authorToken: String? = null,
+    @SerializedName("author_token") @SerialName("author_token") val authorToken: String? = null,
 )
 
+@Serializable
 data class CommunityRegionSummary(
-    @SerializedName("country") val country: String = "",
-    @SerializedName("region") val region: String? = null,
-    @SerializedName("total") val total: Int = 0,
-    @SerializedName("last_7d") val last7d: Int = 0,
-    @SerializedName("top_diseases") val topDiseases: List<CommunityTopDisease> = emptyList(),
-    @SerializedName("top_regions") val topRegions: List<CommunityTopRegion> = emptyList(),
+    @SerializedName("country") @SerialName("country") val country: String = "",
+    @SerializedName("region") @SerialName("region") val region: String? = null,
+    @SerializedName("total") @SerialName("total") val total: Int = 0,
+    @SerializedName("last_7d") @SerialName("last_7d") val last7d: Int = 0,
+    @SerializedName("top_diseases") @SerialName("top_diseases") val topDiseases: List<CommunityTopDisease> = emptyList(),
+    @SerializedName("top_regions") @SerialName("top_regions") val topRegions: List<CommunityTopRegion> = emptyList(),
 )
 
+@Serializable
 data class CommunityTopDisease(
-    @SerializedName("disease") val disease: String = "",
-    @SerializedName("count") val count: Int = 0,
+    @SerializedName("disease") @SerialName("disease") val disease: String = "",
+    @SerializedName("count") @SerialName("count") val count: Int = 0,
 )
 
+@Serializable
 data class CommunityTopRegion(
-    @SerializedName("region") val region: String = "",
-    @SerializedName("count") val count: Int = 0,
+    @SerializedName("region") @SerialName("region") val region: String = "",
+    @SerializedName("count") @SerialName("count") val count: Int = 0,
 )
 
 /** /api/community/scan response shape. */
@@ -363,23 +370,25 @@ data class CommunityRequestOpinionResponse(
 
 /** One community 'second opinion' on a shared scan. `scanId` is only
  *  populated by the /my-opinions endpoint (which scan the opinion was on). */
+@Serializable
 data class CommunityOpinion(
-    @SerializedName("suggested_disease") val suggestedDisease: String = "",
-    @SerializedName("note") val note: String = "",
-    @SerializedName("created_at") val createdAt: Long = 0L,
-    @SerializedName("scan_id") val scanId: String = "",
+    @SerializedName("suggested_disease") @SerialName("suggested_disease") val suggestedDisease: String = "",
+    @SerializedName("note") @SerialName("note") val note: String = "",
+    @SerializedName("created_at") @SerialName("created_at") val createdAt: Long = 0L,
+    @SerializedName("scan_id") @SerialName("scan_id") val scanId: String = "",
 )
 
 /** /api/community/opinions/{scan_id} response. POST /opinion returns the
  *  same shape plus `ok` + `count`. */
+@Serializable
 data class CommunityOpinionsResponse(
-    @SerializedName("scan_id") val scanId: String = "",
-    @SerializedName("opinions") val opinions: List<CommunityOpinion> = emptyList(),
-    @SerializedName("consensus") val consensus: List<CommunityTopDisease> = emptyList(),
+    @SerializedName("scan_id") @SerialName("scan_id") val scanId: String = "",
+    @SerializedName("opinions") @SerialName("opinions") val opinions: List<CommunityOpinion> = emptyList(),
+    @SerializedName("consensus") @SerialName("consensus") val consensus: List<CommunityTopDisease> = emptyList(),
     // Distinct-viewer count on this scan (per-user deduped server-side).
-    @SerializedName("views") val views: Int = 0,
-    @SerializedName("ok") val ok: Boolean = false,
-    @SerializedName("count") val count: Int = 0,
+    @SerializedName("views") @SerialName("views") val views: Int = 0,
+    @SerializedName("ok") @SerialName("ok") val ok: Boolean = false,
+    @SerializedName("count") @SerialName("count") val count: Int = 0,
 )
 
 /** /api/push/register request body — registers this install's FCM token

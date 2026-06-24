@@ -577,4 +577,86 @@ class ScanRepositoryNetworkTest {
         assertThat(body).doesNotContain("name=region")
         assertThat(body).doesNotContain("name=species")
     }
+
+    // --- Community read GETs (Ktor) ---
+
+    @Test
+    fun communityNearby_success_parsesItemsAndOmitsBlankQueries() {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(
+                    """{"items":[{"scan_id":"s1","disease":"leaf_spot","opinion_count":2}],""" +
+                        """"summary":{"country":"US","total":5}}""",
+                ),
+        )
+        val result = runBlocking {
+            repo.communityNearby(
+                country = "US",
+                region = "", // blank → omitted
+                disease = null, // null → omitted
+                userPseudoId = "u1",
+            )
+        }
+        assertThat(result.isSuccess).isTrue()
+        assertThat(result.getOrNull()?.items?.get(0)?.scanId).isEqualTo("s1")
+        assertThat(result.getOrNull()?.summary?.total).isEqualTo(5)
+
+        val req = server.takeRequest()
+        assertThat(req.method).isEqualTo("GET")
+        assertThat(req.path).startsWith("/api/community/nearby")
+        assertThat(req.path).contains("country=US")
+        assertThat(req.path).contains("user_pseudo_id=u1")
+        assertThat(req.path).contains("limit=12")
+        assertThat(req.path).doesNotContain("region=")
+        assertThat(req.path).doesNotContain("disease=")
+    }
+
+    @Test
+    fun communityBySpecies_success_buildsQuery() {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"items":[]}"""),
+        )
+        runBlocking { repo.communityScansBySpecies("Ficus elastica", userPseudoId = "u9") }
+        val req = server.takeRequest()
+        assertThat(req.path).startsWith("/api/community/by-species")
+        assertThat(req.path).contains("species=Ficus")
+        assertThat(req.path).contains("user_pseudo_id=u9")
+    }
+
+    @Test
+    fun getCommunityOpinions_success_pathAndParse() {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(
+                    """{"scan_id":"sc-9","opinions":[""" +
+                        """{"suggested_disease":"rust","note":"looks like rust"}],"views":4}""",
+                ),
+        )
+        val result = runBlocking { repo.getCommunityOpinions("sc-9") }
+        assertThat(result.isSuccess).isTrue()
+        assertThat(result.getOrNull()?.views).isEqualTo(4)
+        assertThat(result.getOrNull()?.opinions?.get(0)?.suggestedDisease).isEqualTo("rust")
+        assertThat(server.takeRequest().path).isEqualTo("/api/community/opinions/sc-9")
+    }
+
+    @Test
+    fun fetchMyScanOpinions_success_pathAndParse() {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(
+                    """{"scans":[{"scan_id":"a","disease":"leaf_spot","opinion_count":3}],""" +
+                        """"total_opinions":3,"total_views":10}""",
+                ),
+        )
+        val result = runBlocking { repo.fetchMyScanOpinions("user-42") }
+        assertThat(result.isSuccess).isTrue()
+        assertThat(result.getOrNull()?.totalOpinions).isEqualTo(3)
+        assertThat(result.getOrNull()?.scans?.get(0)?.opinionCount).isEqualTo(3)
+        assertThat(server.takeRequest().path).isEqualTo("/api/community/my-scan-opinions/user-42")
+    }
 }

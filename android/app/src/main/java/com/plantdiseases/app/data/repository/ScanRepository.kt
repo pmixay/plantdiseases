@@ -28,6 +28,7 @@ import io.ktor.client.call.body
 import io.ktor.client.request.forms.MultiPartFormDataContent
 import io.ktor.client.request.forms.formData
 import io.ktor.client.request.get
+import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.request.url
@@ -345,11 +346,10 @@ class ScanRepository(
     suspend fun getCommunityOpinions(scanId: String): Result<CommunityOpinionsResponse> =
         withContext(Dispatchers.IO) {
             try {
-                val response = apiService.communityGetOpinions(scanId)
-                if (response.isSuccessful && response.body() != null) {
-                    Result.success(response.body()!!)
-                } else {
-                    Result.failure(Exception("Server error: ${response.code()}"))
+                val response = apiClient.httpClient.get("api/community/opinions/$scanId")
+                when (response.status.value) {
+                    in 200..299 -> Result.success(response.body<CommunityOpinionsResponse>())
+                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
                 }
             } catch (e: SocketTimeoutException) {
                 Result.failure(ServerTimeoutException())
@@ -364,11 +364,10 @@ class ScanRepository(
     suspend fun getMyCommunityOpinions(pseudoId: String): Result<CommunityOpinionsResponse> =
         withContext(Dispatchers.IO) {
             try {
-                val response = apiService.communityMyOpinions(pseudoId)
-                if (response.isSuccessful && response.body() != null) {
-                    Result.success(response.body()!!)
-                } else {
-                    Result.failure(Exception("Server error: ${response.code()}"))
+                val response = apiClient.httpClient.get("api/community/my-opinions/$pseudoId")
+                when (response.status.value) {
+                    in 200..299 -> Result.success(response.body<CommunityOpinionsResponse>())
+                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
                 }
             } catch (e: SocketTimeoutException) {
                 Result.failure(ServerTimeoutException())
@@ -748,11 +747,10 @@ class ScanRepository(
     suspend fun fetchMyScanOpinions(pseudoId: String): Result<MyScanOpinionsResponse> =
         withContext(Dispatchers.IO) {
             try {
-                val r = apiService.communityMyScanOpinions(pseudoId)
-                if (r.isSuccessful && r.body() != null) {
-                    Result.success(r.body()!!)
-                } else {
-                    Result.failure(Exception("Server error: ${r.code()}"))
+                val r = apiClient.httpClient.get("api/community/my-scan-opinions/$pseudoId")
+                when (r.status.value) {
+                    in 200..299 -> Result.success(r.body<MyScanOpinionsResponse>())
+                    else -> Result.failure(Exception("Server error: ${r.status.value}"))
                 }
             } catch (e: Exception) {
                 Result.failure(e)
@@ -1077,18 +1075,23 @@ class ScanRepository(
     ): Result<com.plantdiseases.app.data.model.CommunityScansResponse> =
         withContext(Dispatchers.IO) {
             try {
-                val response = apiService.communityScanNearby(
-                    country = country,
-                    region = region?.takeIf { it.isNotBlank() },
-                    disease = disease?.takeIf { it.isNotBlank() },
-                    species = species?.takeIf { it.isNotBlank() },
-                    userPseudoId = userPseudoId?.takeIf { it.isNotBlank() },
-                    limit = limit,
-                )
-                if (response.isSuccessful && response.body() != null) {
-                    Result.success(response.body()!!)
-                } else {
-                    Result.failure(Exception("Community nearby failed: ${response.code()}"))
+                val response = apiClient.httpClient.get("api/community/nearby") {
+                    parameter("country", country)
+                    region?.takeIf { it.isNotBlank() }?.let { parameter("region", it) }
+                    disease?.takeIf { it.isNotBlank() }?.let { parameter("disease", it) }
+                    species?.takeIf { it.isNotBlank() }?.let { parameter("species", it) }
+                    userPseudoId?.takeIf { it.isNotBlank() }?.let {
+                        parameter("user_pseudo_id", it)
+                    }
+                    parameter("limit", limit)
+                }
+                when (response.status.value) {
+                    in 200..299 -> Result.success(
+                        response.body<com.plantdiseases.app.data.model.CommunityScansResponse>(),
+                    )
+                    else -> Result.failure(
+                        Exception("Community nearby failed: ${response.status.value}"),
+                    )
                 }
             } catch (e: Exception) {
                 Result.failure(e)
@@ -1136,15 +1139,18 @@ class ScanRepository(
     ): Result<com.plantdiseases.app.data.model.CommunityScansResponse> =
         withContext(Dispatchers.IO) {
             try {
-                val response = apiService.communityBySpecies(
-                    species = species,
-                    limit = limit,
-                    userPseudoId = userPseudoId?.takeIf { it.isNotBlank() },
-                )
-                if (response.isSuccessful && response.body() != null) {
-                    Result.success(response.body()!!)
-                } else {
-                    Result.failure(Exception("by-species failed: ${response.code()}"))
+                val response = apiClient.httpClient.get("api/community/by-species") {
+                    parameter("species", species)
+                    parameter("limit", limit)
+                    userPseudoId?.takeIf { it.isNotBlank() }?.let {
+                        parameter("user_pseudo_id", it)
+                    }
+                }
+                when (response.status.value) {
+                    in 200..299 -> Result.success(
+                        response.body<com.plantdiseases.app.data.model.CommunityScansResponse>(),
+                    )
+                    else -> Result.failure(Exception("by-species failed: ${response.status.value}"))
                 }
             } catch (e: Exception) {
                 Result.failure(e)
