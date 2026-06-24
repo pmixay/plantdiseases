@@ -423,20 +423,19 @@ class ScanRepository(
     suspend fun sendChat(request: ChatRequest): Result<ChatResponse> =
         withContext(Dispatchers.IO) {
             try {
-                val response = apiService.chat(request)
-                if (response.isSuccessful && response.body() != null) {
-                    Result.success(response.body()!!)
-                } else if (response.code() == 429) {
-                    Result.failure(RateLimitException())
-                } else if (response.code() == 503) {
-                    Result.failure(ServerStartingException())
-                } else if (response.code() == 400) {
+                val response = apiClient.httpClient.post("api/chat") {
+                    contentType(ContentType.Application.Json)
+                    setBody(request)
+                }
+                when (response.status.value) {
+                    in 200..299 -> Result.success(response.body<ChatResponse>())
+                    429 -> Result.failure(RateLimitException())
+                    503 -> Result.failure(ServerStartingException())
                     // Server rejected our payload (oversize diagnosis,
                     // empty message, etc.). Surface as a generic
                     // failure — the UI keeps a chat-level error toast.
-                    Result.failure(Exception("Bad request"))
-                } else {
-                    Result.failure(Exception("Server error: ${response.code()}"))
+                    400 -> Result.failure(Exception("Bad request"))
+                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
                 }
             } catch (e: SocketTimeoutException) {
                 Result.failure(ServerTimeoutException())
@@ -530,11 +529,13 @@ class ScanRepository(
     suspend fun fetchProgression(request: ProgressionRequest): Result<ProgressionResponse> =
         withContext(Dispatchers.IO) {
             try {
-                val response = apiService.progression(request)
-                if (response.isSuccessful && response.body() != null) {
-                    Result.success(response.body()!!)
-                } else {
-                    Result.failure(Exception("Server error: ${response.code()}"))
+                val response = apiClient.httpClient.post("api/progression") {
+                    contentType(ContentType.Application.Json)
+                    setBody(request)
+                }
+                when (response.status.value) {
+                    in 200..299 -> Result.success(response.body<ProgressionResponse>())
+                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
                 }
             } catch (e: SocketTimeoutException) {
                 Result.failure(ServerTimeoutException())

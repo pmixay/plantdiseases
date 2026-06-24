@@ -3,8 +3,6 @@ package com.plantdiseases.app.data.remote
 import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.CarePlanResponse
-import com.plantdiseases.app.data.model.ChatRequest
-import com.plantdiseases.app.data.model.ChatResponse
 import com.plantdiseases.app.data.model.CommunityOpinionRequest
 import com.plantdiseases.app.data.model.CommunityOpinionsResponse
 import com.plantdiseases.app.data.model.CommunityRequestOpinionRequest
@@ -21,8 +19,6 @@ import com.plantdiseases.app.data.model.SpeciesDiseasesResponse
 import com.plantdiseases.app.data.model.SpeciesInfoResponse
 import com.plantdiseases.app.data.model.FeedbackResponse
 import com.plantdiseases.app.data.model.IdentifyResponse
-import com.plantdiseases.app.data.model.ProgressionRequest
-import com.plantdiseases.app.data.model.ProgressionResponse
 import com.plantdiseases.app.data.model.TrendingResponse
 import com.plantdiseases.app.util.ServerConfig
 import io.ktor.client.HttpClient
@@ -83,8 +79,7 @@ interface ApiService {
 
     // GET api/health migrated to Ktor (ScanRepository.checkServerHealth).
 
-    @POST("api/chat")
-    suspend fun chat(@Body request: ChatRequest): retrofit2.Response<ChatResponse>
+    // POST api/chat migrated to Ktor (ScanRepository.sendChat).
 
     @Multipart
     @POST("api/identify")
@@ -99,8 +94,7 @@ interface ApiService {
 
     // POST api/symptom-diagnose migrated to Ktor (ScanRepository.diagnoseSymptoms).
 
-    @POST("api/progression")
-    suspend fun progression(@Body request: ProgressionRequest): retrofit2.Response<ProgressionResponse>
+    // POST api/progression migrated to Ktor (ScanRepository.fetchProgression).
 
     // POST api/feedback migrated to Ktor (ScanRepository.submitFeedback).
 

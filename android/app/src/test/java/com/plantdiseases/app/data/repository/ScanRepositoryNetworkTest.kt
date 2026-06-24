@@ -2,7 +2,9 @@ package com.plantdiseases.app.data.repository
 
 import com.google.common.truth.Truth.assertThat
 import com.plantdiseases.app.data.model.CarePlanRequest
+import com.plantdiseases.app.data.model.ChatRequest
 import com.plantdiseases.app.data.model.FeedbackRequest
+import com.plantdiseases.app.data.model.ProgressionRequest
 import com.plantdiseases.app.data.model.SymptomDiagnoseRequest
 import com.plantdiseases.app.data.remote.PlantApiClient
 import com.plantdiseases.app.testutil.FakeScanDao
@@ -408,5 +410,83 @@ class ScanRepositoryNetworkTest {
         server.enqueue(MockResponse().setResponseCode(503))
         val plan = runBlocking { client.carePlan(CarePlanRequest(disease = "x")) }
         assertThat(plan).isNull()
+    }
+
+    // --- POST /api/chat (Ktor, Map<String,Any?> diagnosis via AnyMapSerializer) ---
+
+    @Test
+    fun chat_success_serializesDiagnosisMapAsJsonObject() {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"available":true,"reply":"Water less.","session":{"session_id":"s1"}}"""),
+        )
+        val request = ChatRequest(
+            sessionId = "s1",
+            message = "help",
+            diagnosis = mapOf(
+                "class_name" to "leaf_spot",
+                "confidence" to 0.9,
+                "is_healthy" to false,
+                "warnings" to listOf("blurry"),
+                "species" to null,
+            ),
+        )
+        val result = runBlocking { repo.sendChat(request) }
+
+        assertThat(result.isSuccess).isTrue()
+        assertThat(result.getOrNull()?.reply).isEqualTo("Water less.")
+        assertThat(result.getOrNull()?.session?.sessionId).isEqualTo("s1")
+
+        val sent = server.takeRequest()
+        assertThat(sent.method).isEqualTo("POST")
+        assertThat(sent.path).isEqualTo("/api/chat")
+        val body = sent.body.readUtf8()
+        // diagnosis must be a real nested JSON object, not a toString() blob.
+        assertThat(body).contains("\"diagnosis\":{")
+        assertThat(body).contains("\"class_name\":\"leaf_spot\"")
+        assertThat(body).contains("\"confidence\":0.9")
+        assertThat(body).contains("\"is_healthy\":false")
+        assertThat(body).contains("\"warnings\":[\"blurry\"]")
+    }
+
+    @Test
+    fun chat_429_mapsToRateLimit() {
+        // POST retries an explicit 429 once.
+        server.enqueue(MockResponse().setResponseCode(429))
+        server.enqueue(MockResponse().setResponseCode(429))
+        val result = runBlocking { repo.sendChat(ChatRequest(sessionId = "s", message = "x")) }
+        assertThat(result.exceptionOrNull())
+            .isInstanceOf(ScanRepository.RateLimitException::class.java)
+    }
+
+    // --- POST /api/progression (Ktor, List<Map<String,Any?>> via AnyMapListSerializer) ---
+
+    @Test
+    fun progression_success_serializesHistoryAndParsesTrend() {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"trend":"worsening","sparkline":[1.0,2.0,3.0],"alert":true}"""),
+        )
+        val request = ProgressionRequest(
+            history = listOf(
+                mapOf("class_name" to "leaf_spot", "confidence" to 0.8, "severity" to "high"),
+                mapOf("class_name" to "leaf_spot", "confidence" to 0.9, "severity" to "high"),
+            ),
+        )
+        val result = runBlocking { repo.fetchProgression(request) }
+
+        assertThat(result.isSuccess).isTrue()
+        assertThat(result.getOrNull()?.trend).isEqualTo("worsening")
+        assertThat(result.getOrNull()?.alert).isTrue()
+
+        val sent = server.takeRequest()
+        assertThat(sent.path).isEqualTo("/api/progression")
+        val body = sent.body.readUtf8()
+        // history must be a JSON array of objects.
+        assertThat(body).contains("\"history\":[{")
+        assertThat(body).contains("\"class_name\":\"leaf_spot\"")
+        assertThat(body).contains("\"severity\":\"high\"")
     }
 }

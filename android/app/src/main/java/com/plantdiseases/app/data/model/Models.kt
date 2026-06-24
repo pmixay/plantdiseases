@@ -5,16 +5,25 @@ import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.descriptors.PrimitiveKind
 import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.descriptors.nullable
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonDecoder
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonEncoder
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.longOrNull
 
 // NOTE (Ktor + kotlinx.serialization migration, step 2): the response models
 // reachable from /api/analyze are dual-annotated — @SerializedName keeps Gson
@@ -485,11 +494,15 @@ data class ScanHistoryItem(
  *                  reply in the latest classifier output. Capped to
  *                  8 KB on the wire.
  */
+@Serializable
 data class ChatRequest(
-    @SerializedName("session_id") val sessionId: String,
-    @SerializedName("message") val message: String,
-    @SerializedName("locale") val locale: String = "en",
-    @SerializedName("diagnosis") val diagnosis: Map<String, Any?>? = null,
+    @SerializedName("session_id") @SerialName("session_id") val sessionId: String,
+    @SerializedName("message") @SerialName("message") val message: String,
+    @SerializedName("locale") @SerialName("locale") val locale: String = "en",
+    @SerializedName("diagnosis")
+    @SerialName("diagnosis")
+    @Serializable(with = AnyMapSerializer::class)
+    val diagnosis: Map<String, Any?>? = null,
 )
 
 /**
@@ -498,28 +511,31 @@ data class ChatRequest(
  * readable `reason`. The UI should surface `fallback` (when present)
  * verbatim instead of inventing its own copy.
  */
+@Serializable
 data class ChatResponse(
-    @SerializedName("available") val available: Boolean = false,
-    @SerializedName("reply") val reply: String = "",
-    @SerializedName("reason") val reason: String? = null,
-    @SerializedName("fallback") val fallback: String? = null,
-    @SerializedName("model") val model: String? = null,
-    @SerializedName("provider") val provider: String? = null,
-    @SerializedName("usage") val usage: ChatUsage? = null,
-    @SerializedName("session") val session: ChatSession? = null,
+    @SerializedName("available") @SerialName("available") val available: Boolean = false,
+    @SerializedName("reply") @SerialName("reply") val reply: String = "",
+    @SerializedName("reason") @SerialName("reason") val reason: String? = null,
+    @SerializedName("fallback") @SerialName("fallback") val fallback: String? = null,
+    @SerializedName("model") @SerialName("model") val model: String? = null,
+    @SerializedName("provider") @SerialName("provider") val provider: String? = null,
+    @SerializedName("usage") @SerialName("usage") val usage: ChatUsage? = null,
+    @SerializedName("session") @SerialName("session") val session: ChatSession? = null,
 )
 
+@Serializable
 data class ChatUsage(
-    @SerializedName("input_tokens") val inputTokens: Int? = null,
-    @SerializedName("output_tokens") val outputTokens: Int? = null,
+    @SerializedName("input_tokens") @SerialName("input_tokens") val inputTokens: Int? = null,
+    @SerializedName("output_tokens") @SerialName("output_tokens") val outputTokens: Int? = null,
 )
 
+@Serializable
 data class ChatSession(
-    @SerializedName("session_id") val sessionId: String,
-    @SerializedName("turns_used") val turnsUsed: Int = 0,
-    @SerializedName("turns_remaining") val turnsRemaining: Int = 0,
-    @SerializedName("tokens_used") val tokensUsed: Int = 0,
-    @SerializedName("tokens_remaining") val tokensRemaining: Int = 0,
+    @SerializedName("session_id") @SerialName("session_id") val sessionId: String,
+    @SerializedName("turns_used") @SerialName("turns_used") val turnsUsed: Int = 0,
+    @SerializedName("turns_remaining") @SerialName("turns_remaining") val turnsRemaining: Int = 0,
+    @SerializedName("tokens_used") @SerialName("tokens_used") val tokensUsed: Int = 0,
+    @SerializedName("tokens_remaining") @SerialName("tokens_remaining") val tokensRemaining: Int = 0,
 )
 
 /** PlantNet species candidate from /api/identify. */
@@ -727,8 +743,8 @@ data class CarePlanCheckpoint(
  * ResponseCache round-trip — keep working unchanged. Only the kotlinx/Ktor
  * transport path uses this; Gson uses @SerializedName as before.
  */
+@OptIn(ExperimentalSerializationApi::class)
 object WateringDaysSerializer : KSerializer<Any?> {
-    @OptIn(ExperimentalSerializationApi::class)
     override val descriptor =
         PrimitiveSerialDescriptor("watering_days", PrimitiveKind.STRING).nullable
 
@@ -753,6 +769,70 @@ object WateringDaysSerializer : KSerializer<Any?> {
     }
 }
 
+/** Recursively map a loosely-typed [Any] value (String/Number/Boolean/List/Map/
+ *  null — the shapes the chat-diagnosis and progression-history payloads use)
+ *  to a kotlinx [JsonElement]. */
+private fun anyToJsonElement(value: Any?): JsonElement = when (value) {
+    null -> JsonNull
+    is JsonElement -> value
+    is String -> JsonPrimitive(value)
+    is Boolean -> JsonPrimitive(value)
+    is Number -> JsonPrimitive(value)
+    is Map<*, *> -> JsonObject(value.entries.associate { (k, v) -> k.toString() to anyToJsonElement(v) })
+    is Iterable<*> -> JsonArray(value.map { anyToJsonElement(it) })
+    else -> JsonPrimitive(value.toString())
+}
+
+/** Inverse of [anyToJsonElement] — only exercised in tests (these payloads are
+ *  request-only and never decoded from the wire), but a [KSerializer] must
+ *  implement both directions. */
+private fun jsonElementToAny(element: JsonElement): Any? = when (element) {
+    is JsonNull -> null
+    is JsonObject -> element.mapValues { jsonElementToAny(it.value) }
+    is JsonArray -> element.map { jsonElementToAny(it) }
+    is JsonPrimitive -> when {
+        element.isString -> element.content
+        element.booleanOrNull != null -> element.booleanOrNull
+        element.longOrNull != null -> element.longOrNull
+        element.doubleOrNull != null -> element.doubleOrNull
+        else -> element.content
+    }
+}
+
+/**
+ * Serializes a `Map<String, Any?>` (a free-form analyse-shaped payload) as a
+ * JSON object on the kotlinx/Ktor path. Keeps the field type `Map<String, Any?>`
+ * so the builders (`scanToProgressionPayload`, the chat-diagnosis `mapOf`) and
+ * any Gson use stay unchanged. Request-only — `deserialize` is for completeness.
+ */
+object AnyMapSerializer : KSerializer<Map<String, Any?>> {
+    override val descriptor: SerialDescriptor = JsonObject.serializer().descriptor
+
+    override fun serialize(encoder: Encoder, value: Map<String, Any?>) {
+        val jsonEncoder = encoder as JsonEncoder
+        jsonEncoder.encodeJsonElement(
+            JsonObject(value.mapValues { anyToJsonElement(it.value) }),
+        )
+    }
+
+    override fun deserialize(decoder: Decoder): Map<String, Any?> {
+        val jsonObject = (decoder as JsonDecoder).decodeJsonElement().jsonObject
+        return jsonObject.mapValues { jsonElementToAny(it.value) }
+    }
+}
+
+/** `List<Map<String, Any?>>` variant for the progression history payload. */
+object AnyMapListSerializer : KSerializer<List<Map<String, Any?>>> {
+    private val delegate = ListSerializer(AnyMapSerializer)
+    override val descriptor: SerialDescriptor = delegate.descriptor
+
+    override fun serialize(encoder: Encoder, value: List<Map<String, Any?>>) =
+        delegate.serialize(encoder, value)
+
+    override fun deserialize(decoder: Decoder): List<Map<String, Any?>> =
+        delegate.deserialize(decoder)
+}
+
 /** Server health check response */
 @Serializable
 data class HealthResponse(
@@ -768,8 +848,12 @@ data class HealthResponse(
  * The server returns the 5-point severity sparkline + a trend slope
  * computed across the full history.
  */
+@Serializable
 data class ProgressionRequest(
-    @SerializedName("history") val history: List<Map<String, Any?>>,
+    @SerializedName("history")
+    @SerialName("history")
+    @Serializable(with = AnyMapListSerializer::class)
+    val history: List<Map<String, Any?>>,
 )
 
 /**
@@ -777,21 +861,22 @@ data class ProgressionRequest(
  * baseline}. `baseline` means there were not enough scans to compare
  * against. `sparkline` is always populated (5-point severity series).
  */
+@Serializable
 data class ProgressionResponse(
-    @SerializedName("trend") val trend: String = "baseline",
-    @SerializedName("delta_confidence") val deltaConfidence: Float = 0f,
-    @SerializedName("delta_severity") val deltaSeverity: Int = 0,
-    @SerializedName("class_changed") val classChanged: Boolean = false,
-    @SerializedName("previous_class") val previousClass: String? = null,
-    @SerializedName("current_class") val currentClass: String? = null,
-    @SerializedName("sparkline") val sparkline: List<Float>? = null,
-    @SerializedName("history_length") val historyLength: Int? = null,
-    @SerializedName("points") val points: List<Float>? = null,
+    @SerializedName("trend") @SerialName("trend") val trend: String = "baseline",
+    @SerializedName("delta_confidence") @SerialName("delta_confidence") val deltaConfidence: Float = 0f,
+    @SerializedName("delta_severity") @SerialName("delta_severity") val deltaSeverity: Int = 0,
+    @SerializedName("class_changed") @SerialName("class_changed") val classChanged: Boolean = false,
+    @SerializedName("previous_class") @SerialName("previous_class") val previousClass: String? = null,
+    @SerializedName("current_class") @SerialName("current_class") val currentClass: String? = null,
+    @SerializedName("sparkline") @SerialName("sparkline") val sparkline: List<Float>? = null,
+    @SerializedName("history_length") @SerialName("history_length") val historyLength: Int? = null,
+    @SerializedName("points") @SerialName("points") val points: List<Float>? = null,
     /** Server flag — set when the LAST TWO points both rose; the
      *  plant-detail screen pushes a "take a fresh scan" notification
      *  in that case. */
-    @SerializedName("alert") val alert: Boolean = false,
-    @SerializedName("alert_reason") val alertReason: String? = null,
+    @SerializedName("alert") @SerialName("alert") val alert: Boolean = false,
+    @SerializedName("alert_reason") @SerialName("alert_reason") val alertReason: String? = null,
 )
 
 /**
