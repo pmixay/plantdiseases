@@ -42,7 +42,6 @@ import com.plantdiseases.app.util.AutosavePrefs
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.TelemetryIds
 import com.plantdiseases.app.util.ThemeHelper
-import com.plantdiseases.app.util.expandTouchTarget
 import kotlinx.coroutines.launch
 
 class ProfileFragment : Fragment() {
@@ -116,21 +115,13 @@ class ProfileFragment : Fragment() {
         binding.langRu.setOnClickListener { setLanguage("ru") }
         highlightActiveLanguage()
 
-        binding.btnRefreshHealth.setOnClickListener {
-            checkServerHealth()
-        }
-        // Accessibility: grow the 40dp refresh icon's hit area to 48dp.
-        binding.btnRefreshHealth.expandTouchTarget()
-
         setupThemeChips()
         setupAutosaveToggle()
         setupCommunityControls()
         setupMyOpinionsFold()
-        // loadStats() + checkServerHealth() run in onResume(), which always
-        // fires immediately after this on first show and again on every return.
-        // Calling them here too issued a duplicate getStats() DB read and a
-        // duplicate /api/health request (with a visible status flicker) on
-        // every fragment creation.
+        // loadStats() runs in onResume(), which fires immediately after this on
+        // first show and again on every return — calling it here too would issue
+        // a duplicate getStats() DB read on every fragment creation.
     }
 
     private fun setupMyOpinionsFold() {
@@ -611,47 +602,10 @@ class ProfileFragment : Fragment() {
         }
     }
 
-    private fun checkServerHealth() {
-        val app = requireActivity().application as PlantDiseasesApp
-
-        binding.tvServerStatus.text = getString(R.string.server_checking)
-        setStatusIndicatorColor(R.color.on_surface_secondary)
-        val dash = getString(R.string.diagnostics_value_dash)
-        binding.tvDiagVersion.text = dash
-        binding.tvDiagClasses.text = dash
-
-        lifecycleScope.launch {
-            val result = app.scanRepository.checkServerHealth()
-            if (_binding == null) return@launch
-
-            result.onSuccess { health ->
-                binding.tvServerStatus.text = getString(R.string.server_online)
-                setStatusIndicatorColor(R.color.healthy_green)
-                binding.tvDiagVersion.text = health.version.ifBlank { dash }
-                binding.tvDiagClasses.text = if (health.numClasses > 0) {
-                    health.numClasses.toString()
-                } else {
-                    dash
-                }
-            }.onFailure {
-                binding.tvServerStatus.text = getString(R.string.server_offline)
-                setStatusIndicatorColor(R.color.disease_red)
-                binding.tvDiagVersion.text = dash
-                binding.tvDiagClasses.text = dash
-            }
-        }
-    }
-
-    private fun setStatusIndicatorColor(colorRes: Int) {
-        val drawable = binding.serverStatusIndicator.background as? GradientDrawable
-        drawable?.setColor(ContextCompat.getColor(requireContext(), colorRes))
-    }
-
     override fun onResume() {
         super.onResume()
         loadStats()
         loadMyOpinions()
-        checkServerHealth()
     }
 
     override fun onDestroyView() {

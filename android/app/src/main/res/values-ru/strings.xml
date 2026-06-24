@@ -292,7 +292,7 @@
     <string name="warning_disease_suspected_title">Замечена возможная проблема</string>
     <string name="warning_disease_suspected">Растение выглядит в основном здоровым, но модель также заметила признаки: %1$s. Понаблюдайте и переснимите, если симптомы усилятся.</string>
     <string name="warning_offline_scan_title">Офлайн-скан</string>
-    <string name="warning_offline_scan" formatted="false">Рассчитано на телефоне, офлайн — без сервера. Точность модели на устройстве около 84% на нашем реальном тестовом наборе (полная серверная модель: 86,5%). Пересканируйте онлайн для более точного диагноза.</string>
+    <string name="warning_offline_scan">Рассчитано на телефоне, офлайн — без сервера. Пересканируйте онлайн для более точного диагноза.</string>
 
     <!-- Empty states -->
     <string name="first_scan_cta">Сделать первый скан</string>

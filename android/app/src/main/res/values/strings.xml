@@ -298,7 +298,7 @@
     <string name="warning_disease_suspected_title">Possible problem spotted</string>
     <string name="warning_disease_suspected">The plant looks mostly healthy, but the model also picked up signs of %1$s. Keep an eye on it and re-scan if it spreads.</string>
     <string name="warning_offline_scan_title">Offline scan</string>
-    <string name="warning_offline_scan" formatted="false">Computed on your phone, offline — no server. The on-device model is about 84% accurate on our real-world test set (full server model: 86.5%). Re-scan online for a more confident diagnosis.</string>
+    <string name="warning_offline_scan">Computed on your phone, offline — no server. Re-scan online for a more thorough diagnosis.</string>
 
     <!-- Empty states -->
     <string name="first_scan_cta">Take First Scan</string>
