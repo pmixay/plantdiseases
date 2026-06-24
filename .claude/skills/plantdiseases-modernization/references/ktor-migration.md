@@ -1,5 +1,14 @@
 # Retrofit + Gson → Ktor + kotlinx.serialization
 
+> **STATUS: scaffolded, in progress.** The serialization plugin + Ktor (ktor-bom 2.3.13) are in
+> the build; `PlantApiClient` (at the END of `data/remote/ApiService.kt`, ≈ lines 377–425) already
+> builds **both** a Retrofit+Gson client and a Ktor `HttpClient` over the **same OkHttp engine**
+> (shared base-URL seam, `RetryInterceptor`, `ContentNegotiation(Json)`, `expectSuccess=false`).
+> `/api/analyze` is migrated (`ScanRepository.analyzeImage`); 9/73 models are `@Serializable`.
+> **Remaining = 31 endpoints + 64 models** — the per-endpoint recipe + checklist is in
+> [endpoint-inventory.md](endpoint-inventory.md). The setup sections below describe what's already
+> wired (reference, not steps to redo); use them to mirror the existing pattern for each new endpoint.
+
 A contained data-layer swap behind the existing `ApiService`/`PlantApiClient` boundary. Goal:
 identical behavior (every endpoint, multipart upload, streaming, retry, status→exception
 mapping), the base-URL test seam preserved, `ScanRepositoryNetworkTest` still green.

@@ -1,5 +1,12 @@
 # Koin DI — replacing the service locator
 
+> **STATUS: graph already wired.** `di/AppModule.kt` (`appModule`) + `startKoin{}` in
+> `PlantDiseasesApp` exist, Koin deps are in the build (koin-bom 4.0.0), and the Application
+> keeps its accessors as `by inject()` (the safety net). **The only work left: migrate the ~54
+> `application as PlantDiseasesApp` call sites to direct injection, then delete the accessors**
+> — jump to "Migrating the ~54 call sites". The build/module/startKoin sections below document
+> what's already in place; don't redo them.
+
 The app already does manual DI via a service locator: `PlantDiseasesApp` holds `by lazy`
 singletons and ~54 consumers reach them with `application as PlantDiseasesApp`. Koin replaces
 that with declarative modules + injection, with almost 1:1 mapping. Koin is **runtime** DI

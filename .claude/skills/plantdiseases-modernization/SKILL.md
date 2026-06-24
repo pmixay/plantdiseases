@@ -16,35 +16,51 @@ the ML, not the UI). Instead, modernize the guts and ship:
 > MetalRestrict is on a *different* track (full Compose migration — see the
 > `android-compose-migration` skill). This skill is plantdiseases-only and Compose-free.
 
-## Current state (verified — build on this, don't guess)
+## Progress snapshot — PARTLY DONE on `main` (verify against code; don't redo finished work)
 
-- **DI today:** `PlantDiseasesApp : Application` is a **service locator** holding `by lazy`
-  singletons: `database` (Room), `apiClient: PlantApiClient`, `scanRepository`,
-  `plantRepository`, `communityUploader`, plus `appScope`. Consumers reach them via
-  **`application as PlantDiseasesApp`** — there are **~54 such call sites** to migrate.
-- **Networking today:** `data/remote/PlantApiClient.kt` builds OkHttp + Retrofit + Gson and
-  exposes `data/remote/ApiService.kt` (a large `@Multipart`/`@GET`/`@POST` interface). It has
-  a **base-URL constructor seam** (`PlantApiClient(baseUrl)`) used by tests, a
-  **`RetryInterceptor`**, and HTTP-status → typed-exception mapping.
-- **Models:** `data/model/Models.kt` + `LabelingModels.kt` use Gson (`@SerializedName`).
-- **Tests:** `ScanRepositoryNetworkTest` drives a **`MockWebServer`** through the base-URL seam
-  (multipart upload, retry, status→exception mapping). These must stay green after migration.
-- Kotlin **2.1.21**, AGP 8.13.2, compileSdk 35, minSdk 26, `build.gradle.kts`, single `:app`,
-  signed releases, EN/RU (`values/` + `values-ru/`), `values-night` dark theme.
+The build already wires Koin (koin-bom 4.0.0) + Ktor (ktor-bom 2.3.13) + the kotlinx
+serialization plugin. State as of this upgrade:
 
-## Recommended order (and why)
+**Step 1 — Koin DI: ✅ graph wired, ⬜ call sites pending.**
+- `di/AppModule.kt` defines `appModule`, mirroring the former `by lazy` singletons 1:1
+  (`AppDatabase`, `PlantApiClient`, `ScanRepository`, `PlantRepository`, `CommunityUploader`).
+- `PlantDiseasesApp.onCreate` calls `startKoin{}`; the Application keeps its
+  `database/apiClient/scanRepository/...` accessors as `by inject()` — the **safety net**.
+- **Remaining:** migrate the **~54 `application as PlantDiseasesApp`** call sites to direct
+  injection (`by inject()` / constructor / `viewModel { }`), then delete the Application
+  accessors. `koin-androidx-workmanager` is intentionally NOT added yet (no Koin worker).
+- Details + the call-site procedure: [koin-di.md](references/koin-di.md).
 
-**Koin → Ktor/Serialization → RuStore.**
-- Koin **first**: once dependencies come from Koin modules, swapping the networking *impl*
-  behind the same `ApiService`/repository boundary is a one-line rebinding, not 54 edits twice.
-- Ktor **second**: contained data-layer swap behind the existing interfaces + test seam.
-- RuStore **last**: it's release/process — do it once the code is stable.
+**Step 2 — Ktor + kotlinx.serialization: 🟡 scaffolded, analyze path migrated.**
+- `PlantApiClient` **lives at the END of `data/remote/ApiService.kt`** (≈ lines 377–425), NOT
+  a separate file. It builds **both** a Retrofit+Gson client **and** a Ktor `HttpClient` over
+  the **same OkHttp engine** (shared `RetryInterceptor`, **base-URL seam**,
+  `ContentNegotiation(Json)`, `expectSuccess = false`). Both transports coexist by design.
+- `/api/analyze` is **done**: `ScanRepository.analyzeImage` uses `apiClient.httpClient` (Ktor
+  multipart). **9 of 73 models** are `@Serializable` (the analyze path).
+- **Remaining: 31 Retrofit endpoints + 64 Gson-only models.** Full checklist with done/todo
+  status and the per-endpoint recipe: [endpoint-inventory.md](references/endpoint-inventory.md).
 
-| Step | Reference | Rough effort | Risk |
+**Step 3 — RuStore publish: ⬜ not started.** [rustore-publishing.md](references/rustore-publishing.md).
+
+Stack: Kotlin **2.1.21**, AGP 8.13.2, compileSdk 35, minSdk 26, `build.gradle.kts`, single
+`:app`, signed releases, EN/RU (`values/` + `values-ru/`), `values-night` dark theme.
+
+## Remaining-work order
+
+1. **Finish Ktor migration** endpoint-by-endpoint ([endpoint-inventory.md](references/endpoint-inventory.md)),
+   each with a test ([testing.md](references/testing.md)). Migrate a model's `@Serializable`
+   the first time an endpoint that returns it moves to Ktor. Keep Retrofit+Gson until the
+   **last** endpoint is migrated, then delete Retrofit/Gson + the dual `@SerializedName`.
+2. **Finish Koin** call-site migration ([koin-di.md](references/koin-di.md)) — can proceed in
+   parallel; it's mechanical and independent of networking.
+3. **RuStore** once code is stable ([rustore-publishing.md](references/rustore-publishing.md)).
+
+| Step | Reference | Status | Remaining effort |
 |---|---|---|---|
-| Koin DI | [koin-di.md](references/koin-di.md) | ~half a day | low–med (touches ~54 call sites, mechanical) |
-| Ktor + Serialization | [ktor-migration.md](references/ktor-migration.md) | ~a day w/ tests | med (preserve every endpoint + error mapping) |
-| RuStore publish | [rustore-publishing.md](references/rustore-publishing.md) | ~half a day | low (process, not code) |
+| Koin DI | [koin-di.md](references/koin-di.md) | ✅ wired / ⬜ ~54 call sites | ~half a day, mechanical |
+| Ktor + Serialization | [ktor-migration.md](references/ktor-migration.md) · [endpoint-inventory.md](references/endpoint-inventory.md) | 🟡 1/32 endpoints, 9/73 models | ~a day w/ tests |
+| RuStore publish | [rustore-publishing.md](references/rustore-publishing.md) | ⬜ not started | ~half a day, process |
 
 ## Hard constraints — do not violate
 
