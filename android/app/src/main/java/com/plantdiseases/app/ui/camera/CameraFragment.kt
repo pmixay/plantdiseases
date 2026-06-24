@@ -106,6 +106,10 @@ class CameraFragment : Fragment() {
          *  cropped photo path under [RESULT_PATH]. */
         const val RESULT_IDENTIFY_CAPTURE = "camera_identify_capture"
         const val RESULT_PATH = "path"
+
+        private const val KEY_PENDING_CROP = "pending_crop_file"
+        private const val KEY_PENDING_SOURCE = "pending_source_file"
+        private const val KEY_PENDING_FROM_CAMERA = "pending_from_camera"
     }
 
     private val permissionLauncher = registerForActivityResult(
@@ -205,11 +209,28 @@ class CameraFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
+        // Restore the in-flight crop/capture handoff so a process-death while
+        // the cropper or camera is foregrounded doesn't orphan the result.
+        savedInstanceState?.let { state ->
+            pendingCropFile = state.getString(KEY_PENDING_CROP)?.let { File(it) }
+            pendingSourceFile = state.getString(KEY_PENDING_SOURCE)?.let { File(it) }
+            pendingFromCamera = state.getBoolean(KEY_PENDING_FROM_CAMERA, false)
+        }
+
         setupUI()
         setupPinchToZoom()
         checkCameraPermission()
         registerNetworkCallback()
         restoreGridOverlay()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        // captureInFlight is deliberately not persisted: a capture cannot
+        // survive process-death, so it must reset to false on restore.
+        pendingCropFile?.let { outState.putString(KEY_PENDING_CROP, it.absolutePath) }
+        pendingSourceFile?.let { outState.putString(KEY_PENDING_SOURCE, it.absolutePath) }
+        outState.putBoolean(KEY_PENDING_FROM_CAMERA, pendingFromCamera)
     }
 
     private fun setupUI() {

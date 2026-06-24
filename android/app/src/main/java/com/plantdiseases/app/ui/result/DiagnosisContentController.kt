@@ -226,7 +226,12 @@ class DiagnosisContentController(
             else -> token
         }
 
-    fun setupTreatmentPrevention(scan: ScanEntity, repository: ScanRepository, isRu: Boolean) {
+    fun setupTreatmentPrevention(
+        scan: ScanEntity,
+        repository: ScanRepository,
+        isRu: Boolean,
+        initialTab: Int = 0,
+    ) {
         val treatment = repository.parseStringList(if (isRu) scan.treatmentRu else scan.treatment)
         val prevention = repository.parseStringList(if (isRu) scan.preventionRu else scan.prevention)
 
@@ -274,6 +279,12 @@ class DiagnosisContentController(
             override fun onTabUnselected(tab: TabLayout.Tab) {}
             override fun onTabReselected(tab: TabLayout.Tab) {}
         })
+
+        // Restore a previously-selected tab (rotation / process-death). Tab 0 is
+        // already shown by default, so only re-select when a later tab was active.
+        if (initialTab in 1 until binding.tabsTreatmentPrevention.tabCount) {
+            binding.tabsTreatmentPrevention.getTabAt(initialTab)?.select()
+        }
 
         // AI Plant Doctor follow-up — the same assistant as the Garden plant
         // detail. If this scan is already attached to a garden plant we open a

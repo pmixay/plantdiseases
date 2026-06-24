@@ -53,6 +53,10 @@ class ResultActivity : AppCompatActivity() {
 
     private var pendingScanForToolbar: ScanEntity? = null
 
+    // Treatment/Prevention tab to restore after the (async) result load
+    // rebuilds the tabs — survives rotation and process-death.
+    private var restoredTabIndex = 0
+
     private val diagnosisContent by lazy { DiagnosisContentController(this, binding) }
     private val speciesCard by lazy { SpeciesCardController(this, binding) }
     private val carePlan by lazy { CarePlanController(this, binding) }
@@ -110,6 +114,7 @@ class ResultActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        restoredTabIndex = savedInstanceState?.getInt(KEY_RESULT_TAB, 0) ?: 0
         // Edge-to-edge: let the gradient app bar fill the status-bar area.
         WindowCompat.setDecorFitsSystemWindows(window, false)
         binding = ActivityResultBinding.inflate(layoutInflater)
@@ -422,7 +427,7 @@ class ResultActivity : AppCompatActivity() {
                 diagnosisContent.bindAlternatives(scan, repository, isRu)
                 speciesCard.bind(scan)
                 community.bindSimilarScans(scan, repository, isRu)
-                diagnosisContent.setupTreatmentPrevention(scan, repository, isRu)
+                diagnosisContent.setupTreatmentPrevention(scan, repository, isRu, restoredTabIndex)
                 carePlan.bind(scan, repository, isRu)
             }
 
@@ -531,8 +536,20 @@ class ResultActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        // Persist the selected Treatment/Prevention tab so it survives rotation
+        // and process-death (the scan itself reloads from the DB by scanId).
+        outState.putInt(
+            KEY_RESULT_TAB,
+            binding.tabsTreatmentPrevention.selectedTabPosition.coerceAtLeast(0),
+        )
+    }
+
     companion object {
         const val EXTRA_SCAN_ID = "extra_scan_id"
+
+        private const val KEY_RESULT_TAB = "result_tab"
 
         /** When true, auto-open the community opinions for this scan once it
          *  loads — set from an opinion notification tap and from tapping a
