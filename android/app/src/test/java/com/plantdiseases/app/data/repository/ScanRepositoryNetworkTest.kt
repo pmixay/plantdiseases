@@ -489,4 +489,92 @@ class ScanRepositoryNetworkTest {
         assertThat(body).contains("\"class_name\":\"leaf_spot\"")
         assertThat(body).contains("\"severity\":\"high\"")
     }
+
+    // --- POST /api/identify (Ktor multipart) ---
+
+    @Test
+    fun identify_success_parsesCandidatesAndBuildsMultipart() {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(
+                    """{"available":true,"results":[""" +
+                        """{"scientific_name":"Ficus elastica","common_names":["Rubber plant"],""" +
+                        """"score":0.7}]}""",
+                ),
+        )
+        val result = runBlocking { repo.identifySpecies(imageFile, organ = "leaf", locale = "ru") }
+
+        assertThat(result.isSuccess).isTrue()
+        assertThat(result.getOrNull()?.results?.get(0)?.scientificName).isEqualTo("Ficus elastica")
+
+        val req = server.takeRequest()
+        assertThat(req.method).isEqualTo("POST")
+        assertThat(req.path).startsWith("/api/identify")
+        assertThat(req.path).contains("organ=leaf")
+        assertThat(req.path).contains("locale=ru")
+        assertThat(req.getHeader("Content-Type")).contains("multipart/form-data")
+    }
+
+    @Test
+    fun identify_400_mapsToUnsupportedImage() {
+        server.enqueue(MockResponse().setResponseCode(400))
+        val result = runBlocking { repo.identifySpecies(imageFile) }
+        assertThat(result.exceptionOrNull())
+            .isInstanceOf(ScanRepository.UnsupportedImageException::class.java)
+    }
+
+    // --- POST /api/feedback/image (Ktor multipart) ---
+
+    @Test
+    fun uploadFeedbackImage_success_postsScanIdAndImageParts() {
+        server.enqueue(MockResponse().setResponseCode(200))
+        val result = runBlocking { repo.uploadFeedbackImage("scan-7", imageFile) }
+
+        assertThat(result.isSuccess).isTrue()
+        val req = server.takeRequest()
+        assertThat(req.method).isEqualTo("POST")
+        assertThat(req.path).isEqualTo("/api/feedback/image")
+        val body = req.body.readUtf8()
+        // multipart carries the scan_id text part and the image part.
+        // (Ktor's formData writes Content-Disposition names unquoted: name=scan_id.)
+        assertThat(body).contains("name=scan_id")
+        assertThat(body).contains("scan-7")
+        assertThat(body).contains("name=image")
+    }
+
+    // --- POST /api/community/scan (Ktor multipart) ---
+
+    @Test
+    fun uploadCommunityScan_success_sendsRequiredPartsOmitsBlankOptionals() {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"ok":true,"id":99}"""),
+        )
+        val result = runBlocking {
+            repo.uploadCommunityScan(
+                scanId = "sc-1",
+                userPseudoId = "u-1",
+                country = "US",
+                region = "", // blank → omitted
+                disease = "leaf_spot",
+                confidence = 0.8f,
+                species = null, // null → omitted
+            )
+        }
+
+        assertThat(result.isSuccess).isTrue()
+        assertThat(result.getOrNull()?.id).isEqualTo(99L)
+
+        val req = server.takeRequest()
+        assertThat(req.path).isEqualTo("/api/community/scan")
+        val body = req.body.readUtf8()
+        assertThat(body).contains("name=scan_id")
+        assertThat(body).contains("name=country")
+        assertThat(body).contains("name=confidence")
+        // blank region / null species must NOT be sent.
+        assertThat(body).doesNotContain("name=region")
+        assertThat(body).doesNotContain("name=species")
+    }
 }

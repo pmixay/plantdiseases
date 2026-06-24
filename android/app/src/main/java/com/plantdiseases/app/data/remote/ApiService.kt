@@ -10,7 +10,6 @@ import com.plantdiseases.app.data.model.CommunityRequestOpinionResponse
 import com.plantdiseases.app.data.model.AquaManifestResponse
 import com.plantdiseases.app.data.model.CommunityScansResponse
 import com.plantdiseases.app.data.model.MyScanOpinionsResponse
-import com.plantdiseases.app.data.model.CommunityScanUploadResponse
 import com.plantdiseases.app.data.model.CommunityViewRequest
 import com.plantdiseases.app.data.model.PushRegisterRequest
 import com.plantdiseases.app.data.model.CommunityScanCountsRequest
@@ -18,7 +17,6 @@ import com.plantdiseases.app.data.model.CommunityScanCountsResponse
 import com.plantdiseases.app.data.model.SpeciesDiseasesResponse
 import com.plantdiseases.app.data.model.SpeciesInfoResponse
 import com.plantdiseases.app.data.model.FeedbackResponse
-import com.plantdiseases.app.data.model.IdentifyResponse
 import com.plantdiseases.app.data.model.TrendingResponse
 import com.plantdiseases.app.util.ServerConfig
 import io.ktor.client.HttpClient
@@ -37,21 +35,17 @@ import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 import okhttp3.Interceptor
-import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Response
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
-import okhttp3.RequestBody
 import okhttp3.ResponseBody
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
-import retrofit2.http.Multipart
 import retrofit2.http.POST
 import retrofit2.http.Streaming
-import retrofit2.http.Part
 import retrofit2.http.Path
 import retrofit2.http.Query
 import java.io.IOException
@@ -81,13 +75,7 @@ interface ApiService {
 
     // POST api/chat migrated to Ktor (ScanRepository.sendChat).
 
-    @Multipart
-    @POST("api/identify")
-    suspend fun identifySpecies(
-        @Part image: MultipartBody.Part,
-        @Query("organ") organ: String = "leaf",
-        @Query("locale") locale: String = "en",
-    ): retrofit2.Response<IdentifyResponse>
+    // POST api/identify (multipart) migrated to Ktor (ScanRepository.identifySpecies).
 
     // POST api/care-plan migrated to Ktor (PlantApiClient.carePlan +
     // repo fetchCarePlan, which keeps the ResponseCache + 503 mapping).
@@ -98,40 +86,8 @@ interface ApiService {
 
     // POST api/feedback migrated to Ktor (ScanRepository.submitFeedback).
 
-    /**
-     * Upload the original image bytes for a negative-feedback row.
-     * Called immediately after a successful ``correct=false``
-     * /api/feedback POST. The server stores the bytes under
-     * ``feedback_images/<sha256>.<ext>`` and backfills the
-     * ``image_path`` column on the matching feedback row.
-     */
-    @Multipart
-    @POST("api/feedback/image")
-    suspend fun feedbackImage(
-        @Part("scan_id") scanId: RequestBody,
-        @Part image: MultipartBody.Part,
-    ): retrofit2.Response<okhttp3.ResponseBody>
-
-    /**
-     * Upload one community-shared scan. ``image`` is optional — when
-     * omitted, the server records the row without a thumbnail and the
-     * carousel renders a fallback icon. All other parts are form
-     * fields validated by ``CommunityScanRequest`` on the server.
-     */
-    @Multipart
-    @POST("api/community/scan")
-    suspend fun communityScanUpload(
-        @Part("scan_id") scanId: RequestBody,
-        @Part("user_pseudo_id") userPseudoId: RequestBody,
-        @Part("country") country: RequestBody,
-        @Part("region") region: RequestBody? = null,
-        @Part("disease") disease: RequestBody,
-        @Part("confidence") confidence: RequestBody? = null,
-        @Part("species") species: RequestBody? = null,
-        @Part("species_score") speciesScore: RequestBody? = null,
-        @Part("locale") locale: RequestBody? = null,
-        @Part image: MultipartBody.Part? = null,
-    ): retrofit2.Response<CommunityScanUploadResponse>
+    // POST api/feedback/image (multipart) migrated to Ktor (ScanRepository.uploadFeedbackImage).
+    // POST api/community/scan (multipart) migrated to Ktor (ScanRepository.uploadCommunityScan).
 
     @GET("api/community/nearby")
     suspend fun communityScanNearby(

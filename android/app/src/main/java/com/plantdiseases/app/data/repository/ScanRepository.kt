@@ -219,19 +219,36 @@ class ScanRepository(
     ): Result<IdentifyResponse> =
         withContext(Dispatchers.IO) {
             try {
-                val body = imageFile.asRequestBody("image/jpeg".toMediaTypeOrNull())
-                val part = MultipartBody.Part.createFormData("image", imageFile.name, body)
-                val response = apiService.identifySpecies(part, organ, locale)
-                if (response.isSuccessful && response.body() != null) {
-                    Result.success(response.body()!!)
-                } else if (response.code() == 429) {
-                    Result.failure(RateLimitException())
-                } else if (response.code() == 503) {
-                    Result.failure(ServerStartingException())
-                } else if (response.code() == 400 || response.code() == 415) {
-                    Result.failure(UnsupportedImageException())
-                } else {
-                    Result.failure(Exception("Server error: ${response.code()}"))
+                val imageBytes = imageFile.readBytes()
+                val response = apiClient.httpClient.post("api/identify") {
+                    url {
+                        parameters.append("organ", organ)
+                        parameters.append("locale", locale)
+                    }
+                    setBody(
+                        MultiPartFormDataContent(
+                            formData {
+                                append(
+                                    "image",
+                                    imageBytes,
+                                    Headers.build {
+                                        append(HttpHeaders.ContentType, "image/jpeg")
+                                        append(
+                                            HttpHeaders.ContentDisposition,
+                                            "filename=\"${imageFile.name}\"",
+                                        )
+                                    },
+                                )
+                            },
+                        ),
+                    )
+                }
+                when (response.status.value) {
+                    in 200..299 -> Result.success(response.body<IdentifyResponse>())
+                    429 -> Result.failure(RateLimitException())
+                    503 -> Result.failure(ServerStartingException())
+                    400, 415 -> Result.failure(UnsupportedImageException())
+                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
                 }
             } catch (e: SocketTimeoutException) {
                 Result.failure(ServerTimeoutException())
@@ -508,18 +525,31 @@ class ScanRepository(
                 "webp" -> "image/webp"
                 else -> "image/jpeg"
             }
-            val requestBody = imageFile.asRequestBody(mime.toMediaTypeOrNull())
-            val part = MultipartBody.Part.createFormData(
-                "image",
-                imageFile.name,
-                requestBody,
-            )
-            val scanIdBody = scanId.toRequestBody("text/plain".toMediaTypeOrNull())
-            val response = apiService.feedbackImage(scanIdBody, part)
-            if (response.isSuccessful) {
+            val imageBytes = imageFile.readBytes()
+            val response = apiClient.httpClient.post("api/feedback/image") {
+                setBody(
+                    MultiPartFormDataContent(
+                        formData {
+                            append("scan_id", scanId)
+                            append(
+                                "image",
+                                imageBytes,
+                                Headers.build {
+                                    append(HttpHeaders.ContentType, mime)
+                                    append(
+                                        HttpHeaders.ContentDisposition,
+                                        "filename=\"${imageFile.name}\"",
+                                    )
+                                },
+                            )
+                        },
+                    ),
+                )
+            }
+            if (response.status.value in 200..299) {
                 Result.success(Unit)
             } else {
-                Result.failure(Exception("Server error: ${response.code()}"))
+                Result.failure(Exception("Server error: ${response.status.value}"))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -977,30 +1007,46 @@ class ScanRepository(
     ): Result<com.plantdiseases.app.data.model.CommunityScanUploadResponse> =
         withContext(Dispatchers.IO) {
             try {
-                val plainText = "text/plain".toMediaTypeOrNull()
-                fun text(value: String?): okhttp3.RequestBody? = value
-                    ?.takeIf { it.isNotBlank() }
-                    ?.toRequestBody(plainText)
-                val image = thumbnail?.takeIf { it.exists() }?.let { f ->
-                    val rb = f.asRequestBody("image/jpeg".toMediaTypeOrNull())
-                    MultipartBody.Part.createFormData("image", f.name, rb)
+                val response = apiClient.httpClient.post("api/community/scan") {
+                    setBody(
+                        MultiPartFormDataContent(
+                            formData {
+                                // Required fields (callers always supply these).
+                                append("scan_id", scanId)
+                                append("user_pseudo_id", userPseudoId)
+                                append("country", country)
+                                append("disease", disease)
+                                // Optional fields — only sent when present/non-blank,
+                                // matching the old `text()` helper exactly.
+                                region.takeIf { it.isNotBlank() }?.let { append("region", it) }
+                                confidence?.let { append("confidence", it.toString()) }
+                                species?.takeIf { it.isNotBlank() }?.let { append("species", it) }
+                                speciesScore?.let { append("species_score", it.toString()) }
+                                locale?.takeIf { it.isNotBlank() }?.let { append("locale", it) }
+                                thumbnail?.takeIf { it.exists() }?.let { f ->
+                                    append(
+                                        "image",
+                                        f.readBytes(),
+                                        Headers.build {
+                                            append(HttpHeaders.ContentType, "image/jpeg")
+                                            append(
+                                                HttpHeaders.ContentDisposition,
+                                                "filename=\"${f.name}\"",
+                                            )
+                                        },
+                                    )
+                                }
+                            },
+                        ),
+                    )
                 }
-                val response = apiService.communityScanUpload(
-                    scanId = text(scanId)!!,
-                    userPseudoId = text(userPseudoId)!!,
-                    country = text(country)!!,
-                    region = text(region),
-                    disease = text(disease)!!,
-                    confidence = text(confidence?.toString()),
-                    species = text(species),
-                    speciesScore = text(speciesScore?.toString()),
-                    locale = text(locale),
-                    image = image,
-                )
-                if (response.isSuccessful && response.body() != null) {
-                    Result.success(response.body()!!)
-                } else {
-                    Result.failure(Exception("Community upload failed: ${response.code()}"))
+                when (response.status.value) {
+                    in 200..299 -> Result.success(
+                        response.body<com.plantdiseases.app.data.model.CommunityScanUploadResponse>(),
+                    )
+                    else -> Result.failure(
+                        Exception("Community upload failed: ${response.status.value}"),
+                    )
                 }
             } catch (e: Exception) {
                 Result.failure(e)

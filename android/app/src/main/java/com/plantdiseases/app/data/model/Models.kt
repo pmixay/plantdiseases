@@ -328,9 +328,10 @@ data class CommunityTopRegion(
 )
 
 /** /api/community/scan response shape. */
+@Serializable
 data class CommunityScanUploadResponse(
-    @SerializedName("ok") val ok: Boolean = false,
-    @SerializedName("id") val id: Long = 0,
+    @SerializedName("ok") @SerialName("ok") val ok: Boolean = false,
+    @SerializedName("id") @SerialName("id") val id: Long = 0,
 )
 
 /** /api/community/opinion request body. */
@@ -539,12 +540,13 @@ data class ChatSession(
 )
 
 /** PlantNet species candidate from /api/identify. */
+@Serializable
 data class SpeciesCandidate(
-    @SerializedName("scientific_name") val scientificName: String?,
-    @SerializedName("common_names") val commonNames: List<String> = emptyList(),
-    @SerializedName("family") val family: String? = null,
-    @SerializedName("genus") val genus: String? = null,
-    @SerializedName("score") val score: Float = 0f,
+    @SerializedName("scientific_name") @SerialName("scientific_name") val scientificName: String?,
+    @SerializedName("common_names") @SerialName("common_names") val commonNames: List<String> = emptyList(),
+    @SerializedName("family") @SerialName("family") val family: String? = null,
+    @SerializedName("genus") @SerialName("genus") val genus: String? = null,
+    @SerializedName("score") @SerialName("score") val score: Float = 0f,
 ) {
     val displayCommonName: String?
         get() = commonNames.firstOrNull()?.takeIf { it.isNotBlank() }
@@ -555,17 +557,18 @@ data class SpeciesCandidate(
  * server has no PlantNet key, the quota is exhausted, or PlantNet errored —
  * the UI should fall back to manual species entry, not show an error toast.
  */
+@Serializable
 data class IdentifyResponse(
-    @SerializedName("available") val available: Boolean = false,
-    @SerializedName("results") val results: List<SpeciesCandidate> = emptyList(),
-    @SerializedName("source") val source: String? = null,
-    @SerializedName("organ") val organ: String? = null,
-    @SerializedName("remaining_requests") val remainingRequests: Int? = null,
+    @SerializedName("available") @SerialName("available") val available: Boolean = false,
+    @SerializedName("results") @SerialName("results") val results: List<SpeciesCandidate> = emptyList(),
+    @SerializedName("source") @SerialName("source") val source: String? = null,
+    @SerializedName("organ") @SerialName("organ") val organ: String? = null,
+    @SerializedName("remaining_requests") @SerialName("remaining_requests") val remainingRequests: Int? = null,
     /** True when the server served this response from its in-memory
      *  PlantNet cache (saves a quota hit). Currently not surfaced in
      *  the UI — kept on the wire for future "served from cache"
      *  indicator next to species suggestions. */
-    @SerializedName("cached") val cached: Boolean? = null,
+    @SerializedName("cached") @SerialName("cached") val cached: Boolean? = null,
 )
 
 /** /api/species-info response — localized Wikipedia blurb + lead photo. */

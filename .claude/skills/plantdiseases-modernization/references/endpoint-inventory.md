@@ -29,7 +29,7 @@ at the **end of `ApiService.kt`, ≈ lines 377–425**) in `data/remote/`. Model
 > Gson `JsonObject` field must become `JsonObject` from `kotlinx.serialization.json` (or a typed
 > model). Flag these two when you reach them.
 
-## Table A — Endpoints (21 remaining on Retrofit, 11 done)
+## Table A — Endpoints (18 remaining on Retrofit, 14 done)
 
 | Endpoint | Function | Req → Resp | Status |
 |---|---|---|---|
@@ -39,13 +39,13 @@ at the **end of `ApiService.kt`, ≈ lines 377–425**) in `data/remote/`. Model
 | GET /api/aqua/model (@Streaming) | `aquaModel` | — → ResponseBody (bytes) | ⬜ Retrofit ⚠ streaming |
 | GET /api/health | `checkServerHealth` (in ScanRepository) | — → HealthResponse | ✅ **Ktor** |
 | POST /api/chat | `sendChat` (in ScanRepository) | ChatRequest → ChatResponse | ✅ **Ktor** |
-| POST /api/identify (multipart) | `identifySpecies` | image → IdentifyResponse | ⬜ Retrofit ⚠ multipart |
+| POST /api/identify (multipart) | `identifySpecies` (in ScanRepository) | image → IdentifyResponse | ✅ **Ktor** |
 | POST /api/care-plan | `carePlan` (PlantApiClient + repo fetchCarePlan) | CarePlanRequest → CarePlanResponse | ✅ **Ktor** |
 | POST /api/symptom-diagnose | `diagnoseSymptoms` (in ScanRepository) | SymptomDiagnoseRequest → SymptomDiagnoseResponse | ✅ **Ktor** |
 | POST /api/progression | `fetchProgression` (in ScanRepository) | ProgressionRequest → ProgressionResponse | ✅ **Ktor** |
 | POST /api/feedback | `submitFeedback` (in ScanRepository) | FeedbackRequest → FeedbackResponse | ✅ **Ktor** |
-| POST /api/feedback/image (multipart) | `feedbackImage` | image + scanId → ResponseBody | ⬜ Retrofit ⚠ multipart |
-| POST /api/community/scan (multipart) | `communityScanUpload` | image? + fields → CommunityScanUploadResponse | ⬜ Retrofit ⚠ multipart |
+| POST /api/feedback/image (multipart) | `uploadFeedbackImage` (in ScanRepository) | image + scanId → Unit | ✅ **Ktor** |
+| POST /api/community/scan (multipart) | `uploadCommunityScan` (in ScanRepository) | image? + fields → CommunityScanUploadResponse | ✅ **Ktor** |
 | GET /api/community/nearby | `communityScanNearby` | — → CommunityScansResponse | ⬜ Retrofit |
 | DELETE /api/community/user/{id} | `communityScanDeleteUser` | — → FeedbackResponse | ⬜ Retrofit ⚠ path |
 | POST /api/community/opinion | `communitySubmitOpinion` | CommunityOpinionRequest → CommunityOpinionsResponse | ⬜ Retrofit |
@@ -71,7 +71,7 @@ at the **end of `ApiService.kt`, ≈ lines 377–425**) in `data/remote/`. Model
 plain GET/POST first (capabilities, health, care-plan, chat, symptom, progression, feedback,
 trending, species-*), then path-param GETs, then the multipart/streaming/header ones, label-* last.
 
-## Table B — Models (36 of 73 migrated)
+## Table B — Models (39 of 73 migrated)
 
 **✅ `@Serializable` already (Models.kt):** DetectionRegion, Detection, TopKEntry,
 PredictionSetItem, PredictionSetCareCard, PredictionSet, AnalysisResponse, SpeciesBlock,
@@ -81,16 +81,17 @@ TrendingResponse, TrendingSpecies, TrendingDisease, SpeciesInfoResponse,
 SpeciesDiseasesResponse, SpeciesDiseaseItem, CarePlanRequest, CarePlanResponse (watering_days
 via WateringDaysSerializer), LuxBand, HumidityBand, TemperatureBand, CarePlanCheckpoint,
 ChatRequest (diagnosis via AnyMapSerializer), ChatResponse, ChatUsage, ChatSession,
-ProgressionRequest (history via AnyMapListSerializer), ProgressionResponse.
+ProgressionRequest (history via AnyMapListSerializer), ProgressionResponse, IdentifyResponse,
+SpeciesCandidate, CommunityScanUploadResponse.
 
 **⬜ Still Gson-only — migrate when their endpoint moves (Models.kt):**
 MyScanOpinionsResponse, ScanOpinionItem,
 AquaManifestResponse ⚠(JsonObject field), CommunityScansResponse, CommunityScanItem,
-CommunityRegionSummary, CommunityTopDisease, CommunityTopRegion, CommunityScanUploadResponse,
+CommunityRegionSummary, CommunityTopDisease, CommunityTopRegion,
 CommunityOpinionRequest, CommunityRequestOpinionRequest, CommunityRequestOpinionResponse,
 CommunityOpinion, CommunityOpinionsResponse, PushRegisterRequest, CommunityViewRequest,
 CommunityScanCountsRequest, CommunityScanCount, CommunityScanCountsResponse, GuideItem,
-GuideCategory (enum), ScanHistoryItem, SpeciesCandidate, IdentifyResponse.
+GuideCategory (enum), ScanHistoryItem.
 
 **⬜ Still Gson-only (LabelingModels.kt):** LabelLoginRequest, LabelLoginResponse, LabelCard,
 LabelNextResponse, LabelVerdictItem, LabelVerdictBatch, LabelVerdictResponse, LabelClassStat,
