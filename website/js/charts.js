@@ -85,6 +85,9 @@
     viral:    { graymold:0, healthy:6, scorch:0, leafspot:5, notplant:0, nutrient:4, pests:0, powdery:0, viral:85 }
   };
 
+  // conformal gauge — coverage % + temperature (overridable from live metrics)
+  var CONFORMAL = { cov: 98.1, temp: 0.727 };
+
   /* ---------- tooltip ---------- */
   var tip = document.createElement('div');
   tip.className = 'chart-tip';
@@ -281,22 +284,22 @@
   function renderConformal(root) {
     root.innerHTML = '';
     var box = el('div', 'cf-box');
-    // radial gauge — conformal coverage (matches model_card.json: 0.981)
-    var pct = 98.1;
+    // radial gauge — conformal coverage (live from model_card.json when served)
+    var pct = CONFORMAL.cov;
     var gauge = el('div', 'cf-gauge');
     gauge.innerHTML =
       '<svg viewBox="0 0 120 120">' +
         '<circle class="cf-bg" cx="60" cy="60" r="52"></circle>' +
         '<circle class="cf-fill" cx="60" cy="60" r="52" data-pct="' + pct + '"></circle>' +
       '</svg>' +
-      '<div class="cf-center"><div class="cf-pct">98.1%</div><div class="cf-cap">' + t('покрытие','coverage') + '</div></div>';
+      '<div class="cf-center"><div class="cf-pct">' + pct + '%</div><div class="cf-cap">' + t('покрытие','coverage') + '</div></div>';
     box.appendChild(gauge);
     var stats = el('div', 'cf-stats');
     [[t('Цель','Target'), '≥ 90%', 'ok'],
      [t('Средний размер','Avg. set size'), '1.84 ' + t('класса','classes'), ''],
      [t('Метод','Method'), 'RAPS · α=0.2', ''],
      [t('Калибровка','Calibration'), '1063 ' + t('фото','photos'), ''],
-     [t('Температура','Temperature'), 'T = 0.727', '']].forEach(function (s) {
+     [t('Температура','Temperature'), 'T = ' + CONFORMAL.temp, '']].forEach(function (s) {
       var r = el('div', 'cf-row');
       r.innerHTML = '<span class="cf-k">' + s[0] + '</span><span class="cf-v ' + s[2] + '">' + s[1] + '</span>';
       stats.appendChild(r);
@@ -336,11 +339,66 @@
 
   function build(root, fn) { fn(root); }
 
+  /* ---------- live metrics (graceful) ----------
+     Pull the deployed model's per-class precision / recall + 95% CI (and
+     conformal coverage + temperature) from /api/capabilities -> model.metrics,
+     read live from the bundle's model_card.json, so the charts track whatever
+     model is uploaded. Same-origin fetch; falls back silently to the baked-in
+     numbers above when the API isn't reachable (e.g. the static site opened on
+     its own, or a bundle without a model card). */
+  var CLASS_KEY = {
+    gray_mold_botrytis: 'graymold', healthy: 'healthy',
+    leaf_scorch_underwatering: 'scorch', leaf_spot: 'leafspot',
+    not_a_plant: 'notplant', nutrient_deficiency: 'nutrient',
+    pests: 'pests', powdery_mildew: 'powdery', viral_disease: 'viral'
+  };
+  function pct(x) { return x == null ? null : Math.round(x * 1000) / 10; }
+  function loadLiveMetrics() {
+    if (!window.fetch) return;
+    fetch('/api/capabilities', { headers: { Accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (cap) {
+        var m = cap && cap.model && cap.model.metrics;
+        if (!m || !m.per_class) return;
+        Object.keys(m.per_class).forEach(function (cls) {
+          var key = CLASS_KEY[cls]; if (!key) return;
+          var d = m.per_class[cls] || {};
+          var p = PERCLASS.find(function (x) { return x.k === key; });
+          if (p && d.precision && d.recall) {
+            if (d.precision.point != null) p.p = pct(d.precision.point);
+            if (d.recall.point != null) p.r = pct(d.recall.point);
+            if (p.p != null && p.r != null && (p.p + p.r) > 0) {
+              p.f = Math.round((2 * p.p * p.r / (p.p + p.r)) * 10) / 10;
+            }
+          }
+          var rc = RECALL_CI.find(function (x) { return x.k === key; });
+          if (rc && d.recall) {
+            if (d.recall.point != null) rc.r = pct(d.recall.point);
+            if (d.recall.ci_low != null) rc.lo = pct(d.recall.ci_low);
+            if (d.recall.ci_high != null) rc.hi = pct(d.recall.ci_high);
+          }
+        });
+        RECALL_CI.sort(function (a, b) { return b.r - a.r; });
+        if (m.temperature != null) CONFORMAL.temp = Math.round(m.temperature * 1000) / 1000;
+        var conf = m.conformal || {};
+        var cov = conf.coverage != null ? conf.coverage
+          : (conf.empirical_coverage != null ? conf.empirical_coverage : null);
+        if (cov != null && cov > 0 && cov <= 1) CONFORMAL.cov = pct(cov);
+        [['#chart-perclass', renderPerClass], ['#chart-recall', renderRecallCI],
+         ['#chart-conformal', renderConformal]].forEach(function (c) {
+          var root = document.querySelector(c[0]);
+          if (root) { c[1](root); animate(root); }
+        });
+      })
+      .catch(function () { /* offline / not deployed — keep baked-in numbers */ });
+  }
+
   function init() {
     charts.forEach(function (c) {
       var root = document.querySelector(c.sel);
       if (root) build(root, c.fn);
     });
+    loadLiveMetrics();
     if ('IntersectionObserver' in window) {
       var io = new IntersectionObserver(function (entries) {
         entries.forEach(function (en) {

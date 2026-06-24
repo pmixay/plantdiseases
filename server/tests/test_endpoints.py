@@ -42,6 +42,46 @@ def test_capabilities_model_contract(client):
     healthy = [c for c in body["classes"] if c["class"] == "healthy"]
     assert len(healthy) == 1
     assert healthy[0]["is_healthy"] is True
+    # Live per-class metrics block (None on a fresh checkout without a card).
+    assert "metrics" in model
+
+
+def test_capabilities_surfaces_live_model_metrics(client, tmp_path, monkeypatch):
+    """With a model_card.json present, /capabilities.model.metrics carries the
+    per-class precision/recall + 95% CI the marketing site renders live, so the
+    charts track whatever model bundle is deployed."""
+    import json as _json
+
+    import main as server_main
+
+    card = {
+        "per_class_recall_ci_realworld": {
+            "classes": {
+                "powdery_mildew": {"point": 0.91, "ci_low": 0.86, "ci_high": 0.95},
+            }
+        },
+        "per_class_precision_ci_realworld": {
+            "classes": {
+                "powdery_mildew": {
+                    "point": 0.939, "ci_low": 0.90, "ci_high": 0.97, "n_predicted": 120,
+                },
+            }
+        },
+        "conformal": {"coverage": 0.981},
+    }
+    (tmp_path / "model_card.json").write_text(_json.dumps(card), encoding="utf-8")
+    monkeypatch.setattr(server_main, "MODELS_DIR", tmp_path)
+
+    r = client.get("/api/capabilities")
+    assert r.status_code == 200
+    metrics = r.json()["model"]["metrics"]
+    assert metrics is not None
+    assert metrics["eval_set"] == "val_realworld"
+    pm = metrics["per_class"]["powdery_mildew"]
+    assert pm["recall"] == {"point": 0.91, "ci_low": 0.86, "ci_high": 0.95}
+    assert pm["precision"]["point"] == 0.939
+    assert pm["n_predicted"] == 120
+    assert metrics["conformal"] == {"coverage": 0.981}
 
 
 def test_metrics_json(client):

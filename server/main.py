@@ -1518,22 +1518,56 @@ async def capabilities():
             ),
         },
     ]
-    # Consolidated model/version metadata (formerly /version and /classes).
-    # The int8 ship flag comes from model_card.json so operators can see
-    # whether the deployed classifier_int8.onnx is genuine INT8 or the FP32
-    # ONNX renamed; defaults to false if the card is missing/malformed.
-    int8_shipped = False
-    int8_artifact: str | None = None
+    # Consolidated model/version metadata (formerly /version and /classes) plus
+    # the shipped model's per-class quality metrics, read live from the bundle's
+    # model_card.json so the marketing site renders whatever model is deployed.
+    # The int8 ship flag tells operators whether classifier_int8.onnx is genuine
+    # INT8 or the FP32 ONNX renamed. Everything degrades to None/false when the
+    # card is missing or malformed (tests, minimal deploy).
+    card: dict | None = None
     try:
         with open(MODELS_DIR / "model_card.json", encoding="utf-8") as fh:
-            _card = json.load(fh)
-        _int8 = _card.get("int8") or {}
-        int8_shipped = bool(_int8.get("shipped", False))
-        _artifact = _int8.get("shipped_artifact")
-        if isinstance(_artifact, str):
-            int8_artifact = _artifact
+            card = json.load(fh)
     except (OSError, ValueError):
-        pass
+        card = None
+
+    _int8 = (card or {}).get("int8") or {}
+    int8_shipped = bool(_int8.get("shipped", False))
+    _artifact = _int8.get("shipped_artifact")
+    int8_artifact = _artifact if isinstance(_artifact, str) else None
+
+    def _ci(d: object) -> dict | None:
+        if not isinstance(d, dict):
+            return None
+        return {
+            "point": d.get("point"),
+            "ci_low": d.get("ci_low"),
+            "ci_high": d.get("ci_high"),
+        }
+
+    metrics: dict | None = None
+    if card is not None:
+        _recall = (card.get("per_class_recall_ci_realworld") or {}).get("classes") or {}
+        _precision = (card.get("per_class_precision_ci_realworld") or {}).get("classes") or {}
+        if _recall or _precision:
+            per_class: dict[str, dict] = {}
+            for cls in sorted(set(_recall) | set(_precision)):
+                p = _precision.get(cls)
+                r = _recall.get(cls)
+                per_class[cls] = {
+                    "precision": _ci(p),
+                    "recall": _ci(r),
+                    "n_predicted": p.get("n_predicted") if isinstance(p, dict) else None,
+                }
+            metrics = {
+                "eval_set": "val_realworld",
+                "ci": "95% bootstrap",
+                "per_class": per_class,
+                "temperature": card.get("temperature"),
+                # Passed through verbatim; clients read coverage/set-size
+                # defensively since the schema is owned by the notebook.
+                "conformal": card.get("conformal"),
+            }
 
     model: dict | None = None
     classes_list: list[dict] = []
@@ -1551,6 +1585,7 @@ async def capabilities():
             "focus": "houseplants",
             "int8_shipped": int8_shipped,
             "int8_artifact": int8_artifact,
+            "metrics": metrics,
         }
         for name in clf.CLASS_NAMES:
             info = DISEASES_DATABASE.get(name, {})
