@@ -29,13 +29,15 @@ class ScanRepositoryNetworkTest {
 
     private lateinit var server: MockWebServer
     private lateinit var repo: ScanRepository
+    private lateinit var client: PlantApiClient
     private lateinit var imageFile: File
 
     @Before
     fun setup() {
         server = MockWebServer()
         server.start()
-        repo = ScanRepository(FakeScanDao(), PlantApiClient(server.url("/").toString()))
+        client = PlantApiClient(server.url("/").toString())
+        repo = ScanRepository(FakeScanDao(), client)
         imageFile = File.createTempFile("upload", ".jpg")
         imageFile.writeBytes(ByteArray(128) { it.toByte() })
     }
@@ -285,5 +287,76 @@ class ScanRepositoryNetworkTest {
         }
         assertThat(result.isFailure).isTrue()
         assertThat(result.exceptionOrNull()?.message).contains("Invalid feedback payload")
+    }
+
+    // --- GET /api/species-info (Ktor, PlantApiClient wrapper) ---
+
+    @Test
+    fun speciesInfo_success_parsesBodyAndQueries() {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"available":true,"title":"Ficus","image_url":"http://x/i.jpg"}"""),
+        )
+        val info = runBlocking { client.speciesInfo("Ficus elastica", "en") }
+        assertThat(info?.available).isTrue()
+        assertThat(info?.imageUrl).isEqualTo("http://x/i.jpg")
+        val req = server.takeRequest()
+        assertThat(req.method).isEqualTo("GET")
+        assertThat(req.path).startsWith("/api/species-info")
+        assertThat(req.path).contains("name=Ficus")
+        assertThat(req.path).contains("locale=en")
+    }
+
+    @Test
+    fun speciesInfo_nonSuccess_returnsNull() {
+        // Mirrors the old Retrofit .body() contract: null on non-2xx.
+        server.enqueue(MockResponse().setResponseCode(500))
+        val info = runBlocking { client.speciesInfo("X", "en") }
+        assertThat(info).isNull()
+    }
+
+    // --- GET /api/species-diseases (Ktor) ---
+
+    @Test
+    fun speciesDiseases_success_parsesItemsAndQueries() {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(
+                    """{"available":true,"diseases":[{"name":"Root rot","doc_key":"root_rot"}]}""",
+                ),
+        )
+        val resp = runBlocking { client.speciesDiseases("Ficus", "Rubber plant", "ru") }
+        assertThat(resp?.diseases).hasSize(1)
+        assertThat(resp?.diseases?.get(0)?.docKey).isEqualTo("root_rot")
+        val req = server.takeRequest()
+        assertThat(req.path).startsWith("/api/species-diseases")
+        assertThat(req.path).contains("name=Ficus")
+        assertThat(req.path).contains("common=Rubber")
+        assertThat(req.path).contains("locale=ru")
+    }
+
+    // --- GET /api/community/trending (Ktor) ---
+
+    @Test
+    fun communityTrending_success_parsesTopListsAndQueries() {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(
+                    """{"scope":"country","top_species":[{"species":"Ficus","count":3}],""" +
+                        """"top_diseases":[]}""",
+                ),
+        )
+        val resp = runBlocking { client.communityTrending(country = "US", region = "CA") }
+        assertThat(resp?.scope).isEqualTo("country")
+        assertThat(resp?.topSpecies).hasSize(1)
+        assertThat(resp?.topSpecies?.get(0)?.species).isEqualTo("Ficus")
+        val req = server.takeRequest()
+        assertThat(req.path).startsWith("/api/community/trending")
+        assertThat(req.path).contains("country=US")
+        assertThat(req.path).contains("region=CA")
+        assertThat(req.path).contains("days=7")
     }
 }

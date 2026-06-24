@@ -409,24 +409,27 @@ enum class GuideCategory {
 /** /api/community/trending — the Home screen's "trending nearby" module.
  *  `scope` reports how far the server had to widen (region/country/global)
  *  so the UI can label the card honestly. */
+@Serializable
 data class TrendingResponse(
-    @SerializedName("scope") val scope: String = "global",
-    @SerializedName("country") val country: String? = null,
-    @SerializedName("region") val region: String? = null,
-    @SerializedName("window_days") val windowDays: Int = 7,
-    @SerializedName("total") val total: Int = 0,
-    @SerializedName("top_species") val topSpecies: List<TrendingSpecies> = emptyList(),
-    @SerializedName("top_diseases") val topDiseases: List<TrendingDisease> = emptyList(),
+    @SerializedName("scope") @SerialName("scope") val scope: String = "global",
+    @SerializedName("country") @SerialName("country") val country: String? = null,
+    @SerializedName("region") @SerialName("region") val region: String? = null,
+    @SerializedName("window_days") @SerialName("window_days") val windowDays: Int = 7,
+    @SerializedName("total") @SerialName("total") val total: Int = 0,
+    @SerializedName("top_species") @SerialName("top_species") val topSpecies: List<TrendingSpecies> = emptyList(),
+    @SerializedName("top_diseases") @SerialName("top_diseases") val topDiseases: List<TrendingDisease> = emptyList(),
 )
 
+@Serializable
 data class TrendingSpecies(
-    @SerializedName("species") val species: String = "",
-    @SerializedName("count") val count: Int = 0,
+    @SerializedName("species") @SerialName("species") val species: String = "",
+    @SerializedName("count") @SerialName("count") val count: Int = 0,
 )
 
+@Serializable
 data class TrendingDisease(
-    @SerializedName("disease") val disease: String = "",
-    @SerializedName("count") val count: Int = 0,
+    @SerializedName("disease") @SerialName("disease") val disease: String = "",
+    @SerializedName("count") @SerialName("count") val count: Int = 0,
 )
 
 /** Scan history item for display */
@@ -538,17 +541,18 @@ data class IdentifyResponse(
 )
 
 /** /api/species-info response — localized Wikipedia blurb + lead photo. */
+@Serializable
 data class SpeciesInfoResponse(
-    @SerializedName("available") val available: Boolean = false,
-    @SerializedName("title") val title: String? = null,
-    @SerializedName("extract") val extract: String? = null,
-    @SerializedName("image_url") val imageUrl: String? = null,
-    @SerializedName("images") val images: List<String> = emptyList(),
-    @SerializedName("page_url") val pageUrl: String? = null,
-    @SerializedName("source") val source: String? = null,
+    @SerializedName("available") @SerialName("available") val available: Boolean = false,
+    @SerializedName("title") @SerialName("title") val title: String? = null,
+    @SerializedName("extract") @SerialName("extract") val extract: String? = null,
+    @SerializedName("image_url") @SerialName("image_url") val imageUrl: String? = null,
+    @SerializedName("images") @SerialName("images") val images: List<String> = emptyList(),
+    @SerializedName("page_url") @SerialName("page_url") val pageUrl: String? = null,
+    @SerializedName("source") @SerialName("source") val source: String? = null,
     /** True when `extract` was machine-translated into the requested locale
      *  because no Wikipedia article existed in that language. */
-    @SerializedName("translated") val translated: Boolean = false,
+    @SerializedName("translated") @SerialName("translated") val translated: Boolean = false,
 )
 
 /**
@@ -557,19 +561,21 @@ data class SpeciesInfoResponse(
  * key or any failure) is a graceful state: the species screen then renders
  * the bundled offline disease guide instead, so the section is never empty.
  */
+@Serializable
 data class SpeciesDiseasesResponse(
-    @SerializedName("available") val available: Boolean = false,
-    @SerializedName("species") val species: String? = null,
-    @SerializedName("diseases") val diseases: List<SpeciesDiseaseItem> = emptyList(),
-    @SerializedName("source") val source: String? = null,
+    @SerializedName("available") @SerialName("available") val available: Boolean = false,
+    @SerializedName("species") @SerialName("species") val species: String? = null,
+    @SerializedName("diseases") @SerialName("diseases") val diseases: List<SpeciesDiseaseItem> = emptyList(),
+    @SerializedName("source") @SerialName("source") val source: String? = null,
 )
 
 /** One common-problem entry. `docKey`, when present, is a disease-guide class
  *  key (see DiseaseCatalog) the client turns into a tappable guide link. */
+@Serializable
 data class SpeciesDiseaseItem(
-    @SerializedName("name") val name: String = "",
-    @SerializedName("doc_key") val docKey: String? = null,
-    @SerializedName("note") val note: String? = null,
+    @SerializedName("name") @SerialName("name") val name: String = "",
+    @SerializedName("doc_key") @SerialName("doc_key") val docKey: String? = null,
+    @SerializedName("note") @SerialName("note") val note: String? = null,
 )
 
 /** /api/care-plan request body. */

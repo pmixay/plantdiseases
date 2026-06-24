@@ -1049,9 +1049,8 @@ class ScanRepository(
                 .get(cacheKey, com.plantdiseases.app.data.model.SpeciesInfoResponse::class.java)
                 ?.let { return@withContext Result.success(it) }
             try {
-                val response = apiService.speciesInfo(name, locale)
-                if (response.isSuccessful && response.body() != null) {
-                    val body = response.body()!!
+                val body = apiClient.speciesInfo(name, locale)
+                if (body != null) {
                     // Don't cache a transient "unavailable" (e.g. Wikipedia
                     // miss / rate-limit) — only a real hit is worth keeping.
                     if (body.available) {
@@ -1063,7 +1062,7 @@ class ScanRepository(
                     }
                     Result.success(body)
                 } else {
-                    Result.failure(Exception("species-info failed: ${response.code()}"))
+                    Result.failure(Exception("species-info failed"))
                 }
             } catch (e: Exception) {
                 Result.failure(e)

@@ -26,10 +26,14 @@ import com.plantdiseases.app.data.model.ProgressionResponse
 import com.plantdiseases.app.data.model.TrendingResponse
 import com.plantdiseases.app.util.ServerConfig
 import io.ktor.client.HttpClient
+import io.ktor.client.call.body
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.defaultRequest
+import io.ktor.client.request.get
+import io.ktor.client.request.parameter
 import io.ktor.client.request.url
+import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 import okhttp3.Interceptor
@@ -199,33 +203,9 @@ interface ApiService {
         @Body request: CommunityScanCountsRequest,
     ): retrofit2.Response<CommunityScanCountsResponse>
 
-    /** Home-screen "trending nearby" module. Country/region optional — the
-     *  server widens region → country → global until a scope has data, and
-     *  never 422s, so the widget works on a fresh install with no location. */
-    @GET("api/community/trending")
-    suspend fun communityTrending(
-        @Query("country") country: String? = null,
-        @Query("region") region: String? = null,
-        @Query("days") days: Int = 7,
-        @Query("limit") limit: Int = 6,
-    ): retrofit2.Response<TrendingResponse>
-
-    /** Localized Wikipedia blurb + lead image for a scientific name. */
-    @GET("api/species-info")
-    suspend fun speciesInfo(
-        @Query("name") name: String,
-        @Query("locale") locale: String = "en",
-    ): retrofit2.Response<SpeciesInfoResponse>
-
-    /** Common conditions a species is affected by indoors (AI, best-effort).
-     *  `available=false` is graceful — the client falls back to the bundled
-     *  disease guide. */
-    @GET("api/species-diseases")
-    suspend fun speciesDiseases(
-        @Query("name") name: String,
-        @Query("common") common: String? = null,
-        @Query("locale") locale: String = "en",
-    ): retrofit2.Response<SpeciesDiseasesResponse>
+    // GET api/community/trending, api/species-info, api/species-diseases
+    // migrated to Ktor (PlantApiClient.communityTrending / .speciesInfo /
+    // .speciesDiseases — best-effort body-or-null wrappers used by UI).
 
     /** Community scans of one species (scientific name), across regions. */
     @GET("api/community/by-species")
@@ -357,5 +337,51 @@ class PlantApiClient(
             }
             defaultRequest { url(baseUrl) }
         }
+    }
+
+    // ── Best-effort GET lookups called directly by UI ──────────────────
+    // These mirror the old Retrofit `.body()` contract: the parsed body on
+    // 2xx, or null on any non-2xx. Callers wrap them in runCatching, so a
+    // thrown decode error and a null both collapse to "no data" — exactly
+    // how the Retrofit Response path behaved. No caching here (the species
+    // and trending caches live in their callers / repository).
+
+    /** Localized Wikipedia blurb + lead image for a scientific name. */
+    suspend fun speciesInfo(name: String, locale: String = "en"): SpeciesInfoResponse? {
+        val response = httpClient.get("api/species-info") {
+            parameter("name", name)
+            parameter("locale", locale)
+        }
+        return if (response.status.isSuccess()) response.body() else null
+    }
+
+    /** Common conditions a species is affected by indoors (AI, best-effort). */
+    suspend fun speciesDiseases(
+        name: String,
+        common: String? = null,
+        locale: String = "en",
+    ): SpeciesDiseasesResponse? {
+        val response = httpClient.get("api/species-diseases") {
+            parameter("name", name)
+            common?.let { parameter("common", it) }
+            parameter("locale", locale)
+        }
+        return if (response.status.isSuccess()) response.body() else null
+    }
+
+    /** Trending species/diseases for a region (graceful, never 422s). */
+    suspend fun communityTrending(
+        country: String? = null,
+        region: String? = null,
+        days: Int = 7,
+        limit: Int = 6,
+    ): TrendingResponse? {
+        val response = httpClient.get("api/community/trending") {
+            country?.let { parameter("country", it) }
+            region?.let { parameter("region", it) }
+            parameter("days", days)
+            parameter("limit", limit)
+        }
+        return if (response.status.isSuccess()) response.body() else null
     }
 }

@@ -259,10 +259,10 @@ class HomeFragment : Fragment() {
             val trending = com.plantdiseases.app.util.ResponseCache
                 .get(cacheKey, TrendingResponse::class.java)
                 ?: runCatching {
-                    app.apiClient.apiService.communityTrending(
+                    app.apiClient.communityTrending(
                         country = region?.country,
                         region = region?.locality,
-                    ).body()
+                    )
                 }.getOrNull()?.also {
                     com.plantdiseases.app.util.ResponseCache.put(
                         cacheKey,
@@ -367,7 +367,7 @@ class HomeFragment : Fragment() {
         val app = requireActivity().application as PlantDiseasesApp
         viewLifecycleOwner.lifecycleScope.launch {
             val url = runCatching {
-                app.apiClient.apiService.speciesInfo(scientificName, locale).body()?.imageUrl
+                app.apiClient.speciesInfo(scientificName, locale)?.imageUrl
             }.getOrNull()
             speciesImageCache[scientificName] = url
             if (url != null) {

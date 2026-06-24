@@ -109,7 +109,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
         binding.tvSpeciesExtract.text = getString(R.string.identify_loading)
         lifecycleScope.launch {
             val info = runCatching {
-                app.apiClient.apiService.speciesInfo(scientificName, locale).body()
+                app.apiClient.speciesInfo(scientificName, locale)
             }.getOrNull()
             binding.progress.visibility = View.GONE
             if (info?.available == true) {
@@ -223,8 +223,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
         val app = application as PlantDiseasesApp
         lifecycleScope.launch {
             val resp = runCatching {
-                app.apiClient.apiService
-                    .speciesDiseases(scientificName, commonName, locale).body()
+                app.apiClient.speciesDiseases(scientificName, commonName, locale)
             }.getOrNull()
             val aiItems = if (resp?.available == true) {
                 resp.diseases.filter { it.name.isNotBlank() }
