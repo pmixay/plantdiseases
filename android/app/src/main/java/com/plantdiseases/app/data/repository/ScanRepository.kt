@@ -21,11 +21,11 @@ import com.plantdiseases.app.data.model.MyScanOpinionsResponse
 import com.plantdiseases.app.data.model.ProgressionRequest
 import com.plantdiseases.app.data.model.ProgressionResponse
 import com.plantdiseases.app.data.model.ScanHistoryItem
-import com.plantdiseases.app.data.remote.ApiService
 import com.plantdiseases.app.data.remote.PlantApiClient
 import com.plantdiseases.app.util.AquaModelManager
 import io.ktor.client.call.body
 import io.ktor.client.request.forms.MultiPartFormDataContent
+import io.ktor.client.request.delete
 import io.ktor.client.request.forms.formData
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
@@ -58,9 +58,6 @@ class ScanRepository(
     // when absent.
     private val scanChatMessageDao: ScanChatMessageDao? = null,
 ) {
-    private val apiService: ApiService
-        get() = apiClient.apiService
-
     private val gson = Gson()
 
     // Serialises Aqua model installs so two concurrent syncAquaModel calls
@@ -384,11 +381,13 @@ class ScanRepository(
     ): Result<CommunityOpinionsResponse> =
         withContext(Dispatchers.IO) {
             try {
-                val response = apiService.communitySubmitOpinion(request)
-                if (response.isSuccessful && response.body() != null) {
-                    Result.success(response.body()!!)
-                } else {
-                    Result.failure(Exception("Server error: ${response.code()}"))
+                val response = apiClient.httpClient.post("api/community/opinion") {
+                    contentType(ContentType.Application.Json)
+                    setBody(request)
+                }
+                when (response.status.value) {
+                    in 200..299 -> Result.success(response.body<CommunityOpinionsResponse>())
+                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
                 }
             } catch (e: SocketTimeoutException) {
                 Result.failure(ServerTimeoutException())
@@ -414,16 +413,21 @@ class ScanRepository(
     ): Result<Boolean> =
         withContext(Dispatchers.IO) {
             try {
-                val response = apiService.communityRequestOpinion(
-                    com.plantdiseases.app.data.model.CommunityRequestOpinionRequest(
-                        scanId = scanId,
-                        userPseudoId = userPseudoId,
-                    ),
-                )
-                if (response.isSuccessful && response.body() != null) {
-                    Result.success(response.body()!!.flagged)
-                } else {
-                    Result.failure(Exception("Server error: ${response.code()}"))
+                val response = apiClient.httpClient.post("api/community/request-opinion") {
+                    contentType(ContentType.Application.Json)
+                    setBody(
+                        com.plantdiseases.app.data.model.CommunityRequestOpinionRequest(
+                            scanId = scanId,
+                            userPseudoId = userPseudoId,
+                        ),
+                    )
+                }
+                when (response.status.value) {
+                    in 200..299 -> Result.success(
+                        response.body<com.plantdiseases.app.data.model.CommunityRequestOpinionResponse>()
+                            .flagged,
+                    )
+                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
                 }
             } catch (e: SocketTimeoutException) {
                 Result.failure(ServerTimeoutException())
@@ -763,12 +767,15 @@ class ScanRepository(
     suspend fun registerPushToken(pseudoId: String, token: String) {
         withContext(Dispatchers.IO) {
             try {
-                apiService.registerPushToken(
-                    com.plantdiseases.app.data.model.PushRegisterRequest(
-                        userPseudoId = pseudoId,
-                        token = token,
-                    ),
-                )
+                apiClient.httpClient.post("api/push/register") {
+                    contentType(ContentType.Application.Json)
+                    setBody(
+                        com.plantdiseases.app.data.model.PushRegisterRequest(
+                            userPseudoId = pseudoId,
+                            token = token,
+                        ),
+                    )
+                }
             } catch (_: Exception) {
                 // best-effort; the poll fallback still covers delivery
             }
@@ -781,12 +788,15 @@ class ScanRepository(
     suspend fun recordCommunityView(scanId: String, viewerPseudoId: String) {
         withContext(Dispatchers.IO) {
             try {
-                apiService.communityRecordView(
-                    com.plantdiseases.app.data.model.CommunityViewRequest(
-                        scanId = scanId,
-                        userPseudoId = viewerPseudoId,
-                    ),
-                )
+                apiClient.httpClient.post("api/community/view") {
+                    contentType(ContentType.Application.Json)
+                    setBody(
+                        com.plantdiseases.app.data.model.CommunityViewRequest(
+                            scanId = scanId,
+                            userPseudoId = viewerPseudoId,
+                        ),
+                    )
+                }
             } catch (_: Exception) {
                 // best-effort telemetry; never surface to the user
             }
@@ -801,10 +811,15 @@ class ScanRepository(
         withContext(Dispatchers.IO) {
             if (scanIds.isEmpty()) return@withContext emptyMap()
             try {
-                val r = apiService.communityScanCounts(
-                    com.plantdiseases.app.data.model.CommunityScanCountsRequest(scanIds),
-                )
-                if (r.isSuccessful && r.body() != null) r.body()!!.counts else emptyMap()
+                val r = apiClient.httpClient.post("api/community/scan-counts") {
+                    contentType(ContentType.Application.Json)
+                    setBody(com.plantdiseases.app.data.model.CommunityScanCountsRequest(scanIds))
+                }
+                if (r.status.value in 200..299) {
+                    r.body<com.plantdiseases.app.data.model.CommunityScanCountsResponse>().counts
+                } else {
+                    emptyMap()
+                }
             } catch (e: Exception) {
                 emptyMap()
             }
@@ -1161,11 +1176,11 @@ class ScanRepository(
     suspend fun deleteCommunityContributions(userPseudoId: String): Result<Unit> =
         withContext(Dispatchers.IO) {
             try {
-                val response = apiService.communityScanDeleteUser(userPseudoId)
-                if (response.isSuccessful) {
+                val response = apiClient.httpClient.delete("api/community/user/$userPseudoId")
+                if (response.status.value in 200..299) {
                     Result.success(Unit)
                 } else {
-                    Result.failure(Exception("Community delete failed: ${response.code()}"))
+                    Result.failure(Exception("Community delete failed: ${response.status.value}"))
                 }
             } catch (e: Exception) {
                 Result.failure(e)

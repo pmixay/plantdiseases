@@ -3,6 +3,7 @@ package com.plantdiseases.app.data.repository
 import com.google.common.truth.Truth.assertThat
 import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.ChatRequest
+import com.plantdiseases.app.data.model.CommunityOpinionRequest
 import com.plantdiseases.app.data.model.FeedbackRequest
 import com.plantdiseases.app.data.model.ProgressionRequest
 import com.plantdiseases.app.data.model.SymptomDiagnoseRequest
@@ -658,5 +659,95 @@ class ScanRepositoryNetworkTest {
         assertThat(result.getOrNull()?.totalOpinions).isEqualTo(3)
         assertThat(result.getOrNull()?.scans?.get(0)?.opinionCount).isEqualTo(3)
         assertThat(server.takeRequest().path).isEqualTo("/api/community/my-scan-opinions/user-42")
+    }
+
+    // --- Community write POSTs / DELETE / push (Ktor) ---
+
+    @Test
+    fun submitCommunityOpinion_success_postsBodyAndParses() {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"scan_id":"sc-2","ok":true,"count":1,"opinions":[]}"""),
+        )
+        val result = runBlocking {
+            repo.submitCommunityOpinion(
+                CommunityOpinionRequest(
+                    scanId = "sc-2",
+                    userPseudoId = "u1",
+                    suggestedDisease = "rust",
+                ),
+            )
+        }
+        assertThat(result.isSuccess).isTrue()
+        assertThat(result.getOrNull()?.ok).isTrue()
+        val req = server.takeRequest()
+        assertThat(req.method).isEqualTo("POST")
+        assertThat(req.path).isEqualTo("/api/community/opinion")
+        val body = req.body.readUtf8()
+        assertThat(body).contains("\"scan_id\":\"sc-2\"")
+        assertThat(body).contains("\"suggested_disease\":\"rust\"")
+    }
+
+    @Test
+    fun requestSecondOpinion_returnsFlaggedFlag() {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"ok":true,"flagged":true}"""),
+        )
+        val result = runBlocking { repo.requestSecondOpinion("sc-3", "u2") }
+        assertThat(result.getOrNull()).isTrue()
+        assertThat(server.takeRequest().path).isEqualTo("/api/community/request-opinion")
+    }
+
+    @Test
+    fun getCommunityScanCounts_success_parsesCountMap() {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"counts":{"sc-1":{"opinions":2,"views":7}}}"""),
+        )
+        val counts = runBlocking { repo.getCommunityScanCounts(listOf("sc-1")) }
+        assertThat(counts["sc-1"]?.opinions).isEqualTo(2)
+        assertThat(counts["sc-1"]?.views).isEqualTo(7)
+        assertThat(server.takeRequest().path).isEqualTo("/api/community/scan-counts")
+    }
+
+    @Test
+    fun getCommunityScanCounts_emptyInput_skipsNetwork() {
+        val counts = runBlocking { repo.getCommunityScanCounts(emptyList()) }
+        assertThat(counts).isEmpty()
+        assertThat(server.requestCount).isEqualTo(0)
+    }
+
+    @Test
+    fun deleteCommunityContributions_success_onDelete() {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
+        val result = runBlocking { repo.deleteCommunityContributions("user-9") }
+        assertThat(result.isSuccess).isTrue()
+        val req = server.takeRequest()
+        assertThat(req.method).isEqualTo("DELETE")
+        assertThat(req.path).isEqualTo("/api/community/user/user-9")
+    }
+
+    @Test
+    fun recordCommunityView_firesPostWithBody() {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
+        runBlocking { repo.recordCommunityView("sc-5", "viewer-1") }
+        val req = server.takeRequest()
+        assertThat(req.method).isEqualTo("POST")
+        assertThat(req.path).isEqualTo("/api/community/view")
+        assertThat(req.body.readUtf8()).contains("\"scan_id\":\"sc-5\"")
+    }
+
+    @Test
+    fun registerPushToken_firesPostWithBody() {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
+        runBlocking { repo.registerPushToken("u-7", "fcm-token-xyz") }
+        val req = server.takeRequest()
+        assertThat(req.method).isEqualTo("POST")
+        assertThat(req.path).isEqualTo("/api/push/register")
+        assertThat(req.body.readUtf8()).contains("\"token\":\"fcm-token-xyz\"")
     }
 }

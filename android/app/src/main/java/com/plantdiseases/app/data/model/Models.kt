@@ -347,25 +347,28 @@ data class CommunityScanUploadResponse(
 )
 
 /** /api/community/opinion request body. */
+@Serializable
 data class CommunityOpinionRequest(
-    @SerializedName("scan_id") val scanId: String,
-    @SerializedName("user_pseudo_id") val userPseudoId: String,
-    @SerializedName("suggested_disease") val suggestedDisease: String,
-    @SerializedName("note") val note: String? = null,
+    @SerializedName("scan_id") @SerialName("scan_id") val scanId: String,
+    @SerializedName("user_pseudo_id") @SerialName("user_pseudo_id") val userPseudoId: String,
+    @SerializedName("suggested_disease") @SerialName("suggested_disease") val suggestedDisease: String,
+    @SerializedName("note") @SerialName("note") val note: String? = null,
 )
 
 /** /api/community/request-opinion request body. The scanner flags their
  *  OWN scan as wanting a second opinion — they don't suggest a diagnosis. */
+@Serializable
 data class CommunityRequestOpinionRequest(
-    @SerializedName("scan_id") val scanId: String,
-    @SerializedName("user_pseudo_id") val userPseudoId: String,
+    @SerializedName("scan_id") @SerialName("scan_id") val scanId: String,
+    @SerializedName("user_pseudo_id") @SerialName("user_pseudo_id") val userPseudoId: String,
 )
 
 /** /api/community/request-opinion response. `flagged` is false when no
  *  owned community row exists yet (upload pending / sharing opted out). */
+@Serializable
 data class CommunityRequestOpinionResponse(
-    @SerializedName("ok") val ok: Boolean = false,
-    @SerializedName("flagged") val flagged: Boolean = false,
+    @SerializedName("ok") @SerialName("ok") val ok: Boolean = false,
+    @SerializedName("flagged") @SerialName("flagged") val flagged: Boolean = false,
 )
 
 /** One community 'second opinion' on a shared scan. `scanId` is only
@@ -393,32 +396,37 @@ data class CommunityOpinionsResponse(
 
 /** /api/push/register request body — registers this install's FCM token
  *  under its pseudo-id so the server can push opinion notifications. */
+@Serializable
 data class PushRegisterRequest(
-    @SerializedName("user_pseudo_id") val userPseudoId: String,
-    @SerializedName("token") val token: String,
-    @SerializedName("platform") val platform: String = "android",
+    @SerializedName("user_pseudo_id") @SerialName("user_pseudo_id") val userPseudoId: String,
+    @SerializedName("token") @SerialName("token") val token: String,
+    @SerializedName("platform") @SerialName("platform") val platform: String = "android",
 )
 
 /** /api/community/view request body — records that the caller opened
  *  someone else's shared scan (deduped per viewer server-side). */
+@Serializable
 data class CommunityViewRequest(
-    @SerializedName("scan_id") val scanId: String,
-    @SerializedName("user_pseudo_id") val userPseudoId: String,
+    @SerializedName("scan_id") @SerialName("scan_id") val scanId: String,
+    @SerializedName("user_pseudo_id") @SerialName("user_pseudo_id") val userPseudoId: String,
 )
 
 /** /api/community/scan-counts request + response: batched {opinions, views}
  *  per scan so the Gallery can badge the caller's own rows in one call. */
+@Serializable
 data class CommunityScanCountsRequest(
-    @SerializedName("scan_ids") val scanIds: List<String>,
+    @SerializedName("scan_ids") @SerialName("scan_ids") val scanIds: List<String>,
 )
 
+@Serializable
 data class CommunityScanCount(
-    @SerializedName("opinions") val opinions: Int = 0,
-    @SerializedName("views") val views: Int = 0,
+    @SerializedName("opinions") @SerialName("opinions") val opinions: Int = 0,
+    @SerializedName("views") @SerialName("views") val views: Int = 0,
 )
 
+@Serializable
 data class CommunityScanCountsResponse(
-    @SerializedName("counts") val counts: Map<String, CommunityScanCount> = emptyMap(),
+    @SerializedName("counts") @SerialName("counts") val counts: Map<String, CommunityScanCount> = emptyMap(),
 )
 
 /** Guide article about plant care */

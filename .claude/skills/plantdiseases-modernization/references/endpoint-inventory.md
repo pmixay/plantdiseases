@@ -29,7 +29,7 @@ at the **end of `ApiService.kt`, ≈ lines 377–425**) in `data/remote/`. Model
 > Gson `JsonObject` field must become `JsonObject` from `kotlinx.serialization.json` (or a typed
 > model). Flag these two when you reach them.
 
-## Table A — Endpoints (11 remaining on Retrofit, 21 done)
+## Table A — Endpoints (0 remaining — Retrofit removed, 26 done)
 
 | Endpoint | Function | Req → Resp | Status |
 |---|---|---|---|
@@ -47,31 +47,25 @@ at the **end of `ApiService.kt`, ≈ lines 377–425**) in `data/remote/`. Model
 | POST /api/feedback/image (multipart) | `uploadFeedbackImage` (in ScanRepository) | image + scanId → Unit | ✅ **Ktor** |
 | POST /api/community/scan (multipart) | `uploadCommunityScan` (in ScanRepository) | image? + fields → CommunityScanUploadResponse | ✅ **Ktor** |
 | GET /api/community/nearby | `communityNearby` (in ScanRepository) | — → CommunityScansResponse | ✅ **Ktor** |
-| DELETE /api/community/user/{id} | `communityScanDeleteUser` | — → FeedbackResponse | ⬜ Retrofit ⚠ path |
-| POST /api/community/opinion | `communitySubmitOpinion` | CommunityOpinionRequest → CommunityOpinionsResponse | ⬜ Retrofit |
-| POST /api/community/request-opinion | `communityRequestOpinion` | CommunityRequestOpinionRequest → CommunityRequestOpinionResponse | ⬜ Retrofit |
+| DELETE /api/community/user/{id} | `deleteCommunityContributions` (in ScanRepository) | — → 2xx | ✅ **Ktor** |
+| POST /api/community/opinion | `submitCommunityOpinion` (in ScanRepository) | CommunityOpinionRequest → CommunityOpinionsResponse | ✅ **Ktor** |
+| POST /api/community/request-opinion | `requestSecondOpinion` (in ScanRepository) | CommunityRequestOpinionRequest → CommunityRequestOpinionResponse | ✅ **Ktor** |
 | GET /api/community/opinions/{scan_id} | `getCommunityOpinions` (in ScanRepository) | — → CommunityOpinionsResponse | ✅ **Ktor** |
 | GET /api/community/my-opinions/{id} | `getMyCommunityOpinions` (in ScanRepository) | — → CommunityOpinionsResponse | ✅ **Ktor** |
 | GET /api/community/my-scan-opinions/{id} | `fetchMyScanOpinions` (in ScanRepository) | — → MyScanOpinionsResponse | ✅ **Ktor** |
-| POST /api/push/register | `registerPushToken` | PushRegisterRequest → ResponseBody | ⬜ Retrofit |
-| POST /api/community/view | `communityRecordView` | CommunityViewRequest → ResponseBody | ⬜ Retrofit |
-| POST /api/community/scan-counts | `communityScanCounts` | CommunityScanCountsRequest → CommunityScanCountsResponse | ⬜ Retrofit |
+| POST /api/push/register | `registerPushToken` (in ScanRepository) | PushRegisterRequest → 2xx | ✅ **Ktor** |
+| POST /api/community/view | `recordCommunityView` (in ScanRepository) | CommunityViewRequest → 2xx | ✅ **Ktor** |
+| POST /api/community/scan-counts | `getCommunityScanCounts` (in ScanRepository) | CommunityScanCountsRequest → CommunityScanCountsResponse | ✅ **Ktor** |
 | GET /api/community/trending | `communityTrending` (PlantApiClient) | — → TrendingResponse | ✅ **Ktor** |
 | GET /api/species-info | `speciesInfo` (PlantApiClient + repo getSpeciesInfo) | — → SpeciesInfoResponse | ✅ **Ktor** |
 | GET /api/species-diseases | `speciesDiseases` (PlantApiClient) | — → SpeciesDiseasesResponse | ✅ **Ktor** |
 | GET /api/community/by-species | `communityScansBySpecies` (in ScanRepository) | — → CommunityScansResponse | ✅ **Ktor** |
-| POST /api/label/login | `labelLogin` | LabelLoginRequest → LabelLoginResponse | ⬜ Retrofit |
-| GET /api/label/next | `labelNext` | — (X-Label-Token) → LabelNextResponse | ⬜ Retrofit ⚠ header |
-| POST /api/label/verdict | `labelVerdict` | LabelVerdictBatch → LabelVerdictResponse | ⬜ Retrofit |
-| GET /api/label/stats | `labelStats` | — (X-Label-Token) → LabelStatsResponse | ⬜ Retrofit ⚠ header |
-| GET /api/label/clue/{klass} | `labelClue` | — (X-Label-Token) → LabelClueResponse | ⬜ Retrofit ⚠ path+header |
-| POST /api/label/export | `labelExport` | — (X-Label-Token) → LabelExportResponse | ⬜ Retrofit ⚠ header |
 
 ⚠ = needs extra care (multipart / streaming / path param / custom header). Suggested order:
 plain GET/POST first (capabilities, health, care-plan, chat, symptom, progression, feedback,
 trending, species-*), then path-param GETs, then the multipart/streaming/header ones, label-* last.
 
-## Table B — Models (49 of 73 migrated)
+## Table B — Models (all transport models migrated; Retrofit + converter-gson removed)
 
 **✅ `@Serializable` already (Models.kt):** DetectionRegion, Detection, TopKEntry,
 PredictionSetItem, PredictionSetCareCard, PredictionSet, AnalysisResponse, SpeciesBlock,
@@ -85,21 +79,18 @@ ProgressionRequest (history via AnyMapListSerializer), ProgressionResponse, Iden
 SpeciesCandidate, CommunityScanUploadResponse,
 AquaManifestResponse (classes via GsonJsonObjectSerializer), MyScanOpinionsResponse,
 ScanOpinionItem, CommunityScansResponse, CommunityScanItem, CommunityRegionSummary,
-CommunityTopDisease, CommunityTopRegion, CommunityOpinion, CommunityOpinionsResponse.
+CommunityTopDisease, CommunityTopRegion, CommunityOpinion, CommunityOpinionsResponse, CommunityOpinionRequest,
+CommunityRequestOpinionRequest, CommunityRequestOpinionResponse, PushRegisterRequest,
+CommunityViewRequest, CommunityScanCountsRequest, CommunityScanCount, CommunityScanCountsResponse.
 
 **⬜ Still Gson-only — migrate when their endpoint moves (Models.kt):**
 CommunityOpinionRequest, CommunityRequestOpinionRequest, CommunityRequestOpinionResponse,
-PushRegisterRequest, CommunityViewRequest,
-CommunityScanCountsRequest, CommunityScanCount, CommunityScanCountsResponse, GuideItem,
+GuideItem,
 GuideCategory (enum), ScanHistoryItem.
 
-**⬜ Still Gson-only (LabelingModels.kt):** LabelLoginRequest, LabelLoginResponse, LabelCard,
-LabelNextResponse, LabelVerdictItem, LabelVerdictBatch, LabelVerdictResponse, LabelClassStat,
-LabelSourceStat, LabelStatsResponse, LabelClueItem, LabelClueResponse, LabelExportResponse.
+**Note:** `LabelingModels.kt` and the `api/label/*` endpoints were removed upstream
+(commit 16da03c) — they are not part of this migration.
 
-> Some `⬜` models are nested inside a migrated parent's graph but not yet annotated — when you
-> annotate a response, annotate every type it transitively references, or kotlinx won't compile
-> a serializer for it.
 
 ## Done = step 2 complete
 - [ ] All 31 endpoints call Ktor; `ApiService` interface deleted.

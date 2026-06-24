@@ -3,17 +3,8 @@ package com.plantdiseases.app.data.remote
 import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.CarePlanResponse
-import com.plantdiseases.app.data.model.CommunityOpinionRequest
-import com.plantdiseases.app.data.model.CommunityOpinionsResponse
-import com.plantdiseases.app.data.model.CommunityRequestOpinionRequest
-import com.plantdiseases.app.data.model.CommunityRequestOpinionResponse
-import com.plantdiseases.app.data.model.CommunityViewRequest
-import com.plantdiseases.app.data.model.PushRegisterRequest
-import com.plantdiseases.app.data.model.CommunityScanCountsRequest
-import com.plantdiseases.app.data.model.CommunityScanCountsResponse
 import com.plantdiseases.app.data.model.SpeciesDiseasesResponse
 import com.plantdiseases.app.data.model.SpeciesInfoResponse
-import com.plantdiseases.app.data.model.FeedbackResponse
 import com.plantdiseases.app.data.model.TrendingResponse
 import com.plantdiseases.app.util.ServerConfig
 import io.ktor.client.HttpClient
@@ -35,100 +26,13 @@ import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Response
 import okhttp3.logging.HttpLoggingInterceptor
-import retrofit2.Retrofit
-import retrofit2.converter.gson.GsonConverterFactory
-import okhttp3.ResponseBody
-import retrofit2.http.Body
-import retrofit2.http.DELETE
-import retrofit2.http.GET
-import retrofit2.http.POST
-import retrofit2.http.Path
-import retrofit2.http.Query
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
-interface ApiService {
-
-    // NOTE: /api/analyze has migrated to the Ktor client (see PlantApiClient
-    // .httpClient and ScanRepository.analyzeImage). Per the migration plan,
-    // a Retrofit endpoint is removed once its last call-site is gone — this
-    // was that endpoint's only caller.
-
-    // GET api/capabilities migrated to Ktor (ScanRepository.fetchCapabilities).
-
-    // GET api/aqua/manifest migrated to Ktor (ScanRepository.syncAquaModel).
-    // GET api/aqua/model (@Streaming) migrated to Ktor (ScanRepository.syncAquaModel,
-    // streamed via bodyAsChannel().toInputStream()).
-
-    // GET api/health migrated to Ktor (ScanRepository.checkServerHealth).
-
-    // POST api/chat migrated to Ktor (ScanRepository.sendChat).
-
-    // POST api/identify (multipart) migrated to Ktor (ScanRepository.identifySpecies).
-
-    // POST api/care-plan migrated to Ktor (PlantApiClient.carePlan +
-    // repo fetchCarePlan, which keeps the ResponseCache + 503 mapping).
-
-    // POST api/symptom-diagnose migrated to Ktor (ScanRepository.diagnoseSymptoms).
-
-    // POST api/progression migrated to Ktor (ScanRepository.fetchProgression).
-
-    // POST api/feedback migrated to Ktor (ScanRepository.submitFeedback).
-
-    // POST api/feedback/image (multipart) migrated to Ktor (ScanRepository.uploadFeedbackImage).
-    // POST api/community/scan (multipart) migrated to Ktor (ScanRepository.uploadCommunityScan).
-
-    // GET api/community/nearby migrated to Ktor (ScanRepository.communityNearby).
-
-    @DELETE("api/community/user/{user_pseudo_id}")
-    suspend fun communityScanDeleteUser(
-        @Path("user_pseudo_id") userPseudoId: String,
-    ): retrofit2.Response<FeedbackResponse>
-
-    /** Submit a community "second opinion" on a shared scan. */
-    @POST("api/community/opinion")
-    suspend fun communitySubmitOpinion(
-        @Body request: CommunityOpinionRequest,
-    ): retrofit2.Response<CommunityOpinionsResponse>
-
-    /** Flag the scanner's OWN scan as wanting a community second opinion.
-     *  The scanner doesn't suggest a diagnosis — they wait for others. */
-    @POST("api/community/request-opinion")
-    suspend fun communityRequestOpinion(
-        @Body request: CommunityRequestOpinionRequest,
-    ): retrofit2.Response<CommunityRequestOpinionResponse>
-
-    // GET api/community/opinions/{scan_id} migrated to Ktor (ScanRepository.getCommunityOpinions).
-    // GET api/community/my-opinions/{id} migrated to Ktor (ScanRepository.getMyCommunityOpinions).
-    // GET api/community/my-scan-opinions/{id} migrated to Ktor (ScanRepository.fetchMyScanOpinions).
-
-    /** Register this install's FCM token so the server can push opinion
-     *  notifications to a closed / idle device. */
-    @POST("api/push/register")
-    suspend fun registerPushToken(
-        @Body request: PushRegisterRequest,
-    ): retrofit2.Response<ResponseBody>
-
-    /** Record that the caller opened someone else's shared scan. Deduped per
-     *  viewer server-side, so it's safe to fire on every open. */
-    @POST("api/community/view")
-    suspend fun communityRecordView(
-        @Body request: CommunityViewRequest,
-    ): retrofit2.Response<ResponseBody>
-
-    /** Batched {opinions, views} per scan_id — used to badge the caller's own
-     *  rows in the Gallery in a single round-trip. */
-    @POST("api/community/scan-counts")
-    suspend fun communityScanCounts(
-        @Body request: CommunityScanCountsRequest,
-    ): retrofit2.Response<CommunityScanCountsResponse>
-
-    // GET api/community/trending, api/species-info, api/species-diseases
-    // migrated to Ktor (PlantApiClient.communityTrending / .speciesInfo /
-    // .speciesDiseases — best-effort body-or-null wrappers used by UI).
-
-    // GET api/community/by-species migrated to Ktor (ScanRepository.communityScansBySpecies).
-}
+// All HTTP endpoints have migrated from Retrofit to the Ktor client below
+// (PlantApiClient.httpClient + the ScanRepository call sites). The Retrofit
+// ApiService interface and its Gson converter have been removed; OkHttp +
+// RetryInterceptor remain as the shared engine the Ktor client runs on.
 
 /**
  * Retries on transient network failures and on HTTP 429 / 503, honouring the
@@ -200,9 +104,10 @@ class RetryInterceptor(
 }
 
 /**
- * Retrofit client. Defaults to the build-time API base URL; the
- * constructor parameter is a test seam so unit/integration tests can
- * point the whole stack at a local MockWebServer without a device.
+ * The app's HTTP client — a Ktor [HttpClient] over an OkHttp engine.
+ * Defaults to the build-time API base URL; the constructor parameter is a
+ * test seam so unit/integration tests can point the whole stack at a local
+ * MockWebServer without a device.
  */
 class PlantApiClient(
     private val baseUrl: String = ServerConfig.baseUrl,
@@ -225,17 +130,8 @@ class PlantApiClient(
             .build()
     }
 
-    val apiService: ApiService by lazy {
-        Retrofit.Builder()
-            .baseUrl(baseUrl)
-            .client(client)
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
-            .create(ApiService::class.java)
-    }
-
     /**
-     * Ktor client for endpoints migrated off Retrofit. It reuses the same
+     * Ktor client for all HTTP endpoints. It reuses the same
      * preconfigured [client] (so the RetryInterceptor, logging and timeouts
      * are shared, not duplicated) and resolves relative paths against the same
      * [baseUrl] test seam. `expectSuccess = false` keeps non-2xx responses as
