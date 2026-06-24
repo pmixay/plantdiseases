@@ -125,4 +125,70 @@ class ScanRepositoryNetworkTest {
         assertThat(ex).isNotInstanceOf(ScanRepository.UnsupportedImageException::class.java)
         assertThat(ex.message).contains("Server error")
     }
+
+    // --- GET /api/capabilities (Ktor) ---
+
+    @Test
+    fun capabilities_success_parsesFamiliesAndGets() {
+        // Extra unknown field ("note") proves ignoreUnknownKeys is on.
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody(
+                    """{"default":"gamma","note":"x","families":""" +
+                        """[{"id":"gamma","available":true,"location":"server"},""" +
+                        """{"id":"frontier","available":false}]}""",
+                ),
+        )
+
+        val result = runBlocking { repo.fetchCapabilities() }
+
+        assertThat(result.isSuccess).isTrue()
+        val body = result.getOrNull()!!
+        assertThat(body.default).isEqualTo("gamma")
+        assertThat(body.families).hasSize(2)
+        assertThat(body.families[0].available).isTrue()
+
+        val request = server.takeRequest()
+        assertThat(request.method).isEqualTo("GET")
+        assertThat(request.path).isEqualTo("/api/capabilities")
+    }
+
+    @Test
+    fun capabilities_500_mapsToGenericFailure() {
+        // 500 isn't retried (RetryInterceptor only replays 429/503), so one response.
+        server.enqueue(MockResponse().setResponseCode(500))
+        val result = runBlocking { repo.fetchCapabilities() }
+        assertThat(result.isFailure).isTrue()
+        assertThat(result.exceptionOrNull()?.message).contains("Server error")
+    }
+
+    // --- GET /api/health (Ktor) ---
+
+    @Test
+    fun health_success_parsesBodyAndGets() {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"status":"ok","version":"1.4","num_classes":9}"""),
+        )
+
+        val result = runBlocking { repo.checkServerHealth() }
+
+        assertThat(result.isSuccess).isTrue()
+        assertThat(result.getOrNull()?.status).isEqualTo("ok")
+        assertThat(result.getOrNull()?.numClasses).isEqualTo(9)
+
+        val request = server.takeRequest()
+        assertThat(request.method).isEqualTo("GET")
+        assertThat(request.path).isEqualTo("/api/health")
+    }
+
+    @Test
+    fun health_500_mapsToGenericFailure() {
+        server.enqueue(MockResponse().setResponseCode(500))
+        val result = runBlocking { repo.checkServerHealth() }
+        assertThat(result.isFailure).isTrue()
+        assertThat(result.exceptionOrNull()?.message).contains("Server error")
+    }
 }

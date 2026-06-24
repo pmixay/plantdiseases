@@ -1,6 +1,6 @@
 ---
 name: plantdiseases-modernization
-description: MANUAL-INVOKE ONLY — do NOT auto-trigger. Invoke solely when the user runs /plantdiseases-modernization or asks for it by name. Playbook for modernizing the plantdiseases/PlantVision Android app (com.plantdiseases.app) WITHOUT a Compose rewrite: (1) add Koin DI in place of the hand-rolled service locator, (2) migrate Retrofit + Gson → Ktor + kotlinx.serialization, (3) publish to RuStore. Keeps XML Views, single-module, EN/RU, and the ML/TFLite pipeline intact. Even when a request clearly involves DI, networking, or release work on this app, do NOT load on your own — wait for explicit invocation.
+description: MANUAL-INVOKE ONLY — do NOT auto-trigger. Invoke solely when the user runs /plantdiseases-modernization or asks for it by name. Playbook for modernizing the plantdiseases/PlantVision Android app (com.plantdiseases.app) WITHOUT a Compose rewrite: (1) add Koin DI in place of the hand-rolled service locator, (2) migrate Retrofit + Gson → Ktor + kotlinx.serialization. Keeps XML Views, single-module, EN/RU, and the ML/TFLite pipeline intact. Even when a request clearly involves DI or networking work on this app, do NOT load on your own — wait for explicit invocation.
 ---
 
 # PlantDiseases modernization (no Compose)
@@ -11,7 +11,8 @@ the ML, not the UI). Instead, modernize the guts and ship:
 
 1. **DI: hand-rolled service locator → Koin** (simpler than Hilt; runtime, no codegen).
 2. **Networking: Retrofit + Gson → Ktor + kotlinx.serialization** (~a day, *with tests*).
-3. **Distribution: publish to RuStore** (RU audience; app is already bilingual).
+
+(RuStore publishing — the original step 3 — is **already done** and out of scope here.)
 
 > MetalRestrict is on a *different* track (full Compose migration — see the
 > `android-compose-migration` skill). This skill is plantdiseases-only and Compose-free.
@@ -41,8 +42,6 @@ serialization plugin. State as of this upgrade:
 - **Remaining: 31 Retrofit endpoints + 64 Gson-only models.** Full checklist with done/todo
   status and the per-endpoint recipe: [endpoint-inventory.md](references/endpoint-inventory.md).
 
-**Step 3 — RuStore publish: ⬜ not started.** [rustore-publishing.md](references/rustore-publishing.md).
-
 Stack: Kotlin **2.1.21**, AGP 8.13.2, compileSdk 35, minSdk 26, `build.gradle.kts`, single
 `:app`, signed releases, EN/RU (`values/` + `values-ru/`), `values-night` dark theme.
 
@@ -54,13 +53,11 @@ Stack: Kotlin **2.1.21**, AGP 8.13.2, compileSdk 35, minSdk 26, `build.gradle.kt
    **last** endpoint is migrated, then delete Retrofit/Gson + the dual `@SerializedName`.
 2. **Finish Koin** call-site migration ([koin-di.md](references/koin-di.md)) — can proceed in
    parallel; it's mechanical and independent of networking.
-3. **RuStore** once code is stable ([rustore-publishing.md](references/rustore-publishing.md)).
 
 | Step | Reference | Status | Remaining effort |
 |---|---|---|---|
 | Koin DI | [koin-di.md](references/koin-di.md) | ✅ wired / ⬜ ~54 call sites | ~half a day, mechanical |
 | Ktor + Serialization | [ktor-migration.md](references/ktor-migration.md) · [endpoint-inventory.md](references/endpoint-inventory.md) | 🟡 1/32 endpoints, 9/73 models | ~a day w/ tests |
-| RuStore publish | [rustore-publishing.md](references/rustore-publishing.md) | ⬜ not started | ~half a day, process |
 
 ## Hard constraints — do not violate
 
@@ -73,8 +70,8 @@ Stack: Kotlin **2.1.21**, AGP 8.13.2, compileSdk 35, minSdk 26, `build.gradle.kt
    refactor, not a redesign.
 4. **EN/RU bilingual** stays — no hardcoded user-facing strings.
 5. **Graceful degradation stays.** Optional integrations (PlantNet/OpenRouter/FCM) return
-   "not configured" rather than crashing — keep that. RuStore devices may lack Google Play
-   services, so the existing **FCM → WorkManager-poll fallback** matters (see RuStore ref).
+   "not configured" rather than crashing — keep that, including the **FCM → WorkManager-poll
+   fallback** for devices without Google Play services.
 6. **Don't touch the ML path or WorkManager init quirk.** TFLite/Aqua, the server diagnosis
    flow, and the "don't call WorkManager in `Application.onCreate`" rule (scheduling happens in
    `MainActivity`) stay as-is.
@@ -87,4 +84,3 @@ Stack: Kotlin **2.1.21**, AGP 8.13.2, compileSdk 35, minSdk 26, `build.gradle.kt
    may send unknown/extra fields — see ktor ref; you'll get crashes without `ignoreUnknownKeys`).
 - ❌ Dropping the base-URL seam / rewriting the tests' transport instead of porting them.
 - ❌ Doing Koin and Ktor in one giant commit. One step, green CI, merge, next step.
-- ❌ Shipping to RuStore without a privacy policy (the app uploads user photos).

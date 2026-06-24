@@ -29,15 +29,15 @@ at the **end of `ApiService.kt`, ≈ lines 377–425**) in `data/remote/`. Model
 > Gson `JsonObject` field must become `JsonObject` from `kotlinx.serialization.json` (or a typed
 > model). Flag these two when you reach them.
 
-## Table A — Endpoints (31 remaining on Retrofit, 1 done)
+## Table A — Endpoints (29 remaining on Retrofit, 3 done)
 
 | Endpoint | Function | Req → Resp | Status |
 |---|---|---|---|
 | POST /api/analyze (multipart) | `analyzeImage` (in ScanRepository) | image → AnalysisResponse | ✅ **Ktor** |
-| GET /api/capabilities | `capabilities` | — → CapabilitiesResponse | ⬜ Retrofit |
+| GET /api/capabilities | `fetchCapabilities` (in ScanRepository) | — → CapabilitiesResponse | ✅ **Ktor** |
 | GET /api/aqua/manifest | `aquaManifest` | — → AquaManifestResponse | ⬜ Retrofit |
 | GET /api/aqua/model (@Streaming) | `aquaModel` | — → ResponseBody (bytes) | ⬜ Retrofit ⚠ streaming |
-| GET /api/health | `healthCheck` | — → HealthResponse | ⬜ Retrofit |
+| GET /api/health | `checkServerHealth` (in ScanRepository) | — → HealthResponse | ✅ **Ktor** |
 | POST /api/chat | `chat` | ChatRequest → ChatResponse | ⬜ Retrofit |
 | POST /api/identify (multipart) | `identifySpecies` | image → IdentifyResponse | ⬜ Retrofit ⚠ multipart |
 | POST /api/care-plan | `carePlan` | CarePlanRequest → CarePlanResponse | ⬜ Retrofit |
@@ -71,14 +71,14 @@ at the **end of `ApiService.kt`, ≈ lines 377–425**) in `data/remote/`. Model
 plain GET/POST first (capabilities, health, care-plan, chat, symptom, progression, feedback,
 trending, species-*), then path-param GETs, then the multipart/streaming/header ones, label-* last.
 
-## Table B — Models (9 of 73 migrated)
+## Table B — Models (12 of 73 migrated)
 
 **✅ `@Serializable` already (Models.kt):** DetectionRegion, Detection, TopKEntry,
 PredictionSetItem, PredictionSetCareCard, PredictionSet, AnalysisResponse, SpeciesBlock,
-SpeciesMatch.
+SpeciesMatch, CapabilitiesResponse, FamilyCapability, HealthResponse.
 
 **⬜ Still Gson-only — migrate when their endpoint moves (Models.kt):**
-CapabilitiesResponse, FamilyCapability, MyScanOpinionsResponse, ScanOpinionItem,
+MyScanOpinionsResponse, ScanOpinionItem,
 AquaManifestResponse ⚠(JsonObject field), CommunityScansResponse, CommunityScanItem,
 CommunityRegionSummary, CommunityTopDisease, CommunityTopRegion, CommunityScanUploadResponse,
 CommunityOpinionRequest, CommunityRequestOpinionRequest, CommunityRequestOpinionResponse,
@@ -88,7 +88,7 @@ GuideCategory (enum), TrendingResponse, TrendingSpecies, TrendingDisease, ScanHi
 ChatRequest, ChatResponse, ChatUsage, ChatSession, SpeciesCandidate, IdentifyResponse,
 SpeciesInfoResponse, SpeciesDiseasesResponse, SpeciesDiseaseItem, CarePlanRequest,
 SymptomDiagnoseRequest, SymptomResult, SymptomDiagnoseResponse, CarePlanResponse, LuxBand,
-HumidityBand, TemperatureBand, CarePlanCheckpoint, HealthResponse, ProgressionRequest,
+HumidityBand, TemperatureBand, CarePlanCheckpoint, ProgressionRequest,
 ProgressionResponse, FeedbackRequest, TopProb, FeedbackResponse.
 
 **⬜ Still Gson-only (LabelingModels.kt):** LabelLoginRequest, LabelLoginResponse, LabelCard,

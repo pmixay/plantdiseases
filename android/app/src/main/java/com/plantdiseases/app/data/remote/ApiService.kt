@@ -12,7 +12,6 @@ import com.plantdiseases.app.data.model.CommunityOpinionsResponse
 import com.plantdiseases.app.data.model.CommunityRequestOpinionRequest
 import com.plantdiseases.app.data.model.CommunityRequestOpinionResponse
 import com.plantdiseases.app.data.model.AquaManifestResponse
-import com.plantdiseases.app.data.model.CapabilitiesResponse
 import com.plantdiseases.app.data.model.CommunityScansResponse
 import com.plantdiseases.app.data.model.MyScanOpinionsResponse
 import com.plantdiseases.app.data.model.CommunityScanUploadResponse
@@ -24,7 +23,6 @@ import com.plantdiseases.app.data.model.SpeciesDiseasesResponse
 import com.plantdiseases.app.data.model.SpeciesInfoResponse
 import com.plantdiseases.app.data.model.FeedbackRequest
 import com.plantdiseases.app.data.model.FeedbackResponse
-import com.plantdiseases.app.data.model.HealthResponse
 import com.plantdiseases.app.data.model.IdentifyResponse
 import com.plantdiseases.app.data.model.ProgressionRequest
 import com.plantdiseases.app.data.model.ProgressionResponse
@@ -65,10 +63,7 @@ interface ApiService {
     // a Retrofit endpoint is removed once its last call-site is gone — this
     // was that endpoint's only caller.
 
-    /** Per-family availability so the scan-screen picker can grey out a
-     *  tier the server doesn't serve (notably frontier when disabled). */
-    @GET("api/capabilities")
-    suspend fun capabilities(): retrofit2.Response<CapabilitiesResponse>
+    // GET api/capabilities migrated to Ktor (ScanRepository.fetchCapabilities).
 
     /** Manifest for the hosted Aqua on-device model (version + sha + sidecar),
      *  so the app downloads/updates it only when the bytes change. */
@@ -81,8 +76,7 @@ interface ApiService {
     @GET("api/aqua/model")
     suspend fun aquaModel(): retrofit2.Response<ResponseBody>
 
-    @GET("api/health")
-    suspend fun healthCheck(): retrofit2.Response<HealthResponse>
+    // GET api/health migrated to Ktor (ScanRepository.checkServerHealth).
 
     @POST("api/chat")
     suspend fun chat(@Body request: ChatRequest): retrofit2.Response<ChatResponse>

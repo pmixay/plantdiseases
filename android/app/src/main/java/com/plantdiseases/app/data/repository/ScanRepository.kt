@@ -27,6 +27,7 @@ import com.plantdiseases.app.util.AquaModelManager
 import io.ktor.client.call.body
 import io.ktor.client.request.forms.MultiPartFormDataContent
 import io.ktor.client.request.forms.formData
+import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.request.url
@@ -145,11 +146,10 @@ class ScanRepository(
     suspend fun fetchCapabilities(): Result<CapabilitiesResponse> =
         withContext(Dispatchers.IO) {
             try {
-                val response = apiService.capabilities()
-                if (response.isSuccessful && response.body() != null) {
-                    Result.success(response.body()!!)
-                } else {
-                    Result.failure(Exception("Server error: ${response.code()}"))
+                val response = apiClient.httpClient.get("api/capabilities")
+                when (response.status.value) {
+                    in 200..299 -> Result.success(response.body<CapabilitiesResponse>())
+                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
                 }
             } catch (e: Exception) {
                 Result.failure(e)
@@ -560,11 +560,10 @@ class ScanRepository(
     suspend fun checkServerHealth(): Result<HealthResponse> =
         withContext(Dispatchers.IO) {
             try {
-                val response = apiService.healthCheck()
-                if (response.isSuccessful && response.body() != null) {
-                    Result.success(response.body()!!)
-                } else {
-                    Result.failure(Exception("Server error: ${response.code()}"))
+                val response = apiClient.httpClient.get("api/health")
+                when (response.status.value) {
+                    in 200..299 -> Result.success(response.body<HealthResponse>())
+                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
                 }
             } catch (e: SocketTimeoutException) {
                 Result.failure(ServerTimeoutException())

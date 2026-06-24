@@ -185,18 +185,20 @@ data class AnalysisResponse(
  *  scan-screen model picker reads this to decide which tiers to offer:
  *  a family with ``available=false`` (typically frontier when the server
  *  hasn't enabled it) is shown disabled. */
+@Serializable
 data class CapabilitiesResponse(
-    @SerializedName("default") val default: String = "gamma",
-    @SerializedName("families") val families: List<FamilyCapability> = emptyList(),
-    @SerializedName("server_version") val serverVersion: String? = null,
+    @SerializedName("default") @SerialName("default") val default: String = "gamma",
+    @SerializedName("families") @SerialName("families") val families: List<FamilyCapability> = emptyList(),
+    @SerializedName("server_version") @SerialName("server_version") val serverVersion: String? = null,
 )
 
+@Serializable
 data class FamilyCapability(
-    @SerializedName("id") val id: String = "",
-    @SerializedName("available") val available: Boolean = false,
+    @SerializedName("id") @SerialName("id") val id: String = "",
+    @SerializedName("available") @SerialName("available") val available: Boolean = false,
     // "server" or "on_device".
-    @SerializedName("location") val location: String = "server",
-    @SerializedName("model_family") val modelFamily: String? = null,
+    @SerializedName("location") @SerialName("location") val location: String = "server",
+    @SerializedName("model_family") @SerialName("model_family") val modelFamily: String? = null,
 )
 
 /** Opinion counts on the user's OWN shared scans (GET /api/community/
@@ -684,12 +686,13 @@ data class CarePlanCheckpoint(
 )
 
 /** Server health check response */
+@Serializable
 data class HealthResponse(
-    @SerializedName("status") val status: String = "",
-    @SerializedName("version") val version: String = "",
-    @SerializedName("num_classes") val numClasses: Int = 0,
-    @SerializedName("uptime_seconds") val uptimeSeconds: Double? = null,
-    @SerializedName("total_requests") val totalRequests: Int? = null
+    @SerializedName("status") @SerialName("status") val status: String = "",
+    @SerializedName("version") @SerialName("version") val version: String = "",
+    @SerializedName("num_classes") @SerialName("num_classes") val numClasses: Int = 0,
+    @SerializedName("uptime_seconds") @SerialName("uptime_seconds") val uptimeSeconds: Double? = null,
+    @SerializedName("total_requests") @SerialName("total_requests") val totalRequests: Int? = null
 )
 
 /**
