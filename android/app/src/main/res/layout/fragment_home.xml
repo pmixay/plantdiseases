@@ -150,21 +150,12 @@
             android:paddingHorizontal="@dimen/space_lg">
 
             <LinearLayout
-                android:id="@+id/tile_light"
+                android:id="@+id/tile_tools"
                 style="@style/HomeToolTile">
 
-                <ImageView style="@style/HomeToolTileIcon" android:src="@drawable/ic_light" />
+                <ImageView style="@style/HomeToolTileIcon" android:src="@drawable/ic_tools" />
 
-                <TextView style="@style/HomeToolTileLabel" android:text="@string/home_tool_light" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/tile_water"
-                style="@style/HomeToolTile">
-
-                <ImageView style="@style/HomeToolTileIcon" android:src="@drawable/ic_watering" />
-
-                <TextView style="@style/HomeToolTileLabel" android:text="@string/home_tool_water" />
+                <TextView style="@style/HomeToolTileLabel" android:text="@string/home_tools" />
             </LinearLayout>
 
             <LinearLayout

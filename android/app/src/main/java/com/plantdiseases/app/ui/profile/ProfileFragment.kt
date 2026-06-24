@@ -105,6 +105,13 @@ class ProfileFragment : Fragment() {
             findNavController().navigate(R.id.cameraFragment)
         }
 
+        // Full stats & advice (relocated from Home; Home keeps a teaser).
+        binding.btnStatsAdvice.setOnClickListener {
+            startActivity(
+                Intent(requireContext(), com.plantdiseases.app.ui.stats.StatsTipsActivity::class.java)
+            )
+        }
+
         binding.langEn.setOnClickListener { setLanguage("en") }
         binding.langRu.setOnClickListener { setLanguage("ru") }
         highlightActiveLanguage()

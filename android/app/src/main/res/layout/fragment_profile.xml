@@ -294,6 +294,18 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
+        <!-- Full stats & advice — relocated here from Home; Home keeps a
+             compact teaser card that opens the same screen. -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_stats_advice"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_md"
+            android:text="@string/stats_tips_title"
+            app:icon="@drawable/ic_chevron_right"
+            app:iconGravity="textEnd" />
+
         <!-- Empty state -->
         <LinearLayout
             android:id="@+id/empty_state"

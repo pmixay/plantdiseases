@@ -91,12 +91,7 @@ class HomeFragment : Fragment() {
             startActivity(Intent(requireContext(), com.plantdiseases.app.ui.identify.SpeciesIdentifyActivity::class.java))
         }
 
-        binding.tileLight.setOnClickListener {
-            startActivity(Intent(requireContext(), LightMeterActivity::class.java))
-        }
-        binding.tileWater.setOnClickListener {
-            startActivity(Intent(requireContext(), WaterCalculatorActivity::class.java))
-        }
+        binding.tileTools.setOnClickListener { showToolsSheet() }
         binding.tileSymptom.setOnClickListener {
             startActivity(Intent(requireContext(), SymptomCheckerActivity::class.java))
         }
@@ -186,6 +181,25 @@ class HomeFragment : Fragment() {
         requireActivity()
             .findViewById<BottomNavigationView>(R.id.bottom_navigation)
             ?.selectedItemId = R.id.cameraFragment
+    }
+
+    /** Group the light meter + water calculator behind a single "Tools" entry
+     *  so the home tool row stays uncluttered. The two utilities (logic in
+     *  LightMeterActivity / WaterCalculatorActivity, both unit-tested) are
+     *  unchanged — only the entry point is consolidated. */
+    private fun showToolsSheet() {
+        val sheet = com.google.android.material.bottomsheet.BottomSheetDialog(requireContext())
+        val view = layoutInflater.inflate(R.layout.sheet_tools, null)
+        view.findViewById<View>(R.id.row_light).setOnClickListener {
+            startActivity(Intent(requireContext(), LightMeterActivity::class.java))
+            sheet.dismiss()
+        }
+        view.findViewById<View>(R.id.row_water).setOnClickListener {
+            startActivity(Intent(requireContext(), WaterCalculatorActivity::class.java))
+            sheet.dismiss()
+        }
+        sheet.setContentView(view)
+        sheet.show()
     }
 
     /** Add the "scans near you" community action to the shared toolbar, scoped
