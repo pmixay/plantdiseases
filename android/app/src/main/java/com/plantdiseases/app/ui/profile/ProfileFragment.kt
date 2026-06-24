@@ -4,8 +4,6 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Typeface
-import android.text.InputType
-import android.widget.EditText
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
@@ -33,10 +31,7 @@ import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.GuideDataProvider
 import com.plantdiseases.app.data.model.CommunityOpinion
-import com.plantdiseases.app.data.repository.LabelingRepository
-import com.plantdiseases.app.data.repository.LabelingUnavailableException
 import com.plantdiseases.app.databinding.FragmentProfileBinding
-import com.plantdiseases.app.ui.labeling.LabelingActivity
 import com.plantdiseases.app.ui.result.CommunityOpinionSheet
 import com.plantdiseases.app.util.AutosavePrefs
 import com.plantdiseases.app.util.LocaleHelper
@@ -89,7 +84,6 @@ class ProfileFragment : Fragment() {
 
         applyStatusBarTopInset(binding.root)
         binding.tvAppVersion.text = "v${BuildConfig.VERSION_NAME}"
-        setupSecretLabelingEntry()
 
         // "Clear all history" now lives on the Gallery tab's top-app-bar
         // basket, next to the scans it actually wipes.
@@ -400,63 +394,6 @@ class ProfileFragment : Fragment() {
                 if (active) R.color.on_primary else R.color.on_surface_secondary,
             ),
         )
-    }
-
-    /** Admin data-labeling entry: password prompt → server login → screen.
-     *  The token lives only in memory (passed via intent), never persisted. */
-    /** Hidden admin entry (the visible labeling button was removed for the
-     *  Play release): 7 quick taps on the version row — the Android
-     *  developer-options pattern — open the password gate. Taps more than
-     *  2s apart reset the counter, so accidental touches never trigger it,
-     *  and there is deliberately NO toast countdown: the entry should stay
-     *  invisible to anyone who doesn't already know it exists. */
-    private var secretTapCount = 0
-    private var secretLastTapMs = 0L
-
-    private fun setupSecretLabelingEntry() {
-        binding.tvAppVersion.setOnClickListener {
-            val now = System.currentTimeMillis()
-            secretTapCount = if (now - secretLastTapMs <= 2_000) secretTapCount + 1 else 1
-            secretLastTapMs = now
-            if (secretTapCount >= 7) {
-                secretTapCount = 0
-                promptLabelingLogin()
-            }
-        }
-    }
-
-    private fun promptLabelingLogin() {
-        val ctx = requireContext()
-        val input = EditText(ctx).apply {
-            hint = getString(R.string.label_password_hint)
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-        }
-        MaterialAlertDialogBuilder(ctx)
-            .setTitle(R.string.label_admin_entry)
-            .setView(input)
-            .setPositiveButton(android.R.string.ok) { _, _ ->
-                val pw = input.text?.toString().orEmpty()
-                if (pw.isBlank()) return@setPositiveButton
-                val app = requireActivity().application as PlantDiseasesApp
-                val repo = LabelingRepository(app.apiClient)
-                lifecycleScope.launch {
-                    repo.login(pw).onSuccess { token ->
-                        startActivity(
-                            Intent(requireContext(), LabelingActivity::class.java)
-                                .putExtra(LabelingActivity.EXTRA_TOKEN, token)
-                        )
-                    }.onFailure {
-                        val msg = if (it is LabelingUnavailableException) {
-                            getString(R.string.label_unavailable)
-                        } else {
-                            getString(R.string.label_login_failed)
-                        }
-                        Toast.makeText(requireContext(), msg, Toast.LENGTH_LONG).show()
-                    }
-                }
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
     }
 
     private fun setLanguage(lang: String) {

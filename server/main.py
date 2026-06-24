@@ -924,7 +924,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if path in (
             "/api/health",
             "/api/version",
-            "/api/classes",
             "/api/metrics",
             "/api/metrics/prometheus",
             "/api/metrics/model",
@@ -1530,23 +1529,6 @@ def _attach_dual_care(prediction_set: dict) -> None:
         for cls in classes
         if cls in _PHYSIOLOGICAL_CARE_PAIR
     ]
-
-
-@api_router.get("/classes")
-async def classes():
-    """List of known disease classes with bilingual names."""
-    if pipeline is None:
-        raise HTTPException(status_code=503, detail="Pipeline not ready")
-    items = []
-    for name in pipeline.classifier.CLASS_NAMES:
-        info = DISEASES_DATABASE.get(name, {})
-        items.append({
-            "class": name,
-            "name_en": info.get("name_en", name.replace("_", " ").title()),
-            "name_ru": info.get("name_ru", name),
-            "is_healthy": bool(info.get("is_healthy", False)),
-        })
-    return {"count": len(items), "classes": items}
 
 
 @api_router.get("/capabilities")

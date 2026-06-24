@@ -18,10 +18,10 @@ def test_security_headers_present(client):
     assert r.headers["X-Frame-Options"] == "DENY"
 
 
-def test_health_version_classes_not_rate_limited(client):
+def test_health_version_not_rate_limited(client):
     # Hammer free endpoints — none should ever produce a 429.
     for _ in range(5):
-        for path in ("/api/health", "/api/version", "/api/classes"):
+        for path in ("/api/health", "/api/version"):
             r = client.get(path)
             assert r.status_code == 200, f"{path} returned {r.status_code}"
 
@@ -47,9 +47,9 @@ def test_analyze_rate_limit_returns_429_with_retry_after(rate_limited_client, pn
 
 
 def test_gzip_middleware_compresses_large_responses(client):
-    """`/api/classes` returns a few KB of bilingual JSON. GZip should
-    kick in for clients that advertise Accept-Encoding: gzip."""
-    r = client.get("/api/classes", headers={"Accept-Encoding": "gzip"})
+    """`/openapi.json` is tens of KB of JSON. GZip should kick in for
+    clients that advertise Accept-Encoding: gzip."""
+    r = client.get("/openapi.json", headers={"Accept-Encoding": "gzip"})
     assert r.status_code == 200
     # TestClient transparently decompresses, but the response headers
     # still carry Content-Encoding: gzip when the middleware was active.

@@ -40,23 +40,6 @@
         }
       }
     },
-    "/api/classes": {
-      "get": {
-        "summary": "Classes",
-        "description": "List of known disease classes with bilingual names.",
-        "operationId": "classes_api_classes_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/capabilities": {
       "get": {
         "summary": "Capabilities",

@@ -29,23 +29,6 @@ def test_version_contract(client):
     assert body["model_family"] in {"aqua", "gamma", "frontier"}
 
 
-def test_classes_contract(client):
-    from classifier import DEFAULT_CLASS_NAMES
-
-    r = client.get("/api/classes")
-    assert r.status_code == 200
-    body = r.json()
-    assert body["count"] == len(DEFAULT_CLASS_NAMES)
-    assert len(body["classes"]) == len(DEFAULT_CLASS_NAMES)
-
-    first = body["classes"][0]
-    assert set(first.keys()) >= {"class", "name_en", "name_ru", "is_healthy"}
-    # "healthy" class must be present and flagged.
-    healthy = [c for c in body["classes"] if c["class"] == "healthy"]
-    assert len(healthy) == 1
-    assert healthy[0]["is_healthy"] is True
-
-
 def test_metrics_json(client):
     r = client.get("/api/metrics")
     assert r.status_code == 200

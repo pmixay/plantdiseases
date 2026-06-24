@@ -336,11 +336,59 @@
 
   function build(root, fn) { fn(root); }
 
+  /* ---------- live metrics overlay (graceful) ----------
+     Pull the latest per-class precision / recall + 95% CI from the running
+     server's model card (/api/metrics/model) so the showcase tracks the
+     shipped model. Falls back silently to the baked-in evaluation numbers
+     above when the API is unreachable, CORS-blocked, or reports unavailable. */
+  var API_BASE = 'https://pdis.arbuz.lol';
+  var CLASS_KEY = {
+    gray_mold_botrytis: 'graymold', healthy: 'healthy',
+    leaf_scorch_underwatering: 'scorch', leaf_spot: 'leafspot',
+    not_a_plant: 'notplant', nutrient_deficiency: 'nutrient',
+    pests: 'pests', powdery_mildew: 'powdery', viral_disease: 'viral'
+  };
+  function pct(x) { return x == null ? null : Math.round(x * 1000) / 10; }
+  function loadLiveMetrics() {
+    if (!window.fetch) return;
+    fetch(API_BASE + '/api/metrics/model', { mode: 'cors' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (!d || !d.available || !d.per_class) return;
+        Object.keys(d.per_class).forEach(function (cls) {
+          var key = CLASS_KEY[cls]; if (!key) return;
+          var m = d.per_class[cls] || {};
+          var pc = PERCLASS.find(function (x) { return x.k === key; });
+          if (pc && m.precision && m.recall) {
+            if (m.precision.point != null) pc.p = pct(m.precision.point);
+            if (m.recall.point != null) pc.r = pct(m.recall.point);
+            if (pc.p != null && pc.r != null && (pc.p + pc.r) > 0) {
+              pc.f = Math.round((2 * pc.p * pc.r / (pc.p + pc.r)) * 10) / 10;
+            }
+          }
+          var rc = RECALL_CI.find(function (x) { return x.k === key; });
+          if (rc && m.recall) {
+            if (m.recall.point != null) rc.r = pct(m.recall.point);
+            if (m.recall.ci_low != null) rc.lo = pct(m.recall.ci_low);
+            if (m.recall.ci_high != null) rc.hi = pct(m.recall.ci_high);
+          }
+        });
+        RECALL_CI.sort(function (a, b) { return b.r - a.r; });
+        [['#chart-perclass', renderPerClass], ['#chart-recall', renderRecallCI]]
+          .forEach(function (c) {
+            var root = document.querySelector(c[0]);
+            if (root) { c[1](root); animate(root); }
+          });
+      })
+      .catch(function () { /* offline / CORS / disabled — keep static numbers */ });
+  }
+
   function init() {
     charts.forEach(function (c) {
       var root = document.querySelector(c.sel);
       if (root) build(root, c.fn);
     });
+    loadLiveMetrics();
     if ('IntersectionObserver' in window) {
       var io = new IntersectionObserver(function (entries) {
         entries.forEach(function (en) {
