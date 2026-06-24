@@ -923,10 +923,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         if path in (
             "/api/health",
-            "/api/version",
+            "/api/capabilities",
             "/api/metrics",
             "/api/metrics/prometheus",
-            "/api/metrics/model",
         ):
             return await call_next(request)
         # Static image assets + the tiny aqua manifest are also free.
@@ -1437,53 +1436,6 @@ async def health_check():
     }
 
 
-@api_router.get("/version")
-async def version():
-    """Server version and model architecture."""
-    if pipeline is None:
-        raise HTTPException(status_code=503, detail="Pipeline not ready")
-    # Read the int8 ship flag from model_card.json so operators can see at
-    # a glance whether the deployed classifier_int8.onnx is genuine INT8
-    # or the FP32 ONNX renamed (see MODEL_CARD.md, "Known caveats"). We
-    # default conservatively to false if the file is missing or malformed
-    # so that callers can never accidentally believe INT8 shipped.
-    int8_shipped = False
-    int8_artifact: str | None = None
-    try:
-        with open(MODELS_DIR / "model_card.json", encoding="utf-8") as fh:
-            card = json.load(fh)
-        int8_section = card.get("int8") or {}
-        int8_shipped = bool(int8_section.get("shipped", False))
-        artifact = int8_section.get("shipped_artifact")
-        if isinstance(artifact, str):
-            int8_artifact = artifact
-    except (OSError, ValueError):
-        pass
-    return {
-        "version": APP_VERSION,
-        "classifier_name": "plantvision",
-        # Capacity tier the loaded bundle declares (classes.json ->
-        # model_family): aqua (light/on-device) | gamma (current medium) |
-        # frontier (future high-capacity). Defaults to "gamma" for bundles
-        # trained before the family field existed.
-        "model_family": pipeline.classifier.model_family,
-        "detector_arch": "YOLOv8n (single-class plant_leaf, indoor-trained)",
-        # Report the architecture the loaded model actually declares
-        # (classes.json -> architecture, surfaced as classifier.architecture)
-        # rather than a hardcoded backbone name, so this stays correct
-        # across model swaps (the MobileNetV3 student and the frozen
-        # DINOv2 ViT-S/14 + head both flow through the same ONNX path).
-        "classifier_arch": (
-            f"PlantVision {pipeline.classifier.architecture} @ "
-            f"{pipeline.classifier.img_size} px / {pipeline.classifier.backend} backend"
-        ),
-        "stages": 2,
-        "focus": "houseplants",
-        "int8_shipped": int8_shipped,
-        "int8_artifact": int8_artifact,
-    }
-
-
 # The two physiological-stress classes whose care advice genuinely
 # diverges — under-watering (``leaf_scorch_underwatering``) says "water me"
 # / fix humidity & salts, nutrient deficiency says "feed me". When the
@@ -1566,10 +1518,56 @@ async def capabilities():
             ),
         },
     ]
+    # Consolidated model/version metadata (formerly /version and /classes).
+    # The int8 ship flag comes from model_card.json so operators can see
+    # whether the deployed classifier_int8.onnx is genuine INT8 or the FP32
+    # ONNX renamed; defaults to false if the card is missing/malformed.
+    int8_shipped = False
+    int8_artifact: str | None = None
+    try:
+        with open(MODELS_DIR / "model_card.json", encoding="utf-8") as fh:
+            _card = json.load(fh)
+        _int8 = _card.get("int8") or {}
+        int8_shipped = bool(_int8.get("shipped", False))
+        _artifact = _int8.get("shipped_artifact")
+        if isinstance(_artifact, str):
+            int8_artifact = _artifact
+    except (OSError, ValueError):
+        pass
+
+    model: dict | None = None
+    classes_list: list[dict] = []
+    if base_ready:
+        clf = pipeline.classifier
+        model = {
+            "classifier_name": "plantvision",
+            "model_family": clf.model_family,
+            "detector_arch": "YOLOv8n (single-class plant_leaf, indoor-trained)",
+            "classifier_arch": (
+                f"PlantVision {clf.architecture} @ "
+                f"{clf.img_size} px / {clf.backend} backend"
+            ),
+            "stages": 2,
+            "focus": "houseplants",
+            "int8_shipped": int8_shipped,
+            "int8_artifact": int8_artifact,
+        }
+        for name in clf.CLASS_NAMES:
+            info = DISEASES_DATABASE.get(name, {})
+            classes_list.append({
+                "class": name,
+                "name_en": info.get("name_en", name.replace("_", " ").title()),
+                "name_ru": info.get("name_ru", name),
+                "is_healthy": bool(info.get("is_healthy", False)),
+            })
+
     return {
         "default": DEFAULT_FAMILY,
         "families": families,
+        "version": APP_VERSION,
         "server_version": APP_VERSION,
+        "model": model,
+        "classes": classes_list,
     }
 
 
@@ -1584,56 +1582,6 @@ async def metrics():
         "ai_doctor": chat_metrics_snapshot(),
         "feedback": feedback_counts(),
         "community": community_stats_snapshot(),
-    }
-
-
-@api_router.get("/metrics/model")
-async def metrics_model():
-    """Per-class model quality: precision/recall point estimates + 95% CI.
-
-    Sourced from the shipped ``model_card.json`` (notebook §6 keys
-    ``per_class_precision_ci_realworld`` / ``per_class_recall_ci_realworld``,
-    both measured on ``val_realworld``). Like the optional integrations, this
-    degrades gracefully: a bundle without a model card (tests, or a minimal
-    deploy) yields ``{"available": false}`` rather than an error, so dashboards
-    and the jury demo never see a 500.
-    """
-    if pipeline is None:
-        raise HTTPException(status_code=503, detail="Pipeline not ready")
-    try:
-        with open(MODELS_DIR / "model_card.json", encoding="utf-8") as fh:
-            card = json.load(fh)
-    except (OSError, ValueError):
-        return {"available": False, "reason": "no model_card.json in bundle"}
-
-    recall = (card.get("per_class_recall_ci_realworld") or {}).get("classes") or {}
-    precision = (card.get("per_class_precision_ci_realworld") or {}).get("classes") or {}
-
-    def _ci(d: object) -> dict | None:
-        if not isinstance(d, dict):
-            return None
-        return {
-            "point": d.get("point"),
-            "ci_low": d.get("ci_low"),
-            "ci_high": d.get("ci_high"),
-        }
-
-    per_class: dict[str, dict] = {}
-    for cls in sorted(set(recall) | set(precision)):
-        r = recall.get(cls)
-        p = precision.get(cls)
-        per_class[cls] = {
-            "precision": _ci(p),
-            "recall": _ci(r),
-            "n_predicted": p.get("n_predicted") if isinstance(p, dict) else None,
-        }
-
-    return {
-        "available": True,
-        "version": APP_VERSION,
-        "eval_set": "val_realworld",
-        "ci": "95% bootstrap",
-        "per_class": per_class,
     }
 
 

@@ -23,23 +23,6 @@
         }
       }
     },
-    "/api/version": {
-      "get": {
-        "summary": "Version",
-        "description": "Server version and model architecture.",
-        "operationId": "version_api_version_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/capabilities": {
       "get": {
         "summary": "Capabilities",
@@ -1360,23 +1343,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
                 }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/metrics/model": {
-      "get": {
-        "summary": "Metrics Model",
-        "description": "Per-class model quality: precision/recall point estimates + 95% CI.\n\nSourced from the shipped ``model_card.json`` (notebook §6 keys\n``per_class_precision_ci_realworld`` / ``per_class_recall_ci_realworld``,\nboth measured on ``val_realworld``). Like the optional integrations, this\ndegrades gracefully: a bundle without a model card (tests, or a minimal\ndeploy) yields ``{\"available\": false}`` rather than an error, so dashboards\nand the jury demo never see a 500.",
-        "operationId": "metrics_model_api_metrics_model_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
               }
             }
           }

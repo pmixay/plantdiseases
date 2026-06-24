@@ -18,10 +18,10 @@ def test_security_headers_present(client):
     assert r.headers["X-Frame-Options"] == "DENY"
 
 
-def test_health_version_not_rate_limited(client):
+def test_health_capabilities_not_rate_limited(client):
     # Hammer free endpoints — none should ever produce a 429.
     for _ in range(5):
-        for path in ("/api/health", "/api/version"):
+        for path in ("/api/health", "/api/capabilities"):
             r = client.get(path)
             assert r.status_code == 200, f"{path} returned {r.status_code}"
 

@@ -15,18 +15,33 @@ def test_health_contract(client):
     assert body["uptime_seconds"] >= 0
 
 
-def test_version_contract(client):
-    r = client.get("/api/version")
+def test_capabilities_model_contract(client):
+    # /capabilities is the consolidated metadata endpoint: family availability
+    # plus a `model` block and the bilingual `classes` list (folding in what
+    # the separate /version and /classes endpoints used to return).
+    from classifier import DEFAULT_CLASS_NAMES
+
+    r = client.get("/api/capabilities")
     assert r.status_code == 200
     body = r.json()
-    assert body["detector_arch"] == "YOLOv8n (single-class plant_leaf, indoor-trained)"
-    assert isinstance(body["classifier_arch"], str) and body["classifier_arch"]
-    assert body["classifier_name"] == "plantvision"
-    assert body["stages"] == 2
-    assert body["focus"] == "houseplants"
+    assert body["version"]
+    model = body["model"]
+    assert model is not None
+    assert model["detector_arch"] == "YOLOv8n (single-class plant_leaf, indoor-trained)"
+    assert isinstance(model["classifier_arch"], str) and model["classifier_arch"]
+    assert model["classifier_name"] == "plantvision"
+    assert model["stages"] == 2
+    assert model["focus"] == "houseplants"
     # Capacity tier (aqua/gamma/frontier) declared by the bundle; defaults
     # to "gamma" for bundles trained before the family field existed.
-    assert body["model_family"] in {"aqua", "gamma", "frontier"}
+    assert model["model_family"] in {"aqua", "gamma", "frontier"}
+    # classes carried inline (the old /classes contract)
+    assert len(body["classes"]) == len(DEFAULT_CLASS_NAMES)
+    first = body["classes"][0]
+    assert set(first.keys()) >= {"class", "name_en", "name_ru", "is_healthy"}
+    healthy = [c for c in body["classes"] if c["class"] == "healthy"]
+    assert len(healthy) == 1
+    assert healthy[0]["is_healthy"] is True
 
 
 def test_metrics_json(client):
@@ -60,74 +75,18 @@ def test_metrics_prometheus_format(client):
     assert "plantdiseases_build_info" in text
 
 
-def test_analyze_int8_flag_surfaced(client):
-    """`/api/version` must expose `int8_shipped` so operators can see
-    that the deployed `classifier_int8.onnx` is genuine INT8 (true) or
-    the FP32 ONNX renamed (false). The flag is read from
-    `models/model_card.json` at request time; it is OK for it to be
-    absent (-> false) on a fresh checkout.
+def test_capabilities_int8_flag_surfaced(client):
+    """`/api/capabilities` `model.int8_shipped` lets operators see whether the
+    deployed `classifier_int8.onnx` is genuine INT8 (true) or the FP32 ONNX
+    renamed (false). Read from `models/model_card.json`; absent -> false on a
+    fresh checkout.
     """
-    r = client.get("/api/version")
+    r = client.get("/api/capabilities")
     assert r.status_code == 200
-    body = r.json()
-    assert "int8_shipped" in body
-    assert isinstance(body["int8_shipped"], bool)
-    assert "int8_artifact" in body
-
-
-def test_metrics_model_absent_is_graceful(client):
-    """`/api/metrics/model` must degrade gracefully when the bundle ships no
-    `model_card.json` (the default on a fresh checkout / in tests) — returning
-    a 200 with `available: false`, never a 500.
-    """
-    r = client.get("/api/metrics/model")
-    assert r.status_code == 200
-    body = r.json()
-    assert body["available"] is False
-    assert "reason" in body
-
-
-def test_metrics_model_surfaces_per_class_ci(client, tmp_path, monkeypatch):
-    """When `model_card.json` is present, per-class precision/recall point
-    estimates and 95% CIs are surfaced from the notebook §6 keys."""
-    import json as _json
-
-    import main as server_main
-
-    card = {
-        "version": "2.6.0",
-        "per_class_recall_ci_realworld": {
-            "classes": {
-                "powdery_mildew": {"point": 0.91, "ci_low": 0.86, "ci_high": 0.95},
-                "viral_mosaic": {"point": 0.854, "ci_low": 0.80, "ci_high": 0.90},
-            }
-        },
-        "per_class_precision_ci_realworld": {
-            "classes": {
-                "powdery_mildew": {
-                    "point": 0.939,
-                    "ci_low": 0.90,
-                    "ci_high": 0.97,
-                    "n_predicted": 120,
-                },
-            }
-        },
-    }
-    (tmp_path / "model_card.json").write_text(_json.dumps(card), encoding="utf-8")
-    monkeypatch.setattr(server_main, "MODELS_DIR", tmp_path)
-
-    r = client.get("/api/metrics/model")
-    assert r.status_code == 200
-    body = r.json()
-    assert body["available"] is True
-    assert body["eval_set"] == "val_realworld"
-    pm = body["per_class"]["powdery_mildew"]
-    assert pm["recall"] == {"point": 0.91, "ci_low": 0.86, "ci_high": 0.95}
-    assert pm["precision"]["point"] == 0.939
-    assert pm["precision"]["ci_high"] == 0.97
-    assert pm["n_predicted"] == 120
-    # A class with recall but no precision entry still resolves (precision None).
-    assert body["per_class"]["viral_mosaic"]["precision"] is None
+    model = r.json()["model"]
+    assert "int8_shipped" in model
+    assert isinstance(model["int8_shipped"], bool)
+    assert "int8_artifact" in model
 
 
 def test_analyze_inference_timeout_504(client, png_bytes):
