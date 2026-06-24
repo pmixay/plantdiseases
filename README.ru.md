@@ -6,7 +6,7 @@
 
 **Определение болезней комнатных растений с помощью ИИ — камера на устройстве, облачный инференс, двуязычные планы ухода.**
 
-[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=pmixay_plantdiseases&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=pmixay_plantdiseases)
+[![CI](https://github.com/pmixay/plantdiseases/actions/workflows/ci.yml/badge.svg)](https://github.com/pmixay/plantdiseases/actions/workflows/ci.yml)
 
 Двухэтапный ML-конвейер (детектор листьев YOLOv8 → классификатор на
 замороженном backbone DINOv2 ViT-S/14 + LoRA + MLP-голова), развёрнутый за
