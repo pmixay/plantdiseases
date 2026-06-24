@@ -1,7 +1,7 @@
 /* ============================================================
    PlantDiseases — native, interactive metric charts
    Hand-built SVG / CSS visualisations (no image assets, no libs).
-   Data: PlantVision 2.6.0 gamma (dataset v3) · evaluation on val_realworld.
+   Data: PlantVision 2.6.7 gamma (dataset v3) · evaluation on val_realworld.
    ============================================================ */
 (function () {
   'use strict';

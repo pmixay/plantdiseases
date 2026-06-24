@@ -29,7 +29,6 @@ import com.plantdiseases.app.ui.camera.WaterCalculatorActivity
 import com.plantdiseases.app.ui.community.NearbyScansActivity
 import com.plantdiseases.app.ui.guide.GuideDetailActivity
 import com.plantdiseases.app.ui.species.SpeciesDetailActivity
-import com.plantdiseases.app.ui.stats.StatsTipsActivity
 import com.plantdiseases.app.ui.symptom.SymptomCheckerActivity
 import com.plantdiseases.app.util.DiseaseCatalog
 import com.plantdiseases.app.util.DiseaseLabels
@@ -98,10 +97,6 @@ class HomeFragment : Fragment() {
         binding.tileGuide.setOnClickListener { findNavController().navigate(R.id.guideFragment) }
         binding.tvGuideAll.setOnClickListener { findNavController().navigate(R.id.guideFragment) }
 
-        binding.cardStats.setOnClickListener {
-            startActivity(Intent(requireContext(), StatsTipsActivity::class.java))
-        }
-
         binding.rvSpecies.layoutManager =
             LinearLayoutManager(requireContext(), LinearLayoutManager.HORIZONTAL, false)
         binding.rvSpecies.adapter = speciesAdapter
@@ -159,7 +154,6 @@ class HomeFragment : Fragment() {
 
     override fun onResume() {
         super.onResume()
-        loadStatsSummary()
         loadTrending()
     }
 
@@ -251,21 +245,6 @@ class HomeFragment : Fragment() {
             )
         }
         guideAdapter.submit(items)
-    }
-
-    // ── Stats teaser ────────────────────────────────────────────────
-    private fun loadStatsSummary() {
-        val app = requireActivity().application as PlantDiseasesApp
-        viewLifecycleOwner.lifecycleScope.launch {
-            val scans = runCatching { app.scanRepository.getAllScans() }
-                .getOrDefault(emptyList())
-            val plants = runCatching { app.plantRepository.getPlants() }
-                .getOrDefault(emptyList())
-            val real = scans.filter { !it.isNotAPlant }
-            val healthy = real.count { it.isHealthy }
-            _binding?.tvStatsSummary?.text =
-                getString(R.string.home_stats_summary, real.size, healthy, plants.size)
-        }
     }
 
     // ── Trending carousels ──────────────────────────────────────────

@@ -66,11 +66,10 @@ The production artefact is an ONNX graph and the runtime is
 **architecture-neutral** — it serves whatever backbone+head the shipped
 bundle declares (`classes.json -> architecture`):
 
-> **Version scheme.** The **public/production** version is what the live API
-> reports — currently **2.6.0** (the deployed `gamma` bundle, supplement v3).
-> The `v2.6.x` labels below are **internal training-run identifiers**, not
-> separate public releases. The shipped production metrics are the supplement-v3
-> run's (disease macro-F1 **0.865**, accuracy 91.9%, `val_realworld` n=2334).
+> **Current version: 2.6.7 (`gamma`)** — the shipped production model. The
+> entries below (v2.6.6, v2.6.5, …) document the preceding training runs that
+> led here; the supplement-v3 baseline metrics (disease macro-F1 **0.865**,
+> accuracy 91.9%, `val_realworld` n=2334) remain the reference point.
 
 - **v2.6.6 (latest run, `gamma`; trained on dataset supplement v4 — ship-pending):**
   same recipe as v2.6.5, retrained on **eval-supplement v4** (1951 rows: nutrient
