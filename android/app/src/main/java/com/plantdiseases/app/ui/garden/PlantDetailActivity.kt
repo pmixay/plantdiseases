@@ -802,11 +802,10 @@ class PlantDetailActivity : AppCompatActivity() {
      * probability (canonical model class name like "powdery_mildew"); fall
      * back to a normalised lowercase of the human-readable name.
      */
-    private fun resolveClassKey(scan: ScanEntity): String {
-        return scanRepository.parseAllProbs(scan.allProbs)
+    private fun resolveClassKey(scan: ScanEntity): String =
+        scanRepository.parseAllProbs(scan.allProbs)
             .entries.maxByOrNull { it.value }?.key
             ?: scan.diseaseName.lowercase().replace(' ', '_')
-    }
 
     /** One-line "Last watered N days ago" strip directly under the
      *  action row. Reads from the plant_reminder_events log filled
