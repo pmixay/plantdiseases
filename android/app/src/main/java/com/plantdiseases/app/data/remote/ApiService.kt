@@ -3,6 +3,7 @@ package com.plantdiseases.app.data.remote
 import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.CarePlanResponse
+import com.plantdiseases.app.data.model.PopularResponse
 import com.plantdiseases.app.data.model.SpeciesDiseasesResponse
 import com.plantdiseases.app.data.model.SpeciesInfoResponse
 import com.plantdiseases.app.data.model.TrendingResponse
@@ -203,6 +204,21 @@ class PlantApiClient(
             region?.let { parameter("region", it) }
             parameter("days", days)
             parameter("limit", limit)
+        }
+        return if (response.status.isSuccess()) response.body() else null
+    }
+
+    /** Personalized popular-houseplants bundle with images pre-resolved
+     *  (graceful: null on any failure, caller falls back to the bundled list). */
+    suspend fun popular(
+        country: String? = null,
+        region: String? = null,
+        locale: String = "en",
+    ): PopularResponse? {
+        val response = httpClient.get("api/popular") {
+            country?.let { parameter("country", it) }
+            region?.let { parameter("region", it) }
+            parameter("locale", locale)
         }
         return if (response.status.isSuccess()) response.body() else null
     }

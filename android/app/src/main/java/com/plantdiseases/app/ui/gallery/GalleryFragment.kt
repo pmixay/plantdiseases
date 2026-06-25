@@ -17,8 +17,8 @@ import androidx.core.view.MenuProvider
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
-import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.GridLayoutManager
+import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.ScanHistoryItem
@@ -86,7 +86,10 @@ class GalleryFragment : Fragment() {
         binding.swipeRefresh.setOnRefreshListener { loadScans() }
 
         binding.btnFirstScan.setOnClickListener {
-            findNavController().navigate(R.id.cameraFragment)
+            // Select the Scan bottom-nav tab (routes through MainActivity) rather
+            // than navigating the camera into Gallery's own back stack.
+            requireActivity().findViewById<BottomNavigationView>(R.id.bottom_navigation)
+                ?.selectedItemId = R.id.cameraFragment
         }
 
         setupFilterChips()

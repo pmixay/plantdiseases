@@ -609,6 +609,27 @@ data class SpeciesInfoResponse(
 )
 
 /**
+ * /api/popular response — the personalized popular-houseplants bundle for the
+ * Home carousel, with lead images already resolved server-side so the row
+ * paints in one shot (no per-species Wikipedia round-trips on the client).
+ */
+@Serializable
+data class PopularResponse(
+    @SerializedName("scope") @SerialName("scope") val scope: String? = null,
+    @SerializedName("country") @SerialName("country") val country: String? = null,
+    @SerializedName("locale") @SerialName("locale") val locale: String? = null,
+    @SerializedName("items") @SerialName("items") val items: List<PopularItem> = emptyList(),
+)
+
+@Serializable
+data class PopularItem(
+    @SerializedName("scientific") @SerialName("scientific") val scientific: String = "",
+    @SerializedName("common_en") @SerialName("common_en") val commonEn: String = "",
+    @SerializedName("common_ru") @SerialName("common_ru") val commonRu: String = "",
+    @SerializedName("image_url") @SerialName("image_url") val imageUrl: String? = null,
+)
+
+/**
  * /api/species-diseases response — the conditions a species is commonly
  * affected by indoors (AI, best-effort). `available=false` (no OpenRouter
  * key or any failure) is a graceful state: the species screen then renders

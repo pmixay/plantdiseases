@@ -798,16 +798,7 @@
     <string name="guide_detail_scan">Отсканировать растение</string>
 
     <!-- Графики статистики -->
-    <string name="stats_scans_label">сканов</string>
     <string name="stats_last_7_days">Сканы за неделю</string>
-    <string name="stats_legend_healthy">Здоровые · %1$d</string>
-    <string name="stats_legend_diseased">Проблемы · %1$d</string>
-    <plurals name="stats_garden_plants_value">
-        <item quantity="one">%d растение в саду</item>
-        <item quantity="few">%d растения в саду</item>
-        <item quantity="many">%d растений в саду</item>
-        <item quantity="other">%d растений в саду</item>
-    </plurals>
     <string-array name="weekday_initials">
         <item>Вс</item>
         <item>Пн</item>
@@ -846,14 +837,12 @@
     <string name="species_problems_guide_note">Болезни комнатных растений, которые умеет распознавать приложение, — нажмите, чтобы узнать больше.</string>
 
     <!-- Статистика и советы -->
-    <string name="stats_tips_title">Статистика и советы</string>
     <string name="stats_section">Ваша статистика</string>
     <string name="tips_section">Гайды и советы</string>
     <string name="stats_total_scans">Сканов растений</string>
     <string name="stats_healthy_share">Здоровых результатов</string>
     <string name="stats_healthy_share_value">%1$d%% (%2$d)</string>
     <string name="stats_issues_found">Найдено проблем</string>
-    <string name="stats_garden_plants">Растений в саду</string>
     <string name="stats_top_issues">Ваши частые проблемы</string>
     <string name="stats_empty">Пока нет сканов — статистика появится после первого сканирования.</string>
     <string name="tip_scanning_title">Как сделать хорошее фото для скана</string>
@@ -862,14 +851,6 @@
     <string name="tip_results_body">Уверенность модели откалибрована: когда приложение сомневается, оно показывает несколько кандидатов вместо угадывания. Воспринимайте результат как подсказку, смотрите карточку альтернатив, а при неуверенности модели сделайте второе фото или пройдите проверку симптомов.</string>
     <string name="tip_watering_title">Основы полива</string>
     <string name="tip_watering_body">Перелив губит больше комнатных растений, чем засуха. Проверяйте пальцем верхние 2–3 см почвы — поливайте только когда они сухие, затем обильно, пока вода не стечёт. Помощник полива даст стартовую норму для каждого растения; корректируйте по сезону.</string>
-    <string name="tip_light_title">Основы освещения</string>
-    <string name="tip_light_body">Большинству комнатных растений нужен яркий рассеянный свет: у окна, но не под жёстким полуденным солнцем. Резкий переезд из тени на солнце вызывает ожог — приучайте за неделю. Замерьте люксметром реальный свет на месте растения.</string>
-    <string name="tip_seasonal_title">Сезонный уход</string>
-    <string name="tip_seasonal_body">Осенью и зимой большинство растений отдыхает: поливайте реже, не подкармливайте, уберите листья от холодного стекла и батарей. Возобновляйте подкормку весной, с появлением нового роста.</string>
-    <string name="tip_repotting_title">Пересадка</string>
-    <string name="tip_repotting_body">Пересаживайте, когда корни закручиваются по горшку или выходят из дренажных отверстий — обычно раз в 1–2 года, весной. Берите горшок лишь на один размер больше: в слишком большом почва задерживает воду и провоцирует гниль корней.</string>
-    <string name="tip_pests_title">Профилактика вредителей</string>
-    <string name="tip_pests_body">Держите новые растения на двухнедельном карантине, осматривайте нижнюю сторону листьев при поливе и протирайте пыль. Липкий налёт, тонкая паутина или белый пух — ранние признаки: отсканируйте растение и изолируйте его до обработки.</string>
     <string name="tip_community_title">Сообщество и ваши данные</string>
     <string name="tip_community_body">Делитесь сканами, чтобы видеть, что распространяется рядом, и получать вторые мнения от других цветоводов. Фото анонимизируются (метаданные удаляются), а всё опубликованное можно удалить в Профиле в любой момент.</string>
 </resources>

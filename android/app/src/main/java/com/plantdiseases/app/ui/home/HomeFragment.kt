@@ -21,6 +21,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import com.bumptech.glide.Glide
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.plantdiseases.app.R
+import com.plantdiseases.app.data.model.PopularResponse
 import com.plantdiseases.app.data.model.TrendingResponse
 import com.plantdiseases.app.data.remote.PlantApiClient
 import com.plantdiseases.app.databinding.FragmentHomeBinding
@@ -114,7 +115,7 @@ class HomeFragment : Fragment() {
         // Show the bundled popular-species fallback right away so the carousel
         // is present on first frame; loadTrending() (onResume) upgrades it to
         // real trending data when the feed has any.
-        renderSpecies(binding, null)
+        renderSpecies(binding, null, null)
         maybePlayIntro(savedInstanceState)
     }
 
@@ -272,8 +273,16 @@ class HomeFragment : Fragment() {
                         com.plantdiseases.app.util.ResponseCache.TTL_TRENDING_MS,
                     )
                 }
+            // When trending has no nearby species, fall back to the personalized
+            // popular bundle (images already resolved server-side). Fetched here
+            // so renderSpecies stays synchronous.
+            val popular = if (trending == null || trending.topSpecies.isEmpty()) {
+                loadPopularBundle(region)
+            } else {
+                null
+            }
             val b = _binding ?: return@launch
-            renderSpecies(b, trending)
+            renderSpecies(b, trending, popular)
             // Popular diseases is genuinely trending-only — no bundled fallback
             // (the always-on Disease guide below already covers that need).
             if (trending == null) {
@@ -291,7 +300,31 @@ class HomeFragment : Fragment() {
      * the row is never empty — the same always-on contract the Disease guide
      * has.
      */
-    private fun renderSpecies(b: FragmentHomeBinding, t: TrendingResponse?) {
+    /** Fetch the personalized popular bundle, cached 24h. Null on any failure
+     *  so the caller falls back to the bundled SpeciesCatalog list. */
+    private suspend fun loadPopularBundle(
+        region: com.plantdiseases.app.util.ResolvedRegion?,
+    ): PopularResponse? {
+        val cacheKey = "popular:v1:${region?.country.orEmpty()}|" +
+            "${region?.locality.orEmpty()}|$locale"
+        return com.plantdiseases.app.util.ResponseCache
+            .get(cacheKey, PopularResponse::class.java)
+            ?: runCatching {
+                apiClient.popular(region?.country, region?.locality, locale)
+            }.getOrNull()?.takeIf { it.items.isNotEmpty() }?.also {
+                com.plantdiseases.app.util.ResponseCache.put(
+                    cacheKey,
+                    it,
+                    com.plantdiseases.app.util.ResponseCache.TTL_POPULAR_MS,
+                )
+            }
+    }
+
+    private fun renderSpecies(
+        b: FragmentHomeBinding,
+        t: TrendingResponse?,
+        popular: PopularResponse?,
+    ) {
         b.sectionSpecies.visibility = View.VISIBLE
         if (t != null && t.topSpecies.isNotEmpty()) {
             b.tvSpeciesTitle.setText(R.string.home_trending)
@@ -314,15 +347,28 @@ class HomeFragment : Fragment() {
             b.tvSpeciesTitle.setText(R.string.home_popular_species)
             b.tvTrendingScope.visibility = View.GONE
             val tag = getString(R.string.home_species_popular_tag)
-            speciesAdapter.submit(
+            val items = if (popular != null && popular.items.isNotEmpty()) {
+                popular.items.map { p ->
+                    // Pre-seed the image cache so loadSpeciesImage paints instantly,
+                    // no per-species Wikipedia call.
+                    speciesImageCache[p.scientific] = p.imageUrl
+                    SpeciesCarouselAdapter.Item(
+                        scientific = p.scientific,
+                        title = if (isRu) p.commonRu else p.commonEn,
+                        subtitle = tag,
+                    )
+                }
+            } else {
+                // Last-resort bundled list so the row is never empty.
                 SpeciesCatalog.popular.map { sp ->
                     SpeciesCarouselAdapter.Item(
                         scientific = sp.scientific,
                         title = if (isRu) sp.commonRu else sp.commonEn,
                         subtitle = tag,
                     )
-                },
-            )
+                }
+            }
+            speciesAdapter.submit(items)
         }
     }
 

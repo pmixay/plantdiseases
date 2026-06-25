@@ -802,14 +802,7 @@
     <string name="guide_detail_scan">Scan a plant for this</string>
 
     <!-- Stats charts -->
-    <string name="stats_scans_label">scans</string>
     <string name="stats_last_7_days">Scans this week</string>
-    <string name="stats_legend_healthy">Healthy · %1$d</string>
-    <string name="stats_legend_diseased">Issues · %1$d</string>
-    <plurals name="stats_garden_plants_value">
-        <item quantity="one">%d plant in your garden</item>
-        <item quantity="other">%d plants in your garden</item>
-    </plurals>
     <string-array name="weekday_initials">
         <item>Su</item>
         <item>Mo</item>
@@ -848,14 +841,12 @@
     <string name="species_problems_guide_note">Houseplant conditions this app can diagnose — tap one to learn more.</string>
 
     <!-- Stats & Tips -->
-    <string name="stats_tips_title">Stats &amp; tips</string>
     <string name="stats_section">Your stats</string>
     <string name="tips_section">Guides &amp; tips</string>
     <string name="stats_total_scans">Plant scans</string>
     <string name="stats_healthy_share">Healthy results</string>
     <string name="stats_healthy_share_value">%1$d%% (%2$d)</string>
     <string name="stats_issues_found">Issues found</string>
-    <string name="stats_garden_plants">Plants in garden</string>
     <string name="stats_top_issues">Your most frequent issues</string>
     <string name="stats_empty">No scans yet — your stats will appear after the first scan.</string>
     <string name="tip_scanning_title">How to take a good scan photo</string>
@@ -864,14 +855,6 @@
     <string name="tip_results_body">The confidence score is calibrated: when the app isn\'t sure it shows several candidate conditions instead of guessing. Treat the result as guidance, check the alternatives card, and use a second photo or the symptom checker when the model says it\'s uncertain.</string>
     <string name="tip_watering_title">Watering basics</string>
     <string name="tip_watering_body">Overwatering kills more houseplants than drought. Check the top 2–3 cm of soil with a finger — water only when it\'s dry, then water thoroughly until it drains. Use the Watering helper for a per-plant starting point and adjust by season.</string>
-    <string name="tip_light_title">Light basics</string>
-    <string name="tip_light_body">Most houseplants want bright indirect light: near a window but out of harsh midday sun. Sudden moves from shade to sun cause scorch — acclimate over a week. Use the Light meter at the plant\'s spot to measure what it actually gets.</string>
-    <string name="tip_seasonal_title">Seasonal care</string>
-    <string name="tip_seasonal_body">In autumn and winter most plants rest: water less often, stop fertilising, and keep leaves away from cold glass and radiators. Resume feeding in spring when new growth appears.</string>
-    <string name="tip_repotting_title">Repotting</string>
-    <string name="tip_repotting_body">Repot when roots circle the pot or grow out of the drainage holes — usually every 1–2 years, in spring. Go up only one pot size; an oversized pot holds water and invites root rot.</string>
-    <string name="tip_pests_title">Preventing pests</string>
-    <string name="tip_pests_body">Quarantine new plants for two weeks, inspect leaf undersides when you water, and wipe dust off foliage. Sticky residue, fine webbing or white fluff are early signs — scan the plant and isolate it before treating.</string>
     <string name="tip_community_title">Community &amp; your data</string>
     <string name="tip_community_body">Share scans to see what\'s spreading near you and get second opinions from other growers. Photos are anonymized (metadata stripped) and you can delete everything you\'ve shared from Profile at any time.</string>
 </resources>

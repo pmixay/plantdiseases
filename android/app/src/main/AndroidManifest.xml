@@ -118,11 +118,6 @@
             android:screenOrientation="portrait" />
 
         <activity
-            android:name=".ui.stats.StatsTipsActivity"
-            android:exported="false"
-            android:screenOrientation="portrait" />
-
-        <activity
             android:name=".ui.species.SpeciesDetailActivity"
             android:exported="false"
             android:screenOrientation="portrait" />

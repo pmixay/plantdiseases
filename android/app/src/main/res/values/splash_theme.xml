@@ -2,7 +2,10 @@
 <resources>
     <style name="Theme.PlantDiseases.Splash" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/primary</item>
-        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+        <!-- The real logotype (same artwork as the launcher icon), pre-padded
+             into the splash safe zone so the Android-12 circle mask shows it
+             complete instead of chopping the full-bleed icon. -->
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_logo</item>
         <item name="windowSplashScreenAnimationDuration">800</item>
         <item name="postSplashScreenTheme">@style/Theme.PlantDiseases</item>
     </style>
