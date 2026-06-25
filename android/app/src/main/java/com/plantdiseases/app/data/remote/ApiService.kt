@@ -3,6 +3,7 @@ package com.plantdiseases.app.data.remote
 import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.CarePlanResponse
+import com.plantdiseases.app.data.model.PopularResponse
 import com.plantdiseases.app.data.model.SpeciesDiseasesResponse
 import com.plantdiseases.app.data.model.SpeciesInfoResponse
 import com.plantdiseases.app.data.model.TrendingResponse

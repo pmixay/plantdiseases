@@ -115,7 +115,7 @@ class HomeFragment : Fragment() {
         // Show the bundled popular-species fallback right away so the carousel
         // is present on first frame; loadTrending() (onResume) upgrades it to
         // real trending data when the feed has any.
-        renderSpecies(binding, null)
+        renderSpecies(binding, null, null)
         maybePlayIntro(savedInstanceState)
     }
 
