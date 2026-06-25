@@ -104,26 +104,33 @@ consistent, every published version must satisfy:
 
 Two correctness changes are wired into `train_notebook.ipynb` for v5:
 
-- **Stable held-out test split (`make_test_split`, §2).** Before the random
-  `make_*_split` val carves, a deterministic, **group-aware** partition is moved to
-  `val/test`: each `(source, plant_id)` group's side is fixed by a content hash of
-  the group id, so a plant is *always* test or *always* train **across dataset
-  versions** — a reproducible benchmark, disjoint from train AND from the drifting
-  `val_*` splits. This is what the **"split the supplement into train/test"** idea
-  resolved to: the supplement (and the other real-photo sources) are carved by the
-  same hash, so ~18% becomes a fixed test slice and the rest trains. The shipped
-  model is graded on it as `final test` in §6 (next to `val_realworld`). It is still
+- **Stable, class-aware held-out test split (`make_test_split`, §2).** Before the
+  random `make_*_split` val carves, a deterministic, **group-aware** partition is
+  moved to `val/test`: each `(source, plant_id)` group's side is fixed by a content
+  hash of the group id, so a plant is *always* test or *always* train **across
+  dataset versions** — a reproducible benchmark, disjoint from train AND from the
+  drifting `val_*` splits. This is what the **"split the supplement into train/test"**
+  idea resolved to: the supplement (and the other real-photo sources) are carved by
+  the same hash, so the default ~18% becomes a fixed test slice and the rest trains.
+  The carve fraction is **class-aware** (`ratio_by_class`): supply-bound classes give
+  up less so the benchmark stays populated without starving their scarce train side —
+  `gray_mold_botrytis` carves only **0.08**, `nutrient_deficiency` / `leaf_scorch` /
+  `pests` / `powdery_mildew` **0.10**, everything else the **0.18** default. (Lowering
+  a class's fraction only *removes* groups from its test side; the hash threshold is
+  the only lever, so the slice stays a reproducible subset.) The shipped model is
+  graded on it as `final test` in §6 (next to `val_realworld`). It is still
   *in-distribution* (same sources as train) — a stable, richer `val_realworld`, not
   an out-of-distribution gate; true OOD still needs production photos. *(Wired but
   unrun here — confirm "test split populated" + "final test" on the next Colab run.)*
 - **Pre-v5 weak-class top-up (the correction I'd make).** The supply-bound classes
-  have unused headroom in *existing* sources, so v5 raises two caps to pull it:
-  `kaggle_strawberry_graymold cap 250→500` (more Botrytis for the binding gray_mold
-  class) and `kaggle_ornamental per_class_cap 300→600` (more scorch/viral/powdery/
-  nutrient — ornamental holds 1000–1680 images per class vs the old 300 cap). This
-  thickens the weak classes in *both* train and the carved test slice, offsetting the
-  ~18% the split removes. gray_mold still won't reach 250 *clean houseplant* rows
-  this way (strawberry is agricultural Botrytis) — production remains its only path.
+  have unused headroom in *existing* sources, so v5 raises `kaggle_ornamental
+  per_class_cap 300→600` (more scorch/viral/powdery/nutrient — ornamental holds
+  1000–1680 images per class vs the old 300 cap). Combined with the class-aware carve
+  above, this thickens the weak classes in *both* train and the test slice. gray_mold
+  is **not** topped up from the old Kaggle strawberry set — that was *agricultural*
+  Botrytis (strawberry fruit/leaves), domain-mismatched from houseplants, so it is
+  **removed entirely**; gray_mold draws from iNat (non-foliage-filtered) + DoctorP +
+  the supplement, and production scans remain its only path to clean houseplant rows.
 
 ### v4-run outcome (model v2.6.6) — what v5 must react to
 
