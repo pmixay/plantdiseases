@@ -110,6 +110,35 @@ class ModelsTest {
     }
 
     @Test
+    fun popularResponse_fullParse_mapsSnakeCaseFields() {
+        val json = """
+            {"scope":"country","country":"RU","locale":"ru",
+             "items":[{"scientific":"Monstera deliciosa","common_en":"Swiss cheese plant",
+                       "common_ru":"Монстера","image_url":"https://img/m.jpg"}]}
+        """.trimIndent()
+        val r = gson.fromJson(json, PopularResponse::class.java)
+        assertThat(r.scope).isEqualTo("country")
+        assertThat(r.country).isEqualTo("RU")
+        assertThat(r.items).hasSize(1)
+        val item = r.items[0]
+        assertThat(item.scientific).isEqualTo("Monstera deliciosa")
+        assertThat(item.commonEn).isEqualTo("Swiss cheese plant")
+        assertThat(item.commonRu).isEqualTo("Монстера")
+        assertThat(item.imageUrl).isEqualTo("https://img/m.jpg")
+    }
+
+    @Test
+    fun popularResponse_missingFields_useSafeDefaults() {
+        val r = gson.fromJson("""{"scope":"global"}""", PopularResponse::class.java)
+        assertThat(r.scope).isEqualTo("global")
+        assertThat(r.items).isEmpty()
+        // A bare item with no image still parses (client shows a placeholder).
+        val item = gson.fromJson("""{"scientific":"Aloe vera"}""", PopularItem::class.java)
+        assertThat(item.scientific).isEqualTo("Aloe vera")
+        assertThat(item.imageUrl).isNull()
+    }
+
+    @Test
     fun resolvedRegion_displayLabel() {
         assertThat(ResolvedRegion("US", "Boston").displayLabel).isEqualTo("Boston, US")
         assertThat(ResolvedRegion("US", null).displayLabel).isEqualTo("US")
