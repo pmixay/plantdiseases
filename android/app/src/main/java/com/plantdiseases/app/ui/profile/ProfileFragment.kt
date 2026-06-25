@@ -662,14 +662,16 @@ class ProfileFragment : Fragment() {
             // who only have NAP scans see an "empty" profile.
             val totalRecorded = stats.totalScans + stats.notAPlantCount
             if (totalRecorded == 0) {
+                // No scans yet: hide the summary + charts, but the tips library
+                // (also in stats_detail_layout) stays visible for onboarding.
                 binding.statsLayout.visibility = View.GONE
-                binding.statsDetailLayout.visibility = View.GONE
+                binding.statsChartsCard.visibility = View.GONE
                 binding.emptyState.visibility = View.VISIBLE
                 return@launch
             }
 
             binding.statsLayout.visibility = View.VISIBLE
-            binding.statsDetailLayout.visibility = View.VISIBLE
+            binding.statsChartsCard.visibility = View.VISIBLE
             binding.emptyState.visibility = View.GONE
 
             // 7-day activity bar chart + top recurring issues.
