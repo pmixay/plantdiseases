@@ -174,7 +174,9 @@ try:
     from .feedback import (
         scan_ids_for_user as feedback_scan_ids_for_user,
     )
+    from .geoip import detect_country
     from .pipeline import PlantDiseasePipeline
+    from .popular_plants import popular_for
     from .push import (
         register as push_register,
     )
@@ -302,7 +304,9 @@ except ImportError:
     from feedback import (
         scan_ids_for_user as feedback_scan_ids_for_user,
     )
+    from geoip import detect_country
     from pipeline import PlantDiseasePipeline
+    from popular_plants import popular_for
     from push import (
         register as push_register,
     )
@@ -3606,6 +3610,73 @@ async def export_user_data(user_pseudo_id: str):
         "community_scans": community_data,
         "feedback_submissions": feedback_data,
     })
+
+
+# --- /api/popular: personalized, daily-cached popular-houseplants bundle ----
+# key "{country|'global'}:{locale}" -> (expiry_epoch, payload). Per-species
+# Wikipedia calls happen once per (country, locale) per day; clients get the
+# whole resolved bundle in one response.
+_POPULAR_TTL_S = get_int("POPULAR_BUNDLE_TTL_SECONDS", 86400)
+_popular_cache: "OrderedDict[str, tuple[float, dict]]" = OrderedDict()
+_popular_lock = threading.Lock()
+_POPULAR_CACHE_MAX = 64
+
+
+def _build_popular_bundle(country: str | None, region: str | None, locale: str) -> dict:
+    plants = popular_for(country, region)
+    lang = "ru" if locale == "ru" else "en"
+    items = []
+    for p in plants:
+        info = fetch_species_info(p.scientific, lang)
+        items.append({
+            "scientific": p.scientific,
+            "common_en": p.common_en,
+            "common_ru": p.common_ru,
+            # Include the item even when no image resolves — client has a placeholder.
+            "image_url": (info or {}).get("image_url"),
+        })
+    return {
+        "scope": "country" if country else "global",
+        "country": country,
+        "locale": locale,
+        "items": items,
+    }
+
+
+@api_router.get("/popular")
+async def popular_endpoint(request: Request, country: str | None = None,
+                           region: str | None = None, locale: str = "en"):
+    """Personalized popular-houseplants bundle with lead images pre-resolved.
+
+    Country comes from the client when given, else server-side IP geolocation,
+    else a global list. Cached per (country, locale) for a day so the
+    per-species Wikipedia calls aren't repeated."""
+    country_norm = (_normalise_country(country) or None) if country else None
+    if not country_norm:
+        country_norm = detect_country(request, _client_ip(request))
+    # popular_for matches ISO codes; a full country name simply falls to global.
+    region_norm = _normalise_locality(region) or None if region else None
+    locale = "ru" if str(locale or "en").lower().startswith("ru") else "en"
+
+    key = f"{country_norm or 'global'}:{locale}"
+    now = time.time()
+    with _popular_lock:
+        hit = _popular_cache.get(key)
+        if hit and hit[0] > now:
+            _popular_cache.move_to_end(key)
+            bundle = hit[1]
+        else:
+            bundle = None
+    if bundle is None:
+        bundle = await asyncio.get_running_loop().run_in_executor(
+            None, lambda: _build_popular_bundle(country_norm, region_norm, locale),
+        )
+        with _popular_lock:
+            _popular_cache[key] = (now + _POPULAR_TTL_S, bundle)
+            _popular_cache.move_to_end(key)
+            while len(_popular_cache) > _POPULAR_CACHE_MAX:
+                _popular_cache.popitem(last=False)
+    return JSONResponse(content=bundle, headers={"cache-control": "public, max-age=86400"})
 
 
 app.include_router(api_router)
