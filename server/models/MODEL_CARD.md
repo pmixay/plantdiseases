@@ -66,12 +66,30 @@ The production artefact is an ONNX graph and the runtime is
 **architecture-neutral** — it serves whatever backbone+head the shipped
 bundle declares (`classes.json -> architecture`):
 
-> **Current version: 2.6.7 (`gamma`)** — the shipped production model. The
-> entries below (v2.6.6, v2.6.5, …) document the preceding training runs that
-> led here; the supplement-v3 baseline metrics (disease macro-F1 **0.865**,
-> accuracy 91.9%, `val_realworld` n=2334) remain the reference point.
-
-- **v2.6.6 (latest run, `gamma`; trained on dataset supplement v4 — ship-pending):**
+- **v2.6.7 (shipped, `gamma`; trained on dataset supplement v5):** same recipe as
+  v2.6.5/v2.6.6. **Two structural changes landed.** (1) The *agricultural* Kaggle
+  strawberry Botrytis proxy was **removed entirely**; `gray_mold_botrytis` now trains
+  on clean foliage only (iNat 606 + supplement 255 + DoctorP 96 → 339 train) and is
+  **fixed**: `val_realworld` recall/precision **0.83/0.83**, and **0.913 recall on the
+  new stable held-out test slice** — it had been the binding class for five versions.
+  (2) A **stable, class-aware, group-aware test split** (`make_test_split`, §2) carves
+  a content-hash held-out slice that is reproducible across dataset versions; it is
+  graded as `final test` in §6. Headline `val_realworld` (n=1854): disease macro-F1
+  **0.862** (int8) / 0.868 (fp32), overall accuracy **91.1%**, healthy-bias 0.95;
+  **stable test** (n=2329): disease macro-F1 **0.866**. **Ships INT8**
+  (`classifier_int8.onnx`, 22.5 MB → 130 MB bundle): INT8 is statistically tied with
+  FP32 (paired-bootstrap int8−fp32 CI [−0.018, +0.005], n.s.). Calibration re-fit on
+  the **int8** path (no fp32 fallback): T=0.761, RAPS α=0.2 → coverage 0.991, mean set
+  size 1.90. OOD now uses the **embedding k-NN gate** (threshold 0.606, NaP recall
+  0.942 @ 5% plant FPR); the legacy MaxLogit floor auto-disabled (not_a_plant is now a
+  strong enough trained class that its MaxLogit overlaps real plants). aqua student
+  recovered after the §5 feature-distillation fix (KD val-macroF1 0.780→**0.798**).
+  Detector mAP50 **0.819**. **Remaining weakness (v6 target):** the two physiological
+  classes *over-predict* — `nutrient_deficiency` precision **0.679** (recall 0.878) and
+  `leaf_scorch_underwatering` precision **0.745** (recall 0.814); they alone hold
+  macro-F1 at 0.86. Rows are agent-judged, so the gate is a **proxy** until verified
+  production volume exists.
+- **v2.6.6 (`gamma`; trained on dataset supplement v4 — superseded by v2.6.7, never shipped):**
   same recipe as v2.6.5, retrained on **eval-supplement v4** (1951 rows: nutrient
   disambiguating negatives + the first offline-judged production scans) with the
   train-source de-crop landed (rice `kaggle_nutrient` + CoLeaf removed, COCO

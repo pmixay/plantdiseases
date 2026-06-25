@@ -580,38 +580,54 @@ def test_kaggle_houseplant_downweighted_and_prior_decoupled():
     )
 
 
-def test_kaggle_strawberry_graymold_is_train_only_proxy():
-    """gray_mold_botrytis is supply-bound at the iNat ceiling, so a crop-domain
-    Botrytis proxy (the Kaggle strawberry COCO set) supplements it. Must (a)
-    parse the gray-mold category, (b) write into gray_mold_botrytis, (c) be
-    TRAIN-ONLY (no make_*_split allows 'kaggle_strawberry'), and (d) be
-    down-weighted with the LA prior decoupled below the sampler weight."""
+def test_kaggle_strawberry_graymold_removed_entirely():
+    """The Kaggle strawberry-disease set was an AGRICULTURAL Botrytis proxy
+    (strawberry fruit/leaves), domain-mismatched from houseplants, so it is
+    removed: gray_mold_botrytis draws from iNat (non-foliage filtered) + DoctorP
+    + the supplement instead. No fetcher, slug, opt-in flag, or sampler/prior
+    weight may remain — dead code/config invites a re-add of cross-domain
+    imagery into the hardest-to-supply class. The PlantVillage 'Strawberry___*'
+    label-map entries are a SEPARATE system (whole-dataset label remapping) and
+    intentionally stay."""
     src = _notebook_source()
-    assert "def fetch_kaggle_strawberry_graymold" in src, "strawberry gray-mold fetcher missing"
-    assert "_is_graymold_name" in src and "botrytis" in src.lower(), (
-        "must detect the gray-mold / Botrytis category"
+    assert "def fetch_kaggle_strawberry_graymold" not in src, "the strawberry fetcher must be gone"
+    assert "_is_graymold_name" not in src, "the strawberry gray-mold helper must be gone"
+    assert "KAGGLE_STRAWBERRY_SLUG" not in src, "the strawberry slug constant must be gone"
+    assert "INCLUDE_KAGGLE_STRAWBERRY_GM" not in src, "the strawberry opt-in flag must be gone"
+    assert "_try_fetch('kaggle_strawberry" not in src, "strawberry must never be fetched"
+    assert re.search(r"'kaggle_strawberry'\s*:", src) is None, "no 'kaggle_strawberry' SOURCE_WEIGHTS entry"
+    assert "PRIOR_SOURCE_WEIGHTS['kaggle_strawberry']" not in src, "no 'kaggle_strawberry' prior weight"
+
+
+def test_make_test_split_is_class_aware_and_stable():
+    """The held-out TEST partition must be (a) stable across dataset versions
+    (group id hashed, not rng.shuffle'd) and group-aware (carved by source/
+    plant_id, not per-image), and (b) class-aware: thin/binding classes carve a
+    SMALLER fraction so the benchmark stays populated without starving their
+    scarce train side. gray_mold_botrytis — the supply floor — must give up the
+    LEAST, and every per-class fraction must sit at or below the global default
+    so no class over-donates to the test set."""
+    src = _notebook_source()
+    assert "def make_test_split(" in src, "make_test_split must exist"
+    # Stable + group-aware: a content hash of the (source, plant_id) group id.
+    assert "hashlib.sha256" in src and "sc.get('plant_id'" in src, (
+        "test split must hash the (source, plant_id) group id, not shuffle per-image"
     )
-    # The real dataset ships LabelMe per-image JSON (shapes[].label), not a single
-    # COCO file — the fetcher must handle that schema (validated: 621 gray-mold imgs).
-    assert "shapes" in src and "imagePath" in src, (
-        "strawberry fetcher must parse the LabelMe per-image JSON schema (shapes[].label)"
+    # Class-aware carve fraction.
+    assert "ratio_by_class" in src, "make_test_split must take a per-class carve fraction"
+    m = re.search(r"make_test_split.*?ratio_by_class\s*=\s*\{(.*?)\}", src, re.S)
+    assert m, "make_test_split must define a default ratio_by_class map"
+    by_class = {k: float(v) for k, v in re.findall(r"'([a-z_]+)'\s*:\s*([0-9.]+)", m.group(1))}
+    default = float(re.search(r"def make_test_split\(ratio\s*=\s*([0-9.]+)", src).group(1))
+    gm = by_class.get("gray_mold_botrytis")
+    assert gm is not None, "gray_mold_botrytis must have an explicit (smaller) test fraction"
+    assert gm == min(by_class.values()), "gray_mold_botrytis (supply floor) must carve the least"
+    assert all(v <= default for v in by_class.values()), (
+        "no per-class test fraction may exceed the global default ratio"
     )
-    assert "'gray_mold_botrytis'" in src, "must write into the gray_mold_botrytis class"
-    for split_fn in ("make_val_realworld", "make_val_indomain",
-                     "make_temperature_cal", "make_conformal_cal"):
-        body = re.search(rf"def {split_fn}\(.*?\n(?:.*\n){{0,14}}", src)
-        assert body and "kaggle_strawberry" not in body.group(0), (
-            f"{split_fn} must NOT allow 'kaggle_strawberry' — it is a TRAIN-ONLY proxy"
-        )
-    sw = re.search(r"'kaggle_strawberry'\s*:\s*([0-9.]+)", src)
-    assert sw and float(sw.group(1)) < 1.0, "'kaggle_strawberry' must be down-weighted (<1.0)"
-    pr = re.search(r"PRIOR_SOURCE_WEIGHTS\['kaggle_strawberry'\]\s*=\s*([0-9.]+)", src)
-    assert pr and float(pr.group(1)) < float(sw.group(1)), (
-        "PRIOR_SOURCE_WEIGHTS['kaggle_strawberry'] must be < its sampler weight"
-    )
-    # Runs before the pre-split dedup.
-    assert 0 < src.find("_try_fetch('kaggle_strawberry_graymold'") < src.find("_dedup_train_in_place(TRAIN_ROOT"), (
-        "strawberry fetch must run before the pre-split dedup"
+    # Carved BEFORE the val/cal splits so they draw from the remaining train pool.
+    assert src.find("make_test_split()") < src.find("make_val_realworld()"), (
+        "the test split must be carved before the val/cal splits"
     )
 
 
