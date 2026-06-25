@@ -1,15 +1,11 @@
 package com.plantdiseases.app
 
-import android.Manifest
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.os.Bundle
 import android.view.View
 import android.view.animation.OvershootInterpolator
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -29,23 +25,6 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var appBarConfiguration: AppBarConfiguration
-
-    // Single batched request for every startup permission we care
-    // about (camera + coarse location + notifications on 13+). Before
-    // this consolidation, three separate launchers fired from
-    // MainActivity.onCreate and CameraFragment.onViewCreated in quick
-    // succession; Android silently auto-denied the later ones without
-    // ever showing their system dialogs, so the user never saw the
-    // location prompt and the camera tab landed straight on the
-    // in-app Grant button. ``RequestMultiplePermissions`` serialises
-    // the dialogs internally so all of them surface.
-    private val startupPermissionsLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { grants ->
-        if (grants[Manifest.permission.ACCESS_COARSE_LOCATION] == true) {
-            warmRegionCache()
-        }
-    }
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
@@ -78,7 +57,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        maybeRequestStartupPermissions()
+        maybeWarmStartupCaches()
         maybeShowConsentDialog()
 
         // Edge-to-edge display
@@ -228,26 +207,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * The scan tab is the start destination, so CAMERA is the ONLY permission
-     * requested at launch. Location and notifications are deliberately NOT
-     * asked for here — they are opt-in IN CONTEXT (enabling community / nearby
-     * requests coarse location; enabling opinions or plant reminders requests
-     * notifications). This keeps a brand-new user from being hit by a wall of
-     * system dialogs on first launch.
+     * Do not request runtime permissions on the default Home screen. Camera is
+     * requested by CameraFragment when the user opens Scan; location and
+     * notifications remain opt-in at their feature entry points.
      */
-    private fun maybeRequestStartupPermissions() {
+    private fun maybeWarmStartupCaches() {
         // Only warm the region cache for users who already opted into
         // community — a no-op without a prior COARSE_LOCATION grant, and never
         // triggers a location read for someone who hasn't opted in.
         if (com.plantdiseases.app.util.CommunityPrefs.uploadsEnabled(this)) {
             warmRegionCache()
-        }
-        if (ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.CAMERA,
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            startupPermissionsLauncher.launch(arrayOf(Manifest.permission.CAMERA))
         }
     }
 
