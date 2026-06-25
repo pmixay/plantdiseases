@@ -372,8 +372,10 @@ class ProfileFragment : Fragment() {
     private fun weeklyBars(scans: List<ScanHistoryItem>): List<BarChartView.Bar> {
         val labels = resources.getStringArray(R.array.weekday_initials)
         val start = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
             add(Calendar.DAY_OF_YEAR, -6)
         }
         return (0 until 7).map {
@@ -433,7 +435,8 @@ class ProfileFragment : Fragment() {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(0x14000000)
             layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(8),
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(8),
             ).apply { topMargin = dp(4) }
         }
         val fillWeight = value.toFloat() / max.coerceAtLeast(1)
@@ -446,7 +449,9 @@ class ProfileFragment : Fragment() {
         track.addView(
             View(ctx).apply {
                 layoutParams = LinearLayout.LayoutParams(
-                    0, LinearLayout.LayoutParams.MATCH_PARENT, (1f - fillWeight).coerceAtLeast(0f),
+                    0,
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    (1f - fillWeight).coerceAtLeast(0f),
                 )
             },
         )

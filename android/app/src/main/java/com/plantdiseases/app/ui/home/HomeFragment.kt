@@ -313,7 +313,9 @@ class HomeFragment : Fragment() {
                 apiClient.popular(region?.country, region?.locality, locale)
             }.getOrNull()?.takeIf { it.items.isNotEmpty() }?.also {
                 com.plantdiseases.app.util.ResponseCache.put(
-                    cacheKey, it, com.plantdiseases.app.util.ResponseCache.TTL_POPULAR_MS,
+                    cacheKey,
+                    it,
+                    com.plantdiseases.app.util.ResponseCache.TTL_POPULAR_MS,
                 )
             }
     }

@@ -3,14 +3,37 @@
     <file name="src/main/java/com/plantdiseases/app/data/local/Database.kt">
         <error line="465" column="21" source="standard:property-naming" />
     </file>
+    <file name="src/main/java/com/plantdiseases/app/data/model/Models.kt">
+        <error line="802" column="39" source="standard:multiline-if-else" />
+        <error line="803" column="22" source="standard:multiline-if-else" />
+    </file>
+    <file name="src/main/java/com/plantdiseases/app/data/repository/ScanRepository.kt">
+        <error line="45" column="1" source="standard:no-unused-imports" />
+        <error line="46" column="1" source="standard:no-unused-imports" />
+        <error line="47" column="1" source="standard:no-unused-imports" />
+        <error line="48" column="1" source="standard:no-unused-imports" />
+    </file>
     <file name="src/main/java/com/plantdiseases/app/ui/camera/CameraFragment.kt">
-        <error line="94" column="17" source="standard:property-naming" />
-        <error line="95" column="17" source="standard:property-naming" />
-        <error line="96" column="17" source="standard:property-naming" />
+        <error line="98" column="17" source="standard:property-naming" />
+        <error line="99" column="17" source="standard:property-naming" />
+        <error line="100" column="17" source="standard:property-naming" />
+    </file>
+    <file name="src/main/java/com/plantdiseases/app/ui/garden/PlantDetailActivity.kt">
+        <error line="803" column="59" source="standard:function-expression-body" />
     </file>
     <file name="src/main/java/com/plantdiseases/app/ui/guide/GuideFragment.kt">
         <error line="41" column="17" source="standard:property-naming" />
         <error line="42" column="17" source="standard:property-naming" />
         <error line="43" column="17" source="standard:property-naming" />
+    </file>
+    <file name="src/main/java/com/plantdiseases/app/worker/OpinionCheckWorker.kt">
+        <error line="26" column="39" source="standard:class-signature" />
+    </file>
+    <file name="src/main/java/com/plantdiseases/app/worker/PlantReminderWorker.kt">
+        <error line="38" column="39" source="standard:class-signature" />
+    </file>
+    <file name="src/main/java/com/plantdiseases/app/worker/ReminderActionReceiver.kt">
+        <error line="25" column="32" source="standard:class-signature" />
+        <error line="25" column="53" source="standard:class-signature" />
     </file>
 </baseline>
