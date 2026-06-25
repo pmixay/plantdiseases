@@ -24,7 +24,7 @@ import androidx.core.view.doOnAttach
 import androidx.core.view.updatePadding
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
-import androidx.navigation.fragment.findNavController
+import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.R
@@ -98,7 +98,10 @@ class ProfileFragment : Fragment() {
 
         // Profile empty state CTA
         binding.btnStartScan.setOnClickListener {
-            findNavController().navigate(R.id.cameraFragment)
+            // Select the Scan bottom-nav tab (routes through MainActivity) rather
+            // than navigating the camera into Profile's own back stack.
+            requireActivity().findViewById<BottomNavigationView>(R.id.bottom_navigation)
+                ?.selectedItemId = R.id.cameraFragment
         }
 
         // Full stats & advice (relocated from Home; Home keeps a teaser).
