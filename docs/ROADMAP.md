@@ -8,15 +8,19 @@ now; this stays an internal/beta build. Companions: `DATASET_LABELING_PLAN.md`
 
 ## Where we are
 
-Last shipped: **v2.6.5 `gamma`** (frozen DINOv2 ViT-S/14 + LoRA + MLP head,
-supplement v3). **Latest run: v2.6.6** (supplement v4) — ship gate passed
-(`val_realworld` n=2150, disease macro-F1 **0.861** vs v2.6.5's 0.865, flat
-within noise) and **INT8 now ships** (it beat FP32 this run: +0.0057, n.s.) →
-**130 MB bundle / 22.5 MB classifier**, reclaiming the 4× size win v2.6.5 lost.
-But it's a **lateral move**: powdery F1 0.881→**0.939** and gray_mold precision
-0.840→**0.888**, offset by a **leaf_scorch regression** (F1 0.805→0.719) and a
-viral-precision dip (eval-slice-confounded). YOLOv8n detector mAP50 0.817.
-**Ship decision pending** — see "Model / data — next".
+Last shipped: **v2.6.7 `gamma`** (frozen DINOv2 ViT-S/14 + LoRA + MLP head,
+supplement v5) — ship gate **PASSED** (`val_realworld` n=1854, disease macro-F1
+**0.862** int8 / 0.868 fp32; **stable held-out test** n=2329 F1 **0.866**) and
+**INT8 ships** (reclaimed: paired bootstrap int8−fp32 CI [−0.018, +0.005], n.s.)
+→ **130 MB bundle / 22.5 MB classifier**. The **gray_mold fix landed**: recall /
+precision **0.83 / 0.83** on clean foliage after the *agricultural* strawberry
+Botrytis proxy was removed — it had been the binding class for five versions, now
+corroborated at **0.913** recall on the stable slice. Aggregate F1 is flat vs
+v2.6.5/v2.6.6 (~0.86) because two classes now cap it: **nutrient_deficiency
+(P 0.679) and leaf_scorch (P 0.745) over-predict** — the v6 target. YOLOv8n
+detector mAP50 **0.819**. Calibration: T=0.761, RAPS α=0.2 → coverage 0.991,
+set 1.90 (fit on the shipped int8 path). aqua student recovered (KD val-macroF1
+0.780→**0.798**).
 
 9 classes: `gray_mold_botrytis`, `healthy`, `leaf_spot`, `not_a_plant`, `pests`,
 `powdery_mildew`, `viral_disease`, `leaf_scorch_underwatering`,
@@ -40,28 +44,27 @@ viral-precision dip (eval-slice-confounded). YOLOv8n detector mAP50 0.817.
 
 ## Model / data — next ⏳
 
-- [x] **Trained v3 → v2.6.5**, then **v4 → v2.6.6** (`val_realworld` n=2150, F1 0.861)
-- [x] **INT8 reclaimed** — the v4 run's INT8 beat FP32 (+0.0057, n.s.); ships 22.5 MB
-      classifier / 130 MB bundle (v2.6.5 had to ship FP32 87 MB)
-- [x] **rice/coleaf de-crop verdict: NEUTRAL** — removing the 200 rice `kaggle_nutrient`
-      images (and `coleaf` entirely) left nutrient precision flat (0.743→0.750): they
-      were wrong-domain dead weight, not the cause. Keep removed; don't re-add.
-- [ ] **leaf_scorch regression (NEW, v4 run)** — F1 0.805→0.719 (P 0.774→0.703,
-      R 0.840→0.736) at the same eval n. Likely the v4 healthy hard-negatives (+114,
-      mostly *generic*; only +31 boundary) made the model under-call scorch → **v5: add
-      ONLY boundary brown-tip negatives, stop adding generic healthy.** Flagship fix,
-      don't ship-regress it silently.
-- [ ] **nutrient_deficiency precision** — still the laggard (P **0.750**, over-triggers
-      ~1.19×). Confirmed it's boundary confusion, not crop domain → v5 scorch↔nutrient /
-      healthy↔nutrient **boundary** negatives.
-- [ ] **gray_mold** — precision improved **0.840→0.888** despite flat supply (232,
-      31% conf<0.80, wide CIs at n=94) → production scans remain the real lever.
-- [ ] **aqua student regression (NEW)** — KD val_macroF1 0.838→**0.780**; teacher↔student
-      gap tripled (0.043→0.106); on hard real web photos it collapses toward
-      healthy/not_a_plant. **Fix queued for the next run:** feature distillation
-      added to §5 (`KD_BETA=0.5` — cosine-match the student's representation to the
-      teacher's DINOv2 CLS embedding) + clean teacher `eval()` targets, at the same
-      30-epoch budget (no added runtime). Validate the gap closes on the next run.
+- [x] **Trained v3 → v2.6.5**, **v4 → v2.6.6**, **v5 → v2.6.7** (`val_realworld`
+      n=1854, F1 0.862; stable test n=2329, F1 0.866) — **shipped**
+- [x] **INT8 reclaimed** — v2.6.7's INT8 is statistically tied with FP32 (paired
+      bootstrap CI [−0.018, +0.005], n.s.); ships 22.5 MB classifier / 130 MB bundle
+      (v2.6.0 had to ship FP32 87 MB). Calibration now fit on the int8 path (no fallback).
+- [x] **gray_mold FIXED** — removed the *agricultural* strawberry Botrytis proxy and
+      fed clean foliage (iNat 606 + supplement 255 + DoctorP 96 → 339 train). Result:
+      R/P **0.83/0.83** on val_realworld, **0.913** recall on the stable slice. The
+      binding class for five versions is solved; production scans now a maintain-only lever.
+- [x] **leaf_scorch — v4 regression did NOT persist** (v2.6.7 F1 ≈0.78, R 0.814);
+      it is now **precision-bound** (P **0.745**, over-triggers) rather than recall-bound.
+- [x] **rice/coleaf de-crop verdict: NEUTRAL** (kept removed; were wrong-domain dead weight).
+- [x] **aqua student recovered** — the §5 feature-distillation fix landed: KD val-macroF1
+      0.780→**0.798**, smooth curve, no collapse (still below the 0.861 teacher, expected).
+- [x] **stable cross-version benchmark shipped** — `make_test_split` (§2) carves a
+      class-aware, content-hash, group-aware held-out slice; `final test` F1 0.866 graded
+      next to `val_realworld`. Future runs are now comparable across dataset versions.
+- [ ] **v6 = the precision run** — `nutrient_deficiency` (P **0.679**) and `leaf_scorch`
+      (P **0.745**) over-predict and alone cap macro-F1 at 0.86. Fix with confusion-pair
+      boundary negatives (scorch-lookalike + nutrient-lookalike healthy); do NOT add
+      positives. Optionally trim the LA-prior rare-class boost. See `DATASET_LABELING_PLAN.md`.
 - [ ] Fold offline-judged production scans/feedback into the next dataset version
       (export via `tools/export_data.py` → vision-agent judge; weak classes first)
 
