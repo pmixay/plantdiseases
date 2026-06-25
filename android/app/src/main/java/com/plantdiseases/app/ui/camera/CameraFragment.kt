@@ -421,17 +421,10 @@ class CameraFragment : Fragment() {
             startCamera()
             return
         }
-        // No auto-launch from the fragment: MainActivity batches the
-        // startup permission ask (camera + location + notifications)
-        // into a single RequestMultiplePermissions flow so the system
-        // dialogs surface reliably. Firing another launch() here at
-        // the same time used to race with that batch and Android
-        // would silently auto-deny the camera prompt — landing the
-        // user on this Grant-button screen without ever showing the
-        // system dialog. ``onResume`` re-checks once the batch
-        // completes so the camera starts as soon as the user grants.
+        // Ask only once the user has opened the Scan screen.
         binding.permissionLayout.visibility = View.VISIBLE
         binding.cameraPreview.visibility = View.GONE
+        permissionLauncher.launch(Manifest.permission.CAMERA)
     }
 
     private fun startCamera() {
@@ -734,10 +727,8 @@ class CameraFragment : Fragment() {
         // otherwise keep showing the previously-selected family. (No chip in
         // identify mode.)
         if (_binding != null && !identifyMode) refreshModelFamilyChip()
-        // If MainActivity's startup permission batch just finished and
-        // CAMERA flipped to granted, start the preview now — onResume
-        // is the first point we're sure the system dialog has been
-        // dismissed and the permission state is stable.
+        // If the Scan permission dialog just granted CAMERA, start the
+        // preview once the system dialog is dismissed and state is stable.
         if (_binding != null &&
             binding.permissionLayout.visibility == View.VISIBLE &&
             ContextCompat.checkSelfPermission(
