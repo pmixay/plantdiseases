@@ -1,15 +1,15 @@
 name: ci
 
 on:
-  # Push-only. Work happens on claude/** branches, so a push already
-  # covers both the pre-PR window and every later PR update — the check
-  # runs attach to the commit and show on the PR. The pull_request
-  # trigger was dropped because it re-ran the whole suite for the same
-  # commit once a PR was open, doubling a commit's checks (push +
-  # pull_request). Re-add `pull_request:` only if you need CI on PRs from
-  # forks or branches that don't match the patterns below.
+  # Pushes from the repo-owned automation branches get immediate CI before a
+  # PR is opened. Include both slash-prefixed branches and the plain `work`
+  # branch name used by some Codex sessions.
   push:
-    branches: [main, "claude/**", "codex/**"]
+    branches: [main, "claude/**", "codex/**", work, "work/**"]
+  # Also run for PRs into main so Codex branches from forks (where the source
+  # push does not trigger this repository's workflow) still receive checks.
+  pull_request:
+    branches: [main]
 
 concurrency:
   group: ci-${{ github.ref }}
