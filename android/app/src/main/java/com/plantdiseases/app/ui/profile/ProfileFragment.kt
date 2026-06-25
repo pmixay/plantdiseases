@@ -365,8 +365,6 @@ class ProfileFragment : Fragment() {
 
     private fun color(res: Int): Int = ContextCompat.getColor(requireContext(), res)
 
-    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
-
     // ── Inline stats detail (7-day bars, top issues) + tips library ──────
     /** Real-scan count per day for the last 7 days (oldest → today). */
     private fun weeklyBars(scans: List<ScanHistoryItem>): List<BarChartView.Bar> {
@@ -407,7 +405,7 @@ class ProfileFragment : Fragment() {
         val ctx = requireContext()
         val column = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(6), 0, dp(6))
+            setPadding(0, 6.dp(), 0, 6.dp())
         }
         val header = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -436,8 +434,8 @@ class ProfileFragment : Fragment() {
             setBackgroundColor(0x14000000)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(8),
-            ).apply { topMargin = dp(4) }
+                8.dp(),
+            ).apply { topMargin = 4.dp() }
         }
         val fillWeight = value.toFloat() / max.coerceAtLeast(1)
         track.addView(
@@ -474,24 +472,24 @@ class ProfileFragment : Fragment() {
     private fun tipCard(titleRes: Int, bodyRes: Int): View {
         val ctx = requireContext()
         val card = MaterialCardView(ctx).apply {
-            radius = dp(16).toFloat()
-            cardElevation = dp(1).toFloat()
+            radius = 16.dp().toFloat()
+            cardElevation = 1.dp().toFloat()
             setCardBackgroundColor(color(R.color.surface))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { bottomMargin = dp(10) }
+            ).apply { bottomMargin = 10.dp() }
         }
         val column = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(14), dp(16), dp(14))
+            setPadding(16.dp(), 14.dp(), 16.dp(), 14.dp())
         }
         val bodyView = TextView(ctx).apply {
             text = getString(bodyRes)
             textSize = 14f
-            setLineSpacing(dp(3).toFloat(), 1f)
+            setLineSpacing(3.dp().toFloat(), 1f)
             setTextColor(color(R.color.on_surface_secondary))
-            setPadding(0, dp(8), 0, 0)
+            setPadding(0, 8.dp(), 0, 0)
             visibility = View.GONE
         }
         val chevron = ImageView(ctx).apply {
