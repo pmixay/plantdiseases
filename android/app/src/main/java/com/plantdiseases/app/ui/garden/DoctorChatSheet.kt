@@ -1,6 +1,7 @@
 package com.plantdiseases.app.ui.garden
 
 import android.os.Bundle
+import android.text.InputFilter
 import android.text.Spannable
 import android.text.SpannableStringBuilder
 import android.text.TextPaint
@@ -119,6 +120,7 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
         scrollView = binding.chatScroll
         suggestionsContainer = binding.chatSuggestions
         inputField = binding.chatInput
+        inputField.filters = arrayOf(InputFilter.LengthFilter(TEXT_FIELD_MAX_LENGTH))
 
         // Suggestion chips — label comes from the layout; tapping one
         // sends it verbatim.
@@ -541,6 +543,7 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
     ).toInt()
 
     companion object {
+        private const val TEXT_FIELD_MAX_LENGTH = 1024
         private const val TAG = "DoctorChatSheet"
         private const val ARG_PLANT_ID = "arg_plant_id"
         private const val ARG_SCAN_ID = "arg_scan_id"

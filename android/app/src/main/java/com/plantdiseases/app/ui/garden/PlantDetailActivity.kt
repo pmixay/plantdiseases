@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
+import android.text.InputFilter
 import android.text.InputType
 import android.util.TypedValue
 import android.view.Gravity
@@ -207,10 +208,6 @@ class PlantDetailActivity : AppCompatActivity() {
         restoredTabIndex = savedInstanceState?.getInt(KEY_TAB, 0) ?: 0
         restoredScrollY = savedInstanceState?.getInt(KEY_SCROLL, 0) ?: 0
         buildLayout()
-        // Re-select the previously-active section tab (Timeline/Photos/Journal).
-        if (restoredTabIndex in 1 until tabLayout.tabCount) {
-            tabLayout.getTabAt(restoredTabIndex)?.select()
-        }
         loadPlant()
         // Best-effort scroll restore once the content has been laid out.
         if (restoredScrollY > 0) {
@@ -317,6 +314,9 @@ class PlantDetailActivity : AppCompatActivity() {
         scans: List<ScanEntity>,
         journal: List<PlantJournalEntity>,
     ) {
+        if (::tabLayout.isInitialized) {
+            restoredTabIndex = tabLayout.selectedTabPosition.coerceAtLeast(0)
+        }
         content.removeAllViews()
         toolbarTitle.text = plant.name
         // Order is primary-first: identity & quick actions; the
@@ -360,6 +360,7 @@ class PlantDetailActivity : AppCompatActivity() {
         content.addView(timelineContainer)
         content.addView(journalContainer)
         content.addView(photosContainer)
+        applyRestoredTabSelection()
 
         // Secondary surfaces — pushed below the tabs so the
         // primary-actions area stays scannable.
@@ -689,6 +690,7 @@ class PlantDetailActivity : AppCompatActivity() {
         view.findViewById<TextView>(R.id.tv_dialog_title).setText(kind.titleRes)
         view.findViewById<TextInputLayout>(R.id.til_dialog_input).hint = getString(kind.hintRes)
         val input = view.findViewById<TextInputEditText>(R.id.et_dialog_input).apply {
+            filters = arrayOf(InputFilter.LengthFilter(TEXT_FIELD_MAX_LENGTH))
             inputType = InputType.TYPE_CLASS_TEXT or
                 InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or
                 InputType.TYPE_TEXT_FLAG_MULTI_LINE
@@ -1882,6 +1884,7 @@ class PlantDetailActivity : AppCompatActivity() {
             hint = getString(hintRes)
         }
         val input = view.findViewById<TextInputEditText>(R.id.et_dialog_input).apply {
+            filters = arrayOf(InputFilter.LengthFilter(TEXT_FIELD_MAX_LENGTH))
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
             minLines = 3
             maxLines = 6
@@ -2059,6 +2062,7 @@ class PlantDetailActivity : AppCompatActivity() {
             hint = getString(hintRes)
         }
         val input = view.findViewById<TextInputEditText>(R.id.et_dialog_input).apply {
+            filters = arrayOf(InputFilter.LengthFilter(TEXT_FIELD_MAX_LENGTH))
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
             minLines = 3
             maxLines = 6
@@ -2076,6 +2080,12 @@ class PlantDetailActivity : AppCompatActivity() {
             }
             onSave(text)
             dialog.dismiss()
+        }
+    }
+
+    private fun applyRestoredTabSelection() {
+        if (restoredTabIndex in 1 until tabLayout.tabCount) {
+            tabLayout.getTabAt(restoredTabIndex)?.select()
         }
     }
 
@@ -2320,5 +2330,6 @@ class PlantDetailActivity : AppCompatActivity() {
 
         private const val KEY_TAB = "plant_detail_tab"
         private const val KEY_SCROLL = "plant_detail_scroll"
+        private const val TEXT_FIELD_MAX_LENGTH = 1024
     }
 }
