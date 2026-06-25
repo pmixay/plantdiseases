@@ -8,38 +8,28 @@ import android.os.Build
 import android.os.Bundle
 import android.view.ViewGroup
 import com.canhub.cropper.CropImageActivity
-import com.plantdiseases.app.data.local.AppDatabase
-import com.plantdiseases.app.data.remote.PlantApiClient
 import com.plantdiseases.app.data.repository.CommunityUploader
-import com.plantdiseases.app.data.repository.PlantRepository
-import com.plantdiseases.app.data.repository.ScanRepository
+import com.plantdiseases.app.di.appModule
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.ThemeHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import org.koin.android.ext.android.inject
+import org.koin.android.ext.koin.androidContext
+import org.koin.android.ext.koin.androidLogger
+import org.koin.core.context.GlobalContext
+import org.koin.core.context.startKoin
 
 class PlantDiseasesApp : Application() {
 
-    val database: AppDatabase by lazy { AppDatabase.getInstance(this) }
-    val apiClient: PlantApiClient by lazy { PlantApiClient() }
-    val scanRepository: ScanRepository by lazy {
-        ScanRepository(database.scanDao(), apiClient, database.scanChatMessageDao())
-    }
-    val plantRepository: PlantRepository by lazy {
-        PlantRepository(
-            database.plantDao(),
-            database.plantJournalDao(),
-            database.scanDao(),
-            database.plantReminderDao(),
-            database.plantReminderEventDao(),
-            database.chatMessageDao(),
-        )
-    }
-    val communityUploader: CommunityUploader by lazy {
-        CommunityUploader(this, scanRepository)
-    }
+    // All app-scoped singletons now live in Koin (see di/AppModule.kt) and are
+    // obtained at the call sites via direct injection. The Application only
+    // injects what it uses itself — the community uploader for
+    // [launchCommunityUpload]. `inject()` is lazy, so nothing resolves before
+    // startKoin() runs below.
+    private val communityUploader: CommunityUploader by inject()
 
     /**
      * Application-scoped CoroutineScope for fire-and-forget work that
@@ -67,6 +57,33 @@ class PlantDiseasesApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // Start Koin before anything resolves an injected singleton. Guarded
+        // with getOrNull() because Robolectric reinstantiates this Application
+        // across test classes in one JVM, and a second startKoin() on the
+        // process-wide GlobalContext would throw.
+        //
+        // NB: do NOT add workManagerFactory() here. It calls
+        // WorkManager.initialize(), but the default androidx.startup
+        // WorkManagerInitializer (still enabled — the manifest never removed it)
+        // already initialised WorkManager from the InitializationProvider that
+        // runs *before* Application.onCreate. The second init throws
+        // "WorkManager is already initialized" and crashes every launch on a
+        // real device. Robolectric doesn't run the startup provider, so the
+        // double-init never fired in unit tests — it only crashed on-device.
+        // Today's workers (OpinionCheckWorker, PlantReminderWorker) use the
+        // default WorkerFactory and resolve their deps as KoinComponents
+        // (`by inject()` off the global Koin), not Koin constructor injection,
+        // so the Koin WorkerFactory isn't needed. If a future worker needs
+        // constructor injection, re-add workManagerFactory() *and* remove the
+        // default WorkManagerInitializer in AndroidManifest.xml so only one
+        // party initialises WorkManager.
+        if (GlobalContext.getOrNull() == null) {
+            startKoin {
+                androidLogger()
+                androidContext(this@PlantDiseasesApp)
+                modules(appModule)
+            }
+        }
         LocaleHelper.applyLocale(this)
         ThemeHelper.applySavedTheme(this)
         createNotificationChannels()
@@ -74,11 +91,13 @@ class PlantDiseasesApp : Application() {
         // species info) — "fetched once, never fetched again".
         com.plantdiseases.app.util.ResponseCache.init(this)
         registerCropImageInsetFix()
-        // NB: do NOT touch WorkManager here. The app disables the default
-        // WorkManagerInitializer, so WorkManager.getInstance() in
-        // Application.onCreate throws (and breaks every Robolectric test that
-        // instantiates the app). Scheduling is kicked off from MainActivity
-        // instead — the same on-demand pattern ReminderManager uses.
+        // NB: do NOT touch WorkManager here. The default androidx.startup
+        // WorkManagerInitializer initialises it before onCreate, but calling
+        // WorkManager.getInstance()/initialize() from Application.onCreate
+        // breaks every Robolectric test that instantiates the app (the startup
+        // provider doesn't run under Robolectric). Scheduling is kicked off
+        // from MainActivity instead — the same on-demand pattern ReminderManager
+        // uses.
     }
 
     /**
@@ -124,13 +143,15 @@ class PlantDiseasesApp : Application() {
             val nm = getSystemService(NotificationManager::class.java)
             nm.createNotificationChannel(
                 NotificationChannel(
-                    CHANNEL_PLANT_REMINDERS, getString(R.string.channel_plant_reminders_name),
+                    CHANNEL_PLANT_REMINDERS,
+                    getString(R.string.channel_plant_reminders_name),
                     NotificationManager.IMPORTANCE_HIGH,
                 ).apply { description = getString(R.string.channel_plant_reminders_desc) },
             )
             nm.createNotificationChannel(
                 NotificationChannel(
-                    CHANNEL_COMMUNITY, getString(R.string.channel_community_name),
+                    CHANNEL_COMMUNITY,
+                    getString(R.string.channel_community_name),
                     NotificationManager.IMPORTANCE_DEFAULT,
                 ).apply { description = getString(R.string.channel_community_desc) },
             )
@@ -145,9 +166,12 @@ class PlantDiseasesApp : Application() {
      *  Quiet: notifies only on a genuinely new opinion — see OpinionCheckWorker. */
     fun scheduleOpinionChecks() {
         val request = androidx.work.PeriodicWorkRequestBuilder<
-            com.plantdiseases.app.worker.OpinionCheckWorker>(
-            1, java.util.concurrent.TimeUnit.HOURS,
-            15, java.util.concurrent.TimeUnit.MINUTES,
+            com.plantdiseases.app.worker.OpinionCheckWorker
+            >(
+            1,
+            java.util.concurrent.TimeUnit.HOURS,
+            15,
+            java.util.concurrent.TimeUnit.MINUTES,
         )
             .setConstraints(
                 androidx.work.Constraints.Builder()
@@ -169,7 +193,8 @@ class PlantDiseasesApp : Application() {
      *  if the expedited quota is spent. */
     fun checkOpinionsNow() {
         val request = androidx.work.OneTimeWorkRequestBuilder<
-            com.plantdiseases.app.worker.OpinionCheckWorker>()
+            com.plantdiseases.app.worker.OpinionCheckWorker
+            >()
             .setConstraints(
                 androidx.work.Constraints.Builder()
                     .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)

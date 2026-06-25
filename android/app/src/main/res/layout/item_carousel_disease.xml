@@ -25,6 +25,20 @@
             android:layout_height="84dp"
             android:background="@color/disease_red_bg">
 
+            <!-- Server example photo (GuideDataProvider.exampleImageUrl). Stays
+                 VISIBLE (an empty ImageView is transparent) so Glide can measure
+                 it and actually start the load — a GONE target never resolves a
+                 size, so the request would never fire. The vector below is drawn
+                 on top as the placeholder until the photo arrives. -->
+            <ImageView
+                android:id="@+id/iv_photo"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="centerCrop"
+                android:contentDescription="@null" />
+
+            <!-- Fallback / backdrop: the tinted disease vector, shown until the
+                 photo resolves, or for offline / no-photo / load-failure. -->
             <ImageView
                 android:id="@+id/iv_disease"
                 android:layout_width="40dp"
@@ -32,6 +46,15 @@
                 android:layout_gravity="center"
                 app:tint="@color/disease_red"
                 android:contentDescription="@null" />
+
+            <!-- Spinner while the photo loads. -->
+            <ProgressBar
+                android:id="@+id/photo_progress"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:layout_gravity="center"
+                android:indeterminateTint="@color/disease_red"
+                android:visibility="gone" />
         </FrameLayout>
 
         <LinearLayout

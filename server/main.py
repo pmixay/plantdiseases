@@ -923,8 +923,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         if path in (
             "/api/health",
-            "/api/version",
-            "/api/classes",
+            "/api/capabilities",
             "/api/metrics",
             "/api/metrics/prometheus",
         ):
@@ -1229,17 +1228,9 @@ ALLOWED_ORIGINS = get_list(
 if ALLOWED_ORIGINS == ["*"]:
     logger.warning("CORS_ORIGINS=* is insecure for production; restrict it in deployment.")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_methods=["GET", "POST"],
-    # Tightened — the Android client only sends Content-Type. Avoid
-    # the wildcard so a XS-Search via a custom header isn't trivially
-    # mountable from a malicious origin we forgot to exclude.
-    allow_headers=["Content-Type", "Accept"],
-)
-
-# Middleware order: outermost runs first.
+# Middleware order: Starlette wraps in reverse-registration order, so the
+# LAST middleware added is the OUTERMOST (runs first on the request, last
+# on the response).
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(
@@ -1251,6 +1242,20 @@ app.add_middleware(
 # Halving that on the wire matters more for slow mobile uplinks than
 # the ~10 µs CPU cost on the server side.
 app.add_middleware(GZipMiddleware, minimum_size=1024)
+# CORS is added LAST so it is the outermost layer: preflight (OPTIONS)
+# requests are answered before they reach the rate limiter, and the
+# Access-Control-* headers are attached even to error responses produced
+# by the inner middleware (rate-limit 429s, etc.) so the browser can read
+# them instead of reporting an opaque CORS failure.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_methods=["GET", "POST"],
+    # Tightened — the Android client only sends Content-Type. Avoid
+    # the wildcard so a XS-Search via a custom header isn't trivially
+    # mountable from a malicious origin we forgot to exclude.
+    allow_headers=["Content-Type", "Accept"],
+)
 
 
 def _validate_image_bytes(contents: bytes) -> None:
@@ -1414,7 +1419,7 @@ def _record_scan_candidate(
 
 # ── Endpoints ────────────────────────────────────────────────────────
 
-api_router = APIRouter()
+api_router = APIRouter(prefix="/api")
 
 @api_router.get("/health")
 async def health_check():
@@ -1428,53 +1433,6 @@ async def health_check():
         "num_classes": len(pipeline.classifier.CLASS_NAMES),
         "uptime_seconds": round(uptime, 1),
         "total_requests": _snapshot_metrics()["total_requests"],
-    }
-
-
-@api_router.get("/version")
-async def version():
-    """Server version and model architecture."""
-    if pipeline is None:
-        raise HTTPException(status_code=503, detail="Pipeline not ready")
-    # Read the int8 ship flag from model_card.json so operators can see at
-    # a glance whether the deployed classifier_int8.onnx is genuine INT8
-    # or the FP32 ONNX renamed (see MODEL_CARD.md, "Known caveats"). We
-    # default conservatively to false if the file is missing or malformed
-    # so that callers can never accidentally believe INT8 shipped.
-    int8_shipped = False
-    int8_artifact: str | None = None
-    try:
-        with open(MODELS_DIR / "model_card.json", encoding="utf-8") as fh:
-            card = json.load(fh)
-        int8_section = card.get("int8") or {}
-        int8_shipped = bool(int8_section.get("shipped", False))
-        artifact = int8_section.get("shipped_artifact")
-        if isinstance(artifact, str):
-            int8_artifact = artifact
-    except (OSError, ValueError):
-        pass
-    return {
-        "version": APP_VERSION,
-        "classifier_name": "plantvision",
-        # Capacity tier the loaded bundle declares (classes.json ->
-        # model_family): aqua (light/on-device) | gamma (current medium) |
-        # frontier (future high-capacity). Defaults to "gamma" for bundles
-        # trained before the family field existed.
-        "model_family": pipeline.classifier.model_family,
-        "detector_arch": "YOLOv8n (single-class plant_leaf, indoor-trained)",
-        # Report the architecture the loaded model actually declares
-        # (classes.json -> architecture, surfaced as classifier.architecture)
-        # rather than a hardcoded backbone name, so this stays correct
-        # across model swaps (the MobileNetV3 student and the frozen
-        # DINOv2 ViT-S/14 + head both flow through the same ONNX path).
-        "classifier_arch": (
-            f"PlantVision {pipeline.classifier.architecture} @ "
-            f"{pipeline.classifier.img_size} px / {pipeline.classifier.backend} backend"
-        ),
-        "stages": 2,
-        "focus": "houseplants",
-        "int8_shipped": int8_shipped,
-        "int8_artifact": int8_artifact,
     }
 
 
@@ -1525,23 +1483,6 @@ def _attach_dual_care(prediction_set: dict) -> None:
     ]
 
 
-@api_router.get("/classes")
-async def classes():
-    """List of known disease classes with bilingual names."""
-    if pipeline is None:
-        raise HTTPException(status_code=503, detail="Pipeline not ready")
-    items = []
-    for name in pipeline.classifier.CLASS_NAMES:
-        info = DISEASES_DATABASE.get(name, {})
-        items.append({
-            "class": name,
-            "name_en": info.get("name_en", name.replace("_", " ").title()),
-            "name_ru": info.get("name_ru", name),
-            "is_healthy": bool(info.get("is_healthy", False)),
-        })
-    return {"count": len(items), "classes": items}
-
-
 @api_router.get("/capabilities")
 async def capabilities():
     """Model-family availability for the scan-screen picker.
@@ -1577,10 +1518,55 @@ async def capabilities():
             ),
         },
     ]
+    # Consolidated model/version metadata (formerly /version and /classes).
+    # The int8 ship flag tells operators whether classifier_int8.onnx is genuine
+    # INT8 or the FP32 ONNX renamed; defaults to false when the card is missing
+    # or malformed.
+    int8_shipped = False
+    int8_artifact: str | None = None
+    try:
+        with open(MODELS_DIR / "model_card.json", encoding="utf-8") as fh:
+            _int8 = (json.load(fh).get("int8") or {})
+        int8_shipped = bool(_int8.get("shipped", False))
+        _artifact = _int8.get("shipped_artifact")
+        if isinstance(_artifact, str):
+            int8_artifact = _artifact
+    except (OSError, ValueError):
+        pass
+
+    model: dict | None = None
+    classes_list: list[dict] = []
+    if base_ready:
+        clf = pipeline.classifier
+        model = {
+            "classifier_name": "plantvision",
+            "model_family": clf.model_family,
+            "detector_arch": "YOLOv8n (single-class plant_leaf, indoor-trained)",
+            "classifier_arch": (
+                f"PlantVision {clf.architecture} @ "
+                f"{clf.img_size} px / {clf.backend} backend"
+            ),
+            "stages": 2,
+            "focus": "houseplants",
+            "int8_shipped": int8_shipped,
+            "int8_artifact": int8_artifact,
+        }
+        for name in clf.CLASS_NAMES:
+            info = DISEASES_DATABASE.get(name, {})
+            classes_list.append({
+                "class": name,
+                "name_en": info.get("name_en", name.replace("_", " ").title()),
+                "name_ru": info.get("name_ru", name),
+                "is_healthy": bool(info.get("is_healthy", False)),
+            })
+
     return {
         "default": DEFAULT_FAMILY,
         "families": families,
+        "version": APP_VERSION,
         "server_version": APP_VERSION,
+        "model": model,
+        "classes": classes_list,
     }
 
 
@@ -3622,7 +3608,7 @@ async def export_user_data(user_pseudo_id: str):
     })
 
 
-app.include_router(api_router, prefix="/api")
+app.include_router(api_router)
 
 
 if __name__ == "__main__":

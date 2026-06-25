@@ -1,13 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Main shell — toolbar + bottom nav with the navigation host between.
-     The bottom nav uses our background tone so the surface still reads
-     as "page" rather than a hard white strip. -->
-<androidx.coordinatorlayout.widget.CoordinatorLayout
+     A vertical LinearLayout (not a CoordinatorLayout): the app bar has no
+     scroll-collapse behaviour, and stacking the three children lets the app bar
+     be hidden with View.GONE on the immersive Garden/Profile tabs (see
+     MainActivity) so the nav host fills from the very top — a CoordinatorLayout
+     left a residual ScrollingViewBehavior offset (white gap) when the app bar
+     went GONE. The bottom nav uses our background tone so the surface still
+     reads as "page" rather than a hard white strip. -->
+<LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/root_coordinator"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:orientation="vertical">
 
     <com.google.android.material.appbar.AppBarLayout
         android:id="@+id/app_bar"
@@ -31,8 +37,8 @@
         android:id="@+id/nav_host_fragment"
         android:name="androidx.navigation.fragment.NavHostFragment"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        app:layout_behavior="@string/appbar_scrolling_view_behavior"
+        android:layout_height="0dp"
+        android:layout_weight="1"
         app:defaultNavHost="true"
         app:navGraph="@navigation/nav_graph" />
 
@@ -40,7 +46,6 @@
         android:id="@+id/bottom_navigation"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="bottom"
         android:background="@color/background"
         android:clipToPadding="false"
         app:elevation="0dp"
@@ -50,4 +55,4 @@
         app:itemActiveIndicatorStyle="@style/App.BottomNavIndicator"
         app:menu="@menu/bottom_nav_menu" />
 
-</androidx.coordinatorlayout.widget.CoordinatorLayout>
+</LinearLayout>

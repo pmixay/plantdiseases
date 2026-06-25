@@ -41,6 +41,7 @@ class WaterCalculatorActivity : AppCompatActivity() {
         /** Pass the plant's scientific (Latin) name so the plant-type chip
          *  pre-selects the right bucket. */
         const val EXTRA_SCIENTIFIC_NAME = "extra_scientific_name"
+
         /** Optional common / free-text name — auto-detection fallback. */
         const val EXTRA_COMMON_NAME = "extra_common_name"
 
@@ -79,11 +80,11 @@ class WaterCalculatorActivity : AppCompatActivity() {
         // Baseline days between waterings for a 15 cm pot in medium light
         // during the growing season, per plant type.
         private val BASE_DAYS = doubleArrayOf(
-            7.0,  // general
+            7.0, // general
             14.0, // succulent
-            6.0,  // tropical
-            4.0,  // fern
-            3.0,  // vegetable
+            6.0, // tropical
+            4.0, // fern
+            3.0, // vegetable
         )
 
         private val LIGHT_FACTOR = doubleArrayOf(1.3, 1.0, 0.8) // low / medium / bright
@@ -204,12 +205,14 @@ class WaterCalculatorActivity : AppCompatActivity() {
             R.string.light_species_vegetable,
         )
         labels.forEachIndexed { idx, labelRes ->
-            binding.typeChips.addView(buildChip(getString(labelRes), idx == typeIndex).apply {
-                setOnClickListener {
-                    typeIndex = idx
-                    recompute()
+            binding.typeChips.addView(
+                buildChip(getString(labelRes), idx == typeIndex).apply {
+                    setOnClickListener {
+                        typeIndex = idx
+                        recompute()
+                    }
                 }
-            })
+            )
         }
     }
 
@@ -220,20 +223,28 @@ class WaterCalculatorActivity : AppCompatActivity() {
             R.string.water_calc_light_bright,
         )
         labels.forEachIndexed { idx, labelRes ->
-            binding.lightChips.addView(buildChip(getString(labelRes), idx == lightLevel).apply {
-                setOnClickListener {
-                    lightLevel = idx
-                    recompute()
+            binding.lightChips.addView(
+                buildChip(getString(labelRes), idx == lightLevel).apply {
+                    setOnClickListener {
+                        lightLevel = idx
+                        recompute()
+                    }
                 }
-            })
+            )
         }
     }
 
     private fun setupSeasonChips() {
         val growing = buildChip(getString(R.string.water_calc_season_growing), !dormant)
         val dorm = buildChip(getString(R.string.water_calc_season_dormant), dormant)
-        growing.setOnClickListener { dormant = false; recompute() }
-        dorm.setOnClickListener { dormant = true; recompute() }
+        growing.setOnClickListener {
+            dormant = false
+            recompute()
+        }
+        dorm.setOnClickListener {
+            dormant = true
+            recompute()
+        }
         binding.seasonChips.addView(growing)
         binding.seasonChips.addView(dorm)
     }
@@ -259,7 +270,9 @@ class WaterCalculatorActivity : AppCompatActivity() {
         val (ml, days) = computeWatering(potDiameterCm, typeIndex, lightLevel, dormant)
         binding.waterAmount.text = ml.toString()
         binding.waterEvery.text = resources.getQuantityString(
-            R.plurals.water_calc_every_days, days, days,
+            R.plurals.water_calc_every_days,
+            days,
+            days,
         )
         binding.waterTip.text = getString(tipForType(typeIndex))
     }
@@ -277,6 +290,8 @@ class WaterCalculatorActivity : AppCompatActivity() {
     }
 
     private fun Int.dp(): Int = TypedValue.applyDimension(
-        TypedValue.COMPLEX_UNIT_DIP, this.toFloat(), resources.displayMetrics,
+        TypedValue.COMPLEX_UNIT_DIP,
+        this.toFloat(),
+        resources.displayMetrics,
     ).toInt()
 }

@@ -17,14 +17,15 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
-import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.SymptomDiagnoseRequest
 import com.plantdiseases.app.data.model.SymptomResult
+import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivitySymptomCheckerBinding
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.launch
+import org.koin.android.ext.android.inject
 
 /**
  * No-photo symptom checker — the fallback shown when the camera/ML pipeline
@@ -40,6 +41,8 @@ class SymptomCheckerActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivitySymptomCheckerBinding
 
+    private val scanRepository: ScanRepository by inject()
+
     // Selected option per question id. The submit button enables at >= 2.
     private val answers = linkedMapOf<String, String>()
 
@@ -53,7 +56,8 @@ class SymptomCheckerActivity : AppCompatActivity() {
         // do not rename. Labels are localised string resources.
         private val QUESTIONS = listOf(
             Question(
-                "part", R.string.symptom_q_part,
+                "part",
+                R.string.symptom_q_part,
                 listOf(
                     Option("leaves", R.string.symptom_opt_part_leaves),
                     Option("stems", R.string.symptom_opt_part_stems),
@@ -63,7 +67,8 @@ class SymptomCheckerActivity : AppCompatActivity() {
                 ),
             ),
             Question(
-                "symptom", R.string.symptom_q_symptom,
+                "symptom",
+                R.string.symptom_q_symptom,
                 listOf(
                     Option("spots", R.string.symptom_opt_symptom_spots),
                     Option("yellowing", R.string.symptom_opt_symptom_yellowing),
@@ -78,7 +83,8 @@ class SymptomCheckerActivity : AppCompatActivity() {
                 ),
             ),
             Question(
-                "pattern", R.string.symptom_q_pattern,
+                "pattern",
+                R.string.symptom_q_pattern,
                 listOf(
                     Option("tips_edges", R.string.symptom_opt_pattern_tips_edges),
                     Option("whole_leaf", R.string.symptom_opt_pattern_whole_leaf),
@@ -89,7 +95,8 @@ class SymptomCheckerActivity : AppCompatActivity() {
                 ),
             ),
             Question(
-                "moisture", R.string.symptom_q_moisture,
+                "moisture",
+                R.string.symptom_q_moisture,
                 listOf(
                     Option("overwatered", R.string.symptom_opt_moisture_overwatered),
                     Option("underwatered", R.string.symptom_opt_moisture_underwatered),
@@ -97,7 +104,8 @@ class SymptomCheckerActivity : AppCompatActivity() {
                 ),
             ),
             Question(
-                "pests", R.string.symptom_q_pests,
+                "pests",
+                R.string.symptom_q_pests,
                 listOf(
                     Option("moving_dots", R.string.symptom_opt_pests_moving_dots),
                     Option("white_cotton", R.string.symptom_opt_pests_white_cotton),
@@ -153,45 +161,54 @@ class SymptomCheckerActivity : AppCompatActivity() {
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT,
         ).apply { topMargin = 10.dp() }
-        addView(LinearLayout(this@SymptomCheckerActivity).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(16.dp(), 14.dp(), 16.dp(), 14.dp())
-            addView(TextView(this@SymptomCheckerActivity).apply {
-                text = getString(question.titleRes)
-                textSize = 15f
-                setTextColor(getColor(R.color.on_surface))
-                typeface = android.graphics.Typeface.create(
-                    "sans-serif-medium", android.graphics.Typeface.NORMAL,
+        addView(
+            LinearLayout(this@SymptomCheckerActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(16.dp(), 14.dp(), 16.dp(), 14.dp())
+                addView(
+                    TextView(this@SymptomCheckerActivity).apply {
+                        text = getString(question.titleRes)
+                        textSize = 15f
+                        setTextColor(getColor(R.color.on_surface))
+                        typeface = android.graphics.Typeface.create(
+                            "sans-serif-medium",
+                            android.graphics.Typeface.NORMAL,
+                        )
+                        ViewCompat.setAccessibilityHeading(this, true)
+                    }
                 )
-                ViewCompat.setAccessibilityHeading(this, true)
-            })
-            addView(ChipGroup(this@SymptomCheckerActivity).apply {
-                isSingleSelection = true
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = 8.dp() }
-                question.options.forEach { option ->
-                    addView(Chip(this@SymptomCheckerActivity).apply {
-                        text = getString(option.labelRes)
-                        isCheckable = true
-                        isClickable = true
-                        setChipBackgroundColorResource(R.color.chip_bg_color)
-                        setEnsureMinTouchTargetSize(false)
-                        setOnClickListener {
-                            // Re-tapping the selected chip clears it (ChipGroup
-                            // single-selection leaves it checked otherwise).
-                            if (answers[question.id] == option.id && !isChecked) {
-                                answers.remove(question.id)
-                            } else {
-                                answers[question.id] = option.id
-                            }
-                            updateSubmitState()
+                addView(
+                    ChipGroup(this@SymptomCheckerActivity).apply {
+                        isSingleSelection = true
+                        layoutParams = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                        ).apply { topMargin = 8.dp() }
+                        question.options.forEach { option ->
+                            addView(
+                                Chip(this@SymptomCheckerActivity).apply {
+                                    text = getString(option.labelRes)
+                                    isCheckable = true
+                                    isClickable = true
+                                    setChipBackgroundColorResource(R.color.chip_bg_color)
+                                    setEnsureMinTouchTargetSize(false)
+                                    setOnClickListener {
+                                        // Re-tapping the selected chip clears it (ChipGroup
+                                        // single-selection leaves it checked otherwise).
+                                        if (answers[question.id] == option.id && !isChecked) {
+                                            answers.remove(question.id)
+                                        } else {
+                                            answers[question.id] = option.id
+                                        }
+                                        updateSubmitState()
+                                    }
+                                }
+                            )
                         }
-                    })
-                }
-            })
-        })
+                    }
+                )
+            }
+        )
     }
 
     private fun updateSubmitState() {
@@ -204,10 +221,9 @@ class SymptomCheckerActivity : AppCompatActivity() {
         Haptics.tick(this)
         binding.symptomSubmit.isEnabled = false
         binding.symptomProgress.visibility = View.VISIBLE
-        val app = application as PlantDiseasesApp
         val locale = LocaleHelper.getSavedLanguage(this)
         lifecycleScope.launch {
-            val result = app.scanRepository.diagnoseSymptoms(
+            val result = scanRepository.diagnoseSymptoms(
                 SymptomDiagnoseRequest(answers = LinkedHashMap(answers), locale = locale),
             )
             if (isFinishing || isDestroyed) return@launch
@@ -216,7 +232,9 @@ class SymptomCheckerActivity : AppCompatActivity() {
                 .onFailure {
                     binding.symptomSubmit.isEnabled = true
                     Toast.makeText(
-                        this@SymptomCheckerActivity, R.string.symptom_error, Toast.LENGTH_LONG,
+                        this@SymptomCheckerActivity,
+                        R.string.symptom_error,
+                        Toast.LENGTH_LONG,
                     ).show()
                 }
         }
@@ -234,15 +252,18 @@ class SymptomCheckerActivity : AppCompatActivity() {
         container.removeAllViews()
         container.visibility = View.VISIBLE
 
-        container.addView(TextView(this).apply {
-            text = getString(R.string.symptom_results_title)
-            textSize = 20f
-            setTextColor(getColor(R.color.on_surface))
-            typeface = android.graphics.Typeface.create(
-                "sans-serif-medium", android.graphics.Typeface.NORMAL,
-            )
-            ViewCompat.setAccessibilityHeading(this, true)
-        })
+        container.addView(
+            TextView(this).apply {
+                text = getString(R.string.symptom_results_title)
+                textSize = 20f
+                setTextColor(getColor(R.color.on_surface))
+                typeface = android.graphics.Typeface.create(
+                    "sans-serif-medium",
+                    android.graphics.Typeface.NORMAL,
+                )
+                ViewCompat.setAccessibilityHeading(this, true)
+            }
+        )
 
         if (lowConfidence) {
             container.addView(buildNoticeCard(getString(R.string.symptom_low_confidence)))
@@ -250,29 +271,34 @@ class SymptomCheckerActivity : AppCompatActivity() {
 
         results.forEach { container.addView(buildResultCard(it, isRu)) }
 
-        container.addView(MaterialButton(this).apply {
-            text = getString(R.string.symptom_take_photo)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 16.dp() }
-            setOnClickListener {
-                // Return to the camera/scan screen. finish() pops back to
-                // whatever launched the checker (result screen or camera).
-                finish()
+        container.addView(
+            MaterialButton(this).apply {
+                text = getString(R.string.symptom_take_photo)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = 16.dp() }
+                setOnClickListener {
+                    // Return to the camera/scan screen. finish() pops back to
+                    // whatever launched the checker (result screen or camera).
+                    finish()
+                }
             }
-        })
-        container.addView(MaterialButton(
-            this, null,
-            com.google.android.material.R.attr.materialButtonOutlinedStyle,
-        ).apply {
-            text = getString(R.string.symptom_start_over)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 8.dp() }
-            setOnClickListener { resetToQuestionnaire() }
-        })
+        )
+        container.addView(
+            MaterialButton(
+                this,
+                null,
+                com.google.android.material.R.attr.materialButtonOutlinedStyle,
+            ).apply {
+                text = getString(R.string.symptom_start_over)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = 8.dp() }
+                setOnClickListener { resetToQuestionnaire() }
+            }
+        )
     }
 
     private fun resetToQuestionnaire() {
@@ -299,63 +325,76 @@ class SymptomCheckerActivity : AppCompatActivity() {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             ).apply { topMargin = 12.dp() }
-            addView(LinearLayout(this@SymptomCheckerActivity).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(16.dp(), 14.dp(), 16.dp(), 16.dp())
+            addView(
+                LinearLayout(this@SymptomCheckerActivity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(16.dp(), 14.dp(), 16.dp(), 16.dp())
 
-                // Rank caption: "Most likely" for the top hit, else "Also possible".
-                addView(TextView(this@SymptomCheckerActivity).apply {
-                    text = getString(
-                        if (result.rank <= 1) R.string.symptom_match_most_likely
-                        else R.string.symptom_match_possible,
+                    // Rank caption: "Most likely" for the top hit, else "Also possible".
+                    addView(
+                        TextView(this@SymptomCheckerActivity).apply {
+                            text = getString(
+                                if (result.rank <= 1) {
+                                    R.string.symptom_match_most_likely
+                                } else {
+                                    R.string.symptom_match_possible
+                                },
+                            )
+                            textSize = 12f
+                            setTextColor(getColor(if (result.rank <= 1) R.color.primary else R.color.on_surface_secondary))
+                            typeface = android.graphics.Typeface.create(
+                                "sans-serif-medium",
+                                android.graphics.Typeface.NORMAL,
+                            )
+                            isAllCaps = true
+                            letterSpacing = 0.05f
+                        }
                     )
-                    textSize = 12f
-                    setTextColor(getColor(if (result.rank <= 1) R.color.primary else R.color.on_surface_secondary))
-                    typeface = android.graphics.Typeface.create(
-                        "sans-serif-medium", android.graphics.Typeface.NORMAL,
+
+                    addView(
+                        TextView(this@SymptomCheckerActivity).apply {
+                            text = if (isRu) result.nameRu else result.nameEn
+                            textSize = 18f
+                            setTextColor(getColor(R.color.on_surface))
+                            typeface = android.graphics.Typeface.create(
+                                "sans-serif-medium",
+                                android.graphics.Typeface.NORMAL,
+                            )
+                            layoutParams = LinearLayout.LayoutParams(
+                                LinearLayout.LayoutParams.MATCH_PARENT,
+                                LinearLayout.LayoutParams.WRAP_CONTENT,
+                            ).apply { topMargin = 2.dp() }
+                        }
                     )
-                    isAllCaps = true
-                    letterSpacing = 0.05f
-                })
 
-                addView(TextView(this@SymptomCheckerActivity).apply {
-                    text = if (isRu) result.nameRu else result.nameEn
-                    textSize = 18f
-                    setTextColor(getColor(R.color.on_surface))
-                    typeface = android.graphics.Typeface.create(
-                        "sans-serif-medium", android.graphics.Typeface.NORMAL,
-                    )
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                    ).apply { topMargin = 2.dp() }
-                })
+                    val desc = if (isRu) result.descriptionRu else result.description
+                    if (desc.isNotBlank()) {
+                        addView(
+                            TextView(this@SymptomCheckerActivity).apply {
+                                text = desc
+                                textSize = 14f
+                                setTextColor(getColor(R.color.on_surface_secondary))
+                                setLineSpacing(2f, 1f)
+                                layoutParams = LinearLayout.LayoutParams(
+                                    LinearLayout.LayoutParams.MATCH_PARENT,
+                                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                                ).apply { topMargin = 6.dp() }
+                            }
+                        )
+                    }
 
-                val desc = if (isRu) result.descriptionRu else result.description
-                if (desc.isNotBlank()) {
-                    addView(TextView(this@SymptomCheckerActivity).apply {
-                        text = desc
-                        textSize = 14f
-                        setTextColor(getColor(R.color.on_surface_secondary))
-                        setLineSpacing(2f, 1f)
-                        layoutParams = LinearLayout.LayoutParams(
-                            LinearLayout.LayoutParams.MATCH_PARENT,
-                            LinearLayout.LayoutParams.WRAP_CONTENT,
-                        ).apply { topMargin = 6.dp() }
-                    })
+                    val treatment = if (isRu) result.treatmentRu else result.treatment
+                    if (treatment.isNotEmpty()) {
+                        addView(sectionLabel(getString(R.string.symptom_treatment_label)))
+                        treatment.forEach { addView(bullet(it)) }
+                    }
+                    val prevention = if (isRu) result.preventionRu else result.prevention
+                    if (prevention.isNotEmpty()) {
+                        addView(sectionLabel(getString(R.string.symptom_prevention_label)))
+                        prevention.forEach { addView(bullet(it)) }
+                    }
                 }
-
-                val treatment = if (isRu) result.treatmentRu else result.treatment
-                if (treatment.isNotEmpty()) {
-                    addView(sectionLabel(getString(R.string.symptom_treatment_label)))
-                    treatment.forEach { addView(bullet(it)) }
-                }
-                val prevention = if (isRu) result.preventionRu else result.prevention
-                if (prevention.isNotEmpty()) {
-                    addView(sectionLabel(getString(R.string.symptom_prevention_label)))
-                    prevention.forEach { addView(bullet(it)) }
-                }
-            })
+            )
         }
 
     private fun buildNoticeCard(message: String): View = MaterialCardView(this).apply {
@@ -368,13 +407,15 @@ class SymptomCheckerActivity : AppCompatActivity() {
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT,
         ).apply { topMargin = 12.dp() }
-        addView(TextView(this@SymptomCheckerActivity).apply {
-            text = message
-            textSize = 13f
-            setTextColor(getColor(R.color.on_surface))
-            setLineSpacing(2f, 1f)
-            setPadding(14.dp(), 12.dp(), 14.dp(), 12.dp())
-        })
+        addView(
+            TextView(this@SymptomCheckerActivity).apply {
+                text = message
+                textSize = 13f
+                setTextColor(getColor(R.color.on_surface))
+                setLineSpacing(2f, 1f)
+                setPadding(14.dp(), 12.dp(), 14.dp(), 12.dp())
+            }
+        )
     }
 
     private fun sectionLabel(label: String): TextView = TextView(this).apply {
@@ -382,7 +423,8 @@ class SymptomCheckerActivity : AppCompatActivity() {
         textSize = 13f
         setTextColor(getColor(R.color.primary))
         typeface = android.graphics.Typeface.create(
-            "sans-serif-medium", android.graphics.Typeface.NORMAL,
+            "sans-serif-medium",
+            android.graphics.Typeface.NORMAL,
         )
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
@@ -396,23 +438,31 @@ class SymptomCheckerActivity : AppCompatActivity() {
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT,
         ).apply { topMargin = 4.dp() }
-        addView(TextView(this@SymptomCheckerActivity).apply {
-            this.text = "•"
-            setTextColor(getColor(R.color.on_surface_secondary))
-            textSize = 14f
-        })
-        addView(TextView(this@SymptomCheckerActivity).apply {
-            this.text = text
-            textSize = 14f
-            setTextColor(getColor(R.color.on_surface))
-            setLineSpacing(1f, 1f)
-            layoutParams = LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f,
-            ).apply { marginStart = 8.dp() }
-        })
+        addView(
+            TextView(this@SymptomCheckerActivity).apply {
+                this.text = "•"
+                setTextColor(getColor(R.color.on_surface_secondary))
+                textSize = 14f
+            }
+        )
+        addView(
+            TextView(this@SymptomCheckerActivity).apply {
+                this.text = text
+                textSize = 14f
+                setTextColor(getColor(R.color.on_surface))
+                setLineSpacing(1f, 1f)
+                layoutParams = LinearLayout.LayoutParams(
+                    0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    1f,
+                ).apply { marginStart = 8.dp() }
+            }
+        )
     }
 
     private fun Int.dp(): Int = TypedValue.applyDimension(
-        TypedValue.COMPLEX_UNIT_DIP, this.toFloat(), resources.displayMetrics,
+        TypedValue.COMPLEX_UNIT_DIP,
+        this.toFloat(),
+        resources.displayMetrics,
     ).toInt()
 }

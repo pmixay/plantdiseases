@@ -1,73 +1,73 @@
 package com.plantdiseases.app.ui.result
 
+import android.animation.ValueAnimator
 import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.Canvas
-import android.net.Uri
 import android.os.Bundle
-import android.util.Log
-import android.util.TypedValue
-import android.view.Gravity
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.ViewGroup
-import android.animation.ValueAnimator
 import android.view.animation.DecelerateInterpolator
-import android.widget.ImageView
-import android.widget.LinearLayout
-import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.google.android.material.progressindicator.LinearProgressIndicator
-import com.google.android.material.tabs.TabLayout
 import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
-import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.bumptech.glide.load.resource.bitmap.CenterCrop
 import com.bumptech.glide.load.resource.bitmap.RoundedCorners
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.MainActivity
-import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.GuideDataProvider
 import com.plantdiseases.app.data.local.ScanEntity
-import com.plantdiseases.app.data.model.CarePlanRequest
-import com.plantdiseases.app.data.model.FeedbackRequest
-import com.plantdiseases.app.data.model.TopProb
-import com.plantdiseases.app.util.TelemetryIds
-import com.plantdiseases.app.BuildConfig
-import com.plantdiseases.app.data.repository.CommunityUploader
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.ui.analysis.AnalysisActivity
-import com.plantdiseases.app.ui.common.CarePlanCardView
 import com.plantdiseases.app.ui.guide.GuideDetailSheet
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.LocaleHelper
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import org.koin.android.ext.android.inject
 import java.io.File
-import java.io.FileOutputStream
 
+/**
+ * Shows one saved scan's diagnosis. The activity is a thin host: it owns the
+ * screen chrome (insets, toolbar, pinch-zoom, sticky header, skeleton) and the
+ * status/image header, then hands each independent section to a controller —
+ * [DiagnosisContentController], [SpeciesCardController], [CommunityController],
+ * [CarePlanController], [FeedbackController], [GardenAttachController] and
+ * [ShareController]. The activity-result permission launchers stay here because
+ * they must be registered before the activity is STARTED.
+ */
 class ResultActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityResultBinding
+
+    private val scanRepository: ScanRepository by inject()
 
     private var scaleFactor = 1.0f
     private lateinit var scaleGestureDetector: ScaleGestureDetector
     private var skeletonAnimator: ValueAnimator? = null
 
-    private var carePlanCard: CarePlanCardView? = null
+    private var pendingScanForToolbar: ScanEntity? = null
+
+    // Treatment/Prevention tab to restore after the (async) result load
+    // rebuilds the tabs — survives rotation and process-death.
+    private var restoredTabIndex = 0
+
+    private val diagnosisContent by lazy { DiagnosisContentController(this, binding) }
+    private val speciesCard by lazy { SpeciesCardController(this, binding) }
+    private val carePlan by lazy { CarePlanController(this, binding) }
+    private val feedback by lazy { FeedbackController(this, binding) }
+    private val gardenAttach by lazy { GardenAttachController(this, binding) }
+    private val share by lazy { ShareController(this) }
+    private val community by lazy {
+        CommunityController(this, binding, ::onEnableCommunity, ::ensureNotificationPermission)
+    }
 
     // In-context community opt-in: tapping "Enable" on the similar-scans card
     // requests coarse location (+ notifications on 13+) and, whatever the
@@ -82,7 +82,8 @@ class ResultActivity : AppCompatActivity() {
         pendingCommunityRerun = null
     }
 
-    private fun requestCommunityPermissions() {
+    private fun onEnableCommunity(rerun: () -> Unit) {
+        pendingCommunityRerun = rerun
         val perms = mutableListOf(android.Manifest.permission.ACCESS_COARSE_LOCATION)
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
             // So the OpinionCheckWorker can later notify the owner when someone
@@ -101,20 +102,12 @@ class ResultActivity : AppCompatActivity() {
     private fun ensureNotificationPermission() {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
             androidx.core.content.ContextCompat.checkSelfPermission(
-                this, android.Manifest.permission.POST_NOTIFICATIONS,
+                this,
+                android.Manifest.permission.POST_NOTIFICATIONS,
             ) != android.content.pm.PackageManager.PERMISSION_GRANTED
         ) {
             notifPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
         }
-    }
-
-    /** Fire-and-forget: record that this install opened someone else's shared
-     *  scan. The repository swallows failures and the server dedups per
-     *  viewer + ignores owner self-views, so this is safe to call on any tap. */
-    private fun recordCommunityView(scanId: String, viewerPseudoId: String) {
-        if (scanId.isBlank() || viewerPseudoId.isBlank()) return
-        val repo = (application as PlantDiseasesApp).scanRepository
-        lifecycleScope.launch { repo.recordCommunityView(scanId, viewerPseudoId) }
     }
 
     override fun attachBaseContext(newBase: Context) {
@@ -123,33 +116,28 @@ class ResultActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        restoredTabIndex = savedInstanceState?.getInt(KEY_RESULT_TAB, 0) ?: 0
         // Edge-to-edge: let the gradient app bar fill the status-bar area.
         WindowCompat.setDecorFitsSystemWindows(window, false)
         binding = ActivityResultBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        // Extend the gradient app bar behind the status bar, and lift the
-        // bottom action bar above the navigation bar.
         ViewCompat.setOnApplyWindowInsetsListener(binding.appBar) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             view.updatePadding(top = bars.top)
             // Lift the bottom action bar above the gesture / nav bar. It's a
-            // MaterialCardView, whose setPadding() is a no-op (CardView manages
-            // its own padding) — so updatePadding() here did nothing and the
-            // buttons sat under the nav bar. setContentPadding() is the inset
-            // CardView actually honours; the frosted-glass background still
-            // fills down behind the bar while the buttons clear it.
+            // MaterialCardView whose setPadding() is a no-op (CardView manages
+            // its own padding), so setContentPadding() is the inset it honours;
+            // the frosted-glass background still fills down behind the bar.
             binding.bottomActionBar.setContentPadding(0, 0, 0, bars.bottom)
             insets
         }
 
         // Keep the scroll content clear of the floating bottom bar. The bar's
-        // height is content + the nav-bar inset applied above, and isn't known
-        // until layout — a static paddingBottom (it was 80dp) left the last
-        // card (feedback) partly hidden behind the buttons. Match it to the
-        // bar's actual measured height instead.
-        binding.bottomActionBar.addOnLayoutChangeListener {
-            _, _, _, _, _, _, _, _, _ ->
+        // height isn't known until layout — a static paddingBottom left the
+        // last card hidden behind the buttons — so match it to the measured
+        // height instead.
+        binding.bottomActionBar.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
             val h = binding.bottomActionBar.height
             if (h > 0 && binding.scrollView.paddingBottom != h) {
                 binding.scrollView.updatePadding(bottom = h)
@@ -166,40 +154,12 @@ class ResultActivity : AppCompatActivity() {
         setupToolbarMenu()
         setupPinchToZoom()
         setupStickyHeader()
-        // Registered in onCreate — NOT when the sheet is shown — so the
-        // handoff survives the activity + sheet being recreated together
-        // (rotation, process death with the sheet open). A listener field
-        // on the sheet did not, and a recreated sheet's Send button then
-        // silently dropped the user's feedback.
-        supportFragmentManager.setFragmentResultListener(
-            FeedbackCorrectionSheet.REQUEST_KEY, this,
-        ) { _, result ->
-            val correctedClass = result.getString(FeedbackCorrectionSheet.RESULT_CORRECTED_CLASS)
-            val reason = result.getString(FeedbackCorrectionSheet.RESULT_REASON)
-            val note = result.getString(FeedbackCorrectionSheet.RESULT_NOTE)
-            val loaded = pendingScanForToolbar
-            if (loaded != null) {
-                submitFeedback(loaded, correct = false, correctedClass, reason, note)
-            } else {
-                // Sheet outlived the scan load (recreation) — re-fetch by id.
-                val app = application as PlantDiseasesApp
-                lifecycleScope.launch {
-                    app.scanRepository.getScanById(scanId)?.let {
-                        submitFeedback(it, correct = false, correctedClass, reason, note)
-                    }
-                }
-            }
-        }
-        // Same recreation-safe handoff for the "create plant from this
-        // scan" sheet — its Save used to ride on a listener field that a
-        // recreated sheet lost, silently dropping the new plant.
-        supportFragmentManager.setFragmentResultListener(
-            CreatePlantSheet.REQUEST_KEY, this,
-        ) { _, result -> onCreatePlantResult(result) }
+        // Registered in onCreate so the handoffs survive the activity + sheet
+        // being recreated together (rotation, process death with a sheet open).
+        feedback.registerCorrectionListener(scanId) { pendingScanForToolbar }
+        gardenAttach.registerCreatePlantListener()
         loadResult(scanId)
     }
-
-    private var pendingScanForToolbar: ScanEntity? = null
 
     private fun setupToolbarMenu() {
         binding.toolbar.inflateMenu(R.menu.result_toolbar_menu)
@@ -216,14 +176,13 @@ class ResultActivity : AppCompatActivity() {
     }
 
     private fun onDeleteAction(scan: ScanEntity) {
-        MaterialAlertDialogBuilder(this@ResultActivity)
+        MaterialAlertDialogBuilder(this)
             .setTitle(R.string.delete_scan)
             .setMessage(R.string.delete_scan_confirm)
             .setPositiveButton(R.string.delete) { _, _ ->
-                val appInstance = application as PlantDiseasesApp
                 lifecycleScope.launch {
                     runCatching { File(scan.imagePath).delete() }
-                    appInstance.scanRepository.deleteScan(scan.id)
+                    scanRepository.deleteScan(scan.id)
                     finish()
                 }
             }
@@ -232,15 +191,18 @@ class ResultActivity : AppCompatActivity() {
     }
 
     private fun setupPinchToZoom() {
-        scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
-            override fun onScale(detector: ScaleGestureDetector): Boolean {
-                scaleFactor *= detector.scaleFactor
-                scaleFactor = scaleFactor.coerceIn(1.0f, 3.0f)
-                binding.imageFrame.scaleX = scaleFactor
-                binding.imageFrame.scaleY = scaleFactor
-                return true
+        scaleGestureDetector = ScaleGestureDetector(
+            this,
+            object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                override fun onScale(detector: ScaleGestureDetector): Boolean {
+                    scaleFactor *= detector.scaleFactor
+                    scaleFactor = scaleFactor.coerceIn(1.0f, 3.0f)
+                    binding.imageFrame.scaleX = scaleFactor
+                    binding.imageFrame.scaleY = scaleFactor
+                    return true
+                }
             }
-        })
+        )
 
         binding.cardImage.setOnTouchListener { _, event ->
             scaleGestureDetector.onTouchEvent(event)
@@ -256,25 +218,19 @@ class ResultActivity : AppCompatActivity() {
 
     private fun setupStickyHeader() {
         binding.scrollView.setOnScrollChangeListener { _, _, scrollY, _, _ ->
-            val statusCardBottom = binding.cardStatus.bottom
-            if (scrollY > statusCardBottom) {
-                binding.stickyHeader.visibility = View.VISIBLE
-            } else {
-                binding.stickyHeader.visibility = View.GONE
-            }
+            binding.stickyHeader.visibility =
+                if (scrollY > binding.cardStatus.bottom) View.VISIBLE else View.GONE
         }
     }
 
     private fun loadResult(scanId: Long) {
-        val app = application as PlantDiseasesApp
-
         binding.skeletonLayout.visibility = View.VISIBLE
         binding.scrollView.visibility = View.GONE
         binding.bottomActionBar.visibility = View.GONE
         animateSkeleton()
 
         lifecycleScope.launch {
-            val scan = app.scanRepository.getScanById(scanId)
+            val scan = scanRepository.getScanById(scanId)
             if (scan == null) {
                 finish()
                 return@launch
@@ -285,17 +241,15 @@ class ResultActivity : AppCompatActivity() {
             binding.scrollView.visibility = View.VISIBLE
             binding.bottomActionBar.visibility = View.VISIBLE
 
-            displayResult(scan, app.scanRepository)
+            displayResult(scan, scanRepository)
             Haptics.success(this@ResultActivity)
         }
     }
 
     private fun animateSkeleton() {
         skeletonAnimator?.cancel()
-        // Walk the first child of the ShimmerFrameLayout (the inner
-        // LinearLayout that holds the placeholder cards) so we keep the
-        // original "each block fades independently" feel even though
-        // the layout is now wrapped in a shimmer host.
+        // Walk the first child of the ShimmerFrameLayout (the inner LinearLayout
+        // of placeholder cards) so each block still fades independently.
         val container = binding.skeletonLayout.getChildAt(0) as? ViewGroup
             ?: binding.skeletonLayout
         val animator = ValueAnimator.ofFloat(0.3f, 0.7f).apply {
@@ -316,21 +270,13 @@ class ResultActivity : AppCompatActivity() {
     private fun displayResult(scan: ScanEntity, repository: ScanRepository) {
         val isRu = LocaleHelper.isRussian(this)
         val isNotAPlant = repository.isNotAPlantScan(scan)
-        // Trust the server's final verdict end-to-end. The previous
-        // version overrode `diseaseName` / `confidence` with the
-        // top-class key from `all_probs`, which fought the server's
-        // own weak-healthy reroute: when the server downgraded a
-        // 47%-healthy / 41%-fungal scan to "Fungal Leaf Spot", the
-        // override flipped the visible verdict back to "Healthy
-        // Plant" while the description and stored `diseaseName`
-        // still said fungal — the cause of the screenshot bug.
+        // Trust the server's final verdict end-to-end (isHealthy/diseaseName),
+        // not a re-derived argmax over all_probs — overriding it fought the
+        // server's own weak-healthy reroute and flipped the visible verdict.
         val isHealthyVerdict = scan.isHealthy
-        // A not_a_plant verdict that carries the blur warning is really
-        // "couldn't read the photo", not a confident "this isn't a plant".
-        // Present it as blurry-or-NAP so a user who scanned a genuine but
-        // blurry plant isn't told it isn't one (and doesn't think the app is
-        // broken). The blur gate always routes to not_a_plant, so this is a
-        // strict subset of isNotAPlant.
+        // A not_a_plant verdict carrying the blur warning is really "couldn't
+        // read the photo", not a confident "this isn't a plant" — present it as
+        // blurry-or-NAP so a genuine blurry plant isn't told it isn't one.
         val isBlurryReject = isNotAPlant &&
             "blurry_image" in repository.parseWarnings(scan.warnings)
         val diseaseName = when {
@@ -341,38 +287,31 @@ class ResultActivity : AppCompatActivity() {
         }
 
         binding.apply {
-            // Image
             Glide.with(this@ResultActivity)
                 .load(File(scan.imagePath))
                 .transform(CenterCrop(), RoundedCorners(24))
                 .into(ivPlant)
 
-            // YOLOv8 bbox overlay — only when we actually found a diseased
-            // region. NAP and healthy verdicts skip the overlay.
-            // Bbox coordinates are in the *server-side* image's pixel
-            // space (the upload after PIL decode, which Android
-            // pre-rotates + downscales to <=1024 px). The server echoes
-            // those dims back on every response and the scan row carries
-            // them; render against those values directly.
+            // YOLOv8 bbox overlay — only on a disease verdict with regions. The
+            // bbox coords are in the server-side image's pixel space (the scan
+            // row carries those dims); render against them directly. Stage 1 is
+            // a single-class leaf detector and "diseased" is one whole-image
+            // verdict, so mark EVERY detected leaf red (not just the primary
+            // crop) — the primary box just gets a thicker stroke.
             val regions = repository.parseRegions(scan.regions)
             if (!isNotAPlant && !isHealthyVerdict && regions.isNotEmpty()) {
-                val origBounds = Pair(scan.detectionImageWidth, scan.detectionImageHeight)
                 val primaryIdx = scan.primaryRegionIndex ?: -1
-                // Stage 1 is a single-class leaf detector: every box is just a
-                // detected leaf, and "diseased" is one whole-image verdict
-                // (we only reach this branch on a disease verdict). So mark
-                // EVERY detected leaf as diseased/red — not just the primary
-                // crop — otherwise a plant with several affected leaves shows
-                // one red leaf and the rest green, as if they were healthy.
-                // The primary box stays emphasised with a thicker stroke.
                 val overlayBoxes = regions.mapIndexed { i, r ->
                     HeatmapOverlayView.Box(
-                        x = r.x, y = r.y, width = r.width, height = r.height,
+                        x = r.x,
+                        y = r.y,
+                        width = r.width,
+                        height = r.height,
                         diseased = true,
                         primary = i == primaryIdx,
                     )
                 }
-                heatmapOverlay.setBoxes(overlayBoxes, origBounds.first, origBounds.second)
+                heatmapOverlay.setBoxes(overlayBoxes, scan.detectionImageWidth, scan.detectionImageHeight)
                 heatmapOverlay.postDelayed({
                     heatmapOverlay.animateIn()
                     tvHeatmapLabel.visibility = View.VISIBLE
@@ -381,97 +320,34 @@ class ResultActivity : AppCompatActivity() {
                 }, 500)
             }
 
-            // Disease name
             tvDiseaseName.text = diseaseName
-
-            // Sticky header data
             tvStickyName.text = diseaseName
 
-            // "Read the full guide" — deep-link to the offline doc article for
-            // this verdict's class, when one exists (not_a_plant has none).
+            // "Read the full guide" — deep-link to the offline doc for this
+            // verdict's class, when one exists (not_a_plant has none).
             val guideId = GuideDataProvider.guideIdForDisease(repository.verdictClassKey(scan) ?: "")
             if (guideId != null) {
                 btnOpenGuide.visibility = View.VISIBLE
                 btnOpenGuide.setOnClickListener {
-                    GuideDetailSheet.newInstance(guideId)
-                        .show(supportFragmentManager, "guide_detail")
+                    GuideDetailSheet.newInstance(guideId).show(supportFragmentManager, "guide_detail")
                 }
             } else {
                 btnOpenGuide.visibility = View.GONE
             }
 
-            // Bundled offline example photo of this diagnosis, above the
-            // description. Keyed off the DISPLAYED verdict (verdictClassKey),
-            // not the raw argmax — otherwise a server-rerouted scan (e.g.
-            // weak-healthy → leaf_spot) looks up the photo for the wrong class
-            // and the strip silently disappears.
-            binding.tvDiseasePhotosLabel.visibility = View.GONE
-            binding.hsvDiseasePhotos.visibility = View.GONE
+            // Bundled example photo of this diagnosis. Keyed off the DISPLAYED
+            // verdict (verdictClassKey), not the raw argmax, so a rerouted scan
+            // looks up the right class.
+            tvDiseasePhotosLabel.visibility = View.GONE
+            hsvDiseasePhotos.visibility = View.GONE
             GuideDataProvider.exampleImageUrlForDisease(repository.verdictClassKey(scan) ?: "")
-                ?.let { loadDiseasePhotos(it) }
+                ?.let { diagnosisContent.loadDiseasePhotos(it) }
 
-            // Community opinions others left on THIS (the user's own) scan.
-            // Loaded lazily; the button appears only if there are any.
-            btnViewOpinions.visibility = View.GONE
-            val ownScanId = scan.clientScanId
-            if (ownScanId.isNotBlank()) {
-                lifecycleScope.launch {
-                    repository.getCommunityOpinions(ownScanId).onSuccess { resp ->
-                        val n = resp.opinions.size
-                        val v = resp.views
-                        // Opening the scan's result counts as viewing its
-                        // activity — advance the viewed baseline so the Gallery
-                        // clears its "+N new opinions" badge for this scan.
-                        com.plantdiseases.app.util.OpinionPrefs
-                            .markViewedOpinions(this@ResultActivity, ownScanId, n)
-                        // Show activity on the user's OWN shared scan whenever
-                        // there is any — opinions and/or views — not only when
-                        // they explicitly asked for a second opinion. The view
-                        // count is deduped per viewer server-side.
-                        if (n > 0 || v > 0) {
-                            binding.btnViewOpinions.text = if (v > 0) {
-                                getString(R.string.result_view_activity, n, v)
-                            } else {
-                                getString(R.string.result_view_opinions, n)
-                            }
-                            binding.btnViewOpinions.visibility = View.VISIBLE
-                            val opinionName =
-                                classKeyDisplayName(repository.topClassKey(scan) ?: "", isRu)
-                            binding.btnViewOpinions.setOnClickListener {
-                                // Owner viewing their OWN scan — read-only, you
-                                // don't leave a second opinion on your own scan.
-                                CommunityOpinionSheet.showForOwner(
-                                    supportFragmentManager, ownScanId, opinionName,
-                                )
-                            }
-                            // Arrived from a notification / a Gallery row with
-                            // new opinions → jump straight to them (scroll the
-                            // button into view, then open the sheet).
-                            if (n > 0 && intent.getBooleanExtra(EXTRA_OPEN_OPINIONS, false)) {
-                                intent.removeExtra(EXTRA_OPEN_OPINIONS)
-                                binding.scrollView.post {
-                                    binding.btnViewOpinions.requestRectangleOnScreen(
-                                        android.graphics.Rect(
-                                            0, 0,
-                                            binding.btnViewOpinions.width,
-                                            binding.btnViewOpinions.height,
-                                        ), false,
-                                    )
-                                    CommunityOpinionSheet.showForOwner(
-                                        supportFragmentManager, ownScanId, opinionName,
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            community.bindOwnScanOpinions(scan, isRu)
 
             val confidencePercent = (scan.confidence * 100).toInt()
-            // For NAP we don't expose a confidence bar — the "verdict" itself
-            // is "we can't classify this". Showing 100% confidence next to
-            // a "not a plant" reads as the model being certain about the
-            // diagnosis, which is misleading.
+            // For NAP we don't expose a confidence bar — "100% confident this
+            // isn't a plant" reads as the model being certain about a diagnosis.
             if (isNotAPlant) {
                 tvConfidence.visibility = View.GONE
                 progressConfidence.visibility = View.GONE
@@ -484,14 +360,11 @@ class ResultActivity : AppCompatActivity() {
                 tvStickyConfidence.text = getString(R.string.confidence_format, confidencePercent)
                 progressConfidence.max = 100
                 progressConfidence.progress = 0
-                val confidenceAnimator = ValueAnimator.ofInt(0, confidencePercent).apply {
+                ValueAnimator.ofInt(0, confidencePercent).apply {
                     duration = 800
                     interpolator = DecelerateInterpolator(2.5f)
-                    addUpdateListener { anim ->
-                        progressConfidence.progress = anim.animatedValue as Int
-                    }
-                }
-                confidenceAnimator.start()
+                    addUpdateListener { anim -> progressConfidence.progress = anim.animatedValue as Int }
+                }.start()
             }
 
             when {
@@ -525,12 +398,15 @@ class ResultActivity : AppCompatActivity() {
                 }
             }
 
-            // Description: for NAP we replace it with a dedicated retry hint
-            // and silence the disease-only sections below.
+            // Description: for NAP we swap in a retry hint and silence the
+            // disease-only sections below.
             if (isNotAPlant) {
                 tvDescription.text = getString(
-                    if (isBlurryReject) R.string.blurry_or_not_a_plant_result_body
-                    else R.string.not_a_plant_result_body,
+                    if (isBlurryReject) {
+                        R.string.blurry_or_not_a_plant_result_body
+                    } else {
+                        R.string.not_a_plant_result_body
+                    },
                 )
                 cardTreatmentPrevention.visibility = View.GONE
                 cardAlternatives.visibility = View.GONE
@@ -538,47 +414,43 @@ class ResultActivity : AppCompatActivity() {
                 cardSimilarScans.visibility = View.GONE
                 cardPipelineWarning.visibility = View.GONE
                 cardLowConfidence.visibility = View.GONE
-                // Share / add-to-garden don't make sense for a NAP verdict —
-                // collapse the bottom bar to just the "new scan" button so
-                // it expands to fill the row.
+                // Share / add-to-garden don't make sense for NAP — collapse the
+                // bottom bar to just the "new scan" button.
                 btnShare.visibility = View.GONE
                 btnAddToGarden.visibility = View.GONE
             } else {
                 tvDescription.text = if (isRu) scan.descriptionRu else scan.description
                 btnShare.visibility = View.VISIBLE
                 btnAddToGarden.visibility = View.VISIBLE
-                buildPipelineWarnings(scan, repository)
-                buildAlternativeDiagnoses(scan, repository, isRu)
-                buildSpeciesCard(scan)
-                buildSimilarScansCard(scan, repository, isRu)
-                setupTreatmentPreventionTabs(scan, repository, isRu)
-                buildCarePlanCard(scan, repository, isRu)
+                diagnosisContent.bindPipelineWarnings(scan, repository)
+                diagnosisContent.bindAlternatives(scan, repository, isRu)
+                speciesCard.bind(scan)
+                community.bindSimilarScans(scan, repository, isRu)
+                diagnosisContent.setupTreatmentPrevention(scan, repository, isRu, restoredTabIndex)
+                carePlan.bind(scan, repository, isRu)
             }
 
-            // Toxicity card + feedback card render for every plant verdict
-            // (including healthy) — they're not disease-only — but stay
-            // hidden on NAP since neither makes sense without a plant.
+            // Toxicity + feedback render for every plant verdict (incl. healthy)
+            // but stay hidden on NAP.
             if (isNotAPlant) {
                 cardToxicity.visibility = View.GONE
                 cardFeedback.visibility = View.GONE
             } else {
-                buildToxicityCard(scan, repository)
-                buildFeedbackCard(scan)
+                diagnosisContent.bindToxicity(scan, repository)
+                feedback.bind(scan)
             }
 
-            // Date
             tvDate.text = ImageUtils.formatTimestamp(scan.timestamp)
 
             btnNewScan.setOnClickListener {
                 // Always land back on the scanner tab — finish() alone would
                 // return to whichever tab launched the result (e.g. Gallery).
-                val intent = Intent(this@ResultActivity, MainActivity::class.java).apply {
-                    addFlags(
-                        Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP,
-                    )
-                    putExtra(MainActivity.EXTRA_OPEN_SCANNER, true)
-                }
-                startActivity(intent)
+                startActivity(
+                    Intent(this@ResultActivity, MainActivity::class.java).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                        putExtra(MainActivity.EXTRA_OPEN_SCANNER, true)
+                    },
+                )
                 finish()
             }
 
@@ -587,17 +459,11 @@ class ResultActivity : AppCompatActivity() {
             } else {
                 getString(R.string.added_to_garden)
             }
-            btnAddToGarden.setOnClickListener {
-                showAddToGardenDialog(scan)
-            }
+            btnAddToGarden.setOnClickListener { gardenAttach.showAddToGardenDialog(scan) }
+            btnShare.setOnClickListener { share.share(scan, repository, isRu) }
 
-            btnShare.setOnClickListener {
-                shareWithImage(scan, repository, isRu)
-            }
-
-            // Low-confidence card carries its own retry button now —
-            // the action belongs next to the warning text, not in the
-            // global bottom bar where it duplicates "New scan".
+            // Low-confidence card carries its own retry button (the action
+            // belongs next to the warning, not in the global bottom bar).
             if (!isNotAPlant && scan.confidence < 0.5f && !isHealthyVerdict) {
                 cardLowConfidence.visibility = View.VISIBLE
                 btnRetryAnalysis.visibility = View.VISIBLE
@@ -606,937 +472,33 @@ class ResultActivity : AppCompatActivity() {
             }
 
             // No-photo fallback CTA: offer the symptom checker whenever the
-            // pipeline couldn't get a confident plant read (not_a_plant) or
-            // the diagnosis is low-confidence, so the user still gets guidance.
-            val showSymptomChecker = isNotAPlant ||
-                (scan.confidence < 0.5f && !isHealthyVerdict)
+            // pipeline couldn't get a confident plant read or the diagnosis is
+            // low-confidence, so the user still gets guidance.
+            val showSymptomChecker = isNotAPlant || (scan.confidence < 0.5f && !isHealthyVerdict)
             btnSymptomChecker.visibility = if (showSymptomChecker) View.VISIBLE else View.GONE
             btnSymptomChecker.setOnClickListener {
                 startActivity(
-                    Intent(
-                        this@ResultActivity,
-                        com.plantdiseases.app.ui.symptom.SymptomCheckerActivity::class.java,
-                    ),
+                    Intent(this@ResultActivity, com.plantdiseases.app.ui.symptom.SymptomCheckerActivity::class.java),
                 )
             }
 
             btnRetryAnalysis.setOnClickListener {
-                val intent = Intent(this@ResultActivity, AnalysisActivity::class.java).apply {
-                    putExtra(AnalysisActivity.EXTRA_IMAGE_PATH, scan.imagePath)
-                }
-                startActivity(intent)
+                startActivity(
+                    Intent(this@ResultActivity, AnalysisActivity::class.java).apply {
+                        putExtra(AnalysisActivity.EXTRA_IMAGE_PATH, scan.imagePath)
+                    },
+                )
                 finish()
             }
 
             // When unsure, let the user raise a hand for a community second
-            // opinion on their OWN scan — or, once replies arrive, view
-            // them. Wired in setupSecondOpinion().
-            setupSecondOpinion(scan, repository, isRu)
+            // opinion on their OWN scan — or, once replies arrive, view them.
+            community.setupSecondOpinion(scan, repository, isRu)
 
-            // Animate cards from bottom
             animateCardsIn()
 
             // Toolbar overflow menu owns the delete action.
             pendingScanForToolbar = scan
-        }
-    }
-
-    /**
-     * Wire the "second opinion" control. Two modes:
-     *
-     *  - **Ask** (default): the scanner raises a hand. Tapping shares this
-     *    scan to the community (the tap is consent — so it works even if
-     *    global sharing is off, and the server dedups by scan id), then
-     *    durably flags it as wanting a second opinion. Other users see a
-     *    badge in their "scans near you" feed and weigh in. The scanner
-     *    does NOT pick a diagnosis — they wait.
-     *  - **View**: once replies exist, the button switches to showing the
-     *    community's opinions (read-only sheet) for this scan.
-     *
-     * We probe for existing opinions on load so a returning user lands
-     * straight in the "view replies" state.
-     */
-    private fun setupSecondOpinion(
-        scan: ScanEntity,
-        repository: ScanRepository,
-        isRu: Boolean,
-    ) {
-        val btn = binding.btnSecondOpinion
-        val displayName = classKeyDisplayName(repository.verdictClassKey(scan) ?: "", isRu)
-
-        fun openReplies() {
-            CommunityOpinionSheet.showForOwner(
-                supportFragmentManager, scan.clientScanId, displayName,
-            )
-        }
-        fun showViewReplies(count: Int) {
-            btn.isEnabled = true
-            btn.text = getString(R.string.result_second_opinion_view, count)
-            btn.setOnClickListener { openReplies() }
-        }
-        fun showWaiting() {
-            // Truthful now: the request is durably recorded server-side,
-            // so "waiting" always means the community can see the ask.
-            // Tappable so the user can check back for replies.
-            btn.isEnabled = true
-            btn.setText(R.string.result_second_opinion_waiting)
-            btn.setOnClickListener { openReplies() }
-        }
-
-        fun showAsk() {
-            btn.isEnabled = true
-            btn.setText(R.string.result_get_second_opinion)
-            btn.setOnClickListener {
-                btn.isEnabled = false
-                btn.setText(R.string.result_second_opinion_waiting)
-                // They're asking for replies — make sure we can notify them.
-                ensureNotificationPermission()
-                val app = application as PlantDiseasesApp
-                val pseudoId =
-                    com.plantdiseases.app.util.TelemetryIds.userPseudoId(this@ResultActivity)
-                lifecycleScope.launch {
-                    // Ensure the scan is in the community corpus so others
-                    // can actually see the ask (force = explicit consent).
-                    val outcome = app.communityUploader.uploadFromEntity(scan, force = true)
-                    if (outcome == CommunityUploader.UploadOutcome.NoRegion) {
-                        showAsk()
-                        Toast.makeText(
-                            this@ResultActivity,
-                            R.string.result_second_opinion_no_region,
-                            Toast.LENGTH_LONG,
-                        ).show()
-                        return@launch
-                    }
-                    app.scanRepository.requestSecondOpinion(scan.clientScanId, pseudoId)
-                        .onSuccess {
-                            showWaiting()
-                            // Seed the notify baseline at 0 so the very next
-                            // reply counts as new (and isn't swallowed as a
-                            // "first poll" pre-existing opinion), and flip the
-                            // global init flag for the same reason.
-                            com.plantdiseases.app.util.OpinionPrefs
-                                .markInitialized(this@ResultActivity)
-                            com.plantdiseases.app.util.OpinionPrefs
-                                .setSeen(this@ResultActivity, scan.clientScanId, 0)
-                        }
-                        .onFailure {
-                            showAsk()
-                            Toast.makeText(
-                                this@ResultActivity,
-                                R.string.result_second_opinion_failed,
-                                Toast.LENGTH_SHORT,
-                            ).show()
-                        }
-                }
-            }
-        }
-
-        showAsk()
-        // Upgrade to "view replies" if the community already responded.
-        lifecycleScope.launch {
-            repository.getCommunityOpinions(scan.clientScanId).onSuccess { resp ->
-                if (resp.opinions.isNotEmpty()) showViewReplies(resp.opinions.size)
-            }
-        }
-    }
-
-    private fun showAddToGardenDialog(scan: ScanEntity) {
-        val app = application as PlantDiseasesApp
-        lifecycleScope.launch {
-            val plants = app.plantRepository.getPlants()
-            if (plants.isEmpty()) {
-                showCreatePlantForScanDialog(scan)
-                return@launch
-            }
-
-            val labels = plants.map { it.plant.name }.toTypedArray()
-
-            MaterialAlertDialogBuilder(this@ResultActivity)
-                .setTitle(R.string.add_to_garden)
-                .setItems(labels) { _, which ->
-                    lifecycleScope.launch {
-                        app.plantRepository.assignScanToPlant(scan.id, plants[which].plant.id)
-                        binding.btnAddToGarden.text = getString(R.string.added_to_garden)
-                        Toast.makeText(
-                            this@ResultActivity,
-                            getString(R.string.scan_added_to_garden),
-                            Toast.LENGTH_SHORT,
-                        ).show()
-                    }
-                }
-                .setPositiveButton(R.string.create_new_plant) { _, _ ->
-                    showCreatePlantForScanDialog(scan)
-                }
-                .setNegativeButton(R.string.cancel, null)
-                .show()
-        }
-    }
-
-    private fun showCreatePlantForScanDialog(scan: ScanEntity) {
-        // The save handoff arrives via the Fragment Result listener
-        // registered in onCreate (config-change safe); the sheet itself
-        // carries every input in arguments.
-        //
-        // Suggested plant name: prefer the detected species' common name
-        // (people name plants after the plant, not its disease); fall back
-        // to the LOCALIZED disease name — the raw English ``diseaseName``
-        // used to leak into the RU UI here.
-        val isRu = LocaleHelper.isRussian(this)
-        val suggestedName = scan.speciesCommon?.takeIf { it.isNotBlank() }
-            ?: if (isRu) scan.diseaseNameRu else scan.diseaseName
-        CreatePlantSheet.show(
-            supportFragmentManager,
-            scan,
-            initialName = suggestedName,
-        )
-    }
-
-    /** Persist the plant the CreatePlantSheet just saved and attach the
-     *  scan to it. Invoked through the Fragment Result API so the handoff
-     *  survives the activity + sheet being recreated together. */
-    private fun onCreatePlantResult(result: Bundle) {
-        val plantName = result.getString(CreatePlantSheet.RESULT_NAME) ?: return
-        val scanId = result.getLong(CreatePlantSheet.RESULT_SCAN_ID, -1L)
-        if (scanId <= 0L) return
-        val app = application as PlantDiseasesApp
-        lifecycleScope.launch {
-            val plantId = app.plantRepository.savePlant(
-                name = plantName,
-                species = result.getString(CreatePlantSheet.RESULT_SPECIES),
-                scientificName = result.getString(CreatePlantSheet.RESULT_SCIENTIFIC),
-                commonName = result.getString(CreatePlantSheet.RESULT_COMMON),
-            )
-            app.plantRepository.assignScanToPlant(scanId, plantId)
-            binding.btnAddToGarden.text = getString(R.string.added_to_garden)
-            Toast.makeText(
-                this@ResultActivity,
-                getString(R.string.scan_added_to_garden),
-                Toast.LENGTH_SHORT,
-            ).show()
-        }
-    }
-
-    private fun setupTreatmentPreventionTabs(scan: ScanEntity, repository: ScanRepository, isRu: Boolean) {
-        val treatment = repository.parseStringList(
-            if (isRu) scan.treatmentRu else scan.treatment
-        )
-        val prevention = repository.parseStringList(
-            if (isRu) scan.preventionRu else scan.prevention
-        )
-
-        if (treatment.isEmpty() && prevention.isEmpty()) {
-            binding.cardTreatmentPrevention.visibility = View.GONE
-            return
-        }
-
-        binding.cardTreatmentPrevention.visibility = View.VISIBLE
-
-        // Add tabs
-        if (treatment.isNotEmpty()) {
-            binding.tabsTreatmentPrevention.addTab(
-                binding.tabsTreatmentPrevention.newTab().setText(R.string.treatment_label).setTag("treatment")
-            )
-            buildStepsList(binding.treatmentStepsLayout, treatment, R.drawable.bg_step_circle, R.color.primary)
-        }
-        if (prevention.isNotEmpty()) {
-            binding.tabsTreatmentPrevention.addTab(
-                binding.tabsTreatmentPrevention.newTab().setText(R.string.prevention_label).setTag("prevention")
-            )
-            buildStepsList(binding.preventionStepsLayout, prevention, R.drawable.bg_step_circle_green, R.color.healthy_green)
-        }
-
-        // Show first tab content by default
-        if (treatment.isNotEmpty()) {
-            binding.treatmentStepsLayout.visibility = View.VISIBLE
-            binding.preventionStepsLayout.visibility = View.GONE
-        } else {
-            binding.treatmentStepsLayout.visibility = View.GONE
-            binding.preventionStepsLayout.visibility = View.VISIBLE
-        }
-
-        binding.tabsTreatmentPrevention.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
-            override fun onTabSelected(tab: TabLayout.Tab) {
-                when (tab.tag) {
-                    "treatment" -> {
-                        binding.treatmentStepsLayout.visibility = View.VISIBLE
-                        binding.preventionStepsLayout.visibility = View.GONE
-                    }
-                    "prevention" -> {
-                        binding.treatmentStepsLayout.visibility = View.GONE
-                        binding.preventionStepsLayout.visibility = View.VISIBLE
-                    }
-                }
-            }
-            override fun onTabUnselected(tab: TabLayout.Tab) {}
-            override fun onTabReselected(tab: TabLayout.Tab) {}
-        })
-
-        // AI Plant Doctor follow-up — the same assistant as the Garden plant
-        // detail. If this scan is already attached to a garden plant we open a
-        // persistent plant session; otherwise an ephemeral scan session that
-        // still carries the diagnosis context.
-        binding.btnAskDoctor.setOnClickListener {
-            Haptics.tick(this)
-            val app = application as PlantDiseasesApp
-            lifecycleScope.launch {
-                val plant = scan.plantId?.let { app.plantRepository.getPlant(it) }
-                if (plant != null) {
-                    com.plantdiseases.app.ui.garden.DoctorChatSheet
-                        .show(supportFragmentManager, plant)
-                } else {
-                    com.plantdiseases.app.ui.garden.DoctorChatSheet
-                        .show(supportFragmentManager, scan)
-                }
-            }
-        }
-    }
-
-    private fun buildPipelineWarnings(scan: ScanEntity, repository: ScanRepository) {
-        val warnings = repository.parseWarnings(scan.warnings)
-        if (warnings.isEmpty()) {
-            binding.cardPipelineWarning.visibility = View.GONE
-            return
-        }
-
-        val isRu = LocaleHelper.isRussian(this)
-
-        // The server can attach a dynamic `disease_suspected:<class>`
-        // warning alongside a healthy verdict — match by prefix and
-        // surface the suspected class name (an exact-string `in`
-        // check could never match it).
-        val suspectedKey = warnings
-            .firstOrNull { it.startsWith("disease_suspected:") }
-            ?.substringAfter(":")
-
-        // Priority order: very_low_confidence (re-shoot is the only
-        // honest path — the verdict in the card is essentially a guess)
-        // > blur > not-a-leaf gate > weak-healthy reroute (verdict was
-        // rewritten) > uncertain_healthy / disease_suspected (soft
-        // hedge) > low_confidence (mild hedge).
-        binding.cardPipelineWarning.visibility = View.VISIBLE
-        when {
-            // On-device (Aqua) scan — always caveat: the offline model has
-            // no detector / post-processing pipeline behind it, so the
-            // verdict can be less confident than a server analysis.
-            "offline_aqua" in warnings -> {
-                binding.tvPipelineWarningTitle.setText(R.string.warning_offline_scan_title)
-                binding.tvPipelineWarningBody.setText(R.string.warning_offline_scan)
-            }
-            "very_low_confidence" in warnings -> {
-                binding.tvPipelineWarningTitle.setText(R.string.warning_very_low_confidence_title)
-                binding.tvPipelineWarningBody.setText(R.string.warning_very_low_confidence)
-            }
-            "blurry_image" in warnings -> {
-                binding.tvPipelineWarningTitle.setText(R.string.warning_blurry_image_title)
-                binding.tvPipelineWarningBody.setText(R.string.warning_blurry_image)
-            }
-            "nap_ood_gated" in warnings -> {
-                binding.tvPipelineWarningTitle.setText(R.string.warning_nap_ood_gated_title)
-                binding.tvPipelineWarningBody.setText(R.string.warning_nap_ood_gated)
-            }
-            "weak_healthy_rerouted" in warnings -> {
-                binding.tvPipelineWarningTitle.setText(R.string.warning_weak_healthy_rerouted_title)
-                binding.tvPipelineWarningBody.setText(R.string.warning_weak_healthy_rerouted)
-            }
-            suspectedKey != null -> {
-                val label = classKeyDisplayName(suspectedKey, isRu) ?: suspectedKey
-                binding.tvPipelineWarningTitle.setText(R.string.warning_disease_suspected_title)
-                binding.tvPipelineWarningBody.text =
-                    getString(R.string.warning_disease_suspected, label)
-            }
-            "uncertain_healthy" in warnings -> {
-                binding.tvPipelineWarningTitle.setText(R.string.warning_uncertain_healthy_title)
-                binding.tvPipelineWarningBody.setText(R.string.warning_uncertain_healthy)
-            }
-            "viral_variegation_caveat" in warnings -> {
-                binding.tvPipelineWarningTitle.setText(R.string.warning_viral_variegation_title)
-                binding.tvPipelineWarningBody.setText(R.string.warning_viral_variegation)
-            }
-            "low_confidence" in warnings -> {
-                binding.tvPipelineWarningTitle.setText(R.string.warning_low_confidence_title)
-                binding.tvPipelineWarningBody.setText(R.string.warning_low_confidence)
-            }
-            else -> {
-                binding.cardPipelineWarning.visibility = View.GONE
-            }
-        }
-    }
-
-    private fun buildSpeciesCard(scan: ScanEntity) {
-        // Render the stored species fields (populated at save time
-        // from the server's PlantNet fan-out). The card stays hidden
-        // when we have neither a scientific nor a common name —
-        // that's the case when PlantNet wasn't configured or every
-        // candidate scored zero.
-        val sci = scan.speciesScientific?.takeIf { it.isNotBlank() }
-        val common = scan.speciesCommon?.takeIf { it.isNotBlank() }
-        if (sci == null && common == null) {
-            binding.cardSpecies.visibility = View.GONE
-            return
-        }
-        binding.cardSpecies.visibility = View.VISIBLE
-        binding.tvSpeciesBest.text = common ?: sci.orEmpty()
-        binding.tvSpeciesScientific.text = sci.orEmpty()
-        binding.tvSpeciesScientific.visibility =
-            if (sci.isNullOrBlank() || sci == common) View.GONE else View.VISIBLE
-        val score = scan.speciesScore
-        if (score != null && score > 0f) {
-            binding.tvSpeciesScore.visibility = View.VISIBLE
-            binding.tvSpeciesScore.text = getString(
-                R.string.species_card_score,
-                (score * 100).toInt().coerceIn(0, 100),
-            )
-        } else {
-            binding.tvSpeciesScore.visibility = View.GONE
-        }
-        // Alternates intentionally left empty — we only persist the
-        // best match on the ScanEntity. The full candidates list is
-        // available on the live AnalysisResponse and could be wired
-        // later if we add multi-pick UX.
-        binding.speciesAltsLayout.removeAllViews()
-
-        // Enrich with a localized Wikipedia blurb + lead photo, and a strip of
-        // other community scans of this species — best-effort, both need the
-        // scientific name and stay hidden on failure.
-        binding.ivSpeciesPhoto.visibility = View.GONE
-        binding.tvSpeciesBlurb.visibility = View.GONE
-        binding.tvSpeciesSource.visibility = View.GONE
-        binding.tvSpeciesCommunityLabel.visibility = View.GONE
-        binding.rvSpeciesCommunity.visibility = View.GONE
-        if (sci != null) loadSpeciesEnrichment(sci)
-    }
-
-    /** Bundled offline example photo of the diagnosed problem, shown above
-     *  the description. No network — the asset ships with the app. */
-    private fun loadDiseasePhotos(imageUrl: String) {
-        val row = binding.llDiseasePhotosRow
-        row.removeAllViews()
-        val iv = ImageView(this@ResultActivity).apply {
-            layoutParams = LinearLayout.LayoutParams(dpPx(150), dpPx(110))
-                .apply { marginEnd = dpPx(8) }
-            scaleType = ImageView.ScaleType.CENTER_CROP
-        }
-        // Server-hosted example photo (moved out of the APK). Disk-cached so it
-        // stays available offline after the first view; a placeholder shows
-        // while it loads / if the device is offline before it was ever cached.
-        Glide.with(this@ResultActivity)
-            .load(imageUrl)
-            .diskCacheStrategy(DiskCacheStrategy.ALL)
-            .placeholder(R.drawable.ic_plant_placeholder)
-            .error(R.drawable.ic_plant_placeholder)
-            .transform(CenterCrop(), RoundedCorners(24))
-            .into(iv)
-        row.addView(iv)
-        binding.tvDiseasePhotosLabel.visibility = View.VISIBLE
-        binding.hsvDiseasePhotos.visibility = View.VISIBLE
-    }
-
-    private fun dpPx(v: Int): Int = (v * resources.displayMetrics.density).toInt()
-
-    /** Best-effort species enrichment: a localized Wikipedia blurb + lead
-     *  photo, and a horizontal strip of other community scans of the species. */
-    private fun loadSpeciesEnrichment(scientific: String) {
-        val repo = (application as PlantDiseasesApp).scanRepository
-        val isRu = LocaleHelper.isRussian(this)
-        val pseudoId = TelemetryIds.userPseudoId(this)
-
-        lifecycleScope.launch {
-            repo.getSpeciesInfo(scientific, if (isRu) "ru" else "en").onSuccess { info ->
-                if (!info.available) return@onSuccess
-                info.extract?.takeIf { it.isNotBlank() }?.let {
-                    binding.tvSpeciesBlurb.text = it
-                    binding.tvSpeciesBlurb.visibility = View.VISIBLE
-                }
-                info.imageUrl?.takeIf { it.isNotBlank() }?.let { url ->
-                    Glide.with(this@ResultActivity)
-                        .load(url)
-                        .diskCacheStrategy(DiskCacheStrategy.ALL)
-                        .transform(CenterCrop(), RoundedCorners(24))
-                        .into(binding.ivSpeciesPhoto)
-                    binding.ivSpeciesPhoto.visibility = View.VISIBLE
-                }
-                val page = info.pageUrl
-                if (!page.isNullOrBlank()) {
-                    binding.tvSpeciesSource.visibility = View.VISIBLE
-                    binding.tvSpeciesSource.text = getString(
-                        if (info.translated) R.string.species_source_wikipedia_translated
-                        else R.string.species_source_wikipedia,
-                    )
-                    binding.tvSpeciesSource.setOnClickListener {
-                        runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(page))) }
-                    }
-                }
-            }
-        }
-
-        val adapter = SimilarScansAdapter(
-            displayName = { key -> classKeyDisplayName(key, isRu) ?: key },
-            onClick = { item ->
-                recordCommunityView(item.scanId, pseudoId)
-                CommunityOpinionSheet.show(
-                    supportFragmentManager,
-                    item.scanId,
-                    classKeyDisplayName(item.disease, isRu) ?: item.disease,
-                )
-            },
-        )
-        binding.rvSpeciesCommunity.layoutManager =
-            androidx.recyclerview.widget.LinearLayoutManager(
-                this, androidx.recyclerview.widget.LinearLayoutManager.HORIZONTAL, false,
-            )
-        binding.rvSpeciesCommunity.adapter = adapter
-        lifecycleScope.launch {
-            repo.communityScansBySpecies(scientific, pseudoId).onSuccess { resp ->
-                if (resp.items.isNotEmpty()) {
-                    adapter.submit(resp.items)
-                    binding.tvSpeciesCommunityLabel.text =
-                        getString(R.string.species_community_others)
-                    binding.tvSpeciesCommunityLabel.visibility = View.VISIBLE
-                    binding.rvSpeciesCommunity.visibility = View.VISIBLE
-                }
-            }
-        }
-    }
-
-    private fun buildSimilarScansCard(
-        scan: ScanEntity,
-        repository: ScanRepository,
-        isRu: Boolean,
-    ) {
-        val card = binding.cardSimilarScans
-        val rv = binding.rvSimilarScans
-        val empty = binding.tvSimilarEmpty
-        val enableBtn = binding.btnEnableSimilar
-        // Default state: hidden until the network call returns.
-        card.visibility = View.GONE
-        rv.visibility = View.GONE
-        empty.visibility = View.GONE
-        enableBtn.visibility = View.GONE
-
-        // Community is opt-in. Until the user opts in, show the card as an
-        // in-context Enable prompt instead of reading their location / hitting
-        // the network. Tapping Enable flips the pref, asks for coarse location
-        // (+ notifications), and re-renders this card to populate it.
-        if (!com.plantdiseases.app.util.CommunityPrefs.uploadsEnabled(this)) {
-            card.visibility = View.VISIBLE
-            binding.tvSimilarSubtitle.text = getString(R.string.similar_scans_enable_prompt)
-            enableBtn.visibility = View.VISIBLE
-            enableBtn.setOnClickListener {
-                com.plantdiseases.app.util.CommunityPrefs.enable(this)
-                pendingCommunityRerun = { buildSimilarScansCard(scan, repository, isRu) }
-                requestCommunityPermissions()
-            }
-            return
-        }
-
-        // Scope the carousel by the verdict the user actually SAW — the
-        // server's reroute-aware displayed class — not the raw argmax.
-        // After a weak-healthy reroute the raw top is "healthy" while the
-        // user was shown a disease; querying by the raw top would surface
-        // "healthy" neighbours for a disease verdict (and vice-versa).
-        val diseaseKey = repository.verdictClassKey(scan)
-            ?: scan.diseaseName.lowercase().replace(' ', '_')
-        val app = application as PlantDiseasesApp
-        val pseudoId = com.plantdiseases.app.util.TelemetryIds.userPseudoId(this)
-        val adapter = SimilarScansAdapter(
-            displayName = { key -> classKeyDisplayName(key, isRu) ?: key },
-            onClick = { item ->
-                // Opening someone else's scan counts as a view (deduped per
-                // viewer server-side) and lets the user weigh in with a second
-                // opinion on their uncertain verdict.
-                recordCommunityView(item.scanId, pseudoId)
-                CommunityOpinionSheet.show(
-                    supportFragmentManager,
-                    item.scanId,
-                    classKeyDisplayName(item.disease, isRu) ?: item.disease,
-                )
-            },
-        )
-        rv.adapter = adapter
-        rv.layoutManager = androidx.recyclerview.widget.LinearLayoutManager(
-            this, androidx.recyclerview.widget.LinearLayoutManager.HORIZONTAL, false,
-        )
-
-        lifecycleScope.launch {
-            // First-scan-after-permission may not have a cached
-            // region yet because the MainActivity warmer races with
-            // this code. Resolve actively so the card lights up on
-            // the same scan instead of the next one — Geocoder /
-            // LocationManager block, so dispatch to IO; lifecycleScope
-            // is Main by default.
-            val resolved = withContext(Dispatchers.IO) {
-                com.plantdiseases.app.util.RegionResolver.cachedRegion(this@ResultActivity)
-                    ?: com.plantdiseases.app.util.RegionResolver.resolveRegion(this@ResultActivity)
-            }
-            if (resolved == null) {
-                // No region yet. Render a soft hint so the user
-                // knows why the card is empty.
-                card.visibility = View.VISIBLE
-                binding.tvSimilarSubtitle.text = getString(R.string.similar_scans_subtitle_no_region)
-                empty.visibility = View.GONE
-                return@launch
-            }
-            fetchAndRenderSimilarScans(
-                adapter = adapter,
-                resolved = resolved,
-                pseudoId = pseudoId,
-                disease = diseaseKey,
-                speciesScientific = scan.speciesScientific,
-            )
-        }
-    }
-
-    /**
-     * Fetch + render the "similar scans near you" carousel: other people's
-     * scans of the SAME problem (the current scan's verdict disease) on the
-     * SAME species where known. There is intentionally no disease switcher —
-     * the strip is "scans similar to this one", so letting the user pivot to
-     * an unrelated disease (when only one matching photo was shown) was
-     * confusing. Similarity is enforced by [SimilarScans.filterSimilar].
-     */
-    private fun fetchAndRenderSimilarScans(
-        adapter: SimilarScansAdapter,
-        resolved: com.plantdiseases.app.util.ResolvedRegion,
-        pseudoId: String,
-        disease: String,
-        speciesScientific: String?,
-    ) {
-        val card = binding.cardSimilarScans
-        val rv = binding.rvSimilarScans
-        val empty = binding.tvSimilarEmpty
-        val app = application as PlantDiseasesApp
-        lifecycleScope.launch {
-            val result = app.scanRepository.communityNearby(
-                country = resolved.country,
-                region = resolved.locality,
-                disease = disease,
-                // Narrow by detected scientific name so a "Powdery
-                // mildew on Monstera" scan doesn't render "Powdery
-                // mildew on Ficus" thumbnails — different species,
-                // different care. Server falls back gracefully when
-                // the species bucket is empty.
-                species = speciesScientific,
-                userPseudoId = pseudoId,
-                limit = 12,
-            )
-            result.onSuccess { response ->
-                card.visibility = View.VISIBLE
-                val label = resolved.displayLabel
-                // Restrict the carousel to genuinely similar scans (same
-                // disease, same species where both are known). The server
-                // already scopes the query, but we filter client-side too
-                // so a cached response from an older deployment can't leak
-                // unrelated verdicts/species into a "similar to this" strip.
-                val items = com.plantdiseases.app.util.SimilarScans.filterSimilar(
-                    response.items, disease, speciesScientific,
-                )
-
-                if (items.isEmpty()) {
-                    binding.tvSimilarSubtitle.text = getString(
-                        R.string.similar_scans_subtitle_region, label,
-                    )
-                    empty.text = getString(R.string.similar_scans_empty)
-                    empty.visibility = View.VISIBLE
-                    rv.visibility = View.GONE
-                } else {
-                    // Count what the strip actually SHOWS. The old
-                    // ``summary.last_7d`` was the regional all-disease
-                    // total, so the header said "9 scans nearby" above a
-                    // one-item carousel of genuinely similar scans.
-                    binding.tvSimilarSubtitle.text = resources.getQuantityString(
-                        R.plurals.similar_scans_subtitle_count,
-                        items.size, items.size, label,
-                    )
-                    rv.visibility = View.VISIBLE
-                    empty.visibility = View.GONE
-                    adapter.submit(items)
-                }
-            }.onFailure {
-                // Stay hidden on error — never surface a broken card.
-                card.visibility = View.GONE
-            }
-        }
-    }
-
-    private fun buildAlternativeDiagnoses(scan: ScanEntity, repository: ScanRepository, isRu: Boolean) {
-        val allProbs = repository.parseAllProbs(scan.allProbs)
-        if (allProbs.isEmpty()) {
-            binding.cardAlternatives.visibility = View.GONE
-            return
-        }
-
-        val top3 = allProbs.entries
-            .sortedByDescending { it.value }
-            .take(3)
-
-        if (top3.isEmpty()) {
-            binding.cardAlternatives.visibility = View.GONE
-            return
-        }
-
-        binding.cardAlternatives.visibility = View.VISIBLE
-        binding.alternativesLayout.removeAllViews()
-
-        top3.forEachIndexed { index, entry ->
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    if (index > 0) topMargin = 12.dpToPx()
-                }
-            }
-
-            val percent = (entry.value * 100).toInt()
-            val displayName = classKeyDisplayName(entry.key, isRu) ?: entry.key
-            val isMain = index == 0
-
-            val nameRow = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-            }
-
-            val nameView = TextView(this).apply {
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                text = displayName
-                textSize = if (isMain) 14f else 13f
-                setTextColor(getColor(if (isMain) R.color.on_surface else R.color.on_surface_secondary))
-                if (isMain) typeface = android.graphics.Typeface.DEFAULT_BOLD
-            }
-
-            val percentView = TextView(this).apply {
-                text = getString(R.string.confidence_format, percent)
-                textSize = if (isMain) 14f else 13f
-                setTextColor(getColor(if (isMain) R.color.primary else R.color.on_surface_secondary))
-                if (isMain) typeface = android.graphics.Typeface.DEFAULT_BOLD
-            }
-
-            nameRow.addView(nameView)
-            nameRow.addView(percentView)
-
-            val progressBar = LinearProgressIndicator(this).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { topMargin = 4.dpToPx() }
-                max = 100
-                progress = 0
-                trackCornerRadius = 4.dpToPx()
-                trackThickness = if (isMain) 8.dpToPx() else 6.dpToPx()
-                setIndicatorColor(getColor(if (isMain) R.color.primary else R.color.primary_light))
-                trackColor = getColor(R.color.surface_variant)
-            }
-
-            val barAnimator = ValueAnimator.ofInt(0, percent).apply {
-                duration = 600
-                startDelay = (index * 150).toLong()
-                interpolator = DecelerateInterpolator(2.5f)
-                addUpdateListener { anim ->
-                    progressBar.progress = anim.animatedValue as Int
-                }
-            }
-            barAnimator.start()
-
-            row.addView(nameRow)
-            row.addView(progressBar)
-            binding.alternativesLayout.addView(row)
-        }
-    }
-
-    private fun shareWithImage(scan: ScanEntity, repository: ScanRepository, isRu: Boolean) {
-        val shareText = buildString {
-            append(getString(R.string.share_diagnosis_header))
-            append("\n\n")
-            append(if (isRu) scan.diseaseNameRu else scan.diseaseName)
-            append(" (${(scan.confidence * 100).toInt()}%)\n\n")
-            append(if (isRu) scan.descriptionRu else scan.description)
-            val treatmentList = repository.parseStringList(if (isRu) scan.treatmentRu else scan.treatment)
-            if (treatmentList.isNotEmpty()) {
-                append("\n\n")
-                append(getString(R.string.share_treatment_label))
-                append("\n")
-                treatmentList.forEachIndexed { i, t -> append("${i + 1}. $t\n") }
-            }
-        }
-
-        val imageFile = File(scan.imagePath)
-        if (!imageFile.exists()) {
-            launchShareTextOnly(shareText)
-            return
-        }
-
-        // Image composition (decode + canvas + JPEG encode) is off the UI thread.
-        lifecycleScope.launch {
-            val shareFile = try {
-                withContext(Dispatchers.IO) { createShareableImage(scan) }
-            } catch (e: Exception) {
-                Log.w(TAG, "Share image composition failed, falling back to text-only", e)
-                null
-            }
-
-            if (shareFile == null || isFinishing) {
-                if (!isFinishing) launchShareTextOnly(shareText)
-                return@launch
-            }
-
-            val imageUri = try {
-                FileProvider.getUriForFile(this@ResultActivity, "${packageName}.fileprovider", shareFile)
-            } catch (e: IllegalArgumentException) {
-                Log.w(TAG, "FileProvider URI failed, falling back to text-only", e)
-                launchShareTextOnly(shareText)
-                return@launch
-            }
-
-            val sendIntent = Intent().apply {
-                action = Intent.ACTION_SEND
-                putExtra(Intent.EXTRA_TEXT, shareText)
-                putExtra(Intent.EXTRA_STREAM, imageUri)
-                type = "image/jpeg"
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            startActivity(Intent.createChooser(sendIntent, getString(R.string.share)))
-        }
-    }
-
-    private fun launchShareTextOnly(shareText: String) {
-        val sendIntent = Intent().apply {
-            action = Intent.ACTION_SEND
-            putExtra(Intent.EXTRA_TEXT, shareText)
-            type = "text/plain"
-        }
-        startActivity(Intent.createChooser(sendIntent, getString(R.string.share)))
-    }
-
-    private fun createShareableImage(scan: ScanEntity): File {
-        cacheDir.listFiles { file -> file.name.startsWith("share_") }?.forEach { it.delete() }
-
-        val maxDim = 1920
-        val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(scan.imagePath, boundsOpts)
-        val rawW = boundsOpts.outWidth
-        val rawH = boundsOpts.outHeight
-        if (rawW <= 0 || rawH <= 0) {
-            throw ImageUtils.ImageDecodeException("Source image cannot be decoded: ${scan.imagePath}")
-        }
-        var inSampleSize = 1
-        while (rawW / (inSampleSize * 2) >= maxDim && rawH / (inSampleSize * 2) >= maxDim) {
-            inSampleSize *= 2
-        }
-        val decodeOpts = BitmapFactory.Options().apply {
-            this.inSampleSize = inSampleSize
-            inMutable = true
-        }
-        val result = BitmapFactory.decodeFile(scan.imagePath, decodeOpts)
-            ?: throw ImageUtils.ImageDecodeException("Failed to decode image: ${scan.imagePath}")
-
-        val finalBitmap = if (maxOf(result.width, result.height) > maxDim) {
-            val ratio = maxDim.toFloat() / maxOf(result.width, result.height)
-            val scaled = Bitmap.createScaledBitmap(
-                result, (result.width * ratio).toInt(), (result.height * ratio).toInt(), true
-            )
-            result.recycle()
-            scaled
-        } else {
-            result
-        }
-
-        // Skip the red highlight when the verdict is healthy.
-        val repo = (application as PlantDiseasesApp).scanRepository
-        if (!repo.isHealthyVerdict(scan)) {
-            val regions = repo.parseRegions(scan.regions)
-            val primary = regions.getOrNull(scan.primaryRegionIndex ?: -1)
-            if (primary != null) {
-                // Bbox coordinates live in the server's decoded image space
-                // (the <=1024 px upload the server echoes back), NOT the
-                // on-disk original — so scale against the detection dims to
-                // match the on-screen overlay. Fall back to the raw dims for
-                // legacy scans that predate detection-dimension persistence.
-                val detW = scan.detectionImageWidth.takeIf { it > 0 } ?: rawW
-                val detH = scan.detectionImageHeight.takeIf { it > 0 } ?: rawH
-                val scaleX = finalBitmap.width.toFloat() / detW
-                val scaleY = finalBitmap.height.toFloat() / detH
-                val canvas = Canvas(finalBitmap)
-                val cx = (primary.x + primary.width / 2f) * scaleX
-                val cy = (primary.y + primary.height / 2f) * scaleY
-                val radius = (primary.width + primary.height) / 4f * ((scaleX + scaleY) / 2f)
-
-                val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
-                val gradient = android.graphics.RadialGradient(
-                    cx, cy, radius.coerceAtLeast(1f),
-                    intArrayOf(
-                        android.graphics.Color.argb(120, 255, 0, 0),
-                        android.graphics.Color.argb(80, 255, 165, 0),
-                        android.graphics.Color.argb(40, 255, 255, 0),
-                        android.graphics.Color.TRANSPARENT
-                    ),
-                    floatArrayOf(0f, 0.4f, 0.7f, 1f),
-                    android.graphics.Shader.TileMode.CLAMP
-                )
-                paint.shader = gradient
-                canvas.drawCircle(cx, cy, radius, paint)
-            }
-        }
-
-        val shareFile = File(cacheDir, "share_${System.currentTimeMillis()}.jpg")
-        FileOutputStream(shareFile).use { out ->
-            finalBitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
-        }
-        finalBitmap.recycle()
-        return shareFile
-    }
-
-    private fun buildStepsList(
-        container: LinearLayout,
-        steps: List<String>,
-        bgRes: Int,
-        colorRes: Int
-    ) {
-        container.removeAllViews()
-        val color = getColor(colorRes)
-
-        steps.forEachIndexed { index, step ->
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.TOP
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    if (index > 0) topMargin = 14.dpToPx()
-                }
-            }
-
-            val numberView = TextView(this).apply {
-                // Fixed-size badge that never shrinks (weight stays on the
-                // text) so the number can't crowd or overlap the step text.
-                layoutParams = LinearLayout.LayoutParams(28.dpToPx(), 28.dpToPx())
-                setBackgroundResource(bgRes)
-                text = "${index + 1}"
-                setTextColor(color)
-                textSize = 13f
-                gravity = Gravity.CENTER
-                includeFontPadding = false
-                typeface = android.graphics.Typeface.DEFAULT_BOLD
-            }
-
-            val textView = TextView(this).apply {
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                    marginStart = 12.dpToPx()
-                    marginEnd = 4.dpToPx()
-                    // Nudge the text down so its first line optically centers
-                    // against the number badge instead of sitting above it.
-                    topMargin = 3.dpToPx()
-                }
-                text = step
-                setTextColor(getColor(R.color.on_surface_secondary))
-                textSize = 14f
-                setLineSpacing(4f.dpToPxF(), 1f)
-            }
-
-            row.addView(numberView)
-            row.addView(textView)
-            container.addView(row)
         }
     }
 
@@ -1551,7 +513,7 @@ class ResultActivity : AppCompatActivity() {
             binding.cardToxicity,
             binding.cardFeedback,
             binding.cardPipelineWarning,
-            binding.cardLowConfidence
+            binding.cardLowConfidence,
         ).filter { it.visibility == View.VISIBLE }
 
         cards.forEachIndexed { index, view ->
@@ -1567,388 +529,30 @@ class ResultActivity : AppCompatActivity() {
         }
     }
 
-    private fun Int.dpToPx(): Int = TypedValue.applyDimension(
-        TypedValue.COMPLEX_UNIT_DIP, this.toFloat(), resources.displayMetrics
-    ).toInt()
-
-    private fun Float.dpToPxF(): Float = TypedValue.applyDimension(
-        TypedValue.COMPLEX_UNIT_DIP, this, resources.displayMetrics
-    )
-
     override fun onDestroy() {
         skeletonAnimator?.cancel()
         skeletonAnimator = null
         super.onDestroy()
     }
 
-    // ─── Care Plan card (server-side /api/care-plan) ───────────────────────
-
-    private fun buildCarePlanCard(scan: ScanEntity, repository: ScanRepository, isRu: Boolean) {
-        val container = binding.contentLayout
-        val classKey = repository.topClassKey(scan)
-            ?: scan.diseaseName.lowercase().replace(' ', '_')
-
-        // Reuse a single card across re-binds.
-        val card = carePlanCard ?: CarePlanCardView(this).also { fresh ->
-            carePlanCard = fresh
-            val lp = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 12.dpToPx() }
-            fresh.layoutParams = lp
-            // Insert just after the Treatment / Prevention card so the
-            // "what's wrong → how to treat → ongoing care" reading order
-            // stays intact.
-            val anchorIdx = container.indexOfChild(binding.cardTreatmentPrevention)
-                .takeIf { it >= 0 } ?: (container.childCount - 1)
-            container.addView(fresh, anchorIdx + 1)
-        }
-
-        val app = application as PlantDiseasesApp
-
-        // Offline (Aqua) scans never call the server: bind a basic,
-        // locally-computed plan instead, visually marked as offline.
-        if ("offline_aqua" in repository.parseWarnings(scan.warnings)) {
-            card.bind(
-                plan = com.plantdiseases.app.util.OfflineScanContent
-                    .localCarePlan(classKey, isRu),
-                speciesDisplay = null,
-                showApplyToReminders = scan.plantId != null,
-                onApplyToReminders = { applied ->
-                    applyCarePlanToReminders(scan, applied)
-                },
-                offlineBasic = true,
-            )
-            return
-        }
-
-        card.showLoading(null)
-
-        lifecycleScope.launch {
-            // Prefer the species attached to the saved garden plant; otherwise
-            // fall back to the PlantNet species detected for this scan so the
-            // care plan is species-specific even before "Add to garden".
-            val plantSpecies = scan.plantId?.let { pid ->
-                val plant = app.plantRepository.getPlant(pid)
-                plant?.scientificName?.takeIf { it.isNotBlank() }
-                    ?: plant?.commonName?.takeIf { it.isNotBlank() }
-                    ?: plant?.species?.takeIf { it.isNotBlank() }
-            }
-                ?: scan.speciesScientific?.takeIf { it.isNotBlank() }
-                ?: scan.speciesCommon?.takeIf { it.isNotBlank() }
-            card.showLoading(plantSpecies)
-
-            val request = CarePlanRequest(
-                disease = classKey,
-                species = plantSpecies,
-                light = "bright_indirect",
-                locale = if (isRu) "ru" else "en",
-            )
-            val result = app.scanRepository.fetchCarePlan(request)
-            result.onSuccess { plan ->
-                card.bind(
-                    plan = plan,
-                    speciesDisplay = plantSpecies,
-                    showApplyToReminders = scan.plantId != null,
-                    onApplyToReminders = { applied ->
-                        applyCarePlanToReminders(scan, applied)
-                    },
-                )
-            }.onFailure {
-                card.showError(onRetry = { buildCarePlanCard(scan, repository, isRu) })
-            }
-        }
-    }
-
-    private fun applyCarePlanToReminders(
-        scan: ScanEntity,
-        plan: com.plantdiseases.app.data.model.CarePlanResponse,
-    ) {
-        val plantId = scan.plantId ?: return
-        val app = application as PlantDiseasesApp
-        lifecycleScope.launch {
-            val plant = app.plantRepository.getPlant(plantId) ?: return@launch
-            com.plantdiseases.app.ui.garden.ReminderScheduleSheet.showWithCarePlanDefaults(
-                supportFragmentManager, plant, plan,
-            )
-            Toast.makeText(
-                this@ResultActivity,
-                getString(R.string.care_plan_reminders_applied),
-                Toast.LENGTH_SHORT,
-            ).show()
-        }
-    }
-
-    // ─── Pet toxicity card ────────────────────────────────────────────────
-
-    private fun buildToxicityCard(scan: ScanEntity, repository: ScanRepository) {
-        val card = binding.cardToxicity
-        val title = binding.tvToxicityTitle
-        val body = binding.tvToxicityBody
-        val icon = binding.ivToxicityIcon
-
-        val speciesList = repository.parseToxicSpeciesList(scan.toxicSpeciesList)
-        when (scan.toxicitySource) {
-            "db" -> if (scan.toxicToPets) {
-                card.visibility = View.VISIBLE
-                card.setCardBackgroundColor(getColor(R.color.disease_red_bg))
-                title.setTextColor(getColor(R.color.disease_red))
-                icon.setColorFilter(getColor(R.color.disease_red))
-                title.setText(R.string.toxicity_toxic_title)
-                body.setTextColor(getColor(R.color.disease_red))
-                body.text = getString(
-                    R.string.toxicity_toxic_body,
-                    speciesList.joinToString(", ") { localizeToxicSpecies(it) },
-                )
-            } else {
-                card.visibility = View.VISIBLE
-                card.setCardBackgroundColor(getColor(R.color.healthy_green_bg))
-                title.setTextColor(getColor(R.color.healthy_green))
-                icon.setColorFilter(getColor(R.color.healthy_green))
-                icon.setImageResource(R.drawable.ic_healthy)
-                title.setText(R.string.toxicity_safe_title)
-                body.setTextColor(getColor(R.color.healthy_green))
-                body.setText(R.string.toxicity_safe_body)
-            }
-            else -> {
-                // Unknown source: the server couldn't pin a species
-                // (PlantNet wasn't configured / no candidates / the
-                // species isn't in our toxicity DB). Showing a big
-                // amber "pet safety unconfirmed" card on every scan
-                // by default reads as a warning the user can't act
-                // on — the previous behaviour. Hide the card and let
-                // the user pick a species via the create-plant flow
-                // to trigger a real lookup on the next request.
-                card.visibility = View.GONE
-            }
-        }
-    }
-
-    /** Localize the ASPCA toxic-species tokens (a closed set: cats / dogs /
-     *  horses) so the toxicity card reads in the user's language. Unknown
-     *  tokens pass through unchanged. */
-    private fun localizeToxicSpecies(token: String): String =
-        when (token.trim().lowercase()) {
-            "cats", "cat" -> getString(R.string.toxicity_animal_cats)
-            "dogs", "dog" -> getString(R.string.toxicity_animal_dogs)
-            "horses", "horse" -> getString(R.string.toxicity_animal_horses)
-            else -> token
-        }
-
-    // ─── Diagnosis feedback ──────────────────────────────────────────────
-
-    private fun buildFeedbackCard(scan: ScanEntity) {
-        val card = binding.cardFeedback
-        card.visibility = View.VISIBLE
-
-        // Already-submitted feedback persists across re-opens of the same
-        // scan — show the confirmation state and skip the buttons so the
-        // user can't double-submit.
-        if (isFeedbackAlreadySubmitted(scan.id)) {
-            binding.feedbackChoiceRow.visibility = View.GONE
-            binding.tvFeedbackStatus.visibility = View.VISIBLE
-            binding.tvFeedbackStatus.setText(R.string.feedback_sent)
-            return
-        }
-
-        binding.tvFeedbackStatus.visibility = View.GONE
-        binding.feedbackChoiceRow.visibility = View.VISIBLE
-        binding.btnFeedbackYes.isEnabled = true
-        binding.btnFeedbackNo.isEnabled = true
-
-        binding.btnFeedbackYes.setOnClickListener {
-            Haptics.tick(this)
-            submitFeedback(scan, correct = true)
-        }
-        binding.btnFeedbackNo.setOnClickListener {
-            Haptics.tick(this)
-            showCorrectionSheet(scan)
-        }
-    }
-
-    private fun showCorrectionSheet(scan: ScanEntity) {
-        val isRu = LocaleHelper.isRussian(this)
-        val repository = (application as PlantDiseasesApp).scanRepository
-        val predictedKey = repository.topClassKey(scan)
-        val predictedDisplay = predictedKey?.let { classKeyDisplayName(it, isRu) }
-            ?: (if (isRu) scan.diseaseNameRu else scan.diseaseName)
-        // The submit lands via the Fragment Result API listener wired in
-        // onCreate — survives recreation while this sheet is open.
-        FeedbackCorrectionSheet.show(
-            supportFragmentManager,
-            predictedDisplayName = predictedDisplay,
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        // Persist the selected Treatment/Prevention tab so it survives rotation
+        // and process-death (the scan itself reloads from the DB by scanId).
+        outState.putInt(
+            KEY_RESULT_TAB,
+            binding.tabsTreatmentPrevention.selectedTabPosition.coerceAtLeast(0),
         )
     }
-
-    private fun submitFeedback(
-        scan: ScanEntity,
-        correct: Boolean,
-        correctedClass: String? = null,
-        reason: String? = null,
-        note: String? = null,
-    ) {
-        // Visible progress, not just disabled buttons — a long send (slow
-        // network, server cold start) previously looked like a freeze.
-        binding.btnFeedbackYes.isEnabled = false
-        binding.btnFeedbackNo.isEnabled = false
-        binding.tvFeedbackStatus.visibility = View.VISIBLE
-        binding.tvFeedbackStatus.setText(R.string.feedback_sending)
-        val app = application as PlantDiseasesApp
-        lifecycleScope.launch {
-            val request = buildFeedbackRequest(
-                scan = scan,
-                correct = correct,
-                correctedClass = correctedClass,
-                reason = reason,
-                note = note,
-            )
-            val result = app.scanRepository.submitFeedback(request)
-            result.onSuccess {
-                markFeedbackSubmitted(scan.id)
-                binding.feedbackChoiceRow.visibility = View.GONE
-                binding.tvFeedbackStatus.visibility = View.VISIBLE
-                binding.tvFeedbackStatus.setText(R.string.feedback_sent)
-                Haptics.success(this@ResultActivity)
-                // On negative feedback the original image is high-value
-                // for retraining. Best-effort upload: failures are
-                // swallowed (the JSON feedback row has already
-                // landed). Filename on the server is the SHA-256 of
-                // the bytes, matching the ``image_hash`` we already
-                // sent in the JSON payload.
-                if (!correct) {
-                    val scanId = request.scanId
-                    val imageFile = java.io.File(scan.imagePath)
-                    if (imageFile.exists()) {
-                        runCatching {
-                            app.scanRepository.uploadFeedbackImage(scanId, imageFile)
-                        }
-                    }
-                }
-            }.onFailure { error ->
-                binding.btnFeedbackYes.isEnabled = true
-                binding.btnFeedbackNo.isEnabled = true
-                binding.tvFeedbackStatus.visibility = View.GONE
-                val msgRes = when (error) {
-                    is ScanRepository.RateLimitException -> R.string.feedback_rate_limited
-                    else -> R.string.feedback_failed
-                }
-                Toast.makeText(this@ResultActivity, msgRes, Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-
-    /**
-     * Assemble the full feedback payload from a [ScanEntity] + the
-     * user's three correction signals. All metadata is best-effort:
-     * when a field is unknown we send null rather than fabricating a
-     * value, so server-side metrics don't get polluted by defaults.
-     */
-    private suspend fun buildFeedbackRequest(
-        scan: ScanEntity,
-        correct: Boolean,
-        correctedClass: String?,
-        reason: String?,
-        note: String?,
-    ): FeedbackRequest {
-        val repository = (application as PlantDiseasesApp).scanRepository
-        // Prefer the server-issued ``displayedClassKey`` — that's the
-        // verdict the user actually saw (post-weak-healthy-reroute).
-        // Falling back to argmax(all_probs) only when the column is
-        // empty (legacy scans saved before this build, or a server
-        // old enough that the field wasn't returned). Without this
-        // we'd echo the pre-reroute argmax back as
-        // ``predicted_class`` and rot the per-class accuracy
-        // metrics on the server side.
-        val displayedKey = scan.displayedClassKey?.takeIf { it.isNotBlank() }
-        val argmaxKey = repository.topClassKey(scan)
-        val predictedKey = displayedKey ?: argmaxKey
-        val allProbs = repository.parseAllProbs(scan.allProbs)
-        val predictedConfidence = predictedKey
-            ?.let { allProbs[it] }
-            ?: scan.confidence
-        val top3 = allProbs.entries
-            .asSequence()
-            .sortedByDescending { it.value }
-            .take(3)
-            .map { TopProb(classKey = it.key, prob = it.value) }
-            .toList()
-            .takeIf { it.isNotEmpty() }
-        val regionCount = repository.parseRegions(scan.regions).size
-        val isRu = LocaleHelper.isRussian(this)
-        val latencyMs = (System.currentTimeMillis() - scan.timestamp).coerceAtLeast(0L)
-
-        // ``client_scan_id`` is the random UUID we mint at insert time.
-        // We never send the local autoincrement primary key.
-        val scanId = scan.clientScanId.takeIf { it.isNotBlank() }
-            ?: java.util.UUID.randomUUID().toString()
-
-        // SHA-256 of the original on-disk image so the corrections
-        // corpus can be joined back to image bytes during retraining
-        // without uploading the image itself. Runs off the UI thread;
-        // returns null when the file is gone — the server treats the
-        // field as optional.
-        val imageHashHex = withContext(Dispatchers.IO) {
-            ImageUtils.sha256Hex(java.io.File(scan.imagePath))
-        }
-
-        // Parse the persisted prediction set (JSON array of class
-        // keys, stored at saveScan time) back into a list. Stale
-        // gallery rows from before v2 of the local schema won't have
-        // it; that's fine — the server treats the field as optional.
-        val predictionSet: List<String>? = scan.predictionSet?.let { raw ->
-            runCatching {
-                com.google.gson.Gson()
-                    .fromJson(raw, Array<String>::class.java).toList()
-            }.getOrNull()?.takeIf { it.isNotEmpty() }
-        }
-
-        return FeedbackRequest(
-            scanId = scanId,
-            correct = correct,
-            correctedClass = correctedClass,
-            reason = reason,
-            note = note,
-            predictedClass = predictedKey,
-            predictedConfidence = predictedConfidence,
-            top3 = top3,
-            modelVersion = SERVER_MODEL_VERSION,
-            appVersion = BuildConfig.VERSION_NAME,
-            locale = if (isRu) "ru" else "en",
-            platform = "android",
-            userPseudoId = TelemetryIds.userPseudoId(this),
-            regionCount = regionCount,
-            primaryRegionIndex = scan.primaryRegionIndex,
-            feedbackLatencyMs = latencyMs,
-            imageHash = imageHashHex,
-            predictionSet = predictionSet,
-        )
-    }
-
-    private fun classKeyDisplayName(key: String, isRu: Boolean): String? =
-        com.plantdiseases.app.util.DiseaseLabels.displayName(key, isRu)
 
     companion object {
         const val EXTRA_SCAN_ID = "extra_scan_id"
+
+        private const val KEY_RESULT_TAB = "result_tab"
+
         /** When true, auto-open the community opinions for this scan once it
          *  loads — set from an opinion notification tap and from tapping a
          *  Gallery row that has new opinions. */
         const val EXTRA_OPEN_OPINIONS = "extra_open_opinions"
-        private const val TAG = "ResultActivity"
-        private const val FEEDBACK_PREFS = "plantdiseases_feedback_prefs"
-        private const val FEEDBACK_KEY_PREFIX = "scan_"
-        // Pinned to the classifier release in server/models/classes.json.
-        // When the server exposes model_version in /api/analyze we'll
-        // start trusting that value per-scan instead.
-        private const val SERVER_MODEL_VERSION = "2.5.0"
-    }
-
-    private fun isFeedbackAlreadySubmitted(scanId: Long): Boolean =
-        getSharedPreferences(FEEDBACK_PREFS, MODE_PRIVATE)
-            .getBoolean("$FEEDBACK_KEY_PREFIX$scanId", false)
-
-    private fun markFeedbackSubmitted(scanId: Long) {
-        getSharedPreferences(FEEDBACK_PREFS, MODE_PRIVATE).edit()
-            .putBoolean("$FEEDBACK_KEY_PREFIX$scanId", true)
-            .apply()
     }
 }

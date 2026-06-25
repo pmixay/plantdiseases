@@ -14,7 +14,10 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
+import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.ui.garden.PlantDetailActivity
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
 
 /**
  * Fires when a reminder's WorkManager interval elapses. Persists a
@@ -32,7 +35,9 @@ import com.plantdiseases.app.ui.garden.PlantDetailActivity
 class PlantReminderWorker(
     private val context: Context,
     params: WorkerParameters,
-) : CoroutineWorker(context, params) {
+) : CoroutineWorker(context, params), KoinComponent {
+
+    private val plantRepository: PlantRepository by inject()
 
     @SuppressLint("MissingPermission") // permission checked at line below before notify()
     override suspend fun doWork(): Result {
@@ -68,8 +73,11 @@ class PlantReminderWorker(
             TYPE_CHECK -> (plantId * 10 + 1).toInt()
             TYPE_FERTILIZE -> (plantId * 10 + 2).toInt()
             else ->
-                if (reminderId > 0) (reminderId % 1_000_000L).toInt() + 10_000_000
-                else (plantId * 10 + 9).toInt()
+                if (reminderId > 0) {
+                    (reminderId % 1_000_000L).toInt() + 10_000_000
+                } else {
+                    (plantId * 10 + 9).toInt()
+                }
         }
 
         // Log the firing as a pending event BEFORE posting the notify
@@ -77,11 +85,12 @@ class PlantReminderWorker(
         // resolution doesn't happen (user dismisses without tapping),
         // the row stays "pending" and the recent-events list shows it
         // — that's an audit signal, not a bug.
-        val app = context.applicationContext as PlantDiseasesApp
-        val reminder = if (reminderId > 0) app.plantRepository.getReminderById(reminderId) else null
+        val reminder = if (reminderId > 0) plantRepository.getReminderById(reminderId) else null
         val eventId = if (reminder != null) {
-            app.plantRepository.recordReminderFire(reminder)
-        } else -1L
+            plantRepository.recordReminderFire(reminder)
+        } else {
+            -1L
+        }
 
         // Custom-named reminders title with their own name; legacy rows
         // without a custom label keep the friendlier verb phrasing. The
@@ -106,7 +115,8 @@ class PlantReminderWorker(
         }
         val body = reminder?.description?.trim()?.takeIf { it.isNotEmpty() }
             ?: com.plantdiseases.app.util.ReminderPresets.displayLabel(
-                customLabel, reminderType,
+                customLabel,
+                reminderType,
             ) { context.getString(it) }
 
         val contentIntent = PendingIntent.getActivity(
@@ -133,7 +143,10 @@ class PlantReminderWorker(
         // still shows.
         if (eventId > 0) {
             val doneIntent = ReminderActionReceiver.buildIntent(
-                context, eventId, notificationId, ReminderActionReceiver.ACTION_DONE,
+                context,
+                eventId,
+                notificationId,
+                ReminderActionReceiver.ACTION_DONE,
             )
             val donePending = PendingIntent.getBroadcast(
                 context,
@@ -142,9 +155,14 @@ class PlantReminderWorker(
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
             val snoozeIntent = ReminderActionReceiver.buildIntent(
-                context, eventId, notificationId, ReminderActionReceiver.ACTION_SNOOZE,
-                plantId = plantId, reminderId = reminderId,
-                type = reminderType, plantName = plantName,
+                context,
+                eventId,
+                notificationId,
+                ReminderActionReceiver.ACTION_SNOOZE,
+                plantId = plantId,
+                reminderId = reminderId,
+                type = reminderType,
+                plantName = plantName,
             )
             val snoozePending = PendingIntent.getBroadcast(
                 context,
@@ -153,10 +171,14 @@ class PlantReminderWorker(
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
             builder.addAction(
-                R.drawable.ic_care, context.getString(R.string.reminder_action_done), donePending,
+                R.drawable.ic_care,
+                context.getString(R.string.reminder_action_done),
+                donePending,
             )
             builder.addAction(
-                R.drawable.ic_clock, context.getString(R.string.reminder_action_snooze), snoozePending,
+                R.drawable.ic_clock,
+                context.getString(R.string.reminder_action_snooze),
+                snoozePending,
             )
         }
 

@@ -21,9 +21,23 @@ import com.plantdiseases.app.data.model.MyScanOpinionsResponse
 import com.plantdiseases.app.data.model.ProgressionRequest
 import com.plantdiseases.app.data.model.ProgressionResponse
 import com.plantdiseases.app.data.model.ScanHistoryItem
-import com.plantdiseases.app.data.remote.ApiService
 import com.plantdiseases.app.data.remote.PlantApiClient
 import com.plantdiseases.app.util.AquaModelManager
+import io.ktor.client.call.body
+import io.ktor.client.request.forms.MultiPartFormDataContent
+import io.ktor.client.request.delete
+import io.ktor.client.request.forms.formData
+import io.ktor.client.request.get
+import io.ktor.client.request.parameter
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.client.request.url
+import io.ktor.client.statement.bodyAsChannel
+import io.ktor.utils.io.jvm.javaio.toInputStream
+import io.ktor.http.ContentType
+import io.ktor.http.Headers
+import io.ktor.http.HttpHeaders
+import io.ktor.http.contentType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -44,9 +58,6 @@ class ScanRepository(
     // when absent.
     private val scanChatMessageDao: ScanChatMessageDao? = null,
 ) {
-    private val apiService: ApiService
-        get() = apiClient.apiService
-
     private val gson = Gson()
 
     // Serialises Aqua model installs so two concurrent syncAquaModel calls
@@ -68,28 +79,55 @@ class ScanRepository(
     ): Result<AnalysisResponse> =
         withContext(Dispatchers.IO) {
             try {
-                val requestBody = imageFile.asRequestBody("image/jpeg".toMediaTypeOrNull())
-                val part = MultipartBody.Part.createFormData("image", imageFile.name, requestBody)
-                val response = apiService.analyzeImage(
-                    part,
-                    speciesHint?.takeIf { it.isNotBlank() },
-                    locale,
-                    family,
-                )
-                if (response.isSuccessful && response.body() != null) {
-                    Result.success(response.body()!!)
-                } else if (response.code() == 429 || response.code() == 403) {
+                // Ktor multipart over the shared OkHttp engine. Reading the
+                // bytes up front (rather than streaming the File) keeps the
+                // body re-writable, so the OkHttp RetryInterceptor can replay
+                // the POST once on an explicit 429/503 — the same behaviour the
+                // Retrofit File-backed body had.
+                val imageBytes = imageFile.readBytes()
+                val response = apiClient.httpClient.post("api/analyze") {
+                    url {
+                        speciesHint?.takeIf { it.isNotBlank() }?.let {
+                            parameters.append("species", it)
+                        }
+                        parameters.append("locale", locale)
+                        // Model tier (aqua | gamma | frontier). Aqua normally
+                        // never reaches here (on-device); gamma is the default;
+                        // frontier only when the operator enabled it.
+                        parameters.append("family", family)
+                    }
+                    setBody(
+                        MultiPartFormDataContent(
+                            formData {
+                                append(
+                                    "image",
+                                    imageBytes,
+                                    Headers.build {
+                                        append(HttpHeaders.ContentType, "image/jpeg")
+                                        append(
+                                            HttpHeaders.ContentDisposition,
+                                            "filename=\"${imageFile.name}\"",
+                                        )
+                                    },
+                                )
+                            },
+                        ),
+                    )
+                }
+                when (response.status.value) {
+                    in 200..299 -> Result.success(response.body<AnalysisResponse>())
                     // 403 = a temporary abuse-control cooldown (the server bans
                     // an IP that briefly burst past the rate limit). Treat it
                     // like 429: show the "server busy, retry shortly" card
                     // instead of a scary "Server error: 403".
-                    Result.failure(RateLimitException())
-                } else if (response.code() == 503) {
-                    Result.failure(ServerStartingException())
-                } else if (response.code() == 400 || response.code() == 415) {
-                    Result.failure(UnsupportedImageException())
-                } else {
-                    Result.failure(Exception("Server error: ${response.code()} ${response.message()}"))
+                    429, 403 -> Result.failure(RateLimitException())
+                    503 -> Result.failure(ServerStartingException())
+                    400, 415 -> Result.failure(UnsupportedImageException())
+                    else -> Result.failure(
+                        Exception(
+                            "Server error: ${response.status.value} ${response.status.description}",
+                        ),
+                    )
                 }
             } catch (e: SocketTimeoutException) {
                 Result.failure(ServerTimeoutException())
@@ -110,11 +148,10 @@ class ScanRepository(
     suspend fun fetchCapabilities(): Result<CapabilitiesResponse> =
         withContext(Dispatchers.IO) {
             try {
-                val response = apiService.capabilities()
-                if (response.isSuccessful && response.body() != null) {
-                    Result.success(response.body()!!)
-                } else {
-                    Result.failure(Exception("Server error: ${response.code()}"))
+                val response = apiClient.httpClient.get("api/capabilities")
+                when (response.status.value) {
+                    in 200..299 -> Result.success(response.body<CapabilitiesResponse>())
+                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
                 }
             } catch (e: Exception) {
                 Result.failure(e)
@@ -131,9 +168,13 @@ class ScanRepository(
     suspend fun syncAquaModel(context: android.content.Context): Result<Boolean> =
         withContext(Dispatchers.IO) {
             try {
-                val manifestResp = apiService.aquaManifest()
-                val manifest = manifestResp.body()
-                if (!manifestResp.isSuccessful || manifest == null || !manifest.available) {
+                val manifestResp = apiClient.httpClient.get("api/aqua/manifest")
+                if (manifestResp.status.value !in 200..299) {
+                    return@withContext Result.success(false)
+                }
+                val manifest =
+                    manifestResp.body<com.plantdiseases.app.data.model.AquaManifestResponse>()
+                if (!manifest.available) {
                     return@withContext Result.success(false)
                 }
                 val sha = manifest.sha256
@@ -151,14 +192,16 @@ class ScanRepository(
                     if (AquaModelManager.isUpToDate(context, sha)) {
                         return@withContext Result.success(false)
                     }
-                    val modelResp = apiService.aquaModel()
-                    val body = modelResp.body()
-                    if (!modelResp.isSuccessful || body == null) {
+                    val modelResp = apiClient.httpClient.get("api/aqua/model")
+                    if (modelResp.status.value !in 200..299) {
                         return@withContext Result.failure(
-                            Exception("Aqua model download failed: ${modelResp.code()}")
+                            Exception("Aqua model download failed: ${modelResp.status.value}"),
                         )
                     }
-                    val installed = body.byteStream().use { stream ->
+                    // Stream the multi-MB body through a channel-backed
+                    // InputStream rather than buffering it all in memory — the
+                    // Retrofit path used @Streaming for the same reason.
+                    val installed = modelResp.bodyAsChannel().toInputStream().use { stream ->
                         AquaModelManager.install(context, stream, sha, manifest.version, classes)
                     }
                     Result.success(installed)
@@ -182,19 +225,36 @@ class ScanRepository(
     ): Result<IdentifyResponse> =
         withContext(Dispatchers.IO) {
             try {
-                val body = imageFile.asRequestBody("image/jpeg".toMediaTypeOrNull())
-                val part = MultipartBody.Part.createFormData("image", imageFile.name, body)
-                val response = apiService.identifySpecies(part, organ, locale)
-                if (response.isSuccessful && response.body() != null) {
-                    Result.success(response.body()!!)
-                } else if (response.code() == 429) {
-                    Result.failure(RateLimitException())
-                } else if (response.code() == 503) {
-                    Result.failure(ServerStartingException())
-                } else if (response.code() == 400 || response.code() == 415) {
-                    Result.failure(UnsupportedImageException())
-                } else {
-                    Result.failure(Exception("Server error: ${response.code()}"))
+                val imageBytes = imageFile.readBytes()
+                val response = apiClient.httpClient.post("api/identify") {
+                    url {
+                        parameters.append("organ", organ)
+                        parameters.append("locale", locale)
+                    }
+                    setBody(
+                        MultiPartFormDataContent(
+                            formData {
+                                append(
+                                    "image",
+                                    imageBytes,
+                                    Headers.build {
+                                        append(HttpHeaders.ContentType, "image/jpeg")
+                                        append(
+                                            HttpHeaders.ContentDisposition,
+                                            "filename=\"${imageFile.name}\"",
+                                        )
+                                    },
+                                )
+                            },
+                        ),
+                    )
+                }
+                when (response.status.value) {
+                    in 200..299 -> Result.success(response.body<IdentifyResponse>())
+                    429 -> Result.failure(RateLimitException())
+                    503 -> Result.failure(ServerStartingException())
+                    400, 415 -> Result.failure(UnsupportedImageException())
+                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
                 }
             } catch (e: SocketTimeoutException) {
                 Result.failure(ServerTimeoutException())
@@ -223,17 +283,22 @@ class ScanRepository(
                 .get(cacheKey, CarePlanResponse::class.java)
                 ?.let { return@withContext Result.success(it) }
             try {
-                val response = apiService.carePlan(request)
-                if (response.isSuccessful && response.body() != null) {
-                    com.plantdiseases.app.util.ResponseCache.put(
-                        cacheKey, response.body()!!,
-                        com.plantdiseases.app.util.ResponseCache.TTL_CARE_PLAN_MS,
-                    )
-                    Result.success(response.body()!!)
-                } else if (response.code() == 503) {
-                    Result.failure(ServerStartingException())
-                } else {
-                    Result.failure(Exception("Server error: ${response.code()}"))
+                val response = apiClient.httpClient.post("api/care-plan") {
+                    contentType(ContentType.Application.Json)
+                    setBody(request)
+                }
+                when (response.status.value) {
+                    in 200..299 -> {
+                        val body = response.body<CarePlanResponse>()
+                        com.plantdiseases.app.util.ResponseCache.put(
+                            cacheKey,
+                            body,
+                            com.plantdiseases.app.util.ResponseCache.TTL_CARE_PLAN_MS,
+                        )
+                        Result.success(body)
+                    }
+                    503 -> Result.failure(ServerStartingException())
+                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
                 }
             } catch (e: SocketTimeoutException) {
                 Result.failure(ServerTimeoutException())
@@ -254,13 +319,16 @@ class ScanRepository(
     ): Result<com.plantdiseases.app.data.model.SymptomDiagnoseResponse> =
         withContext(Dispatchers.IO) {
             try {
-                val response = apiService.symptomDiagnose(request)
-                if (response.isSuccessful && response.body() != null) {
-                    Result.success(response.body()!!)
-                } else if (response.code() == 503) {
-                    Result.failure(ServerStartingException())
-                } else {
-                    Result.failure(Exception("Server error: ${response.code()}"))
+                val response = apiClient.httpClient.post("api/symptom-diagnose") {
+                    contentType(ContentType.Application.Json)
+                    setBody(request)
+                }
+                when (response.status.value) {
+                    in 200..299 -> Result.success(
+                        response.body<com.plantdiseases.app.data.model.SymptomDiagnoseResponse>(),
+                    )
+                    503 -> Result.failure(ServerStartingException())
+                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
                 }
             } catch (e: SocketTimeoutException) {
                 Result.failure(ServerTimeoutException())
@@ -275,11 +343,10 @@ class ScanRepository(
     suspend fun getCommunityOpinions(scanId: String): Result<CommunityOpinionsResponse> =
         withContext(Dispatchers.IO) {
             try {
-                val response = apiService.communityGetOpinions(scanId)
-                if (response.isSuccessful && response.body() != null) {
-                    Result.success(response.body()!!)
-                } else {
-                    Result.failure(Exception("Server error: ${response.code()}"))
+                val response = apiClient.httpClient.get("api/community/opinions/$scanId")
+                when (response.status.value) {
+                    in 200..299 -> Result.success(response.body<CommunityOpinionsResponse>())
+                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
                 }
             } catch (e: SocketTimeoutException) {
                 Result.failure(ServerTimeoutException())
@@ -294,11 +361,10 @@ class ScanRepository(
     suspend fun getMyCommunityOpinions(pseudoId: String): Result<CommunityOpinionsResponse> =
         withContext(Dispatchers.IO) {
             try {
-                val response = apiService.communityMyOpinions(pseudoId)
-                if (response.isSuccessful && response.body() != null) {
-                    Result.success(response.body()!!)
-                } else {
-                    Result.failure(Exception("Server error: ${response.code()}"))
+                val response = apiClient.httpClient.get("api/community/my-opinions/$pseudoId")
+                when (response.status.value) {
+                    in 200..299 -> Result.success(response.body<CommunityOpinionsResponse>())
+                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
                 }
             } catch (e: SocketTimeoutException) {
                 Result.failure(ServerTimeoutException())
@@ -315,11 +381,13 @@ class ScanRepository(
     ): Result<CommunityOpinionsResponse> =
         withContext(Dispatchers.IO) {
             try {
-                val response = apiService.communitySubmitOpinion(request)
-                if (response.isSuccessful && response.body() != null) {
-                    Result.success(response.body()!!)
-                } else {
-                    Result.failure(Exception("Server error: ${response.code()}"))
+                val response = apiClient.httpClient.post("api/community/opinion") {
+                    contentType(ContentType.Application.Json)
+                    setBody(request)
+                }
+                when (response.status.value) {
+                    in 200..299 -> Result.success(response.body<CommunityOpinionsResponse>())
+                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
                 }
             } catch (e: SocketTimeoutException) {
                 Result.failure(ServerTimeoutException())
@@ -345,16 +413,21 @@ class ScanRepository(
     ): Result<Boolean> =
         withContext(Dispatchers.IO) {
             try {
-                val response = apiService.communityRequestOpinion(
-                    com.plantdiseases.app.data.model.CommunityRequestOpinionRequest(
-                        scanId = scanId,
-                        userPseudoId = userPseudoId,
-                    ),
-                )
-                if (response.isSuccessful && response.body() != null) {
-                    Result.success(response.body()!!.flagged)
-                } else {
-                    Result.failure(Exception("Server error: ${response.code()}"))
+                val response = apiClient.httpClient.post("api/community/request-opinion") {
+                    contentType(ContentType.Application.Json)
+                    setBody(
+                        com.plantdiseases.app.data.model.CommunityRequestOpinionRequest(
+                            scanId = scanId,
+                            userPseudoId = userPseudoId,
+                        ),
+                    )
+                }
+                when (response.status.value) {
+                    in 200..299 -> Result.success(
+                        response.body<com.plantdiseases.app.data.model.CommunityRequestOpinionResponse>()
+                            .flagged,
+                    )
+                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
                 }
             } catch (e: SocketTimeoutException) {
                 Result.failure(ServerTimeoutException())
@@ -378,20 +451,19 @@ class ScanRepository(
     suspend fun sendChat(request: ChatRequest): Result<ChatResponse> =
         withContext(Dispatchers.IO) {
             try {
-                val response = apiService.chat(request)
-                if (response.isSuccessful && response.body() != null) {
-                    Result.success(response.body()!!)
-                } else if (response.code() == 429) {
-                    Result.failure(RateLimitException())
-                } else if (response.code() == 503) {
-                    Result.failure(ServerStartingException())
-                } else if (response.code() == 400) {
+                val response = apiClient.httpClient.post("api/chat") {
+                    contentType(ContentType.Application.Json)
+                    setBody(request)
+                }
+                when (response.status.value) {
+                    in 200..299 -> Result.success(response.body<ChatResponse>())
+                    429 -> Result.failure(RateLimitException())
+                    503 -> Result.failure(ServerStartingException())
                     // Server rejected our payload (oversize diagnosis,
                     // empty message, etc.). Surface as a generic
                     // failure — the UI keeps a chat-level error toast.
-                    Result.failure(Exception("Bad request"))
-                } else {
-                    Result.failure(Exception("Server error: ${response.code()}"))
+                    400 -> Result.failure(Exception("Bad request"))
+                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
                 }
             } catch (e: SocketTimeoutException) {
                 Result.failure(ServerTimeoutException())
@@ -421,17 +493,16 @@ class ScanRepository(
     suspend fun submitFeedback(request: FeedbackRequest): Result<FeedbackResponse> =
         withContext(Dispatchers.IO) {
             try {
-                val response = apiService.feedback(request)
-                if (response.isSuccessful && response.body() != null) {
-                    Result.success(response.body()!!)
-                } else if (response.code() == 429) {
-                    Result.failure(RateLimitException())
-                } else if (response.code() == 503) {
-                    Result.failure(ServerStartingException())
-                } else if (response.code() == 422) {
-                    Result.failure(Exception("Invalid feedback payload"))
-                } else {
-                    Result.failure(Exception("Server error: ${response.code()}"))
+                val response = apiClient.httpClient.post("api/feedback") {
+                    contentType(ContentType.Application.Json)
+                    setBody(request)
+                }
+                when (response.status.value) {
+                    in 200..299 -> Result.success(response.body<FeedbackResponse>())
+                    429 -> Result.failure(RateLimitException())
+                    503 -> Result.failure(ServerStartingException())
+                    422 -> Result.failure(Exception("Invalid feedback payload"))
+                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
                 }
             } catch (e: SocketTimeoutException) {
                 Result.failure(ServerTimeoutException())
@@ -465,14 +536,32 @@ class ScanRepository(
                 "webp" -> "image/webp"
                 else -> "image/jpeg"
             }
-            val requestBody = imageFile.asRequestBody(mime.toMediaTypeOrNull())
-            val part = MultipartBody.Part.createFormData(
-                "image", imageFile.name, requestBody,
-            )
-            val scanIdBody = scanId.toRequestBody("text/plain".toMediaTypeOrNull())
-            val response = apiService.feedbackImage(scanIdBody, part)
-            if (response.isSuccessful) Result.success(Unit)
-            else Result.failure(Exception("Server error: ${response.code()}"))
+            val imageBytes = imageFile.readBytes()
+            val response = apiClient.httpClient.post("api/feedback/image") {
+                setBody(
+                    MultiPartFormDataContent(
+                        formData {
+                            append("scan_id", scanId)
+                            append(
+                                "image",
+                                imageBytes,
+                                Headers.build {
+                                    append(HttpHeaders.ContentType, mime)
+                                    append(
+                                        HttpHeaders.ContentDisposition,
+                                        "filename=\"${imageFile.name}\"",
+                                    )
+                                },
+                            )
+                        },
+                    ),
+                )
+            }
+            if (response.status.value in 200..299) {
+                Result.success(Unit)
+            } else {
+                Result.failure(Exception("Server error: ${response.status.value}"))
+            }
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -481,11 +570,13 @@ class ScanRepository(
     suspend fun fetchProgression(request: ProgressionRequest): Result<ProgressionResponse> =
         withContext(Dispatchers.IO) {
             try {
-                val response = apiService.progression(request)
-                if (response.isSuccessful && response.body() != null) {
-                    Result.success(response.body()!!)
-                } else {
-                    Result.failure(Exception("Server error: ${response.code()}"))
+                val response = apiClient.httpClient.post("api/progression") {
+                    contentType(ContentType.Application.Json)
+                    setBody(request)
+                }
+                when (response.status.value) {
+                    in 200..299 -> Result.success(response.body<ProgressionResponse>())
+                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
                 }
             } catch (e: SocketTimeoutException) {
                 Result.failure(ServerTimeoutException())
@@ -519,11 +610,10 @@ class ScanRepository(
     suspend fun checkServerHealth(): Result<HealthResponse> =
         withContext(Dispatchers.IO) {
             try {
-                val response = apiService.healthCheck()
-                if (response.isSuccessful && response.body() != null) {
-                    Result.success(response.body()!!)
-                } else {
-                    Result.failure(Exception("Server error: ${response.code()}"))
+                val response = apiClient.httpClient.get("api/health")
+                when (response.status.value) {
+                    in 200..299 -> Result.success(response.body<HealthResponse>())
+                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
                 }
             } catch (e: SocketTimeoutException) {
                 Result.failure(ServerTimeoutException())
@@ -544,11 +634,16 @@ class ScanRepository(
             val detection = result.detection
             val regions = detection?.regions ?: emptyList()
             val primary = detection?.primaryRegion
-            val primaryIndex = if (primary == null) null
-                else regions.indexOfFirst {
-                    it.x == primary.x && it.y == primary.y &&
-                        it.width == primary.width && it.height == primary.height
+            val primaryIndex = if (primary == null) {
+                null
+            } else {
+                regions.indexOfFirst {
+                    it.x == primary.x &&
+                        it.y == primary.y &&
+                        it.width == primary.width &&
+                        it.height == primary.height
                 }.takeIf { it >= 0 }
+            }
             val warningsJson = result.warnings
                 ?.takeIf { it.isNotEmpty() }
                 ?.let { gson.toJson(it) }
@@ -656,9 +751,11 @@ class ScanRepository(
     suspend fun fetchMyScanOpinions(pseudoId: String): Result<MyScanOpinionsResponse> =
         withContext(Dispatchers.IO) {
             try {
-                val r = apiService.communityMyScanOpinions(pseudoId)
-                if (r.isSuccessful && r.body() != null) Result.success(r.body()!!)
-                else Result.failure(Exception("Server error: ${r.code()}"))
+                val r = apiClient.httpClient.get("api/community/my-scan-opinions/$pseudoId")
+                when (r.status.value) {
+                    in 200..299 -> Result.success(r.body<MyScanOpinionsResponse>())
+                    else -> Result.failure(Exception("Server error: ${r.status.value}"))
+                }
             } catch (e: Exception) {
                 Result.failure(e)
             }
@@ -670,12 +767,15 @@ class ScanRepository(
     suspend fun registerPushToken(pseudoId: String, token: String) {
         withContext(Dispatchers.IO) {
             try {
-                apiService.registerPushToken(
-                    com.plantdiseases.app.data.model.PushRegisterRequest(
-                        userPseudoId = pseudoId,
-                        token = token,
-                    ),
-                )
+                apiClient.httpClient.post("api/push/register") {
+                    contentType(ContentType.Application.Json)
+                    setBody(
+                        com.plantdiseases.app.data.model.PushRegisterRequest(
+                            userPseudoId = pseudoId,
+                            token = token,
+                        ),
+                    )
+                }
             } catch (_: Exception) {
                 // best-effort; the poll fallback still covers delivery
             }
@@ -688,12 +788,15 @@ class ScanRepository(
     suspend fun recordCommunityView(scanId: String, viewerPseudoId: String) {
         withContext(Dispatchers.IO) {
             try {
-                apiService.communityRecordView(
-                    com.plantdiseases.app.data.model.CommunityViewRequest(
-                        scanId = scanId,
-                        userPseudoId = viewerPseudoId,
-                    ),
-                )
+                apiClient.httpClient.post("api/community/view") {
+                    contentType(ContentType.Application.Json)
+                    setBody(
+                        com.plantdiseases.app.data.model.CommunityViewRequest(
+                            scanId = scanId,
+                            userPseudoId = viewerPseudoId,
+                        ),
+                    )
+                }
             } catch (_: Exception) {
                 // best-effort telemetry; never surface to the user
             }
@@ -708,10 +811,15 @@ class ScanRepository(
         withContext(Dispatchers.IO) {
             if (scanIds.isEmpty()) return@withContext emptyMap()
             try {
-                val r = apiService.communityScanCounts(
-                    com.plantdiseases.app.data.model.CommunityScanCountsRequest(scanIds),
-                )
-                if (r.isSuccessful && r.body() != null) r.body()!!.counts else emptyMap()
+                val r = apiClient.httpClient.post("api/community/scan-counts") {
+                    contentType(ContentType.Application.Json)
+                    setBody(com.plantdiseases.app.data.model.CommunityScanCountsRequest(scanIds))
+                }
+                if (r.status.value in 200..299) {
+                    r.body<com.plantdiseases.app.data.model.CommunityScanCountsResponse>().counts
+                } else {
+                    emptyMap()
+                }
             } catch (e: Exception) {
                 emptyMap()
             }
@@ -858,12 +966,10 @@ class ScanRepository(
     )
 
     /** Parse treatment/prevention JSON arrays */
-    fun parseStringList(json: String): List<String> {
-        return try {
-            gson.fromJson(json, Array<String>::class.java).toList()
-        } catch (e: Exception) {
-            emptyList()
-        }
+    fun parseStringList(json: String): List<String> = try {
+        gson.fromJson(json, Array<String>::class.java).toList()
+    } catch (e: Exception) {
+        emptyList()
     }
 
     /** Parse all_probs JSON map */
@@ -922,30 +1028,46 @@ class ScanRepository(
     ): Result<com.plantdiseases.app.data.model.CommunityScanUploadResponse> =
         withContext(Dispatchers.IO) {
             try {
-                val plainText = "text/plain".toMediaTypeOrNull()
-                fun text(value: String?): okhttp3.RequestBody? = value
-                    ?.takeIf { it.isNotBlank() }
-                    ?.toRequestBody(plainText)
-                val image = thumbnail?.takeIf { it.exists() }?.let { f ->
-                    val rb = f.asRequestBody("image/jpeg".toMediaTypeOrNull())
-                    MultipartBody.Part.createFormData("image", f.name, rb)
+                val response = apiClient.httpClient.post("api/community/scan") {
+                    setBody(
+                        MultiPartFormDataContent(
+                            formData {
+                                // Required fields (callers always supply these).
+                                append("scan_id", scanId)
+                                append("user_pseudo_id", userPseudoId)
+                                append("country", country)
+                                append("disease", disease)
+                                // Optional fields — only sent when present/non-blank,
+                                // matching the old `text()` helper exactly.
+                                region.takeIf { it.isNotBlank() }?.let { append("region", it) }
+                                confidence?.let { append("confidence", it.toString()) }
+                                species?.takeIf { it.isNotBlank() }?.let { append("species", it) }
+                                speciesScore?.let { append("species_score", it.toString()) }
+                                locale?.takeIf { it.isNotBlank() }?.let { append("locale", it) }
+                                thumbnail?.takeIf { it.exists() }?.let { f ->
+                                    append(
+                                        "image",
+                                        f.readBytes(),
+                                        Headers.build {
+                                            append(HttpHeaders.ContentType, "image/jpeg")
+                                            append(
+                                                HttpHeaders.ContentDisposition,
+                                                "filename=\"${f.name}\"",
+                                            )
+                                        },
+                                    )
+                                }
+                            },
+                        ),
+                    )
                 }
-                val response = apiService.communityScanUpload(
-                    scanId = text(scanId)!!,
-                    userPseudoId = text(userPseudoId)!!,
-                    country = text(country)!!,
-                    region = text(region),
-                    disease = text(disease)!!,
-                    confidence = text(confidence?.toString()),
-                    species = text(species),
-                    speciesScore = text(speciesScore?.toString()),
-                    locale = text(locale),
-                    image = image,
-                )
-                if (response.isSuccessful && response.body() != null) {
-                    Result.success(response.body()!!)
-                } else {
-                    Result.failure(Exception("Community upload failed: ${response.code()}"))
+                when (response.status.value) {
+                    in 200..299 -> Result.success(
+                        response.body<com.plantdiseases.app.data.model.CommunityScanUploadResponse>(),
+                    )
+                    else -> Result.failure(
+                        Exception("Community upload failed: ${response.status.value}"),
+                    )
                 }
             } catch (e: Exception) {
                 Result.failure(e)
@@ -968,18 +1090,23 @@ class ScanRepository(
     ): Result<com.plantdiseases.app.data.model.CommunityScansResponse> =
         withContext(Dispatchers.IO) {
             try {
-                val response = apiService.communityScanNearby(
-                    country = country,
-                    region = region?.takeIf { it.isNotBlank() },
-                    disease = disease?.takeIf { it.isNotBlank() },
-                    species = species?.takeIf { it.isNotBlank() },
-                    userPseudoId = userPseudoId?.takeIf { it.isNotBlank() },
-                    limit = limit,
-                )
-                if (response.isSuccessful && response.body() != null) {
-                    Result.success(response.body()!!)
-                } else {
-                    Result.failure(Exception("Community nearby failed: ${response.code()}"))
+                val response = apiClient.httpClient.get("api/community/nearby") {
+                    parameter("country", country)
+                    region?.takeIf { it.isNotBlank() }?.let { parameter("region", it) }
+                    disease?.takeIf { it.isNotBlank() }?.let { parameter("disease", it) }
+                    species?.takeIf { it.isNotBlank() }?.let { parameter("species", it) }
+                    userPseudoId?.takeIf { it.isNotBlank() }?.let {
+                        parameter("user_pseudo_id", it)
+                    }
+                    parameter("limit", limit)
+                }
+                when (response.status.value) {
+                    in 200..299 -> Result.success(
+                        response.body<com.plantdiseases.app.data.model.CommunityScansResponse>(),
+                    )
+                    else -> Result.failure(
+                        Exception("Community nearby failed: ${response.status.value}"),
+                    )
                 }
             } catch (e: Exception) {
                 Result.failure(e)
@@ -999,20 +1126,20 @@ class ScanRepository(
                 .get(cacheKey, com.plantdiseases.app.data.model.SpeciesInfoResponse::class.java)
                 ?.let { return@withContext Result.success(it) }
             try {
-                val response = apiService.speciesInfo(name, locale)
-                if (response.isSuccessful && response.body() != null) {
-                    val body = response.body()!!
+                val body = apiClient.speciesInfo(name, locale)
+                if (body != null) {
                     // Don't cache a transient "unavailable" (e.g. Wikipedia
                     // miss / rate-limit) — only a real hit is worth keeping.
                     if (body.available) {
                         com.plantdiseases.app.util.ResponseCache.put(
-                            cacheKey, body,
+                            cacheKey,
+                            body,
                             com.plantdiseases.app.util.ResponseCache.TTL_SPECIES_MS,
                         )
                     }
                     Result.success(body)
                 } else {
-                    Result.failure(Exception("species-info failed: ${response.code()}"))
+                    Result.failure(Exception("species-info failed"))
                 }
             } catch (e: Exception) {
                 Result.failure(e)
@@ -1027,15 +1154,18 @@ class ScanRepository(
     ): Result<com.plantdiseases.app.data.model.CommunityScansResponse> =
         withContext(Dispatchers.IO) {
             try {
-                val response = apiService.communityBySpecies(
-                    species = species,
-                    limit = limit,
-                    userPseudoId = userPseudoId?.takeIf { it.isNotBlank() },
-                )
-                if (response.isSuccessful && response.body() != null) {
-                    Result.success(response.body()!!)
-                } else {
-                    Result.failure(Exception("by-species failed: ${response.code()}"))
+                val response = apiClient.httpClient.get("api/community/by-species") {
+                    parameter("species", species)
+                    parameter("limit", limit)
+                    userPseudoId?.takeIf { it.isNotBlank() }?.let {
+                        parameter("user_pseudo_id", it)
+                    }
+                }
+                when (response.status.value) {
+                    in 200..299 -> Result.success(
+                        response.body<com.plantdiseases.app.data.model.CommunityScansResponse>(),
+                    )
+                    else -> Result.failure(Exception("by-species failed: ${response.status.value}"))
                 }
             } catch (e: Exception) {
                 Result.failure(e)
@@ -1046,9 +1176,12 @@ class ScanRepository(
     suspend fun deleteCommunityContributions(userPseudoId: String): Result<Unit> =
         withContext(Dispatchers.IO) {
             try {
-                val response = apiService.communityScanDeleteUser(userPseudoId)
-                if (response.isSuccessful) Result.success(Unit)
-                else Result.failure(Exception("Community delete failed: ${response.code()}"))
+                val response = apiClient.httpClient.delete("api/community/user/$userPseudoId")
+                if (response.status.value in 200..299) {
+                    Result.success(Unit)
+                } else {
+                    Result.failure(Exception("Community delete failed: ${response.status.value}"))
+                }
             } catch (e: Exception) {
                 Result.failure(e)
             }

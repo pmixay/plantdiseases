@@ -1,7 +1,10 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.serialization")
     id("com.google.devtools.ksp")
+    id("org.jlleitschuh.gradle.ktlint")
+    id("io.gitlab.arturbosch.detekt")
 }
 
 android {
@@ -12,8 +15,8 @@ android {
         applicationId = "com.plantdiseases.app"
         minSdk = 26 // Android 8.0
         targetSdk = 35
-        versionCode = 13
-        versionName = "1.3"
+        versionCode = 14
+        versionName = "1.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -53,12 +56,15 @@ android {
         buildConfigField("String", "FCM_SENDER_ID", "\"${fcmProp("FCM_SENDER_ID")}\"")
 
         // The Aqua family runs a TFLite model on-device. Limit the bundled
-        // native .so libs to the ABIs real devices use — dropping x86/mips
-        // keeps the APK from carrying interpreter libs no phone will load.
+        // native .so libs to the ABIs real phones use. x86_64 is dropped: it
+        // exists only for emulators/Chromebooks and the LiteRT interpreter lib
+        // for it is ~10 MB — on x86_64 the app simply degrades to server
+        // inference (the documented Aqua-absent fallback). LiteRT ships no
+        // armeabi-v7a lib, so 32-bit devices also degrade to the server.
         // (The model itself is downloaded from the server into filesDir, not
         // bundled in the APK — see AquaModelManager.)
         ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
     }
 
@@ -115,7 +121,13 @@ android {
 
     packaging {
         jniLibs {
-            // These prebuilt .so libs (DataStore, CameraX JNI, TFLite) can't be
+            // LiteRT ships an OpenCL GPU-delegate accelerator lib alongside the
+            // interpreter (~2.7 MB arm64 / 3.3 MB x86_64). AquaClassifier runs
+            // CPU-only (Interpreter.Options().setNumThreads(2), no GpuDelegate),
+            // so the accelerator is never dlopen'd — exclude it from the APK.
+            excludes += "**/libLiteRtOpenClAccelerator.so"
+
+            // These prebuilt .so libs (DataStore, CameraX JNI) can't be
             // stripped by the NDK strip tool, which logs a noisy "Unable to
             // strip the following libraries" warning every build. They are
             // packaged as-is either way, so declaring them here just keeps
@@ -125,18 +137,17 @@ android {
                 "**/libdatastore_shared_counter.so",
                 "**/libimage_processing_util_jni.so",
                 "**/libsurface_util_jni.so",
-                "**/libtensorflowlite_jni.so",
             )
         }
     }
 
     lint {
-        // Fail the release build on lint errors so we catch regressions
-        // in CI rather than on-device. Warnings are still non-fatal —
-        // `warningsAsErrors = false` preserves that.
-        abortOnError = true
-        checkReleaseBuilds = true
-        warningsAsErrors = false
+        // Android Lint is no longer the code-quality gate — ktlint (style) and
+        // detekt (static analysis) replace it (see the ktlint/detekt blocks
+        // below and ci.yml). Don't let it fail the build, and skip the
+        // lintVitalRelease pass so assembleRelease doesn't re-run it.
+        abortOnError = false
+        checkReleaseBuilds = false
     }
 
     compileOptions {
@@ -156,6 +167,32 @@ android {
             isIncludeAndroidResources = true
             isReturnDefaultValues = true
         }
+    }
+}
+
+// ─── Kotlin linting (replaces Android Lint) ───────────────────────────────────
+// Gating: ktlint (formatting/style) + detekt (static analysis) fail the build
+// on any NEW violation. The pre-existing tree is grandfathered via baselines
+// (config/ktlint/baseline.xml, config/detekt/baseline.xml) generated once with
+// `./gradlew ktlintGenerateBaseline detektBaseline` after a `./gradlew
+// ktlintFormat` cleanup, so only newly-introduced issues break CI.
+detekt {
+    buildUponDefaultConfig = true
+    config.setFrom(files("$rootDir/config/detekt/detekt.yml"))
+    baseline = file("$rootDir/config/detekt/baseline.xml")
+    source.setFrom("src/main/java", "src/test/java")
+    parallel = true
+    ignoreFailures = false
+}
+
+ktlint {
+    version.set("1.3.1")
+    android.set(true)
+    ignoreFailures.set(false)
+    baseline.set(file("config/ktlint/baseline.xml"))
+    filter {
+        // Never lint generated sources (view binding, KSP/Room, BuildConfig).
+        exclude { it.file.path.contains("/build/") }
     }
 }
 
@@ -195,11 +232,24 @@ dependencies {
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
 
-    // Retrofit + OkHttp
-    implementation("com.squareup.retrofit2:retrofit:2.11.0")
-    implementation("com.squareup.retrofit2:converter-gson:2.11.0")
+    // OkHttp — the engine the Ktor client runs on (shared RetryInterceptor +
+    // logging). Retrofit/converter-gson were removed once the last endpoint
+    // moved to the Ktor client; Gson itself stays for Room field + cache JSON.
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
+
+    // Ktor client + kotlinx.serialization — incrementally replaces Retrofit.
+    // Uses the OkHttp engine so the existing RetryInterceptor, logging and
+    // timeouts (configured on the shared OkHttpClient) carry over unchanged.
+    implementation(platform("io.ktor:ktor-bom:2.3.13"))
+    implementation("io.ktor:ktor-client-core")
+    implementation("io.ktor:ktor-client-okhttp")
+    implementation("io.ktor:ktor-client-content-negotiation")
+    implementation("io.ktor:ktor-serialization-kotlinx-json")
+    // Pinned to match the Kotlin 2.1.21 serialization compiler plugin (Ktor
+    // 2.3.13 bundles 1.6.3; overriding up keeps the generated serializers and
+    // the runtime in lockstep).
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
     // Firebase Cloud Messaging (push). No google-services plugin / json:
     // Firebase is initialised manually from BuildConfig.FCM_* at runtime, so
@@ -213,6 +263,16 @@ dependencies {
     // Glide for images
     implementation("com.github.bumptech.glide:glide:4.16.0")
     ksp("com.github.bumptech.glide:ksp:4.16.0")
+
+    // Koin dependency injection. Replaces the hand-rolled `by lazy` singletons
+    // on PlantDiseasesApp with a Koin graph (di/AppModule.kt). The
+    // koin-androidx-workmanager artefact (Koin WorkerFactory) is intentionally
+    // NOT depended on: wiring workManagerFactory() re-initialises WorkManager
+    // and collides with the default androidx.startup initializer (crash on
+    // launch — see PlantDiseasesApp.onCreate). A future Koin-injected worker
+    // would re-add it there and remove the startup initializer.
+    implementation(platform("io.insert-koin:koin-bom:4.0.0"))
+    implementation("io.insert-koin:koin-android")
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
@@ -240,11 +300,15 @@ dependencies {
     // WorkManager (plant reminders)
     implementation("androidx.work:work-runtime-ktx:2.10.0")
 
-    // TensorFlow Lite — on-device inference for the Aqua model family.
+    // LiteRT (formerly TensorFlow Lite) — on-device inference for the Aqua
+    // model family. Migrated off org.tensorflow:tensorflow-lite:2.16.1, whose
+    // prebuilt .so libs aren't 16 KB page-aligned (Google Play's Nov 2025
+    // requirement). LiteRT keeps the org.tensorflow.lite Interpreter API, so
+    // AquaClassifier's code is unchanged; only the artefact coordinate moves.
     // The model artefact (assets/models/aqua_classifier.tflite) is provisioned
     // out of band like the server weights, never committed; AquaClassifier
     // gates on its presence and the app degrades to the server when absent.
-    implementation("org.tensorflow:tensorflow-lite:2.16.1")
+    implementation("com.google.ai.edge.litert:litert:2.1.0")
 
     // ─── Local JVM unit tests (./gradlew testDebugUnitTest) ───────────────
     // Robolectric lets the image / ML-diagnosis pipeline run on the JVM

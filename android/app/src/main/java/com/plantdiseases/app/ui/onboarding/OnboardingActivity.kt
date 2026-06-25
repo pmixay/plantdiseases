@@ -193,15 +193,11 @@ class OnboardingActivity : AppCompatActivity() {
         const val KEY_ONBOARDING_DONE = "onboarding_done"
         const val KEY_DATA_CONSENT = "data_consent_given"
 
-        fun isOnboardingDone(context: Context): Boolean {
-            return context.getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-                .getBoolean(KEY_ONBOARDING_DONE, false)
-        }
+        fun isOnboardingDone(context: Context): Boolean = context.getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            .getBoolean(KEY_ONBOARDING_DONE, false)
 
-        fun isDataConsentGiven(context: Context): Boolean {
-            return context.getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-                .getBoolean(KEY_DATA_CONSENT, false)
-        }
+        fun isDataConsentGiven(context: Context): Boolean = context.getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            .getBoolean(KEY_DATA_CONSENT, false)
 
         fun setDataConsentGiven(context: Context) {
             context.getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
@@ -228,12 +224,13 @@ class OnboardingAdapter(
     private val pages: List<OnboardingPage>
 ) : RecyclerView.Adapter<OnboardingAdapter.ViewHolder>() {
 
-    inner class ViewHolder(val binding: ItemOnboardingPageBinding) :
-        RecyclerView.ViewHolder(binding.root)
+    inner class ViewHolder(val binding: ItemOnboardingPageBinding) : RecyclerView.ViewHolder(binding.root)
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
         val binding = ItemOnboardingPageBinding.inflate(
-            LayoutInflater.from(parent.context), parent, false
+            LayoutInflater.from(parent.context),
+            parent,
+            false
         )
         return ViewHolder(binding)
     }

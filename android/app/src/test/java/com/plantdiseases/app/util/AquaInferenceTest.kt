@@ -70,7 +70,10 @@ class AquaInferenceTest {
     @Test
     fun buildResponse_topK_is_capped_and_localised() {
         val probs = mapOf(
-            "leaf_spot" to 0.5f, "rust" to 0.25f, "healthy" to 0.15f, "aphids" to 0.10f,
+            "leaf_spot" to 0.5f,
+            "rust" to 0.25f,
+            "healthy" to 0.15f,
+            "aphids" to 0.10f,
         )
         val r = AquaInference.buildResponse(probs)
         val topK = r.topK!!

@@ -31,7 +31,9 @@ import com.plantdiseases.app.util.ModelFamilyPrefs
 class ModelPickerSheet : BottomSheetDialogFragment() {
 
     override fun onCreateView(
-        inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?,
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?,
     ): View = inflater.inflate(R.layout.sheet_model_picker, container, false)
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -82,7 +84,8 @@ class ModelPickerSheet : BottomSheetDialogFragment() {
             // know which family is active without seeing the checkmark.
             row.isSelected = isSelected
             ViewCompat.setStateDescription(
-                row, if (isSelected) getString(R.string.cd_selected) else null,
+                row,
+                if (isSelected) getString(R.string.cd_selected) else null,
             )
 
             row.isEnabled = available

@@ -46,7 +46,8 @@ class PhotoCompareActivity : AppCompatActivity() {
         val firstUri = intent.getStringExtra(EXTRA_FIRST_URI)
         val secondUri = intent.getStringExtra(EXTRA_SECOND_URI)
         if (firstUri.isNullOrBlank() || secondUri.isNullOrBlank()) {
-            finish(); return
+            finish()
+            return
         }
 
         binding = ActivityPhotoCompareBinding.inflate(layoutInflater)
@@ -90,10 +91,12 @@ class PhotoCompareActivity : AppCompatActivity() {
         const val EXTRA_SECOND_URI = "extra_second_uri"
 
         fun open(context: Context, firstUri: String, secondUri: String) {
-            context.startActivity(Intent(context, PhotoCompareActivity::class.java).apply {
-                putExtra(EXTRA_FIRST_URI, firstUri)
-                putExtra(EXTRA_SECOND_URI, secondUri)
-            })
+            context.startActivity(
+                Intent(context, PhotoCompareActivity::class.java).apply {
+                    putExtra(EXTRA_FIRST_URI, firstUri)
+                    putExtra(EXTRA_SECOND_URI, secondUri)
+                }
+            )
         }
     }
 }
@@ -105,7 +108,9 @@ class PhotoCompareActivity : AppCompatActivity() {
  * drawable to the area RIGHT of the divider.
  */
 class CompareView @JvmOverloads constructor(
-    context: Context, attrs: AttributeSet? = null, defStyle: Int = 0,
+    context: Context,
+    attrs: AttributeSet? = null,
+    defStyle: Int = 0,
 ) : View(context, attrs, defStyle) {
 
     private var before: Drawable? = null
@@ -121,8 +126,14 @@ class CompareView @JvmOverloads constructor(
         strokeWidth = 3f * resources.displayMetrics.density
     }
 
-    fun setBefore(d: Drawable) { before = d; invalidate() }
-    fun setAfter(d: Drawable) { after = d; invalidate() }
+    fun setBefore(d: Drawable) {
+        before = d
+        invalidate()
+    }
+    fun setAfter(d: Drawable) {
+        after = d
+        invalidate()
+    }
 
     private fun fitRect(drawable: Drawable): Rect {
         // Letterbox-fit drawable inside this view, preserving aspect.

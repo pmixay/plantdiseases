@@ -24,7 +24,6 @@ import androidx.lifecycle.lifecycleScope
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.textfield.TextInputEditText
-import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.GuideDataProvider
 import com.plantdiseases.app.data.local.ChatMessageEntity
@@ -32,11 +31,14 @@ import com.plantdiseases.app.data.local.PlantEntity
 import com.plantdiseases.app.data.local.ScanChatMessageEntity
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.ChatRequest
+import com.plantdiseases.app.data.repository.PlantRepository
+import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.SheetDoctorChatBinding
 import com.plantdiseases.app.ui.guide.GuideDetailSheet
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.launch
+import org.koin.android.ext.android.inject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -45,6 +47,9 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
 
     private var _binding: SheetDoctorChatBinding? = null
     private val binding get() = _binding!!
+
+    private val plantRepository: PlantRepository by inject()
+    private val scanRepository: ScanRepository by inject()
 
     // The chat runs in one of two modes:
     //   * plant mode — launched from the Garden plant detail; chat history
@@ -138,7 +143,9 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
                 val txt = inputField.text?.toString()?.trim().orEmpty()
                 if (txt.isNotEmpty() && !isSending) sendMessage(txt)
                 true
-            } else false
+            } else {
+                false
+            }
         }
         ViewCompat.setOnApplyWindowInsetsListener(binding.chatInputRow) { v, insets ->
             val bottomInset = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom
@@ -172,10 +179,9 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
                 return
             }
             lifecycleScope.launch {
-                val app = requireActivity().application as PlantDiseasesApp
                 when {
-                    savedPlantId > 0L -> plant = app.plantRepository.getPlant(savedPlantId)
-                    savedScanId > 0L -> scan = app.scanRepository.getScanById(savedScanId)
+                    savedPlantId > 0L -> plant = plantRepository.getPlant(savedPlantId)
+                    savedScanId > 0L -> scan = scanRepository.getScanById(savedScanId)
                 }
                 if ((plant == null && scan == null) || _binding == null) {
                     dismissAllowingStateLoss()
@@ -198,14 +204,13 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
     }
 
     private fun loadMessages() {
-        val app = requireActivity().application as PlantDiseasesApp
         val pid = persistPlantId
         val sid = persistScanId
         lifecycleScope.launch {
             val msgs: List<Triple<String, String, Long>> = when {
-                pid != null -> app.plantRepository.getChatMessages(pid)
+                pid != null -> plantRepository.getChatMessages(pid)
                     .map { Triple(it.role, it.content, it.timestamp) }
-                sid != null -> app.scanRepository.getChatMessages(sid)
+                sid != null -> scanRepository.getChatMessages(sid)
                     .map { Triple(it.role, it.content, it.timestamp) }
                 else -> emptyList()
             }
@@ -236,9 +241,8 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
         inputField.setText("")
         suggestionsContainer.visibility = View.GONE
 
-        val app = requireActivity().application as PlantDiseasesApp
-        val plantRepo = app.plantRepository
-        val scanRepo = app.scanRepository
+        val plantRepo = plantRepository
+        val scanRepo = scanRepository
         val isRu = LocaleHelper.isRussian(requireContext())
         val now = System.currentTimeMillis()
 
@@ -416,26 +420,30 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
             )
         }
 
-        bubble.addView(TextView(requireContext()).apply {
-            text = applyMarkdown(content)
-            textSize = 15f
-            maxWidth = bubbleMaxWidth
-            setTextColor(requireContext().getColor(R.color.chat_bubble_text))
-            setLineSpacing(3.dp().toFloat(), 1f)
-            // Make [[doc:…]] citation links tappable.
-            movementMethod = LinkMovementMethod.getInstance()
-        })
-        bubble.addView(TextView(requireContext()).apply {
-            text = formatTime(timestamp)
-            textSize = 10f
-            setTextColor(requireContext().getColor(R.color.chat_bubble_text_secondary))
-            alpha = 0.85f
-            gravity = Gravity.END
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = 4.dp() }
-        })
+        bubble.addView(
+            TextView(requireContext()).apply {
+                text = applyMarkdown(content)
+                textSize = 15f
+                maxWidth = bubbleMaxWidth
+                setTextColor(requireContext().getColor(R.color.chat_bubble_text))
+                setLineSpacing(3.dp().toFloat(), 1f)
+                // Make [[doc:…]] citation links tappable.
+                movementMethod = LinkMovementMethod.getInstance()
+            }
+        )
+        bubble.addView(
+            TextView(requireContext()).apply {
+                text = formatTime(timestamp)
+                textSize = 10f
+                setTextColor(requireContext().getColor(R.color.chat_bubble_text_secondary))
+                alpha = 0.85f
+                gravity = Gravity.END
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = 4.dp() }
+            }
+        )
 
         outer.addView(bubble)
         return outer
@@ -462,7 +470,9 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
                     sb.append(bold)
                     sb.setSpan(
                         StyleSpan(android.graphics.Typeface.BOLD),
-                        start, sb.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+                        start,
+                        sb.length,
+                        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
                     )
                 }
                 docKey.isNotEmpty() -> {
@@ -485,7 +495,9 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
                                     ds.isUnderlineText = true
                                 }
                             },
-                            start, sb.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+                            start,
+                            sb.length,
+                            Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
                         )
                     }
                 }
@@ -498,7 +510,6 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
 
     private fun clearChat() {
         if (plant == null && scan == null) return
-        val app = requireActivity().application as PlantDiseasesApp
         val pid = persistPlantId
         val sid = persistScanId
         // Start a fresh server session so the per-session budget resets
@@ -506,8 +517,8 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
         bumpSessionEpoch(requireContext(), ownerKey)
         lifecycleScope.launch {
             when {
-                pid != null -> app.plantRepository.clearChat(pid)
-                sid != null -> app.scanRepository.clearChat(sid)
+                pid != null -> plantRepository.clearChat(pid)
+                sid != null -> scanRepository.clearChat(sid)
             }
             if (_binding != null) {
                 messagesLayout.removeAllViews()
@@ -524,7 +535,9 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
         SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(timestamp))
 
     private fun Int.dp(): Int = TypedValue.applyDimension(
-        TypedValue.COMPLEX_UNIT_DIP, this.toFloat(), resources.displayMetrics
+        TypedValue.COMPLEX_UNIT_DIP,
+        this.toFloat(),
+        resources.displayMetrics
     ).toInt()
 
     companion object {
@@ -543,7 +556,8 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
 
         private fun bumpSessionEpoch(context: android.content.Context, ownerKey: String) {
             val prefs = context.getSharedPreferences(
-                PREFS_NAME, android.content.Context.MODE_PRIVATE,
+                PREFS_NAME,
+                android.content.Context.MODE_PRIVATE,
             )
             prefs.edit()
                 .putInt(

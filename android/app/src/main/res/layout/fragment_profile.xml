@@ -26,14 +26,18 @@
         android:orientation="vertical"
         android:padding="@dimen/space_lg">
 
-        <!-- Hero: leaf-green gradient header, mirroring the Garden tab so
-             the two tabs share one production look (same bg_garden_hero,
-             bg_circle_semi, type ramp and on_hero palette). -->
+        <!-- Hero card: rounded leaf-green gradient panel, mirroring the Garden
+             tab (same bg_circle_semi chip, type ramp and on_hero palette). The
+             toolbar is hidden on this tab (see MainActivity), so ProfileFragment
+             pads the scroll view by the status-bar inset to drop the card below
+             the system clock; the parent's space_lg padding gives the side
+             margins. -->
         <LinearLayout
+            android:id="@+id/profile_hero"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:background="@drawable/bg_garden_hero"
+            android:background="@drawable/bg_hero_card"
             android:paddingHorizontal="@dimen/space_xl"
             android:paddingTop="@dimen/space_2xl"
             android:paddingBottom="@dimen/space_xl">
@@ -72,77 +76,7 @@
                 android:lineSpacingExtra="3dp" />
         </LinearLayout>
 
-        <!-- Server status (compact one-line glass pill row) -->
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/server_status_card"
-            style="@style/App.GlassCard"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_lg"
-            app:contentPadding="0dp">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:paddingHorizontal="@dimen/space_lg"
-                android:paddingVertical="@dimen/space_md">
-
-                <View
-                    android:id="@+id/server_status_indicator"
-                    android:layout_width="10dp"
-                    android:layout_height="10dp"
-                    android:background="@drawable/bg_status_dot" />
-
-                <TextView
-                    android:id="@+id/tv_server_status"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="@dimen/space_md"
-                    android:text="@string/server_checking"
-                    android:textSize="@dimen/text_body"
-                    android:textColor="@color/on_surface"
-                    android:fontFamily="sans-serif-medium" />
-
-                <TextView
-                    android:id="@+id/tv_diag_version"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:textSize="@dimen/text_body_sm"
-                    android:textColor="@color/on_surface_secondary"
-                    android:visibility="gone" />
-
-                <TextView
-                    android:id="@+id/tv_diag_classes"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:textSize="@dimen/text_body_sm"
-                    android:textColor="@color/on_surface_secondary"
-                    android:visibility="gone" />
-
-                <!-- Plain ImageView, not a MaterialButton: the icon button's
-                     min-width / insets were rendering the icon clipped and
-                     flush to the card edge. fitCenter inside 40dp with 8dp
-                     padding keeps the 24dp icon centered and clear. -->
-                <ImageView
-                    android:id="@+id/btn_refresh_health"
-                    android:layout_width="40dp"
-                    android:layout_height="40dp"
-                    android:layout_marginStart="@dimen/space_xs"
-                    android:padding="8dp"
-                    android:scaleType="fitCenter"
-                    android:src="@drawable/ic_refresh"
-                    app:tint="@color/primary"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:contentDescription="@string/diagnostics_refresh" />
-
-            </LinearLayout>
-
-        </com.google.android.material.card.MaterialCardView>
+        <!-- Stats and settings below. -->
 
         <!-- Shimmer stats placeholder -->
         <com.facebook.shimmer.ShimmerFrameLayout
@@ -289,6 +223,18 @@
                 </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
+
+        <!-- Full stats & advice — relocated here from Home; Home keeps a
+             compact teaser card that opens the same screen. -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_stats_advice"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_md"
+            android:text="@string/stats_tips_title"
+            app:icon="@drawable/ic_chevron_right"
+            app:iconGravity="textEnd" />
 
         <!-- Empty state -->
         <LinearLayout

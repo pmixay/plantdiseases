@@ -1,0 +1,76 @@
+# detekt configuration — layered on top of the bundled defaults
+# (buildUponDefaultConfig = true). The goal is high-signal static analysis
+# (potential bugs, coroutine misuse, performance), not style nitpicking —
+# ktlint owns formatting. Rules that fight an Android view-binding app
+# (magic dp/colour values, long UI-building methods) are relaxed so the
+# report stays actionable.
+
+build:
+  maxIssues: 0
+  excludeCorrectable: false
+
+config:
+  # Don't fail the run if a rule/property name drifts between detekt versions —
+  # we adopt in reporting mode (ignoreFailures) and don't want a config-schema
+  # mismatch to break CI.
+  validation: false
+  warningsAsErrors: false
+
+comments:
+  active: false
+
+complexity:
+  LongMethod:
+    active: false
+  LongParameterList:
+    active: false
+  LargeClass:
+    active: false
+  TooManyFunctions:
+    active: false
+  CyclomaticComplexMethod:
+    active: false
+  CognitiveComplexMethod:
+    active: false
+  NestedBlockDepth:
+    active: false
+
+exceptions:
+  TooGenericExceptionCaught:
+    active: false
+  SwallowedException:
+    active: false
+  TooGenericExceptionThrown:
+    active: false
+
+empty-blocks:
+  EmptyFunctionBlock:
+    active: true
+    ignoreOverridden: true
+
+naming:
+  FunctionNaming:
+    # Compose-style and Robolectric test names trip the default pattern.
+    active: true
+    ignoreAnnotated: ['Composable', 'Test']
+
+style:
+  MagicNumber:
+    active: false
+  MaxLineLength:
+    # ktlint owns line length.
+    active: false
+  ReturnCount:
+    active: false
+  WildcardImport:
+    # ktlint's no-wildcard-imports covers this (and is relaxed in .editorconfig).
+    active: false
+  ForbiddenComment:
+    active: false
+  UnusedPrivateMember:
+    # Noisy against view-binding / generated accessors.
+    active: false
+  UnusedPrivateProperty:
+    active: false
+  LoopWithTooManyJumpStatements:
+    active: false

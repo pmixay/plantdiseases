@@ -16,19 +16,26 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
+import android.graphics.drawable.Drawable
 import com.bumptech.glide.Glide
+import com.bumptech.glide.load.DataSource
 import com.bumptech.glide.load.engine.DiskCacheStrategy
+import com.bumptech.glide.load.engine.GlideException
+import com.bumptech.glide.request.RequestListener
+import com.bumptech.glide.request.target.Target
 import com.google.android.material.card.MaterialCardView
 import com.plantdiseases.app.MainActivity
-import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.SpeciesDiseaseItem
+import com.plantdiseases.app.data.remote.PlantApiClient
+import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.databinding.ActivitySpeciesDetailBinding
 import com.plantdiseases.app.ui.guide.GuideDetailActivity
 import com.plantdiseases.app.util.DiseaseCatalog
 import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.launch
+import org.koin.android.ext.android.inject
 import java.util.Locale
 
 /**
@@ -43,6 +50,8 @@ import java.util.Locale
 class SpeciesDetailActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivitySpeciesDetailBinding
+    private val apiClient: PlantApiClient by inject()
+    private val plantRepository: PlantRepository by inject()
     private val isRu: Boolean get() = Locale.getDefault().language == "ru"
     private val locale: String get() = if (isRu) "ru" else "en"
 
@@ -64,6 +73,10 @@ class SpeciesDetailActivity : AppCompatActivity() {
             // Pad the app-bar container (not the fixed-height toolbar) so the
             // toolbar sits fully below the status bar instead of being squeezed.
             binding.appbar.updatePadding(top = bars.top)
+            // And pad the scroll content past the nav bar — without this the
+            // bottom actions (Add to garden / Scan health) draw under the
+            // system navigation bar and can't be scrolled into reach.
+            binding.speciesScroll.updatePadding(bottom = bars.bottom)
             insets
         }
         binding.speciesToolbar.setNavigationOnClickListener { finish() }
@@ -95,12 +108,11 @@ class SpeciesDetailActivity : AppCompatActivity() {
     }
 
     private fun loadDetail() {
-        val app = application as PlantDiseasesApp
         binding.progress.visibility = View.VISIBLE
         binding.tvSpeciesExtract.text = getString(R.string.identify_loading)
         lifecycleScope.launch {
             val info = runCatching {
-                app.apiClient.apiService.speciesInfo(scientificName, locale).body()
+                apiClient.speciesInfo(scientificName, locale)
             }.getOrNull()
             binding.progress.visibility = View.GONE
             if (info?.available == true) {
@@ -124,9 +136,9 @@ class SpeciesDetailActivity : AppCompatActivity() {
             }
 
             val plan = runCatching {
-                app.apiClient.apiService.carePlan(
+                apiClient.carePlan(
                     CarePlanRequest(disease = "healthy", species = scientificName, locale = locale),
-                ).body()
+                )
             }.getOrNull()
             if (plan != null) {
                 val watering = when {
@@ -172,8 +184,38 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 scaleType = ImageView.ScaleType.CENTER_CROP
                 contentDescription = null
             }
-            Glide.with(this).load(url).placeholder(R.drawable.ic_plant_placeholder)
-                .diskCacheStrategy(DiskCacheStrategy.ALL).into(iv)
+            Glide.with(this)
+                .load(url)
+                .placeholder(R.drawable.ic_plant_placeholder)
+                .diskCacheStrategy(DiskCacheStrategy.ALL)
+                // Decode straight to the 120dp thumbnail size instead of the
+                // full-resolution Wikipedia original — much faster to show and
+                // far lighter on memory across a six-card strip.
+                .override(size, size)
+                .centerCrop()
+                // Wikipedia media-lists can carry entries Glide can't render
+                // (SVG, non-image media) or dead URLs. Drop those cards rather
+                // than leaving a permanent placeholder so only real photos show.
+                .listener(object : RequestListener<Drawable> {
+                    override fun onLoadFailed(
+                        e: GlideException?,
+                        model: Any?,
+                        target: Target<Drawable>,
+                        isFirstResource: Boolean,
+                    ): Boolean {
+                        card.visibility = View.GONE
+                        return false
+                    }
+
+                    override fun onResourceReady(
+                        resource: Drawable,
+                        model: Any,
+                        target: Target<Drawable>,
+                        dataSource: DataSource,
+                        isFirstResource: Boolean,
+                    ): Boolean = false
+                })
+                .into(iv)
             card.addView(iv)
             binding.photoStrip.addView(card)
         }
@@ -181,11 +223,9 @@ class SpeciesDetailActivity : AppCompatActivity() {
     }
 
     private fun loadDiseases() {
-        val app = application as PlantDiseasesApp
         lifecycleScope.launch {
             val resp = runCatching {
-                app.apiClient.apiService
-                    .speciesDiseases(scientificName, commonName, locale).body()
+                apiClient.speciesDiseases(scientificName, commonName, locale)
             }.getOrNull()
             val aiItems = if (resp?.available == true) {
                 resp.diseases.filter { it.name.isNotBlank() }
@@ -232,7 +272,9 @@ class SpeciesDetailActivity : AppCompatActivity() {
 
     private fun addDiseaseRow(name: String, note: String?, iconRes: Int, guideId: String?) {
         val row = layoutInflater.inflate(
-            R.layout.item_species_disease, binding.listDiseases, false,
+            R.layout.item_species_disease,
+            binding.listDiseases,
+            false,
         ) as MaterialCardView
         row.findViewById<ImageView>(R.id.disease_icon).setImageResource(iconRes)
         row.findViewById<TextView>(R.id.disease_name).text = name
@@ -260,10 +302,9 @@ class SpeciesDetailActivity : AppCompatActivity() {
     }
 
     private fun addToGarden() {
-        val app = application as PlantDiseasesApp
         lifecycleScope.launch {
             runCatching {
-                app.plantRepository.savePlant(
+                plantRepository.savePlant(
                     name = commonName ?: scientificName,
                     species = scientificName,
                     scientificName = scientificName,
@@ -271,11 +312,15 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 )
             }.onSuccess {
                 Toast.makeText(
-                    this@SpeciesDetailActivity, R.string.identify_added_garden, Toast.LENGTH_SHORT,
+                    this@SpeciesDetailActivity,
+                    R.string.identify_added_garden,
+                    Toast.LENGTH_SHORT,
                 ).show()
             }.onFailure {
                 Toast.makeText(
-                    this@SpeciesDetailActivity, R.string.identify_failed, Toast.LENGTH_SHORT,
+                    this@SpeciesDetailActivity,
+                    R.string.identify_failed,
+                    Toast.LENGTH_SHORT,
                 ).show()
             }
         }

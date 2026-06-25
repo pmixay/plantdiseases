@@ -6,6 +6,8 @@
 
 **Определение болезней комнатных растений с помощью ИИ — камера на устройстве, облачный инференс, двуязычные планы ухода.**
 
+[![CI](https://github.com/pmixay/plantdiseases/actions/workflows/ci.yml/badge.svg)](https://github.com/pmixay/plantdiseases/actions/workflows/ci.yml)
+
 Двухэтапный ML-конвейер (детектор листьев YOLOv8 → классификатор на
 замороженном backbone DINOv2 ViT-S/14 + LoRA + MLP-голова), развёрнутый за
 защищённым FastAPI-сервисом, в паре с Android-клиентом на Kotlin, который
@@ -46,7 +48,7 @@ ML-конвейера и живых графиков с метриками.
 │                      │ ──────► │                                  │
 │  • Съёмка CameraX    │         │   ┌──────────────────────────┐   │
 │  • История (Room)    │         │   │ Этап 1 — детектор листа  │   │
-│  • Retrofit + OkHttp │  JSON   │   │ YOLOv8n один класс        │   │
+│  • Ktor + OkHttp     │  JSON   │   │ YOLOv8n один класс        │   │
 │  • UI на Material 3  │ ◄────── │   └──────────┬───────────────┘   │
 │  • Строки EN / RU    │         │              │                   │
 │  • Воркер напоминаний│         │   ┌──────────▼───────────────┐   │
@@ -221,7 +223,7 @@ start.bat
 
 ```
 plantdiseases/
-├── android/                Приложение на Kotlin (Material 3, CameraX, Room, Retrofit)
+├── android/                Приложение на Kotlin (Material 3, CameraX, Room, Ktor, Koin DI)
 ├── server/                 FastAPI-сервер + ML-конвейер
 │   ├── main.py             HTTP-слой, middleware, валидация
 │   ├── pipeline.py         Двухэтапный конвейер + фильтры размытия/OOD
@@ -256,5 +258,10 @@ plantdiseases/
 ## Лицензия
 
 [Unlicense](https://unlicense.org) — общественное достояние, свободно для любого использования.
+
+Unlicense распространяется на собственный код проекта. Сторонние веса моделей
+(DINOv2, Ultralytics YOLOv8), наборы данных (PlantVillage, PlantDoc,
+iNaturalist, COCO, Open Images) и runtime-библиотеки остаются под своими
+лицензиями — см. [`NOTICE`](NOTICE) и [`THIRD_PARTY.md`](THIRD_PARTY.md).
 </content>
 </invoke>

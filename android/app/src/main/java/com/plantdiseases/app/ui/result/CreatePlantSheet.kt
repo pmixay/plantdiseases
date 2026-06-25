@@ -15,12 +15,13 @@ import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
-import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.SpeciesCandidate
+import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.launch
+import org.koin.android.ext.android.inject
 import java.io.File
 
 /**
@@ -41,6 +42,8 @@ import java.io.File
  */
 class CreatePlantSheet : BottomSheetDialogFragment() {
 
+    private val scanRepository: ScanRepository by inject()
+
     private var scanId: Long = -1
     private var initialName: String? = null
     private var prefilledScientific: String? = null
@@ -48,7 +51,9 @@ class CreatePlantSheet : BottomSheetDialogFragment() {
     private var prefilledScore: Float? = null
 
     override fun onCreateView(
-        inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?
     ): View = inflater.inflate(R.layout.sheet_create_plant, container, false)
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -93,10 +98,8 @@ class CreatePlantSheet : BottomSheetDialogFragment() {
         }
 
         identifyBtn.setOnClickListener {
-            val activity = activity ?: return@setOnClickListener
-            val app = activity.application as PlantDiseasesApp
             lifecycleScope.launch {
-                val scan = app.scanRepository.getScanById(scanId)
+                val scan = scanRepository.getScanById(scanId)
                 if (scan == null) {
                     statusText.text = getString(R.string.species_suggest_unavailable_body)
                     return@launch
@@ -111,30 +114,34 @@ class CreatePlantSheet : BottomSheetDialogFragment() {
                 candidateChips.removeAllViews()
                 candidateChips.visibility = View.GONE
                 val locale = if (LocaleHelper.isRussian(requireContext())) "ru" else "en"
-                val res = app.scanRepository.identifySpecies(file, locale = locale)
+                val res = scanRepository.identifySpecies(file, locale = locale)
                 identifyBtn.isEnabled = true
                 res.onSuccess { id ->
                     if (!id.available || id.results.isEmpty()) {
-                        statusText.text = if (id.available)
+                        statusText.text = if (id.available) {
                             getString(R.string.species_suggest_no_results)
-                        else
+                        } else {
                             getString(plantNetFailureMessage(id.source))
+                        }
                         return@onSuccess
                     }
                     statusText.text = getString(R.string.species_suggest_title)
                     id.results.take(3).forEach { candidate ->
-                        candidateChips.addView(buildCandidateRow(candidate) { picked ->
-                            pickedScientific = picked.scientificName
-                            pickedCommon = picked.displayCommonName
-                            val display = picked.displayCommonName
-                                ?: picked.scientificName
-                                ?: getString(R.string.species_suggest_unknown_name)
-                            etSpecies.setText(display)
-                            if (etName.text.isNullOrBlank() ||
-                                etName.text?.toString() == initialName) {
-                                etName.setText(display)
+                        candidateChips.addView(
+                            buildCandidateRow(candidate) { picked ->
+                                pickedScientific = picked.scientificName
+                                pickedCommon = picked.displayCommonName
+                                val display = picked.displayCommonName
+                                    ?: picked.scientificName
+                                    ?: getString(R.string.species_suggest_unknown_name)
+                                etSpecies.setText(display)
+                                if (etName.text.isNullOrBlank() ||
+                                    etName.text?.toString() == initialName
+                                ) {
+                                    etName.setText(display)
+                                }
                             }
-                        })
+                        )
                     }
                     candidateChips.visibility = View.VISIBLE
                 }.onFailure {
@@ -173,10 +180,10 @@ class CreatePlantSheet : BottomSheetDialogFragment() {
      * generic copy when the source is unknown.
      */
     private fun plantNetFailureMessage(source: String?): Int = when (source) {
-        "no_api_key"     -> R.string.species_suggest_unavailable_no_key
-        "auth_failed"    -> R.string.species_suggest_unavailable_auth_failed
-        "rate_limited"   -> R.string.species_suggest_unavailable_rate_limited
-        else             -> R.string.species_suggest_unavailable_body
+        "no_api_key" -> R.string.species_suggest_unavailable_no_key
+        "auth_failed" -> R.string.species_suggest_unavailable_auth_failed
+        "rate_limited" -> R.string.species_suggest_unavailable_rate_limited
+        else -> R.string.species_suggest_unavailable_body
     }
 
     private fun buildCandidateRow(
@@ -204,46 +211,56 @@ class CreatePlantSheet : BottomSheetDialogFragment() {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        labels.addView(TextView(ctx).apply {
-            this.text = candidate.displayCommonName
-                ?: candidate.scientificName
-                ?: getString(R.string.species_suggest_unknown_name)
-            textSize = 14f
-            setTextColor(ctx.getColor(R.color.on_surface))
-            typeface = android.graphics.Typeface.create("sans-serif-medium",
-                android.graphics.Typeface.NORMAL)
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-        })
+        labels.addView(
+            TextView(ctx).apply {
+                this.text = candidate.displayCommonName
+                    ?: candidate.scientificName
+                    ?: getString(R.string.species_suggest_unknown_name)
+                textSize = 14f
+                setTextColor(ctx.getColor(R.color.on_surface))
+                typeface = android.graphics.Typeface.create(
+                    "sans-serif-medium",
+                    android.graphics.Typeface.NORMAL
+                )
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            }
+        )
         candidate.scientificName?.let { sci ->
             if (sci != (candidate.displayCommonName ?: "")) {
-                labels.addView(TextView(ctx).apply {
-                    this.text = sci
-                    textSize = 12f
-                    setTextColor(ctx.getColor(R.color.on_surface_secondary))
-                    setTypeface(typeface, android.graphics.Typeface.ITALIC)
-                    maxLines = 1
-                    ellipsize = android.text.TextUtils.TruncateAt.END
-                })
+                labels.addView(
+                    TextView(ctx).apply {
+                        this.text = sci
+                        textSize = 12f
+                        setTextColor(ctx.getColor(R.color.on_surface_secondary))
+                        setTypeface(typeface, android.graphics.Typeface.ITALIC)
+                        maxLines = 1
+                        ellipsize = android.text.TextUtils.TruncateAt.END
+                    }
+                )
             }
         }
         row.addView(labels)
-        row.addView(TextView(ctx).apply {
-            this.text = getString(
-                R.string.species_suggest_match,
-                (candidate.score * 100).toInt().coerceIn(0, 100),
-            )
-            textSize = 12f
-            setTextColor(ctx.getColor(R.color.primary))
-            typeface = android.graphics.Typeface.create("sans-serif-medium",
-                android.graphics.Typeface.NORMAL)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply {
-                marginStart = (10 * resources.displayMetrics.density).toInt()
+        row.addView(
+            TextView(ctx).apply {
+                this.text = getString(
+                    R.string.species_suggest_match,
+                    (candidate.score * 100).toInt().coerceIn(0, 100),
+                )
+                textSize = 12f
+                setTextColor(ctx.getColor(R.color.primary))
+                typeface = android.graphics.Typeface.create(
+                    "sans-serif-medium",
+                    android.graphics.Typeface.NORMAL
+                )
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply {
+                    marginStart = (10 * resources.displayMetrics.density).toInt()
+                }
             }
-        })
+        )
         return row
     }
 

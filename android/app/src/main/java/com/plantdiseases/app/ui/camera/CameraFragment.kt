@@ -21,9 +21,6 @@ import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import android.view.LayoutInflater
-import android.view.Menu
-import android.view.MenuInflater
-import android.view.MenuItem
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
@@ -35,19 +32,17 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.core.os.bundleOf
-import androidx.core.view.MenuProvider
 import androidx.fragment.app.Fragment
-import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import com.canhub.cropper.CropImageContract
 import com.canhub.cropper.CropImageContractOptions
 import com.canhub.cropper.CropImageOptions
 import com.canhub.cropper.CropImageView
 import com.plantdiseases.app.PlantDiseasesApp
+import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.R
 import com.plantdiseases.app.databinding.FragmentCameraBinding
 import com.plantdiseases.app.ui.analysis.AnalysisActivity
-import com.plantdiseases.app.ui.community.NearbyScansActivity
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.AutosavePrefs
 import com.plantdiseases.app.util.ImageUtils
@@ -55,6 +50,7 @@ import com.plantdiseases.app.util.ModelFamilyPrefs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.koin.android.ext.android.inject
 import java.io.File
 import java.util.Locale
 
@@ -62,6 +58,8 @@ class CameraFragment : Fragment() {
 
     private var _binding: FragmentCameraBinding? = null
     private val binding get() = _binding!!
+
+    private val scanRepository: ScanRepository by inject()
 
     private var imageCapture: ImageCapture? = null
     private var cameraProvider: ProcessCameraProvider? = null
@@ -112,6 +110,10 @@ class CameraFragment : Fragment() {
          *  cropped photo path under [RESULT_PATH]. */
         const val RESULT_IDENTIFY_CAPTURE = "camera_identify_capture"
         const val RESULT_PATH = "path"
+
+        private const val KEY_PENDING_CROP = "pending_crop_file"
+        private const val KEY_PENDING_SOURCE = "pending_source_file"
+        private const val KEY_PENDING_FROM_CAMERA = "pending_from_camera"
     }
 
     private val permissionLauncher = registerForActivityResult(
@@ -190,7 +192,8 @@ class CameraFragment : Fragment() {
         // sheet is open. Registering with `this` re-arms on recreation and the
         // FragmentManager replays any pending result to the new listener.
         parentFragmentManager.setFragmentResultListener(
-            ScanTipsSheet.REQUEST_KEY, this,
+            ScanTipsSheet.REQUEST_KEY,
+            this,
         ) { _, _ ->
             requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                 .edit().putBoolean(KEY_TIPS_SEEN, true).apply()
@@ -199,7 +202,8 @@ class CameraFragment : Fragment() {
     }
 
     override fun onCreateView(
-        inflater: LayoutInflater, container: ViewGroup?,
+        inflater: LayoutInflater,
+        container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
         _binding = FragmentCameraBinding.inflate(inflater, container, false)
@@ -209,41 +213,28 @@ class CameraFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
+        // Restore the in-flight crop/capture handoff so a process-death while
+        // the cropper or camera is foregrounded doesn't orphan the result.
+        savedInstanceState?.let { state ->
+            pendingCropFile = state.getString(KEY_PENDING_CROP)?.let { File(it) }
+            pendingSourceFile = state.getString(KEY_PENDING_SOURCE)?.let { File(it) }
+            pendingFromCamera = state.getBoolean(KEY_PENDING_FROM_CAMERA, false)
+        }
+
         setupUI()
-        // The community "scans near you" action is disease-tab specific and
-        // assumes the MainActivity toolbar host; skip it in identify mode.
-        if (!identifyMode) setupToolbarMenu()
         setupPinchToZoom()
         checkCameraPermission()
         registerNetworkCallback()
         restoreGridOverlay()
     }
 
-    /** Add the "scans near you" community action to the shared toolbar,
-     *  scoped to this fragment's RESUMED state so the people icon only
-     *  shows in the green top bar while the Scan tab is open. */
-    private fun setupToolbarMenu() {
-        requireActivity().addMenuProvider(
-            object : MenuProvider {
-                override fun onCreateMenu(menu: Menu, menuInflater: MenuInflater) {
-                    menuInflater.inflate(R.menu.camera_menu, menu)
-                    // Tint to match the toolbar title (theme-aware: white on the light
-                    // gradient, light on the dark surface bar). Menu icons
-                    // otherwise fall back to a default control colour.
-                    menu.findItem(R.id.action_nearby_scans)?.icon
-                        ?.setTint(ContextCompat.getColor(requireContext(), R.color.toolbar_title))
-                }
-
-                override fun onMenuItemSelected(item: MenuItem): Boolean {
-                    if (item.itemId != R.id.action_nearby_scans) return false
-                    Haptics.tick(requireContext())
-                    startActivity(Intent(requireContext(), NearbyScansActivity::class.java))
-                    return true
-                }
-            },
-            viewLifecycleOwner,
-            Lifecycle.State.RESUMED,
-        )
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        // captureInFlight is deliberately not persisted: a capture cannot
+        // survive process-death, so it must reset to false on restore.
+        pendingCropFile?.let { outState.putString(KEY_PENDING_CROP, it.absolutePath) }
+        pendingSourceFile?.let { outState.putString(KEY_PENDING_SOURCE, it.absolutePath) }
+        outState.putBoolean(KEY_PENDING_FROM_CAMERA, pendingFromCamera)
     }
 
     private fun setupUI() {
@@ -266,7 +257,8 @@ class CameraFragment : Fragment() {
             // chip-refresh signal survives a config-change recreation while the
             // picker is open (re-registered here on every view creation).
             childFragmentManager.setFragmentResultListener(
-                ModelPickerSheet.REQUEST_KEY, viewLifecycleOwner,
+                ModelPickerSheet.REQUEST_KEY,
+                viewLifecycleOwner,
             ) { _, _ ->
                 if (_binding != null) refreshModelFamilyChip()
             }
@@ -299,9 +291,11 @@ class CameraFragment : Fragment() {
      *  last-known state (frontier stays disabled; the existing Aqua model, if
      *  any, is untouched). */
     private fun syncModelCapabilities() {
+        // The Application is still needed here for appScope (an app-lifecycle
+        // CoroutineScope, not an injectable singleton).
         val app = requireActivity().application as PlantDiseasesApp
         viewLifecycleOwner.lifecycleScope.launch {
-            app.scanRepository.fetchCapabilities().onSuccess { caps ->
+            scanRepository.fetchCapabilities().onSuccess { caps ->
                 if (!isAdded) return@onSuccess
                 val frontier = caps.families.firstOrNull { it.id == "frontier" }?.available ?: false
                 ModelFamilyPrefs.setFrontierAvailable(requireContext(), frontier)
@@ -313,30 +307,33 @@ class CameraFragment : Fragment() {
             // Runs on the app scope so a tab switch mid-download doesn't cancel
             // it, and only transfers bytes when the sha actually changed.
             app.appScope.launch {
-                app.scanRepository.syncAquaModel(requireContext().applicationContext)
+                scanRepository.syncAquaModel(requireContext().applicationContext)
             }
         }
     }
 
     private fun setupPinchToZoom() {
-        scaleGestureDetector = ScaleGestureDetector(requireContext(), object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
-            override fun onScale(detector: ScaleGestureDetector): Boolean {
-                val cam = camera ?: return false
-                val currentZoomRatio = cam.cameraInfo.zoomState.value?.zoomRatio ?: 1f
-                val newZoomRatio = (currentZoomRatio * detector.scaleFactor)
-                    .coerceIn(
-                        cam.cameraInfo.zoomState.value?.minZoomRatio ?: 1f,
-                        cam.cameraInfo.zoomState.value?.maxZoomRatio ?: 4f
-                    )
-                cam.cameraControl.setZoomRatio(newZoomRatio)
+        scaleGestureDetector = ScaleGestureDetector(
+            requireContext(),
+            object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                override fun onScale(detector: ScaleGestureDetector): Boolean {
+                    val cam = camera ?: return false
+                    val currentZoomRatio = cam.cameraInfo.zoomState.value?.zoomRatio ?: 1f
+                    val newZoomRatio = (currentZoomRatio * detector.scaleFactor)
+                        .coerceIn(
+                            cam.cameraInfo.zoomState.value?.minZoomRatio ?: 1f,
+                            cam.cameraInfo.zoomState.value?.maxZoomRatio ?: 4f
+                        )
+                    cam.cameraControl.setZoomRatio(newZoomRatio)
 
-                binding.tvZoom.visibility = View.VISIBLE
-                binding.tvZoom.text = String.format(Locale.US, "%.1fx", newZoomRatio)
-                binding.tvZoom.removeCallbacks(hideZoomRunnable)
-                binding.tvZoom.postDelayed(hideZoomRunnable, 2000)
-                return true
+                    binding.tvZoom.visibility = View.VISIBLE
+                    binding.tvZoom.text = String.format(Locale.US, "%.1fx", newZoomRatio)
+                    binding.tvZoom.removeCallbacks(hideZoomRunnable)
+                    binding.tvZoom.postDelayed(hideZoomRunnable, 2000)
+                    return true
+                }
             }
-        })
+        )
     }
 
     private val hideZoomRunnable = Runnable {
@@ -417,7 +414,8 @@ class CameraFragment : Fragment() {
 
     private fun checkCameraPermission() {
         val granted = ContextCompat.checkSelfPermission(
-            requireContext(), Manifest.permission.CAMERA,
+            requireContext(),
+            Manifest.permission.CAMERA,
         ) == PackageManager.PERMISSION_GRANTED
         if (granted) {
             startCamera()
@@ -455,8 +453,10 @@ class CameraFragment : Fragment() {
                     it.setSurfaceProvider(binding.cameraPreview.surfaceProvider)
                 }
 
-            val rotation = (view?.display
-                ?: ContextCompat.getDisplayOrDefault(requireContext())).rotation
+            val rotation = (
+                view?.display
+                    ?: ContextCompat.getDisplayOrDefault(requireContext())
+                ).rotation
             imageCapture = ImageCapture.Builder()
                 .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
                 .setTargetRotation(rotation)
@@ -467,8 +467,10 @@ class CameraFragment : Fragment() {
             try {
                 cameraProvider?.unbindAll()
                 camera = cameraProvider?.bindToLifecycle(
-                    viewLifecycleOwner, cameraSelector,
-                    preview, imageCapture,
+                    viewLifecycleOwner,
+                    cameraSelector,
+                    preview,
+                    imageCapture,
                 )
 
                 // INVISIBLE (not GONE) when there's no flash unit so the
@@ -476,7 +478,6 @@ class CameraFragment : Fragment() {
                 // centered — btn_flash mirrors the gallery button.
                 binding.btnFlash.visibility =
                     if (camera?.cameraInfo?.hasFlashUnit() == true) View.VISIBLE else View.INVISIBLE
-
             } catch (e: Exception) {
                 Toast.makeText(requireContext(), getString(R.string.camera_error), Toast.LENGTH_SHORT).show()
             }
@@ -684,7 +685,8 @@ class CameraFragment : Fragment() {
      *  photo path to the host activity, which runs species identification. */
     private fun deliverIdentifyCapture(imagePath: String) {
         parentFragmentManager.setFragmentResult(
-            RESULT_IDENTIFY_CAPTURE, bundleOf(RESULT_PATH to imagePath),
+            RESULT_IDENTIFY_CAPTURE,
+            bundleOf(RESULT_PATH to imagePath),
         )
     }
 
@@ -739,8 +741,10 @@ class CameraFragment : Fragment() {
         if (_binding != null &&
             binding.permissionLayout.visibility == View.VISIBLE &&
             ContextCompat.checkSelfPermission(
-                requireContext(), Manifest.permission.CAMERA,
-            ) == PackageManager.PERMISSION_GRANTED) {
+                requireContext(),
+                Manifest.permission.CAMERA,
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
             startCamera()
         }
     }
@@ -787,6 +791,14 @@ class CameraFragment : Fragment() {
 
     override fun onDestroyView() {
         super.onDestroyView()
+        // Explicitly release the camera the moment the Scan tab's view is torn
+        // down (every tab switch, since the bottom nav destroys the inactive
+        // tab). Relying on the view-lifecycle auto-unbind alone left the sensor
+        // — and the OS camera-active indicator — held on the other tabs.
+        // startCamera() re-acquires it when the tab is reopened.
+        cameraProvider?.unbindAll()
+        cameraProvider = null
+        camera = null
         // Drain any pending zoom-pill hide before the binding goes — the
         // runnable null-checks _binding, but cancelling it avoids a
         // dangling Choreographer callback on the destroyed view.
@@ -798,5 +810,4 @@ class CameraFragment : Fragment() {
         networkCallback = null
         _binding = null
     }
-
 }

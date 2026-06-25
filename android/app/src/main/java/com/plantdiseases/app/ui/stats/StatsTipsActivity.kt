@@ -16,14 +16,16 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.card.MaterialCardView
-import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.ScanHistoryItem
+import com.plantdiseases.app.data.repository.PlantRepository
+import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityStatsTipsBinding
 import com.plantdiseases.app.ui.widget.BarChartView
 import com.plantdiseases.app.ui.widget.DonutChartView
 import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.launch
+import org.koin.android.ext.android.inject
 import java.util.Calendar
 import java.util.Locale
 
@@ -37,6 +39,9 @@ class StatsTipsActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityStatsTipsBinding
     private val isRu: Boolean get() = Locale.getDefault().language == "ru"
+
+    private val scanRepository: ScanRepository by inject()
+    private val plantRepository: PlantRepository by inject()
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
@@ -63,11 +68,10 @@ class StatsTipsActivity : AppCompatActivity() {
 
     // ── Personal stats (local data only) ────────────────────────────
     private fun loadStats() {
-        val app = application as PlantDiseasesApp
         lifecycleScope.launch {
-            val scans = runCatching { app.scanRepository.getAllScans() }
+            val scans = runCatching { scanRepository.getAllScans() }
                 .getOrDefault(emptyList())
-            val plants = runCatching { app.plantRepository.getPlants() }
+            val plants = runCatching { plantRepository.getPlants() }
                 .getOrDefault(emptyList())
             val real = scans.filter { !it.isNotAPlant }
             val healthy = real.count { it.isHealthy }
@@ -77,7 +81,8 @@ class StatsTipsActivity : AppCompatActivity() {
 
             // Donut: healthy vs diseased, total in the center.
             binding.donutHealth.setTextColors(
-                color(R.color.on_surface), color(R.color.on_surface_secondary),
+                color(R.color.on_surface),
+                color(R.color.on_surface_secondary),
             )
             binding.donutHealth.setSegments(
                 listOf(
@@ -105,7 +110,9 @@ class StatsTipsActivity : AppCompatActivity() {
 
             binding.tvGardenCount.text =
                 resources.getQuantityString(
-                    R.plurals.stats_garden_plants_value, plants.size, plants.size,
+                    R.plurals.stats_garden_plants_value,
+                    plants.size,
+                    plants.size,
                 )
         }
     }
@@ -113,8 +120,10 @@ class StatsTipsActivity : AppCompatActivity() {
     /** Count of real scans per day for the last 7 days (oldest → today). */
     private fun weeklyBars(scans: List<ScanHistoryItem>): List<BarChartView.Bar> {
         val cal = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
         }
         val labels = resources.getStringArray(R.array.weekday_initials)
         val days = ArrayList<Pair<Long, Long>>(7) // [start, end) per day
@@ -161,18 +170,22 @@ class StatsTipsActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        header.addView(TextView(this).apply {
-            text = name
-            textSize = 13f
-            setTextColor(color(R.color.on_surface))
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        })
-        header.addView(TextView(this).apply {
-            text = value.toString()
-            textSize = 13f
-            setTypeface(typeface, Typeface.BOLD)
-            setTextColor(color(R.color.on_surface))
-        })
+        header.addView(
+            TextView(this).apply {
+                text = name
+                textSize = 13f
+                setTextColor(color(R.color.on_surface))
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+        )
+        header.addView(
+            TextView(this).apply {
+                text = value.toString()
+                textSize = 13f
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(color(R.color.on_surface))
+            }
+        )
         column.addView(header)
 
         // Track + proportional fill.
@@ -180,19 +193,26 @@ class StatsTipsActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(0x14000000)
             layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(8),
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(8),
             ).apply { topMargin = dp(4) }
         }
         val fillWeight = value.toFloat() / max.coerceAtLeast(1)
-        track.addView(View(this).apply {
-            setBackgroundColor(color(R.color.disease_red))
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, fillWeight)
-        })
-        track.addView(View(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.MATCH_PARENT, (1f - fillWeight).coerceAtLeast(0f),
-            )
-        })
+        track.addView(
+            View(this).apply {
+                setBackgroundColor(color(R.color.disease_red))
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, fillWeight)
+            }
+        )
+        track.addView(
+            View(this).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    0,
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    (1f - fillWeight).coerceAtLeast(0f),
+                )
+            }
+        )
         column.addView(track)
         return column
     }
@@ -245,13 +265,15 @@ class StatsTipsActivity : AppCompatActivity() {
         val headerRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            addView(TextView(this@StatsTipsActivity).apply {
-                text = getString(titleRes)
-                textSize = 15f
-                setTypeface(typeface, Typeface.BOLD)
-                setTextColor(color(R.color.on_surface))
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            })
+            addView(
+                TextView(this@StatsTipsActivity).apply {
+                    text = getString(titleRes)
+                    textSize = 15f
+                    setTypeface(typeface, Typeface.BOLD)
+                    setTextColor(color(R.color.on_surface))
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                }
+            )
             addView(chevron)
         }
         column.addView(headerRow)

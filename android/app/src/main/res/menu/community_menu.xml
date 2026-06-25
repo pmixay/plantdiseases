@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Scan-tab toolbar actions. Added by CameraFragment via a MenuProvider
-     scoped to its view lifecycle (RESUMED), so the community button only
-     appears in the green top bar while the Scan tab is open. -->
+<!-- Home toolbar action. Added by HomeFragment via a MenuProvider scoped to
+     its view lifecycle (RESUMED), so the community "scans near you" button
+     only appears in the top bar while the Home tab is open. -->
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
 

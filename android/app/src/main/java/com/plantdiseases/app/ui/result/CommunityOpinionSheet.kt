@@ -15,14 +15,15 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import com.google.android.material.textfield.TextInputEditText
-import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.CommunityOpinion
 import com.plantdiseases.app.data.model.CommunityOpinionRequest
 import com.plantdiseases.app.data.model.CommunityTopDisease
+import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.TelemetryIds
 import kotlinx.coroutines.launch
+import org.koin.android.ext.android.inject
 import android.widget.Toast
 
 /**
@@ -36,6 +37,8 @@ import android.widget.Toast
  */
 class CommunityOpinionSheet : BottomSheetDialogFragment() {
 
+    private val scanRepository: ScanRepository by inject()
+
     private var scanId: String = ""
     private var currentName: String? = null
 
@@ -48,7 +51,9 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
     private var sendBtn: MaterialButton? = null
 
     override fun onCreateView(
-        inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?,
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?,
     ): View = inflater.inflate(R.layout.sheet_community_opinion, container, false)
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -110,13 +115,15 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         }
 
         CLASS_CATALOG.forEach { (key, labelRes) ->
-            chipGroup?.addView(Chip(ctx).apply {
-                id = View.generateViewId()
-                text = getString(labelRes)
-                isCheckable = true
-                isCheckedIconVisible = true
-                tag = key
-            })
+            chipGroup?.addView(
+                Chip(ctx).apply {
+                    id = View.generateViewId()
+                    text = getString(labelRes)
+                    isCheckable = true
+                    isCheckedIconVisible = true
+                    tag = key
+                }
+            )
         }
 
         sendBtn?.isEnabled = false
@@ -142,9 +149,8 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
     }
 
     private fun loadOpinions() {
-        val repo = (requireActivity().application as PlantDiseasesApp).scanRepository
         viewLifecycleOwner.lifecycleScope.launch {
-            repo.getCommunityOpinions(scanId)
+            scanRepository.getCommunityOpinions(scanId)
                 .onSuccess { render(it.consensus, it.opinions) }
                 .onFailure { render(emptyList(), emptyList()) }
         }
@@ -159,7 +165,6 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         Haptics.tick(ctx)
         sendBtn?.isEnabled = false
 
-        val repo = (ctx.applicationContext as PlantDiseasesApp).scanRepository
         val request = CommunityOpinionRequest(
             scanId = scanId,
             userPseudoId = TelemetryIds.userPseudoId(ctx),
@@ -167,7 +172,7 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
             note = note,
         )
         viewLifecycleOwner.lifecycleScope.launch {
-            repo.submitCommunityOpinion(request)
+            scanRepository.submitCommunityOpinion(request)
                 .onSuccess { resp ->
                     Toast.makeText(ctx, R.string.community_opinion_thanks, Toast.LENGTH_SHORT).show()
                     // One opinion per scan — record it and lock the input.
@@ -242,7 +247,8 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         fun dp(v: Int) = (v * density).toInt()
         val pct = Math.round(entry.count * 100f / total).coerceIn(0, 100)
         val fillColor = ContextCompat.getColor(
-            ctx, if (leading) R.color.primary else R.color.primary_light,
+            ctx,
+            if (leading) R.color.primary else R.color.primary_light,
         )
         val trackColor = ContextCompat.getColor(ctx, R.color.surface_variant)
 
@@ -253,17 +259,21 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
 
         // Label + percentage line.
         val labelLine = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
-        labelLine.addView(TextView(ctx).apply {
-            text = labelFor(entry.disease)
-            textSize = 13f
-            setTextColor(ContextCompat.getColor(ctx, R.color.on_surface))
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        })
-        labelLine.addView(TextView(ctx).apply {
-            text = getString(R.string.community_vote_percent, pct)
-            textSize = 13f
-            setTextColor(ContextCompat.getColor(ctx, R.color.on_surface_secondary))
-        })
+        labelLine.addView(
+            TextView(ctx).apply {
+                text = labelFor(entry.disease)
+                textSize = 13f
+                setTextColor(ContextCompat.getColor(ctx, R.color.on_surface))
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+        )
+        labelLine.addView(
+            TextView(ctx).apply {
+                text = getString(R.string.community_vote_percent, pct)
+                textSize = 13f
+                setTextColor(ContextCompat.getColor(ctx, R.color.on_surface_secondary))
+            }
+        )
         row.addView(labelLine)
 
         // Bar track with a weighted fill.
@@ -275,23 +285,30 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
                 setColor(trackColor)
             }
             layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(8),
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(8),
             ).apply { topMargin = dp(4) }
             weightSum = 100f
         }
-        track.addView(View(ctx).apply {
-            background = android.graphics.drawable.GradientDrawable().apply {
-                cornerRadius = radius
-                setColor(fillColor)
+        track.addView(
+            View(ctx).apply {
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    cornerRadius = radius
+                    setColor(fillColor)
+                }
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, pct.toFloat())
             }
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, pct.toFloat())
-        })
+        )
         if (pct < 100) {
-            track.addView(View(ctx).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    0, LinearLayout.LayoutParams.MATCH_PARENT, (100 - pct).toFloat(),
-                )
-            })
+            track.addView(
+                View(ctx).apply {
+                    layoutParams = LinearLayout.LayoutParams(
+                        0,
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        (100 - pct).toFloat(),
+                    )
+                }
+            )
         }
         row.addView(track)
         return row

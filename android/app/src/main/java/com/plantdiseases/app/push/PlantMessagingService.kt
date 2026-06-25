@@ -3,10 +3,12 @@ package com.plantdiseases.app.push
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import com.plantdiseases.app.PlantDiseasesApp
+import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.TelemetryIds
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import org.koin.android.ext.android.inject
 
 /**
  * Receives FCM pushes — the primary delivery path for "someone left a second
@@ -19,14 +21,17 @@ import kotlinx.coroutines.runBlocking
  */
 class PlantMessagingService : FirebaseMessagingService() {
 
+    private val scanRepository: ScanRepository by inject()
+
     override fun onNewToken(token: String) {
         val ctx = applicationContext
         // Only report a token once the user has opted into community.
         if (!CommunityPrefs.uploadsEnabled(ctx)) return
+        // The Application is still needed for appScope (an app-lifecycle scope).
         val app = ctx as PlantDiseasesApp
         app.appScope.launch {
             runCatching {
-                app.scanRepository.registerPushToken(TelemetryIds.userPseudoId(ctx), token)
+                scanRepository.registerPushToken(TelemetryIds.userPseudoId(ctx), token)
             }
         }
     }

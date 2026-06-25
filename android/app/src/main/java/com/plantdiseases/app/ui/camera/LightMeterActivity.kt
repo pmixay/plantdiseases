@@ -36,10 +36,15 @@ import kotlinx.coroutines.launch
 import kotlin.math.ln
 import kotlin.math.pow
 import java.util.concurrent.ExecutorService
+import com.plantdiseases.app.data.repository.PlantRepository
+import org.koin.android.ext.android.inject
 import java.util.concurrent.Executors
 
-class LightMeterActivity : AppCompatActivity(), SensorEventListener {
+class LightMeterActivity :
+    AppCompatActivity(),
+    SensorEventListener {
 
+    private val plantRepository: PlantRepository by inject()
     private lateinit var binding: ActivityLightMeterBinding
     private lateinit var tvLux: TextView
     private lateinit var tvStatus: TextView
@@ -58,6 +63,7 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
     private lateinit var cameraExecutor: ExecutorService
     private var selectedSpecies = SPECIES[0]
     private var lastCameraSampleAt = 0L
+
     // Session peak — the highest reading since onCreate. Used both as
     // a "remember the brightest spot" affordance for the user and as
     // an auto-expand hint when the reading goes off the 30 k cap.
@@ -84,10 +90,12 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
          *  plants, wrong for succulents (need 5-15k) or ferns
          *  (need 200-1k). */
         const val EXTRA_SCIENTIFIC_NAME = "extra_scientific_name"
+
         /** Optional common / free-text species name — a fallback for
          *  auto-detection when the scientific name is missing or its genus
          *  isn't in the table (e.g. "Aloe Vera"). */
         const val EXTRA_COMMON_NAME = "extra_common_name"
+
         /** Pass the plant's row id (>0) so the session's peak lux
          *  gets recorded back onto the plant on close. Without it
          *  the meter behaves as a pure standalone tool — no
@@ -142,6 +150,7 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
         // the gauge here gives indoor readings (10..2000 lux) most of
         // the bar instead of huddling against the left edge.
         private const val MAX_LUX_DISPLAY = 30_000f
+
         // Log-scale base for the adaptive gauge. Indoor lighting spans
         // ~3 orders of magnitude (10..10k); mapping it linearly into a
         // 0..30k bar wastes 90% of the bar on outdoor brightness no
@@ -150,6 +159,7 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
         // changes that matter for plant care.
         private const val PROGRESS_RESOLUTION = 1000
         private const val SMOOTHING_ALPHA = 0.1f
+
         // Major ticks (lux) shown under the gauge. Ends pinned to 1 and
         // MAX_LUX_DISPLAY so the labels line up with the bar extents.
         private val SCALE_TICKS = intArrayOf(1, 10, 100, 1_000, 10_000, 30_000)
@@ -249,15 +259,19 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
             // from the previous tick — resolution-independent placement.
             val gapWeight = (pos - prevPos).coerceAtLeast(0f)
             if (gapWeight > 0f) {
-                bar.addView(View(this).apply {
-                    layoutParams = LinearLayout.LayoutParams(0, 1, gapWeight)
-                })
+                bar.addView(
+                    View(this).apply {
+                        layoutParams = LinearLayout.LayoutParams(0, 1, gapWeight)
+                    }
+                )
             }
-            bar.addView(TextView(this).apply {
-                text = formatLuxLabel(lux)
-                textSize = 10f
-                setTextColor(getColor(R.color.on_surface_secondary))
-            })
+            bar.addView(
+                TextView(this).apply {
+                    text = formatLuxLabel(lux)
+                    textSize = 10f
+                    setTextColor(getColor(R.color.on_surface_secondary))
+                }
+            )
         }
         return bar
     }
@@ -279,13 +293,15 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                 ).apply { topMargin = 12.dp() }
-                addView(TextView(this@LightMeterActivity).apply {
-                    text = getString(R.string.light_no_sensor)
-                    textSize = 14f
-                    setTextColor(getColor(R.color.on_surface_secondary))
-                    gravity = Gravity.CENTER
-                    setPadding(20.dp(), 20.dp(), 20.dp(), 20.dp())
-                })
+                addView(
+                    TextView(this@LightMeterActivity).apply {
+                        text = getString(R.string.light_no_sensor)
+                        textSize = 14f
+                        setTextColor(getColor(R.color.on_surface_secondary))
+                        gravity = Gravity.CENTER
+                        setPadding(20.dp(), 20.dp(), 20.dp(), 20.dp())
+                    }
+                )
             }
         )
         previewView = PreviewView(this).apply {
@@ -380,8 +396,11 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
             }
             val avgLuma = if (samples == 0) 0f else sum.toFloat() / samples
             val estimatedLux = estimateLuxFromLuma(avgLuma)
-            smoothedLux = if (smoothedLux == 0f) estimatedLux
-            else SMOOTHING_ALPHA * estimatedLux + (1f - SMOOTHING_ALPHA) * smoothedLux
+            smoothedLux = if (smoothedLux == 0f) {
+                estimatedLux
+            } else {
+                SMOOTHING_ALPHA * estimatedLux + (1f - SMOOTHING_ALPHA) * smoothedLux
+            }
             runOnUiThread { updateDisplay(smoothedLux) }
         } finally {
             image.close()
@@ -490,7 +509,7 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
             // if the DB write ever stalled. appScope already exists for
             // exactly this "must outlive the Activity" work.
             app.appScope.launch {
-                app.plantRepository.updateMeasuredLux(plantId, peak)
+                plantRepository.updateMeasuredLux(plantId, peak)
             }
         }
     }
@@ -498,8 +517,11 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
     override fun onSensorChanged(event: SensorEvent) {
         if (event.sensor.type == Sensor.TYPE_LIGHT) {
             val raw = event.values[0]
-            smoothedLux = if (smoothedLux == 0f) raw
-            else SMOOTHING_ALPHA * raw + (1f - SMOOTHING_ALPHA) * smoothedLux
+            smoothedLux = if (smoothedLux == 0f) {
+                raw
+            } else {
+                SMOOTHING_ALPHA * raw + (1f - SMOOTHING_ALPHA) * smoothedLux
+            }
             updateDisplay(smoothedLux)
         }
     }
@@ -515,6 +537,8 @@ class LightMeterActivity : AppCompatActivity(), SensorEventListener {
     }
 
     private fun Int.dp(): Int = TypedValue.applyDimension(
-        TypedValue.COMPLEX_UNIT_DIP, this.toFloat(), resources.displayMetrics
+        TypedValue.COMPLEX_UNIT_DIP,
+        this.toFloat(),
+        resources.displayMetrics
     ).toInt()
 }

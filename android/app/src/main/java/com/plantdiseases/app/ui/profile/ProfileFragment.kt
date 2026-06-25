@@ -4,8 +4,6 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Typeface
-import android.text.InputType
-import android.widget.EditText
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
@@ -20,28 +18,31 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.doOnAttach
+import androidx.core.view.updatePadding
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.BuildConfig
-import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.GuideDataProvider
 import com.plantdiseases.app.data.model.CommunityOpinion
-import com.plantdiseases.app.data.repository.LabelingRepository
-import com.plantdiseases.app.data.repository.LabelingUnavailableException
+import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.FragmentProfileBinding
-import com.plantdiseases.app.ui.labeling.LabelingActivity
 import com.plantdiseases.app.ui.result.CommunityOpinionSheet
 import com.plantdiseases.app.util.AutosavePrefs
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.TelemetryIds
 import com.plantdiseases.app.util.ThemeHelper
-import com.plantdiseases.app.util.expandTouchTarget
 import kotlinx.coroutines.launch
+import org.koin.android.ext.android.inject
 
 class ProfileFragment : Fragment() {
+
+    private val scanRepository: ScanRepository by inject()
 
     private var _binding: FragmentProfileBinding? = null
     private val binding get() = _binding!!
@@ -65,13 +66,16 @@ class ProfileFragment : Fragment() {
             AutosavePrefs.setEnabled(requireContext(), false)
             binding.switchAutosave.isChecked = false
             Toast.makeText(
-                requireContext(), R.string.autosave_permission_needed, Toast.LENGTH_LONG,
+                requireContext(),
+                R.string.autosave_permission_needed,
+                Toast.LENGTH_LONG,
             ).show()
         }
     }
 
     override fun onCreateView(
-        inflater: LayoutInflater, container: ViewGroup?,
+        inflater: LayoutInflater,
+        container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
         _binding = FragmentProfileBinding.inflate(inflater, container, false)
@@ -81,8 +85,8 @@ class ProfileFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
+        applyStatusBarTopInset(binding.root)
         binding.tvAppVersion.text = "v${BuildConfig.VERSION_NAME}"
-        setupSecretLabelingEntry()
 
         // "Clear all history" now lives on the Gallery tab's top-app-bar
         // basket, next to the scans it actually wipes.
@@ -97,25 +101,24 @@ class ProfileFragment : Fragment() {
             findNavController().navigate(R.id.cameraFragment)
         }
 
+        // Full stats & advice (relocated from Home; Home keeps a teaser).
+        binding.btnStatsAdvice.setOnClickListener {
+            startActivity(
+                Intent(requireContext(), com.plantdiseases.app.ui.stats.StatsTipsActivity::class.java)
+            )
+        }
+
         binding.langEn.setOnClickListener { setLanguage("en") }
         binding.langRu.setOnClickListener { setLanguage("ru") }
         highlightActiveLanguage()
-
-        binding.btnRefreshHealth.setOnClickListener {
-            checkServerHealth()
-        }
-        // Accessibility: grow the 40dp refresh icon's hit area to 48dp.
-        binding.btnRefreshHealth.expandTouchTarget()
 
         setupThemeChips()
         setupAutosaveToggle()
         setupCommunityControls()
         setupMyOpinionsFold()
-        // loadStats() + checkServerHealth() run in onResume(), which always
-        // fires immediately after this on first show and again on every return.
-        // Calling them here too issued a duplicate getStats() DB read and a
-        // duplicate /api/health request (with a visible status flicker) on
-        // every fragment creation.
+        // loadStats() runs in onResume(), which fires immediately after this on
+        // first show and again on every return — calling it here too would issue
+        // a duplicate getStats() DB read on every fragment creation.
     }
 
     private fun setupMyOpinionsFold() {
@@ -155,14 +158,14 @@ class ProfileFragment : Fragment() {
     }
 
     private fun deleteCommunityContributions() {
-        val app = requireActivity().application as PlantDiseasesApp
         val pseudoId = TelemetryIds.userPseudoId(requireContext())
         lifecycleScope.launch {
-            val result = app.scanRepository.deleteCommunityContributions(pseudoId)
-            val msg = if (result.isSuccess)
+            val result = scanRepository.deleteCommunityContributions(pseudoId)
+            val msg = if (result.isSuccess) {
                 R.string.community_delete_done
-            else
+            } else {
                 R.string.community_delete_failed
+            }
             Toast.makeText(requireContext(), msg, Toast.LENGTH_SHORT).show()
         }
     }
@@ -172,11 +175,10 @@ class ProfileFragment : Fragment() {
      *  styled list of recent opinions. Failure / empty both collapse to the
      *  empty-state line. */
     private fun loadMyOpinions() {
-        val app = requireActivity().application as PlantDiseasesApp
         val pseudoId = TelemetryIds.userPseudoId(requireContext())
         val isRu = LocaleHelper.isRussian(requireContext())
         lifecycleScope.launch {
-            val result = app.scanRepository.getMyCommunityOpinions(pseudoId)
+            val result = scanRepository.getMyCommunityOpinions(pseudoId)
             val b = _binding ?: return@launch
             b.llMyOpinions.removeAllViews()
             b.llMyOpinionsChart.removeAllViews()
@@ -245,42 +247,51 @@ class ProfileFragment : Fragment() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        head.addView(TextView(ctx).apply {
-            text = label
-            textSize = 13f
-            setTextColor(color(R.color.on_surface))
-            maxLines = 1
-            ellipsize = TextUtils.TruncateAt.END
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        })
-        head.addView(TextView(ctx).apply {
-            text = count.toString()
-            textSize = 13f
-            setTextColor(color(R.color.on_surface_secondary))
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { marginStart = 8.dp() }
-        })
+        head.addView(
+            TextView(ctx).apply {
+                text = label
+                textSize = 13f
+                setTextColor(color(R.color.on_surface))
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.END
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+        )
+        head.addView(
+            TextView(ctx).apply {
+                text = count.toString()
+                textSize = 13f
+                setTextColor(color(R.color.on_surface_secondary))
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { marginStart = 8.dp() }
+            }
+        )
 
         val track = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 8.dp(),
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                8.dp(),
             ).apply { topMargin = 5.dp() }
             background = pill(color(R.color.divider))
         }
         val fillWeight = count.toFloat().coerceAtLeast(0.0001f)
         val restWeight = (maxCount - count).toFloat().coerceAtLeast(0f)
-        track.addView(View(ctx).apply {
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, fillWeight)
-            background = pill(color(R.color.primary))
-        })
+        track.addView(
+            View(ctx).apply {
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, fillWeight)
+                background = pill(color(R.color.primary))
+            }
+        )
         if (restWeight > 0f) {
-            track.addView(View(ctx).apply {
-                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, restWeight)
-            })
+            track.addView(
+                View(ctx).apply {
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, restWeight)
+                }
+            )
         }
 
         root.addView(head)
@@ -299,37 +310,43 @@ class ProfileFragment : Fragment() {
             setPadding(0, v, 0, v)
         }
 
-        row.addView(View(ctx).apply {
-            layoutParams = LinearLayout.LayoutParams(8.dp(), 8.dp()).apply {
-                topMargin = 6.dp()
-                marginEnd = 10.dp()
+        row.addView(
+            View(ctx).apply {
+                layoutParams = LinearLayout.LayoutParams(8.dp(), 8.dp()).apply {
+                    topMargin = 6.dp()
+                    marginEnd = 10.dp()
+                }
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(color(R.color.primary))
+                }
             }
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(color(R.color.primary))
-            }
-        })
+        )
 
         val col = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        col.addView(TextView(ctx).apply {
-            text = label
-            textSize = 14f
-            setTextColor(color(R.color.on_surface))
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-        })
+        col.addView(
+            TextView(ctx).apply {
+                text = label
+                textSize = 14f
+                setTextColor(color(R.color.on_surface))
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            }
+        )
         if (op.note.isNotBlank()) {
-            col.addView(TextView(ctx).apply {
-                text = op.note
-                textSize = 13f
-                setTextColor(color(R.color.on_surface_secondary))
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply { topMargin = 2.dp() }
-            })
+            col.addView(
+                TextView(ctx).apply {
+                    text = op.note
+                    textSize = 13f
+                    setTextColor(color(R.color.on_surface_secondary))
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ).apply { topMargin = 2.dp() }
+                }
+            )
         }
         row.addView(col)
 
@@ -380,63 +397,6 @@ class ProfileFragment : Fragment() {
         )
     }
 
-    /** Admin data-labeling entry: password prompt → server login → screen.
-     *  The token lives only in memory (passed via intent), never persisted. */
-    /** Hidden admin entry (the visible labeling button was removed for the
-     *  Play release): 7 quick taps on the version row — the Android
-     *  developer-options pattern — open the password gate. Taps more than
-     *  2s apart reset the counter, so accidental touches never trigger it,
-     *  and there is deliberately NO toast countdown: the entry should stay
-     *  invisible to anyone who doesn't already know it exists. */
-    private var secretTapCount = 0
-    private var secretLastTapMs = 0L
-
-    private fun setupSecretLabelingEntry() {
-        binding.tvAppVersion.setOnClickListener {
-            val now = System.currentTimeMillis()
-            secretTapCount = if (now - secretLastTapMs <= 2_000) secretTapCount + 1 else 1
-            secretLastTapMs = now
-            if (secretTapCount >= 7) {
-                secretTapCount = 0
-                promptLabelingLogin()
-            }
-        }
-    }
-
-    private fun promptLabelingLogin() {
-        val ctx = requireContext()
-        val input = EditText(ctx).apply {
-            hint = getString(R.string.label_password_hint)
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-        }
-        MaterialAlertDialogBuilder(ctx)
-            .setTitle(R.string.label_admin_entry)
-            .setView(input)
-            .setPositiveButton(android.R.string.ok) { _, _ ->
-                val pw = input.text?.toString().orEmpty()
-                if (pw.isBlank()) return@setPositiveButton
-                val app = requireActivity().application as PlantDiseasesApp
-                val repo = LabelingRepository(app.apiClient)
-                lifecycleScope.launch {
-                    repo.login(pw).onSuccess { token ->
-                        startActivity(
-                            Intent(requireContext(), LabelingActivity::class.java)
-                                .putExtra(LabelingActivity.EXTRA_TOKEN, token)
-                        )
-                    }.onFailure {
-                        val msg = if (it is LabelingUnavailableException) {
-                            getString(R.string.label_unavailable)
-                        } else {
-                            getString(R.string.label_login_failed)
-                        }
-                        Toast.makeText(requireContext(), msg, Toast.LENGTH_LONG).show()
-                    }
-                }
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
-    }
-
     private fun setLanguage(lang: String) {
         if (LocaleHelper.getSavedLanguage(requireContext()) == lang) return
         // Locale is owned entirely by LocaleHelper: every activity's
@@ -461,7 +421,8 @@ class ProfileFragment : Fragment() {
             if (isChecked) {
                 val needsLegacyPermission = Build.VERSION.SDK_INT <= Build.VERSION_CODES.P &&
                     ContextCompat.checkSelfPermission(
-                        requireContext(), Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                        requireContext(),
+                        Manifest.permission.WRITE_EXTERNAL_STORAGE,
                     ) != PackageManager.PERMISSION_GRANTED
                 if (needsLegacyPermission) {
                     storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
@@ -503,7 +464,6 @@ class ProfileFragment : Fragment() {
     }
 
     private fun loadStats() {
-        val app = requireActivity().application as PlantDiseasesApp
         val isRu = LocaleHelper.isRussian(requireContext())
 
         // Show shimmer on first load
@@ -517,7 +477,7 @@ class ProfileFragment : Fragment() {
         // continuation never resumes against a null binding (NPE on tab
         // switch / config change mid-query).
         viewLifecycleOwner.lifecycleScope.launch {
-            val stats = app.scanRepository.getStats()
+            val stats = scanRepository.getStats()
 
             // Hide shimmer
             if (isFirstLoad) {
@@ -553,7 +513,9 @@ class ProfileFragment : Fragment() {
             // centre % animate up together.
             val ratePct = if (stats.totalScans > 0) {
                 stats.healthyCount * 100 / stats.totalScans
-            } else 0
+            } else {
+                0
+            }
             binding.tvHealthRate.text = if (stats.totalScans > 0) "$ratePct%" else "—"
             binding.progressHealthRing.max = 100
             binding.progressHealthRing.setProgressCompat(ratePct, true)
@@ -577,44 +539,10 @@ class ProfileFragment : Fragment() {
         }
     }
 
-    private fun checkServerHealth() {
-        val app = requireActivity().application as PlantDiseasesApp
-
-        binding.tvServerStatus.text = getString(R.string.server_checking)
-        setStatusIndicatorColor(R.color.on_surface_secondary)
-        val dash = getString(R.string.diagnostics_value_dash)
-        binding.tvDiagVersion.text = dash
-        binding.tvDiagClasses.text = dash
-
-        lifecycleScope.launch {
-            val result = app.scanRepository.checkServerHealth()
-            if (_binding == null) return@launch
-
-            result.onSuccess { health ->
-                binding.tvServerStatus.text = getString(R.string.server_online)
-                setStatusIndicatorColor(R.color.healthy_green)
-                binding.tvDiagVersion.text = health.version.ifBlank { dash }
-                binding.tvDiagClasses.text = if (health.numClasses > 0)
-                    health.numClasses.toString() else dash
-            }.onFailure {
-                binding.tvServerStatus.text = getString(R.string.server_offline)
-                setStatusIndicatorColor(R.color.disease_red)
-                binding.tvDiagVersion.text = dash
-                binding.tvDiagClasses.text = dash
-            }
-        }
-    }
-
-    private fun setStatusIndicatorColor(colorRes: Int) {
-        val drawable = binding.serverStatusIndicator.background as? GradientDrawable
-        drawable?.setColor(ContextCompat.getColor(requireContext(), colorRes))
-    }
-
     override fun onResume() {
         super.onResume()
         loadStats()
         loadMyOpinions()
-        checkServerHealth()
     }
 
     override fun onDestroyView() {
@@ -622,5 +550,22 @@ class ProfileFragment : Fragment() {
         countAnimators.forEach { it.cancel() }
         countAnimators.clear()
         _binding = null
+    }
+
+    /** The shared toolbar is hidden on this tab (see MainActivity), so the
+     *  scroll content runs edge-to-edge under the status bar. Pad the scroll
+     *  view's top by the status-bar inset so the hero card drops below the
+     *  system clock (status bar over the dark background, card beneath it). */
+    private fun applyStatusBarTopInset(scroll: View) {
+        val baseTop = scroll.paddingTop
+        ViewCompat.setOnApplyWindowInsetsListener(scroll) { v, insets ->
+            val top = insets.getInsets(WindowInsetsCompat.Type.systemBars()).top
+            v.updatePadding(top = baseTop + top)
+            insets
+        }
+        // onViewCreated runs before the view is attached, so requesting insets
+        // now no-ops and a tab switched-to later never gets an inset pass — the
+        // hero then draws under the status bar. Request once attached instead.
+        scroll.doOnAttach { ViewCompat.requestApplyInsets(it) }
     }
 }

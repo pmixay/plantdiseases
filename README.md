@@ -6,6 +6,8 @@
 
 **AI-powered houseplant disease detection — on-device camera, cloud inference, bilingual care plans.**
 
+[![CI](https://github.com/pmixay/plantdiseases/actions/workflows/ci.yml/badge.svg)](https://github.com/pmixay/plantdiseases/actions/workflows/ci.yml)
+
 Two-stage ML pipeline (YOLOv8 leaf detector → frozen DINOv2 ViT-S/14
 backbone + LoRA + MLP head classifier) hosted behind a hardened FastAPI
 service, paired with a Kotlin Android client that ships scan history,
@@ -45,7 +47,7 @@ pipeline and live benchmark charts.
 │                      │ ──────► │                                  │
 │  • CameraX capture   │         │   ┌──────────────────────────┐   │
 │  • Room scan history │         │   │ Stage 1 — leaf detector  │   │
-│  • Retrofit + OkHttp │  JSON   │   │ YOLOv8n single-class      │   │
+│  • Ktor + OkHttp     │  JSON   │   │ YOLOv8n single-class      │   │
 │  • Material 3 UI     │ ◄────── │   └──────────┬───────────────┘   │
 │  • EN / RU strings   │         │              │                   │
 │  • Reminders worker  │         │   ┌──────────▼───────────────┐   │
@@ -217,7 +219,7 @@ Response shapes and validation rules are documented inline in
 
 ```
 plantdiseases/
-├── android/                Kotlin app (Material 3, CameraX, Room, Retrofit)
+├── android/                Kotlin app (Material 3, CameraX, Room, Ktor, Koin DI)
 ├── server/                 FastAPI server + ML pipeline
 │   ├── main.py             HTTP layer, middleware, validation
 │   ├── pipeline.py         Two-stage pipeline + blur/OOD gates
@@ -252,3 +254,8 @@ plantdiseases/
 ## License
 
 [Unlicense](https://unlicense.org) — public domain, free for any use.
+
+The Unlicense covers first-party code. Third-party model weights (DINOv2,
+Ultralytics YOLOv8), datasets (PlantVillage, PlantDoc, iNaturalist, COCO,
+Open Images), and runtime libraries remain under their own licenses — see
+[`NOTICE`](NOTICE) and [`THIRD_PARTY.md`](THIRD_PARTY.md).

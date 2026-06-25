@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.view.View
-import android.widget.TextView
 import androidx.activity.addCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -15,17 +14,17 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
-import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.SpeciesCandidate
+import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivitySpeciesIdentifyBinding
 import com.plantdiseases.app.ui.camera.CameraFragment
 import com.plantdiseases.app.ui.species.SpeciesDetailActivity
 import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.launch
+import org.koin.android.ext.android.inject
 import java.io.File
 import java.util.Locale
-import kotlin.math.roundToInt
 
 /**
  * "Identify my plant" — a full live-camera screen that mirrors the disease
@@ -38,6 +37,8 @@ import kotlin.math.roundToInt
 class SpeciesIdentifyActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivitySpeciesIdentifyBinding
+
+    private val scanRepository: ScanRepository by inject()
 
     private val isRu: Boolean get() = Locale.getDefault().language == "ru"
     private val locale: String get() = if (isRu) "ru" else "en"
@@ -92,7 +93,8 @@ class SpeciesIdentifyActivity : AppCompatActivity() {
 
         // Receive the captured+cropped photo from the camera fragment.
         supportFragmentManager.setFragmentResultListener(
-            CameraFragment.RESULT_IDENTIFY_CAPTURE, this,
+            CameraFragment.RESULT_IDENTIFY_CAPTURE,
+            this,
         ) { _, result ->
             result.getString(CameraFragment.RESULT_PATH)?.let { runIdentify(File(it)) }
         }
@@ -102,24 +104,24 @@ class SpeciesIdentifyActivity : AppCompatActivity() {
 
     private fun ensureCameraPermission() {
         val granted = ContextCompat.checkSelfPermission(
-            this, android.Manifest.permission.CAMERA,
+            this,
+            android.Manifest.permission.CAMERA,
         ) == PackageManager.PERMISSION_GRANTED
         if (!granted) requestCamera.launch(android.Manifest.permission.CAMERA)
     }
 
     // ── Identify ────────────────────────────────────────────────────
     private fun runIdentify(file: File) {
-        val app = application as PlantDiseasesApp
         binding.candidatesPanel.visibility = View.GONE
         binding.identifyProgress.visibility = View.VISIBLE
         lifecycleScope.launch {
-            val result = app.scanRepository.identifySpecies(file, "auto", locale)
+            val result = scanRepository.identifySpecies(file, "auto", locale)
             binding.identifyProgress.visibility = View.GONE
             result.onSuccess { resp ->
                 when {
                     !resp.available -> showStatus(getString(R.string.identify_unavailable))
                     resp.results.isEmpty() -> showStatus(getString(R.string.identify_no_match))
-                    else -> renderCandidates(resp.results.take(5))
+                    else -> openTopCandidate(resp.results)
                 }
             }.onFailure {
                 showStatus(it.localizedMessage ?: getString(R.string.identify_failed))
@@ -127,34 +129,31 @@ class SpeciesIdentifyActivity : AppCompatActivity() {
         }
     }
 
-    private fun renderCandidates(candidates: List<SpeciesCandidate>) {
-        binding.candidatesStatus.visibility = View.GONE
-        binding.candidatesList.removeAllViews()
-        candidates.forEach { c ->
-            val sci = c.scientificName ?: return@forEach
-            val row = layoutInflater.inflate(
-                R.layout.item_home_tool, binding.candidatesList, false,
-            )
-            row.findViewById<android.widget.ImageView>(R.id.tool_icon)
-                .setImageResource(R.drawable.ic_plant_placeholder)
-            row.findViewById<TextView>(R.id.tool_title).text = getString(
-                R.string.identify_candidate_row,
-                c.displayCommonName ?: sci,
-                sci,
-                (c.score * 100).roundToInt(),
-            )
-            row.setOnClickListener {
-                SpeciesDetailActivity.start(this, sci, c.displayCommonName)
-            }
-            binding.candidatesList.addView(row)
+    /** Auto-open the single best match — no "which is yours?" picker, mirroring
+     *  how the disease scan jumps straight to its top diagnosis. Picks the
+     *  highest-scoring candidate with a usable scientific name; if none has one,
+     *  degrade to the no-match status (same as an empty result set). */
+    private fun openTopCandidate(candidates: List<SpeciesCandidate>) {
+        val top = candidates
+            .filter { !it.scientificName.isNullOrBlank() }
+            .maxByOrNull { it.score }
+        val sci = top?.scientificName
+        if (sci.isNullOrBlank()) {
+            showStatus(getString(R.string.identify_no_match))
+            return
         }
-        showCandidates()
+        // Return to the live camera underneath so backing out of the detail
+        // screen lands on a fresh capture, not a stale panel.
+        hideCandidates()
+        SpeciesDetailActivity.start(this, sci, top.displayCommonName)
     }
 
-    /** Show the panel with a status line instead of candidate rows (no match,
-     *  unavailable, or an error). */
+    /** Show the panel with a status line instead of opening a match (no match,
+     *  unavailable, or an error). The picker title is hidden — the panel is now
+     *  status-only. */
     private fun showStatus(msg: String) {
         binding.candidatesList.removeAllViews()
+        binding.candidatesTitle.visibility = View.GONE
         binding.candidatesStatus.text = msg
         binding.candidatesStatus.visibility = View.VISIBLE
         showCandidates()

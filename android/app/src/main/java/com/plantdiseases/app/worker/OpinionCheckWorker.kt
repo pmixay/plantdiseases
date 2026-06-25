@@ -3,10 +3,12 @@ package com.plantdiseases.app.worker
 import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.plantdiseases.app.PlantDiseasesApp
+import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.push.OpinionNotifier
 import com.plantdiseases.app.util.OpinionPrefs
 import com.plantdiseases.app.util.TelemetryIds
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
 
 /**
  * Periodically polls the server for second opinions on THIS install's shared
@@ -21,14 +23,15 @@ import com.plantdiseases.app.util.TelemetryIds
 class OpinionCheckWorker(
     context: Context,
     params: WorkerParameters,
-) : CoroutineWorker(context, params) {
+) : CoroutineWorker(context, params), KoinComponent {
+
+    private val scanRepository: ScanRepository by inject()
 
     override suspend fun doWork(): Result {
         val ctx = applicationContext
-        val app = ctx as PlantDiseasesApp
         val pseudoId = TelemetryIds.userPseudoId(ctx)
 
-        val resp = app.scanRepository.fetchMyScanOpinions(pseudoId).getOrElse {
+        val resp = scanRepository.fetchMyScanOpinions(pseudoId).getOrElse {
             // Network/server hiccup — retry on the next interval.
             return Result.retry()
         }

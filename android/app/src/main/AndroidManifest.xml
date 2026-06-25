@@ -36,6 +36,7 @@
         android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="true"
         android:theme="@style/Theme.PlantDiseases"
+        android:usesCleartextTraffic="false"
         android:networkSecurityConfig="@xml/network_security_config"
         tools:targetApi="34">
 
@@ -128,11 +129,6 @@
 
         <activity
             android:name=".ui.guide.GuideDetailActivity"
-            android:exported="false"
-            android:screenOrientation="portrait" />
-
-        <activity
-            android:name=".ui.labeling.LabelingActivity"
             android:exported="false"
             android:screenOrientation="portrait" />
 

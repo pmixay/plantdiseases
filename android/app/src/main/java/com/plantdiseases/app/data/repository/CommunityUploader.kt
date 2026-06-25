@@ -143,7 +143,12 @@ class CommunityUploader(
     /** Outcome of one upload attempt — surfaced to callers only for
      *  logging; never user-visible. */
     enum class UploadOutcome {
-        Uploaded, OptedOut, NoRegion, MissingScanId, Failed, HiddenDisease,
+        Uploaded,
+        OptedOut,
+        NoRegion,
+        MissingScanId,
+        Failed,
+        HiddenDisease,
     }
 
     /**
@@ -196,7 +201,9 @@ class CommunityUploader(
             val w = (decoded.width * ratio).toInt().coerceAtLeast(1)
             val h = (decoded.height * ratio).toInt().coerceAtLeast(1)
             Bitmap.createScaledBitmap(decoded, w, h, true).also { decoded.recycle() }
-        } else decoded
+        } else {
+            decoded
+        }
         val out = File(
             context.cacheDir,
             "community_thumb_${scan.id}_${System.currentTimeMillis()}.jpg",
@@ -218,6 +225,7 @@ class CommunityUploader(
         private const val TAG = "CommunityUploader"
         private const val THUMB_LONG_EDGE = 512
         private const val THUMB_QUALITY = 78
+
         // Mirrors the server's ``_HIDDEN_COMMUNITY_DISEASES`` set —
         // diagnoses we never surface in the community feed and so
         // shouldn't upload either.
