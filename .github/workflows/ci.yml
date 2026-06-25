@@ -5,11 +5,9 @@ on:
   # PR is opened. Include both slash-prefixed branches and the plain `work`
   # branch name used by some Codex sessions.
   push:
-    branches: [main, "claude/**", "codex/**", work, "work/**"]
+    branches: [main, "claude/**", "work/**"]
   # Also run for PRs into main so Codex branches from forks (where the source
   # push does not trigger this repository's workflow) still receive checks.
-  pull_request:
-    branches: [main]
 
 concurrency:
   group: ci-${{ github.ref }}
