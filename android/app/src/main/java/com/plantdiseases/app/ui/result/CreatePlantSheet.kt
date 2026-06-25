@@ -1,6 +1,7 @@
 package com.plantdiseases.app.ui.result
 
 import android.os.Bundle
+import android.text.InputFilter
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
@@ -75,6 +76,9 @@ class CreatePlantSheet : BottomSheetDialogFragment() {
         val cancelBtn = view.findViewById<MaterialButton>(R.id.btn_cancel)
         val saveBtn = view.findViewById<MaterialButton>(R.id.btn_save)
 
+        val textLimitFilter = InputFilter.LengthFilter(TEXT_FIELD_MAX_LENGTH)
+        etName.filters = arrayOf(textLimitFilter)
+        etSpecies.filters = arrayOf(textLimitFilter)
         etName.setText(initialName.orEmpty())
 
         // Pre-fill from the species PlantNet already identified at
@@ -265,6 +269,7 @@ class CreatePlantSheet : BottomSheetDialogFragment() {
     }
 
     companion object {
+        private const val TEXT_FIELD_MAX_LENGTH = 1024
         private const val TAG = "create-plant-sheet"
 
         /** Fragment Result API contract with the host. */

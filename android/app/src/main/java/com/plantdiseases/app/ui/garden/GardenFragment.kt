@@ -5,6 +5,7 @@ import android.content.Intent
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.text.InputFilter
 import android.text.InputType
 import android.text.TextUtils
 import android.util.TypedValue
@@ -706,6 +707,7 @@ class GardenFragment : Fragment() {
         type: Int,
     ): Pair<TextInputLayout, TextInputEditText> {
         val input = TextInputEditText(requireContext()).apply {
+            filters = arrayOf(InputFilter.LengthFilter(TEXT_FIELD_MAX_LENGTH))
             setText(value.orEmpty())
             inputType = type
             setSingleLine(true)
@@ -719,6 +721,10 @@ class GardenFragment : Fragment() {
             ).apply { bottomMargin = 10.dp() }
         }
         return layout to input
+    }
+
+    private companion object {
+        private const val TEXT_FIELD_MAX_LENGTH = 1024
     }
 
     private fun Int.dp(): Int = TypedValue.applyDimension(
