@@ -9,7 +9,7 @@ on:
   # pull_request). Re-add `pull_request:` only if you need CI on PRs from
   # forks or branches that don't match the patterns below.
   push:
-    branches: [main, master, "claude/**"]
+    branches: [main, "claude/**", "codex/**"]
 
 concurrency:
   group: ci-${{ github.ref }}
