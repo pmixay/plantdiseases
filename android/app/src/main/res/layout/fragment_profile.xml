@@ -224,17 +224,89 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Full stats & advice — relocated here from Home; Home keeps a
-             compact teaser card that opens the same screen. -->
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btn_stats_advice"
-            style="@style/Widget.Material3.Button.TonalButton"
+        <!-- Stats detail + guides, consolidated here (the standalone
+             "Statistics & tips" screen was removed). Hidden in the empty
+             state alongside stats_layout. -->
+        <LinearLayout
+            android:id="@+id/stats_detail_layout"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_md"
-            android:text="@string/stats_tips_title"
-            app:icon="@drawable/ic_chevron_right"
-            app:iconGravity="textEnd" />
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <com.google.android.material.card.MaterialCardView
+                style="@style/App.GlassCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/stats_section"
+                        android:textColor="@color/on_surface"
+                        android:textSize="@dimen/text_title_sm"
+                        android:textStyle="bold" />
+
+                    <!-- 7-day bar chart -->
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_md"
+                        android:text="@string/stats_last_7_days"
+                        android:textColor="@color/on_surface"
+                        android:textSize="@dimen/text_body"
+                        android:textStyle="bold" />
+
+                    <com.plantdiseases.app.ui.widget.BarChartView
+                        android:id="@+id/bar_week"
+                        android:layout_width="match_parent"
+                        android:layout_height="120dp"
+                        android:layout_marginTop="@dimen/space_sm" />
+
+                    <!-- Top issues -->
+                    <TextView
+                        android:id="@+id/tv_top_issues_title"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_lg"
+                        android:text="@string/stats_top_issues"
+                        android:textColor="@color/on_surface"
+                        android:textSize="@dimen/text_body"
+                        android:textStyle="bold"
+                        android:visibility="gone" />
+
+                    <LinearLayout
+                        android:id="@+id/list_top_issues"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_sm"
+                        android:orientation="vertical" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Guides & tips -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_xl"
+                android:text="@string/tips_section"
+                android:textColor="@color/on_surface"
+                android:textSize="@dimen/text_title_sm"
+                android:textStyle="bold" />
+
+            <LinearLayout
+                android:id="@+id/list_tips"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_sm"
+                android:orientation="vertical" />
+        </LinearLayout>
 
         <!-- Empty state -->
         <LinearLayout

@@ -1,7 +1,6 @@
 package com.plantdiseases.app.ui.profile
 
 import android.Manifest
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -13,6 +12,7 @@ import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -29,16 +29,20 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.GuideDataProvider
+import com.google.android.material.card.MaterialCardView
 import com.plantdiseases.app.data.model.CommunityOpinion
+import com.plantdiseases.app.data.model.ScanHistoryItem
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.FragmentProfileBinding
 import com.plantdiseases.app.ui.result.CommunityOpinionSheet
+import com.plantdiseases.app.ui.widget.BarChartView
 import com.plantdiseases.app.util.AutosavePrefs
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.TelemetryIds
 import com.plantdiseases.app.util.ThemeHelper
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
+import java.util.Calendar
 
 class ProfileFragment : Fragment() {
 
@@ -104,12 +108,9 @@ class ProfileFragment : Fragment() {
                 ?.selectedItemId = R.id.cameraFragment
         }
 
-        // Full stats & advice (relocated from Home; Home keeps a teaser).
-        binding.btnStatsAdvice.setOnClickListener {
-            startActivity(
-                Intent(requireContext(), com.plantdiseases.app.ui.stats.StatsTipsActivity::class.java)
-            )
-        }
+        // Tips library lives inline now (the standalone Stats & tips screen
+        // was removed). Static content — build once.
+        buildTips()
 
         binding.langEn.setOnClickListener { setLanguage("en") }
         binding.langRu.setOnClickListener { setLanguage("ru") }
@@ -364,6 +365,163 @@ class ProfileFragment : Fragment() {
 
     private fun color(res: Int): Int = ContextCompat.getColor(requireContext(), res)
 
+    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+
+    // ── Inline stats detail (7-day bars, top issues) + tips library ──────
+    /** Real-scan count per day for the last 7 days (oldest → today). */
+    private fun weeklyBars(scans: List<ScanHistoryItem>): List<BarChartView.Bar> {
+        val labels = resources.getStringArray(R.array.weekday_initials)
+        val start = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+            add(Calendar.DAY_OF_YEAR, -6)
+        }
+        return (0 until 7).map {
+            val dayStart = start.timeInMillis
+            val dow = start.get(Calendar.DAY_OF_WEEK) // 1=Sun..7=Sat
+            start.add(Calendar.DAY_OF_YEAR, 1)
+            val dayEnd = start.timeInMillis
+            BarChartView.Bar(labels[dow - 1], scans.count { it.timestamp in dayStart until dayEnd })
+        }
+    }
+
+    private fun renderTopIssues(scans: List<ScanHistoryItem>) {
+        val isRu = LocaleHelper.isRussian(requireContext())
+        val list = binding.listTopIssues
+        list.removeAllViews()
+        val top = scans.filter { !it.isHealthy }
+            .groupingBy { if (isRu) it.diseaseNameRu else it.diseaseName }
+            .eachCount().entries
+            .sortedByDescending { it.value }
+            .take(4)
+        binding.tvTopIssuesTitle.visibility = if (top.isEmpty()) View.GONE else View.VISIBLE
+        if (top.isEmpty()) return
+        val max = top.first().value
+        top.forEach { (name, n) -> list.addView(issueBar(name, n, max)) }
+    }
+
+    /** One horizontal "issue" bar: label over a proportional fill track. */
+    private fun issueBar(name: String, value: Int, max: Int): View {
+        val ctx = requireContext()
+        val column = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(6), 0, dp(6))
+        }
+        val header = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        header.addView(
+            TextView(ctx).apply {
+                text = name
+                textSize = 13f
+                setTextColor(color(R.color.on_surface))
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            },
+        )
+        header.addView(
+            TextView(ctx).apply {
+                text = value.toString()
+                textSize = 13f
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(color(R.color.on_surface))
+            },
+        )
+        column.addView(header)
+
+        val track = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setBackgroundColor(0x14000000)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(8),
+            ).apply { topMargin = dp(4) }
+        }
+        val fillWeight = value.toFloat() / max.coerceAtLeast(1)
+        track.addView(
+            View(ctx).apply {
+                setBackgroundColor(color(R.color.disease_red))
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, fillWeight)
+            },
+        )
+        track.addView(
+            View(ctx).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.MATCH_PARENT, (1f - fillWeight).coerceAtLeast(0f),
+                )
+            },
+        )
+        column.addView(track)
+        return column
+    }
+
+    /** The trimmed tips library (4 cards) — static, built once. */
+    private fun buildTips() {
+        val sections = listOf(
+            R.string.tip_scanning_title to R.string.tip_scanning_body,
+            R.string.tip_results_title to R.string.tip_results_body,
+            R.string.tip_watering_title to R.string.tip_watering_body,
+            R.string.tip_community_title to R.string.tip_community_body,
+        )
+        binding.listTips.removeAllViews()
+        sections.forEach { (title, body) -> binding.listTips.addView(tipCard(title, body)) }
+    }
+
+    private fun tipCard(titleRes: Int, bodyRes: Int): View {
+        val ctx = requireContext()
+        val card = MaterialCardView(ctx).apply {
+            radius = dp(16).toFloat()
+            cardElevation = dp(1).toFloat()
+            setCardBackgroundColor(color(R.color.surface))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { bottomMargin = dp(10) }
+        }
+        val column = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+        }
+        val bodyView = TextView(ctx).apply {
+            text = getString(bodyRes)
+            textSize = 14f
+            setLineSpacing(dp(3).toFloat(), 1f)
+            setTextColor(color(R.color.on_surface_secondary))
+            setPadding(0, dp(8), 0, 0)
+            visibility = View.GONE
+        }
+        val chevron = ImageView(ctx).apply {
+            setImageResource(R.drawable.ic_chevron_down)
+            imageTintList = android.content.res.ColorStateList.valueOf(
+                color(R.color.on_surface_secondary),
+            )
+        }
+        val headerRow = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(
+                TextView(ctx).apply {
+                    text = getString(titleRes)
+                    textSize = 15f
+                    setTypeface(typeface, Typeface.BOLD)
+                    setTextColor(color(R.color.on_surface))
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                },
+            )
+            addView(chevron)
+        }
+        column.addView(headerRow)
+        column.addView(bodyView)
+        card.addView(column)
+        card.setOnClickListener {
+            val open = bodyView.visibility == View.VISIBLE
+            bodyView.visibility = if (open) View.GONE else View.VISIBLE
+            chevron.setImageResource(
+                if (open) R.drawable.ic_chevron_down else R.drawable.ic_chevron_up,
+            )
+        }
+        return card
+    }
+
     private fun pill(fill: Int): GradientDrawable = GradientDrawable().apply {
         shape = GradientDrawable.RECTANGLE
         cornerRadius = 999f
@@ -481,6 +639,11 @@ class ProfileFragment : Fragment() {
         // switch / config change mid-query).
         viewLifecycleOwner.lifecycleScope.launch {
             val stats = scanRepository.getStats()
+            // Full list (the bar chart + top-issues need per-scan data the
+            // aggregate ScanStats doesn't carry).
+            val real = runCatching { scanRepository.getAllScans() }
+                .getOrDefault(emptyList())
+                .filter { !it.isNotAPlant }
 
             // Hide shimmer
             if (isFirstLoad) {
@@ -497,12 +660,23 @@ class ProfileFragment : Fragment() {
             val totalRecorded = stats.totalScans + stats.notAPlantCount
             if (totalRecorded == 0) {
                 binding.statsLayout.visibility = View.GONE
+                binding.statsDetailLayout.visibility = View.GONE
                 binding.emptyState.visibility = View.VISIBLE
                 return@launch
             }
 
             binding.statsLayout.visibility = View.VISIBLE
+            binding.statsDetailLayout.visibility = View.VISIBLE
             binding.emptyState.visibility = View.GONE
+
+            // 7-day activity bar chart + top recurring issues.
+            binding.barWeek.setBars(
+                weeklyBars(real),
+                barColor = color(R.color.primary),
+                labelColor = color(R.color.on_surface_secondary),
+                valueColor = color(R.color.on_surface),
+            )
+            renderTopIssues(real)
 
             // The "Total Scans" card surfaces the full recorded count so
             // it matches the gallery row count; NAP filtering only affects
