@@ -2,7 +2,10 @@
 <resources>
     <style name="Theme.PlantDiseases.Splash" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/primary</item>
-        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+        <!-- Just the sprig (transparent bg, art in the safe zone) so cold start
+             shows a clean, complete logo on green — not the full-bleed launcher
+             art circle-cropped into a chopped card. -->
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
         <item name="windowSplashScreenAnimationDuration">800</item>
         <item name="postSplashScreenTheme">@style/Theme.PlantDiseases</item>
     </style>
