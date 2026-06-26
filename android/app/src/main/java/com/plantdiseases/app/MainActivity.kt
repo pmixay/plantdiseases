@@ -19,7 +19,6 @@ import androidx.navigation.ui.setupWithNavController
 import com.plantdiseases.app.databinding.ActivityMainBinding
 import com.plantdiseases.app.ui.onboarding.OnboardingActivity
 import com.plantdiseases.app.util.LocaleHelper
-import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
 

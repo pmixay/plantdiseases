@@ -817,8 +817,11 @@ object WateringDaysSerializer : KSerializer<Any?> {
         return when (val element = jsonDecoder.decodeJsonElement()) {
             is JsonNull -> null
             is JsonPrimitive ->
-                if (element.isString) element.content
-                else element.intOrNull ?: element.doubleOrNull ?: element.content
+                if (element.isString) {
+                    element.content
+                } else {
+                    element.intOrNull ?: element.doubleOrNull ?: element.content
+                }
             else -> null
         }
     }
