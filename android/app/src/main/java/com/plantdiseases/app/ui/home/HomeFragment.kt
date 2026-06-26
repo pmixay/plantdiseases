@@ -449,8 +449,7 @@ class HomeFragment : Fragment() {
         // Prefer the server's localized country NAME (e.g. "Spain") over the
         // raw ISO bucket (e.g. "ES"); the server attaches it alongside the
         // code, exactly as the "Popular in <country>" title uses it.
-        val country = (if (isRu) t.countryNameRu else t.countryNameEn)
-            ?.takeIf { it.isNotBlank() } ?: t.country
+        val country = (if (isRu) t.countryNameRu else t.countryNameEn)?.takeIf { it.isNotBlank() } ?: t.country
         return when (t.scope) {
             "region" -> listOfNotNull(t.region, country).joinToString(", ")
             "country" -> country ?: getString(R.string.home_trending_global)
@@ -518,9 +517,7 @@ private class GradientTextSpan(private val colors: IntArray) : ReplacementSpan()
     ) {
         val width = paint.measureText(text, start, end)
         val previous = paint.shader
-        paint.shader = LinearGradient(
-            x, 0f, x + width, 0f, colors, null, Shader.TileMode.CLAMP,
-        )
+        paint.shader = LinearGradient(x, 0f, x + width, 0f, colors, null, Shader.TileMode.CLAMP)
         canvas.drawText(text, start, end, x, y.toFloat(), paint)
         paint.shader = previous
     }
