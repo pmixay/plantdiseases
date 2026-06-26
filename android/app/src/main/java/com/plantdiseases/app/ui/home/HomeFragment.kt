@@ -3,6 +3,9 @@ package com.plantdiseases.app.ui.home
 import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
 import android.view.LayoutInflater
 import android.view.Menu
 import android.view.MenuInflater
@@ -34,7 +37,6 @@ import com.plantdiseases.app.ui.symptom.SymptomCheckerActivity
 import com.plantdiseases.app.util.DiseaseCatalog
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.Haptics
-import com.plantdiseases.app.util.RegionResolver
 import com.plantdiseases.app.util.SpeciesCatalog
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
@@ -44,7 +46,7 @@ import java.util.Locale
 /**
  * Home — a visual discovery feed (start destination). Two hero actions, a
  * compact tools row, then the carousels that are the centerpiece: trending
- * species nearby (Wikipedia photos), popular diseases, and the disease
+ * community species (Wikipedia photos), popular diseases, and the disease
  * guide. A slim Stats & Tips teaser sits at the bottom. Tapping a card opens
  * a dedicated detail screen (SpeciesDetailActivity / GuideDetailActivity).
  */
@@ -200,7 +202,7 @@ class HomeFragment : Fragment() {
         sheet.show()
     }
 
-    /** Add the "scans near you" community action to the shared toolbar, scoped
+    /** Add the community scans action to the shared toolbar, scoped
      *  to this fragment's RESUMED state so the people icon only shows in the top
      *  bar while the Home tab is open. */
     private fun setupCommunityMenu() {
@@ -253,19 +255,14 @@ class HomeFragment : Fragment() {
 
     // ── Trending carousels ──────────────────────────────────────────
     private fun loadTrending() {
-        val appContext = requireContext().applicationContext
         viewLifecycleOwner.lifecycleScope.launch {
-            val region = runCatching { RegionResolver.resolveRegion(appContext) }.getOrNull()
             // Trending is a "moving" feed — cache it 24h (ResponseCache policy) so
             // every Home onResume doesn't re-hit the network for the same region.
-            val cacheKey = "trending:v1:${region?.country.orEmpty()}|${region?.locality.orEmpty()}"
+            val cacheKey = "trending:v2:server"
             val trending = com.plantdiseases.app.util.ResponseCache
                 .get(cacheKey, TrendingResponse::class.java)
                 ?: runCatching {
-                    apiClient.communityTrending(
-                        country = region?.country,
-                        region = region?.locality,
-                    )
+                    apiClient.communityTrending()
                 }.getOrNull()?.also {
                     com.plantdiseases.app.util.ResponseCache.put(
                         cacheKey,
@@ -273,11 +270,11 @@ class HomeFragment : Fragment() {
                         com.plantdiseases.app.util.ResponseCache.TTL_TRENDING_MS,
                     )
                 }
-            // When trending has no nearby species, fall back to the personalized
+            // When trending has no community species, fall back to the personalized
             // popular bundle (images already resolved server-side). Fetched here
             // so renderSpecies stays synchronous.
             val popular = if (trending == null || trending.topSpecies.isEmpty()) {
-                loadPopularBundle(region)
+                loadPopularBundle()
             } else {
                 null
             }
@@ -302,15 +299,12 @@ class HomeFragment : Fragment() {
      */
     /** Fetch the personalized popular bundle, cached 24h. Null on any failure
      *  so the caller falls back to the bundled SpeciesCatalog list. */
-    private suspend fun loadPopularBundle(
-        region: com.plantdiseases.app.util.ResolvedRegion?,
-    ): PopularResponse? {
-        val cacheKey = "popular:v1:${region?.country.orEmpty()}|" +
-            "${region?.locality.orEmpty()}|$locale"
+    private suspend fun loadPopularBundle(): PopularResponse? {
+        val cacheKey = "popular:v2:server|$locale"
         return com.plantdiseases.app.util.ResponseCache
             .get(cacheKey, PopularResponse::class.java)
             ?: runCatching {
-                apiClient.popular(region?.country, region?.locality, locale)
+                apiClient.popular(locale = locale)
             }.getOrNull()?.takeIf { it.items.isNotEmpty() }?.also {
                 com.plantdiseases.app.util.ResponseCache.put(
                     cacheKey,
@@ -344,7 +338,7 @@ class HomeFragment : Fragment() {
                 },
             )
         } else {
-            b.tvSpeciesTitle.setText(R.string.home_popular_species)
+            setPopularTitle(b, popular)
             b.tvTrendingScope.visibility = View.GONE
             val tag = getString(R.string.home_species_popular_tag)
             val items = if (popular != null && popular.items.isNotEmpty()) {
@@ -355,7 +349,15 @@ class HomeFragment : Fragment() {
                     SpeciesCarouselAdapter.Item(
                         scientific = p.scientific,
                         title = if (isRu) p.commonRu else p.commonEn,
-                        subtitle = tag,
+                        subtitle = when {
+                            p.percent > 0 -> getString(R.string.home_popular_percent, p.percent)
+                            p.count > 0 -> resources.getQuantityString(
+                                R.plurals.home_species_count,
+                                p.count,
+                                p.count,
+                            )
+                            else -> tag
+                        },
                     )
                 }
             } else {
@@ -370,6 +372,28 @@ class HomeFragment : Fragment() {
             }
             speciesAdapter.submit(items)
         }
+    }
+
+    private fun setPopularTitle(b: FragmentHomeBinding, popular: PopularResponse?) {
+        val country = if (isRu) popular?.countryNameRu else popular?.countryNameEn
+        val title = if (popular?.scope == "country" && !country.isNullOrBlank()) {
+            getString(R.string.home_popular_in_country, country)
+        } else {
+            getString(R.string.home_popular_worldwide)
+        }
+        val spannable = SpannableString(title)
+        if (!country.isNullOrBlank()) {
+            val start = title.indexOf(country)
+            if (start >= 0) {
+                spannable.setSpan(
+                    ForegroundColorSpan(ContextCompat.getColor(requireContext(), R.color.primary)),
+                    start,
+                    start + country.length,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+                )
+            }
+        }
+        b.tvSpeciesTitle.text = spannable
     }
 
     private fun renderPopular(b: FragmentHomeBinding, t: TrendingResponse) {

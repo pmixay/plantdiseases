@@ -557,7 +557,6 @@ class ScanRepositoryNetworkTest {
             repo.uploadCommunityScan(
                 scanId = "sc-1",
                 userPseudoId = "u-1",
-                country = "US",
                 region = "", // blank → omitted
                 disease = "leaf_spot",
                 confidence = 0.8f,
@@ -572,7 +571,7 @@ class ScanRepositoryNetworkTest {
         assertThat(req.path).isEqualTo("/api/community/scan")
         val body = req.body.readUtf8()
         assertThat(body).contains("name=scan_id")
-        assertThat(body).contains("name=country")
+        assertThat(body).doesNotContain("name=country")
         assertThat(body).contains("name=confidence")
         // blank region / null species must NOT be sent.
         assertThat(body).doesNotContain("name=region")
@@ -593,7 +592,6 @@ class ScanRepositoryNetworkTest {
         )
         val result = runBlocking {
             repo.communityNearby(
-                country = "US",
                 region = "", // blank → omitted
                 disease = null, // null → omitted
                 userPseudoId = "u1",
@@ -606,7 +604,7 @@ class ScanRepositoryNetworkTest {
         val req = server.takeRequest()
         assertThat(req.method).isEqualTo("GET")
         assertThat(req.path).startsWith("/api/community/nearby")
-        assertThat(req.path).contains("country=US")
+        assertThat(req.path).doesNotContain("country=")
         assertThat(req.path).contains("user_pseudo_id=u1")
         assertThat(req.path).contains("limit=12")
         assertThat(req.path).doesNotContain("region=")

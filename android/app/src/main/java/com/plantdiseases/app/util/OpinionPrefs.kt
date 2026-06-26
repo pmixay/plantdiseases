@@ -14,6 +14,8 @@ import android.content.Context
 object OpinionPrefs {
     private const val PREFS = "plantdiseases_opinions"
     private const val KEY_INITIALIZED = "baseline_initialized"
+    private const val KEY_NOTIFICATIONS_ENABLED = "notifications_enabled"
+    internal const val DEFAULT_NOTIFICATIONS_ENABLED = false
     private const val KEY_PREFIX = "seen_"
     private const val KEY_VIEWED_PREFIX = "viewed_"
     private const val KEY_SUBMITTED_PREFIX = "opined_"
@@ -23,6 +25,13 @@ object OpinionPrefs {
 
     fun markInitialized(context: Context) {
         prefs(context).edit().putBoolean(KEY_INITIALIZED, true).apply()
+    }
+
+    fun notificationsEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_NOTIFICATIONS_ENABLED, DEFAULT_NOTIFICATIONS_ENABLED)
+
+    fun setNotificationsEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_NOTIFICATIONS_ENABLED, enabled).apply()
     }
 
     fun lastSeen(context: Context, scanId: String): Int =

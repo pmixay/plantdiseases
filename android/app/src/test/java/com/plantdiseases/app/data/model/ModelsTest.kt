@@ -2,7 +2,6 @@ package com.plantdiseases.app.data.model
 
 import com.google.common.truth.Truth.assertThat
 import com.google.gson.Gson
-import com.plantdiseases.app.util.ResolvedRegion
 import org.junit.Test
 
 /**
@@ -139,9 +138,16 @@ class ModelsTest {
     }
 
     @Test
-    fun resolvedRegion_displayLabel() {
-        assertThat(ResolvedRegion("US", "Boston").displayLabel).isEqualTo("Boston, US")
-        assertThat(ResolvedRegion("US", null).displayLabel).isEqualTo("US")
-        assertThat(ResolvedRegion("US", "").displayLabel).isEqualTo("US")
+    fun communityScansResponse_countryScopeFields_parse() {
+        val r = gson.fromJson(
+            """{"scope":"country","country":"US","country_name_en":"United States","country_name_ru":"United States","summary":{"scope":"country","country":"US","country_name_en":"United States","total":3}}""",
+            CommunityScansResponse::class.java,
+        )
+        assertThat(r.scope).isEqualTo("country")
+        assertThat(r.country).isEqualTo("US")
+        assertThat(r.countryNameEn).isEqualTo("United States")
+        assertThat(r.summary!!.scope).isEqualTo("country")
+        assertThat(r.summary!!.countryNameEn).isEqualTo("United States")
+        assertThat(r.summary!!.total).isEqualTo(3)
     }
 }

@@ -175,3 +175,38 @@ def test_ru_direct_hit_skips_langlinks(monkeypatch):
     info = species_info.fetch_species_info(SCI_NAME, "ru")
     assert info is not None
     assert info["lang"] == "ru"
+
+
+def test_media_images_excludes_non_plant_media(monkeypatch):
+    def fake_get(url, params=None, headers=None, timeout=None):
+        assert "/page/media-list/" in url
+        return _FakeResp(payload={"items": [
+            {
+                "type": "image",
+                "title": "Distribution map",
+                "srcset": [{"src": "//upload.example/Ficus_elastica_distribution_map.png"}],
+            },
+            {
+                "type": "image",
+                "title": "Herbarium specimen sheet",
+                "srcset": [{"src": "//upload.example/Ficus_elastica_herbarium.jpg"}],
+            },
+            {
+                "type": "image",
+                "title": "Ficus elastica leaf",
+                "caption": "Ficus elastica foliage",
+                "srcset": [{"src": "//upload.example/Ficus_elastica_leaf.jpg"}],
+            },
+            {
+                "type": "image",
+                "title": "Ficus elastica logo",
+                "srcset": [{"src": "//upload.example/Ficus_elastica_logo.svg"}],
+            },
+        ]})
+
+    import requests
+
+    monkeypatch.setattr(requests, "get", fake_get)
+
+    images = species_info._media_images("Ficus_elastica", "en", limit=4)
+    assert images == ["https://upload.example/Ficus_elastica_leaf.jpg"]

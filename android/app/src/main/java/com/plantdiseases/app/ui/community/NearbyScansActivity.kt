@@ -22,17 +22,14 @@ import com.plantdiseases.app.databinding.SheetNearbyFilterBinding
 import com.plantdiseases.app.ui.result.CommunityOpinionSheet
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.LocaleHelper
-import com.plantdiseases.app.util.RegionResolver
 import com.plantdiseases.app.util.TelemetryIds
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import org.koin.android.ext.android.inject
 
 /**
- * Social-style "Scans near you" feed. Resolves the user's approximate
- * region, pulls the regional community corpus (all diagnoses, not just
- * the current scan's), and renders one card per scan. Tapping a card or
+ * Social-style community feed. The server scopes it by country when it can,
+ * then falls back globally (all diagnoses, not just the current scan's), and
+ * renders one card per scan. Tapping a card or
  * its "Second opinion" action opens [CommunityOpinionSheet] — the vote
  * graph + opinions + the user's own vote.
  *
@@ -52,23 +49,6 @@ class NearbyScansActivity : AppCompatActivity() {
     private var sortNewestFirst = true
     private var typeFilter: String? = null
     private var filterMenuItem: MenuItem? = null
-
-    // In-context community opt-in: tapping "Enable" requests coarse location
-    // (+ notifications on 13+) then reloads the feed whatever the outcome.
-    private val communityPermissionLauncher = registerForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions(),
-    ) { _ ->
-        com.plantdiseases.app.push.PushManager.registerIfEnabled(this)
-        load(isRefresh = false)
-    }
-
-    private fun requestCommunityPermissions() {
-        val perms = mutableListOf(android.Manifest.permission.ACCESS_COARSE_LOCATION)
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            perms += android.Manifest.permission.POST_NOTIFICATIONS
-        }
-        communityPermissionLauncher.launch(perms.toTypedArray())
-    }
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
@@ -135,26 +115,10 @@ class NearbyScansActivity : AppCompatActivity() {
     private fun load(isRefresh: Boolean) {
         // Community is opt-in. Until the user opts in, show an Enable prompt
         // instead of reading their location / hitting the network.
-        if (!com.plantdiseases.app.util.CommunityPrefs.uploadsEnabled(this)) {
-            showEnableState()
-            return
-        }
         if (!isRefresh) showLoading()
         lifecycleScope.launch {
-            val resolved = withContext(Dispatchers.IO) {
-                RegionResolver.cachedRegion(this@NearbyScansActivity)
-                    ?: RegionResolver.resolveRegion(this@NearbyScansActivity)
-            }
-            if (resolved == null) {
-                binding.swipeRefresh.isRefreshing = false
-                showState(getString(R.string.similar_scans_subtitle_no_region))
-                return@launch
-            }
-
             val pseudoId = TelemetryIds.userPseudoId(this@NearbyScansActivity)
             val result = scanRepository.communityNearby(
-                country = resolved.country,
-                region = resolved.locality,
                 // No disease filter — the feed surfaces the whole region.
                 disease = null,
                 userPseudoId = pseudoId,
@@ -180,29 +144,10 @@ class NearbyScansActivity : AppCompatActivity() {
         }
     }
 
-    /** Opt-in prompt shown when community is OFF: a message + Enable button
-     *  that flips the pref, asks for location/notifications, then reloads. */
-    private fun showEnableState() {
-        binding.swipeRefresh.isRefreshing = false
-        binding.stateLayout.visibility = View.VISIBLE
-        binding.progress.visibility = View.GONE
-        binding.ivStateIcon.visibility = View.VISIBLE
-        binding.tvState.text = getString(R.string.similar_scans_enable_prompt)
-        binding.btnEnableCommunity.visibility = View.VISIBLE
-        binding.btnEnableCommunity.setOnClickListener {
-            com.plantdiseases.app.util.CommunityPrefs.enable(this)
-            binding.btnEnableCommunity.visibility = View.GONE
-            requestCommunityPermissions()
-        }
-        filterMenuItem?.isVisible = false
-        binding.rvNearby.visibility = View.GONE
-    }
-
     private fun showLoading() {
         binding.stateLayout.visibility = View.VISIBLE
         binding.progress.visibility = View.VISIBLE
         binding.ivStateIcon.visibility = View.GONE
-        binding.btnEnableCommunity.visibility = View.GONE
         binding.tvState.text = getString(R.string.nearby_scans_loading)
         filterMenuItem?.isVisible = false
         binding.rvNearby.visibility = View.GONE
@@ -212,7 +157,6 @@ class NearbyScansActivity : AppCompatActivity() {
         binding.stateLayout.visibility = View.VISIBLE
         binding.progress.visibility = View.GONE
         binding.ivStateIcon.visibility = View.VISIBLE
-        binding.btnEnableCommunity.visibility = View.GONE
         binding.tvState.text = message
         filterMenuItem?.isVisible = false
         binding.rvNearby.visibility = View.GONE

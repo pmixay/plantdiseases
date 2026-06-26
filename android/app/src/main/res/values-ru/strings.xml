@@ -177,19 +177,18 @@
     <string name="species_source_wikipedia_translated">Источник: Wikipedia (автоперевод)</string>
     <string name="species_community_others">Другие сканы этого вида</string>
     <string name="example_photos_label">Как это выглядит</string>
-    <string name="similar_scans_title">Похожие сканы рядом</string>
-    <string name="similar_scans_subtitle">%1$d сканов рядом с %2$s</string>
+    <string name="similar_scans_title">Похожие сканы в вашей стране</string>
+    <string name="similar_scans_subtitle">%1$d сканов в %2$s</string>
     <plurals name="similar_scans_subtitle_count">
-        <item quantity="one">%1$d похожий скан рядом с %2$s</item>
-        <item quantity="few">%1$d похожих скана рядом с %2$s</item>
-        <item quantity="many">%1$d похожих сканов рядом с %2$s</item>
-        <item quantity="other">%1$d похожих скана рядом с %2$s</item>
+        <item quantity="one">%1$d похожий скан в %2$s</item>
+        <item quantity="few">%1$d похожих скана в %2$s</item>
+        <item quantity="many">%1$d похожих сканов в %2$s</item>
+        <item quantity="other">%1$d похожих скана в %2$s</item>
     </plurals>
-    <string name="similar_scans_subtitle_region">Недавние диагнозы рядом с %1$s</string>
-    <string name="similar_scans_subtitle_no_region">Включите приблизительное местоположение, чтобы видеть сканы рядом.</string>
-    <string name="similar_scans_empty">Похожих сканов пока нет — ваш будет первым.</string>
-    <string name="similar_scans_enable_prompt">Смотрите сканы рядом и делитесь своими. Используется только приблизительное местоположение.</string>
-    <string name="community_enable_cta">Включить сообщество</string>
+    <string name="similar_scans_subtitle_region">Недавние диагнозы сообщества в %1$s</string>
+    <string name="similar_scans_subtitle_no_region">Лента страны пока недоступна.</string>
+    <string name="similar_scans_empty">Сканов сообщества пока нет — ваш будет первым.</string>
+    <string name="similar_scans_enable_prompt">Смотрите сканы сообщества и делитесь своими.</string>
     <!-- Community second opinion -->
     <string name="community_opinion_title">Второе мнение</string>
     <string name="community_opinion_subtitle">Спросите сообщество — и оцените чужие сканы.</string>
@@ -215,16 +214,15 @@
     <string name="result_second_opinion_waiting">Ждём второго мнения…</string>
     <string name="result_second_opinion_view">Посмотреть мнения (%1$d)</string>
     <string name="result_second_opinion_failed">Не удалось запросить второе мнение. Попробуйте ещё раз.</string>
-    <string name="result_second_opinion_no_region">Не удалось определить ваш регион, поэтому этот скан нельзя отправить на второе мнение.</string>
     <string name="community_opinion_replies_title">Второе мнение сообщества</string>
     <string name="community_opinion_replies_subtitle">Что сообщество думает о вашем скане.</string>
     <string name="community_opinion_locked">Вы уже оставили своё второе мнение по этому скану.</string>
     <string name="community_opinion_replies_empty">Пока нет второго мнения. Загляните позже.</string>
     <string name="community_wants_opinion_badge">Ждёт второго мнения</string>
     <!-- Nearby scans feed (social-style, opened from the camera screen) -->
-    <string name="nearby_scans_title">Сканы рядом</string>
-    <string name="nearby_scans_cd">Сканы рядом</string>
-    <string name="nearby_scans_loading">Ищем сканы рядом…</string>
+    <string name="nearby_scans_title">Сканы сообщества</string>
+    <string name="nearby_scans_cd">Сканы сообщества</string>
+    <string name="nearby_scans_loading">Ищем сканы сообщества…</string>
     <string name="nearby_scans_second_opinion">Второе мнение</string>
     <!-- Nearby scans sort & filter overlay -->
     <string name="nearby_filter_title">Сортировка и фильтр</string>
@@ -236,8 +234,11 @@
     <string name="community_votes_header">Голоса сообщества</string>
     <string name="community_vote_percent">%1$d%%</string>
     <string name="community_toggle_title">Делиться сканами с сообществом</string>
-    <string name="community_toggle_subtitle">Регион + диагноз + миниатюра 512px. Можно выключить — всё останется на устройстве.</string>
-    <string name="community_profile_subtitle">Включается в контексте — в блоке «Похожие сканы рядом» на результате или на экране «Рядом». Кнопка ниже удаляет всё, чем вы уже поделились.</string>
+    <string name="community_toggle_subtitle">Страна + диагноз + миниатюра 512px. Можно выключить — всё останется на устройстве.</string>
+    <string name="community_profile_subtitle">Анонимный обмен включен после согласия на данные. Страну определяет сервер, а не геолокация устройства.</string>
+    <string name="community_scope_global">по всему миру</string>
+    <string name="opinion_notifications_title">Получать мнения сообщества</string>
+    <string name="opinion_notifications_subtitle">Уведомлять, когда кто-то отвечает на мои запросы второго мнения.</string>
     <string name="community_delete_title">Удалить мои данные из сообщества</string>
     <string name="opinion_notif_title">Новое второе мнение</string>
     <string name="opinion_notif_body">Кто-то оставил мнение о вашем скане: %1$s</string>
@@ -768,7 +769,7 @@
     <string name="home_tool_water">Помощник полива</string>
     <string name="home_tool_symptom">Проверка симптомов</string>
     <string name="home_tool_guide">Справочник болезней</string>
-    <string name="home_trending">Рядом с вами</string>
+    <string name="home_trending">В вашей стране</string>
     <string name="home_trending_global">Весь мир</string>
     <string name="home_trending_species_chip">%1$s · %2$d</string>
     <string name="home_trending_disease_row">%1$s — %2$d сканов за неделю</string>
@@ -777,6 +778,9 @@
     <string name="home_stats_summary">%1$d сканов · %2$d здоровых · %3$d растений в саду</string>
     <string name="home_popular_diseases">Частые болезни</string>
     <string name="home_popular_species">Популярные растения</string>
+    <string name="home_popular_in_country">Популярно: %1$s</string>
+    <string name="home_popular_worldwide">Популярно во всем мире</string>
+    <string name="home_popular_percent">%1$d%% сканов сообщества</string>
     <string name="home_species_popular_tag">Популярное</string>
     <string name="home_disease_guide">Справочник болезней</string>
     <string name="home_see_all">Все</string>
@@ -852,5 +856,5 @@
     <string name="tip_watering_title">Основы полива</string>
     <string name="tip_watering_body">Перелив губит больше комнатных растений, чем засуха. Проверяйте пальцем верхние 2–3 см почвы — поливайте только когда они сухие, затем обильно, пока вода не стечёт. Помощник полива даст стартовую норму для каждого растения; корректируйте по сезону.</string>
     <string name="tip_community_title">Сообщество и ваши данные</string>
-    <string name="tip_community_body">Делитесь сканами, чтобы видеть, что распространяется рядом, и получать вторые мнения от других цветоводов. Фото анонимизируются (метаданные удаляются), а всё опубликованное можно удалить в Профиле в любой момент.</string>
+    <string name="tip_community_body">Делитесь сканами, чтобы видеть, что часто встречается в вашей стране, и получать вторые мнения от других цветоводов. Фото анонимизируются (метаданные удаляются), а всё опубликованное можно удалить в Профиле в любой момент.</string>
 </resources>

@@ -20,6 +20,7 @@ import com.bumptech.glide.load.resource.bitmap.CenterCrop
 import com.bumptech.glide.load.resource.bitmap.RoundedCorners
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.MainActivity
+import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.GuideDataProvider
 import com.plantdiseases.app.data.local.ScanEntity
@@ -66,48 +67,40 @@ class ResultActivity : AppCompatActivity() {
     private val gardenAttach by lazy { GardenAttachController(this, binding) }
     private val share by lazy { ShareController(this) }
     private val community by lazy {
-        CommunityController(this, binding, ::onEnableCommunity, ::ensureNotificationPermission)
-    }
-
-    // In-context community opt-in: tapping "Enable" on the similar-scans card
-    // requests coarse location (+ notifications on 13+) and, whatever the
-    // outcome, re-renders the gated section via this stored lambda.
-    private var pendingCommunityRerun: (() -> Unit)? = null
-    private val communityPermissionLauncher = registerForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions(),
-    ) { _ ->
-        // Just opted in — register for push so replies reach a closed device.
-        com.plantdiseases.app.push.PushManager.registerIfEnabled(this)
-        pendingCommunityRerun?.invoke()
-        pendingCommunityRerun = null
-    }
-
-    private fun onEnableCommunity(rerun: () -> Unit) {
-        pendingCommunityRerun = rerun
-        val perms = mutableListOf(android.Manifest.permission.ACCESS_COARSE_LOCATION)
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            // So the OpinionCheckWorker can later notify the owner when someone
-            // weighs in on a scan they shared.
-            perms += android.Manifest.permission.POST_NOTIFICATIONS
-        }
-        communityPermissionLauncher.launch(perms.toTypedArray())
+        CommunityController(this, binding, ::ensureNotificationPermission)
     }
 
     // Notifications-only prompt, fired when the user asks for a second opinion
     // so the reply can actually reach them. nm.notify() no-ops if denied.
     private val notifPermissionLauncher = registerForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
-    ) { /* no-op: a denied grant just means no notification later */ }
+    ) { granted ->
+        com.plantdiseases.app.util.OpinionPrefs.setNotificationsEnabled(this, granted)
+        if (granted) {
+            startOpinionDelivery()
+        }
+    }
 
     private fun ensureNotificationPermission() {
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
-            androidx.core.content.ContextCompat.checkSelfPermission(
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) {
+            com.plantdiseases.app.util.OpinionPrefs.setNotificationsEnabled(this, true)
+            startOpinionDelivery()
+        } else if (androidx.core.content.ContextCompat.checkSelfPermission(
                 this,
                 android.Manifest.permission.POST_NOTIFICATIONS,
             ) != android.content.pm.PackageManager.PERMISSION_GRANTED
         ) {
             notifPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            com.plantdiseases.app.util.OpinionPrefs.setNotificationsEnabled(this, true)
+            startOpinionDelivery()
         }
+    }
+
+    private fun startOpinionDelivery() {
+        com.plantdiseases.app.push.PushManager.registerIfEnabled(this)
+        (application as PlantDiseasesApp).scheduleOpinionChecks()
+        (application as PlantDiseasesApp).checkOpinionsNow()
     }
 
     override fun attachBaseContext(newBase: Context) {

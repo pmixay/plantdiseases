@@ -57,7 +57,6 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        maybeWarmStartupCaches()
         maybeShowConsentDialog()
 
         // Edge-to-edge display
@@ -107,15 +106,13 @@ class MainActivity : AppCompatActivity() {
         // Application.onCreate, which would touch WorkManager too early), plus
         // an immediate catch-up check so a reply that arrived while the app was
         // closed notifies now instead of at the next periodic tick.
-        (application as PlantDiseasesApp).apply {
-            scheduleOpinionChecks()
-            checkOpinionsNow()
+        if (com.plantdiseases.app.util.OpinionPrefs.notificationsEnabled(this)) {
+            (application as PlantDiseasesApp).apply {
+                scheduleOpinionChecks()
+                checkOpinionsNow()
+            }
+            com.plantdiseases.app.push.PushManager.registerIfEnabled(this)
         }
-        // Register this install's FCM token (no-op until community is opted
-        // into and FCM is configured) so opinion replies can be PUSHED to a
-        // closed / idle device, not just caught by the poll on next open.
-        com.plantdiseases.app.push.PushManager.registerIfEnabled(this)
-
         val navHostFragment = supportFragmentManager
             .findFragmentById(R.id.nav_host_fragment) as NavHostFragment
         val navController = navHostFragment.navController
@@ -215,9 +212,7 @@ class MainActivity : AppCompatActivity() {
         // Only warm the region cache for users who already opted into
         // community — a no-op without a prior COARSE_LOCATION grant, and never
         // triggers a location read for someone who hasn't opted in.
-        if (com.plantdiseases.app.util.CommunityPrefs.uploadsEnabled(this)) {
-            warmRegionCache()
-        }
+        // No-op: country is now resolved server-side from request metadata.
     }
 
     /** Upgrade path for installs that completed onboarding before the consent
@@ -254,12 +249,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun warmRegionCache() {
-        val app = application as PlantDiseasesApp
-        app.appScope.launch {
-            runCatching {
-                com.plantdiseases.app.util.RegionResolver.resolveRegion(this@MainActivity)
-            }
-        }
+        // No-op: kept only for binary/source compatibility inside this class.
     }
 
     // Up arrow on non-top-level destinations (e.g. the disease guide opened

@@ -41,8 +41,16 @@ def test_trending_region_scope_when_enough_data(comdb):
         _seed("Germany", "Berlin", disease="pests", species="Ficus elastica")
     out = community.trending("Germany", "Berlin")
     assert out["scope"] == "region" and out["total"] == 3
-    assert out["top_species"][0] == {"species": "Ficus elastica", "count": 3}
-    assert out["top_diseases"][0] == {"disease": "pests", "count": 3}
+    assert out["top_species"][0] == {
+        "species": "Ficus elastica",
+        "count": 3,
+        "percent": 100,
+    }
+    assert out["top_diseases"][0] == {
+        "disease": "pests",
+        "count": 3,
+        "percent": 100,
+    }
 
 
 def test_trending_widens_region_to_country_to_global(comdb):

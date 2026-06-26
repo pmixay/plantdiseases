@@ -8,7 +8,7 @@ import com.google.firebase.messaging.FirebaseMessaging
 import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.data.repository.ScanRepository
-import com.plantdiseases.app.util.CommunityPrefs
+import com.plantdiseases.app.util.OpinionPrefs
 import com.plantdiseases.app.util.TelemetryIds
 import kotlinx.coroutines.launch
 import org.koin.core.component.KoinComponent
@@ -56,11 +56,11 @@ object PushManager : KoinComponent {
     }
 
     /** Fetch the current FCM token and register it with the server, scoped to
-     *  the community opt-in (no point registering a user who hasn't joined).
+     *  the opinion-notification opt-in.
      *  Safe to call on every app start / opt-in — the server upserts by token. */
     fun registerIfEnabled(context: Context) {
         val ctx = context.applicationContext
-        if (!CommunityPrefs.uploadsEnabled(ctx)) return
+        if (!OpinionPrefs.notificationsEnabled(ctx)) return
         if (!ensureFirebase(ctx)) return
         // The Application is still needed for appScope (an app-lifecycle scope).
         val app = ctx as PlantDiseasesApp

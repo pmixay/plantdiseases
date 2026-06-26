@@ -12,6 +12,7 @@ tight timeout, so a slow/blocked network never holds up a scan result.
 from __future__ import annotations
 
 import logging
+import re
 import threading
 import time
 import urllib.parse
@@ -26,6 +27,15 @@ _USER_AGENT = (
     "PlantDiseases/1.1 (https://github.com/pmixay/plantdiseases; houseplant care app)"
 )
 _ALLOWED_LANGS = {"en", "ru"}
+_BAD_MEDIA_TERMS = {
+    "distribution", "range map", "map", "locator", "diagram", "logo", "icon",
+    "flag", "portrait", "person", "herbarium", "specimen", "sheet",
+    "drawing", "illustration", "coat of arms", "symbol",
+}
+_GOOD_PLANT_TERMS = {
+    "plant", "leaf", "leaves", "flower", "foliage", "stem", "fruit",
+    "habit", "inflorescence", "houseplant",
+}
 
 # (lower-name, lang) -> (expiry_epoch, payload_or_None). OrderedDict so we
 # evict the single oldest entry at the cap instead of flushing the whole
@@ -271,6 +281,9 @@ def _media_images(quoted_title: str, lang: str, limit: int = 4) -> list[str]:
         items = r.json().get("items") or []
     except Exception:
         return []
+    title_text = urllib.parse.unquote(quoted_title).replace("_", " ")
+    genus = title_text.split()[0].lower() if title_text.split() else ""
+    sci_terms = {t.lower() for t in re.split(r"\s+", title_text) if len(t) > 2}
     out: list[str] = []
     seen: set[str] = set()
     for item in items:
@@ -283,7 +296,19 @@ def _media_images(quoted_title: str, lang: str, limit: int = 4) -> list[str]:
         if src.startswith("//"):
             src = "https:" + src
         base = src.lower().split("?")[0]
-        if not base.endswith((".jpg", ".jpeg", ".png")):
+        if not base.endswith((".jpg", ".jpeg", ".png")) or base.endswith(".svg"):
+            continue
+        caption = " ".join(
+            str(item.get(k) or "") for k in ("title", "caption", "description")
+        ).lower()
+        haystack = " ".join([base, caption]).replace("_", " ").replace("-", " ")
+        if any(term in haystack for term in _BAD_MEDIA_TERMS):
+            continue
+        if not (
+            any(term in haystack for term in sci_terms)
+            or (genus and genus in haystack)
+            or any(term in haystack for term in _GOOD_PLANT_TERMS)
+        ):
             continue
         if src in seen:
             continue
