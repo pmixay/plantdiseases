@@ -56,6 +56,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        maybeWarmStartupCaches()
         maybeShowConsentDialog()
 
         // Edge-to-edge display
