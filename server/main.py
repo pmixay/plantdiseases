@@ -2176,14 +2176,57 @@ def _normalise_locality(raw: str | None) -> str:
 
 _GLOBAL_COUNTRY = "GLOBAL"
 
+# EN/RU display names keyed by ISO-3166 alpha-2. ``_country_display`` falls
+# back to the raw code when a country is absent here, which used to render
+# "Popular in IN" / "DE" instead of a real name — so this covers every country
+# ``popular_plants.BY_REGION`` curates plus the countries geoip most often
+# resolves to, so the Home carousel title is a localized name, not a code.
 _COUNTRY_NAMES: dict[str, tuple[str, str]] = {
-    "DE": ("Germany", "Германия"),
-    "ES": ("Spain", "Испания"),
+    "AR": ("Argentina", "Аргентина"),
+    "AU": ("Australia", "Австралия"),
+    "AT": ("Austria", "Австрия"),
+    "BE": ("Belgium", "Бельгия"),
+    "BR": ("Brazil", "Бразилия"),
+    "BG": ("Bulgaria", "Болгария"),
+    "CA": ("Canada", "Канада"),
+    "CN": ("China", "Китай"),
+    "HR": ("Croatia", "Хорватия"),
+    "CZ": ("Czechia", "Чехия"),
+    "DK": ("Denmark", "Дания"),
+    "FI": ("Finland", "Финляндия"),
     "FR": ("France", "Франция"),
-    "GB": ("United Kingdom", "Великобритания"),
+    "DE": ("Germany", "Германия"),
+    "GR": ("Greece", "Греция"),
+    "HU": ("Hungary", "Венгрия"),
+    "IN": ("India", "Индия"),
+    "ID": ("Indonesia", "Индонезия"),
+    "IE": ("Ireland", "Ирландия"),
+    "IL": ("Israel", "Израиль"),
     "IT": ("Italy", "Италия"),
+    "JP": ("Japan", "Япония"),
+    "KZ": ("Kazakhstan", "Казахстан"),
+    "MX": ("Mexico", "Мексика"),
+    "NL": ("Netherlands", "Нидерланды"),
+    "NZ": ("New Zealand", "Новая Зеландия"),
+    "NO": ("Norway", "Норвегия"),
+    "PL": ("Poland", "Польша"),
+    "PT": ("Portugal", "Португалия"),
+    "RO": ("Romania", "Румыния"),
     "RU": ("Russia", "Россия"),
+    "RS": ("Serbia", "Сербия"),
+    "SG": ("Singapore", "Сингапур"),
+    "SK": ("Slovakia", "Словакия"),
+    "ZA": ("South Africa", "ЮАР"),
+    "KR": ("South Korea", "Южная Корея"),
+    "ES": ("Spain", "Испания"),
+    "SE": ("Sweden", "Швеция"),
+    "CH": ("Switzerland", "Швейцария"),
+    "TR": ("Turkey", "Турция"),
+    "UA": ("Ukraine", "Украина"),
+    "AE": ("United Arab Emirates", "ОАЭ"),
+    "GB": ("United Kingdom", "Великобритания"),
     "US": ("United States", "США"),
+    "VN": ("Vietnam", "Вьетнам"),
 }
 
 
@@ -3350,7 +3393,16 @@ async def community_trending_endpoint(
             limit=max(1, min(int(limit), 20)),
         ),
     )
-    data.update(_country_display(data.get("country") or country_norm))
+    # ``trending()`` already computed the authoritative ``scope``/``country``/
+    # ``region`` (incl. the region→country→global widening), so only the
+    # localized *names* are missing here. Merging the whole ``_country_display``
+    # dict used to clobber that: a widened-to-global response had ``country=None``,
+    # the ``or country_norm`` fallback re-inserted the requested country, and
+    # ``_country_display`` then returned ``scope="country"`` — masking the real
+    # "global" scope (and it overwrote a ``region`` scope with ``country`` too).
+    display = _country_display(data.get("country"))
+    data.setdefault("country_name_en", display["country_name_en"])
+    data.setdefault("country_name_ru", display["country_name_ru"])
     return JSONResponse(content=data)
 
 

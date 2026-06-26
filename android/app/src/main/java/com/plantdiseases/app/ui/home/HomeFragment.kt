@@ -1,11 +1,15 @@
 package com.plantdiseases.app.ui.home
 
 import android.content.Intent
+import android.graphics.Canvas
+import android.graphics.LinearGradient
+import android.graphics.Paint
+import android.graphics.Shader
 import android.os.Bundle
 import android.provider.Settings
 import android.text.SpannableString
 import android.text.Spanned
-import android.text.style.ForegroundColorSpan
+import android.text.style.ReplacementSpan
 import android.view.LayoutInflater
 import android.view.Menu
 import android.view.MenuInflater
@@ -376,22 +380,42 @@ class HomeFragment : Fragment() {
 
     private fun setPopularTitle(b: FragmentHomeBinding, popular: PopularResponse?) {
         val country = if (isRu) popular?.countryNameRu else popular?.countryNameEn
-        val title = if (popular?.scope == "country" && !country.isNullOrBlank()) {
+        val isCountry = popular?.scope == "country" && !country.isNullOrBlank()
+        val title = if (isCountry) {
             getString(R.string.home_popular_in_country, country)
         } else {
             getString(R.string.home_popular_worldwide)
         }
+        // Accent range: the country name for a country scope, else the
+        // locality word(s) ("worldwide" / "во всем мире") — everything after
+        // the leading "Popular" / "Популярно". The worldwide title can't be
+        // matched against the server's country_name string verbatim (case /
+        // wording differ across locales), so we slice off the leading word
+        // instead and highlight the rest the same way the country name is.
+        val start: Int
+        val end: Int
+        if (isCountry) {
+            val s = title.indexOf(country!!)
+            start = if (s >= 0) s else 0
+            end = if (s >= 0) s + country.length else title.length
+        } else {
+            val sp = title.indexOf(' ')
+            start = if (sp in 0 until title.lastIndex) sp + 1 else 0
+            end = title.length
+        }
         val spannable = SpannableString(title)
-        if (!country.isNullOrBlank()) {
-            val start = title.indexOf(country)
-            if (start >= 0) {
-                spannable.setSpan(
-                    ForegroundColorSpan(ContextCompat.getColor(requireContext(), R.color.primary)),
-                    start,
-                    start + country.length,
-                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
-                )
-            }
+        if (end > start) {
+            val gradient = intArrayOf(
+                ContextCompat.getColor(requireContext(), R.color.gradient_start),
+                ContextCompat.getColor(requireContext(), R.color.gradient_mid),
+                ContextCompat.getColor(requireContext(), R.color.gradient_end),
+            )
+            spannable.setSpan(
+                GradientTextSpan(gradient),
+                start,
+                end,
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+            )
         }
         b.tvSpeciesTitle.text = spannable
     }
@@ -421,10 +445,17 @@ class HomeFragment : Fragment() {
         popularAdapter.submit(items)
     }
 
-    private fun scopeLabel(t: TrendingResponse): String = when (t.scope) {
-        "region" -> listOfNotNull(t.region, t.country).joinToString(", ")
-        "country" -> t.country ?: getString(R.string.home_trending_global)
-        else -> getString(R.string.home_trending_global)
+    private fun scopeLabel(t: TrendingResponse): String {
+        // Prefer the server's localized country NAME (e.g. "Spain") over the
+        // raw ISO bucket (e.g. "ES"); the server attaches it alongside the
+        // code, exactly as the "Popular in <country>" title uses it.
+        val country = (if (isRu) t.countryNameRu else t.countryNameEn)
+            ?.takeIf { it.isNotBlank() } ?: t.country
+        return when (t.scope) {
+            "region" -> listOfNotNull(t.region, country).joinToString(", ")
+            "country" -> country ?: getString(R.string.home_trending_global)
+            else -> getString(R.string.home_trending_global)
+        }
     }
 
     /** Resolve + cache a Wikipedia lead photo for a species, then load it
@@ -446,5 +477,52 @@ class HomeFragment : Fragment() {
                     .placeholder(R.drawable.ic_plant_placeholder).into(target)
             }
         }
+    }
+}
+
+/**
+ * Paints its character range with a horizontal multi-stop gradient (used for
+ * the green accent word in the Home "Popular in <country>" / "Popular
+ * worldwide" title). A [ReplacementSpan] is used rather than a plain shader on
+ * the whole TextView so the gradient is aligned to — and clamped within — the
+ * exact accented substring, regardless of where it sits on the line.
+ */
+private class GradientTextSpan(private val colors: IntArray) : ReplacementSpan() {
+
+    override fun getSize(
+        paint: Paint,
+        text: CharSequence,
+        start: Int,
+        end: Int,
+        fm: Paint.FontMetricsInt?,
+    ): Int {
+        if (fm != null) {
+            val pfm = paint.fontMetricsInt
+            fm.ascent = pfm.ascent
+            fm.descent = pfm.descent
+            fm.top = pfm.top
+            fm.bottom = pfm.bottom
+        }
+        return kotlin.math.ceil(paint.measureText(text, start, end).toDouble()).toInt()
+    }
+
+    override fun draw(
+        canvas: Canvas,
+        text: CharSequence,
+        start: Int,
+        end: Int,
+        x: Float,
+        top: Int,
+        y: Int,
+        bottom: Int,
+        paint: Paint,
+    ) {
+        val width = paint.measureText(text, start, end)
+        val previous = paint.shader
+        paint.shader = LinearGradient(
+            x, 0f, x + width, 0f, colors, null, Shader.TileMode.CLAMP,
+        )
+        canvas.drawText(text, start, end, x, y.toFloat(), paint)
+        paint.shader = previous
     }
 }

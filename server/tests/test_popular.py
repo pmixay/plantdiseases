@@ -90,3 +90,21 @@ def test_popular_for_known_and_unknown():
     assert popular_for("ZZ") == GLOBAL_DEFAULT   # unmapped
     assert popular_for(None) == GLOBAL_DEFAULT
     assert popular_for("United States") == GLOBAL_DEFAULT  # full name misses ISO map
+
+
+@pytest.mark.parametrize("code,en,ru", [
+    ("IN", "India", "Индия"),
+    ("BR", "Brazil", "Бразилия"),
+    ("CN", "China", "Китай"),
+    ("CA", "Canada", "Канада"),
+])
+def test_popular_curated_countries_have_real_names(client, code, en, ru):
+    # Every country ``popular_plants.BY_REGION`` curates (plus other
+    # frequently-geoip-detected ones) must surface a localized NAME, not the
+    # raw ISO code, so the Home title reads "Popular in India" not "IN".
+    r = client.get(f"/api/popular?country={code}&locale=en")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["scope"] == "country"
+    assert body["country_name_en"] == en
+    assert body["country_name_ru"] == ru
