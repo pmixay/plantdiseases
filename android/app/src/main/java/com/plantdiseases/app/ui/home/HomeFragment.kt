@@ -488,7 +488,6 @@ class HomeFragment : Fragment() {
  * exact accented substring, regardless of where it sits on the line.
  */
 private class GradientTextSpan(private val colors: IntArray) : ReplacementSpan() {
-
     override fun getSize(
         paint: Paint,
         text: CharSequence,
