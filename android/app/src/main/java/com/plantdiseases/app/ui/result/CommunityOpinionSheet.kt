@@ -97,7 +97,7 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         currentName?.takeIf { it.isNotBlank() }
             ?.let { currentView.text = it }
             ?: run { currentCard.visibility = View.GONE }
-        renderMeta(view)
+        renderMeta()
         renderPhoto(view)
 
         val ctx = requireContext()
@@ -174,7 +174,7 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
 
     /** Confidence + detected species line ("Confidence 87% · Monstera (92%)"),
      *  hidden when neither is known. */
-    private fun renderMeta(view: View) {
+    private fun renderMeta() {
         val meta = metaView ?: return
         val confidence = arguments?.getFloat(ARG_CONFIDENCE, -1f) ?: -1f
         val species = arguments?.getString(ARG_SPECIES)?.takeIf { it.isNotBlank() }
