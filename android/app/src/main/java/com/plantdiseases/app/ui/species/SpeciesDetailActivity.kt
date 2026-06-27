@@ -28,8 +28,8 @@ import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.SpeciesDiseaseItem
-import com.plantdiseases.app.data.remote.PlantApiClient
 import com.plantdiseases.app.data.repository.PlantRepository
+import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivitySpeciesDetailBinding
 import com.plantdiseases.app.ui.guide.GuideDetailActivity
 import com.plantdiseases.app.util.DiseaseCatalog
@@ -50,7 +50,7 @@ import java.util.Locale
 class SpeciesDetailActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivitySpeciesDetailBinding
-    private val apiClient: PlantApiClient by inject()
+    private val scanRepository: ScanRepository by inject()
     private val plantRepository: PlantRepository by inject()
     private val isRu: Boolean get() = Locale.getDefault().language == "ru"
     private val locale: String get() = if (isRu) "ru" else "en"
@@ -111,9 +111,9 @@ class SpeciesDetailActivity : AppCompatActivity() {
         binding.progress.visibility = View.VISIBLE
         binding.tvSpeciesExtract.text = getString(R.string.identify_loading)
         lifecycleScope.launch {
-            val info = runCatching {
-                apiClient.speciesInfo(scientificName, locale)
-            }.getOrNull()
+            // Cached per (name, locale) — reopening the same species serves
+            // the stored Wikipedia blurb/photo instead of re-fetching.
+            val info = scanRepository.getSpeciesInfo(scientificName, locale).getOrNull()
             binding.progress.visibility = View.GONE
             if (info?.available == true) {
                 binding.tvSpeciesExtract.text =
@@ -135,11 +135,9 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 binding.tvSpeciesExtract.text = getString(R.string.identify_no_info)
             }
 
-            val plan = runCatching {
-                apiClient.carePlan(
-                    CarePlanRequest(disease = "healthy", species = scientificName, locale = locale),
-                )
-            }.getOrNull()
+            val plan = scanRepository.fetchCarePlan(
+                CarePlanRequest(disease = "healthy", species = scientificName, locale = locale),
+            ).getOrNull()
             if (plan != null) {
                 val watering = when {
                     plan.wateringDaysIsAsNeeded -> getString(R.string.identify_water_as_needed)
@@ -224,9 +222,11 @@ class SpeciesDetailActivity : AppCompatActivity() {
 
     private fun loadDiseases() {
         lifecycleScope.launch {
-            val resp = runCatching {
-                apiClient.speciesDiseases(scientificName, commonName, locale)
-            }.getOrNull()
+            // Cached per (name, locale) — the slow AI lookup runs once, then
+            // reopening the species renders the list instantly.
+            val resp = scanRepository
+                .fetchSpeciesDiseases(scientificName, commonName, locale)
+                .getOrNull()
             val aiItems = if (resp?.available == true) {
                 resp.diseases.filter { it.name.isNotBlank() }
             } else {

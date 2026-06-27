@@ -1158,6 +1158,42 @@ class ScanRepository(
             }
         }
 
+    /** Conditions a species is commonly affected by (AI, best-effort). The
+     *  answer is stable per (name, locale), and the LLM call is slow, so cache
+     *  a real (`available`) result — reopening the species no longer re-hits
+     *  the model and re-renders the list from scratch. */
+    suspend fun fetchSpeciesDiseases(
+        name: String,
+        common: String?,
+        locale: String,
+    ): Result<com.plantdiseases.app.data.model.SpeciesDiseasesResponse> =
+        withContext(Dispatchers.IO) {
+            val cacheKey = "species_diseases:v1:${name.trim().lowercase()}|$locale"
+            com.plantdiseases.app.util.ResponseCache
+                .get(cacheKey, com.plantdiseases.app.data.model.SpeciesDiseasesResponse::class.java)
+                ?.let { return@withContext Result.success(it) }
+            try {
+                val body = apiClient.speciesDiseases(name, common, locale)
+                if (body != null) {
+                    // Only a real AI hit is worth keeping; a transient
+                    // unavailable (no key / failure) falls back to the offline
+                    // guide and should re-try next open.
+                    if (body.available) {
+                        com.plantdiseases.app.util.ResponseCache.put(
+                            cacheKey,
+                            body,
+                            com.plantdiseases.app.util.ResponseCache.TTL_SPECIES_MS,
+                        )
+                    }
+                    Result.success(body)
+                } else {
+                    Result.failure(Exception("species-diseases failed"))
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
     /** Community scans of one species (scientific name), across regions. */
     suspend fun communityScansBySpecies(
         species: String,
