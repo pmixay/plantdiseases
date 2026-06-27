@@ -313,6 +313,135 @@
 
             </com.google.android.material.card.MaterialCardView>
 
+            <!-- Confidence advisories — surfaced directly under the verdict (not
+                 buried below the fold) so users who don't scroll still see when
+                 the model is unsure. -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/card_pipeline_warning"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md"
+                android:visibility="gone"
+                app:cardCornerRadius="@dimen/radius_lg"
+                app:cardElevation="0dp"
+                app:cardBackgroundColor="@color/warning_amber_bg">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="top"
+                    android:padding="@dimen/space_lg">
+
+                    <ImageView
+                        android:layout_width="22dp"
+                        android:layout_height="22dp"
+                        android:layout_marginTop="2dp"
+                        android:src="@drawable/ic_warning"
+                        android:contentDescription="@null"
+                        android:importantForAccessibility="no" />
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="@dimen/space_md"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:id="@+id/tv_pipeline_warning_title"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:textSize="@dimen/text_body"
+                            android:fontFamily="sans-serif-medium"
+                            android:textColor="@color/warning_amber" />
+
+                        <TextView
+                            android:id="@+id/tv_pipeline_warning_body"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/space_xs"
+                            android:textSize="@dimen/text_body_sm"
+                            android:textColor="@color/warning_amber"
+                            android:lineSpacingExtra="2dp" />
+
+                    </LinearLayout>
+
+                </LinearLayout>
+
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Low confidence warning -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/card_low_confidence"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md"
+                android:visibility="gone"
+                app:cardCornerRadius="@dimen/radius_lg"
+                app:cardElevation="0dp"
+                app:cardBackgroundColor="@color/warning_amber_bg">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="@dimen/space_lg">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <ImageView
+                            android:layout_width="22dp"
+                            android:layout_height="22dp"
+                            android:src="@drawable/ic_warning"
+                            android:contentDescription="@null"
+                            android:importantForAccessibility="no" />
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginStart="@dimen/space_md"
+                            android:text="@string/low_confidence_warning"
+                            android:textSize="@dimen/text_body_sm"
+                            android:textColor="@color/warning_amber" />
+
+                    </LinearLayout>
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_retry_analysis"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="end"
+                        android:layout_marginTop="@dimen/space_xs"
+                        android:text="@string/retry_analysis"
+                        android:textColor="@color/warning_amber"
+                        app:icon="@drawable/ic_scan"
+                        app:iconTint="@color/warning_amber" />
+
+                    <!-- When the model is unsure, offer to crowd-source a
+                         verdict from the community (conformal uncertainty +
+                         the community corpus working together). -->
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_second_opinion"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="end"
+                        android:text="@string/result_get_second_opinion"
+                        android:textColor="@color/warning_amber"
+                        app:icon="@drawable/ic_garden"
+                        app:iconTint="@color/warning_amber" />
+
+                </LinearLayout>
+
+            </com.google.android.material.card.MaterialCardView>
+
             <!-- Description -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/card_description"
@@ -723,62 +852,6 @@
 
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- Pipeline warnings (uncertain healthy / detector mismatch) -->
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/card_pipeline_warning"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_md"
-                android:visibility="gone"
-                app:cardCornerRadius="@dimen/radius_lg"
-                app:cardElevation="0dp"
-                app:cardBackgroundColor="@color/warning_amber_bg">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="top"
-                    android:padding="@dimen/space_lg">
-
-                    <ImageView
-                        android:layout_width="22dp"
-                        android:layout_height="22dp"
-                        android:layout_marginTop="2dp"
-                        android:src="@drawable/ic_warning"
-                        android:contentDescription="@null"
-                        android:importantForAccessibility="no" />
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginStart="@dimen/space_md"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:id="@+id/tv_pipeline_warning_title"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:textSize="@dimen/text_body"
-                            android:fontFamily="sans-serif-medium"
-                            android:textColor="@color/warning_amber" />
-
-                        <TextView
-                            android:id="@+id/tv_pipeline_warning_body"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/space_xs"
-                            android:textSize="@dimen/text_body_sm"
-                            android:textColor="@color/warning_amber"
-                            android:lineSpacingExtra="2dp" />
-
-                    </LinearLayout>
-
-                </LinearLayout>
-
-            </com.google.android.material.card.MaterialCardView>
-
             <!-- Pet-toxicity card. Server populates `toxic_to_pets`,
                  `toxic_species_list` and `toxicity_source`. UI surfaces:
                    • "Toxic to cats / dogs / horses" pill when source=db.
@@ -928,76 +1001,6 @@
 
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- Low confidence warning -->
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/card_low_confidence"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_md"
-                android:visibility="gone"
-                app:cardCornerRadius="@dimen/radius_lg"
-                app:cardElevation="0dp"
-                app:cardBackgroundColor="@color/warning_amber_bg">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="@dimen/space_lg">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical">
-
-                        <ImageView
-                            android:layout_width="22dp"
-                            android:layout_height="22dp"
-                            android:src="@drawable/ic_warning"
-                            android:contentDescription="@null"
-                            android:importantForAccessibility="no" />
-
-                        <TextView
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:layout_marginStart="@dimen/space_md"
-                            android:text="@string/low_confidence_warning"
-                            android:textSize="@dimen/text_body_sm"
-                            android:textColor="@color/warning_amber" />
-
-                    </LinearLayout>
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_retry_analysis"
-                        style="@style/Widget.Material3.Button.TextButton"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_gravity="end"
-                        android:layout_marginTop="@dimen/space_xs"
-                        android:text="@string/retry_analysis"
-                        android:textColor="@color/warning_amber"
-                        app:icon="@drawable/ic_scan"
-                        app:iconTint="@color/warning_amber" />
-
-                    <!-- When the model is unsure, offer to crowd-source a
-                         verdict from the community (conformal uncertainty +
-                         the community corpus working together). -->
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_second_opinion"
-                        style="@style/Widget.Material3.Button.TextButton"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_gravity="end"
-                        android:text="@string/result_get_second_opinion"
-                        android:textColor="@color/warning_amber"
-                        app:icon="@drawable/ic_garden"
-                        app:iconTint="@color/warning_amber" />
-
-                </LinearLayout>
-
-            </com.google.android.material.card.MaterialCardView>
 
             <!-- No-photo fallback: shown when the verdict is not_a_plant or
                  low-confidence, so the user can still get guidance by

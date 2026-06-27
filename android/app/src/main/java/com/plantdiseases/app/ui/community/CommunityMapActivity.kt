@@ -36,6 +36,7 @@ import com.plantdiseases.app.data.model.CommunityScanItem
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityCommunityMapBinding
 import com.plantdiseases.app.ui.result.CommunityOpinionSheet
+import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.DiseaseCatalog
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.LocaleHelper
@@ -51,6 +52,7 @@ import org.osmdroid.events.ScrollEvent
 import org.osmdroid.events.ZoomEvent
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
+import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polygon
 import java.io.File
@@ -98,6 +100,9 @@ class CommunityMapActivity : AppCompatActivity() {
         binding.map.apply {
             setTileSource(TileSourceFactory.MAPNIK)
             setMultiTouchControls(true)
+            // Hide osmdroid's built-in +/- buttons — they sit at the bottom and
+            // collide with the app's bottom nav bar. Pinch/double-tap zoom stays.
+            zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
             controller.setZoom(DEFAULT_ZOOM)
             controller.setCenter(GeoPoint(20.0, 0.0))
             // Debounced refetch on any pan/zoom (cancels the in-flight load).
@@ -120,7 +125,13 @@ class CommunityMapActivity : AppCompatActivity() {
             // boundingBox is only valid after layout — first real load fires here.
             addOnFirstLayoutListener { _, _, _, _, _ ->
                 reload()
-                centerOnUser(animateZoom = false) // recenter only if coords are cached
+                // When the user is in the community, open straight to their area
+                // (coarse location) instead of the world view; otherwise stay on
+                // the world map. Zooming to the user re-triggers reload() via the
+                // debounced map listener, so the markers near them load too.
+                if (CommunityPrefs.uploadsEnabled(this@CommunityMapActivity)) {
+                    centerOnUser(animateZoom = true)
+                }
             }
         }
     }
@@ -265,33 +276,22 @@ class CommunityMapActivity : AppCompatActivity() {
         loadThumbInto(marker, item)
     }
 
-    /** Several scans collapsed at this zoom: a count badge that zooms in to
-     *  spread them, or lists them when they're already truly co-located. */
+    /** Several scans collapsed at this zoom: a count badge that lists the group
+     *  on tap. (Pinch/double-tap zoom shrinks the grid cells so the pins also
+     *  fan apart on their own.) */
     private fun addClusterMarker(group: List<CommunityScanItem>) {
         val avgLat = group.mapNotNull { it.lat }.average()
         val avgLon = group.mapNotNull { it.lon }.average()
-        val center = GeoPoint(avgLat, avgLon)
         val marker = Marker(binding.map).apply {
-            position = center
+            position = GeoPoint(avgLat, avgLon)
             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
             icon = clusterIcon(group.size)
             setOnMarkerClickListener { _, _ ->
-                onClusterTap(group, center)
+                openGroup(group)
                 true
             }
         }
         binding.map.overlays.add(marker)
-    }
-
-    private fun onClusterTap(group: List<CommunityScanItem>, center: GeoPoint) {
-        val zoom = binding.map.zoomLevelDouble
-        if (zoom < binding.map.maxZoomLevel - 0.5) {
-            // Zoom toward the cluster so the grid cells shrink and the pins fan out.
-            binding.map.controller.animateTo(center, zoom + 2.0, MAP_ZOOM_ANIM_MS)
-        } else {
-            // Already as deep as the tiles go and still stacked → list them.
-            openGroup(group)
-        }
     }
 
     private fun loadThumbInto(marker: Marker, item: CommunityScanItem) {
@@ -461,8 +461,11 @@ class CommunityMapActivity : AppCompatActivity() {
         private const val NEAR_ME_ZOOM = 11.0
         private const val MARKER_ZOOM = 11.0 // at/above → individual markers; below → heat
         private const val MAP_DEBOUNCE_MS = 400L
-        private const val MAP_ZOOM_ANIM_MS = 500L
         private const val MARKER_SIZE_DP = 40 // thumbnail + cluster-badge pin size
-        private const val CLUSTER_CELL_DP = 64 // screen-pixel grid; pins closer than this collapse
+
+        // Screen-pixel grid: only pins whose icons would actually overlap merge.
+        // Just over the marker size so near-but-distinct scans stay separate
+        // (a larger value collapsed scans that weren't really close).
+        private const val CLUSTER_CELL_DP = 46
     }
 }
