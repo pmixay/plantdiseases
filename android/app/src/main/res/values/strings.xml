@@ -237,6 +237,16 @@
     <!-- Community scope toggle -->
     <string name="community_filter_nearby">Nearby</string>
     <string name="community_filter_country">Country</string>
+    <!-- Community scans map -->
+    <string name="community_map_title">Community map</string>
+    <string name="nearby_action_map">Map</string>
+    <string name="community_map_near_me">Near me</string>
+    <string name="community_map_zoom_in">Zoom in to see individual scans</string>
+    <string name="community_map_truncated">Showing the latest scans — zoom in to see all</string>
+    <string name="community_map_empty">No community scans in this area yet</string>
+    <string name="community_map_group_title">%1$d scans here</string>
+    <string name="community_map_legend_less">Fewer</string>
+    <string name="community_map_legend_more">More</string>
     <!-- In-context community opt-in -->
     <string name="community_enable_cta">Enable community</string>
     <string name="community_enable_blurb">See scans from growers near you and ask for a second opinion. Enabling shares your scans anonymously and uses your approximate location.</string>

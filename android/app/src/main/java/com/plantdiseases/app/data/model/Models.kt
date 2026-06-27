@@ -295,6 +295,9 @@ data class CommunityScansResponse(
     @SerializedName("country") @SerialName("country") val country: String? = null,
     @SerializedName("country_name_en") @SerialName("country_name_en") val countryNameEn: String? = null,
     @SerializedName("country_name_ru") @SerialName("country_name_ru") val countryNameRu: String? = null,
+    // True on the map endpoint when the bbox held more scans than the cap, so
+    // the UI can prompt "zoom in to see all". Null/false on the feed.
+    @SerializedName("truncated") @SerialName("truncated") val truncated: Boolean = false,
 )
 
 @Serializable
@@ -336,6 +339,29 @@ data class CommunityScanItem(
     // had no requester anchor (country/worldwide scope). Shown as "≈ N km near
     // you" on nearby cards.
     @SerializedName("distance_km") @SerialName("distance_km") val distanceKm: Float? = null,
+    // ~1 km-rounded coords — populated only by the map endpoint (the feed
+    // strips them), so the map can pin a marker. Null elsewhere.
+    @SerializedName("lat") @SerialName("lat") val lat: Double? = null,
+    @SerializedName("lon") @SerialName("lon") val lon: Double? = null,
+)
+
+/** /api/community/heatmap — k-anonymized scan density for the zoomed-out map
+ *  layer. Each cell is a center point + a scan count (>= the server's k). */
+@Serializable
+data class CommunityHeatmapResponse(
+    @SerializedName("cells") @SerialName("cells") val cells: List<CommunityHeatCell> = emptyList(),
+    @SerializedName("cell_size_deg") @SerialName("cell_size_deg") val cellSizeDeg: Double = 0.0,
+    @SerializedName("max_count") @SerialName("max_count") val maxCount: Int = 0,
+    @SerializedName("total") @SerialName("total") val total: Int = 0,
+    @SerializedName("k") @SerialName("k") val k: Int = 0,
+    @SerializedName("days") @SerialName("days") val days: Int = 0,
+)
+
+@Serializable
+data class CommunityHeatCell(
+    @SerializedName("lat") @SerialName("lat") val lat: Double = 0.0,
+    @SerializedName("lon") @SerialName("lon") val lon: Double = 0.0,
+    @SerializedName("count") @SerialName("count") val count: Int = 0,
 )
 
 @Serializable

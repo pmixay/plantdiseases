@@ -233,6 +233,16 @@
     <!-- Community scope toggle -->
     <string name="community_filter_nearby">Рядом</string>
     <string name="community_filter_country">Страна</string>
+    <!-- Community scans map -->
+    <string name="community_map_title">Карта сообщества</string>
+    <string name="nearby_action_map">Карта</string>
+    <string name="community_map_near_me">Рядом со мной</string>
+    <string name="community_map_zoom_in">Приблизьте, чтобы увидеть отдельные сканы</string>
+    <string name="community_map_truncated">Показаны последние сканы — приблизьте, чтобы увидеть все</string>
+    <string name="community_map_empty">В этой области пока нет сканов сообщества</string>
+    <string name="community_map_group_title">Сканов здесь: %1$d</string>
+    <string name="community_map_legend_less">Меньше</string>
+    <string name="community_map_legend_more">Больше</string>
     <!-- In-context community opt-in -->
     <string name="community_enable_cta">Включить сообщество</string>
     <string name="community_enable_blurb">Смотрите сканы садоводов рядом с вами и спрашивайте второе мнение. Включение анонимно делится вашими сканами и использует примерное местоположение.</string>

@@ -136,11 +136,18 @@ class NearbyScansActivity : AppCompatActivity() {
         // Hidden until a feed loads — filtering an empty screen is a no-op.
         filterMenuItem?.isVisible = false
         binding.toolbar.setOnMenuItemClickListener { item ->
-            if (item.itemId == R.id.action_filter) {
-                showFilterSheet()
-                true
-            } else {
-                false
+            when (item.itemId) {
+                R.id.action_map -> {
+                    startActivity(
+                        android.content.Intent(this, CommunityMapActivity::class.java),
+                    )
+                    true
+                }
+                R.id.action_filter -> {
+                    showFilterSheet()
+                    true
+                }
+                else -> false
             }
         }
     }

@@ -1125,6 +1125,74 @@ class ScanRepository(
             }
         }
 
+    /** Individual community scans inside a map bbox (zoomed-in markers). */
+    suspend fun communityMap(
+        minLat: Double,
+        minLon: Double,
+        maxLat: Double,
+        maxLon: Double,
+        disease: String? = null,
+        days: Int = 30,
+        userPseudoId: String? = null,
+        limit: Int = 300,
+    ): Result<com.plantdiseases.app.data.model.CommunityScansResponse> =
+        withContext(Dispatchers.IO) {
+            try {
+                val response = apiClient.httpClient.get("api/community/map") {
+                    parameter("min_lat", minLat)
+                    parameter("min_lon", minLon)
+                    parameter("max_lat", maxLat)
+                    parameter("max_lon", maxLon)
+                    disease?.takeIf { it.isNotBlank() }?.let { parameter("disease", it) }
+                    parameter("days", days)
+                    userPseudoId?.takeIf { it.isNotBlank() }?.let {
+                        parameter("user_pseudo_id", it)
+                    }
+                    parameter("limit", limit)
+                }
+                when (response.status.value) {
+                    in 200..299 -> Result.success(
+                        response.body<com.plantdiseases.app.data.model.CommunityScansResponse>(),
+                    )
+                    else -> Result.failure(Exception("Community map failed: ${response.status.value}"))
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+    /** K-anonymized scan density for the zoomed-out map heat layer. */
+    suspend fun communityHeatmap(
+        minLat: Double,
+        minLon: Double,
+        maxLat: Double,
+        maxLon: Double,
+        disease: String? = null,
+        days: Int = 30,
+    ): Result<com.plantdiseases.app.data.model.CommunityHeatmapResponse> =
+        withContext(Dispatchers.IO) {
+            try {
+                val response = apiClient.httpClient.get("api/community/heatmap") {
+                    parameter("min_lat", minLat)
+                    parameter("min_lon", minLon)
+                    parameter("max_lat", maxLat)
+                    parameter("max_lon", maxLon)
+                    disease?.takeIf { it.isNotBlank() }?.let { parameter("disease", it) }
+                    parameter("days", days)
+                }
+                when (response.status.value) {
+                    in 200..299 -> Result.success(
+                        response.body<com.plantdiseases.app.data.model.CommunityHeatmapResponse>(),
+                    )
+                    else -> Result.failure(
+                        Exception("Community heatmap failed: ${response.status.value}"),
+                    )
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
     /** Localized Wikipedia blurb + lead image for a scientific name. */
     suspend fun getSpeciesInfo(
         name: String,

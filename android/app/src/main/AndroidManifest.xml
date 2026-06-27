@@ -106,6 +106,10 @@
             android:screenOrientation="portrait" />
 
         <activity
+            android:name=".ui.community.CommunityMapActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".ui.symptom.SymptomCheckerActivity"
             android:exported="false"
             android:screenOrientation="portrait" />
