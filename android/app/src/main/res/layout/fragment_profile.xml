@@ -560,8 +560,8 @@
                     android:textAppearance="@style/TextAppearance.App.Title"
                     android:accessibilityHeading="true" />
 
-                <!-- Community sharing is default-on and server-scoped. This
-                     card explains that + keeps the delete-my-shared-data
+                <!-- Community sharing is opt-in (default off) and server-scoped.
+                     This card explains that + keeps the delete-my-shared-data
                      control. -->
                 <TextView
                     android:layout_width="match_parent"

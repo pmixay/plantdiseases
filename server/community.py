@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS community_scans (
     country         TEXT,
     -- ``region`` holds the city (the display locality); ``city`` mirrors it.
     -- lat/lon are the device's COARSE location rounded to ~1 km (never precise
-    -- GPS) for the 25–30 km "nearby" radius + the scans heat-map. All are
+    -- GPS) for the ~30 km "nearby" radius + the scans heat-map. All are
     -- client-supplied by the opted-in uploader. ``nickname`` is the author's
     -- generated plant-vibe handle shown in the feed.
     region          TEXT    NOT NULL,
@@ -1115,7 +1115,7 @@ def popular_snapshot(
 ) -> dict:
     """Live popular species + diseases for one scope.
 
-    Scope precedence: coords (the ~25 km "nearby" box) → ``country`` →
+    Scope precedence: coords (the ~30 km "nearby" box) → ``country`` →
     worldwide (no filter). The caller runs the nearby → country → worldwide
     ladder by calling this with progressively wider arguments.
 

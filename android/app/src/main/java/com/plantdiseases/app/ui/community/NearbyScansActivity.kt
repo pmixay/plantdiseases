@@ -52,7 +52,7 @@ class NearbyScansActivity : AppCompatActivity() {
     private var typeFilter: String? = null
     private var filterMenuItem: MenuItem? = null
 
-    // Server-side scope filter: "nearby" (~25 km radius) or "country".
+    // Server-side scope filter: "nearby" (~30 km radius) or "country".
     private var scope = "nearby"
 
     // In-context opt-in: tapping Enable requests coarse location (+ notifications
@@ -94,7 +94,7 @@ class NearbyScansActivity : AppCompatActivity() {
         binding.toolbar.setNavigationOnClickListener { finish() }
         setupFilterMenu()
 
-        // Nearby (~25 km) vs Country scope — reload the feed on change.
+        // Nearby (~30 km) vs Country scope — reload the feed on change.
         binding.cgScope.setOnCheckedStateChangeListener { _, checked ->
             val next = if (checked.firstOrNull() == R.id.chip_scope_country) "country" else "nearby"
             if (next != scope) {

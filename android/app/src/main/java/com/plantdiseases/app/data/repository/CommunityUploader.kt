@@ -21,8 +21,8 @@ import java.io.FileOutputStream
  * scan corpus.
  *
  * Responsibilities, in order:
- *   1. Confirm uploads are enabled (default ON after the first-run
- *      consent sheet — see [CommunityPrefs]).
+ *   1. Confirm uploads are enabled (opt-in, default OFF — the user
+ *      enables community in-context; see [CommunityPrefs]).
  *   2. Generate a 512px JPEG thumbnail in the app's cache dir so the
  *      upload stays under the server's COMMUNITY_MAX_THUMB_BYTES
  *      ceiling.
@@ -61,7 +61,7 @@ class CommunityUploader(
         val scanId = scan.clientScanId.ifBlank { return@withContext UploadOutcome.MissingScanId }
         // Opt-in is confirmed above, so reading the coarse location here is the
         // "check user location on every scan" step — attaches where the scan
-        // was taken so it can be grouped by the 25 km nearby radius.
+        // was taken so it can be grouped by the 30 km nearby radius.
         val region = runCatching { RegionResolver.resolveRegion(context) }.getOrNull()
 
         val result = scanRepository.uploadCommunityScan(

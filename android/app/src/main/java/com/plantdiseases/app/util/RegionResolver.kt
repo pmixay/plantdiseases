@@ -24,7 +24,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
  * * Only [Manifest.permission.ACCESS_COARSE_LOCATION] is requested; the coords
  *   it yields are already imprecise (Wi-Fi / cell, ~1 km). We additionally
  *   round them to 2 decimals (~1.1 km grid) before they ever leave the device,
- *   so the corpus never holds a precise position — enough for a 25 km "nearby"
+ *   so the corpus never holds a precise position — enough for a 30 km "nearby"
  *   radius + the community heat-map, not enough to pinpoint a home.
  * * Community is opt-in (see [CommunityPrefs]); nothing here runs until the
  *   user enables it and grants the permission.

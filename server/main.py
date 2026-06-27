@@ -3,11 +3,18 @@ PlantDiseases Server — FastAPI backend with the PlantVision two-stage
 houseplant disease pipeline.
 
 Stage 1:  YOLOv8n              — locate plant leaves (single class)
-Stage 2:  MobileNetV3-Large    — distilled student (KD from
-                                 EfficientNetV2-S teacher), classifies
-                                 cropped leaf regions; mean-voted
-                                 across bboxes, ONNX (INT8 dynamic
-                                 on MatMul).
+Stage 2:  DINOv2 ViT-S/14      — frozen backbone + LoRA + MLP head
+                                 (the ``gamma`` family), classifies
+                                 cropped leaf regions into 9 classes
+                                 incl. a ``not_a_plant`` head; mean-voted
+                                 across bboxes, served via ONNX.
+
+Model families (per-bundle ``classes.json -> model_family``): ``aqua``
+(MobileNetV3-Small, distilled → TFLite INT8, on-device), ``gamma``
+(production DINOv2 ViT-S/14, default), ``frontier`` (DINOv2 ViT-B/14,
+off by default — needs a GPU host). Two safety gates wrap Stage 2: a
+variance-of-Laplacian blur gate and an OOD AND-gate, with temperature
+scaling + RAPS conformal sets for honest "I'm not sure" output.
 """
 
 import asyncio
@@ -3457,7 +3464,7 @@ async def community_scan_nearby(
 
     Location is supplied by the opted-in client (coarse ``lat``/``lon`` +
     reverse-geocoded ``country``/``region`` city). ``scope`` is the app's
-    filter toggle: ``nearby`` (default) restricts the feed to a ~25 km radius
+    filter toggle: ``nearby`` (default) restricts the feed to a ~30 km radius
     of the coords; ``country`` widens to the whole country. ``species`` +
     ``disease`` narrow the result-screen "similar scans" carousel, which
     widens nearby→country to stay filled.
@@ -4021,7 +4028,7 @@ def _build_popular_bundle(
     locale: str,
 ) -> dict:
     """Popular species + diseases for the home carousels, with the ladder
-    nearby(≤25 km) → country → worldwide → curated placeholder.
+    nearby(≤30 km) → country → worldwide → curated placeholder.
 
     Real-scan scopes carry per-item ``count``/``percent`` (the client shows
     "P% of scans"); the placeholder carries zeros + ``source="placeholder"``

@@ -734,7 +734,7 @@
     "/api/community/nearby": {
       "get": {
         "summary": "Community Scan Nearby",
-        "description": "List the most recent community-shared scans near the requester.\n\nLocation is supplied by the opted-in client (coarse ``lat``/``lon`` +\nreverse-geocoded ``country``/``region`` city). ``scope`` is the app's\nfilter toggle: ``nearby`` (default) restricts the feed to a ~25 km radius\nof the coords; ``country`` widens to the whole country. ``species`` +\n``disease`` narrow the result-screen \"similar scans\" carousel, which\nwidens nearby→country to stay filled.",
+        "description": "List the most recent community-shared scans near the requester.\n\nLocation is supplied by the opted-in client (coarse ``lat``/``lon`` +\nreverse-geocoded ``country``/``region`` city). ``scope`` is the app's\nfilter toggle: ``nearby`` (default) restricts the feed to a ~30 km radius\nof the coords; ``country`` widens to the whole country. ``species`` +\n``disease`` narrow the result-screen \"similar scans\" carousel, which\nwidens nearby→country to stay filled.",
         "operationId": "community_scan_nearby_api_community_nearby_get",
         "parameters": [
           {

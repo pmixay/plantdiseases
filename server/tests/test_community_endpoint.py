@@ -475,11 +475,11 @@ def test_community_nearby_country_param(client, isolated_community):
     assert len(body["items"]) == 1
 
 
-# ── nearby (25 km radius) vs country filter toggle ─────────────────
+# ── nearby (30 km radius) vs country filter toggle ─────────────────
 
 
 def test_community_nearby_scope_toggle(client, isolated_community):
-    """`scope=nearby` restricts the feed to a ~25 km radius of the requester's
+    """`scope=nearby` restricts the feed to a ~30 km radius of the requester's
     coords; `scope=country` widens to the whole country. Coords ride in on the
     upload's lat/lon and the query's lat/lon."""
     # Two scans ~3 km apart in Warsaw, one ~300 km away in Gdańsk — all PL.
@@ -494,7 +494,7 @@ def test_community_nearby_scope_toggle(client, isolated_community):
         country="PL", region="Gdansk", lat=54.35, lon=18.65, disease="leaf_spot"))
 
     import community as comm
-    # nearby (within 25 km of Warsaw): only the two Warsaw scans.
+    # nearby (within 30 km of Warsaw): only the two Warsaw scans.
     near = client.get("/api/community/nearby", params={
         "country": "PL", "lat": 52.24, "lon": 21.02, "scope": "nearby",
         "user_pseudo_id": "pseudo-viewer-z"}).json()

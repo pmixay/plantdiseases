@@ -143,7 +143,7 @@ keystore is decoded only when `RELEASE_KEYSTORE_BASE64` is set, and a single
 Gradle invocation runs everything:
 
 ```bash
-./gradlew lintDebug testDebugUnitTest assembleRelease --build-cache --stacktrace
+./gradlew ktlintCheck detekt testDebugUnitTest assembleRelease --build-cache --configuration-cache --stacktrace
 ```
 
 `app/build.gradle.kts` reads each value from a Gradle property **or** the

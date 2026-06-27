@@ -214,7 +214,7 @@ pytest tests -q              # full suite — NO trained weights needed (FakePip
 **Android (lean on CI for full builds):**
 ```bash
 cd android
-./gradlew lintDebug testDebugUnitTest          # what CI runs; JVM tests under Robolectric
+./gradlew ktlintCheck detekt testDebugUnitTest # what CI runs; JVM tests under Robolectric
 ./gradlew :app:assembleDebug -PAPI_BASE_URL=http://10.0.2.2:8000/   # point at local server
 ```
 Prefer `src/test/` (Robolectric: real resources, in-memory Room, Bitmap) over

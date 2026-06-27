@@ -193,22 +193,61 @@ the user knows the feature is configurable, not broken.
 
 ## API
 
+All routes are mounted under `/api`. A curated highlights table follows;
+[`server/openapi.json`](server/openapi.json) is the authoritative, complete list.
+
+**Core / meta**
+
 | Method | Path | Description |
 |---|---|---|
 | `GET`  | `/api/health`              | Liveness + uptime + class count |
-| `GET`  | `/api/version`             | Server version + model architecture + family |
-| `GET`  | `/api/classes`             | Trainable classes with bilingual names |
-| `GET`  | `/api/capabilities`        | Per-family availability (aqua / gamma / frontier) for the scan-screen picker |
+| `GET`  | `/api/capabilities`        | Per-family availability (aqua / gamma / frontier) **plus** consolidated server version, model architecture, and bilingual class metadata (this folds in the former `/api/version` & `/api/classes`) |
 | `GET`  | `/api/metrics`             | JSON counters (requests, errors, latency, feedback per-class accuracy) |
 | `GET`  | `/api/metrics/prometheus`  | Prometheus text exposition (v0.0.4) |
+
+**Diagnosis**
+
+| Method | Path | Description |
+|---|---|---|
 | `POST` | `/api/analyze`             | Upload image → bilingual diagnosis (`?family=aqua\|gamma\|frontier`, default `gamma`) |
-| `GET`  | `/api/guide/manifest` · `/api/guide/photo/{key}` | Disease/pest example photos (served by the server, cached by the app) |
-| `GET`  | `/api/aqua/manifest` · `/api/aqua/model` | On-device Aqua TFLite model manifest + bytes (the app downloads/updates it) |
+| `POST` | `/api/symptom-diagnose`    | No-photo symptom triage (fallback when the camera/ML pipeline can't be used) |
 | `POST` | `/api/identify`            | PlantNet species identification (graceful when unconfigured) |
 | `POST` | `/api/chat`                | AI plant doctor (OpenRouter; graceful when unconfigured) |
 | `POST` | `/api/care-plan`           | Watering / light / humidity / feeding schedule + treatment checklist |
 | `POST` | `/api/progression`         | Compare scans → trend verdict + 5-point severity sparkline |
-| `POST` | `/api/feedback`            | Was this diagnosis correct? Append-only training signal |
+| `POST` | `/api/feedback` · `/api/feedback/image` | Was this diagnosis correct? Append-only training signal (optionally with the image) |
+
+**Content & media**
+
+| Method | Path | Description |
+|---|---|---|
+| `GET`  | `/api/guide/manifest` · `/api/guide/photo/{key}` | Disease/pest example photos (served by the server, cached by the app) |
+| `GET`  | `/api/aqua/manifest` · `/api/aqua/model` | On-device Aqua TFLite model manifest + bytes (the app downloads/updates it) |
+| `GET`  | `/api/species-info`        | Localized Wikipedia summary + lead image for a scientific name |
+| `GET`  | `/api/species-diseases`    | Common indoor conditions a species is affected by (AI, best-effort) |
+| `GET`  | `/api/popular`             | Popular-plants bundle (region-aware, cached, stale-while-revalidate) |
+| `GET`  | `/api/plant-photo`         | SSRF-guarded Wikimedia/Wikipedia image proxy (`?u=` URL or `?name=` resolver) |
+
+**Community**
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/community/scan`      | Share a scan into the anonymized corpus (opt-in, coarse-rounded coords) |
+| `GET`  | `/api/community/nearby`    | Nearby-scans feed (≤30 km or country scope; coords stripped, distance only) |
+| `GET`  | `/api/community/map` · `/api/community/heatmap` | Map markers (rounded coords) and k-anonymized density grid |
+| `GET`  | `/api/community/by-species` | Recent shared scans of a given species |
+| `POST` | `/api/community/opinion` · `/api/community/request-opinion` | Cast / request a second opinion on a shared scan |
+| `GET`  | `/api/community/opinions/{scan_id}` · `/api/community/my-opinions/{user_pseudo_id}` | Opinions for a scan / for the caller's scans |
+| `POST` | `/api/community/view` · `/api/community/scan-counts` | Record a view / batch-fetch opinion+view counts |
+| `GET`  | `/api/community/thumb/{filename}` | Community scan thumbnail |
+| `POST` | `/api/push/register`       | Register an FCM token for opinion notifications (no-op without FCM creds) |
+
+**Privacy / data rights**
+
+| Method | Path | Description |
+|---|---|---|
+| `GET`    | `/api/user/export/{user_pseudo_id}`     | Export everything the corpus holds for a pseudo-id |
+| `DELETE` | `/api/community/user/{user_pseudo_id}`  | Delete the caller's shared community contributions |
 
 Response shapes and validation rules are documented inline in
 [`server/main.py`](server/main.py).
