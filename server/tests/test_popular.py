@@ -10,11 +10,13 @@ def _no_wikipedia(monkeypatch):
     the daily bundle cache between tests."""
     import main as server_main
 
+    # Use a Wikimedia host so the bundle's image proxy (plant_photos.proxy_path,
+    # which only rewrites allowed hosts) produces a real proxy path.
     monkeypatch.setattr(
         server_main, "fetch_species_info",
         lambda name, lang="en": {
             "title": name,
-            "image_url": f"https://img/{name}.jpg",
+            "image_url": f"https://upload.wikimedia.org/{name}.jpg",
         },
     )
     monkeypatch.setattr(
@@ -44,7 +46,9 @@ def test_popular_no_location_worldwide_placeholder(client):
     assert body["items"]
     item = body["items"][0]
     assert {"scientific", "common_en", "common_ru", "image_url", "count", "percent"} <= set(item)
-    assert item["image_url"].startswith("https://img/")
+    # Lead images are proxied through the server (api/plant-photo?u=…), not
+    # handed out as raw Wikimedia URLs the app would load directly.
+    assert item["image_url"].startswith("api/plant-photo?u=")
     assert item["percent"] == 0  # placeholder carries no percentages
 
 

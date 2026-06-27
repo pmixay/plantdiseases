@@ -119,7 +119,8 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 binding.tvSpeciesExtract.text =
                     info.extract ?: getString(R.string.identify_no_info)
                 info.imageUrl?.let { url ->
-                    Glide.with(this@SpeciesDetailActivity).load(url)
+                    Glide.with(this@SpeciesDetailActivity)
+                        .load(com.plantdiseases.app.util.ServerConfig.photoUrl(url))
                         .placeholder(R.drawable.ic_plant_placeholder)
                         .diskCacheStrategy(DiskCacheStrategy.ALL)
                         .into(binding.ivSpeciesHero)
@@ -183,7 +184,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 contentDescription = null
             }
             Glide.with(this)
-                .load(url)
+                .load(com.plantdiseases.app.util.ServerConfig.photoUrl(url))
                 .placeholder(R.drawable.ic_plant_placeholder)
                 .diskCacheStrategy(DiskCacheStrategy.ALL)
                 // Decode straight to the 120dp thumbnail size instead of the

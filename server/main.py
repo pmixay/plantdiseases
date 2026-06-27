@@ -178,6 +178,18 @@ try:
         scan_ids_for_user as feedback_scan_ids_for_user,
     )
     from .pipeline import PlantDiseasePipeline
+    from .plant_photos import (
+        get_or_fetch as plant_photo_get_or_fetch,
+    )
+    from .plant_photos import (
+        is_allowed_url as plant_photo_allowed,
+    )
+    from .plant_photos import (
+        media_type_for as plant_photo_media_type,
+    )
+    from .plant_photos import (
+        proxy_path as plant_photo_proxy,
+    )
     from .popular_plants import popular_for
     from .push import (
         register as push_register,
@@ -310,6 +322,18 @@ except ImportError:
         scan_ids_for_user as feedback_scan_ids_for_user,
     )
     from pipeline import PlantDiseasePipeline
+    from plant_photos import (
+        get_or_fetch as plant_photo_get_or_fetch,
+    )
+    from plant_photos import (
+        is_allowed_url as plant_photo_allowed,
+    )
+    from plant_photos import (
+        media_type_for as plant_photo_media_type,
+    )
+    from plant_photos import (
+        proxy_path as plant_photo_proxy,
+    )
     from popular_plants import popular_for
     from push import (
         register as push_register,
@@ -3512,7 +3536,15 @@ async def species_info_endpoint(name: str, locale: str = "en"):
     )
     if info is None:
         return JSONResponse(content={"available": False})
-    return JSONResponse(content={"available": True, **info})
+    # Route the Wikipedia photos through the server's cache so the app loads
+    # them from our domain (reliable where Wikimedia is blocked). Unproxyable
+    # entries drop to None/out so the card just omits them.
+    proxied = {
+        **info,
+        "image_url": plant_photo_proxy(info.get("image_url")),
+        "images": [p for p in (plant_photo_proxy(i) for i in info.get("images") or []) if p],
+    }
+    return JSONResponse(content={"available": True, **proxied})
 
 
 @api_router.get("/species-diseases")
@@ -3580,6 +3612,30 @@ async def community_scan_thumb(filename: str, request: Request):
         request, path,
         media_type="image/jpeg",
         cache_control="public, max-age=86400",
+    )
+
+
+@api_router.get("/plant-photo")
+async def plant_photo(u: str, request: Request):
+    """Proxy + cache an external plant photo so the app loads it from this
+    server's domain — reliable where Wikimedia is throttled/blocked. ``u`` is
+    the (URL-encoded) source URL; only Wikimedia/Wikipedia hosts are fetched.
+
+    404 when the photo can't be cached (disallowed host, fetch failure, or a
+    non-raster format) — the client then shows its plant placeholder, the same
+    graceful fallback as before the proxy existed."""
+    url = (u or "").strip()
+    if not url or not plant_photo_allowed(url):
+        raise HTTPException(status_code=400, detail="Invalid photo URL")
+    path = await asyncio.get_running_loop().run_in_executor(
+        None, lambda: plant_photo_get_or_fetch(url),
+    )
+    if path is None:
+        raise HTTPException(status_code=404, detail="Photo unavailable")
+    return _cached_image_response(
+        request, path,
+        media_type=plant_photo_media_type(path),
+        cache_control="public, max-age=604800",
     )
 
 
@@ -3809,15 +3865,24 @@ async def _warm_placeholder_images() -> None:
     worldwide bundle (the not-opted-in default) for both locales. Best-effort."""
     loop = asyncio.get_running_loop()
     seen: set[str] = set()
+    warmed_photos: set[str] = set()
     for p in popular_for(None):
         if p.scientific in seen:
             continue
         seen.add(p.scientific)
         for lang in ("en", "ru"):
+            info = None
             with contextlib.suppress(Exception):
-                await loop.run_in_executor(
+                info = await loop.run_in_executor(
                     None, lambda s=p.scientific, n=lang: fetch_species_info(s, n),
                 )
+            # Pre-cache the lead photo bytes too, so the very first carousel
+            # request serves images instantly from our disk cache.
+            url = (info or {}).get("image_url")
+            if url and url not in warmed_photos:
+                warmed_photos.add(url)
+                with contextlib.suppress(Exception):
+                    await loop.run_in_executor(None, lambda u=url: plant_photo_get_or_fetch(u))
     for locale in ("en", "ru"):
         with contextlib.suppress(Exception):
             bundle = await loop.run_in_executor(
@@ -3873,7 +3938,9 @@ def _build_popular_bundle(
                 "scientific": p.scientific,
                 "common_en": p.common_en,
                 "common_ru": p.common_ru,
-                "image_url": (fetch_species_info(p.scientific, lang) or {}).get("image_url"),
+                "image_url": plant_photo_proxy(
+                    (fetch_species_info(p.scientific, lang) or {}).get("image_url"),
+                ),
                 "count": 0,
                 "percent": 0,
             }
@@ -3899,7 +3966,7 @@ def _build_popular_bundle(
             "scientific": scientific,
             "common_en": title,
             "common_ru": title,
-            "image_url": (info or {}).get("image_url"),
+            "image_url": plant_photo_proxy((info or {}).get("image_url")),
             "count": row.get("count", 0),
             "percent": row.get("percent", 0),
         })

@@ -1133,7 +1133,9 @@ class ScanRepository(
         withContext(Dispatchers.IO) {
             // Wikipedia blurb + lead image are stable per (name, locale) — cache
             // once available so the result screen doesn't re-fetch every open.
-            val cacheKey = "species:v1:${name.trim().lowercase()}|$locale"
+            // v2: image_url/images are now server-proxied (api/plant-photo) — bump
+            // so cached v1 entries with raw Wikimedia URLs are re-fetched.
+            val cacheKey = "species:v2:${name.trim().lowercase()}|$locale"
             com.plantdiseases.app.util.ResponseCache
                 .get(cacheKey, com.plantdiseases.app.data.model.SpeciesInfoResponse::class.java)
                 ?.let { return@withContext Result.success(it) }

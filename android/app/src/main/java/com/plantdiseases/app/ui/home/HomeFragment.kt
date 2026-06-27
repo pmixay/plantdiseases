@@ -274,7 +274,7 @@ class HomeFragment : Fragment() {
             } else {
                 null
             }
-            val cacheKey = "popular:v4:" +
+            val cacheKey = "popular:v5:" +
                 "${region?.country.orEmpty()}|${region?.lat ?: ""},${region?.lon ?: ""}|$locale"
             val popular = com.plantdiseases.app.util.ResponseCache
                 .get(cacheKey, PopularResponse::class.java)
@@ -412,7 +412,8 @@ class HomeFragment : Fragment() {
     private fun loadSpeciesImage(scientificName: String, target: ImageView) {
         val cached = speciesImageCache[scientificName]
         if (cached != null) {
-            Glide.with(target).load(cached).placeholder(R.drawable.ic_plant_placeholder).into(target)
+            Glide.with(target).load(com.plantdiseases.app.util.ServerConfig.photoUrl(cached))
+                .placeholder(R.drawable.ic_plant_placeholder).into(target)
             return
         }
         if (speciesImageCache.containsKey(scientificName)) return // resolved to null (no photo)
@@ -422,7 +423,7 @@ class HomeFragment : Fragment() {
             }.getOrNull()
             speciesImageCache[scientificName] = url
             if (url != null) {
-                Glide.with(target).load(url)
+                Glide.with(target).load(com.plantdiseases.app.util.ServerConfig.photoUrl(url))
                     .placeholder(R.drawable.ic_plant_placeholder).into(target)
             }
         }

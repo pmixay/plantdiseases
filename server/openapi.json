@@ -1151,6 +1151,44 @@
         }
       }
     },
+    "/api/plant-photo": {
+      "get": {
+        "summary": "Plant Photo",
+        "description": "Proxy + cache an external plant photo so the app loads it from this\nserver's domain — reliable where Wikimedia is throttled/blocked. ``u`` is\nthe (URL-encoded) source URL; only Wikimedia/Wikipedia hosts are fetched.\n\n404 when the photo can't be cached (disallowed host, fetch failure, or a\nnon-raster format) — the client then shows its plant placeholder, the same\ngraceful fallback as before the proxy existed.",
+        "operationId": "plant_photo_api_plant_photo_get",
+        "parameters": [
+          {
+            "name": "u",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "U"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/guide/manifest": {
       "get": {
         "summary": "Guide Manifest",
