@@ -40,12 +40,15 @@ object OpinionNotifier : KoinComponent {
      *   own class key (poll).
      * @param note    optional free-text comment the responder left; shown in
      *   the expanded notification when present.
+     * @param nickname the responder's plant-vibe community handle; names who
+     *   weighed in when present, otherwise the body stays anonymous.
      */
     suspend fun notifyNewOpinion(
         context: Context,
         scanId: String,
         disease: String,
         note: String? = null,
+        nickname: String? = null,
     ) {
         val ctx = context.applicationContext
         if (!OpinionPrefs.notificationsEnabled(ctx)) return
@@ -89,7 +92,12 @@ object OpinionNotifier : KoinComponent {
 
         val name = DiseaseLabels.displayName(disease, isRu)
             ?: disease.split('_').joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
-        val body = ctx.getString(R.string.opinion_notif_body, name)
+        val cleanNick = nickname?.trim().orEmpty()
+        val body = if (cleanNick.isNotEmpty()) {
+            ctx.getString(R.string.opinion_notif_body_named, cleanNick, name)
+        } else {
+            ctx.getString(R.string.opinion_notif_body, name)
+        }
         val cleanNote = note?.trim().orEmpty()
 
         val builder = NotificationCompat.Builder(ctx, PlantDiseasesApp.CHANNEL_COMMUNITY)

@@ -202,12 +202,15 @@
     <string name="community_opinion_agree">Agree</string>
     <string name="community_opinion_disagree">Disagree</string>
     <string name="community_opinion_confidence">Confidence %1$d%%</string>
+    <string name="community_opinion_species_fmt">%1$s (%2$d%%)</string>
     <string name="similar_scans_enable_prompt">Want to see what people are scanning nearby?</string>
     <string name="community_opinion_consensus_prefix">Community so far: %1$s</string>
     <string name="community_opinion_empty">No opinions yet — be the first to weigh in.</string>
     <string name="community_opinion_thanks">Thanks for your opinion!</string>
     <string name="community_opinion_error">Couldn\'t reach the community. Try again.</string>
     <string name="community_opinions_badge">%1$d opinions</string>
+    <string name="community_distance_near">≈ %1$d km near you</string>
+    <string name="community_opinion_photo_desc">Shared plant scan</string>
     <string name="result_view_opinions">%1$d community opinions</string>
     <string name="result_view_activity">%1$d opinions · %2$d views</string>
     <string name="gallery_community_badge">💬 %1$d</string>
@@ -258,6 +261,7 @@
     <string name="community_delete_title">Delete my contributions</string>
     <string name="opinion_notif_title">New second opinion</string>
     <string name="opinion_notif_body">Someone weighed in on your %1$s scan</string>
+    <string name="opinion_notif_body_named">%1$s weighed in on your %2$s scan</string>
     <string name="opinion_notif_with_note">Suggested diagnosis: %1$s\n\n“%2$s”</string>
     <string name="channel_plant_reminders_name">Plant Reminders</string>
     <string name="channel_plant_reminders_desc">Care schedule reminders for your plants</string>

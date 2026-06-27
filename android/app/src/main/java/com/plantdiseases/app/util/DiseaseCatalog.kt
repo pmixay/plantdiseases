@@ -31,6 +31,21 @@ object DiseaseCatalog {
         return GuideDataProvider.getGuideItems().firstOrNull { it.id == id }
     }
 
+    /**
+     * The guide doc whose localized title matches a free-text disease *name*
+     * (either language, case-insensitive). Used when the server gives us a
+     * display name but no class key — so popular-species "common problems"
+     * rows still pick up the same icon as the disease guide instead of the
+     * generic placeholder.
+     */
+    fun guideItemForName(name: String): GuideItem? {
+        val needle = name.trim().lowercase()
+        if (needle.isEmpty()) return null
+        return GuideDataProvider.getGuideItems().firstOrNull {
+            it.titleEn.trim().lowercase() == needle || it.titleRu.trim().lowercase() == needle
+        }
+    }
+
     /** Every bundled disease/pest doc, in catalog order — the "Disease
      *  guide" documentation carousel. */
     fun diseaseGuideItems(): List<GuideItem> =

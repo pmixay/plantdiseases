@@ -46,7 +46,7 @@ class OpinionCheckWorker(
             if (scan.scanId.isBlank()) continue
             val previous = OpinionPrefs.lastSeen(ctx, scan.scanId)
             if (!firstRun && scan.opinionCount > previous) {
-                OpinionNotifier.notifyNewOpinion(ctx, scan.scanId, scan.disease)
+                OpinionNotifier.notifyNewOpinion(ctx, scan.scanId, scan.disease, nickname = scan.latestNickname)
             }
             OpinionPrefs.setSeen(ctx, scan.scanId, scan.opinionCount)
         }

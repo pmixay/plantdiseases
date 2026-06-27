@@ -240,6 +240,7 @@ data class ScanOpinionItem(
     @SerializedName("opinion_count") @SerialName("opinion_count") val opinionCount: Int = 0,
     @SerializedName("latest_at") @SerialName("latest_at") val latestAt: Long = 0,
     @SerializedName("view_count") @SerialName("view_count") val viewCount: Int = 0,
+    @SerializedName("latest_nickname") @SerialName("latest_nickname") val latestNickname: String? = null,
 )
 
 /** Describes the server-hosted Aqua on-device model (GET /api/aqua/manifest)
@@ -330,6 +331,11 @@ data class CommunityScanItem(
     // Author's plant-vibe display handle (e.g. "Томатный Король 42"); the
     // avatar monogram/colour are derived from it on-device.
     @SerializedName("nickname") @SerialName("nickname") val nickname: String? = null,
+    // Approximate great-circle distance from the requester, in km, computed
+    // server-side (the raw coords never leave the server). Null when the feed
+    // had no requester anchor (country/worldwide scope). Shown as "≈ N km near
+    // you" on nearby cards.
+    @SerializedName("distance_km") @SerialName("distance_km") val distanceKm: Float? = null,
 )
 
 @Serializable

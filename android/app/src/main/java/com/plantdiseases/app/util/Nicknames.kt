@@ -16,13 +16,27 @@ import kotlin.random.Random
 object Nicknames {
     private const val PREFS_NAME = "plantdiseases_nickname"
     private const val KEY_NICK = "nickname"
+    private const val KEY_GENERATED_AT = "nickname_generated_at"
+
+    // Mirror the server's 30-day identity rotation: the public handle (and the
+    // nick-derived avatar) changes every 30 days so a user's community activity
+    // can't be linked across windows. Scans older than this go read-only
+    // server-side, so a stale handle is never needed again.
+    private const val ROTATION_MS = 30L * 24 * 60 * 60 * 1000
 
     fun nickname(context: Context): String {
         val prefs = context.applicationContext
             .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.getString(KEY_NICK, null)?.takeIf { it.isNotBlank() }?.let { return it }
+        val now = System.currentTimeMillis()
+        val stored = prefs.getString(KEY_NICK, null)?.takeIf { it.isNotBlank() }
+        val generatedAt = prefs.getLong(KEY_GENERATED_AT, 0L)
+        val fresh = generatedAt > 0L && now - generatedAt < ROTATION_MS
+        if (stored != null && fresh) return stored
         val nick = generate(LocaleHelper.isRussian(context))
-        prefs.edit().putString(KEY_NICK, nick).apply()
+        prefs.edit()
+            .putString(KEY_NICK, nick)
+            .putLong(KEY_GENERATED_AT, now)
+            .apply()
         return nick
     }
 

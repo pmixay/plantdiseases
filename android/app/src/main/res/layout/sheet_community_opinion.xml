@@ -46,6 +46,19 @@
             android:textSize="@dimen/text_body_sm"
             android:textColor="@color/on_surface_secondary" />
 
+        <!-- The shared scan photo, borrowed from the scan-result screen so the
+             sheet reads like a real result. Set + shown programmatically; hidden
+             when this scan has no thumbnail. -->
+        <ImageView
+            android:id="@+id/iv_opinion_photo"
+            android:layout_width="match_parent"
+            android:layout_height="180dp"
+            android:layout_marginTop="@dimen/space_md"
+            android:contentDescription="@string/community_opinion_photo_desc"
+            android:scaleType="centerCrop"
+            android:visibility="gone"
+            tools:visibility="visible" />
+
         <!-- Current diagnosis pill (set programmatically; hidden if unknown). -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/card_opinion_current"

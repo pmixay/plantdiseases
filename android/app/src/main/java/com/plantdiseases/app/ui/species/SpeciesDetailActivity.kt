@@ -244,7 +244,11 @@ class SpeciesDetailActivity : AppCompatActivity() {
         if (aiItems.isNotEmpty()) {
             binding.tvDiseasesSubtitle.setText(R.string.species_problems_ai_note)
             aiItems.forEach { item ->
+                // Match by class key first, then by display name, so the row
+                // picks up the same icon as the disease guide/book instead of
+                // the generic placeholder.
                 val guide = item.docKey?.let { DiseaseCatalog.guideItemForClass(it) }
+                    ?: DiseaseCatalog.guideItemForName(item.name)
                 addDiseaseRow(
                     name = item.name,
                     note = item.note,

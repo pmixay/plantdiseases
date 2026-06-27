@@ -199,12 +199,15 @@
     <string name="community_opinion_agree">Согласен</string>
     <string name="community_opinion_disagree">Не согласен</string>
     <string name="community_opinion_confidence">Точность %1$d%%</string>
+    <string name="community_opinion_species_fmt">%1$s (%2$d%%)</string>
     <string name="similar_scans_enable_prompt">Хотите видеть, что сканируют рядом?</string>
     <string name="community_opinion_consensus_prefix">Мнения сообщества: %1$s</string>
     <string name="community_opinion_empty">Пока нет мнений — будьте первым.</string>
     <string name="community_opinion_thanks">Спасибо за ваше мнение!</string>
     <string name="community_opinion_error">Не удалось связаться с сообществом. Повторите.</string>
     <string name="community_opinions_badge">Мнений: %1$d</string>
+    <string name="community_distance_near">≈ %1$d км рядом с вами</string>
+    <string name="community_opinion_photo_desc">Снимок растения сообщества</string>
     <string name="result_view_opinions">Мнений сообщества: %1$d</string>
     <string name="result_view_activity">Мнений: %1$d · просмотров: %2$d</string>
     <string name="gallery_community_badge">💬 %1$d</string>
@@ -252,6 +255,7 @@
     <string name="community_delete_title">Удалить мои данные из сообщества</string>
     <string name="opinion_notif_title">Новое второе мнение</string>
     <string name="opinion_notif_body">Кто-то оставил мнение о вашем скане: %1$s</string>
+    <string name="opinion_notif_body_named">%1$s оставил(а) мнение о вашем скане: %2$s</string>
     <string name="opinion_notif_with_note">Предложенный диагноз: %1$s\n\n«%2$s»</string>
     <string name="channel_plant_reminders_name">Напоминания о растениях</string>
     <string name="channel_plant_reminders_desc">Напоминания по графику ухода за вашими растениями</string>

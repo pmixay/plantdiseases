@@ -4,12 +4,17 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.core.os.bundleOf
 import androidx.fragment.app.FragmentManager
 import androidx.lifecycle.lifecycleScope
+import com.bumptech.glide.Glide
+import com.bumptech.glide.load.engine.DiskCacheStrategy
+import com.bumptech.glide.load.resource.bitmap.CenterCrop
+import com.bumptech.glide.load.resource.bitmap.RoundedCorners
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.chip.Chip
@@ -22,6 +27,7 @@ import com.plantdiseases.app.data.model.CommunityTopDisease
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.Nicknames
+import com.plantdiseases.app.util.ServerConfig
 import com.plantdiseases.app.util.TelemetryIds
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
@@ -92,6 +98,7 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
             ?.let { currentView.text = it }
             ?: run { currentCard.visibility = View.GONE }
         renderMeta(view)
+        renderPhoto(view)
 
         val ctx = requireContext()
         val cancelBtn = view.findViewById<MaterialButton>(R.id.btn_opinion_cancel)
@@ -178,7 +185,7 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         }
         if (species != null) {
             parts += if (speciesScore in 0f..1f) {
-                "$species (${Math.round(speciesScore * 100)}%)"
+                getString(R.string.community_opinion_species_fmt, species, Math.round(speciesScore * 100))
             } else {
                 species
             }
@@ -189,6 +196,25 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
             meta.visibility = View.VISIBLE
             meta.text = parts.joinToString(" · ")
         }
+    }
+
+    /** Show the shared scan photo (borrowed from the scan-result screen) when
+     *  the feed item carried a thumbnail; otherwise leave the slot hidden. */
+    private fun renderPhoto(view: View) {
+        val photo = view.findViewById<ImageView>(R.id.iv_opinion_photo)
+        val thumb = arguments?.getString(ARG_THUMB)?.takeIf { it.isNotBlank() }
+        if (thumb == null) {
+            photo.visibility = View.GONE
+            return
+        }
+        photo.visibility = View.VISIBLE
+        Glide.with(this)
+            .load("${ServerConfig.baseUrl}api/community/thumb/$thumb")
+            .diskCacheStrategy(DiskCacheStrategy.ALL)
+            .placeholder(R.drawable.ic_plant_placeholder)
+            .error(R.drawable.ic_plant_placeholder)
+            .transform(CenterCrop(), RoundedCorners(24))
+            .into(photo)
     }
 
     private fun showPicker(view: View, visible: Boolean) {
@@ -420,6 +446,7 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         private const val ARG_CONFIDENCE = "arg_confidence"
         private const val ARG_SPECIES = "arg_species"
         private const val ARG_SPECIES_SCORE = "arg_species_score"
+        private const val ARG_THUMB = "arg_thumb"
         private const val ARG_VIEW_ONLY = "arg_view_only"
 
         /** Diagnosable classes a responder can pick. Keys must be present in
@@ -454,6 +481,7 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
                     ARG_CONFIDENCE to (item.confidence ?: -1f),
                     ARG_SPECIES to item.species,
                     ARG_SPECIES_SCORE to (item.speciesScore ?: -1f),
+                    ARG_THUMB to item.thumbPath,
                 )
             }.show(fm, TAG)
         }

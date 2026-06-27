@@ -98,16 +98,28 @@ class NearbyScansAdapter(
             ThumbLoader.load(shimmer, photo, url)
         }
 
-        /** "Powdery mildew · Warsaw, Poland · 2h" — the disease is included
-         *  only when the identity line shows the nickname (else it'd repeat).
+        /** "Powdery mildew · Warsaw, Poland · ≈ 3 km near you · 2h" — the
+         *  disease is included only when the identity line shows the nickname
+         *  (else it'd repeat); the distance only when the server measured one
+         *  (nearby scope). Sorting stays by recency; the time is always shown.
          *  Missing pieces drop out gracefully. */
         private fun buildMeta(item: CommunityScanItem, includeDisease: Boolean): String {
             val locality = item.city.ifBlank { item.region }
             return listOf(
                 if (includeDisease) displayName(item.disease) else "",
                 formatRegion(locality, countryLabel(item)),
+                formatDistance(item.distanceKm),
                 formatTimeAgo(item.createdAt),
             ).filter { it.isNotEmpty() }.joinToString(" · ")
+        }
+
+        /** "≈ N km near you" — coords are rounded to ~1 km server-side, so we
+         *  floor the display at 1 km rather than show a misleading "0 km".
+         *  Empty when the feed had no requester anchor (country/worldwide). */
+        private fun formatDistance(distanceKm: Float?): String {
+            if (distanceKm == null) return ""
+            val km = Math.round(distanceKm).coerceAtLeast(1)
+            return itemView.context.getString(R.string.community_distance_near, km)
         }
 
         /** Localized country NAME (e.g. "Poland"/"Польша") the server resolved,
