@@ -78,10 +78,16 @@ try:
         delete_for_user as community_delete_for_user,
     )
     from .community import (
+        density_grid as community_density_grid,
+    )
+    from .community import (
         get_user_data as community_get_user_data,
     )
     from .community import (
         init_db as init_community_db,
+    )
+    from .community import (
+        map_scans as community_map_scans,
     )
     from .community import (
         nearby_scans as community_nearby_scans,
@@ -225,10 +231,16 @@ except ImportError:
         delete_for_user as community_delete_for_user,
     )
     from community import (
+        density_grid as community_density_grid,
+    )
+    from community import (
         get_user_data as community_get_user_data,
     )
     from community import (
         init_db as init_community_db,
+    )
+    from community import (
+        map_scans as community_map_scans,
     )
     from community import (
         nearby_scans as community_nearby_scans,
@@ -3489,6 +3501,87 @@ async def community_scan_nearby(
     meta["region"] = geo["city"] if (nearby and has_coords) else None
     summary.update(meta)
     return JSONResponse(content={"items": rows, "summary": summary, **meta})
+
+
+def _valid_bbox(
+    min_lat: float, min_lon: float, max_lat: float, max_lon: float,
+) -> tuple[float, float, float, float] | None:
+    """Sanity-check + clamp a map bbox. Returns ``(lo_lat, lo_lon, hi_lat,
+    hi_lon)`` within ±90/±180, or ``None`` when degenerate / out of range."""
+    try:
+        lo_lat, hi_lat = sorted((float(min_lat), float(max_lat)))
+        lo_lon, hi_lon = sorted((float(min_lon), float(max_lon)))
+    except (TypeError, ValueError):
+        return None
+    lo_lat, hi_lat = max(-90.0, lo_lat), min(90.0, hi_lat)
+    lo_lon, hi_lon = max(-180.0, lo_lon), min(180.0, hi_lon)
+    if hi_lat <= lo_lat or hi_lon <= lo_lon:
+        return None
+    return (lo_lat, lo_lon, hi_lat, hi_lon)
+
+
+@api_router.get("/community/map")
+async def community_map(
+    min_lat: float, min_lon: float, max_lat: float, max_lon: float,
+    disease: str | None = None,
+    days: int = 30,
+    user_pseudo_id: str | None = None,
+    limit: int = 300,
+):
+    """Individual community scans inside a bbox — the zoomed-in map markers.
+
+    Each scan carries its ~1 km-rounded coords + the PUBLIC token (never the
+    real scan_id), so the app can pin a marker and open the existing opinion
+    sheet. Public (no opt-in to view); ``not_a_plant`` excluded; ``truncated``
+    signals an over-full bbox."""
+    box = _valid_bbox(min_lat, min_lon, max_lat, max_lon)
+    if box is None:
+        raise HTTPException(status_code=422, detail="Invalid bbox")
+    lo_lat, lo_lon, hi_lat, hi_lon = box
+    data = await asyncio.get_running_loop().run_in_executor(
+        None,
+        lambda: community_map_scans(
+            lo_lat, hi_lat, lo_lon, hi_lon,
+            disease=(disease or None),
+            days=days,
+            limit=max(1, min(int(limit), 500)),
+            exclude_user_pseudo_id=user_pseudo_id,
+        ),
+    )
+    rows = data["items"]
+    # Same opinion-count annotation + public-token swap + country localization as
+    # the nearby feed; here we KEEP lat/lon for the markers.
+    counts = community_opinion_counts([str(r.get("scan_id")) for r in rows if r.get("scan_id")])
+    for r in rows:
+        r["opinion_count"] = counts.get(str(r.get("scan_id")), 0)
+        r["scan_id"] = r.pop("public_id", None) or r["scan_id"]
+        _localize_item_country(r)
+    return JSONResponse(content={"items": rows, "truncated": data["truncated"]})
+
+
+@api_router.get("/community/heatmap")
+async def community_heatmap(
+    min_lat: float, min_lon: float, max_lat: float, max_lon: float,
+    disease: str | None = None,
+    days: int = 30,
+):
+    """K-anonymized scan density (grid cells) for the zoomed-out heat layer.
+
+    Public; returns only cell centers + counts (each ≥ 3 scans), never per-scan
+    coords; ``not_a_plant`` excluded."""
+    box = _valid_bbox(min_lat, min_lon, max_lat, max_lon)
+    if box is None:
+        raise HTTPException(status_code=422, detail="Invalid bbox")
+    lo_lat, lo_lon, hi_lat, hi_lon = box
+    data = await asyncio.get_running_loop().run_in_executor(
+        None,
+        lambda: community_density_grid(
+            lo_lat, hi_lat, lo_lon, hi_lon,
+            disease=(disease or None),
+            days=days,
+        ),
+    )
+    return JSONResponse(content=data)
 
 
 @api_router.get("/community/my-opinions/{user_pseudo_id}")

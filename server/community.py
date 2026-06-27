@@ -904,6 +904,127 @@ def nearby_scans(
         return result
 
 
+def map_scans(
+    min_lat: float,
+    max_lat: float,
+    min_lon: float,
+    max_lon: float,
+    *,
+    disease: str | None = None,
+    days: int = 30,
+    limit: int = 300,
+    exclude_user_pseudo_id: str | None = None,
+) -> dict:
+    """Individual shared scans inside a bbox — the zoomed-in map markers.
+
+    Unlike the feed (:func:`nearby_scans`), this KEEPS each scan's ~1 km-rounded
+    ``lat``/``lon`` so the client can pin a marker: the user explicitly wants
+    individual scans on the map, and the coords are already coarse + anonymous
+    (public token + nickname, never the real scan_id). ``not_a_plant`` excluded;
+    newest-first, capped at ``limit`` (``truncated`` flags an over-full bbox so
+    the UI can prompt "zoom in to see all")."""
+    init_db()
+    limit = max(1, min(int(limit), 500))
+    days = max(1, min(int(days), 90))
+    cutoff = int(time.time()) - days * 86_400
+    clause = (
+        " AND lat IS NOT NULL AND lon IS NOT NULL"
+        " AND lat BETWEEN ? AND ? AND lon BETWEEN ? AND ? AND created_at >= ?"
+    )
+    params: list = [min_lat, max_lat, min_lon, max_lon, cutoff]
+    if exclude_user_pseudo_id:
+        clause += " AND user_pseudo_id != ?"
+        params.append(exclude_user_pseudo_id)
+    if disease:
+        clause += " AND disease = ?"
+        params.append(disease)
+    clause += _hidden_clause()
+    params.extend(_HIDDEN_COMMUNITY_DISEASES)
+    with _connect() as conn:
+        rows = conn.execute(
+            f"SELECT {_FEED_COLUMNS} FROM community_scans WHERE 1=1"
+            + clause
+            + " ORDER BY created_at DESC LIMIT ?",
+            (*params, limit + 1),
+        ).fetchall()
+    truncated = len(rows) > limit
+    # _row_to_dict keeps lat/lon — the map needs them (the feed strips them).
+    return {"items": [_row_to_dict(r) for r in rows[:limit]], "truncated": truncated}
+
+
+_DENSITY_K = 3
+
+
+def _density_cell_size(lat_span: float) -> float:
+    """Grid-cell size (deg) for a bbox's latitude span — coarser when zoomed
+    out, floored at 0.05° (~5.5 km, ~5x the ~1.1 km storage rounding) so a cell
+    always blends many distinct positions and no single ~1 km scan is
+    pinpointable."""
+    if lat_span > 40:
+        return 1.0
+    if lat_span > 15:
+        return 0.5
+    if lat_span > 5:
+        return 0.2
+    if lat_span > 2:
+        return 0.1
+    return 0.05
+
+
+def density_grid(
+    min_lat: float,
+    max_lat: float,
+    min_lon: float,
+    max_lon: float,
+    *,
+    disease: str | None = None,
+    days: int = 30,
+    k: int = _DENSITY_K,
+) -> dict:
+    """K-anonymized scan density for the zoomed-out heat layer.
+
+    Buckets the (already 2-dp-rounded) coords into grid cells and returns only
+    cells holding >= ``k`` scans AFTER the disease/time filter, so a returned
+    cell never represents fewer than ``k`` scans; ``not_a_plant`` excluded. The
+    map receives cell centers + counts only — never per-scan coords."""
+    init_db()
+    days = max(1, min(int(days), 90))
+    cutoff = int(time.time()) - days * 86_400
+    cell = _density_cell_size(max_lat - min_lat)
+    disease_clause = ""
+    disease_params: list = []
+    if disease:
+        disease_clause = " AND disease = ?"
+        disease_params.append(disease)
+    hidden_clause = _hidden_clause()
+    # SQLite CAST(.. AS INTEGER) truncates toward zero — wrong floor for negative
+    # (W/S) coords — so floor with ROUND(z/cell - 0.5) to bucket on a stable grid.
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT CAST(ROUND(lat/? - 0.5) AS INTEGER) AS ilat,"
+            "       CAST(ROUND(lon/? - 0.5) AS INTEGER) AS ilon, COUNT(*) AS n "
+            "FROM community_scans "
+            "WHERE lat IS NOT NULL AND lon IS NOT NULL "
+            "  AND lat BETWEEN ? AND ? AND lon BETWEEN ? AND ? AND created_at >= ?"
+            + disease_clause + hidden_clause
+            + " GROUP BY ilat, ilon HAVING n >= ?",
+            (cell, cell, min_lat, max_lat, min_lon, max_lon, cutoff,
+             *disease_params, *_HIDDEN_COMMUNITY_DISEASES, int(k)),
+        ).fetchall()
+    cells = [
+        {"lat": round(r[0] * cell, 6), "lon": round(r[1] * cell, 6), "count": int(r[2])}
+        for r in rows
+    ]
+    return {
+        "cells": cells,
+        "cell_size_deg": cell,
+        "max_count": max((c["count"] for c in cells), default=0),
+        "total": sum(c["count"] for c in cells),
+        "k": int(k),
+        "days": days,
+    }
+
+
 def region_summary(
     country: str,
     region: str | None = None,
@@ -1244,7 +1365,9 @@ __all__ = [
     "daily_write_count_for_ip_hash",
     "delete_for_user",
     "get_user_data",
+    "density_grid",
     "init_db",
+    "map_scans",
     "nearby_scans",
     "opinion_counts",
     "opinion_counts_for_user",
