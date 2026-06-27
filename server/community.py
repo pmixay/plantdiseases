@@ -584,7 +584,8 @@ def opinion_counts_for_user(user_pseudo_id: str, *, limit: int = 200) -> dict:
     "someone weighed in on your <disease> scan".
 
     Shape::
-        {"scans": [{"scan_id", "disease", "opinion_count", "latest_at"}, ...],
+        {"scans": [{"scan_id", "disease", "opinion_count", "latest_at",
+                    "view_count", "latest_nickname"}, ...],
          "total_opinions": N}
     """
     init_db()
@@ -595,7 +596,10 @@ def opinion_counts_for_user(user_pseudo_id: str, *, limit: int = 200) -> dict:
     with _connect() as conn:
         rows = conn.execute(
             "SELECT s.scan_id, s.disease, COUNT(o.id) AS n, MAX(o.created_at) AS latest, "
-            "  (SELECT COUNT(*) FROM community_scan_views v WHERE v.scan_id = s.scan_id) AS views "
+            "  (SELECT COUNT(*) FROM community_scan_views v WHERE v.scan_id = s.scan_id) AS views, "
+            "  (SELECT o2.nickname FROM community_opinions o2 "
+            "     WHERE o2.scan_id = s.scan_id AND o2.author_pseudo_id != s.user_pseudo_id "
+            "     ORDER BY o2.created_at DESC LIMIT 1) AS latest_nick "
             "FROM community_scans s "
             "JOIN community_opinions o "
             "  ON o.scan_id = s.scan_id AND o.author_pseudo_id != s.user_pseudo_id "
@@ -607,7 +611,8 @@ def opinion_counts_for_user(user_pseudo_id: str, *, limit: int = 200) -> dict:
     scans = [
         {"scan_id": str(r[0]), "disease": str(r[1]),
          "opinion_count": int(r[2]), "latest_at": int(r[3]),
-         "view_count": int(r[4])}
+         "view_count": int(r[4]),
+         "latest_nickname": (r[5] if len(r) > 5 else None) or None}
         for r in rows
     ]
     return {
@@ -784,7 +789,13 @@ def scans_by_species(
             + " ORDER BY created_at DESC LIMIT ?",
             (*params, limit),
         ).fetchall()
-    return [_row_to_dict(r) for r in rows]
+    out = [_row_to_dict(r) for r in rows]
+    # This cross-region strip has no requester anchor to measure from, so we
+    # just drop the raw coords (never leaked to viewers); no distance shown.
+    for row in out:
+        row.pop("lat", None)
+        row.pop("lon", None)
+    return out
 
 
 def nearby_scans(
@@ -878,7 +889,19 @@ def nearby_scans(
                 _run(geo_clause, geo_params, " AND disease = ?", [disease], refine)
             if len(out) < limit and not disease:
                 _run(geo_clause, geo_params, "", [], refine)
-        return out[:limit]
+        result = out[:limit]
+        # Attach an approximate distance from the requester ("~5 km near you")
+        # and DROP the raw coords — a viewer gets the distance, never another
+        # user's ~1 km location. Distance is omitted when we lack either point.
+        for row in result:
+            rlat, rlon = row.get("lat"), row.get("lon")
+            if has_coords and rlat is not None and rlon is not None:
+                row["distance_km"] = round(_haversine_km(lat, lon, rlat, rlon), 1)
+            else:
+                row["distance_km"] = None
+            row.pop("lat", None)
+            row.pop("lon", None)
+        return result
 
 
 def region_summary(

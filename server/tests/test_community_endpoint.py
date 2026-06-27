@@ -493,6 +493,35 @@ def test_community_nearby_scope_toggle(client, isolated_community):
     }
 
 
+def test_community_nearby_attaches_distance_and_hides_coords(client, isolated_community):
+    """Nearby feed rows carry an approximate distance from the requester
+    ('~5 km near you') but NEVER the other user's raw coords."""
+    client.post("/api/community/scan", data=_form(
+        scan_id="distnearwarsaw", user_pseudo_id="pseudo-near-a",
+        country="PL", region="Warsaw", lat=52.23, lon=21.01, disease="leaf_spot"))
+    items = client.get("/api/community/nearby", params={
+        "country": "PL", "lat": 52.24, "lon": 21.02, "scope": "nearby",
+        "user_pseudo_id": "pseudo-viewer-z"}).json()["items"]
+    assert len(items) == 1
+    item = items[0]
+    # Distance present, within the radius, and coords stripped.
+    assert item["distance_km"] is not None
+    assert 0 <= item["distance_km"] <= 30
+    assert "lat" not in item and "lon" not in item
+
+
+def test_community_nearby_no_viewer_coords_omits_distance(client, isolated_community):
+    """Country scope (no requester coords) → distance is null, coords stripped."""
+    client.post("/api/community/scan", data=_form(
+        scan_id="distcountry001", user_pseudo_id="pseudo-other-y",
+        country="US", disease="healthy"))
+    item = client.get("/api/community/nearby", params={
+        "country": "US", "scope": "country",
+        "user_pseudo_id": "pseudo-viewer-q"}).json()["items"][0]
+    assert item["distance_km"] is None
+    assert "lat" not in item and "lon" not in item
+
+
 # ── Localized per-item country names (no raw "PL" codes) ────────────
 
 
