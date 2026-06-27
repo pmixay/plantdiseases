@@ -19,11 +19,6 @@
         android:maxSdkVersion="28" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- Coarse location only — used to resolve the device region to a
-         "City, Country" string for the community scan corpus. Raw
-         lat/lon never leaves the device; we never request fine
-         location. See util/RegionResolver.kt. -->
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
     <application
         android:name=".PlantDiseasesApp"

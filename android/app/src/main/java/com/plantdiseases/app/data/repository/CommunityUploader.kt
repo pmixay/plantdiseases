@@ -8,7 +8,6 @@ import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.AnalysisResponse
 import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.LocaleHelper
-import com.plantdiseases.app.util.RegionResolver
 import com.plantdiseases.app.util.TelemetryIds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -20,15 +19,13 @@ import java.io.FileOutputStream
  * scan corpus.
  *
  * Responsibilities, in order:
- *   1. Confirm the user has opted into uploads (default ON after the
- *      first-run consent sheet — see [CommunityPrefs]).
- *   2. Resolve the device region. No region → no upload; we never send
- *      a row without geographical grouping because the corpus would
- *      become a public dump.
- *   3. Generate a 512px JPEG thumbnail in the app's cache dir so the
+ *   1. Confirm uploads are enabled (default ON after the first-run
+ *      consent sheet — see [CommunityPrefs]).
+ *   2. Generate a 512px JPEG thumbnail in the app's cache dir so the
  *      upload stays under the server's COMMUNITY_MAX_THUMB_BYTES
  *      ceiling.
- *   4. POST the row + thumb via [ScanRepository.uploadCommunityScan].
+ *   3. POST the row + thumb via [ScanRepository.uploadCommunityScan].
+ *      The server fills the country bucket from proxy/IP data.
  *
  * Every step is best-effort: failures are logged and swallowed so the
  * user's diagnosis screen renders even when the corpus is down.
@@ -44,8 +41,6 @@ class CommunityUploader(
         if (!CommunityPrefs.uploadsEnabled(context)) {
             return@withContext UploadOutcome.OptedOut
         }
-        val resolved = RegionResolver.resolveRegion(context)
-            ?: return@withContext UploadOutcome.NoRegion
         val disease = canonicalDiseaseKey(analysis) ?: scan.diseaseName
         // Skip diagnoses that shouldn't be surfaced in the community
         // feed (currently just ``not_a_plant`` — typically faces,
@@ -66,8 +61,6 @@ class CommunityUploader(
         val result = scanRepository.uploadCommunityScan(
             scanId = scanId,
             userPseudoId = pseudoId,
-            country = resolved.country,
-            region = resolved.locality.orEmpty(),
             disease = disease,
             confidence = analysis.confidence,
             species = species,
@@ -107,8 +100,6 @@ class CommunityUploader(
         if (!force && !CommunityPrefs.uploadsEnabled(context)) {
             return@withContext UploadOutcome.OptedOut
         }
-        val resolved = RegionResolver.resolveRegion(context)
-            ?: return@withContext UploadOutcome.NoRegion
         val disease = scan.displayedClassKey?.takeIf { it.isNotBlank() }
             ?: scan.diseaseName
         if (disease in HIDDEN_COMMUNITY_DISEASES) {
@@ -121,8 +112,6 @@ class CommunityUploader(
         val result = scanRepository.uploadCommunityScan(
             scanId = scanId,
             userPseudoId = pseudoId,
-            country = resolved.country,
-            region = resolved.locality.orEmpty(),
             disease = disease,
             confidence = scan.confidence,
             species = scan.speciesScientific,
@@ -145,7 +134,6 @@ class CommunityUploader(
     enum class UploadOutcome {
         Uploaded,
         OptedOut,
-        NoRegion,
         MissingScanId,
         Failed,
         HiddenDisease,
@@ -162,7 +150,7 @@ class CommunityUploader(
      * healthy-fallback / OOD gate, so the community row carries the same
      * disease the user actually saw. Using ``argmax(all_probs)`` here
      * instead would store the RAW top class (e.g. "healthy") for a scan
-     * the user was shown as a disease, so "same disease near you" could
+     * the user was shown as a disease, so "same disease" matching could
      * never match it. Fall back to the raw argmax, then to a normalised
      * display name, only when the verdict key is absent (legacy/partial
      * responses).

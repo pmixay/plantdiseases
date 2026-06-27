@@ -102,6 +102,9 @@ try:
         owner_of as community_owner_of,
     )
     from .community import (
+        popular_snapshot as community_popular_snapshot,
+    )
+    from .community import (
         prune_older_than as community_prune_older_than,
     )
     from .community import (
@@ -230,6 +233,9 @@ except ImportError:
     )
     from community import (
         owner_of as community_owner_of,
+    )
+    from community import (
+        popular_snapshot as community_popular_snapshot,
     )
     from community import (
         prune_older_than as community_prune_older_than,
@@ -2168,6 +2174,94 @@ def _normalise_locality(raw: str | None) -> str:
     return cleaned
 
 
+_GLOBAL_COUNTRY = "GLOBAL"
+
+# EN/RU display names keyed by ISO-3166 alpha-2. ``_country_display`` falls
+# back to the raw code when a country is absent here, which used to render
+# "Popular in IN" / "DE" instead of a real name — so this covers every country
+# ``popular_plants.BY_REGION`` curates plus the countries geoip most often
+# resolves to, so the Home carousel title is a localized name, not a code.
+_COUNTRY_NAMES: dict[str, tuple[str, str]] = {
+    "AR": ("Argentina", "Аргентина"),
+    "AU": ("Australia", "Австралия"),
+    "AT": ("Austria", "Австрия"),
+    "BE": ("Belgium", "Бельгия"),
+    "BR": ("Brazil", "Бразилия"),
+    "BG": ("Bulgaria", "Болгария"),
+    "CA": ("Canada", "Канада"),
+    "CN": ("China", "Китай"),
+    "HR": ("Croatia", "Хорватия"),
+    "CZ": ("Czechia", "Чехия"),
+    "DK": ("Denmark", "Дания"),
+    "FI": ("Finland", "Финляндия"),
+    "FR": ("France", "Франция"),
+    "DE": ("Germany", "Германия"),
+    "GR": ("Greece", "Греция"),
+    "HU": ("Hungary", "Венгрия"),
+    "IN": ("India", "Индия"),
+    "ID": ("Indonesia", "Индонезия"),
+    "IE": ("Ireland", "Ирландия"),
+    "IL": ("Israel", "Израиль"),
+    "IT": ("Italy", "Италия"),
+    "JP": ("Japan", "Япония"),
+    "KZ": ("Kazakhstan", "Казахстан"),
+    "MX": ("Mexico", "Мексика"),
+    "NL": ("Netherlands", "Нидерланды"),
+    "NZ": ("New Zealand", "Новая Зеландия"),
+    "NO": ("Norway", "Норвегия"),
+    "PL": ("Poland", "Польша"),
+    "PT": ("Portugal", "Португалия"),
+    "RO": ("Romania", "Румыния"),
+    "RU": ("Russia", "Россия"),
+    "RS": ("Serbia", "Сербия"),
+    "SG": ("Singapore", "Сингапур"),
+    "SK": ("Slovakia", "Словакия"),
+    "ZA": ("South Africa", "ЮАР"),
+    "KR": ("South Korea", "Южная Корея"),
+    "ES": ("Spain", "Испания"),
+    "SE": ("Sweden", "Швеция"),
+    "CH": ("Switzerland", "Швейцария"),
+    "TR": ("Turkey", "Турция"),
+    "UA": ("Ukraine", "Украина"),
+    "AE": ("United Arab Emirates", "ОАЭ"),
+    "GB": ("United Kingdom", "Великобритания"),
+    "US": ("United States", "США"),
+    "VN": ("Vietnam", "Вьетнам"),
+}
+
+
+def _country_display(country: str | None) -> dict:
+    code = (country or "").strip().upper()
+    if not code or code == _GLOBAL_COUNTRY:
+        return {
+            "country": None,
+            "country_name_en": "Worldwide",
+            "country_name_ru": "по всему миру",
+            "scope": "global",
+        }
+    en, ru = _COUNTRY_NAMES.get(code, (country or code, country or code))
+    return {
+        "country": code if len(code) == 2 else country,
+        "country_name_en": en,
+        "country_name_ru": ru,
+        "scope": "country",
+    }
+
+
+def _resolve_country_bucket(
+    request: Request,
+    explicit: str | None,
+    *,
+    write: bool = False,
+) -> str | None:
+    country = _normalise_country(explicit) if explicit else ""
+    if not country:
+        country = detect_country(request, _client_ip(request)) or ""
+    if country:
+        return country.upper() if len(country) == 2 else country
+    return _GLOBAL_COUNTRY if write else None
+
+
 class CommunityScanRequest(BaseModel):
     """Upload metadata for a single community-shared scan. The image
     bytes ride on a separate multipart field on the upload endpoint
@@ -2182,7 +2276,7 @@ class CommunityScanRequest(BaseModel):
 
     scan_id: str = Field(..., min_length=8, max_length=64)
     user_pseudo_id: str = Field(..., min_length=8, max_length=64)
-    country: str = Field(..., min_length=2, max_length=80)
+    country: str | None = Field(default=None, min_length=2, max_length=80)
     region: str = Field(default="", max_length=80)
     disease: str = Field(..., min_length=1, max_length=64)
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
@@ -2199,7 +2293,9 @@ class CommunityScanRequest(BaseModel):
 
     @field_validator("country")
     @classmethod
-    def _safe_country(cls, v: str) -> str:
+    def _safe_country(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
         cleaned = _normalise_country(v)
         if not cleaned:
             raise ValueError(
@@ -2211,7 +2307,10 @@ class CommunityScanRequest(BaseModel):
     @classmethod
     def _safe_region(cls, v: str) -> str:
         # Empty is legal — country-only writes are supported.
-        return _normalise_locality(v)
+        cleaned = _normalise_locality(v)
+        if v and not cleaned:
+            raise ValueError("region contains invalid characters")
+        return cleaned
 
     @field_validator("disease")
     @classmethod
@@ -2889,7 +2988,7 @@ async def community_scan_upload(
     request: Request,
     scan_id: str = Form(...),
     user_pseudo_id: str = Form(...),
-    country: str = Form(...),
+    country: str | None = Form(None),
     region: str = Form(""),
     disease: str = Form(...),
     confidence: float | None = Form(None),
@@ -2921,6 +3020,8 @@ async def community_scan_upload(
     except Exception as exc:  # noqa: BLE001 — pydantic raises a ValidationError subclass
         logger.info("Community scan validation failed: %s", exc)
         raise HTTPException(status_code=422, detail="Invalid scan upload") from exc
+
+    country_bucket = _resolve_country_bucket(request, payload.country, write=True)
 
     # Enforce the per-IP daily quota BEFORE reading the (up to 10 MB)
     # image body — an over-quota client should be rejected without us
@@ -2976,7 +3077,7 @@ async def community_scan_upload(
             lambda: community_record_scan(
                 scan_id=payload.scan_id,
                 user_pseudo_id=payload.user_pseudo_id,
-                country=payload.country,
+                country=country_bucket or _GLOBAL_COUNTRY,
                 region=payload.region,
                 disease=payload.disease,
                 confidence=payload.confidence,
@@ -3212,6 +3313,7 @@ async def community_scan_counts_endpoint(payload: CommunityScanCountsRequest):
 
 @api_router.get("/community/nearby")
 async def community_scan_nearby(
+    request: Request,
     country: str | None = None,
     region: str | None = None,
     disease: str | None = None,
@@ -3233,11 +3335,8 @@ async def community_scan_nearby(
     → same country (any disease). The carousel always fills up to
     ``limit`` so a thin local bucket still surfaces something.
     """
-    country_norm = _normalise_country(country)
+    country_norm = _resolve_country_bucket(request, country, write=True) or _GLOBAL_COUNTRY
     region_norm = _normalise_locality(region) if region else ""
-    if not country_norm:
-        logger.info("Community nearby missing valid country: %r", country)
-        raise HTTPException(status_code=422, detail="Invalid nearby query")
     rows = community_nearby_scans(
         country=country_norm,
         region=region_norm or None,
@@ -3264,11 +3363,14 @@ async def community_scan_nearby(
     for r in rows:
         r["opinion_count"] = counts.get(str(r.get("scan_id")), 0)
         r["scan_id"] = r.pop("public_id", None) or r["scan_id"]
-    return JSONResponse(content={"items": rows, "summary": summary})
+    meta = _country_display(country_norm)
+    summary.update(meta)
+    return JSONResponse(content={"items": rows, "summary": summary, **meta})
 
 
 @api_router.get("/community/trending")
 async def community_trending_endpoint(
+    request: Request,
     country: str | None = None,
     region: str | None = None,
     days: int = 7,
@@ -3280,7 +3382,7 @@ async def community_trending_endpoint(
     widget that must never error a fresh install with no location. The
     response widens region → country → global until a scope has enough data
     (``scope`` reports which one was served)."""
-    country_norm = _normalise_country(country) if country else ""
+    country_norm = _resolve_country_bucket(request, country, write=False) or ""
     region_norm = _normalise_locality(region) if region else ""
     data = await asyncio.get_running_loop().run_in_executor(
         None,
@@ -3291,6 +3393,16 @@ async def community_trending_endpoint(
             limit=max(1, min(int(limit), 20)),
         ),
     )
+    # ``trending()`` already computed the authoritative ``scope``/``country``/
+    # ``region`` (incl. the region→country→global widening), so only the
+    # localized *names* are missing here. Merging the whole ``_country_display``
+    # dict used to clobber that: a widened-to-global response had ``country=None``,
+    # the ``or country_norm`` fallback re-inserted the requested country, and
+    # ``_country_display`` then returned ``scope="country"`` — masking the real
+    # "global" scope (and it overwrote a ``region`` scope with ``country`` too).
+    display = _country_display(data.get("country"))
+    data.setdefault("country_name_en", display["country_name_en"])
+    data.setdefault("country_name_ru", display["country_name_ru"])
     return JSONResponse(content=data)
 
 
@@ -3614,18 +3726,44 @@ async def export_user_data(user_pseudo_id: str):
 
 # --- /api/popular: personalized, daily-cached popular-houseplants bundle ----
 # key "{country|'global'}:{locale}" -> (expiry_epoch, payload). Per-species
-# Wikipedia calls happen once per (country, locale) per day; clients get the
+# Wikipedia calls happen once per (country, locale) per TTL; clients get the
 # whole resolved bundle in one response.
-_POPULAR_TTL_S = get_int("POPULAR_BUNDLE_TTL_SECONDS", 86400)
+_POPULAR_TTL_S = get_int("POPULAR_BUNDLE_TTL_SECONDS", 7200)
 _popular_cache: "OrderedDict[str, tuple[float, dict]]" = OrderedDict()
 _popular_lock = threading.Lock()
 _POPULAR_CACHE_MAX = 64
 
 
 def _build_popular_bundle(country: str | None, region: str | None, locale: str) -> dict:
-    plants = popular_for(country, region)
+    live = community_popular_snapshot(country if country != _GLOBAL_COUNTRY else None)
+    live_species = live.get("top_species") or []
+    plants = [] if live_species else popular_for(
+        country if country != _GLOBAL_COUNTRY else None,
+        region,
+    )
     lang = "ru" if locale == "ru" else "en"
     items = []
+    if live_species:
+        for row in live_species:
+            scientific = row["species"]
+            info = fetch_species_info(scientific, lang)
+            title = (info or {}).get("title") or scientific
+            items.append({
+                "scientific": scientific,
+                "common_en": title,
+                "common_ru": title,
+                "image_url": (info or {}).get("image_url"),
+                "count": row.get("count", 0),
+                "percent": row.get("percent", 0),
+            })
+        return {
+            **_country_display(country),
+            "locale": locale,
+            "items": items,
+            "top_diseases": live.get("top_diseases") or [],
+            "total": live.get("total", 0),
+            "source": "community",
+        }
     for p in plants:
         info = fetch_species_info(p.scientific, lang)
         items.append({
@@ -3634,12 +3772,16 @@ def _build_popular_bundle(country: str | None, region: str | None, locale: str) 
             "common_ru": p.common_ru,
             # Include the item even when no image resolves — client has a placeholder.
             "image_url": (info or {}).get("image_url"),
+            "count": 0,
+            "percent": 0,
         })
     return {
-        "scope": "country" if country else "global",
-        "country": country,
+        **_country_display(country),
         "locale": locale,
         "items": items,
+        "top_diseases": [],
+        "total": 0,
+        "source": "curated",
     }
 
 
@@ -3649,11 +3791,9 @@ async def popular_endpoint(request: Request, country: str | None = None,
     """Personalized popular-houseplants bundle with lead images pre-resolved.
 
     Country comes from the client when given, else server-side IP geolocation,
-    else a global list. Cached per (country, locale) for a day so the
+    else a global list. Cached per (country, locale) for two hours so the
     per-species Wikipedia calls aren't repeated."""
-    country_norm = (_normalise_country(country) or None) if country else None
-    if not country_norm:
-        country_norm = detect_country(request, _client_ip(request))
+    country_norm = _resolve_country_bucket(request, country, write=True)
     # popular_for matches ISO codes; a full country name simply falls to global.
     region_norm = _normalise_locality(region) or None if region else None
     locale = "ru" if str(locale or "en").lower().startswith("ru") else "en"
@@ -3676,7 +3816,10 @@ async def popular_endpoint(request: Request, country: str | None = None,
             _popular_cache.move_to_end(key)
             while len(_popular_cache) > _POPULAR_CACHE_MAX:
                 _popular_cache.popitem(last=False)
-    return JSONResponse(content=bundle, headers={"cache-control": "public, max-age=86400"})
+    return JSONResponse(
+        content=bundle,
+        headers={"cache-control": f"public, max-age={_POPULAR_TTL_S}"},
+    )
 
 
 app.include_router(api_router)

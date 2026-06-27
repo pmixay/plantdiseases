@@ -67,6 +67,45 @@ def test_community_scan_upload_minimal(client, isolated_community):
     assert body["id"] > 0
 
 
+def test_community_scan_upload_country_from_geo_header(client, isolated_community):
+    db_path, _ = isolated_community
+    r = client.post(
+        "/api/community/scan",
+        headers={"cf-ipcountry": "US"},
+        data=_form(
+            scan_id="scangeo001",
+            user_pseudo_id="pseudogeo01",
+            disease="powdery_mildew",
+        ),
+    )
+    assert r.status_code == 200, r.text
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT country FROM community_scans WHERE scan_id = ?",
+            ("scangeo001",),
+        ).fetchone()
+    assert row[0] == "US"
+
+
+def test_community_scan_upload_no_geo_uses_global_bucket(client, isolated_community):
+    db_path, _ = isolated_community
+    r = client.post(
+        "/api/community/scan",
+        data=_form(
+            scan_id="scanglobal1",
+            user_pseudo_id="pseudoglobal1",
+            disease="healthy",
+        ),
+    )
+    assert r.status_code == 200, r.text
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT country FROM community_scans WHERE scan_id = ?",
+            ("scanglobal1",),
+        ).fetchone()
+    assert row[0] == "GLOBAL"
+
+
 def test_community_scan_upload_with_thumbnail(client, isolated_community):
     _, thumb_dir = isolated_community
     r = client.post(
@@ -379,6 +418,25 @@ def test_community_nearby_handles_empty_region(client, isolated_community):
     assert r.status_code == 200
     assert r.json()["items"] == []
     assert r.json()["summary"]["total"] == 0
+
+
+def test_community_nearby_country_optional_uses_geo_header(client, isolated_community):
+    client.post(
+        "/api/community/scan",
+        data=_form(
+            scan_id="scangeofeed1",
+            user_pseudo_id="pseudo-other-y",
+            country="US",
+            disease="healthy",
+        ),
+    )
+    r = client.get("/api/community/nearby", headers={"cf-ipcountry": "US"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["scope"] == "country"
+    assert body["country"] == "US"
+    assert body["summary"]["country_name_en"] == "United States"
+    assert len(body["items"]) == 1
 
 
 # ── Delete-for-user ─────────────────────────────────────────────────

@@ -1017,7 +1017,7 @@ class ScanRepository(
     suspend fun uploadCommunityScan(
         scanId: String,
         userPseudoId: String,
-        country: String,
+        country: String? = null,
         region: String = "",
         disease: String,
         confidence: Float? = null,
@@ -1035,7 +1035,7 @@ class ScanRepository(
                                 // Required fields (callers always supply these).
                                 append("scan_id", scanId)
                                 append("user_pseudo_id", userPseudoId)
-                                append("country", country)
+                                country?.takeIf { it.isNotBlank() }?.let { append("country", it) }
                                 append("disease", disease)
                                 // Optional fields — only sent when present/non-blank,
                                 // matching the old `text()` helper exactly.
@@ -1081,7 +1081,7 @@ class ScanRepository(
      *  "leaf spot on Monstera" next to "leaf spot on Ficus" and the
      *  care advice is wildly different. */
     suspend fun communityNearby(
-        country: String,
+        country: String? = null,
         region: String? = null,
         disease: String?,
         species: String? = null,
@@ -1091,7 +1091,7 @@ class ScanRepository(
         withContext(Dispatchers.IO) {
             try {
                 val response = apiClient.httpClient.get("api/community/nearby") {
-                    parameter("country", country)
+                    country?.takeIf { it.isNotBlank() }?.let { parameter("country", it) }
                     region?.takeIf { it.isNotBlank() }?.let { parameter("region", it) }
                     disease?.takeIf { it.isNotBlank() }?.let { parameter("disease", it) }
                     species?.takeIf { it.isNotBlank() }?.let { parameter("species", it) }

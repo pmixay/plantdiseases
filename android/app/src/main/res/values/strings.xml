@@ -179,20 +179,19 @@
     <string name="species_community_others">Other scans of this species</string>
     <string name="example_photos_label">What it looks like</string>
     <!-- Similar scans (community corpus) -->
-    <string name="similar_scans_title">Similar scans near you</string>
-    <string name="similar_scans_subtitle">%1$d recent scans near %2$s</string>
+    <string name="similar_scans_title">Similar scans in your country</string>
+    <string name="similar_scans_subtitle">%1$d recent scans in %2$s</string>
     <!-- Count of genuinely SIMILAR scans rendered in the strip (post
          disease/species filter) - not the regional all-disease total,
          which used to say "9 scans" above a one-item carousel. -->
     <plurals name="similar_scans_subtitle_count">
-        <item quantity="one">%1$d similar scan near %2$s</item>
-        <item quantity="other">%1$d similar scans near %2$s</item>
+        <item quantity="one">%1$d similar scan in %2$s</item>
+        <item quantity="other">%1$d similar scans in %2$s</item>
     </plurals>
-    <string name="similar_scans_subtitle_region">Recent diagnoses near %1$s</string>
-    <string name="similar_scans_subtitle_no_region">Enable approximate location to see scans near you.</string>
-    <string name="similar_scans_empty">No nearby scans yet — your scan will be the first.</string>
-    <string name="similar_scans_enable_prompt">See scans near you and contribute yours. Uses approximate location only.</string>
-    <string name="community_enable_cta">Enable community</string>
+    <string name="similar_scans_subtitle_region">Recent community diagnoses in %1$s</string>
+    <string name="similar_scans_subtitle_no_region">No country feed is available yet.</string>
+    <string name="similar_scans_empty">No community scans yet — your scan will be the first.</string>
+    <string name="similar_scans_enable_prompt">See community scans and contribute yours.</string>
     <!-- Community second opinion -->
     <string name="community_opinion_title">Get a second opinion</string>
     <string name="community_opinion_subtitle">Ask the community what they think — and weigh in on others\' scans.</string>
@@ -218,7 +217,6 @@
     <string name="result_second_opinion_waiting">Waiting for second opinions…</string>
     <string name="result_second_opinion_view">View second opinions (%1$d)</string>
     <string name="result_second_opinion_failed">Couldn\'t request a second opinion. Try again.</string>
-    <string name="result_second_opinion_no_region">Couldn\'t find your region, so this scan can\'t be shared for a second opinion.</string>
     <string name="community_opinion_replies_title">Community second opinions</string>
     <string name="community_opinion_replies_subtitle">What the community thinks about your scan.</string>
     <string name="community_opinion_locked">You\'ve already shared your second opinion on this scan.</string>
@@ -226,9 +224,9 @@
     <string name="community_wants_opinion_badge">Wants a second opinion</string>
 
     <!-- Nearby scans feed (social-style, opened from the camera screen) -->
-    <string name="nearby_scans_title">Scans near you</string>
-    <string name="nearby_scans_cd">Scans near you</string>
-    <string name="nearby_scans_loading">Finding scans near you…</string>
+    <string name="nearby_scans_title">Community scans</string>
+    <string name="nearby_scans_cd">Community scans</string>
+    <string name="nearby_scans_loading">Finding community scans…</string>
     <string name="nearby_scans_second_opinion">Second opinion</string>
     <!-- Nearby scans sort & filter overlay -->
     <string name="nearby_filter_title">Sort &amp; filter</string>
@@ -242,8 +240,11 @@
 
     <!-- Community consent + Profile toggle -->
     <string name="community_toggle_title">Share scans with the community</string>
-    <string name="community_toggle_subtitle">Region + diagnosis + 512px thumbnail. Off keeps everything on-device.</string>
-    <string name="community_profile_subtitle">Turn this on from “Similar scans near you” on a result, or the Nearby screen. Below clears anything you’ve already shared.</string>
+    <string name="community_toggle_subtitle">Country + diagnosis + 512px thumbnail. Off keeps everything on-device.</string>
+    <string name="community_profile_subtitle">Anonymous sharing is enabled after data consent. Country comes from the server, not your device location.</string>
+    <string name="community_scope_global">worldwide</string>
+    <string name="opinion_notifications_title">Receive community opinions</string>
+    <string name="opinion_notifications_subtitle">Notify me when someone responds to my second-opinion requests.</string>
     <string name="community_delete_title">Delete my contributions</string>
     <string name="opinion_notif_title">New second opinion</string>
     <string name="opinion_notif_body">Someone weighed in on your %1$s scan</string>
@@ -776,7 +777,7 @@
     <string name="home_tool_water">Watering helper</string>
     <string name="home_tool_symptom">Symptom check</string>
     <string name="home_tool_guide">Disease guide</string>
-    <string name="home_trending">Trending nearby</string>
+    <string name="home_trending">Trending in your country</string>
     <string name="home_trending_global">Worldwide</string>
     <string name="home_trending_species_chip">%1$s · %2$d</string>
     <string name="home_trending_disease_row">%1$s — %2$d scans this week</string>
@@ -785,6 +786,9 @@
     <string name="home_stats_summary">%1$d scans · %2$d healthy · %3$d plants in garden</string>
     <string name="home_popular_diseases">Popular diseases</string>
     <string name="home_popular_species">Popular houseplants</string>
+    <string name="home_popular_in_country">Popular in %1$s</string>
+    <string name="home_popular_worldwide">Popular worldwide</string>
+    <string name="home_popular_percent">%1$d%% of community scans</string>
     <string name="home_species_popular_tag">Popular</string>
     <string name="home_disease_guide">Disease guide</string>
     <string name="home_see_all">See all</string>
@@ -856,5 +860,5 @@
     <string name="tip_watering_title">Watering basics</string>
     <string name="tip_watering_body">Overwatering kills more houseplants than drought. Check the top 2–3 cm of soil with a finger — water only when it\'s dry, then water thoroughly until it drains. Use the Watering helper for a per-plant starting point and adjust by season.</string>
     <string name="tip_community_title">Community &amp; your data</string>
-    <string name="tip_community_body">Share scans to see what\'s spreading near you and get second opinions from other growers. Photos are anonymized (metadata stripped) and you can delete everything you\'ve shared from Profile at any time.</string>
+    <string name="tip_community_body">Share scans to see what\'s common in your country and get second opinions from other growers. Photos are anonymized (metadata stripped) and you can delete everything you\'ve shared from Profile at any time.</string>
 </resources>

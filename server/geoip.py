@@ -19,6 +19,8 @@ logger = logging.getLogger("plantdiseases.geoip")
 _COUNTRY_HEADERS = (
     "cf-ipcountry",
     "x-vercel-ip-country",
+    "cloudfront-viewer-country",
+    "fastly-client-country-code",
     "x-country-code",
     "x-geo-country",
 )

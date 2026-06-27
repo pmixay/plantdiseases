@@ -11,37 +11,27 @@ import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.repository.CommunityUploader
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
-import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.OpinionPrefs
-import com.plantdiseases.app.util.RegionResolver
-import com.plantdiseases.app.util.ResolvedRegion
 import com.plantdiseases.app.util.SimilarScans
 import com.plantdiseases.app.util.TelemetryIds
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 
 /**
- * Owns every community-facing surface on the result screen: the "scans near
- * you" carousel (with its opt-in/region-resolution flow), the second-opinion
+ * Owns every community-facing surface on the result screen: the similar-scans
+ * carousel (country/global scope resolved by the server), the second-opinion
  * ask/wait/view control, and the activity readout on the user's own shared
- * scan. Community upload happens here too — asking for a second opinion forces
+ * scan. Community upload happens here too: asking for a second opinion forces
  * the scan into the shared corpus.
  *
- * The activity-result launchers (location/notification permission) stay on the
- * activity; this controller drives them through [onEnableCommunity] and
- * [ensureNotificationPermission].
+ * The notification permission launcher stays on the activity; this controller
+ * drives it through [ensureNotificationPermission].
  */
 class CommunityController(
     private val activity: AppCompatActivity,
     private val binding: ActivityResultBinding,
-    // Invoked when the user taps "Enable" on the similar-scans card. The
-    // activity stashes [rerun] and requests coarse-location (+ notification)
-    // permission; whatever the outcome, it re-runs [rerun] to repopulate.
-    private val onEnableCommunity: (rerun: () -> Unit) -> Unit,
     private val ensureNotificationPermission: () -> Unit,
 ) : KoinComponent {
     private val repository: ScanRepository by inject()
@@ -71,12 +61,12 @@ class CommunityController(
             repository.getCommunityOpinions(ownScanId).onSuccess { resp ->
                 val n = resp.opinions.size
                 val v = resp.views
-                // Opening the scan's result counts as viewing its activity —
+                // Opening the scan's result counts as viewing its activity:
                 // advance the viewed baseline so the Gallery clears its
                 // "+N new opinions" badge for this scan.
                 OpinionPrefs.markViewedOpinions(activity, ownScanId, n)
                 // Show activity on the user's OWN shared scan whenever there is
-                // any — opinions and/or views. The view count is deduped per
+                // any opinions and/or views. The view count is deduped per
                 // viewer server-side.
                 if (n > 0 || v > 0) {
                     binding.btnViewOpinions.text = if (v > 0) {
@@ -87,7 +77,7 @@ class CommunityController(
                     binding.btnViewOpinions.visibility = View.VISIBLE
                     val opinionName = displayName(repository.topClassKey(scan) ?: "", isRu)
                     binding.btnViewOpinions.setOnClickListener {
-                        // Owner viewing their OWN scan — read-only.
+                        // Owner viewing their OWN scan: read-only.
                         CommunityOpinionSheet.showForOwner(
                             activity.supportFragmentManager,
                             ownScanId,
@@ -162,16 +152,7 @@ class CommunityController(
                 activity.lifecycleScope.launch {
                     // Ensure the scan is in the community corpus so others can
                     // see the ask (force = explicit consent).
-                    val outcome = communityUploader.uploadFromEntity(scan, force = true)
-                    if (outcome == CommunityUploader.UploadOutcome.NoRegion) {
-                        showAsk()
-                        Toast.makeText(
-                            activity,
-                            R.string.result_second_opinion_no_region,
-                            Toast.LENGTH_LONG,
-                        ).show()
-                        return@launch
-                    }
+                    communityUploader.uploadFromEntity(scan, force = true)
                     repository.requestSecondOpinion(scan.clientScanId, pseudoId)
                         .onSuccess {
                             showWaiting()
@@ -205,26 +186,10 @@ class CommunityController(
         val card = binding.cardSimilarScans
         val rv = binding.rvSimilarScans
         val empty = binding.tvSimilarEmpty
-        val enableBtn = binding.btnEnableSimilar
         // Default state: hidden until the network call returns.
         card.visibility = View.GONE
         rv.visibility = View.GONE
         empty.visibility = View.GONE
-        enableBtn.visibility = View.GONE
-
-        // Community is opt-in. Until the user opts in, show the card as an
-        // in-context Enable prompt instead of reading their location / hitting
-        // the network.
-        if (!CommunityPrefs.uploadsEnabled(activity)) {
-            card.visibility = View.VISIBLE
-            binding.tvSimilarSubtitle.text = activity.getString(R.string.similar_scans_enable_prompt)
-            enableBtn.visibility = View.VISIBLE
-            enableBtn.setOnClickListener {
-                CommunityPrefs.enable(activity)
-                onEnableCommunity { bindSimilarScans(scan, repository, isRu) }
-            }
-            return
-        }
 
         // Scope the carousel by the verdict the user actually SAW — the
         // server's reroute-aware displayed class — not the raw argmax.
@@ -245,44 +210,26 @@ class CommunityController(
         rv.adapter = adapter
         rv.layoutManager = LinearLayoutManager(activity, LinearLayoutManager.HORIZONTAL, false)
 
-        activity.lifecycleScope.launch {
-            // First-scan-after-permission may not have a cached region yet
-            // (the MainActivity warmer races with this code). Resolve actively
-            // so the card lights up on the same scan; Geocoder/LocationManager
-            // block, so dispatch to IO (lifecycleScope is Main by default).
-            val resolved = withContext(Dispatchers.IO) {
-                RegionResolver.cachedRegion(activity) ?: RegionResolver.resolveRegion(activity)
-            }
-            if (resolved == null) {
-                card.visibility = View.VISIBLE
-                binding.tvSimilarSubtitle.text =
-                    activity.getString(R.string.similar_scans_subtitle_no_region)
-                empty.visibility = View.GONE
-                return@launch
-            }
-            fetchAndRender(adapter, resolved, diseaseKey, scan.speciesScientific)
-        }
+        fetchAndRender(adapter, diseaseKey, scan.speciesScientific, isRu)
     }
 
     /**
-     * Fetch + render the "similar scans near you" carousel: other people's
+     * Fetch + render the similar-scans carousel: other people's
      * scans of the SAME problem on the SAME species where known. There is no
      * disease switcher — the strip is "scans similar to this one". Similarity
      * is enforced by [SimilarScans.filterSimilar].
      */
     private fun fetchAndRender(
         adapter: SimilarScansAdapter,
-        resolved: ResolvedRegion,
         disease: String,
         speciesScientific: String?,
+        isRu: Boolean,
     ) {
         val card = binding.cardSimilarScans
         val rv = binding.rvSimilarScans
         val empty = binding.tvSimilarEmpty
         activity.lifecycleScope.launch {
             repository.communityNearby(
-                country = resolved.country,
-                region = resolved.locality,
                 disease = disease,
                 // Narrow by detected scientific name so "Powdery mildew on
                 // Monstera" doesn't render Ficus thumbnails. Server falls back
@@ -292,7 +239,11 @@ class CommunityController(
                 limit = 12,
             ).onSuccess { response ->
                 card.visibility = View.VISIBLE
-                val label = resolved.displayLabel
+                val label = if (isRu) {
+                    response.countryNameRu ?: response.summary?.countryNameRu
+                } else {
+                    response.countryNameEn ?: response.summary?.countryNameEn
+                } ?: activity.getString(R.string.community_scope_global)
                 // Restrict to genuinely similar scans client-side too, so a
                 // cached response from an older deployment can't leak unrelated
                 // verdicts/species into a "similar to this" strip.

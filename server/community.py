@@ -865,6 +865,53 @@ def region_summary(
     }
 
 
+def popular_snapshot(country: str | None, *, limit: int = 8) -> dict:
+    """Live popular species + diseases for one country bucket."""
+    init_db()
+    country_clean = (country or "").strip()
+    limit = max(1, min(int(limit), 20))
+    where = ""
+    params: tuple = ()
+    if country_clean:
+        where = " AND country = ?"
+        params = (country_clean,)
+    hidden_clause = _hidden_clause()
+    with _connect() as conn:
+        total = int(conn.execute(
+            "SELECT COUNT(*) FROM community_scans WHERE 1=1"
+            + where + hidden_clause,
+            (*params, *_HIDDEN_COMMUNITY_DISEASES),
+        ).fetchone()[0])
+        species_rows = conn.execute(
+            "SELECT MAX(species) AS sp, COUNT(*) AS n FROM community_scans "
+            "WHERE species_lower IS NOT NULL AND species_lower != ''"
+            + where + hidden_clause
+            + " GROUP BY species_lower ORDER BY n DESC LIMIT ?",
+            (*params, *_HIDDEN_COMMUNITY_DISEASES, limit),
+        ).fetchall()
+        disease_rows = conn.execute(
+            "SELECT disease, COUNT(*) AS n FROM community_scans "
+            "WHERE 1=1" + where + hidden_clause
+            + " GROUP BY disease ORDER BY n DESC LIMIT ?",
+            (*params, *_HIDDEN_COMMUNITY_DISEASES, limit),
+        ).fetchall()
+
+    def pct(n: int) -> int:
+        return int(round((n / total) * 100)) if total > 0 else 0
+
+    return {
+        "total": total,
+        "top_species": [
+            {"species": str(r[0]), "count": int(r[1]), "percent": pct(int(r[1]))}
+            for r in species_rows
+        ],
+        "top_diseases": [
+            {"disease": str(r[0]), "count": int(r[1]), "percent": pct(int(r[1]))}
+            for r in disease_rows
+        ],
+    }
+
+
 # A scope must have at least this many scans in the window to be served;
 # thinner scopes widen (region → country → global) so the Home widget is
 # useful from day one in low-traffic regions.
@@ -929,10 +976,20 @@ def trending(
                 "window_days": max(1, int(days)),
                 "total": total,
                 "top_species": [
-                    {"species": str(r[0]), "count": int(r[1])} for r in species_rows
+                    {
+                        "species": str(r[0]),
+                        "count": int(r[1]),
+                        "percent": int(round((int(r[1]) / total) * 100)) if total else 0,
+                    }
+                    for r in species_rows
                 ],
                 "top_diseases": [
-                    {"disease": str(r[0]), "count": int(r[1])} for r in disease_rows
+                    {
+                        "disease": str(r[0]),
+                        "count": int(r[1]),
+                        "percent": int(round((int(r[1]) / total) * 100)) if total else 0,
+                    }
+                    for r in disease_rows
                 ],
             }
     # unreachable (the global scope always returns) — defensive default
@@ -1128,11 +1185,23 @@ __all__ = [
     "get_user_data",
     "init_db",
     "nearby_scans",
+    "opinion_counts",
+    "opinion_counts_for_user",
+    "opinions_by_author",
+    "opinions_for",
+    "owner_of",
+    "popular_snapshot",
     "prune_older_than",
     "public_scan_token",
+    "record_opinion",
     "record_scan",
+    "record_view",
     "region_summary",
     "resolve_scan_token",
+    "scan_counts",
     "scan_exists",
+    "scans_by_species",
+    "set_wants_opinion",
     "stats_snapshot",
+    "trending",
 ]

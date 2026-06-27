@@ -1,8 +1,15 @@
 package com.plantdiseases.app.ui.home
 
 import android.content.Intent
+import android.graphics.Canvas
+import android.graphics.LinearGradient
+import android.graphics.Paint
+import android.graphics.Shader
 import android.os.Bundle
 import android.provider.Settings
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.ReplacementSpan
 import android.view.LayoutInflater
 import android.view.Menu
 import android.view.MenuInflater
@@ -34,7 +41,6 @@ import com.plantdiseases.app.ui.symptom.SymptomCheckerActivity
 import com.plantdiseases.app.util.DiseaseCatalog
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.Haptics
-import com.plantdiseases.app.util.RegionResolver
 import com.plantdiseases.app.util.SpeciesCatalog
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
@@ -44,7 +50,7 @@ import java.util.Locale
 /**
  * Home — a visual discovery feed (start destination). Two hero actions, a
  * compact tools row, then the carousels that are the centerpiece: trending
- * species nearby (Wikipedia photos), popular diseases, and the disease
+ * community species (Wikipedia photos), popular diseases, and the disease
  * guide. A slim Stats & Tips teaser sits at the bottom. Tapping a card opens
  * a dedicated detail screen (SpeciesDetailActivity / GuideDetailActivity).
  */
@@ -200,7 +206,7 @@ class HomeFragment : Fragment() {
         sheet.show()
     }
 
-    /** Add the "scans near you" community action to the shared toolbar, scoped
+    /** Add the community scans action to the shared toolbar, scoped
      *  to this fragment's RESUMED state so the people icon only shows in the top
      *  bar while the Home tab is open. */
     private fun setupCommunityMenu() {
@@ -253,19 +259,14 @@ class HomeFragment : Fragment() {
 
     // ── Trending carousels ──────────────────────────────────────────
     private fun loadTrending() {
-        val appContext = requireContext().applicationContext
         viewLifecycleOwner.lifecycleScope.launch {
-            val region = runCatching { RegionResolver.resolveRegion(appContext) }.getOrNull()
             // Trending is a "moving" feed — cache it 24h (ResponseCache policy) so
             // every Home onResume doesn't re-hit the network for the same region.
-            val cacheKey = "trending:v1:${region?.country.orEmpty()}|${region?.locality.orEmpty()}"
+            val cacheKey = "trending:v2:server"
             val trending = com.plantdiseases.app.util.ResponseCache
                 .get(cacheKey, TrendingResponse::class.java)
                 ?: runCatching {
-                    apiClient.communityTrending(
-                        country = region?.country,
-                        region = region?.locality,
-                    )
+                    apiClient.communityTrending()
                 }.getOrNull()?.also {
                     com.plantdiseases.app.util.ResponseCache.put(
                         cacheKey,
@@ -273,11 +274,11 @@ class HomeFragment : Fragment() {
                         com.plantdiseases.app.util.ResponseCache.TTL_TRENDING_MS,
                     )
                 }
-            // When trending has no nearby species, fall back to the personalized
+            // When trending has no community species, fall back to the personalized
             // popular bundle (images already resolved server-side). Fetched here
             // so renderSpecies stays synchronous.
             val popular = if (trending == null || trending.topSpecies.isEmpty()) {
-                loadPopularBundle(region)
+                loadPopularBundle()
             } else {
                 null
             }
@@ -302,15 +303,12 @@ class HomeFragment : Fragment() {
      */
     /** Fetch the personalized popular bundle, cached 24h. Null on any failure
      *  so the caller falls back to the bundled SpeciesCatalog list. */
-    private suspend fun loadPopularBundle(
-        region: com.plantdiseases.app.util.ResolvedRegion?,
-    ): PopularResponse? {
-        val cacheKey = "popular:v1:${region?.country.orEmpty()}|" +
-            "${region?.locality.orEmpty()}|$locale"
+    private suspend fun loadPopularBundle(): PopularResponse? {
+        val cacheKey = "popular:v2:server|$locale"
         return com.plantdiseases.app.util.ResponseCache
             .get(cacheKey, PopularResponse::class.java)
             ?: runCatching {
-                apiClient.popular(region?.country, region?.locality, locale)
+                apiClient.popular(locale = locale)
             }.getOrNull()?.takeIf { it.items.isNotEmpty() }?.also {
                 com.plantdiseases.app.util.ResponseCache.put(
                     cacheKey,
@@ -344,7 +342,7 @@ class HomeFragment : Fragment() {
                 },
             )
         } else {
-            b.tvSpeciesTitle.setText(R.string.home_popular_species)
+            setPopularTitle(b, popular)
             b.tvTrendingScope.visibility = View.GONE
             val tag = getString(R.string.home_species_popular_tag)
             val items = if (popular != null && popular.items.isNotEmpty()) {
@@ -355,7 +353,15 @@ class HomeFragment : Fragment() {
                     SpeciesCarouselAdapter.Item(
                         scientific = p.scientific,
                         title = if (isRu) p.commonRu else p.commonEn,
-                        subtitle = tag,
+                        subtitle = when {
+                            p.percent > 0 -> getString(R.string.home_popular_percent, p.percent)
+                            p.count > 0 -> resources.getQuantityString(
+                                R.plurals.home_species_count,
+                                p.count,
+                                p.count,
+                            )
+                            else -> tag
+                        },
                     )
                 }
             } else {
@@ -370,6 +376,48 @@ class HomeFragment : Fragment() {
             }
             speciesAdapter.submit(items)
         }
+    }
+
+    private fun setPopularTitle(b: FragmentHomeBinding, popular: PopularResponse?) {
+        val country = if (isRu) popular?.countryNameRu else popular?.countryNameEn
+        val isCountry = popular?.scope == "country" && !country.isNullOrBlank()
+        val title = if (isCountry) {
+            getString(R.string.home_popular_in_country, country)
+        } else {
+            getString(R.string.home_popular_worldwide)
+        }
+        // Accent range: the country name for a country scope, else the
+        // locality word(s) ("worldwide" / "во всем мире") — everything after
+        // the leading "Popular" / "Популярно". The worldwide title can't be
+        // matched against the server's country_name string verbatim (case /
+        // wording differ across locales), so we slice off the leading word
+        // instead and highlight the rest the same way the country name is.
+        val start: Int
+        val end: Int
+        if (isCountry) {
+            val s = title.indexOf(country!!)
+            start = if (s >= 0) s else 0
+            end = if (s >= 0) s + country.length else title.length
+        } else {
+            val sp = title.indexOf(' ')
+            start = if (sp in 0 until title.lastIndex) sp + 1 else 0
+            end = title.length
+        }
+        val spannable = SpannableString(title)
+        if (end > start) {
+            val gradient = intArrayOf(
+                ContextCompat.getColor(requireContext(), R.color.gradient_start),
+                ContextCompat.getColor(requireContext(), R.color.gradient_mid),
+                ContextCompat.getColor(requireContext(), R.color.gradient_end),
+            )
+            spannable.setSpan(
+                GradientTextSpan(gradient),
+                start,
+                end,
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+            )
+        }
+        b.tvSpeciesTitle.text = spannable
     }
 
     private fun renderPopular(b: FragmentHomeBinding, t: TrendingResponse) {
@@ -397,10 +445,16 @@ class HomeFragment : Fragment() {
         popularAdapter.submit(items)
     }
 
-    private fun scopeLabel(t: TrendingResponse): String = when (t.scope) {
-        "region" -> listOfNotNull(t.region, t.country).joinToString(", ")
-        "country" -> t.country ?: getString(R.string.home_trending_global)
-        else -> getString(R.string.home_trending_global)
+    private fun scopeLabel(t: TrendingResponse): String {
+        // Prefer the server's localized country NAME (e.g. "Spain") over the
+        // raw ISO bucket (e.g. "ES"); the server attaches it alongside the
+        // code, exactly as the "Popular in <country>" title uses it.
+        val country = (if (isRu) t.countryNameRu else t.countryNameEn)?.takeIf { it.isNotBlank() } ?: t.country
+        return when (t.scope) {
+            "region" -> listOfNotNull(t.region, country).joinToString(", ")
+            "country" -> country ?: getString(R.string.home_trending_global)
+            else -> getString(R.string.home_trending_global)
+        }
     }
 
     /** Resolve + cache a Wikipedia lead photo for a species, then load it
@@ -422,5 +476,49 @@ class HomeFragment : Fragment() {
                     .placeholder(R.drawable.ic_plant_placeholder).into(target)
             }
         }
+    }
+}
+
+/**
+ * Paints its character range with a horizontal multi-stop gradient (used for
+ * the green accent word in the Home "Popular in <country>" / "Popular
+ * worldwide" title). A [ReplacementSpan] is used rather than a plain shader on
+ * the whole TextView so the gradient is aligned to — and clamped within — the
+ * exact accented substring, regardless of where it sits on the line.
+ */
+private class GradientTextSpan(private val colors: IntArray) : ReplacementSpan() {
+    override fun getSize(
+        paint: Paint,
+        text: CharSequence,
+        start: Int,
+        end: Int,
+        fm: Paint.FontMetricsInt?,
+    ): Int {
+        if (fm != null) {
+            val pfm = paint.fontMetricsInt
+            fm.ascent = pfm.ascent
+            fm.descent = pfm.descent
+            fm.top = pfm.top
+            fm.bottom = pfm.bottom
+        }
+        return kotlin.math.ceil(paint.measureText(text, start, end).toDouble()).toInt()
+    }
+
+    override fun draw(
+        canvas: Canvas,
+        text: CharSequence,
+        start: Int,
+        end: Int,
+        x: Float,
+        top: Int,
+        y: Int,
+        bottom: Int,
+        paint: Paint,
+    ) {
+        val width = paint.measureText(text, start, end)
+        val previous = paint.shader
+        paint.shader = LinearGradient(x, 0f, x + width, 0f, colors, null, Shader.TileMode.CLAMP)
+        canvas.drawText(text, start, end, x, y.toFloat(), paint)
+        paint.shader = previous
     }
 }

@@ -185,6 +185,10 @@ detekt {
     ignoreFailures = false
 }
 
+tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
+    jvmTarget = "17"
+}
+
 ktlint {
     version.set("1.3.1")
     android.set(true)

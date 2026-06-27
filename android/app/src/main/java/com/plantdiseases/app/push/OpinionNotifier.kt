@@ -15,6 +15,7 @@ import com.plantdiseases.app.R
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.ui.result.ResultActivity
 import com.plantdiseases.app.util.DiseaseLabels
+import com.plantdiseases.app.util.OpinionPrefs
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import java.util.Locale
@@ -47,6 +48,7 @@ object OpinionNotifier : KoinComponent {
         note: String? = null,
     ) {
         val ctx = context.applicationContext
+        if (!OpinionPrefs.notificationsEnabled(ctx)) return
         // On Android 13+ notify() silently no-ops without POST_NOTIFICATIONS —
         // bail before the DB lookup + notification build (matches the reminder
         // worker, which also guards on the runtime permission).

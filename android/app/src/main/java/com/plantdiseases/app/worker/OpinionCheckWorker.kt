@@ -29,6 +29,7 @@ class OpinionCheckWorker(
 
     override suspend fun doWork(): Result {
         val ctx = applicationContext
+        if (!OpinionPrefs.notificationsEnabled(ctx)) return Result.success()
         val pseudoId = TelemetryIds.userPseudoId(ctx)
 
         val resp = scanRepository.fetchMyScanOpinions(pseudoId).getOrElse {

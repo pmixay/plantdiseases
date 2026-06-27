@@ -38,8 +38,8 @@ object ResponseCache {
     val TTL_CARE_PLAN_MS: Long = TimeUnit.DAYS.toMillis(7)
     val TTL_TRENDING_MS: Long = TimeUnit.HOURS.toMillis(1)
 
-    // Popular bundle is refreshed once a day server-side, so cache it a day.
-    val TTL_POPULAR_MS: Long = TimeUnit.DAYS.toMillis(1)
+    // Popular bundle refreshes every two hours server-side.
+    val TTL_POPULAR_MS: Long = TimeUnit.HOURS.toMillis(2)
 
     /** On-disk envelope: the cached payload plus when it was stored and how
      *  long it stays fresh. */

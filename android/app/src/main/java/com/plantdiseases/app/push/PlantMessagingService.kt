@@ -4,7 +4,7 @@ import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.data.repository.ScanRepository
-import com.plantdiseases.app.util.CommunityPrefs
+import com.plantdiseases.app.util.OpinionPrefs
 import com.plantdiseases.app.util.TelemetryIds
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -25,8 +25,7 @@ class PlantMessagingService : FirebaseMessagingService() {
 
     override fun onNewToken(token: String) {
         val ctx = applicationContext
-        // Only report a token once the user has opted into community.
-        if (!CommunityPrefs.uploadsEnabled(ctx)) return
+        if (!OpinionPrefs.notificationsEnabled(ctx)) return
         // The Application is still needed for appScope (an app-lifecycle scope).
         val app = ctx as PlantDiseasesApp
         app.appScope.launch {
@@ -39,6 +38,7 @@ class PlantMessagingService : FirebaseMessagingService() {
     override fun onMessageReceived(message: RemoteMessage) {
         val data = message.data
         if (data["type"] != "opinion") return
+        if (!OpinionPrefs.notificationsEnabled(applicationContext)) return
         val scanId = data["scan_id"].orEmpty()
         if (scanId.isBlank()) return
         val disease = data["disease"].orEmpty()

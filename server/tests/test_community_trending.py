@@ -41,8 +41,16 @@ def test_trending_region_scope_when_enough_data(comdb):
         _seed("Germany", "Berlin", disease="pests", species="Ficus elastica")
     out = community.trending("Germany", "Berlin")
     assert out["scope"] == "region" and out["total"] == 3
-    assert out["top_species"][0] == {"species": "Ficus elastica", "count": 3}
-    assert out["top_diseases"][0] == {"disease": "pests", "count": 3}
+    assert out["top_species"][0] == {
+        "species": "Ficus elastica",
+        "count": 3,
+        "percent": 100,
+    }
+    assert out["top_diseases"][0] == {
+        "disease": "pests",
+        "count": 3,
+        "percent": 100,
+    }
 
 
 def test_trending_widens_region_to_country_to_global(comdb):
@@ -91,3 +99,36 @@ def test_trending_endpoint_optional_country(client, comdb):
     # invalid country degrades to global instead of 422 (discovery widget)
     r = client.get("/api/community/trending?country=%3Cscript%3E")
     assert r.status_code == 200 and r.json()["scope"] == "global"
+
+
+def test_trending_endpoint_keeps_global_scope_when_widening(client, comdb):
+    # The requested country (Germany) has data, but fewer than the
+    # _TRENDING_MIN_SCANS threshold, so trending() widens to global. The
+    # endpoint must NOT re-insert the requested country and overwrite the
+    # scope back to "country" — that masked the real "global" verdict.
+    for _ in range(3):
+        _seed("France", disease="powdery_mildew", species="Rosa")
+    _seed("Germany", disease="leaf_spot", species="Ficus")  # 1 scan → widens
+    r = client.get("/api/community/trending?country=Germany")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["scope"] == "global"
+    assert body["country"] is None
+    # Localized names are still attached (for the global label), but the
+    # scope/country stay authoritative.
+    assert body["country_name_en"] == "Worldwide"
+
+
+def test_trending_endpoint_localizes_known_country(client, comdb):
+    # A known ISO code with enough data is served as "country" scope and
+    # carries a real localized name (not the raw code). Production stores the
+    # bucket as the geoip-resolved ISO code, so the corpus is seeded as "ES"
+    # too — the read path resolves ?country=ES to the same "ES" bucket.
+    for _ in range(3):
+        _seed("ES", disease="powdery_mildew", species="Rosa")
+    r = client.get("/api/community/trending?country=ES")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["scope"] == "country" and body["country"] == "ES"
+    assert body["country_name_en"] == "Spain"
+    assert body["country_name_ru"] == "Испания"

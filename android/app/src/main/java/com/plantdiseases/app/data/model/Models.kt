@@ -290,6 +290,10 @@ data class SpeciesMatch(
 data class CommunityScansResponse(
     @SerializedName("items") @SerialName("items") val items: List<CommunityScanItem> = emptyList(),
     @SerializedName("summary") @SerialName("summary") val summary: CommunityRegionSummary? = null,
+    @SerializedName("scope") @SerialName("scope") val scope: String? = null,
+    @SerializedName("country") @SerialName("country") val country: String? = null,
+    @SerializedName("country_name_en") @SerialName("country_name_en") val countryNameEn: String? = null,
+    @SerializedName("country_name_ru") @SerialName("country_name_ru") val countryNameRu: String? = null,
 )
 
 @Serializable
@@ -320,6 +324,9 @@ data class CommunityScanItem(
 @Serializable
 data class CommunityRegionSummary(
     @SerializedName("country") @SerialName("country") val country: String = "",
+    @SerializedName("country_name_en") @SerialName("country_name_en") val countryNameEn: String? = null,
+    @SerializedName("country_name_ru") @SerialName("country_name_ru") val countryNameRu: String? = null,
+    @SerializedName("scope") @SerialName("scope") val scope: String? = null,
     @SerializedName("region") @SerialName("region") val region: String? = null,
     @SerializedName("total") @SerialName("total") val total: Int = 0,
     @SerializedName("last_7d") @SerialName("last_7d") val last7d: Int = 0,
@@ -457,6 +464,8 @@ enum class GuideCategory {
 data class TrendingResponse(
     @SerializedName("scope") @SerialName("scope") val scope: String = "global",
     @SerializedName("country") @SerialName("country") val country: String? = null,
+    @SerializedName("country_name_en") @SerialName("country_name_en") val countryNameEn: String? = null,
+    @SerializedName("country_name_ru") @SerialName("country_name_ru") val countryNameRu: String? = null,
     @SerializedName("region") @SerialName("region") val region: String? = null,
     @SerializedName("window_days") @SerialName("window_days") val windowDays: Int = 7,
     @SerializedName("total") @SerialName("total") val total: Int = 0,
@@ -468,12 +477,14 @@ data class TrendingResponse(
 data class TrendingSpecies(
     @SerializedName("species") @SerialName("species") val species: String = "",
     @SerializedName("count") @SerialName("count") val count: Int = 0,
+    @SerializedName("percent") @SerialName("percent") val percent: Int = 0,
 )
 
 @Serializable
 data class TrendingDisease(
     @SerializedName("disease") @SerialName("disease") val disease: String = "",
     @SerializedName("count") @SerialName("count") val count: Int = 0,
+    @SerializedName("percent") @SerialName("percent") val percent: Int = 0,
 )
 
 /** Scan history item for display */
@@ -617,8 +628,13 @@ data class SpeciesInfoResponse(
 data class PopularResponse(
     @SerializedName("scope") @SerialName("scope") val scope: String? = null,
     @SerializedName("country") @SerialName("country") val country: String? = null,
+    @SerializedName("country_name_en") @SerialName("country_name_en") val countryNameEn: String? = null,
+    @SerializedName("country_name_ru") @SerialName("country_name_ru") val countryNameRu: String? = null,
     @SerializedName("locale") @SerialName("locale") val locale: String? = null,
     @SerializedName("items") @SerialName("items") val items: List<PopularItem> = emptyList(),
+    @SerializedName("top_diseases") @SerialName("top_diseases") val topDiseases: List<TrendingDisease> = emptyList(),
+    @SerializedName("total") @SerialName("total") val total: Int = 0,
+    @SerializedName("source") @SerialName("source") val source: String? = null,
 )
 
 @Serializable
@@ -627,6 +643,8 @@ data class PopularItem(
     @SerializedName("common_en") @SerialName("common_en") val commonEn: String = "",
     @SerializedName("common_ru") @SerialName("common_ru") val commonRu: String = "",
     @SerializedName("image_url") @SerialName("image_url") val imageUrl: String? = null,
+    @SerializedName("count") @SerialName("count") val count: Int = 0,
+    @SerializedName("percent") @SerialName("percent") val percent: Int = 0,
 )
 
 /**
@@ -799,8 +817,11 @@ object WateringDaysSerializer : KSerializer<Any?> {
         return when (val element = jsonDecoder.decodeJsonElement()) {
             is JsonNull -> null
             is JsonPrimitive ->
-                if (element.isString) element.content
-                else element.intOrNull ?: element.doubleOrNull ?: element.content
+                if (element.isString) {
+                    element.content
+                } else {
+                    element.intOrNull ?: element.doubleOrNull ?: element.content
+                }
             else -> null
         }
     }

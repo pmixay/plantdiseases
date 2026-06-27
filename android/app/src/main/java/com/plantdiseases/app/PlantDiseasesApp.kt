@@ -11,6 +11,7 @@ import com.canhub.cropper.CropImageActivity
 import com.plantdiseases.app.data.repository.CommunityUploader
 import com.plantdiseases.app.di.appModule
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.OpinionPrefs
 import com.plantdiseases.app.util.ThemeHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -165,6 +166,7 @@ class PlantDiseasesApp : Application() {
      *  KEEP) so installs created under the old 6h schedule adopt the new one.
      *  Quiet: notifies only on a genuinely new opinion — see OpinionCheckWorker. */
     fun scheduleOpinionChecks() {
+        if (!OpinionPrefs.notificationsEnabled(this)) return
         val request = androidx.work.PeriodicWorkRequestBuilder<
             com.plantdiseases.app.worker.OpinionCheckWorker
             >(
@@ -192,6 +194,7 @@ class PlantDiseasesApp : Application() {
      *  waiting for the next periodic tick. Expedited, degrading to a normal job
      *  if the expedited quota is spent. */
     fun checkOpinionsNow() {
+        if (!OpinionPrefs.notificationsEnabled(this)) return
         val request = androidx.work.OneTimeWorkRequestBuilder<
             com.plantdiseases.app.worker.OpinionCheckWorker
             >()
