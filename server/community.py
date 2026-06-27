@@ -61,10 +61,11 @@ CREATE TABLE IF NOT EXISTS community_scans (
     scan_id         TEXT    NOT NULL,
     user_pseudo_id  TEXT    NOT NULL,
     country         TEXT,
-    -- ``region`` is the "nearby" grouping key: the MaxMind subdivision
-    -- (state / oblast / region). ``city`` is the finer display label, and
-    -- lat/lon are the MaxMind city centroid (coarse, never device GPS) for
-    -- the scans heat-map. All three are server-derived from the uploader IP.
+    -- ``region`` holds the city (the display locality); ``city`` mirrors it.
+    -- lat/lon are the device's COARSE location rounded to ~1 km (never precise
+    -- GPS) for the 25–30 km "nearby" radius + the scans heat-map. All are
+    -- client-supplied by the opted-in uploader. ``nickname`` is the author's
+    -- generated plant-vibe handle shown in the feed.
     region          TEXT    NOT NULL,
     city            TEXT,
     lat             REAL,
@@ -76,6 +77,7 @@ CREATE TABLE IF NOT EXISTS community_scans (
     species_score   REAL,
     thumb_path      TEXT,
     locale          TEXT,
+    nickname        TEXT,
     client_ip_hash  TEXT,
     wants_opinion   INTEGER NOT NULL DEFAULT 0,
     public_id       TEXT,
@@ -100,6 +102,7 @@ CREATE TABLE IF NOT EXISTS community_opinions (
     author_pseudo_id  TEXT    NOT NULL,
     suggested_disease TEXT    NOT NULL,
     note              TEXT,
+    nickname          TEXT,
     client_ip_hash    TEXT,
     created_at        INTEGER NOT NULL
 );
@@ -187,12 +190,12 @@ _HIDDEN_COMMUNITY_DISEASES = ("not_a_plant",)
 _FEED_COLUMNS = (
     "scan_id, country, region, city, lat, lon, disease, confidence, "
     "species, species_score, thumb_path, locale, created_at, wants_opinion, "
-    "user_pseudo_id"
+    "user_pseudo_id, nickname"
 )
 
 # "Nearby" radius for the coords-based feed + popular scope (km). The client
 # resolves coarse location; we group within this radius of it.
-NEARBY_RADIUS_KM = 25.0
+NEARBY_RADIUS_KM = 30.0
 
 
 def _bbox(lat: float, lon: float, radius_km: float) -> tuple[float, float, float, float]:
@@ -272,6 +275,9 @@ def init_db() -> None:
             _add_column_if_missing(conn, "community_scans", "lat", "REAL")
             _add_column_if_missing(conn, "community_scans", "lon", "REAL")
             conn.execute("CREATE INDEX IF NOT EXISTS ix_community_geo ON community_scans(lat, lon)")
+            # Author's generated plant-vibe handle (community display name).
+            _add_column_if_missing(conn, "community_scans", "nickname", "TEXT")
+            _add_column_if_missing(conn, "community_opinions", "nickname", "TEXT")
             # "Wants a second opinion" flag — set after upload by the
             # scanner via /api/community/request-opinion. Older rows
             # default to 0 (no request).
@@ -363,13 +369,14 @@ def record_scan(
     species_score: float | None = None,
     image_bytes: bytes | None = None,
     locale: str | None = None,
+    nickname: str | None = None,
     client_ip: str | None = None,
 ) -> int:
     """Append a community-shared scan row. Returns the new row id.
 
-    ``region`` is the subdivision (nearby key); ``city`` + ``lat``/``lon`` are
-    the finer display label and the MaxMind city centroid — all server-derived
-    from the uploader IP.
+    ``region``/``city`` are the display locality and ``lat``/``lon`` the
+    rounded coarse coords — all client-supplied. ``nickname`` is the author's
+    generated plant-vibe handle shown in the feed.
     """
     init_db()
     now = int(time.time())
@@ -405,8 +412,8 @@ def record_scan(
             "  scan_id, user_pseudo_id, country, region, city, lat, lon, "
             "  disease, confidence, "
             "  species, species_lower, species_score, thumb_path, locale, "
-            "  client_ip_hash, wants_opinion, public_id, created_at"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "  nickname, client_ip_hash, wants_opinion, public_id, created_at"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 scan_id,
                 user_pseudo_id,
@@ -422,6 +429,7 @@ def record_scan(
                 species_score,
                 thumb_path,
                 locale,
+                (nickname or None),
                 ip_hash,
                 wants_opinion,
                 public_scan_token(scan_id),
@@ -473,6 +481,7 @@ def record_opinion(
     author_pseudo_id: str,
     suggested_disease: str,
     note: str | None = None,
+    nickname: str | None = None,
     client_ip: str | None = None,
 ) -> int:
     """Append one community 'second opinion' on a shared scan. Returns row id."""
@@ -480,6 +489,7 @@ def record_opinion(
     now = int(time.time())
     ip_hash = hash_client_ip(client_ip)
     note_clean = (note or "").strip()[:500] or None
+    nick_clean = (nickname or "").strip()[:48] or None
     with _write_lock, _connect() as conn:
         # One opinion per author per scan. If this install already weighed in,
         # keep the original (the client locks its input too) and return that
@@ -494,9 +504,10 @@ def record_opinion(
         cur = conn.execute(
             "INSERT INTO community_opinions ("
             "  scan_id, author_pseudo_id, suggested_disease, note, "
-            "  client_ip_hash, created_at"
-            ") VALUES (?, ?, ?, ?, ?, ?)",
-            (scan_id, author_pseudo_id, suggested_disease, note_clean, ip_hash, now),
+            "  nickname, client_ip_hash, created_at"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (scan_id, author_pseudo_id, suggested_disease, note_clean,
+             nick_clean, ip_hash, now),
         )
         return int(cur.lastrowid or 0)
 
@@ -513,7 +524,7 @@ def opinions_for(scan_id: str, *, limit: int = 50) -> dict:
     limit = max(1, min(int(limit), 100))
     with _connect() as conn:
         rows = conn.execute(
-            "SELECT suggested_disease, note, created_at "
+            "SELECT suggested_disease, note, created_at, nickname "
             "FROM community_opinions WHERE scan_id = ? "
             "ORDER BY created_at DESC LIMIT ?",
             (scan_id, limit),
@@ -525,7 +536,8 @@ def opinions_for(scan_id: str, *, limit: int = 50) -> dict:
             (scan_id,),
         ).fetchall()
     opinions = [
-        {"suggested_disease": str(r[0]), "note": r[1] or "", "created_at": int(r[2])}
+        {"suggested_disease": str(r[0]), "note": r[1] or "",
+         "created_at": int(r[2]), "nickname": (r[3] if len(r) > 3 else None) or None}
         for r in rows
     ]
     consensus = [{"disease": str(t[0]), "count": int(t[1])} for t in tally]
@@ -1116,6 +1128,9 @@ def _row_to_dict(row: tuple) -> dict:
         # One-way, stable per author so the client can show a
         # consistent (but anonymous) avatar — never the raw pseudo id.
         "author_token": _author_token(row[14]) if len(row) > 14 else None,
+        # Author's generated plant-vibe handle (community display name); the
+        # client also derives the avatar monogram/colour from it on-device.
+        "nickname": (row[15] if len(row) > 15 else None) or None,
     }
 
 

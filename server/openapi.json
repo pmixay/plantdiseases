@@ -436,7 +436,7 @@
     "/api/community/scan": {
       "post": {
         "summary": "Community Scan Upload",
-        "description": "Append one community-shared scan to the corpus.\n\nLocation is supplied by the opted-in client from its coarse location\n(``country`` + ``region`` city + rounded ``lat``/``lon``) — there is no\nserver-side IP geolocation. ``country``/``region`` drive display + the\ncountry scope; the coords drive the 25 km \"nearby\" radius and the\n(future) heat-map. The image is optional.",
+        "description": "Append one community-shared scan to the corpus.\n\nLocation is supplied by the opted-in client from its coarse location\n(``country`` + ``region`` city + rounded ``lat``/``lon``) — there is no\nserver-side IP geolocation. ``nickname`` is the author's generated handle.\nThe image is optional.",
         "operationId": "community_scan_upload_api_community_scan_post",
         "requestBody": {
           "content": {
@@ -1532,6 +1532,17 @@
             ],
             "title": "Locale"
           },
+          "nickname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nickname"
+          },
           "image": {
             "anyOf": [
               {
@@ -1708,6 +1719,18 @@
               }
             ],
             "title": "Note"
+          },
+          "nickname": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nickname"
           }
         },
         "type": "object",

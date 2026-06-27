@@ -512,6 +512,20 @@ def test_community_nearby_localizes_item_country(client, isolated_community):
     assert item["country_name_ru"] == "Польша"
 
 
+def test_community_scan_nickname_round_trips(client, isolated_community):
+    """The author's generated plant-vibe handle rides along on the upload and
+    comes back on the feed row (incl. a Cyrillic handle)."""
+    client.post("/api/community/scan", data=_form(
+        scan_id="nicktest0001", user_pseudo_id="pseudo-nick-a",
+        country="PL", region="Warsaw", lat=52.23, lon=21.01,
+        disease="leaf_spot", nickname="Томатный Король 42"))
+    item = client.get(
+        "/api/community/nearby",
+        params={"country": "PL", "scope": "country", "user_pseudo_id": "pseudo-viewer"},
+    ).json()["items"][0]
+    assert item["nickname"] == "Томатный Король 42"
+
+
 # ── Delete-for-user ─────────────────────────────────────────────────
 
 

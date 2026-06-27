@@ -2306,6 +2306,15 @@ def _client_location(
     return {"country": c or None, "city": city or None, "lat": la, "lon": lo}
 
 
+def _normalise_nickname(raw: str | None) -> str | None:
+    """Sanitise a community nickname: drop non-printable chars (keeps unicode
+    letters so Russian handles survive), trim, cap at 48. Empty → None."""
+    if not raw:
+        return None
+    cleaned = "".join(ch for ch in raw if ch.isprintable()).strip()[:48]
+    return cleaned or None
+
+
 class CommunityScanRequest(BaseModel):
     """Upload metadata for a single community-shared scan. The image
     bytes ride on a separate multipart field on the upload endpoint
@@ -2327,6 +2336,12 @@ class CommunityScanRequest(BaseModel):
     species: str | None = Field(default=None, max_length=128)
     species_score: float | None = Field(default=None, ge=0.0, le=1.0)
     locale: str | None = Field(default=None, max_length=8)
+    nickname: str | None = Field(default=None, max_length=64)
+
+    @field_validator("nickname")
+    @classmethod
+    def _clean_nickname(cls, v: str | None) -> str | None:
+        return _normalise_nickname(v)
 
     @field_validator("scan_id", "user_pseudo_id")
     @classmethod
@@ -3041,15 +3056,15 @@ async def community_scan_upload(
     species: str | None = Form(None),
     species_score: float | None = Form(None),
     locale: str | None = Form(None),
+    nickname: str | None = Form(None),
     image: UploadFile | None = File(None),
 ):
     """Append one community-shared scan to the corpus.
 
     Location is supplied by the opted-in client from its coarse location
     (``country`` + ``region`` city + rounded ``lat``/``lon``) — there is no
-    server-side IP geolocation. ``country``/``region`` drive display + the
-    country scope; the coords drive the 25 km "nearby" radius and the
-    (future) heat-map. The image is optional.
+    server-side IP geolocation. ``nickname`` is the author's generated handle.
+    The image is optional.
     """
 
     try:
@@ -3063,6 +3078,7 @@ async def community_scan_upload(
             species=species,
             species_score=species_score,
             locale=locale,
+            nickname=nickname,
         )
     except Exception as exc:  # noqa: BLE001 — pydantic raises a ValidationError subclass
         logger.info("Community scan validation failed: %s", exc)
@@ -3132,6 +3148,7 @@ async def community_scan_upload(
                 disease=payload.disease,
                 confidence=payload.confidence,
                 species=payload.species,
+                nickname=payload.nickname,
                 species_score=payload.species_score,
                 image_bytes=image_bytes,
                 locale=payload.locale,
@@ -3150,6 +3167,12 @@ class CommunityOpinionRequest(BaseModel):
     user_pseudo_id: str = Field(..., min_length=1, max_length=128)
     suggested_disease: str = Field(..., min_length=1, max_length=64)
     note: str | None = Field(default=None, max_length=500)
+    nickname: str | None = Field(default=None, max_length=64)
+
+    @field_validator("nickname")
+    @classmethod
+    def _clean_opinion_nickname(cls, v: str | None) -> str | None:
+        return _normalise_nickname(v)
 
 
 @api_router.post("/community/opinion")
@@ -3191,6 +3214,7 @@ async def community_opinion_submit(payload: CommunityOpinionRequest, request: Re
                 author_pseudo_id=payload.user_pseudo_id.strip(),
                 suggested_disease=disease,
                 note=payload.note,
+                nickname=payload.nickname,
                 client_ip=client_ip,
             ),
         )
