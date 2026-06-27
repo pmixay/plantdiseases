@@ -188,6 +188,9 @@ try:
         media_type_for as plant_photo_media_type,
     )
     from .plant_photos import (
+        name_proxy_path as plant_photo_name_proxy,
+    )
+    from .plant_photos import (
         proxy_path as plant_photo_proxy,
     )
     from .popular_plants import popular_for
@@ -330,6 +333,9 @@ except ImportError:
     )
     from plant_photos import (
         media_type_for as plant_photo_media_type,
+    )
+    from plant_photos import (
+        name_proxy_path as plant_photo_name_proxy,
     )
     from plant_photos import (
         proxy_path as plant_photo_proxy,
@@ -3616,20 +3622,35 @@ async def community_scan_thumb(filename: str, request: Request):
 
 
 @api_router.get("/plant-photo")
-async def plant_photo(u: str, request: Request):
+async def plant_photo(request: Request, u: str | None = None,
+                      name: str | None = None, locale: str = "en"):
     """Proxy + cache an external plant photo so the app loads it from this
-    server's domain — reliable where Wikimedia is throttled/blocked. ``u`` is
-    the (URL-encoded) source URL; only Wikimedia/Wikipedia hosts are fetched.
+    server's domain — reliable where Wikimedia is throttled/blocked.
 
-    404 when the photo can't be cached (disallowed host, fetch failure, or a
-    non-raster format) — the client then shows its plant placeholder, the same
-    graceful fallback as before the proxy existed."""
+    Two ways to address a photo:
+    - ``u`` — a (URL-encoded) source URL (used for species-detail extra photos);
+    - ``name`` — a scientific name the proxy *fully resolves* to its Wikipedia
+      lead image server-side (used by the popular carousel, so a species that
+      only just became popular still resolves a photo on demand).
+
+    Only Wikimedia/Wikipedia hosts are ever fetched. 404 when the photo can't be
+    cached (no image, fetch failure, or a non-raster format) — the client then
+    shows its plant placeholder, the same graceful fallback as before."""
+    loop = asyncio.get_running_loop()
     url = (u or "").strip()
-    if not url or not plant_photo_allowed(url):
-        raise HTTPException(status_code=400, detail="Invalid photo URL")
-    path = await asyncio.get_running_loop().run_in_executor(
-        None, lambda: plant_photo_get_or_fetch(url),
-    )
+    if url:
+        if not plant_photo_allowed(url):
+            raise HTTPException(status_code=400, detail="Invalid photo URL")
+    elif name:
+        nm = name.strip()[:128]
+        lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
+        info = await loop.run_in_executor(None, lambda: fetch_species_info(nm, lang))
+        url = ((info or {}).get("image_url") or "").strip()
+        if not url:
+            raise HTTPException(status_code=404, detail="Photo unavailable")
+    else:
+        raise HTTPException(status_code=400, detail="Missing photo source")
+    path = await loop.run_in_executor(None, lambda: plant_photo_get_or_fetch(url))
     if path is None:
         raise HTTPException(status_code=404, detail="Photo unavailable")
     return _cached_image_response(
@@ -3835,11 +3856,14 @@ async def export_user_data(user_pseudo_id: str):
     })
 
 
-# --- /api/popular: personalized, daily-cached popular-houseplants bundle ----
-# key "{country|'global'}:{locale}" -> (expiry_epoch, payload). Per-species
-# Wikipedia calls happen once per (country, locale) per TTL; clients get the
-# whole resolved bundle in one response.
-_POPULAR_TTL_S = get_int("POPULAR_BUNDLE_TTL_SECONDS", 7200)
+# --- /api/popular: personalized, short-cached popular-houseplants bundle ----
+# key "{country|'global'}:{locale}" -> (expiry_epoch, payload). The list is a
+# live community-scan aggregate, so the bundle is cached only briefly (and
+# served stale-while-revalidate) — new scans surface within the TTL instead of
+# being pinned for hours. The (static) per-species photos are NOT re-resolved
+# on a rebuild: they're served by the by-name /api/plant-photo proxy, which has
+# its own long-lived disk cache. So a short bundle TTL is cheap.
+_POPULAR_TTL_S = get_int("POPULAR_BUNDLE_TTL_SECONDS", 1800)
 _popular_cache: "OrderedDict[str, tuple[float, dict]]" = OrderedDict()
 _popular_lock = threading.Lock()
 _POPULAR_CACHE_MAX = 64
@@ -3933,14 +3957,14 @@ def _build_popular_bundle(
     # known country when we have one, else worldwide. The first real scan in
     # range flips this to live data on the next (short-lived) cache miss.
     if snap is None:
+        # Curated names are bundled, so the placeholder build does NO network:
+        # the photo is resolved lazily + cached by the by-name proxy.
         items = [
             {
                 "scientific": p.scientific,
                 "common_en": p.common_en,
                 "common_ru": p.common_ru,
-                "image_url": plant_photo_proxy(
-                    (fetch_species_info(p.scientific, lang) or {}).get("image_url"),
-                ),
+                "image_url": plant_photo_name_proxy(p.scientific, lang),
                 "count": 0,
                 "percent": 0,
             }
@@ -3960,13 +3984,16 @@ def _build_popular_bundle(
     items = []
     for row in (snap.get("top_species") or [])[:_POPULAR_MAX_CARDS]:
         scientific = row["species"]
+        # Only the localized title needs resolving here (cached); the photo is
+        # resolved + cached on demand by the by-name proxy, so a species that
+        # only just trended (a fresh scan) still gets an image.
         info = fetch_species_info(scientific, lang)
         title = (info or {}).get("title") or scientific
         items.append({
             "scientific": scientific,
             "common_en": title,
             "common_ru": title,
-            "image_url": plant_photo_proxy((info or {}).get("image_url")),
+            "image_url": plant_photo_name_proxy(scientific, lang),
             "count": row.get("count", 0),
             "percent": row.get("percent", 0),
         })

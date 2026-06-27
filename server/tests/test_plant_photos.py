@@ -42,6 +42,13 @@ def test_proxy_path(photos):
     assert photos.proxy_path("https://evil.com/a.jpg") is None  # disallowed → drop
 
 
+def test_name_proxy_path(photos):
+    p = photos.name_proxy_path("Ficus elastica", "ru")
+    assert p.startswith("api/plant-photo?name=")
+    assert "locale=ru" in p
+    assert " " not in p  # space in the name is URL-encoded
+
+
 def test_get_or_fetch_caches_and_reuses(photos, monkeypatch):
     monkeypatch.setattr(photos, "_download", lambda url: _PNG)
     url = "https://upload.wikimedia.org/x.png"
@@ -80,6 +87,36 @@ def test_endpoint_serves_cached_photo(client, tmp_path, monkeypatch):
 def test_endpoint_rejects_disallowed_host(client):
     r = client.get("/api/plant-photo", params={"u": "https://evil.com/x.png"})
     assert r.status_code == 400
+
+
+def test_endpoint_missing_source_is_400(client):
+    r = client.get("/api/plant-photo")
+    assert r.status_code == 400
+
+
+def test_endpoint_resolves_by_name(client, tmp_path, monkeypatch):
+    """The by-name form fully resolves the photo server-side (Wikipedia lookup
+    → byte cache), so the popular carousel needs only the species name."""
+    import main as server_main
+    f = tmp_path / "p.png"
+    f.write_bytes(_PNG)
+    monkeypatch.setattr(
+        server_main, "fetch_species_info",
+        lambda n, lang="en": {"image_url": "https://upload.wikimedia.org/x.png"},
+    )
+    monkeypatch.setattr(server_main, "plant_photo_get_or_fetch", lambda u: f)
+    r = client.get(
+        "/api/plant-photo", params={"name": "Ficus elastica", "locale": "en"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"].startswith("image/")
+
+
+def test_endpoint_by_name_404_when_unresolvable(client, monkeypatch):
+    import main as server_main
+    monkeypatch.setattr(server_main, "fetch_species_info", lambda n, lang="en": None)
+    r = client.get("/api/plant-photo", params={"name": "Nope nope"})
+    assert r.status_code == 404
 
 
 def test_endpoint_404_when_uncacheable(client, monkeypatch):

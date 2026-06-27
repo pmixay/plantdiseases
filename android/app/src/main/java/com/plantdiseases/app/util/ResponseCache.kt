@@ -38,8 +38,11 @@ object ResponseCache {
     val TTL_CARE_PLAN_MS: Long = TimeUnit.DAYS.toMillis(7)
     val TTL_TRENDING_MS: Long = TimeUnit.HOURS.toMillis(1)
 
-    // Popular bundle refreshes every two hours server-side.
-    val TTL_POPULAR_MS: Long = TimeUnit.HOURS.toMillis(2)
+    // The popular bundle is a live community-scan aggregate, so cache it only
+    // briefly — new scans/trends surface within the window instead of being
+    // pinned for hours. (Re-fetching is cheap: the static per-species photos
+    // load separately through the long-cached by-name photo proxy + Glide.)
+    val TTL_POPULAR_MS: Long = TimeUnit.MINUTES.toMillis(30)
 
     /** On-disk envelope: the cached payload plus when it was stored and how
      *  long it stays fresh. */

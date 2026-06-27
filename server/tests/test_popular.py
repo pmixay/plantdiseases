@@ -46,9 +46,9 @@ def test_popular_no_location_worldwide_placeholder(client):
     assert body["items"]
     item = body["items"][0]
     assert {"scientific", "common_en", "common_ru", "image_url", "count", "percent"} <= set(item)
-    # Lead images are proxied through the server (api/plant-photo?u=…), not
-    # handed out as raw Wikimedia URLs the app would load directly.
-    assert item["image_url"].startswith("api/plant-photo?u=")
+    # Lead images resolve through the by-name server proxy (api/plant-photo?name=…),
+    # not raw Wikimedia URLs the app would load directly.
+    assert item["image_url"].startswith("api/plant-photo?name=")
     assert item["percent"] == 0  # placeholder carries no percentages
 
 

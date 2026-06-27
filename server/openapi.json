@@ -1154,16 +1154,49 @@
     "/api/plant-photo": {
       "get": {
         "summary": "Plant Photo",
-        "description": "Proxy + cache an external plant photo so the app loads it from this\nserver's domain — reliable where Wikimedia is throttled/blocked. ``u`` is\nthe (URL-encoded) source URL; only Wikimedia/Wikipedia hosts are fetched.\n\n404 when the photo can't be cached (disallowed host, fetch failure, or a\nnon-raster format) — the client then shows its plant placeholder, the same\ngraceful fallback as before the proxy existed.",
+        "description": "Proxy + cache an external plant photo so the app loads it from this\nserver's domain — reliable where Wikimedia is throttled/blocked.\n\nTwo ways to address a photo:\n- ``u`` — a (URL-encoded) source URL (used for species-detail extra photos);\n- ``name`` — a scientific name the proxy *fully resolves* to its Wikipedia\n  lead image server-side (used by the popular carousel, so a species that\n  only just became popular still resolves a photo on demand).\n\nOnly Wikimedia/Wikipedia hosts are ever fetched. 404 when the photo can't be\ncached (no image, fetch failure, or a non-raster format) — the client then\nshows its plant placeholder, the same graceful fallback as before.",
         "operationId": "plant_photo_api_plant_photo_get",
         "parameters": [
           {
             "name": "u",
             "in": "query",
-            "required": true,
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "U"
+            }
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Name"
+            }
+          },
+          {
+            "name": "locale",
+            "in": "query",
+            "required": false,
             "schema": {
               "type": "string",
-              "title": "U"
+              "default": "en",
+              "title": "Locale"
             }
           }
         ],

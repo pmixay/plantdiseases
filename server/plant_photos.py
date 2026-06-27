@@ -76,6 +76,18 @@ def proxy_path(url: str | None) -> str | None:
     return "api/plant-photo?u=" + urllib.parse.quote(url, safe="")
 
 
+def name_proxy_path(name: str, locale: str) -> str:
+    """App-facing path that lets the proxy *fully resolve* a species photo from
+    its scientific name (Wikipedia lookup + byte cache happen server-side). Used
+    for the popular carousel so a species that only just became popular (a fresh
+    scan) still resolves a photo on demand, without the bundle having to pin a
+    URL at build time."""
+    return (
+        "api/plant-photo?name=" + urllib.parse.quote(name, safe="")
+        + "&locale=" + urllib.parse.quote(locale or "en", safe="")
+    )
+
+
 def _digest(url: str) -> str:
     return hashlib.sha256(url.encode("utf-8")).hexdigest()[:32]
 
