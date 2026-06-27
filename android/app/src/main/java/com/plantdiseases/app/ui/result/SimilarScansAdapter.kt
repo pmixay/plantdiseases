@@ -10,6 +10,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.facebook.shimmer.ShimmerFrameLayout
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.CommunityScanItem
+import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.ServerConfig
 import com.plantdiseases.app.util.ThumbLoader
 
@@ -57,7 +58,7 @@ class SimilarScansAdapter(
         fun bind(item: CommunityScanItem) {
             itemView.setOnClickListener { onClick(item) }
             label.text = displayName(item.disease)
-            region.text = formatRegion(item.region, item.country)
+            region.text = formatRegion(item.region, countryLabel(item))
             time.text = formatTimeAgo(item.createdAt)
             wantsOpinion.visibility = if (item.wantsOpinion) View.VISIBLE else View.GONE
             if (item.opinionCount > 0) {
@@ -78,6 +79,18 @@ class SimilarScansAdapter(
                 "${ServerConfig.baseUrl}api/community/thumb/$thumb"
             }
             ThumbLoader.load(shimmer, image, url)
+        }
+
+        /** Localized country NAME (e.g. "Poland"/"Польша") the server resolved,
+         *  falling back to the raw [CommunityScanItem.country] code only for
+         *  older/cached responses that predate the localized fields. */
+        private fun countryLabel(item: CommunityScanItem): String {
+            val name = if (LocaleHelper.isRussian(itemView.context)) {
+                item.countryNameRu
+            } else {
+                item.countryNameEn
+            }
+            return (name ?: item.country)
         }
 
         private fun formatRegion(region: String, country: String): String {

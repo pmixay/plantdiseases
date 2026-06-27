@@ -12,6 +12,7 @@ import com.google.android.material.button.MaterialButton
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.CommunityScanItem
 import com.plantdiseases.app.util.Avatars
+import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.ServerConfig
 import com.plantdiseases.app.util.ThumbLoader
 
@@ -94,13 +95,25 @@ class NearbyScansAdapter(
 
         /** "Region, Country · 2h ago" — drops missing pieces gracefully. */
         private fun buildMeta(item: CommunityScanItem): String {
-            val region = formatRegion(item.region, item.country)
+            val region = formatRegion(item.region, countryLabel(item))
             val time = formatTimeAgo(item.createdAt)
             return when {
                 region.isNotEmpty() && time.isNotEmpty() -> "$region · $time"
                 region.isNotEmpty() -> region
                 else -> time
             }
+        }
+
+        /** Localized country NAME (e.g. "Poland"/"Польша") the server resolved,
+         *  falling back to the raw [CommunityScanItem.country] code only for
+         *  older/cached responses that predate the localized fields. */
+        private fun countryLabel(item: CommunityScanItem): String {
+            val name = if (LocaleHelper.isRussian(itemView.context)) {
+                item.countryNameRu
+            } else {
+                item.countryNameEn
+            }
+            return (name ?: item.country)
         }
 
         private fun formatRegion(region: String, country: String): String {

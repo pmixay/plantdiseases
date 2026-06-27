@@ -2248,6 +2248,27 @@ def _country_display(country: str | None) -> dict:
     }
 
 
+def _localize_item_country(row: dict) -> None:
+    """Annotate one community-feed row with localized country *names* and
+    scrub the internal ``GLOBAL`` bucket sentinel.
+
+    Each row stores ``country`` as an ISO alpha-2 code (e.g. ``"PL"``) — the
+    raw code is useless to a reader, so the feed cards used to print "PL".
+    We attach ``country_name_en`` / ``country_name_ru`` (so the client can
+    show "Poland" / "Польша" per locale) and blank the ``GLOBAL`` sentinel
+    that detection-failed uploads carry, since it isn't a real place.
+    """
+    code = str(row.get("country") or "").strip().upper()
+    if not code or code == _GLOBAL_COUNTRY:
+        row["country"] = ""
+        row["country_name_en"] = None
+        row["country_name_ru"] = None
+        return
+    en, ru = _COUNTRY_NAMES.get(code, (row.get("country"), row.get("country")))
+    row["country_name_en"] = en
+    row["country_name_ru"] = ru
+
+
 def _resolve_country_bucket(
     request: Request,
     explicit: str | None,
@@ -3363,6 +3384,8 @@ async def community_scan_nearby(
     for r in rows:
         r["opinion_count"] = counts.get(str(r.get("scan_id")), 0)
         r["scan_id"] = r.pop("public_id", None) or r["scan_id"]
+        # Localize the per-row country so cards show "Poland"/"Польша", not "PL".
+        _localize_item_country(r)
     meta = _country_display(country_norm)
     summary.update(meta)
     return JSONResponse(content={"items": rows, "summary": summary, **meta})
@@ -3442,6 +3465,8 @@ async def community_by_species(
         r["opinion_count"] = counts.get(str(r.get("scan_id")), 0)
         # Public token only — never the feedback-authorising real id.
         r["scan_id"] = r.pop("public_id", None) or r["scan_id"]
+        # Localize the per-row country so cards show "Poland"/"Польша", not "PL".
+        _localize_item_country(r)
     return JSONResponse(content={"items": rows})
 
 

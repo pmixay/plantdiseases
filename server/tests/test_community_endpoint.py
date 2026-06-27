@@ -439,6 +439,85 @@ def test_community_nearby_country_optional_uses_geo_header(client, isolated_comm
     assert len(body["items"]) == 1
 
 
+# ── Empty-feed fix: cross-country (global) fallback ─────────────────
+
+
+def test_community_nearby_global_fallback_fills_empty_country(client, isolated_community):
+    """The 'feed is empty' bug: a thin (or geo-mis-detected) local country
+    bucket must widen to the wider corpus instead of returning nothing.
+    A scan shared in Poland surfaces for a viewer the server placed in a
+    country with no local scans of its own."""
+    import community as comm
+    client.post(
+        "/api/community/scan",
+        data=_form(
+            scan_id="globalfill01",
+            user_pseudo_id="pseudo-poland-1",
+            country="PL", region="Warsaw",
+            disease="leaf_spot",
+        ),
+    )
+    # Viewer resolves to an empty bucket (DE) and is a different install.
+    r = client.get(
+        "/api/community/nearby",
+        params={"country": "DE", "user_pseudo_id": "pseudo-viewer-de"},
+    )
+    assert r.status_code == 200, r.text
+    items = r.json()["items"]
+    assert [it["scan_id"] for it in items] == [comm.public_scan_token("globalfill01")]
+
+
+def test_community_nearby_global_fallback_keeps_disease_strict(client, isolated_community):
+    """The cross-country fallback must never surface a DIFFERENT disease for
+    a disease-scoped strip — the 'similar scans' contract holds even when
+    widening past the viewer's country."""
+    client.post("/api/community/scan", data=_form(
+        scan_id="strictglob01", user_pseudo_id="pseudo-pl-a",
+        country="PL", disease="powdery_mildew"))
+    client.post("/api/community/scan", data=_form(
+        scan_id="strictglob02", user_pseudo_id="pseudo-pl-a",
+        country="PL", disease="leaf_spot"))
+    r = client.get("/api/community/nearby", params={
+        "country": "DE", "disease": "powdery_mildew",
+        "user_pseudo_id": "pseudo-viewer-de"})
+    assert r.status_code == 200, r.text
+    assert [it["disease"] for it in r.json()["items"]] == ["powdery_mildew"]
+
+
+# ── Localized per-item country names (no raw "PL" codes) ────────────
+
+
+def test_community_nearby_localizes_item_country(client, isolated_community):
+    """Feed rows carry localized country NAMES so cards render 'Poland' /
+    'Польша' instead of the raw 'PL' ISO code."""
+    client.post("/api/community/scan", data=_form(
+        scan_id="localename01", user_pseudo_id="pseudo-pl-b",
+        country="PL", region="Warsaw", disease="leaf_spot"))
+    item = client.get(
+        "/api/community/nearby",
+        params={"country": "PL", "user_pseudo_id": "pseudo-viewer-x"},
+    ).json()["items"][0]
+    assert item["country"] == "PL"
+    assert item["country_name_en"] == "Poland"
+    assert item["country_name_ru"] == "Польша"
+
+
+def test_community_nearby_blanks_global_sentinel_in_items(client, isolated_community):
+    """A scan whose server-side country couldn't be detected is bucketed
+    under the internal GLOBAL sentinel; feed rows must blank it (and the
+    names) rather than print 'GLOBAL' as if it were a place."""
+    client.post("/api/community/scan", data=_form(
+        scan_id="sentinel0001", user_pseudo_id="pseudo-anon-a",
+        disease="leaf_spot"))  # no country + no geo header -> GLOBAL bucket
+    item = client.get(
+        "/api/community/nearby",
+        params={"user_pseudo_id": "pseudo-viewer-x"},
+    ).json()["items"][0]
+    assert item["country"] == ""
+    assert item["country_name_en"] is None
+    assert item["country_name_ru"] is None
+
+
 # ── Delete-for-user ─────────────────────────────────────────────────
 
 

@@ -706,12 +706,27 @@ def nearby_scans(
     limit = max(1, min(int(limit), 50))
 
     with _connect() as conn:
+        _SELECT = (
+            "SELECT scan_id, country, region, disease, confidence, species, "
+            "species_score, thumb_path, locale, created_at, wants_opinion, "
+            "user_pseudo_id FROM community_scans WHERE "
+        )
+
         def _query(where_extra: str, params: list, take: int) -> list[dict]:
             sql = (
-                "SELECT scan_id, country, region, disease, confidence, species, "
-                "species_score, thumb_path, locale, created_at, wants_opinion, "
-                "user_pseudo_id "
-                "FROM community_scans WHERE country = ? "
+                _SELECT + "country = ? "
+                + where_extra
+                + " ORDER BY created_at DESC LIMIT ?"
+            )
+            rows = conn.execute(sql, (*params, take)).fetchall()
+            return [_row_to_dict(r) for r in rows]
+
+        def _query_global(where_extra: str, params: list, take: int) -> list[dict]:
+            """Same as ``_query`` but WITHOUT the country filter — the
+            last-resort fallback so a thin (or mis-detected) country
+            bucket still fills the feed from the wider corpus."""
+            sql = (
+                _SELECT + "1=1 "
                 + where_extra
                 + " ORDER BY created_at DESC LIMIT ?"
             )
@@ -782,6 +797,33 @@ def nearby_scans(
                 _append_unique(_query(region_extra, region_params, limit))
             if len(out) < limit:
                 _append_unique(_query(base_extra, base_params, limit))
+        # Cross-country (global) fallbacks — the country bucket can be empty
+        # (a low-traffic region, or a scan whose server-side IP country didn't
+        # match the viewer's), which used to leave the feed blank even when the
+        # corpus had plenty of relevant scans. Widening to the whole corpus as a
+        # last resort mirrors the trending module's region→country→global
+        # fallback and honours the "always fill the feed" promise above.
+        # ``base_extra`` is just the exclude-user + hidden-disease AND-clauses
+        # (no country), so it composes directly onto a country-agnostic WHERE;
+        # ``base_params[1:]`` drops the leading country placeholder.
+        global_params = base_params[1:]
+        if len(out) < limit:
+            if disease and species_clean:
+                # Keep the disease AND species relevance even when widening —
+                # a disease-scoped strip must never surface a different verdict.
+                _append_unique(_query_global(
+                    base_extra + " AND disease = ? AND species_lower = ?",
+                    global_params + [disease, species_lower],
+                    limit,
+                ))
+            if len(out) < limit and disease:
+                _append_unique(_query_global(
+                    base_extra + " AND disease = ?",
+                    global_params + [disease],
+                    limit,
+                ))
+            if len(out) < limit and not disease:
+                _append_unique(_query_global(base_extra, global_params, limit))
         return out[:limit]
 
 

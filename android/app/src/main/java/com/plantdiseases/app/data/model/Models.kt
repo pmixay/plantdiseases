@@ -304,6 +304,11 @@ data class CommunityScanItem(
     // String params). Defaulting degrades one bad row to blank instead.
     @SerializedName("scan_id") @SerialName("scan_id") val scanId: String = "",
     @SerializedName("country") @SerialName("country") val country: String = "",
+    // Localized country name resolved server-side (e.g. "Poland" / "Польша"),
+    // so cards render a real place name instead of the raw "PL" ISO code.
+    // Null on older responses — callers fall back to [country].
+    @SerializedName("country_name_en") @SerialName("country_name_en") val countryNameEn: String? = null,
+    @SerializedName("country_name_ru") @SerialName("country_name_ru") val countryNameRu: String? = null,
     @SerializedName("region") @SerialName("region") val region: String = "",
     @SerializedName("disease") @SerialName("disease") val disease: String = "",
     @SerializedName("confidence") @SerialName("confidence") val confidence: Float? = null,
