@@ -3621,7 +3621,10 @@ async def species_diseases_endpoint(name: str, common: str = "", locale: str = "
     Graceful ``{"available": False, "diseases": []}`` when no OpenRouter key
     is configured or on any failure — the client then renders its bundled
     disease guide, so the species screen's "common problems" section is never
-    empty. Results are cached server-side per (species, language).
+    empty. A real (``available``) result is cached server-side (in-memory +
+    on disk, surviving restarts) per (species, language) and carries a long
+    ``Cache-Control`` so the client/CDN reuses it too; a transient failure is
+    sent uncached so the next open retries.
     """
     n = (name or "").strip()
     if not n or len(n) > 128:
@@ -3631,7 +3634,12 @@ async def species_diseases_endpoint(name: str, common: str = "", locale: str = "
     data = await asyncio.get_running_loop().run_in_executor(
         None, lambda: species_common_diseases(n, common_name=common_name, lang=lang),
     )
-    return JSONResponse(content=data)
+    headers = (
+        {"Cache-Control": "public, max-age=604800"}
+        if isinstance(data, dict) and data.get("available")
+        else {"Cache-Control": "no-store"}
+    )
+    return JSONResponse(content=data, headers=headers)
 
 
 def _cached_image_response(

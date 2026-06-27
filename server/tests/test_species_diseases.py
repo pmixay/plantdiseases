@@ -17,8 +17,14 @@ import ai_services
 
 
 @pytest.fixture(autouse=True)
-def _clear_cache():
+def _clear_cache(tmp_path, monkeypatch):
     ai_services._SPECIES_DISEASES_CACHE._d.clear()
+    # Isolate the persistent disk layer per test (point it at a tmp dir) so a
+    # real result from one test never satisfies another and the repo's
+    # ``server/ai_cache/`` stays clean.
+    monkeypatch.setattr(
+        ai_services._SPECIES_DISEASES_DISK, "dir", tmp_path / "species_diseases",
+    )
     yield
     ai_services._SPECIES_DISEASES_CACHE._d.clear()
 
@@ -109,6 +115,33 @@ def test_structured_success_and_cache(monkeypatch):
     cached = ai_services.species_common_diseases("Ficus elastica", lang="en")
     assert cached.get("cached") is True
     assert calls["n"] == 1
+
+
+def test_disk_cache_survives_inmemory_wipe(monkeypatch):
+    """A real result persists on disk, so after a server restart / fresh worker
+    (in-memory LRU empty) it's reused without paying for the LLM again — this is
+    why reopening a species no longer waits ~20s."""
+    monkeypatch.setattr(ai_services, "OPENROUTER_API_KEY", "test-key")
+    calls = {"n": 0}
+
+    def fake_call(system_text, history, *, max_tokens=None):
+        calls["n"] += 1
+        return (json.dumps({"diseases": [
+            {"name": "Root rot", "note": "Soggy soil; let it dry."},
+        ]}), 5, 5)
+
+    monkeypatch.setattr(ai_services, "_call_openrouter", fake_call)
+
+    first = ai_services.species_common_diseases("Calathea orbifolia", lang="en")
+    assert first["available"] is True and calls["n"] == 1
+
+    # Simulate a restart: drop the in-memory layer; the disk layer remains.
+    ai_services._SPECIES_DISEASES_CACHE._d.clear()
+    again = ai_services.species_common_diseases("Calathea orbifolia", lang="en")
+    assert again["available"] is True
+    assert again.get("cached") is True
+    assert [d["name"] for d in again["diseases"]] == ["Root rot"]
+    assert calls["n"] == 1  # disk hit — the LLM was NOT called a second time
 
 
 def test_api_error_is_graceful(monkeypatch):
