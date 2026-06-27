@@ -164,6 +164,29 @@ def test_community_scan_rejects_bad_region(client, isolated_community):
     assert r.status_code == 422
 
 
+def test_community_scan_accepts_unicode_region(client, isolated_community):
+    """Region validation is Unicode-aware: Cyrillic / accented place names
+    pass (it filters control chars + injection punctuation, not non-Latin
+    letters)."""
+    db_path, _ = isolated_community
+    r = client.post(
+        "/api/community/scan",
+        data=_form(
+            scan_id="scanru000001",
+            user_pseudo_id="pseudoabc123",
+            country="Россия", region="Москва",
+            disease="healthy",
+        ),
+    )
+    assert r.status_code == 200, r.text
+    with sqlite3.connect(str(db_path)) as conn:
+        row = conn.execute(
+            "SELECT country, region FROM community_scans WHERE scan_id = ?",
+            ("scanru000001",),
+        ).fetchone()
+    assert row == ("Россия", "Москва")
+
+
 def test_community_scan_rejects_short_scan_id(client, isolated_community):
     r = client.post(
         "/api/community/scan",

@@ -2165,13 +2165,15 @@ class SymptomDiagnoseRequest(BaseModel):
 
 
 # Region-string alphabet (country name / code + city / admin area).
-# Apostrophe + period + hyphen + space cover the bulk of locality
-# names ("Saint-John's", "Plymouth, U.K." trims to "Plymouth"). Commas
-# are deliberately excluded — we keep country and locality as separate
-# fields so callers never need to embed a comma anywhere.
-_REGION_ALLOWED = set(
-    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .'-"
-)
+# A region char is any Unicode letter (str.isalpha() is Unicode-aware, so
+# Cyrillic / accented Latin / CJK localities like "Москва", "Köln", "東京" all
+# pass) or digit, plus apostrophe + period + hyphen + space, which cover the
+# bulk of place names ("Saint-John's", "Plymouth, U.K." trims to "Plymouth").
+# Commas are deliberately excluded — country and locality are separate fields,
+# so callers never embed a comma — and control chars / injection punctuation
+# (";", "\n", …) still get filtered out.
+def _region_char_ok(ch: str) -> bool:
+    return ch.isalpha() or ch.isdigit() or ch in " .'-"
 
 
 def _normalise_country(raw: str | None) -> str:
@@ -2188,7 +2190,7 @@ def _normalise_country(raw: str | None) -> str:
     if "," in raw:
         raw = raw.rsplit(",", 1)[-1]
     cleaned = raw.strip()[:80]
-    if not cleaned or any(ch not in _REGION_ALLOWED for ch in cleaned):
+    if not cleaned or any(not _region_char_ok(ch) for ch in cleaned):
         return ""
     return cleaned
 
@@ -2203,7 +2205,7 @@ def _normalise_locality(raw: str | None) -> str:
     if not raw:
         return ""
     cleaned = raw.strip()[:80]
-    if not cleaned or any(ch not in _REGION_ALLOWED for ch in cleaned):
+    if not cleaned or any(not _region_char_ok(ch) for ch in cleaned):
         return ""
     return cleaned
 
