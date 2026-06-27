@@ -38,7 +38,7 @@ import com.plantdiseases.app.ui.result.CommunityOpinionSheet
 import com.plantdiseases.app.ui.widget.BarChartView
 import com.plantdiseases.app.util.AutosavePrefs
 import com.plantdiseases.app.util.LocaleHelper
-import com.plantdiseases.app.util.OpinionPrefs
+import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.TelemetryIds
 import com.plantdiseases.app.util.ThemeHelper
 import kotlinx.coroutines.launch
@@ -78,13 +78,17 @@ class ProfileFragment : Fragment() {
         }
     }
 
-    private val opinionNotificationLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
+    // Enabling community sharing requests coarse location (for nearby grouping)
+    // + notifications (for the opinion replies it turns on). Opting in is consent
+    // regardless of which permissions are granted — a denied permission just
+    // means coarser grouping / silent (no-op) notifications, not "off".
+    private val communityPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { _ ->
         if (_binding == null) return@registerForActivityResult
-        OpinionPrefs.setNotificationsEnabled(requireContext(), granted)
-        binding.switchOpinionNotifications.isChecked = granted
-        if (granted) startOpinionDelivery()
+        CommunityPrefs.enable(requireContext())
+        binding.switchCommunityShare.isChecked = true
+        startOpinionDelivery()
     }
 
     override fun onCreateView(
@@ -156,20 +160,20 @@ class ProfileFragment : Fragment() {
 
     private fun setupCommunityControls() {
         val ctx = requireContext()
-        binding.switchOpinionNotifications.isChecked =
-            OpinionPrefs.notificationsEnabled(ctx)
-        binding.switchOpinionNotifications.setOnCheckedChangeListener { _, checked ->
+        // One "Share scans with community" switch (the standalone "Receive
+        // community opinions" toggle was removed — opinions ride along with
+        // sharing, since they're the replies on your shared scans).
+        binding.switchCommunityShare.isChecked = CommunityPrefs.uploadsEnabled(ctx)
+        binding.switchCommunityShare.setOnCheckedChangeListener { _, checked ->
             if (checked) {
-                enableOpinionNotifications()
+                enableCommunity()
             } else {
-                OpinionPrefs.setNotificationsEnabled(ctx, false)
+                CommunityPrefs.setUploadsEnabled(ctx, false) // also stops opinions
                 androidx.work.WorkManager.getInstance(ctx).cancelUniqueWork("opinion_check")
                 androidx.work.WorkManager.getInstance(ctx).cancelUniqueWork("opinion_check_now")
             }
         }
-        // Community sharing is opt-in in context (the result screen's similar-
-        // scans card / the Nearby screen). Keep the destructive
-        // delete-my-shared-data control here.
+        // Keep the destructive delete-my-shared-data control here.
         binding.btnDeleteCommunity.setOnClickListener {
             MaterialAlertDialogBuilder(ctx)
                 .setTitle(R.string.community_delete_title)
@@ -182,17 +186,14 @@ class ProfileFragment : Fragment() {
         }
     }
 
-    private fun enableOpinionNotifications() {
-        val ctx = requireContext()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            opinionNotificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            return
+    private fun enableCommunity() {
+        val perms = mutableListOf(Manifest.permission.ACCESS_COARSE_LOCATION)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            perms += Manifest.permission.POST_NOTIFICATIONS
         }
-        OpinionPrefs.setNotificationsEnabled(ctx, true)
-        startOpinionDelivery()
+        // Always prompt so opting in from Profile mirrors the in-context flow;
+        // the launcher flips the pref on (consent) regardless of the grant.
+        communityPermissionLauncher.launch(perms.toTypedArray())
     }
 
     private fun startOpinionDelivery() {

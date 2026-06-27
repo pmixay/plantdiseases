@@ -413,7 +413,12 @@ class HomeFragment : Fragment() {
         val cached = speciesImageCache[scientificName]
         if (cached != null) {
             Glide.with(target).load(com.plantdiseases.app.util.ServerConfig.photoUrl(cached))
-                .placeholder(R.drawable.ic_plant_placeholder).into(target)
+                .placeholder(R.drawable.ic_plant_placeholder)
+                // Fall back to the general plant icon when the photo can't load
+                // (e.g. a species like Aloe whose lead image fails to resolve),
+                // so the card never ends up blank.
+                .error(R.drawable.ic_plant_placeholder)
+                .into(target)
             return
         }
         if (speciesImageCache.containsKey(scientificName)) return // resolved to null (no photo)
@@ -424,7 +429,9 @@ class HomeFragment : Fragment() {
             speciesImageCache[scientificName] = url
             if (url != null) {
                 Glide.with(target).load(com.plantdiseases.app.util.ServerConfig.photoUrl(url))
-                    .placeholder(R.drawable.ic_plant_placeholder).into(target)
+                    .placeholder(R.drawable.ic_plant_placeholder)
+                    .error(R.drawable.ic_plant_placeholder)
+                    .into(target)
             }
         }
     }
