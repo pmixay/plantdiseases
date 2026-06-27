@@ -325,6 +325,9 @@ data class CommunityScanItem(
     @SerializedName("locale") @SerialName("locale") val locale: String? = null,
     @SerializedName("created_at") @SerialName("created_at") val createdAt: Long = 0L,
     @SerializedName("opinion_count") @SerialName("opinion_count") val opinionCount: Int = 0,
+    // How many people opened this shared scan (server-attached on the feed);
+    // shown as a small overlay count on the card thumbnail.
+    @SerializedName("view_count") @SerialName("view_count") val viewCount: Int = 0,
     // The scanner flagged this scan as wanting a community second opinion
     // (they were unsure and are waiting for others to weigh in).
     @SerializedName("wants_opinion") @SerialName("wants_opinion") val wantsOpinion: Boolean = false,

@@ -857,7 +857,7 @@ def nearby_scans(
     init_db()
     if country:
         country = to_iso_alpha2(country)
-    limit = max(1, min(int(limit), 50))
+    limit = max(1, min(int(limit), 100))
     has_coords = lat is not None and lon is not None
     nearby = scope != "country"
 

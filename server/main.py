@@ -153,6 +153,9 @@ try:
     from .community import (
         stats_snapshot as community_stats_snapshot,
     )
+    from .community import (
+        view_counts as community_view_counts,
+    )
     from .config import get, get_bool, get_float, get_int, get_list, get_str
     from .countries import COUNTRY_NAMES, to_iso_alpha2
     from .diseases_data import (
@@ -306,6 +309,9 @@ except ImportError:
     )
     from community import (
         stats_snapshot as community_stats_snapshot,
+    )
+    from community import (
+        view_counts as community_view_counts,
     )
     from config import get, get_bool, get_float, get_int, get_list, get_str
     from countries import COUNTRY_NAMES, to_iso_alpha2
@@ -3175,6 +3181,9 @@ async def community_scan_upload(
         logger.exception("Community scan write failed: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to record scan") from exc
 
+    # A new scan can change "popular near you" — drop the cached bundles so it
+    # surfaces on the next request rather than only after the TTL lapses.
+    _invalidate_popular_cache()
     return JSONResponse(content={"ok": True, "id": row_id})
 
 
@@ -3455,9 +3464,13 @@ async def community_scan_nearby(
     # can show a badge, then swap the real scan_id for the public token —
     # the real id authorises /api/feedback writes and must never reach
     # other users (see community.public_scan_token).
-    counts = community_opinion_counts([str(r.get("scan_id")) for r in rows if r.get("scan_id")])
+    scan_ids = [str(r.get("scan_id")) for r in rows if r.get("scan_id")]
+    counts = community_opinion_counts(scan_ids)
+    views = community_view_counts(scan_ids)
     for r in rows:
-        r["opinion_count"] = counts.get(str(r.get("scan_id")), 0)
+        sid = str(r.get("scan_id"))
+        r["opinion_count"] = counts.get(sid, 0)
+        r["view_count"] = views.get(sid, 0)
         r["scan_id"] = r.pop("public_id", None) or r["scan_id"]
         # Localize the per-row country so cards show "Poland"/"Польша", not "PL".
         _localize_item_country(r)
@@ -3950,6 +3963,17 @@ _POPULAR_PLACEHOLDER_TTL_S = get_int("POPULAR_PLACEHOLDER_TTL_SECONDS", 300)
 def _popular_ttl(bundle: dict) -> int:
     return (_POPULAR_PLACEHOLDER_TTL_S
             if bundle.get("source") == "placeholder" else _POPULAR_TTL_S)
+
+
+def _invalidate_popular_cache() -> None:
+    """Drop the cached popular bundles so a freshly uploaded community scan
+    surfaces in "popular near you" on the next request instead of waiting out
+    the TTL. Bundles are cheap to rebuild (a DB aggregate over the geo index +
+    already-cached per-species titles/photos), so clearing all of them — rather
+    than trying to map one upload's coords to the affected region keys — is the
+    simple, correct choice. Keeps the carousel near-live wrt new scans."""
+    with _popular_lock:
+        _popular_cache.clear()
 
 
 async def _warm_placeholder_images() -> None:

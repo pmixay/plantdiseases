@@ -203,7 +203,7 @@ class NearbyScansActivity : AppCompatActivity() {
                 // No disease filter — the feed surfaces the whole scope.
                 disease = null,
                 userPseudoId = pseudoId,
-                limit = 30,
+                limit = 100,
                 scope = scope,
             )
             binding.swipeRefresh.isRefreshing = false
