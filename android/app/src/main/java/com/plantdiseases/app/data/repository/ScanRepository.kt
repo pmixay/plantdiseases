@@ -1087,6 +1087,7 @@ class ScanRepository(
         species: String? = null,
         userPseudoId: String?,
         limit: Int = 12,
+        scope: String? = null,
     ): Result<com.plantdiseases.app.data.model.CommunityScansResponse> =
         withContext(Dispatchers.IO) {
             try {
@@ -1098,6 +1099,7 @@ class ScanRepository(
                     userPseudoId?.takeIf { it.isNotBlank() }?.let {
                         parameter("user_pseudo_id", it)
                     }
+                    scope?.takeIf { it.isNotBlank() }?.let { parameter("scope", it) }
                     parameter("limit", limit)
                 }
                 when (response.status.value) {

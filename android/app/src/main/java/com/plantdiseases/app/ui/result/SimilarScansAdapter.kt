@@ -58,7 +58,7 @@ class SimilarScansAdapter(
         fun bind(item: CommunityScanItem) {
             itemView.setOnClickListener { onClick(item) }
             label.text = displayName(item.disease)
-            region.text = formatRegion(item.region, countryLabel(item))
+            region.text = formatRegion(item.city.ifBlank { item.region }, countryLabel(item))
             time.text = formatTimeAgo(item.createdAt)
             wantsOpinion.visibility = if (item.wantsOpinion) View.VISIBLE else View.GONE
             if (item.opinionCount > 0) {

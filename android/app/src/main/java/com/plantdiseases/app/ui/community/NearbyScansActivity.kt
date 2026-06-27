@@ -49,6 +49,8 @@ class NearbyScansActivity : AppCompatActivity() {
     private var sortNewestFirst = true
     private var typeFilter: String? = null
     private var filterMenuItem: MenuItem? = null
+    // Server-side scope filter: "nearby" (the user's subdivision) or "country".
+    private var scope = "nearby"
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
@@ -70,6 +72,15 @@ class NearbyScansActivity : AppCompatActivity() {
 
         binding.toolbar.setNavigationOnClickListener { finish() }
         setupFilterMenu()
+
+        // Nearby (subdivision) vs Country scope — reload the feed on change.
+        binding.cgScope.setOnCheckedStateChangeListener { _, checked ->
+            val next = if (checked.firstOrNull() == R.id.chip_scope_country) "country" else "nearby"
+            if (next != scope) {
+                scope = next
+                load(isRefresh = false)
+            }
+        }
 
         adapter = NearbyScansAdapter(
             displayName = { key -> DiseaseLabels.displayName(key, isRu) ?: key },
@@ -119,10 +130,11 @@ class NearbyScansActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val pseudoId = TelemetryIds.userPseudoId(this@NearbyScansActivity)
             val result = scanRepository.communityNearby(
-                // No disease filter — the feed surfaces the whole region.
+                // No disease filter — the feed surfaces the whole scope.
                 disease = null,
                 userPseudoId = pseudoId,
                 limit = 30,
+                scope = scope,
             )
             binding.swipeRefresh.isRefreshing = false
             result.onSuccess { response ->

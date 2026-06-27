@@ -3757,6 +3757,16 @@ _POPULAR_CACHE_MAX = 64
 # Both home carousels (popular plants + popular diseases) cap at 10 cards.
 _POPULAR_MAX_CARDS = 10
 
+# A placeholder (scan-less country) is cached only briefly so it flips to real
+# data within minutes of the first scan in that scope; real data keeps the
+# full TTL since aggregates move slowly.
+_POPULAR_PLACEHOLDER_TTL_S = get_int("POPULAR_PLACEHOLDER_TTL_SECONDS", 300)
+
+
+def _popular_ttl(bundle: dict) -> int:
+    return (_POPULAR_PLACEHOLDER_TTL_S
+            if bundle.get("source") == "placeholder" else _POPULAR_TTL_S)
+
 
 async def _warm_placeholder_images() -> None:
     """Pre-resolve lead images for the curated placeholder plants (default
@@ -3875,13 +3885,13 @@ async def popular_endpoint(request: Request, country: str | None = None,
             None, lambda: _build_popular_bundle(country_norm, region_norm, locale),
         )
         with _popular_lock:
-            _popular_cache[key] = (now + _POPULAR_TTL_S, bundle)
+            _popular_cache[key] = (now + _popular_ttl(bundle), bundle)
             _popular_cache.move_to_end(key)
             while len(_popular_cache) > _POPULAR_CACHE_MAX:
                 _popular_cache.popitem(last=False)
     return JSONResponse(
         content=bundle,
-        headers={"cache-control": f"public, max-age={_POPULAR_TTL_S}"},
+        headers={"cache-control": f"public, max-age={_popular_ttl(bundle)}"},
     )
 
 

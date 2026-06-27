@@ -309,7 +309,10 @@ data class CommunityScanItem(
     // Null on older responses — callers fall back to [country].
     @SerializedName("country_name_en") @SerialName("country_name_en") val countryNameEn: String? = null,
     @SerializedName("country_name_ru") @SerialName("country_name_ru") val countryNameRu: String? = null,
+    // `region` is the subdivision (nearby key); `city` is the finer label —
+    // cards prefer city, falling back to region.
     @SerializedName("region") @SerialName("region") val region: String = "",
+    @SerializedName("city") @SerialName("city") val city: String = "",
     @SerializedName("disease") @SerialName("disease") val disease: String = "",
     @SerializedName("confidence") @SerialName("confidence") val confidence: Float? = null,
     @SerializedName("species") @SerialName("species") val species: String? = null,
@@ -462,22 +465,7 @@ enum class GuideCategory {
     PESTS
 }
 
-/** /api/community/trending — the Home screen's "trending nearby" module.
- *  `scope` reports how far the server had to widen (region/country/global)
- *  so the UI can label the card honestly. */
-@Serializable
-data class TrendingResponse(
-    @SerializedName("scope") @SerialName("scope") val scope: String = "global",
-    @SerializedName("country") @SerialName("country") val country: String? = null,
-    @SerializedName("country_name_en") @SerialName("country_name_en") val countryNameEn: String? = null,
-    @SerializedName("country_name_ru") @SerialName("country_name_ru") val countryNameRu: String? = null,
-    @SerializedName("region") @SerialName("region") val region: String? = null,
-    @SerializedName("window_days") @SerialName("window_days") val windowDays: Int = 7,
-    @SerializedName("total") @SerialName("total") val total: Int = 0,
-    @SerializedName("top_species") @SerialName("top_species") val topSpecies: List<TrendingSpecies> = emptyList(),
-    @SerializedName("top_diseases") @SerialName("top_diseases") val topDiseases: List<TrendingDisease> = emptyList(),
-)
-
+/** Popular species/diseases row entries (shared by /api/popular). */
 @Serializable
 data class TrendingSpecies(
     @SerializedName("species") @SerialName("species") val species: String = "",
@@ -635,10 +623,15 @@ data class PopularResponse(
     @SerializedName("country") @SerialName("country") val country: String? = null,
     @SerializedName("country_name_en") @SerialName("country_name_en") val countryNameEn: String? = null,
     @SerializedName("country_name_ru") @SerialName("country_name_ru") val countryNameRu: String? = null,
+    // Subdivision label when the bundle is scoped to the "nearby" bucket; null
+    // for country / placeholder scopes.
+    @SerializedName("region") @SerialName("region") val region: String? = null,
     @SerializedName("locale") @SerialName("locale") val locale: String? = null,
     @SerializedName("items") @SerialName("items") val items: List<PopularItem> = emptyList(),
     @SerializedName("top_diseases") @SerialName("top_diseases") val topDiseases: List<TrendingDisease> = emptyList(),
     @SerializedName("total") @SerialName("total") val total: Int = 0,
+    // "nearby" | "country" | "placeholder" — drives the title + whether the
+    // carousels show "P% of scans" (suppressed for the placeholder).
     @SerializedName("source") @SerialName("source") val source: String? = null,
 )
 

@@ -51,6 +51,9 @@ class SpeciesCarouselAdapter(
         val item = items[position]
         holder.binding.tvSpeciesName.text = item.title
         holder.binding.tvSpeciesCount.text = item.subtitle
+        // Blank subtitle (placeholder / sub-1% share) → hide, no empty gap.
+        holder.binding.tvSpeciesCount.visibility =
+            if (item.subtitle.isBlank()) android.view.View.GONE else android.view.View.VISIBLE
         holder.binding.ivSpecies.setImageResource(
             com.plantdiseases.app.R.drawable.ic_plant_placeholder,
         )

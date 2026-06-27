@@ -29,7 +29,6 @@ import com.bumptech.glide.Glide
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.PopularResponse
-import com.plantdiseases.app.data.model.TrendingResponse
 import com.plantdiseases.app.data.remote.PlantApiClient
 import com.plantdiseases.app.databinding.FragmentHomeBinding
 import com.plantdiseases.app.ui.camera.LightMeterActivity
@@ -119,9 +118,9 @@ class HomeFragment : Fragment() {
 
         bindDiseaseGuide()
         // Show the bundled popular-species fallback right away so the carousel
-        // is present on first frame; loadTrending() (onResume) upgrades it to
-        // real trending data when the feed has any.
-        renderSpecies(binding, null, null)
+        // is present on first frame; loadPopular() (onResume) upgrades it to
+        // real scan-based data when the scope has any.
+        renderSpecies(binding, null)
         maybePlayIntro(savedInstanceState)
     }
 
@@ -164,7 +163,7 @@ class HomeFragment : Fragment() {
 
     override fun onResume() {
         super.onResume()
-        loadTrending()
+        loadPopular()
     }
 
     override fun onDestroyView() {
@@ -178,6 +177,9 @@ class HomeFragment : Fragment() {
          *  (tab switches, config changes) so the animation fires once per
          *  launch, then resets naturally when the process is recreated. */
         var introPlayed = false
+
+        /** Max cards per popular carousel (matches the server-side cap). */
+        const val MAX_POPULAR_CARDS = 10
     }
 
     /** Switch the bottom bar to the Scan tab (same transition as a tap). */
@@ -257,152 +259,91 @@ class HomeFragment : Fragment() {
         guideAdapter.submit(items)
     }
 
-    // ── Trending carousels ──────────────────────────────────────────
-    private fun loadTrending() {
+    // ── Popular carousels (plants + diseases) ───────────────────────
+    // Both carousels are driven by /api/popular, which runs one ladder
+    // (nearby → country → curated placeholder) and returns per-item scan
+    // shares. The server resolves the scope from the requester IP.
+    private fun loadPopular() {
         viewLifecycleOwner.lifecycleScope.launch {
-            // Trending is a "moving" feed — cache it 24h (ResponseCache policy) so
-            // every Home onResume doesn't re-hit the network for the same region.
-            val cacheKey = "trending:v2:server"
-            val trending = com.plantdiseases.app.util.ResponseCache
-                .get(cacheKey, TrendingResponse::class.java)
-                ?: runCatching {
-                    apiClient.communityTrending()
-                }.getOrNull()?.also {
-                    com.plantdiseases.app.util.ResponseCache.put(
-                        cacheKey,
-                        it,
-                        com.plantdiseases.app.util.ResponseCache.TTL_TRENDING_MS,
-                    )
-                }
-            // When trending has no community species, fall back to the personalized
-            // popular bundle (images already resolved server-side). Fetched here
-            // so renderSpecies stays synchronous.
-            val popular = if (trending == null || trending.topSpecies.isEmpty()) {
-                loadPopularBundle()
-            } else {
-                null
-            }
+            val cacheKey = "popular:v3:server|$locale"
+            val popular = com.plantdiseases.app.util.ResponseCache
+                .get(cacheKey, PopularResponse::class.java)
+                ?: runCatching { apiClient.popular(locale = locale) }
+                    .getOrNull()?.takeIf { it.items.isNotEmpty() }?.also {
+                        com.plantdiseases.app.util.ResponseCache.put(
+                            cacheKey,
+                            it,
+                            com.plantdiseases.app.util.ResponseCache.TTL_POPULAR_MS,
+                        )
+                    }
             val b = _binding ?: return@launch
-            renderSpecies(b, trending, popular)
-            // Popular diseases is genuinely trending-only — no bundled fallback
-            // (the always-on Disease guide below already covers that need).
-            if (trending == null) {
-                b.sectionPopular.visibility = View.GONE
-            } else {
-                renderPopular(b, trending)
-            }
+            renderSpecies(b, popular)
+            renderDiseases(b, popular)
         }
     }
 
-    /**
-     * Render the species carousel. Trending species near the user take
-     * priority; when the feed has none (fresh install, sparse region, or the
-     * request failed) we fall back to a bundled "popular houseplants" list so
-     * the row is never empty — the same always-on contract the Disease guide
-     * has.
-     */
-    /** Fetch the personalized popular bundle, cached 24h. Null on any failure
-     *  so the caller falls back to the bundled SpeciesCatalog list. */
-    private suspend fun loadPopularBundle(): PopularResponse? {
-        val cacheKey = "popular:v2:server|$locale"
-        return com.plantdiseases.app.util.ResponseCache
-            .get(cacheKey, PopularResponse::class.java)
-            ?: runCatching {
-                apiClient.popular(locale = locale)
-            }.getOrNull()?.takeIf { it.items.isNotEmpty() }?.also {
-                com.plantdiseases.app.util.ResponseCache.put(
-                    cacheKey,
-                    it,
-                    com.plantdiseases.app.util.ResponseCache.TTL_POPULAR_MS,
+    /** "P% of scans" for a real (non-placeholder) scope with a ≥1% share;
+     *  blank otherwise so the carousel hides the subtitle (placeholder data
+     *  or a sub-1% sliver). */
+    private fun percentSubtitle(source: String?, percent: Int): String =
+        if (source != null && source != "placeholder" && percent >= 1) {
+            getString(R.string.home_popular_percent, percent)
+        } else {
+            ""
+        }
+
+    private fun renderSpecies(b: FragmentHomeBinding, popular: PopularResponse?) {
+        b.sectionSpecies.visibility = View.VISIBLE
+        setPopularTitle(b, popular)
+        b.tvTrendingScope.visibility = View.GONE
+        val items = if (popular != null && popular.items.isNotEmpty()) {
+            popular.items.take(MAX_POPULAR_CARDS).map { p ->
+                // Pre-seed the image cache so loadSpeciesImage paints instantly,
+                // no per-species Wikipedia call.
+                speciesImageCache[p.scientific] = p.imageUrl
+                SpeciesCarouselAdapter.Item(
+                    scientific = p.scientific,
+                    title = if (isRu) p.commonRu else p.commonEn,
+                    subtitle = percentSubtitle(popular.source, p.percent),
                 )
             }
-    }
-
-    private fun renderSpecies(
-        b: FragmentHomeBinding,
-        t: TrendingResponse?,
-        popular: PopularResponse?,
-    ) {
-        b.sectionSpecies.visibility = View.VISIBLE
-        if (t != null && t.topSpecies.isNotEmpty()) {
-            b.tvSpeciesTitle.setText(R.string.home_trending)
-            b.tvTrendingScope.text = scopeLabel(t)
-            b.tvTrendingScope.visibility = View.VISIBLE
-            speciesAdapter.submit(
-                t.topSpecies.map { s ->
-                    SpeciesCarouselAdapter.Item(
-                        scientific = s.species,
-                        title = s.species,
-                        subtitle = resources.getQuantityString(
-                            R.plurals.home_species_count,
-                            s.count,
-                            s.count,
-                        ),
-                    )
-                },
-            )
         } else {
-            setPopularTitle(b, popular)
-            b.tvTrendingScope.visibility = View.GONE
-            val tag = getString(R.string.home_species_popular_tag)
-            val items = if (popular != null && popular.items.isNotEmpty()) {
-                popular.items.map { p ->
-                    // Pre-seed the image cache so loadSpeciesImage paints instantly,
-                    // no per-species Wikipedia call.
-                    speciesImageCache[p.scientific] = p.imageUrl
-                    SpeciesCarouselAdapter.Item(
-                        scientific = p.scientific,
-                        title = if (isRu) p.commonRu else p.commonEn,
-                        subtitle = when {
-                            p.percent > 0 -> getString(R.string.home_popular_percent, p.percent)
-                            p.count > 0 -> resources.getQuantityString(
-                                R.plurals.home_species_count,
-                                p.count,
-                                p.count,
-                            )
-                            else -> tag
-                        },
-                    )
-                }
-            } else {
-                // Last-resort bundled list so the row is never empty.
-                SpeciesCatalog.popular.map { sp ->
-                    SpeciesCarouselAdapter.Item(
-                        scientific = sp.scientific,
-                        title = if (isRu) sp.commonRu else sp.commonEn,
-                        subtitle = tag,
-                    )
-                }
+            // Last-resort bundled list so the row is never empty (server down).
+            SpeciesCatalog.popular.take(MAX_POPULAR_CARDS).map { sp ->
+                SpeciesCarouselAdapter.Item(
+                    scientific = sp.scientific,
+                    title = if (isRu) sp.commonRu else sp.commonEn,
+                    subtitle = "",
+                )
             }
-            speciesAdapter.submit(items)
         }
+        speciesAdapter.submit(items)
     }
 
     private fun setPopularTitle(b: FragmentHomeBinding, popular: PopularResponse?) {
-        val country = if (isRu) popular?.countryNameRu else popular?.countryNameEn
-        val isCountry = popular?.scope == "country" && !country.isNullOrBlank()
-        val title = if (isCountry) {
-            getString(R.string.home_popular_in_country, country)
+        // "Popular near <subdivision>" for a nearby scope, else "Popular in
+        // <country>". There is no worldwide title any more — every scope is a
+        // real place (the placeholder still carries the default country).
+        val country = (if (isRu) popular?.countryNameRu else popular?.countryNameEn)
+            ?.takeIf { it.isNotBlank() }
+        val region = popular?.region?.takeIf { it.isNotBlank() }
+        val accent: String
+        val title: String
+        if (popular?.source == "nearby" && region != null) {
+            accent = region
+            title = getString(R.string.home_popular_near, region)
         } else {
-            getString(R.string.home_popular_worldwide)
+            accent = country ?: getString(R.string.home_popular_species)
+            title = if (country != null) {
+                getString(R.string.home_popular_in_country, country)
+            } else {
+                getString(R.string.home_popular_species)
+            }
         }
-        // Accent range: the country name for a country scope, else the
-        // locality word(s) ("worldwide" / "во всем мире") — everything after
-        // the leading "Popular" / "Популярно". The worldwide title can't be
-        // matched against the server's country_name string verbatim (case /
-        // wording differ across locales), so we slice off the leading word
-        // instead and highlight the rest the same way the country name is.
-        val start: Int
-        val end: Int
-        if (isCountry) {
-            val s = title.indexOf(country!!)
-            start = if (s >= 0) s else 0
-            end = if (s >= 0) s + country.length else title.length
-        } else {
-            val sp = title.indexOf(' ')
-            start = if (sp in 0 until title.lastIndex) sp + 1 else 0
-            end = title.length
-        }
+        // Gradient-accent the place name (everything matched in the title).
+        val s = title.indexOf(accent)
+        val start = if (s >= 0) s else 0
+        val end = if (s >= 0) s + accent.length else title.length
         val spannable = SpannableString(title)
         if (end > start) {
             val gradient = intArrayOf(
@@ -420,21 +361,19 @@ class HomeFragment : Fragment() {
         b.tvSpeciesTitle.text = spannable
     }
 
-    private fun renderPopular(b: FragmentHomeBinding, t: TrendingResponse) {
-        // Only diseases we have a bundled doc for — guarantees the card has
-        // an icon + localized name and the tap opens a real detail screen.
-        val items = t.topDiseases.mapNotNull { d ->
+    private fun renderDiseases(b: FragmentHomeBinding, popular: PopularResponse?) {
+        // Same ladder as the species carousel; diseases have no curated
+        // placeholder, so the section simply hides when there's no real data.
+        // Only diseases we have a bundled doc for — guarantees the card has an
+        // icon + localized name and the tap opens a real detail screen.
+        val items = popular?.topDiseases.orEmpty().take(MAX_POPULAR_CARDS).mapNotNull { d ->
             val gi = DiseaseCatalog.guideItemForClass(d.disease) ?: return@mapNotNull null
             DiseaseCarouselAdapter.Item(
                 guideId = gi.id,
                 iconRes = gi.iconRes,
                 title = DiseaseLabels.displayName(d.disease, isRu)
                     ?: (if (isRu) gi.titleRu else gi.titleEn),
-                subtitle = resources.getQuantityString(
-                    R.plurals.home_disease_count,
-                    d.count,
-                    d.count,
-                ),
+                subtitle = percentSubtitle(popular?.source, d.percent),
             )
         }
         if (items.isEmpty()) {
@@ -443,18 +382,6 @@ class HomeFragment : Fragment() {
         }
         b.sectionPopular.visibility = View.VISIBLE
         popularAdapter.submit(items)
-    }
-
-    private fun scopeLabel(t: TrendingResponse): String {
-        // Prefer the server's localized country NAME (e.g. "Spain") over the
-        // raw ISO bucket (e.g. "ES"); the server attaches it alongside the
-        // code, exactly as the "Popular in <country>" title uses it.
-        val country = (if (isRu) t.countryNameRu else t.countryNameEn)?.takeIf { it.isNotBlank() } ?: t.country
-        return when (t.scope) {
-            "region" -> listOfNotNull(t.region, country).joinToString(", ")
-            "country" -> country ?: getString(R.string.home_trending_global)
-            else -> getString(R.string.home_trending_global)
-        }
     }
 
     /** Resolve + cache a Wikipedia lead photo for a species, then load it

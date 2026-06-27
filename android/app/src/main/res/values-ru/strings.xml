@@ -224,6 +224,9 @@
     <string name="nearby_scans_cd">Сканы сообщества</string>
     <string name="nearby_scans_loading">Ищем сканы сообщества…</string>
     <string name="nearby_scans_second_opinion">Второе мнение</string>
+    <!-- Community scope toggle -->
+    <string name="community_filter_nearby">Рядом</string>
+    <string name="community_filter_country">Страна</string>
     <!-- Nearby scans sort & filter overlay -->
     <string name="nearby_filter_title">Сортировка и фильтр</string>
     <string name="nearby_filter_by_date">По дате</string>
@@ -779,6 +782,7 @@
     <string name="home_popular_diseases">Частые болезни</string>
     <string name="home_popular_species">Популярные растения</string>
     <string name="home_popular_in_country">Популярно: %1$s</string>
+    <string name="home_popular_near">Популярно рядом: %1$s</string>
     <string name="home_popular_worldwide">Популярно во всем мире</string>
     <string name="home_popular_percent">%1$d%% сканов сообщества</string>
     <string name="home_species_popular_tag">Популярное</string>

@@ -6,7 +6,6 @@ import com.plantdiseases.app.data.model.CarePlanResponse
 import com.plantdiseases.app.data.model.PopularResponse
 import com.plantdiseases.app.data.model.SpeciesDiseasesResponse
 import com.plantdiseases.app.data.model.SpeciesInfoResponse
-import com.plantdiseases.app.data.model.TrendingResponse
 import com.plantdiseases.app.util.ServerConfig
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -188,22 +187,6 @@ class PlantApiClient(
         val response = httpClient.post("api/care-plan") {
             contentType(ContentType.Application.Json)
             setBody(request)
-        }
-        return if (response.status.isSuccess()) response.body() else null
-    }
-
-    /** Trending species/diseases for a region (graceful, never 422s). */
-    suspend fun communityTrending(
-        country: String? = null,
-        region: String? = null,
-        days: Int = 7,
-        limit: Int = 6,
-    ): TrendingResponse? {
-        val response = httpClient.get("api/community/trending") {
-            country?.let { parameter("country", it) }
-            region?.let { parameter("region", it) }
-            parameter("days", days)
-            parameter("limit", limit)
         }
         return if (response.status.isSuccess()) response.body() else null
     }

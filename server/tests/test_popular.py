@@ -35,7 +35,8 @@ def test_popular_default_country_placeholder_shape(client):
     r = client.get("/api/popular?locale=en")
     assert r.status_code == 200
     body = r.json()
-    assert r.headers["cache-control"] == "public, max-age=7200"
+    # Placeholder is cached only briefly so it flips to real data fast.
+    assert r.headers["cache-control"] == "public, max-age=300"
     assert body["scope"] == "country"
     assert body["country"] == "RU"
     assert body["source"] == "placeholder"

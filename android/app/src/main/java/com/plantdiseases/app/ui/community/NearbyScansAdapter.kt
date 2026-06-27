@@ -93,9 +93,10 @@ class NearbyScansAdapter(
             ThumbLoader.load(shimmer, photo, url)
         }
 
-        /** "Region, Country · 2h ago" — drops missing pieces gracefully. */
+        /** "City, Country · 2h ago" — drops missing pieces gracefully. */
         private fun buildMeta(item: CommunityScanItem): String {
-            val region = formatRegion(item.region, countryLabel(item))
+            val locality = item.city.ifBlank { item.region }
+            val region = formatRegion(locality, countryLabel(item))
             val time = formatTimeAgo(item.createdAt)
             return when {
                 region.isNotEmpty() && time.isNotEmpty() -> "$region · $time"

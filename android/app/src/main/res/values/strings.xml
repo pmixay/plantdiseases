@@ -228,6 +228,9 @@
     <string name="nearby_scans_cd">Community scans</string>
     <string name="nearby_scans_loading">Finding community scans…</string>
     <string name="nearby_scans_second_opinion">Second opinion</string>
+    <!-- Community scope toggle -->
+    <string name="community_filter_nearby">Nearby</string>
+    <string name="community_filter_country">Country</string>
     <!-- Nearby scans sort & filter overlay -->
     <string name="nearby_filter_title">Sort &amp; filter</string>
     <string name="nearby_filter_by_date">By date</string>
@@ -787,6 +790,7 @@
     <string name="home_popular_diseases">Popular diseases</string>
     <string name="home_popular_species">Popular houseplants</string>
     <string name="home_popular_in_country">Popular in %1$s</string>
+    <string name="home_popular_near">Popular near %1$s</string>
     <string name="home_popular_worldwide">Popular worldwide</string>
     <string name="home_popular_percent">%1$d%% of community scans</string>
     <string name="home_species_popular_tag">Popular</string>
