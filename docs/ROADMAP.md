@@ -33,19 +33,22 @@ over-prediction (the v6 target). Per-run metrics live in `server/models/MODEL_CA
 
 ## Model / data — next
 
-- [ ] **v6 = the precision run** — `nutrient_deficiency` (P **0.679**) and `leaf_scorch`
-      (P **0.745**) over-predict and alone cap macro-F1 at 0.86. Fix with confusion-pair
-      boundary negatives (scorch-lookalike + nutrient-lookalike healthy); do NOT add
-      positives. Optionally trim the LA-prior rare-class boost. See `DATASET_LABELING_PLAN.md`.
+- [ ] **v6 = the reliability/safety run (precision over recall).** A confident *wrong*
+      diagnosis is the user harm: v2.6.0 fired disease on **31%** of hard-healthy inputs,
+      v2.6.7 ~7% — drive it lower. `nutrient_deficiency` (P **0.679**) and `leaf_scorch`
+      (P **0.745**) over-predict; fix with confusion-pair boundary negatives (scorch- +
+      nutrient-lookalike healthy), do NOT add positives, optionally trim the LA-prior
+      boost. Keep tuning the runtime safety guards (OOD/blur/conformal/weak-healthy
+      reroute). See `DATASET_LABELING_PLAN.md`.
 - [ ] **Fold production data into the next dataset version** — export offline-judged
       production scans/feedback (`tools/export_data.py` → vision-agent judge), weak
       classes first.
-- [ ] **Cross-version eval protocol (do before trusting v6).** Score the candidate AND
-      the live model on ONE fixed held-out benchmark that neither trained on, then paired-
-      bootstrap (`tools/eval_bootstrap.py`). The v2.6.0↔v2.6.7 "regression" (0.865 vs
-      0.862) was an eval-set artifact — different val sets, v2.6.0's inflated by
-      agricultural-proxy leakage; on identical data it's a sub-noise tie. **Keep the
-      stable held-out benchmark** (reserved, never trained on). See `DATASET_LABELING_PLAN.md`.
+- [ ] **Judge v6 without a cross-version benchmark.** The stable test split
+      (`make_test_split`) was **removed** (it stole scarce weak-class data) and no frozen
+      benchmark is maintained, so headline cross-version disease-F1 is NOT comparable (the
+      v2.6.0↔v2.6.7 "0.865 vs 0.862 regression" was an eval-set artifact). Judge v6 by
+      per-class precision/recall CIs + runtime safety signals (false-disease-fire rate,
+      OOD/blur, conformal coverage), not the macro-F1 mean. See `DATASET_LABELING_PLAN.md`.
 - [ ] **aqua drift watch.** The on-device student regressed as the data hardened (KD
       val-macroF1 0.838→0.780→0.798 while gamma held ~0.86) — it is data-hungry and
       overfits the smaller/harder set. Keep a weak-class volume floor for the student +
@@ -72,9 +75,12 @@ over-prediction (the v6 target). Per-run metrics live in `server/models/MODEL_CA
   (OpenRouter `gpt-120b-oss`) is the smart path, offline shows the existing guide /
   symptom content.
 - **No new disease classes** until the scorch/nutrient boundary is stable.
-- **Keep a stable cross-version benchmark.** Model versions may be compared only on a fixed
-  held-out set neither trained on (the notebook's stable test split). The v2.6.0↔v2.6.7
-  "regression" was an eval-set artifact; never compare disease-F1 across different val sets.
+- **Reliability & safety first.** Optimize for not giving a confident wrong diagnosis
+  (precision + honest uncertainty + OOD/blur refusal) over headline recall/F1.
+- **No dedicated eval benchmark — judge by precision/recall + safety.** The stable test
+  split was removed (carving it stole scarce weak-class data), so cross-version macro-F1
+  is approximate; compare per-class precision/recall CIs + runtime safety behaviour, and
+  never read a small disease-F1 delta across versions as real.
 - **Stay free + honest** — calibrated, OOD-aware, free diagnosis; explicit out-of-domain
   reject; on-device offline; no account; privacy-first. Don't trade this edge for breadth.
 - **Data loop is local** — collect/judge offline → Kaggle supplement → the notebook pulls

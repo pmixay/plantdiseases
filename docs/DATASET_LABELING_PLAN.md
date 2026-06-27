@@ -97,6 +97,28 @@ not below ~0.80**, via a **paired bootstrap vs 2.6.7** on `val_realworld`
 n≈82/97 → ±0.08). The precision/recall seesaw across nutrient ↔ scorch ↔ healthy
 is intrinsic; tune negatives in small increments and read BOTH P and R with CIs.
 
+## Diagnosis reliability & safety (the v6 priority)
+
+The user-facing harm is a **confident wrong diagnosis** — telling a *healthy* plant it is
+diseased (needless treatment / chemicals / anxiety) or diagnosing a non-plant / blurry
+shot. So reliability here means **precision + honest uncertainty + refusing junk inputs**,
+not chasing headline macro-F1. v2.6.0 fired a disease label on **31% of hard
+boundary-healthy images**; v2.6.7 cut that to ~7% — driving it lower is the v6 win.
+
+- **Asymmetry to honor:** a false disease alarm on a healthy plant is worse UX than a
+  missed mild disease. Prefer precision and "I'm not sure" over recall.
+- **Keep + tune the runtime guards** (`server/pipeline.py`) — the safety layer: blur gate,
+  OOD AND-gate (detector ∧ embedding k-NN), conformal prediction sets, the weak-healthy
+  reroute (never manufacture disease on a healthy plant, never reassure on a sick one),
+  the viral-variegation caveat, and low / very-low-confidence demotion over
+  temperature-calibrated probabilities.
+- **Judge v6 by these signals** (no benchmark needed): false-disease-fire rate on
+  healthy + boundary inputs ↓ (the headline); healthy precision/recall stays high;
+  nutrient/leaf_scorch precision ↑ with recall ≥ ~0.80; conformal coverage ≥ target +
+  temperature re-fit on the shipped path; OOD/blur still reject non-leaf/unfocused shots;
+  viral over-trigger on variegated ornamentals ↓; downstream severity + care-plan/chat
+  advice stays conservative (hedge, don't over-treat).
+
 ## Cross-version model A/B — compare versions honestly
 
 **Lesson (v2.6.0 ↔ v2.6.7, investigated 2026-06-27).** v2.6.0 *looked* better than
@@ -112,21 +134,24 @@ also no *clean* improvement, because the only set showing a v2.6.7 win was one v
 trained on (contamination). The comparison could not be made cleanly precisely because
 no fixed never-trained benchmark existed.
 
-**Rule:** never compare disease-F1 across versions from each run's own number. Compare
-only on a **fixed held-out benchmark that NEITHER model trained on**, then
-**paired-bootstrap** (`tools/eval_bootstrap.py`); a point gap that doesn't clear the
-paired CI is noise.
+**Rule:** never read a cross-version disease-F1 delta as real. Each version's
+`val_realworld` drifts in composition (and is partly drawn from its own training
+supplement), so a small headline gap is eval-set drift, not a model change.
 
-**Requirement — wire into every ship:**
-- Keep a **frozen cross-version benchmark**: a deterministic content-hash slice that is
-  the SAME images across supplement versions and is **never** promoted to train (the
-  notebook's stable test split is exactly this — **keep it**). Contamination blocked a
-  clean A/B here only because the supplement is train-eligible, so a reserved
-  never-trained eval fraction is mandatory.
-- On every candidate vN: score **both vN and the live model** on that benchmark and
-  paired-bootstrap. Ship only if there is **no regression** (and, ideally, the targeted
-  precision gain shows). The §6 ship gate's "must not regress below the live model" must
-  be a real paired comparison, not two numbers from two different sets.
+**No dedicated cross-version benchmark — by choice (maintainer, 2026-06-27).** A frozen
+never-trained slice would steal scarce weak-class data (it lowers quality) and cost
+collection time, so the stable test carve (`make_test_split`) was **removed**. We accept
+that a clean cross-version A/B is unavailable and judge a new version by signals that
+don't need it:
+- **Per-class precision AND recall with CIs**, within-run (`model_card.json` ships them):
+  v6 wins when nutrient/leaf_scorch *precision* rises with recall not falling below ~0.80
+  — read the CIs, not the macro-F1 mean.
+- **Runtime safety behaviour** (see "Diagnosis reliability & safety"): false-disease-fire
+  rate on healthy/boundary inputs, OOD/blur rejection, conformal coverage. These are the
+  user-facing reliability metrics and need no fixed benchmark.
+- If a head-to-head is ever needed, run a **one-off** paired bootstrap of candidate vs
+  live model on whatever common held-out exists at the time
+  (`tools/eval_bootstrap.py`) — a manual check, not a maintained benchmark.
 
 ## Protect the on-device student (aqua) when hardening data
 
