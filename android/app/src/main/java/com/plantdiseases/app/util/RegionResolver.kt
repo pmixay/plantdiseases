@@ -173,11 +173,16 @@ object RegionResolver {
     /** (country, locality) from a reverse-geocoded address, or null. */
     private fun formatRegion(address: Address?): Pair<String, String?>? {
         address ?: return null
-        // Country is the top bucket (ISO code when available, else full name);
-        // locality prefers the city, falling back to the admin area.
-        val country = address.countryCode?.trim()?.takeIf { it.isNotBlank() }
-            ?: address.countryName?.trim()?.takeIf { it.isNotBlank() }
+        // Country bucket = ISO-3166 alpha-2 code ONLY (locale-independent). We
+        // deliberately do NOT fall back to the localized countryName: "Russia"
+        // (en) vs "Россия" (ru) would split one country across locale-specific
+        // buckets server-side and break the popular/nearby aggregation. When
+        // the geocoder yields no code we return null so the caller keeps the
+        // last good cached country instead of a mis-bucketed name.
+        val country = address.countryCode?.trim()?.uppercase(Locale.ROOT)
+            ?.takeIf { it.length == 2 && it.all(Char::isLetter) }
             ?: return null
+        // locality prefers the city, falling back to the admin area.
         val locality = (
             address.locality
                 ?: address.subAdminArea

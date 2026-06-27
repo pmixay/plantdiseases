@@ -41,12 +41,12 @@ import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.DiseaseCatalog
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.Haptics
+import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.RegionResolver
 import com.plantdiseases.app.util.SpeciesCatalog
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
 import java.util.Calendar
-import java.util.Locale
 
 /**
  * Home — a visual discovery feed (start destination). Two hero actions, a
@@ -62,7 +62,11 @@ class HomeFragment : Fragment() {
 
     private val apiClient: PlantApiClient by inject()
 
-    private val isRu: Boolean get() = Locale.getDefault().language == "ru"
+    // Use the app's persisted UI language (LocaleHelper), NOT the device
+    // locale: a Russian phone with the app switched to English must send
+    // locale=en AND read the commonEn field, or the popular cards fall back
+    // to the bare scientific name.
+    private val isRu: Boolean get() = LocaleHelper.isRussian(requireContext())
     private val locale: String get() = if (isRu) "ru" else "en"
 
     private val speciesAdapter by lazy {

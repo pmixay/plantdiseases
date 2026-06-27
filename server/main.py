@@ -154,6 +154,7 @@ try:
         stats_snapshot as community_stats_snapshot,
     )
     from .config import get, get_bool, get_float, get_int, get_list, get_str
+    from .countries import COUNTRY_NAMES, to_iso_alpha2
     from .diseases_data import (
         DISEASES_DATABASE,
         lookup_pet_toxicity,
@@ -307,6 +308,7 @@ except ImportError:
         stats_snapshot as community_stats_snapshot,
     )
     from config import get, get_bool, get_float, get_int, get_list, get_str
+    from countries import COUNTRY_NAMES, to_iso_alpha2
     from diseases_data import (
         DISEASES_DATABASE,
         lookup_pet_toxicity,
@@ -2211,7 +2213,12 @@ def _normalise_country(raw: str | None) -> str:
     cleaned = raw.strip()[:80]
     if not cleaned or any(not _region_char_ok(ch) for ch in cleaned):
         return ""
-    return cleaned
+    # Canonicalize to an ISO-3166 alpha-2 code so "RU" / "ru" / "Russia" /
+    # "Россия" all collapse into one bucket — otherwise the same country
+    # splits across locale-specific representations and the popular / nearby
+    # aggregation (and the curated ``popular_for`` map, which only matches
+    # 2-letter codes) disagree per locale.
+    return to_iso_alpha2(cleaned)
 
 
 def _normalise_locality(raw: str | None) -> str:
@@ -2235,58 +2242,10 @@ def _normalise_locality(raw: str | None) -> str:
 # Legacy sentinel still present in old DB rows; only used to scrub them on read.
 _GLOBAL_COUNTRY = "GLOBAL"
 
-# EN/RU display names keyed by ISO-3166 alpha-2. ``_country_display`` falls
-# back to the raw code when a country is absent here, which used to render
-# "Popular in IN" / "DE" instead of a real name — so this covers every country
-# ``popular_plants.BY_REGION`` curates plus the countries clients most often
-# resolve to, so the Home carousel title is a localized name, not a code.
-_COUNTRY_NAMES: dict[str, tuple[str, str]] = {
-    "AR": ("Argentina", "Аргентина"),
-    "AU": ("Australia", "Австралия"),
-    "AT": ("Austria", "Австрия"),
-    "BE": ("Belgium", "Бельгия"),
-    "BR": ("Brazil", "Бразилия"),
-    "BG": ("Bulgaria", "Болгария"),
-    "CA": ("Canada", "Канада"),
-    "CN": ("China", "Китай"),
-    "HR": ("Croatia", "Хорватия"),
-    "CZ": ("Czechia", "Чехия"),
-    "DK": ("Denmark", "Дания"),
-    "FI": ("Finland", "Финляндия"),
-    "FR": ("France", "Франция"),
-    "DE": ("Germany", "Германия"),
-    "GR": ("Greece", "Греция"),
-    "HU": ("Hungary", "Венгрия"),
-    "IN": ("India", "Индия"),
-    "ID": ("Indonesia", "Индонезия"),
-    "IE": ("Ireland", "Ирландия"),
-    "IL": ("Israel", "Израиль"),
-    "IT": ("Italy", "Италия"),
-    "JP": ("Japan", "Япония"),
-    "KZ": ("Kazakhstan", "Казахстан"),
-    "MX": ("Mexico", "Мексика"),
-    "NL": ("Netherlands", "Нидерланды"),
-    "NZ": ("New Zealand", "Новая Зеландия"),
-    "NO": ("Norway", "Норвегия"),
-    "PL": ("Poland", "Польша"),
-    "PT": ("Portugal", "Португалия"),
-    "RO": ("Romania", "Румыния"),
-    "RU": ("Russia", "Россия"),
-    "RS": ("Serbia", "Сербия"),
-    "SG": ("Singapore", "Сингапур"),
-    "SK": ("Slovakia", "Словакия"),
-    "ZA": ("South Africa", "ЮАР"),
-    "KR": ("South Korea", "Южная Корея"),
-    "ES": ("Spain", "Испания"),
-    "SE": ("Sweden", "Швеция"),
-    "CH": ("Switzerland", "Швейцария"),
-    "TR": ("Turkey", "Турция"),
-    "UA": ("Ukraine", "Украина"),
-    "AE": ("United Arab Emirates", "ОАЭ"),
-    "GB": ("United Kingdom", "Великобритания"),
-    "US": ("United States", "США"),
-    "VN": ("Vietnam", "Вьетнам"),
-}
+# EN/RU display names keyed by ISO-3166 alpha-2 now live in ``countries.py``
+# (shared with ``community.py``), alongside ``to_iso_alpha2`` which collapses a
+# code / English name / localized name to one canonical bucket. Imported above
+# as ``COUNTRY_NAMES``.
 
 
 def _country_display(country: str | None) -> dict:
@@ -2299,7 +2258,7 @@ def _country_display(country: str | None) -> dict:
             "country_name_ru": "по всему миру",
             "scope": "global",
         }
-    en, ru = _COUNTRY_NAMES.get(code, (country or code, country or code))
+    en, ru = COUNTRY_NAMES.get(code, (country or code, country or code))
     return {
         "country": code if len(code) == 2 else country,
         "country_name_en": en,
@@ -2324,7 +2283,7 @@ def _localize_item_country(row: dict) -> None:
         row["country_name_en"] = None
         row["country_name_ru"] = None
         return
-    en, ru = _COUNTRY_NAMES.get(code, (row.get("country"), row.get("country")))
+    en, ru = COUNTRY_NAMES.get(code, (row.get("country"), row.get("country")))
     row["country_name_en"] = en
     row["country_name_ru"] = ru
 
@@ -2353,8 +2312,8 @@ def _client_location(
     be empty (community off / permission denied) → the caller falls back to the
     worldwide scope.
     """
+    # ``_normalise_country`` already canonicalizes to an ISO alpha-2 code.
     c = (_normalise_country(country) if country else "")
-    c = c.upper() if len(c) == 2 else c
     city = _normalise_locality(region) if region else ""
     la = _valid_coord(lat, 90.0)
     lo = _valid_coord(lon, 180.0)

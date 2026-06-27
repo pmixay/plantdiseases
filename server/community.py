@@ -39,9 +39,11 @@ from pathlib import Path
 
 try:
     from .config import get_str  # type: ignore[import-not-found]
+    from .countries import to_iso_alpha2
     from .feedback import hash_client_ip
 except ImportError:
     from config import get_str
+    from countries import to_iso_alpha2
     from feedback import hash_client_ip
 
 logger = logging.getLogger(__name__)
@@ -315,8 +317,36 @@ def init_db() -> None:
                 "ON community_scans(public_id)"
             )
             _backfill_public_ids(conn)
+            _canonicalize_countries(conn)
         _initialised = True
         logger.info("Community DB ready at %s", COMMUNITY_DB_PATH)
+
+
+def _canonicalize_countries(conn: sqlite3.Connection) -> None:
+    """One-off migration: fold legacy country buckets to ISO alpha-2 codes.
+
+    Older rows stored whatever the client sent — an ISO code ("RU"), an
+    English name ("Russia") or a localized name ("Россия") — so one country
+    was split across several buckets and the popular / nearby aggregation
+    disagreed per locale. Canonicalizing here (and on every write going
+    forward) collapses them into one ``RU`` bucket. Idempotent: a code maps
+    to itself, so re-running is a no-op.
+    """
+    rows = conn.execute(
+        "SELECT DISTINCT country FROM community_scans "
+        "WHERE country IS NOT NULL AND country != ''",
+    ).fetchall()
+    changed = 0
+    for (country,) in rows:
+        canon = to_iso_alpha2(str(country))
+        if canon and canon != country:
+            conn.execute(
+                "UPDATE community_scans SET country = ? WHERE country = ?",
+                (canon, country),
+            )
+            changed += 1
+    if changed:
+        logger.info("Community: canonicalized %d legacy country bucket(s)", changed)
 
 
 def _backfill_public_ids(conn: sqlite3.Connection) -> None:
@@ -407,6 +437,11 @@ def record_scan(
     init_db()
     now = int(time.time())
     ip_hash = hash_client_ip(client_ip)
+    # Canonicalize the country bucket to an ISO alpha-2 code at the write so
+    # the corpus never splits one country across code / name / localized-name
+    # representations (the HTTP layer already canonicalizes, but a direct
+    # caller — tests, future code — gets the same guarantee).
+    country = to_iso_alpha2(country)
     region_value = region or ""
     species_lower = species.lower() if species else None
     with _write_lock, _connect() as conn:
@@ -820,6 +855,8 @@ def nearby_scans(
     in its scope so the Nearby/Country toggle actually changes what's shown.
     """
     init_db()
+    if country:
+        country = to_iso_alpha2(country)
     limit = max(1, min(int(limit), 50))
     has_coords = lat is not None and lon is not None
     nearby = scope != "country"
@@ -1033,6 +1070,7 @@ def region_summary(
 ) -> dict:
     """Aggregate the corpus for one country (or country+region)."""
     init_db()
+    country = to_iso_alpha2(country)
     now = int(time.time())
     week_ago = now - 7 * 86_400
     region_clean = (region or "").strip()
@@ -1124,7 +1162,7 @@ def popular_snapshot(
     (:func:`nearby_scans`) is the one that refines to a true radius.
     """
     init_db()
-    country_clean = (country or "").strip()
+    country_clean = to_iso_alpha2(country)
     limit = max(1, min(int(limit), 20))
     where = ""
     params: tuple = ()

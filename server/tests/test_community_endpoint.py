@@ -167,7 +167,8 @@ def test_community_scan_rejects_bad_region(client, isolated_community):
 def test_community_scan_accepts_unicode_region(client, isolated_community):
     """Region validation is Unicode-aware: Cyrillic / accented place names
     pass (it filters control chars + injection punctuation, not non-Latin
-    letters)."""
+    letters). The country name additionally canonicalizes to its ISO code
+    ("Россия" -> "RU") while the locality is preserved verbatim."""
     db_path, _ = isolated_community
     r = client.post(
         "/api/community/scan",
@@ -184,7 +185,7 @@ def test_community_scan_accepts_unicode_region(client, isolated_community):
             "SELECT country, region FROM community_scans WHERE scan_id = ?",
             ("scanru000001",),
         ).fetchone()
-    assert row == ("Россия", "Москва")
+    assert row == ("RU", "Москва")
 
 
 def test_community_scan_rejects_short_scan_id(client, isolated_community):
