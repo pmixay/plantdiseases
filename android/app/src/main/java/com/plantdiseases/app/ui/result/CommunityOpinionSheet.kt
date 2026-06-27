@@ -201,13 +201,14 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
     /** Show the shared scan photo (borrowed from the scan-result screen) when
      *  the feed item carried a thumbnail; otherwise leave the slot hidden. */
     private fun renderPhoto(view: View) {
+        val card = view.findViewById<View>(R.id.card_opinion_photo)
         val photo = view.findViewById<ImageView>(R.id.iv_opinion_photo)
         val thumb = arguments?.getString(ARG_THUMB)?.takeIf { it.isNotBlank() }
         if (thumb == null) {
-            photo.visibility = View.GONE
+            card.visibility = View.GONE
             return
         }
-        photo.visibility = View.VISIBLE
+        card.visibility = View.VISIBLE
         Glide.with(this)
             .load("${ServerConfig.baseUrl}api/community/thumb/$thumb")
             .diskCacheStrategy(DiskCacheStrategy.ALL)

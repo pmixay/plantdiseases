@@ -46,78 +46,97 @@
             android:textSize="@dimen/text_body_sm"
             android:textColor="@color/on_surface_secondary" />
 
-        <!-- The shared scan photo, borrowed from the scan-result screen so the
-             sheet reads like a real result. Set + shown programmatically; hidden
-             when this scan has no thumbnail. -->
-        <ImageView
-            android:id="@+id/iv_opinion_photo"
-            android:layout_width="match_parent"
-            android:layout_height="180dp"
-            android:layout_marginTop="@dimen/space_md"
-            android:contentDescription="@string/community_opinion_photo_desc"
-            android:scaleType="centerCrop"
-            android:visibility="gone"
-            tools:visibility="visible" />
-
-        <!-- Current diagnosis pill (set programmatically; hidden if unknown). -->
+        <!-- The shared scan photo, framed like the scan-result screen's image
+             card so the sheet reads like a real result. The CARD is shown/hidden
+             programmatically; hidden when this scan has no thumbnail. -->
         <com.google.android.material.card.MaterialCardView
-            android:id="@+id/card_opinion_current"
+            android:id="@+id/card_opinion_photo"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/space_md"
-            app:cardCornerRadius="@dimen/radius_md"
+            android:visibility="gone"
+            app:cardCornerRadius="@dimen/radius_lg"
             app:cardElevation="0dp"
-            app:cardBackgroundColor="@color/surface_variant">
+            app:strokeColor="@color/card_stroke"
+            app:strokeWidth="@dimen/glass_stroke_width"
+            tools:visibility="visible">
+
+            <ImageView
+                android:id="@+id/iv_opinion_photo"
+                android:layout_width="match_parent"
+                android:layout_height="200dp"
+                android:contentDescription="@string/community_opinion_photo_desc"
+                android:scaleType="centerCrop" />
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Current diagnosis block — styled like the scan-result status card
+             (icon + ALLCAPS label + verdict + confidence/species line) so the
+             sheet mirrors a real result. Set programmatically; hidden if
+             unknown. -->
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/card_opinion_current"
+            style="@style/App.GlassCard.Strong"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_md">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:padding="@dimen/space_md">
+                android:gravity="center_vertical">
 
                 <ImageView
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
                     android:contentDescription="@null"
                     android:src="@drawable/ic_disease"
                     app:tint="@color/on_surface_secondary" />
 
-                <TextView
+                <LinearLayout
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:layout_marginStart="@dimen/space_sm"
-                    android:text="@string/community_opinion_diagnosis_label"
-                    android:textSize="@dimen/text_body_sm"
-                    android:textColor="@color/on_surface_secondary" />
+                    android:layout_marginStart="@dimen/space_md"
+                    android:orientation="vertical">
 
-                <TextView
-                    android:id="@+id/tv_opinion_current"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:textSize="@dimen/text_body"
-                    android:textColor="@color/on_surface"
-                    android:fontFamily="sans-serif-medium"
-                    android:maxLines="1"
-                    android:ellipsize="end"
-                    tools:text="Leaf Spot" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/community_opinion_diagnosis_label"
+                        android:textAllCaps="true"
+                        android:letterSpacing="0.05"
+                        android:fontFamily="sans-serif-medium"
+                        android:textSize="@dimen/text_body_sm"
+                        android:textColor="@color/on_surface_secondary" />
+
+                    <TextView
+                        android:id="@+id/tv_opinion_current"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:textSize="20sp"
+                        android:fontFamily="sans-serif-medium"
+                        android:textColor="@color/on_surface"
+                        android:maxLines="2"
+                        android:ellipsize="end"
+                        tools:text="Leaf Spot" />
+
+                    <!-- Model's read: confidence + detected species. -->
+                    <TextView
+                        android:id="@+id/tv_opinion_meta"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:textSize="@dimen/text_body_sm"
+                        android:textColor="@color/on_surface_secondary"
+                        android:visibility="gone"
+                        tools:text="Confidence 87% · Monstera deliciosa (92%)"
+                        tools:visibility="visible" />
+                </LinearLayout>
 
             </LinearLayout>
 
         </com.google.android.material.card.MaterialCardView>
-
-        <!-- Model's read: confidence + detected species (set programmatically). -->
-        <TextView
-            android:id="@+id/tv_opinion_meta"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_xs"
-            android:textSize="@dimen/text_body_sm"
-            android:textColor="@color/on_surface_secondary"
-            android:visibility="gone"
-            tools:text="Confidence 87% · Monstera deliciosa (92%)"
-            tools:visibility="visible" />
 
         <!-- Agree / Disagree vote (feedback-style). Agree confirms the model's
              diagnosis; Disagree reveals the picker to choose the real one.
