@@ -97,6 +97,54 @@ not below ~0.80**, via a **paired bootstrap vs 2.6.7** on `val_realworld`
 n≈82/97 → ±0.08). The precision/recall seesaw across nutrient ↔ scorch ↔ healthy
 is intrinsic; tune negatives in small increments and read BOTH P and R with CIs.
 
+## Cross-version model A/B — compare versions honestly
+
+**Lesson (v2.6.0 ↔ v2.6.7, investigated 2026-06-27).** v2.6.0 *looked* better than
+v2.6.7 (disease macro-F1 **0.8654 vs 0.8620**) — an apparent regression. It was an
+**eval-set artifact**: the two numbers come from **different** `val_realworld` sets
+(n=2213 vs 1854, different per-class mix), and v2.6.0's set was *easier* — it trained
+on agricultural proxies (`kaggle_strawberry`, `kaggle_nutrient`) that leaked into its
+own eval and inflated its recall-heavy score. The 0.0034 gap is also far below the
+±0.04–0.05 macro-F1 sampling error. Scored on **one identical set** the gap vanishes;
+on hard boundary negatives v2.6.0 actually over-fires disease **19.9%** of the time vs
+**5.1%** for v2.6.7 (its known precision defect). Net: **no real regression** — but
+also no *clean* improvement, because the only set showing a v2.6.7 win was one v2.6.7
+trained on (contamination). The comparison could not be made cleanly precisely because
+no fixed never-trained benchmark existed.
+
+**Rule:** never compare disease-F1 across versions from each run's own number. Compare
+only on a **fixed held-out benchmark that NEITHER model trained on**, then
+**paired-bootstrap** (`tools/eval_bootstrap.py`); a point gap that doesn't clear the
+paired CI is noise.
+
+**Requirement — wire into every ship:**
+- Keep a **frozen cross-version benchmark**: a deterministic content-hash slice that is
+  the SAME images across supplement versions and is **never** promoted to train (the
+  notebook's stable test split is exactly this — **keep it**). Contamination blocked a
+  clean A/B here only because the supplement is train-eligible, so a reserved
+  never-trained eval fraction is mandatory.
+- On every candidate vN: score **both vN and the live model** on that benchmark and
+  paired-bootstrap. Ship only if there is **no regression** (and, ideally, the targeted
+  precision gain shows). The §6 ship gate's "must not regress below the live model" must
+  be a real paired comparison, not two numbers from two different sets.
+
+## Protect the on-device student (aqua) when hardening data
+
+`aqua` (MobileNetV3-Small, distilled **from scratch**) is **data-hungry** — unlike the
+frozen-DINOv2 `gamma` teacher, which is near data-free (linear probe ~0.91). So the same
+changes that *help* gamma (cutting redundant weak-class volume, removing easy
+agricultural proxies, adding hard boundary negatives) **starve and over-stress the
+student**: across v2.6.x the teacher→student KD gap grew and aqua regressed (KD
+val-macro-F1 **0.838 → 0.780 → 0.798** while gamma held ~0.86). It overfits the smaller,
+harder training set — it tracks the teacher on *seen* data but generalizes worse on
+held-out. For v6:
+- Keep a **weak-class volume floor** for the student even while trimming positives for
+  gamma's precision (or distill the student on a *superset* that retains the trimmed
+  positives — the student can keep them as train-only without re-introducing them to the
+  gamma eval).
+- Treat **aqua KD val-macro-F1 as a release watch-item** (flag a drop vs the live
+  student); reach for student-only augmentation before blaming the recipe.
+
 ## Improve & extend the supplement (advice)
 
 The supplement is the main lever for the weak classes — the per-class train
