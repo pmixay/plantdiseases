@@ -588,14 +588,14 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="@string/community_toggle_title"
+                            android:text="@string/community_features_title"
                             android:textAppearance="@style/TextAppearance.App.Title" />
 
                         <TextView
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="@dimen/space_xxs"
-                            android:text="@string/community_toggle_subtitle"
+                            android:text="@string/community_features_subtitle"
                             android:textSize="@dimen/text_body_sm"
                             android:textColor="@color/on_surface_secondary"
                             android:lineSpacingExtra="1dp" />
@@ -606,7 +606,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="@dimen/space_md"
-                        android:contentDescription="@string/community_toggle_title" />
+                        android:contentDescription="@string/community_features_title" />
                 </LinearLayout>
 
                 <com.google.android.material.button.MaterialButton

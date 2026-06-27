@@ -257,6 +257,8 @@
     <string name="community_vote_percent">%1$d%%</string>
     <string name="community_toggle_title">Делиться сканами с сообществом</string>
     <string name="community_toggle_subtitle">Страна + диагноз + миниатюра 512px. Можно выключить — всё останется на устройстве.</string>
+    <string name="community_features_title">Включить функции сообщества</string>
+    <string name="community_features_subtitle">Анонимно делитесь сканами, получайте вторые мнения и смотрите сканы садоводов рядом. Выключение полностью отключает сообщество — всё останется на устройстве.</string>
     <string name="community_profile_subtitle">Анонимный обмен включен после согласия на данные. Страну определяет сервер, а не геолокация устройства.</string>
     <string name="community_scope_global">по всему миру</string>
     <string name="opinion_notifications_title">Получать мнения сообщества</string>
