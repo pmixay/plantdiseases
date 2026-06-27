@@ -199,6 +199,10 @@
     <string name="community_opinion_pick_label">What do you think it is?</string>
     <string name="community_opinion_note_hint">Add a note (optional)</string>
     <string name="community_opinion_send">Post opinion</string>
+    <string name="community_opinion_agree">Agree</string>
+    <string name="community_opinion_disagree">Disagree</string>
+    <string name="community_opinion_confidence">Confidence %1$d%%</string>
+    <string name="similar_scans_enable_prompt">Want to see what people are scanning nearby?</string>
     <string name="community_opinion_consensus_prefix">Community so far: %1$s</string>
     <string name="community_opinion_empty">No opinions yet — be the first to weigh in.</string>
     <string name="community_opinion_thanks">Thanks for your opinion!</string>

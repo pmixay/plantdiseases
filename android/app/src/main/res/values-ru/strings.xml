@@ -196,6 +196,10 @@
     <string name="community_opinion_pick_label">Что это, по-вашему?</string>
     <string name="community_opinion_note_hint">Комментарий (необязательно)</string>
     <string name="community_opinion_send">Отправить мнение</string>
+    <string name="community_opinion_agree">Согласен</string>
+    <string name="community_opinion_disagree">Не согласен</string>
+    <string name="community_opinion_confidence">Точность %1$d%%</string>
+    <string name="similar_scans_enable_prompt">Хотите видеть, что сканируют рядом?</string>
     <string name="community_opinion_consensus_prefix">Мнения сообщества: %1$s</string>
     <string name="community_opinion_empty">Пока нет мнений — будьте первым.</string>
     <string name="community_opinion_thanks">Спасибо за ваше мнение!</string>

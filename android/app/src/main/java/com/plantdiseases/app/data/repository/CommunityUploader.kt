@@ -8,6 +8,7 @@ import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.AnalysisResponse
 import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.Nicknames
 import com.plantdiseases.app.util.RegionResolver
 import com.plantdiseases.app.util.TelemetryIds
 import kotlinx.coroutines.Dispatchers
@@ -75,6 +76,7 @@ class CommunityUploader(
             species = species,
             speciesScore = score,
             locale = locale,
+            nickname = Nicknames.nickname(context),
             thumbnail = thumb,
         )
         // The thumbnail is a transient cache file; delete it once the
@@ -131,6 +133,7 @@ class CommunityUploader(
             species = scan.speciesScientific,
             speciesScore = scan.speciesScore,
             locale = locale,
+            nickname = Nicknames.nickname(context),
             thumbnail = thumb,
         )
         thumb?.let { runCatching { it.delete() } }

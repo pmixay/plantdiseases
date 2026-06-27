@@ -327,6 +327,9 @@ data class CommunityScanItem(
     // Stable, anonymous per-author token (a sha256 prefix of the pseudo id —
     // never the id itself). Same author ⇒ same token ⇒ same generated avatar.
     @SerializedName("author_token") @SerialName("author_token") val authorToken: String? = null,
+    // Author's plant-vibe display handle (e.g. "Томатный Король 42"); the
+    // avatar monogram/colour are derived from it on-device.
+    @SerializedName("nickname") @SerialName("nickname") val nickname: String? = null,
 )
 
 @Serializable
@@ -368,6 +371,7 @@ data class CommunityOpinionRequest(
     @SerializedName("user_pseudo_id") @SerialName("user_pseudo_id") val userPseudoId: String,
     @SerializedName("suggested_disease") @SerialName("suggested_disease") val suggestedDisease: String,
     @SerializedName("note") @SerialName("note") val note: String? = null,
+    @SerializedName("nickname") @SerialName("nickname") val nickname: String? = null,
 )
 
 /** /api/community/request-opinion request body. The scanner flags their
@@ -394,6 +398,7 @@ data class CommunityOpinion(
     @SerializedName("note") @SerialName("note") val note: String = "",
     @SerializedName("created_at") @SerialName("created_at") val createdAt: Long = 0L,
     @SerializedName("scan_id") @SerialName("scan_id") val scanId: String = "",
+    @SerializedName("nickname") @SerialName("nickname") val nickname: String? = null,
 )
 
 /** /api/community/opinions/{scan_id} response. POST /opinion returns the

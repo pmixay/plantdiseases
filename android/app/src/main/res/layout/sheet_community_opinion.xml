@@ -94,6 +94,52 @@
 
         </com.google.android.material.card.MaterialCardView>
 
+        <!-- Model's read: confidence + detected species (set programmatically). -->
+        <TextView
+            android:id="@+id/tv_opinion_meta"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_xs"
+            android:textSize="@dimen/text_body_sm"
+            android:textColor="@color/on_surface_secondary"
+            android:visibility="gone"
+            tools:text="Confidence 87% · Monstera deliciosa (92%)"
+            tools:visibility="visible" />
+
+        <!-- Agree / Disagree vote (feedback-style). Agree confirms the model's
+             diagnosis; Disagree reveals the picker to choose the real one.
+             Hidden in view-only / already-voted modes. -->
+        <LinearLayout
+            android:id="@+id/ll_opinion_vote"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_md"
+            android:orientation="horizontal"
+            android:baselineAligned="false">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_opinion_agree"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:textAllCaps="false"
+                android:text="@string/community_opinion_agree"
+                app:icon="@drawable/ic_check"
+                app:iconGravity="textStart" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_opinion_disagree"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/space_sm"
+                android:textAllCaps="false"
+                android:text="@string/community_opinion_disagree" />
+
+        </LinearLayout>
+
         <!-- Running consensus vote graph (header + bars set programmatically). -->
         <TextView
             android:id="@+id/tv_opinion_votes_header"

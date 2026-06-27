@@ -19,15 +19,30 @@ object Avatars {
         0xFF65A30D.toInt(),
     )
 
-    fun colorFor(token: String?): Int = PALETTE[stableHash(token) % PALETTE.size]
+    /** Stable colour for any seed (a nickname or the legacy author token). */
+    fun colorFor(seed: String?): Int = PALETTE[stableHash(seed) % PALETTE.size]
 
-    /** A 2-letter monogram derived from the token (looks like initials, but is
+    /** A 2-letter monogram derived from a token (looks like initials, but is
      *  just stable hash letters — anonymous). */
     fun monogramFor(token: String?): String {
         val h = stableHash(token)
         val a = 'A' + (h % 26)
         val b = 'A' + ((h / 26) % 26)
         return "$a$b"
+    }
+
+    /** Initials from a display nickname — the first letters of up to two real
+     *  words ("Томатный Король 42" -> "ТК", "Botanist of Fernwood" -> "BF").
+     *  Falls back to the hashed monogram for a blank seed. */
+    fun monogramForNick(nick: String?): String {
+        if (nick.isNullOrBlank()) return monogramFor(nick)
+        val words = nick.trim().split(Regex("\\s+"))
+            .filter { it.length >= 3 && it.first().isLetter() }
+        return when {
+            words.size >= 2 -> "${words[0].first()}${words[1].first()}".uppercase()
+            words.size == 1 -> words[0].take(2).uppercase()
+            else -> monogramFor(nick)
+        }
     }
 
     private fun stableHash(token: String?): Int {

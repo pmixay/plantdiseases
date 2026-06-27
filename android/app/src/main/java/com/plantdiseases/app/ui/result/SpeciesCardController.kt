@@ -117,7 +117,7 @@ class SpeciesCardController(
                 }
                 CommunityOpinionSheet.show(
                     activity.supportFragmentManager,
-                    item.scanId,
+                    item,
                     DiseaseLabels.displayName(item.disease, isRu) ?: item.disease,
                 )
             },

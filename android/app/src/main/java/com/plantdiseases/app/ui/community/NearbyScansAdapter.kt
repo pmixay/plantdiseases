@@ -60,13 +60,18 @@ class NearbyScansAdapter(
         private val avatar: TextView = itemView.findViewById(R.id.tv_nearby_avatar)
 
         fun bind(item: CommunityScanItem) {
-            label.text = displayName(item.disease)
-            meta.text = buildMeta(item)
-            // Anonymous, deterministic author avatar — same author ⇒ same
-            // colour + monogram across the feed.
-            avatar.text = Avatars.monogramFor(item.authorToken)
+            // Identity line = the author's plant-vibe nickname (the diagnosis
+            // moves into the meta). Old rows with no nickname fall back to the
+            // disease label so the line is never empty.
+            val nick = item.nickname?.takeIf { it.isNotBlank() }
+            label.text = nick ?: displayName(item.disease)
+            meta.text = buildMeta(item, includeDisease = nick != null)
+            // Avatar derived on-device from the nickname (or the legacy token).
+            val seed = nick ?: item.authorToken
+            avatar.text =
+                if (nick != null) Avatars.monogramForNick(nick) else Avatars.monogramFor(item.authorToken)
             avatar.backgroundTintList =
-                android.content.res.ColorStateList.valueOf(Avatars.colorFor(item.authorToken))
+                android.content.res.ColorStateList.valueOf(Avatars.colorFor(seed))
             wantsOpinion.visibility = if (item.wantsOpinion) View.VISIBLE else View.GONE
 
             if (item.opinionCount > 0) {
@@ -93,16 +98,16 @@ class NearbyScansAdapter(
             ThumbLoader.load(shimmer, photo, url)
         }
 
-        /** "City, Country · 2h ago" — drops missing pieces gracefully. */
-        private fun buildMeta(item: CommunityScanItem): String {
+        /** "Powdery mildew · Warsaw, Poland · 2h" — the disease is included
+         *  only when the identity line shows the nickname (else it'd repeat).
+         *  Missing pieces drop out gracefully. */
+        private fun buildMeta(item: CommunityScanItem, includeDisease: Boolean): String {
             val locality = item.city.ifBlank { item.region }
-            val region = formatRegion(locality, countryLabel(item))
-            val time = formatTimeAgo(item.createdAt)
-            return when {
-                region.isNotEmpty() && time.isNotEmpty() -> "$region · $time"
-                region.isNotEmpty() -> region
-                else -> time
-            }
+            return listOf(
+                if (includeDisease) displayName(item.disease) else "",
+                formatRegion(locality, countryLabel(item)),
+                formatTimeAgo(item.createdAt),
+            ).filter { it.isNotEmpty() }.joinToString(" · ")
         }
 
         /** Localized country NAME (e.g. "Poland"/"Польша") the server resolved,

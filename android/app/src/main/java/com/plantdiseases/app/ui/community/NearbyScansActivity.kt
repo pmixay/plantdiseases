@@ -115,7 +115,7 @@ class NearbyScansActivity : AppCompatActivity() {
                 }
                 CommunityOpinionSheet.show(
                     supportFragmentManager,
-                    item.scanId,
+                    item,
                     DiseaseLabels.displayName(item.disease, isRu) ?: item.disease,
                 )
             },

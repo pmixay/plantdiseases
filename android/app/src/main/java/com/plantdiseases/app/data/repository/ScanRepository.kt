@@ -1026,6 +1026,7 @@ class ScanRepository(
         species: String? = null,
         speciesScore: Float? = null,
         locale: String? = null,
+        nickname: String? = null,
         thumbnail: File? = null,
     ): Result<com.plantdiseases.app.data.model.CommunityScanUploadResponse> =
         withContext(Dispatchers.IO) {
@@ -1048,6 +1049,7 @@ class ScanRepository(
                                 species?.takeIf { it.isNotBlank() }?.let { append("species", it) }
                                 speciesScore?.let { append("species_score", it.toString()) }
                                 locale?.takeIf { it.isNotBlank() }?.let { append("locale", it) }
+                                nickname?.takeIf { it.isNotBlank() }?.let { append("nickname", it) }
                                 thumbnail?.takeIf { it.exists() }?.let { f ->
                                     append(
                                         "image",

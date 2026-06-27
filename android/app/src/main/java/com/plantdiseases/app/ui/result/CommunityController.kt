@@ -201,7 +201,7 @@ class CommunityController(
         if (!CommunityPrefs.uploadsEnabled(activity)) {
             card.visibility = View.VISIBLE
             binding.tvSimilarSubtitle.text =
-                activity.getString(R.string.community_enable_blurb)
+                activity.getString(R.string.similar_scans_enable_prompt)
             enableBtn.visibility = View.VISIBLE
             enableBtn.setOnClickListener {
                 onEnableCommunity { bindSimilarScans(scan, repository, isRu) }
@@ -220,7 +220,7 @@ class CommunityController(
                 recordView(item.scanId, pseudoId)
                 CommunityOpinionSheet.show(
                     activity.supportFragmentManager,
-                    item.scanId,
+                    item,
                     displayName(item.disease, isRu),
                 )
             },
