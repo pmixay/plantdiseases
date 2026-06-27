@@ -241,6 +241,10 @@
     <string name="community_map_title">Community map</string>
     <string name="nearby_action_map">Map</string>
     <string name="community_map_near_me">Near me</string>
+    <string name="nearby_action_disable">Leave community</string>
+    <string name="community_disable_title">Leave community?</string>
+    <string name="community_disable_body">You\'ll stop sharing scans and receiving opinions. Scans you\'ve already shared stay until you delete them from Profile.</string>
+    <string name="community_disable_confirm">Leave</string>
     <string name="community_map_zoom_in">Zoom in to see individual scans</string>
     <string name="community_map_truncated">Showing the latest scans — zoom in to see all</string>
     <string name="community_map_empty">No community scans in this area yet</string>

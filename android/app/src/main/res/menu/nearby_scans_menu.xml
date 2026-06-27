@@ -16,4 +16,9 @@
         android:title="@string/nearby_filter_title"
         app:showAsAction="ifRoom" />
 
+    <item
+        android:id="@+id/action_disable_community"
+        android:title="@string/nearby_action_disable"
+        app:showAsAction="never" />
+
 </menu>

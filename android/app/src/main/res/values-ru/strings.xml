@@ -237,6 +237,10 @@
     <string name="community_map_title">Карта сообщества</string>
     <string name="nearby_action_map">Карта</string>
     <string name="community_map_near_me">Рядом со мной</string>
+    <string name="nearby_action_disable">Покинуть сообщество</string>
+    <string name="community_disable_title">Покинуть сообщество?</string>
+    <string name="community_disable_body">Вы перестанете делиться сканами и получать мнения. Уже опубликованные сканы останутся, пока вы не удалите их в профиле.</string>
+    <string name="community_disable_confirm">Покинуть</string>
     <string name="community_map_zoom_in">Приблизьте, чтобы увидеть отдельные сканы</string>
     <string name="community_map_truncated">Показаны последние сканы — приблизьте, чтобы увидеть все</string>
     <string name="community_map_empty">В этой области пока нет сканов сообщества</string>

@@ -38,7 +38,6 @@ import com.plantdiseases.app.ui.result.CommunityOpinionSheet
 import com.plantdiseases.app.ui.widget.BarChartView
 import com.plantdiseases.app.util.AutosavePrefs
 import com.plantdiseases.app.util.LocaleHelper
-import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.TelemetryIds
 import com.plantdiseases.app.util.ThemeHelper
 import kotlinx.coroutines.launch
@@ -76,19 +75,6 @@ class ProfileFragment : Fragment() {
                 Toast.LENGTH_LONG,
             ).show()
         }
-    }
-
-    // Enabling community sharing requests coarse location (for nearby grouping)
-    // + notifications (for the opinion replies it turns on). Opting in is consent
-    // regardless of which permissions are granted — a denied permission just
-    // means coarser grouping / silent (no-op) notifications, not "off".
-    private val communityPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { _ ->
-        if (_binding == null) return@registerForActivityResult
-        CommunityPrefs.enable(requireContext())
-        binding.switchCommunityShare.isChecked = true
-        startOpinionDelivery()
     }
 
     override fun onCreateView(
@@ -160,20 +146,9 @@ class ProfileFragment : Fragment() {
 
     private fun setupCommunityControls() {
         val ctx = requireContext()
-        // One "Share scans with community" switch (the standalone "Receive
-        // community opinions" toggle was removed — opinions ride along with
-        // sharing, since they're the replies on your shared scans).
-        binding.switchCommunityShare.isChecked = CommunityPrefs.uploadsEnabled(ctx)
-        binding.switchCommunityShare.setOnCheckedChangeListener { _, checked ->
-            if (checked) {
-                enableCommunity()
-            } else {
-                CommunityPrefs.setUploadsEnabled(ctx, false) // also stops opinions
-                androidx.work.WorkManager.getInstance(ctx).cancelUniqueWork("opinion_check")
-                androidx.work.WorkManager.getInstance(ctx).cancelUniqueWork("opinion_check_now")
-            }
-        }
-        // Keep the destructive delete-my-shared-data control here.
+        // Enabling/disabling community now lives inside the community screen.
+        // Profile keeps only the destructive delete-my-shared-data control — a
+        // data right, available regardless of the current on/off state.
         binding.btnDeleteCommunity.setOnClickListener {
             MaterialAlertDialogBuilder(ctx)
                 .setTitle(R.string.community_delete_title)
@@ -184,23 +159,6 @@ class ProfileFragment : Fragment() {
                 }
                 .show()
         }
-    }
-
-    private fun enableCommunity() {
-        val perms = mutableListOf(Manifest.permission.ACCESS_COARSE_LOCATION)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            perms += Manifest.permission.POST_NOTIFICATIONS
-        }
-        // Always prompt so opting in from Profile mirrors the in-context flow;
-        // the launcher flips the pref on (consent) regardless of the grant.
-        communityPermissionLauncher.launch(perms.toTypedArray())
-    }
-
-    private fun startOpinionDelivery() {
-        val app = requireActivity().application as com.plantdiseases.app.PlantDiseasesApp
-        app.scheduleOpinionChecks()
-        app.checkOpinionsNow()
-        com.plantdiseases.app.push.PushManager.registerIfEnabled(requireContext())
     }
 
     private fun deleteCommunityContributions() {

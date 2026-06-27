@@ -14,6 +14,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.StaggeredGridLayoutManager
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.chip.Chip
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.CommunityScanItem
 import com.plantdiseases.app.data.repository.ScanRepository
@@ -51,6 +52,7 @@ class NearbyScansActivity : AppCompatActivity() {
     private var sortNewestFirst = true
     private var typeFilter: String? = null
     private var filterMenuItem: MenuItem? = null
+    private var disableMenuItem: MenuItem? = null
 
     // Server-side scope filter: "nearby" (~30 km radius) or "country".
     private var scope = "nearby"
@@ -133,8 +135,11 @@ class NearbyScansActivity : AppCompatActivity() {
     private fun setupFilterMenu() {
         binding.toolbar.inflateMenu(R.menu.nearby_scans_menu)
         filterMenuItem = binding.toolbar.menu.findItem(R.id.action_filter)
+        disableMenuItem = binding.toolbar.menu.findItem(R.id.action_disable_community)
         // Hidden until a feed loads — filtering an empty screen is a no-op.
         filterMenuItem?.isVisible = false
+        // "Leave community" only makes sense once the user is in it.
+        disableMenuItem?.isVisible = CommunityPrefs.uploadsEnabled(this)
         binding.toolbar.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 R.id.action_map -> {
@@ -147,9 +152,31 @@ class NearbyScansActivity : AppCompatActivity() {
                     showFilterSheet()
                     true
                 }
+                R.id.action_disable_community -> {
+                    confirmLeaveCommunity()
+                    true
+                }
                 else -> false
             }
         }
+    }
+
+    /** Turn community off from inside the community screen (the on/off control
+     *  no longer lives in Profile). Stops sharing + opinion delivery; already
+     *  shared scans persist until the user deletes them from Profile. */
+    private fun confirmLeaveCommunity() {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.community_disable_title)
+            .setMessage(R.string.community_disable_body)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.community_disable_confirm) { _, _ ->
+                CommunityPrefs.setUploadsEnabled(this, false) // also stops opinions
+                androidx.work.WorkManager.getInstance(this).cancelUniqueWork("opinion_check")
+                androidx.work.WorkManager.getInstance(this).cancelUniqueWork("opinion_check_now")
+                disableMenuItem?.isVisible = false
+                showEnablePrompt()
+            }
+            .show()
     }
 
     private fun load(isRefresh: Boolean) {
@@ -159,6 +186,7 @@ class NearbyScansActivity : AppCompatActivity() {
             showEnablePrompt()
             return
         }
+        disableMenuItem?.isVisible = true
         if (!isRefresh) showLoading()
         lifecycleScope.launch {
             val pseudoId = TelemetryIds.userPseudoId(this@NearbyScansActivity)
@@ -208,6 +236,7 @@ class NearbyScansActivity : AppCompatActivity() {
         binding.btnEnableCommunity.visibility = View.VISIBLE
         binding.cgScope.visibility = View.GONE
         filterMenuItem?.isVisible = false
+        disableMenuItem?.isVisible = false
         binding.rvNearby.visibility = View.GONE
     }
 
