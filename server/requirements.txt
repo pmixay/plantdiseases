@@ -12,11 +12,6 @@ ImageHash>=4.3
 # raised to the current 2.4 series; cap kept at <3 for the next ABI break.
 numpy>=2.4,<3.0
 onnxruntime>=1.26.0
-# MaxMind GeoLite2-City reader (server/geoip.py). Imported lazily and only
-# used when a GeoLite2-City.mmdb is dropped into server/ — without it geo stays
-# fail-soft (country header + configured default), so the dep is harmless on
-# deploys that don't provision the database.
-geoip2>=4.8
 # Smart APIs (PlantNet identify, OpenRouter Plant Doctor, care plan
 # polish) are optional at runtime — the corresponding endpoints return
 # a graceful ``available: false`` when no API key is configured. Only

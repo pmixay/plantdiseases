@@ -67,29 +67,34 @@ def test_community_scan_upload_minimal(client, isolated_community):
     assert body["id"] > 0
 
 
-def test_community_scan_upload_country_from_geo_header(client, isolated_community):
+def test_community_scan_upload_stores_client_location(client, isolated_community):
+    # Location is now supplied by the (opted-in) client: country + city + the
+    # rounded coarse coords. There is no server-side IP/header geo.
     db_path, _ = isolated_community
     r = client.post(
         "/api/community/scan",
-        headers={"cf-ipcountry": "US"},
         data=_form(
             scan_id="scangeo001",
             user_pseudo_id="pseudogeo01",
+            country="US", region="Austin",
+            lat=30.27, lon=-97.74,
             disease="powdery_mildew",
         ),
     )
     assert r.status_code == 200, r.text
     with sqlite3.connect(db_path) as conn:
         row = conn.execute(
-            "SELECT country FROM community_scans WHERE scan_id = ?",
+            "SELECT country, region, city, lat, lon FROM community_scans WHERE scan_id = ?",
             ("scangeo001",),
         ).fetchone()
     assert row[0] == "US"
+    assert row[1] == "Austin" and row[2] == "Austin"
+    assert abs(row[3] - 30.27) < 1e-6 and abs(row[4] - (-97.74)) < 1e-6
 
 
-def test_community_scan_upload_no_geo_uses_default_country(client, isolated_community):
-    # No client country + no geo header + no .mmdb in tests → the upload falls
-    # back to the configured default country (RU), not a "worldwide" bucket.
+def test_community_scan_upload_no_location_stores_empty_country(client, isolated_community):
+    # No client location (community off / permission denied) → empty country;
+    # such rows only surface in the worldwide aggregate, never "RU"/"GLOBAL".
     db_path, _ = isolated_community
     r = client.post(
         "/api/community/scan",
@@ -102,10 +107,11 @@ def test_community_scan_upload_no_geo_uses_default_country(client, isolated_comm
     assert r.status_code == 200, r.text
     with sqlite3.connect(db_path) as conn:
         row = conn.execute(
-            "SELECT country FROM community_scans WHERE scan_id = ?",
+            "SELECT country, lat FROM community_scans WHERE scan_id = ?",
             ("scandefault1",),
         ).fetchone()
-    assert row[0] == "RU"
+    assert row[0] == ""
+    assert row[1] is None
 
 
 def test_community_scan_upload_with_thumbnail(client, isolated_community):
@@ -422,7 +428,9 @@ def test_community_nearby_handles_empty_region(client, isolated_community):
     assert r.json()["summary"]["total"] == 0
 
 
-def test_community_nearby_country_optional_uses_geo_header(client, isolated_community):
+def test_community_nearby_country_param(client, isolated_community):
+    # Location is client-supplied now (no header geo); a country-scoped query
+    # passes country explicitly.
     client.post(
         "/api/community/scan",
         data=_form(
@@ -432,7 +440,10 @@ def test_community_nearby_country_optional_uses_geo_header(client, isolated_comm
             disease="healthy",
         ),
     )
-    r = client.get("/api/community/nearby", headers={"cf-ipcountry": "US"})
+    r = client.get(
+        "/api/community/nearby",
+        params={"country": "US", "scope": "country", "user_pseudo_id": "pseudo-viewer-q"},
+    )
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["scope"] == "country"
@@ -441,38 +452,44 @@ def test_community_nearby_country_optional_uses_geo_header(client, isolated_comm
     assert len(body["items"]) == 1
 
 
-# ── nearby (subdivision) vs country filter toggle ──────────────────
+# ── nearby (25 km radius) vs country filter toggle ─────────────────
 
 
 def test_community_nearby_scope_toggle(client, isolated_community):
-    """`scope=nearby` restricts the feed to the requester's subdivision; the
-    default ``scope=country`` (when no nearby region is in play) widens to the
-    whole country. Subdivisions ride in on the ``region`` field (no .mmdb in
-    tests, so the upload falls back to the client-sent region)."""
+    """`scope=nearby` restricts the feed to a ~25 km radius of the requester's
+    coords; `scope=country` widens to the whole country. Coords ride in on the
+    upload's lat/lon and the query's lat/lon."""
+    # Two scans ~3 km apart in Warsaw, one ~300 km away in Gdańsk — all PL.
     client.post("/api/community/scan", data=_form(
-        scan_id="subnear00001", user_pseudo_id="pseudo-near-a",
-        country="PL", region="Mazovia", disease="leaf_spot"))
+        scan_id="nearwarsaw01", user_pseudo_id="pseudo-near-a",
+        country="PL", region="Warsaw", lat=52.23, lon=21.01, disease="leaf_spot"))
     client.post("/api/community/scan", data=_form(
-        scan_id="subfar000001", user_pseudo_id="pseudo-near-a",
-        country="PL", region="Pomerania", disease="leaf_spot"))
+        scan_id="nearwarsaw02", user_pseudo_id="pseudo-near-a",
+        country="PL", region="Warsaw", lat=52.25, lon=21.03, disease="leaf_spot"))
+    client.post("/api/community/scan", data=_form(
+        scan_id="fargdansk001", user_pseudo_id="pseudo-near-a",
+        country="PL", region="Gdansk", lat=54.35, lon=18.65, disease="leaf_spot"))
 
     import community as comm
-    # nearby: only the Mazovia scan (strict — no country-wide widening).
+    # nearby (within 25 km of Warsaw): only the two Warsaw scans.
     near = client.get("/api/community/nearby", params={
-        "country": "PL", "region": "Mazovia", "scope": "nearby",
+        "country": "PL", "lat": 52.24, "lon": 21.02, "scope": "nearby",
         "user_pseudo_id": "pseudo-viewer-z"}).json()
     assert near["scope"] == "nearby"
-    assert [it["scan_id"] for it in near["items"]] == \
-        [comm.public_scan_token("subnear00001")]
+    assert {it["scan_id"] for it in near["items"]} == {
+        comm.public_scan_token("nearwarsaw01"),
+        comm.public_scan_token("nearwarsaw02"),
+    }
 
-    # country: both PL scans regardless of subdivision.
+    # country: all three PL scans regardless of distance.
     whole = client.get("/api/community/nearby", params={
         "country": "PL", "scope": "country",
         "user_pseudo_id": "pseudo-viewer-z"}).json()
     assert whole["scope"] == "country"
     assert {it["scan_id"] for it in whole["items"]} == {
-        comm.public_scan_token("subnear00001"),
-        comm.public_scan_token("subfar000001"),
+        comm.public_scan_token("nearwarsaw01"),
+        comm.public_scan_token("nearwarsaw02"),
+        comm.public_scan_token("fargdansk001"),
     }
 
 
@@ -561,21 +578,15 @@ def test_metrics_surfaces_community_block(client, isolated_community):
 
 
 def test_country_groups_with_region_breakdown(client, isolated_community):
-    """The corpus stores country + region separately. A country-only
-    nearby query returns every locality; a country+region query
-    narrows to one city. Legacy "City, Country" composite writes
-    auto-split via the backward-compat fallback so older clients
-    still land in the right column.
-    """
+    """The corpus stores country + city (in the ``region`` column). A
+    country-scoped query returns every city and surfaces a top-cities
+    breakdown in the summary."""
     db_path, _ = isolated_community
     writes = (
-        # New hierarchy: explicit country + region.
         dict(scan_id="scangb-london-1", country="GB", region="London"),
         dict(scan_id="scangb-london-2", country="GB", region="London"),
         dict(scan_id="scangb-mancunian1", country="GB", region="Manchester"),
-        # Legacy: composite "City, Country" sent as region with no
-        # explicit country. The endpoint splits on the last comma.
-        dict(scan_id="scangb-legacy001", region="Bristol", country="GB"),
+        dict(scan_id="scangb-bristol001", country="GB", region="Bristol"),
     )
     for w in writes:
         r = client.post(
@@ -583,15 +594,14 @@ def test_country_groups_with_region_breakdown(client, isolated_community):
             data=_form(
                 scan_id=w["scan_id"],
                 user_pseudo_id="pseudo-gb-mixed",
-                country=w.get("country"),
-                region=w.get("region"),
+                country=w["country"],
+                region=w["region"],
                 disease="healthy",
             ),
         )
         assert r.status_code == 200, r.text
 
-    # Persisted country column must always be "GB"; region carries
-    # the locality.
+    # Persisted country is "GB"; the region column carries the city.
     with sqlite3.connect(str(db_path)) as conn:
         rows = conn.execute(
             "SELECT country, region FROM community_scans ORDER BY id"
@@ -599,35 +609,14 @@ def test_country_groups_with_region_breakdown(client, isolated_community):
     assert {row[0] for row in rows} == {"GB"}
     assert {row[1] for row in rows} == {"London", "Manchester", "Bristol"}
 
-    # Country-only nearby returns everything.
+    # Country-scoped query returns everything + a top-cities breakdown.
     r_country = client.get(
-        "/api/community/nearby", params={"country": "GB"},
+        "/api/community/nearby", params={"country": "GB", "scope": "country"},
     ).json()
     assert r_country["summary"]["total"] == 4
     assert r_country["summary"]["country"] == "GB"
-    assert r_country["summary"]["region"] is None
-    # Top regions surfaced for the breakdown view.
     top_region_names = {r["region"] for r in r_country["summary"]["top_regions"]}
     assert top_region_names >= {"London", "Manchester", "Bristol"}
-
-    # Country + region narrows to the matching locality. We still
-    # populate the carousel by widening to the country when the
-    # locality alone has < limit rows — Bristol has 1 row, so the
-    # response includes other GB localities as fillers.
-    r_london = client.get(
-        "/api/community/nearby", params={"country": "GB", "region": "London"},
-    ).json()
-    assert r_london["summary"]["total"] == 2
-    assert r_london["summary"]["region"] == "London"
-    london_first = [it for it in r_london["items"] if it["region"] == "London"]
-    assert len(london_first) == 2
-
-    # Legacy "City, Country" composite on the read path also lands.
-    r_legacy = client.get(
-        "/api/community/nearby", params={"region": "Bristol", "country": "GB"},
-    ).json()
-    assert r_legacy["summary"]["country"] == "GB"
-    assert r_legacy["summary"]["region"] == "Bristol"
 
 
 # ── Regression: thumbnail magic-byte validation ─────────────────────

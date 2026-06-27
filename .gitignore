@@ -47,9 +47,6 @@ server/community.db-wal
 server/community.db-shm
 server/community_thumbs/
 
-# MaxMind GeoLite2 database (provisioned out of band — license-restricted, ~60MB)
-server/*.mmdb
-
 # Hosted Aqua on-device model (provisioned out of band)
 server/static/aqua/aqua_classifier.tflite
 server/static/aqua/classes.json

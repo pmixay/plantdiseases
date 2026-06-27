@@ -436,7 +436,7 @@
     "/api/community/scan": {
       "post": {
         "summary": "Community Scan Upload",
-        "description": "Append one community-shared scan to the corpus.\n\nHierarchy: ``country`` is the canonical top bucket (required),\n``region`` is the optional sub-country locality. The image is\noptional — when omitted we still store the row, just without a\nthumbnail.",
+        "description": "Append one community-shared scan to the corpus.\n\nLocation is supplied by the opted-in client from its coarse location\n(``country`` + ``region`` city + rounded ``lat``/``lon``) — there is no\nserver-side IP geolocation. ``country``/``region`` drive display + the\ncountry scope; the coords drive the 25 km \"nearby\" radius and the\n(future) heat-map. The image is optional.",
         "operationId": "community_scan_upload_api_community_scan_post",
         "requestBody": {
           "content": {
@@ -734,7 +734,7 @@
     "/api/community/nearby": {
       "get": {
         "summary": "Community Scan Nearby",
-        "description": "List the most recent community-shared scans near the requester.\n\nLocation comes from the requester's IP (MaxMind). ``scope`` is the app's\nfilter toggle: ``nearby`` (default) restricts the feed to the requester's\nsubdivision; ``country`` widens to the whole country. ``species``\n(scientific name) + ``disease`` narrow the result-screen \"similar scans\"\ncarousel, which always widens subdivision→country to stay filled.",
+        "description": "List the most recent community-shared scans near the requester.\n\nLocation is supplied by the opted-in client (coarse ``lat``/``lon`` +\nreverse-geocoded ``country``/``region`` city). ``scope`` is the app's\nfilter toggle: ``nearby`` (default) restricts the feed to a ~25 km radius\nof the coords; ``country`` widens to the whole country. ``species`` +\n``disease`` narrow the result-screen \"similar scans\" carousel, which\nwidens nearby→country to stay filled.",
         "operationId": "community_scan_nearby_api_community_nearby_get",
         "parameters": [
           {
@@ -767,6 +767,38 @@
                 }
               ],
               "title": "Region"
+            }
+          },
+          {
+            "name": "lat",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lat"
+            }
+          },
+          {
+            "name": "lon",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lon"
             }
           },
           {
@@ -1287,7 +1319,7 @@
     "/api/popular": {
       "get": {
         "summary": "Popular Endpoint",
-        "description": "Personalized popular-houseplants bundle with lead images pre-resolved.\n\nLocation (country + subdivision) comes from the client when given, else\nthe requester's IP (MaxMind), else the default country. Cached per\n(country, subdivision, locale) so the per-species Wikipedia calls aren't\nrepeated.",
+        "description": "Personalized popular-houseplants bundle with lead images pre-resolved.\n\nLocation is supplied by the opted-in client (coarse ``lat``/``lon`` +\nreverse-geocoded ``country``/``region`` city); a request with none gets the\nworldwide bundle. Cached per (country, coords, locale); a stale entry is\nserved immediately and refreshed in the background so a user never waits on\nthe per-species Wikipedia calls.",
         "operationId": "popular_endpoint_api_popular_get",
         "parameters": [
           {
@@ -1320,6 +1352,38 @@
                 }
               ],
               "title": "Region"
+            }
+          },
+          {
+            "name": "lat",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lat"
+            }
+          },
+          {
+            "name": "lon",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lon"
             }
           },
           {
@@ -1397,6 +1461,28 @@
             "type": "string",
             "title": "Region",
             "default": ""
+          },
+          "lat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lat"
+          },
+          "lon": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lon"
           },
           "disease": {
             "type": "string",

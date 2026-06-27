@@ -70,21 +70,6 @@ new plant* flow and the gallery's "identify species" button.
 The PlantNet client is read in `server/ai_services.py:50` and the
 identify call lives in `identify_species()` lower in the same file.
 
-**MaxMind GeoLite2-City — "nearby" community + popular carousels.**
-Used to place each scan (and each viewer) by IP so the community feed
-and the two popular carousels can scope to the user's subdivision /
-country.
-
-1. Sign up at <https://www.maxmind.com/en/geolite2/signup> (free) and
-   download **GeoLite2-City.mmdb**.
-2. Drop the file into the `server/` folder (any `*.mmdb` there is picked
-   up; `GeoLite2-City.mmdb` is preferred). It is git-ignored and never
-   committed — provision it out of band like the model bundle.
-3. Restart the server. Without the file the server still runs: location
-   falls back to the CDN country header, then to the configured default
-   country (`DEFAULT_COUNTRY`, default `RU`). There is no "worldwide"
-   scope.
-
 **OpenRouter — AI plant doctor + care-plan polish.** Used by the
 chat sheet and the optional Markdown summary on care plans.
 

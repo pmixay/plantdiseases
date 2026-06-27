@@ -31,6 +31,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import logging
+import math
 import sqlite3
 import threading
 import time
@@ -188,6 +189,30 @@ _FEED_COLUMNS = (
     "species, species_score, thumb_path, locale, created_at, wants_opinion, "
     "user_pseudo_id"
 )
+
+# "Nearby" radius for the coords-based feed + popular scope (km). The client
+# resolves coarse location; we group within this radius of it.
+NEARBY_RADIUS_KM = 25.0
+
+
+def _bbox(lat: float, lon: float, radius_km: float) -> tuple[float, float, float, float]:
+    """(min_lat, max_lat, min_lon, max_lon) box ~``radius_km`` around a point.
+    A cheap prefilter for the indexed lat/lon columns; callers refine to a true
+    circle with :func:`_haversine_km` where exactness matters."""
+    dlat = radius_km / 111.0
+    coslat = math.cos(math.radians(lat))
+    dlon = radius_km / (111.0 * coslat) if abs(coslat) > 1e-6 else 180.0
+    return (lat - dlat, lat + dlat, lon - dlon, lon + dlon)
+
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Great-circle distance in km."""
+    r = 6371.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlmb = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlmb / 2) ** 2
+    return 2 * r * math.asin(min(1.0, math.sqrt(a)))
 
 
 def _hidden_clause(table_alias: str = "") -> str:
@@ -726,106 +751,95 @@ def scans_by_species(
 
 def nearby_scans(
     *,
-    country: str,
-    region: str | None = None,
+    country: str | None = None,
+    lat: float | None = None,
+    lon: float | None = None,
+    radius_km: float = NEARBY_RADIUS_KM,
     disease: str | None = None,
     species: str | None = None,
     limit: int = 20,
     exclude_user_pseudo_id: str | None = None,
-    strict_region: bool = False,
+    scope: str = "nearby",
 ) -> list[dict]:
-    """Return the most recent shared scans within ``country``.
+    """Most recent shared scans for one scope.
 
-    ``region`` is the "nearby" grouping key (the MaxMind subdivision). When
-    given, results are scoped to it first, then widened to the rest of the
-    country to fill the feed. Everything stays inside ``country`` — there is
-    no cross-country / worldwide bucket.
-
-    ``strict_region`` (the feed's "nearby" toggle) keeps the disease-agnostic
-    result inside the subdivision — no country-wide widening — so the toggle
-    actually changes what's shown.
+    ``scope="nearby"`` (default) selects scans within ``radius_km`` of
+    ``lat``/``lon`` (the requester's coarse location); ``scope="country"``
+    selects the whole ``country``. A *disease-scoped* call (the result-screen
+    "similar scans" carousel) widens nearby→country to stay filled but never
+    crosses to a different disease; the disease-agnostic feed stays strictly
+    in its scope so the Nearby/Country toggle actually changes what's shown.
     """
     init_db()
     limit = max(1, min(int(limit), 50))
+    has_coords = lat is not None and lon is not None
+    nearby = scope != "country"
 
     with _connect() as conn:
-        _SELECT = f"SELECT {_FEED_COLUMNS} FROM community_scans WHERE "
-
-        def _query(where_extra: str, params: list, take: int) -> list[dict]:
-            sql = (
-                _SELECT + "country = ? "
-                + where_extra
-                + " ORDER BY created_at DESC LIMIT ?"
-            )
-            rows = conn.execute(sql, (*params, take)).fetchall()
-            return [_row_to_dict(r) for r in rows]
-
-        base_params: list = [country]
-        base_extra = ""
+        common = ""
+        cparams: list = []
         if exclude_user_pseudo_id:
-            base_extra += " AND user_pseudo_id != ?"
-            base_params.append(exclude_user_pseudo_id)
+            common += " AND user_pseudo_id != ?"
+            cparams.append(exclude_user_pseudo_id)
         if _HIDDEN_COMMUNITY_DISEASES:
-            base_extra += _hidden_clause()
-            base_params.extend(_HIDDEN_COMMUNITY_DISEASES)
-        region_clean = (region or "").strip()
-        region_extra = base_extra
-        region_params = list(base_params)
-        if region_clean:
-            region_extra += " AND region = ?"
-            region_params.append(region_clean)
-        species_clean = (species or "").strip()
-        species_lower = species_clean.lower() if species_clean else ""
+            common += _hidden_clause()
+            cparams.extend(_HIDDEN_COMMUNITY_DISEASES)
 
+        # Geo scopes, most specific first. A disease-scoped carousel widens
+        # nearby→country; the plain feed stays in a single scope.
+        widen = disease is not None
+        geo_scopes: list[tuple[str, list, bool]] = []
+        if nearby and has_coords:
+            min_lat, max_lat, min_lon, max_lon = _bbox(lat, lon, radius_km)
+            geo_scopes.append((
+                " AND lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?",
+                [min_lat, max_lat, min_lon, max_lon], True,
+            ))
+        if country and (scope == "country" or widen or not has_coords):
+            geo_scopes.append((" AND country = ?", [country], False))
+
+        species_lower = (species or "").strip().lower()
         seen: set[str] = set()
         out: list[dict] = []
 
-        def _append_unique(rows: list[dict]) -> None:
+        def _run(geo_clause, geo_params, dz_clause, dz_params, refine):
+            # Over-fetch when we'll refine the box to a true circle so the
+            # post-filter still has ~limit rows to offer.
+            take = limit * 3 if refine else limit
+            sql = (
+                f"SELECT {_FEED_COLUMNS} FROM community_scans WHERE 1=1"
+                + geo_clause + common + dz_clause
+                + " ORDER BY created_at DESC LIMIT ?"
+            )
+            rows = [
+                _row_to_dict(r)
+                for r in conn.execute(
+                    sql, (*geo_params, *cparams, *dz_params, take),
+                ).fetchall()
+            ]
+            if refine:
+                rows = [
+                    r for r in rows
+                    if r["lat"] is not None and r["lon"] is not None
+                    and _haversine_km(lat, lon, r["lat"], r["lon"]) <= radius_km
+                ]
             for row in rows:
-                sid = row["scan_id"]
-                if sid in seen:
+                if row["scan_id"] in seen:
                     continue
                 out.append(row)
-                seen.add(sid)
+                seen.add(row["scan_id"])
 
-        # Buckets ordered most → least specific
-        if disease and species_clean and region_clean:
-            _append_unique(_query(
-                region_extra + " AND disease = ? AND species_lower = ?",
-                region_params + [disease, species_lower],
-                limit,
-            ))
-        if len(out) < limit and disease and species_clean:
-            _append_unique(_query(
-                base_extra + " AND disease = ? AND species_lower = ?",
-                base_params + [disease, species_lower],
-                limit,
-            ))
-        if len(out) < limit and disease and region_clean:
-            _append_unique(_query(
-                region_extra + " AND disease = ?",
-                region_params + [disease],
-                limit,
-            ))
-        if len(out) < limit and disease:
-            _append_unique(_query(
-                base_extra + " AND disease = ?",
-                base_params + [disease],
-                limit,
-            ))
-        # Disease-agnostic fallback buckets (region-only, then
-        # country-only). These pad the feed with *other* diseases, so we
-        # only reach for them when the caller did NOT scope to a disease.
-        # A disease-scoped "similar scans" request must never return rows
-        # of a different disease — better to return fewer (or none) than
-        # to mislead the user with unrelated verdicts.
-        if not disease:
-            if len(out) < limit and region_clean:
-                _append_unique(_query(region_extra, region_params, limit))
-            # Country-wide fill — skipped in strict "nearby" mode so the
-            # subdivision toggle isn't silently widened to the whole country.
-            if len(out) < limit and not (strict_region and region_clean):
-                _append_unique(_query(base_extra, base_params, limit))
+        for geo_clause, geo_params, refine in geo_scopes:
+            if len(out) >= limit:
+                break
+            if disease and species_lower:
+                _run(geo_clause, geo_params,
+                     " AND disease = ? AND species_lower = ?",
+                     [disease, species_lower], refine)
+            if len(out) < limit and disease:
+                _run(geo_clause, geo_params, " AND disease = ?", [disease], refine)
+            if len(out) < limit and not disease:
+                _run(geo_clause, geo_params, "", [], refine)
         return out[:limit]
 
 
@@ -910,29 +924,35 @@ def region_summary(
 
 
 def popular_snapshot(
-    country: str | None,
-    region: str | None = None,
+    country: str | None = None,
     *,
+    lat: float | None = None,
+    lon: float | None = None,
+    radius_km: float = NEARBY_RADIUS_KM,
     limit: int = 10,
 ) -> dict:
     """Live popular species + diseases for one scope.
 
-    ``country`` alone scopes to the country; adding ``region`` (the MaxMind
-    subdivision) narrows to the "nearby" bucket. The caller runs the
-    nearby → country ladder by calling this twice.
+    Scope precedence: coords (the ~25 km "nearby" box) → ``country`` →
+    worldwide (no filter). The caller runs the nearby → country → worldwide
+    ladder by calling this with progressively wider arguments.
+
+    The nearby scope uses the bounding box (not a refined circle) — for a
+    popularity *aggregate* the square is plenty; the visible feed
+    (:func:`nearby_scans`) is the one that refines to a true radius.
     """
     init_db()
     country_clean = (country or "").strip()
-    region_clean = (region or "").strip()
     limit = max(1, min(int(limit), 20))
     where = ""
     params: tuple = ()
-    if country_clean:
+    if lat is not None and lon is not None:
+        min_lat, max_lat, min_lon, max_lon = _bbox(lat, lon, radius_km)
+        where = " AND lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?"
+        params = (min_lat, max_lat, min_lon, max_lon)
+    elif country_clean:
         where = " AND country = ?"
         params = (country_clean,)
-        if region_clean:
-            where += " AND region = ?"
-            params = (country_clean, region_clean)
     hidden_clause = _hidden_clause()
     with _connect() as conn:
         total = int(conn.execute(
