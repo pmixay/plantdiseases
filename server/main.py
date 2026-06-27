@@ -137,9 +137,6 @@ try:
     from .community import (
         stats_snapshot as community_stats_snapshot,
     )
-    from .community import (
-        trending as community_trending,
-    )
     from .config import get, get_bool, get_float, get_int, get_list, get_str
     from .diseases_data import (
         DISEASES_DATABASE,
@@ -177,7 +174,7 @@ try:
     from .feedback import (
         scan_ids_for_user as feedback_scan_ids_for_user,
     )
-    from .geoip import detect_country
+    from .geoip import detect_country, detect_location
     from .pipeline import PlantDiseasePipeline
     from .popular_plants import popular_for
     from .push import (
@@ -270,9 +267,6 @@ except ImportError:
     from community import (
         stats_snapshot as community_stats_snapshot,
     )
-    from community import (
-        trending as community_trending,
-    )
     from config import get, get_bool, get_float, get_int, get_list, get_str
     from diseases_data import (
         DISEASES_DATABASE,
@@ -310,7 +304,7 @@ except ImportError:
     from feedback import (
         scan_ids_for_user as feedback_scan_ids_for_user,
     )
-    from geoip import detect_country
+    from geoip import detect_country, detect_location
     from pipeline import PlantDiseasePipeline
     from popular_plants import popular_for
     from push import (
@@ -1167,13 +1161,19 @@ async def lifespan(app: FastAPI):
     # Cancelled cleanly on shutdown so the lifespan exit doesn't
     # leak the task.
     prune_task = asyncio.create_task(_prune_loop())
+    # Warm the curated placeholder plants' lead images so a fresh country
+    # (no community scans yet) paints its popular carousel without a wait.
+    warm_task = asyncio.create_task(_warm_placeholder_images())
     try:
         yield
     finally:
         logger.info("Server shutting down")
         prune_task.cancel()
+        warm_task.cancel()
         with contextlib.suppress(asyncio.CancelledError, Exception):
             await prune_task
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await warm_task
         with _executor_lock:
             if _inference_executor is not None:
                 # `wait=True` lets in-flight inferences drain. The bound is
@@ -2174,6 +2174,12 @@ def _normalise_locality(raw: str | None) -> str:
     return cleaned
 
 
+# There is no "worldwide" bucket any more — every scope is a real country.
+# When an IP can't be located at all (private/VPN/no .mmdb) we fall back to
+# this primary-market country so the feed + carousels still have a scope.
+_DEFAULT_COUNTRY = get_str("DEFAULT_COUNTRY", "RU").strip().upper() or "RU"
+
+# Legacy sentinel still present in old DB rows; only used to scrub them on read.
 _GLOBAL_COUNTRY = "GLOBAL"
 
 # EN/RU display names keyed by ISO-3166 alpha-2. ``_country_display`` falls
@@ -2233,12 +2239,7 @@ _COUNTRY_NAMES: dict[str, tuple[str, str]] = {
 def _country_display(country: str | None) -> dict:
     code = (country or "").strip().upper()
     if not code or code == _GLOBAL_COUNTRY:
-        return {
-            "country": None,
-            "country_name_en": "Worldwide",
-            "country_name_ru": "по всему миру",
-            "scope": "global",
-        }
+        code = _DEFAULT_COUNTRY
     en, ru = _COUNTRY_NAMES.get(code, (country or code, country or code))
     return {
         "country": code if len(code) == 2 else country,
@@ -2273,14 +2274,33 @@ def _resolve_country_bucket(
     request: Request,
     explicit: str | None,
     *,
-    write: bool = False,
-) -> str | None:
+    write: bool = False,  # kept for call-site compatibility; unused now
+) -> str:
+    """Country for this request: explicit value, else IP geo, else the
+    configured default. Never ``None`` / never "worldwide"."""
     country = _normalise_country(explicit) if explicit else ""
     if not country:
         country = detect_country(request, _client_ip(request)) or ""
     if country:
         return country.upper() if len(country) == 2 else country
-    return _GLOBAL_COUNTRY if write else None
+    return _DEFAULT_COUNTRY
+
+
+def _resolve_location(request: Request, explicit_country: str | None = None) -> dict:
+    """Full coarse location for a request: country (explicit/geo/default) plus
+    the MaxMind subdivision (the "nearby" key), city, and centroid. Country is
+    always present; the finer fields are ``None`` when unresolved."""
+    loc = detect_location(request, _client_ip(request))
+    country = (_normalise_country(explicit_country) if explicit_country else "") \
+        or (loc.country if loc else "") or _DEFAULT_COUNTRY
+    country = country.upper() if len(country) == 2 else country
+    return {
+        "country": country,
+        "subdivision": (loc.subdivision if loc else None) or None,
+        "city": (loc.city if loc else None) or None,
+        "lat": loc.lat if loc else None,
+        "lon": loc.lon if loc else None,
+    }
 
 
 class CommunityScanRequest(BaseModel):
@@ -3042,7 +3062,10 @@ async def community_scan_upload(
         logger.info("Community scan validation failed: %s", exc)
         raise HTTPException(status_code=422, detail="Invalid scan upload") from exc
 
-    country_bucket = _resolve_country_bucket(request, payload.country, write=True)
+    # Location is derived from the UPLOADER's IP (MaxMind): country is the
+    # bucket, subdivision is the "nearby" key, city + centroid drive display
+    # and the heat-map. Any client-sent country is honoured as an override.
+    geo = _resolve_location(request, payload.country)
 
     # Enforce the per-IP daily quota BEFORE reading the (up to 10 MB)
     # image body — an over-quota client should be rejected without us
@@ -3098,8 +3121,11 @@ async def community_scan_upload(
             lambda: community_record_scan(
                 scan_id=payload.scan_id,
                 user_pseudo_id=payload.user_pseudo_id,
-                country=country_bucket or _GLOBAL_COUNTRY,
-                region=payload.region,
+                country=geo["country"],
+                region=geo["subdivision"] or payload.region,
+                city=geo["city"],
+                lat=geo["lat"],
+                lon=geo["lon"],
                 disease=payload.disease,
                 confidence=payload.confidence,
                 species=payload.species,
@@ -3341,23 +3367,25 @@ async def community_scan_nearby(
     species: str | None = None,
     limit: int = 20,
     user_pseudo_id: str | None = None,
+    scope: str | None = None,
 ):
-    """List the most recent community-shared scans within ``country``.
+    """List the most recent community-shared scans near the requester.
 
-    ``region`` narrows the result set to a sub-country locality
-    (city / admin area) when supplied. ``species`` (scientific name,
-    exact match) narrows further so the carousel only shows scans of
-    the same plant — without it, "Ficus elastica with leaf spot"
-    appears next to "Monstera with leaf spot" and conflates two
-    different care routines.
-
-    Fall-through ordering inside ``nearby_scans`` is most-specific
-    first: same disease+species+region → same disease+species → …
-    → same country (any disease). The carousel always fills up to
-    ``limit`` so a thin local bucket still surfaces something.
+    Location comes from the requester's IP (MaxMind). ``scope`` is the app's
+    filter toggle: ``nearby`` (default) restricts the feed to the requester's
+    subdivision; ``country`` widens to the whole country. ``species``
+    (scientific name) + ``disease`` narrow the result-screen "similar scans"
+    carousel, which always widens subdivision→country to stay filled.
     """
-    country_norm = _resolve_country_bucket(request, country, write=True) or _GLOBAL_COUNTRY
-    region_norm = _normalise_locality(region) if region else ""
+    geo = _resolve_location(request, country)
+    country_norm = geo["country"]
+    nearby = (scope or "nearby").strip().lower() != "country"
+    # Explicit region overrides the IP subdivision; country scope ignores it.
+    region_norm = (_normalise_locality(region) if region else (geo["subdivision"] or "")) \
+        if nearby else ""
+    # The feed (no disease) honours the nearby/country toggle strictly; the
+    # disease-scoped carousel still widens to the country so it stays filled.
+    strict_region = nearby and disease is None
     rows = community_nearby_scans(
         country=country_norm,
         region=region_norm or None,
@@ -3365,6 +3393,7 @@ async def community_scan_nearby(
         species=(species or None),
         limit=max(1, min(int(limit), 50)),
         exclude_user_pseudo_id=user_pseudo_id,
+        strict_region=strict_region,
     )
     # Exclude the requesting user's own rows from the summary too —
     # otherwise the chip row and the ``last_7d`` count include the
@@ -3387,46 +3416,12 @@ async def community_scan_nearby(
         # Localize the per-row country so cards show "Poland"/"Польша", not "PL".
         _localize_item_country(r)
     meta = _country_display(country_norm)
+    # Tell the client which filter was served + the nearby (subdivision) label.
+    served_scope = "nearby" if (nearby and region_norm) else "country"
+    meta["scope"] = served_scope
+    meta["region"] = region_norm or None
     summary.update(meta)
     return JSONResponse(content={"items": rows, "summary": summary, **meta})
-
-
-@api_router.get("/community/trending")
-async def community_trending_endpoint(
-    request: Request,
-    country: str | None = None,
-    region: str | None = None,
-    days: int = 7,
-    limit: int = 6,
-):
-    """Trending species + diseases for the Home screen's "trending nearby"
-    module. Unlike /community/nearby, ``country`` is OPTIONAL and an invalid
-    value degrades to the wider scope instead of 422 — this is a discovery
-    widget that must never error a fresh install with no location. The
-    response widens region → country → global until a scope has enough data
-    (``scope`` reports which one was served)."""
-    country_norm = _resolve_country_bucket(request, country, write=False) or ""
-    region_norm = _normalise_locality(region) if region else ""
-    data = await asyncio.get_running_loop().run_in_executor(
-        None,
-        lambda: community_trending(
-            country_norm or None,
-            region_norm or None,
-            days=max(1, min(int(days), 90)),
-            limit=max(1, min(int(limit), 20)),
-        ),
-    )
-    # ``trending()`` already computed the authoritative ``scope``/``country``/
-    # ``region`` (incl. the region→country→global widening), so only the
-    # localized *names* are missing here. Merging the whole ``_country_display``
-    # dict used to clobber that: a widened-to-global response had ``country=None``,
-    # the ``or country_norm`` fallback re-inserted the requested country, and
-    # ``_country_display`` then returned ``scope="country"`` — masking the real
-    # "global" scope (and it overwrote a ``region`` scope with ``country`` too).
-    display = _country_display(data.get("country"))
-    data.setdefault("country_name_en", display["country_name_en"])
-    data.setdefault("country_name_ru", display["country_name_ru"])
-    return JSONResponse(content=data)
 
 
 @api_router.get("/community/my-opinions/{user_pseudo_id}")
@@ -3759,54 +3754,95 @@ _popular_lock = threading.Lock()
 _POPULAR_CACHE_MAX = 64
 
 
+# Both home carousels (popular plants + popular diseases) cap at 10 cards.
+_POPULAR_MAX_CARDS = 10
+
+
+async def _warm_placeholder_images() -> None:
+    """Pre-resolve lead images for the curated placeholder plants (default
+    country + global list) so the first popular-carousel request for a
+    scan-less country renders instantly. Best-effort; failures are ignored."""
+    loop = asyncio.get_running_loop()
+    seen: set[str] = set()
+    for p in (*popular_for(_DEFAULT_COUNTRY), *popular_for(None)):
+        if p.scientific in seen:
+            continue
+        seen.add(p.scientific)
+        for lang in ("en", "ru"):
+            with contextlib.suppress(Exception):
+                await loop.run_in_executor(
+                    None, lambda s=p.scientific, n=lang: fetch_species_info(s, n),
+                )
+
+
 def _build_popular_bundle(country: str | None, region: str | None, locale: str) -> dict:
-    live = community_popular_snapshot(country if country != _GLOBAL_COUNTRY else None)
-    live_species = live.get("top_species") or []
-    plants = [] if live_species else popular_for(
-        country if country != _GLOBAL_COUNTRY else None,
-        region,
-    )
+    """Popular species + diseases for the home carousels, with the ladder
+    nearby(subdivision) → country → curated placeholder.
+
+    Real-scan scopes carry per-item ``count``/``percent`` (the client shows
+    "P% of scans"); the placeholder carries zeros + ``source="placeholder"``
+    so the client suppresses the percentage. Both lists are capped at 10.
+    """
     lang = "ru" if locale == "ru" else "en"
-    items = []
-    if live_species:
-        for row in live_species:
-            scientific = row["species"]
-            info = fetch_species_info(scientific, lang)
-            title = (info or {}).get("title") or scientific
+
+    def _has(snap: dict) -> bool:
+        return bool(snap.get("top_species") or snap.get("top_diseases"))
+
+    snap = community_popular_snapshot(country, region, limit=_POPULAR_MAX_CARDS)
+    source = "nearby" if region else "country"
+    if region and not _has(snap):
+        snap = community_popular_snapshot(country, None, limit=_POPULAR_MAX_CARDS)
+        source = "country"
+
+    species_rows = (snap.get("top_species") or [])[:_POPULAR_MAX_CARDS]
+    disease_rows = (snap.get("top_diseases") or [])[:_POPULAR_MAX_CARDS]
+
+    # No real scans in this country yet → curated placeholder (plants only;
+    # the diseases carousel just hides when empty). The first real scan in the
+    # scope flips this back to live data on the next cache miss.
+    if not species_rows and not disease_rows:
+        items = []
+        for p in popular_for(country)[:_POPULAR_MAX_CARDS]:
+            info = fetch_species_info(p.scientific, lang)
             items.append({
-                "scientific": scientific,
-                "common_en": title,
-                "common_ru": title,
+                "scientific": p.scientific,
+                "common_en": p.common_en,
+                "common_ru": p.common_ru,
                 "image_url": (info or {}).get("image_url"),
-                "count": row.get("count", 0),
-                "percent": row.get("percent", 0),
+                "count": 0,
+                "percent": 0,
             })
         return {
             **_country_display(country),
             "locale": locale,
+            "region": None,
             "items": items,
-            "top_diseases": live.get("top_diseases") or [],
-            "total": live.get("total", 0),
-            "source": "community",
+            "top_diseases": [],
+            "total": 0,
+            "source": "placeholder",
         }
-    for p in plants:
-        info = fetch_species_info(p.scientific, lang)
+
+    items = []
+    for row in species_rows:
+        scientific = row["species"]
+        info = fetch_species_info(scientific, lang)
+        title = (info or {}).get("title") or scientific
         items.append({
-            "scientific": p.scientific,
-            "common_en": p.common_en,
-            "common_ru": p.common_ru,
-            # Include the item even when no image resolves — client has a placeholder.
+            "scientific": scientific,
+            "common_en": title,
+            "common_ru": title,
             "image_url": (info or {}).get("image_url"),
-            "count": 0,
-            "percent": 0,
+            "count": row.get("count", 0),
+            "percent": row.get("percent", 0),
         })
     return {
         **_country_display(country),
         "locale": locale,
+        "region": region if source == "nearby" else None,
         "items": items,
-        "top_diseases": [],
-        "total": 0,
-        "source": "curated",
+        "top_diseases": disease_rows,
+        "total": snap.get("total", 0),
+        "source": source,
     }
 
 
@@ -3815,15 +3851,17 @@ async def popular_endpoint(request: Request, country: str | None = None,
                            region: str | None = None, locale: str = "en"):
     """Personalized popular-houseplants bundle with lead images pre-resolved.
 
-    Country comes from the client when given, else server-side IP geolocation,
-    else a global list. Cached per (country, locale) for two hours so the
-    per-species Wikipedia calls aren't repeated."""
-    country_norm = _resolve_country_bucket(request, country, write=True)
-    # popular_for matches ISO codes; a full country name simply falls to global.
-    region_norm = _normalise_locality(region) or None if region else None
+    Location (country + subdivision) comes from the client when given, else
+    the requester's IP (MaxMind), else the default country. Cached per
+    (country, subdivision, locale) so the per-species Wikipedia calls aren't
+    repeated."""
+    geo = _resolve_location(request, country)
+    country_norm = geo["country"]
+    # The subdivision is the "nearby" key; an explicit region overrides it.
+    region_norm = (_normalise_locality(region) if region else None) or geo["subdivision"]
     locale = "ru" if str(locale or "en").lower().startswith("ru") else "en"
 
-    key = f"{country_norm or 'global'}:{locale}"
+    key = f"{country_norm}|{region_norm or ''}:{locale}"
     now = time.time()
     with _popular_lock:
         hit = _popular_cache.get(key)

@@ -60,7 +60,14 @@ CREATE TABLE IF NOT EXISTS community_scans (
     scan_id         TEXT    NOT NULL,
     user_pseudo_id  TEXT    NOT NULL,
     country         TEXT,
+    -- ``region`` is the "nearby" grouping key: the MaxMind subdivision
+    -- (state / oblast / region). ``city`` is the finer display label, and
+    -- lat/lon are the MaxMind city centroid (coarse, never device GPS) for
+    -- the scans heat-map. All three are server-derived from the uploader IP.
     region          TEXT    NOT NULL,
+    city            TEXT,
+    lat             REAL,
+    lon             REAL,
     disease         TEXT    NOT NULL,
     confidence      REAL,
     species         TEXT,
@@ -82,6 +89,9 @@ CREATE INDEX IF NOT EXISTS ix_community_created         ON community_scans(creat
 CREATE INDEX IF NOT EXISTS ix_community_country         ON community_scans(country, created_at);
 CREATE INDEX IF NOT EXISTS ix_community_country_region  ON community_scans(country, region, created_at);
 CREATE INDEX IF NOT EXISTS ix_community_species_lower   ON community_scans(species_lower);
+-- NOTE: ix_community_geo is created in init_db AFTER the lat/lon column
+-- migration — putting it here crashes executescript on a legacy DB whose
+-- table predates those columns (same reason as ix_community_public_id).
 
 CREATE TABLE IF NOT EXISTS community_opinions (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -171,6 +181,14 @@ def scan_exists(scan_id: str) -> bool:
 # on disk for retraining; only the read paths filter them out.
 _HIDDEN_COMMUNITY_DISEASES = ("not_a_plant",)
 
+# Column list shared by every feed query so the positional ``_row_to_dict``
+# reader can't drift between callers. Order is load-bearing — keep in sync.
+_FEED_COLUMNS = (
+    "scan_id, country, region, city, lat, lon, disease, confidence, "
+    "species, species_score, thumb_path, locale, created_at, wants_opinion, "
+    "user_pseudo_id"
+)
+
 
 def _hidden_clause(table_alias: str = "") -> str:
     """SQL fragment + placeholders for the hidden-disease filter.
@@ -222,6 +240,13 @@ def init_db() -> None:
             _add_column_if_missing(conn, "community_scans", "species_lower", "TEXT")
             conn.execute("CREATE INDEX IF NOT EXISTS ix_community_species_lower ON community_scans(species_lower)")
             conn.execute("UPDATE community_scans SET species_lower = LOWER(species) WHERE species IS NOT NULL AND species_lower IS NULL")
+            # MaxMind-derived precise location (city + centroid) for the
+            # "nearby" feed/popular grouping and the scans heat-map. Legacy
+            # rows leave these NULL — they group by their old ``region`` only.
+            _add_column_if_missing(conn, "community_scans", "city", "TEXT")
+            _add_column_if_missing(conn, "community_scans", "lat", "REAL")
+            _add_column_if_missing(conn, "community_scans", "lon", "REAL")
+            conn.execute("CREATE INDEX IF NOT EXISTS ix_community_geo ON community_scans(lat, lon)")
             # "Wants a second opinion" flag — set after upload by the
             # scanner via /api/community/request-opinion. Older rows
             # default to 0 (no request).
@@ -304,6 +329,9 @@ def record_scan(
     user_pseudo_id: str,
     country: str,
     region: str = "",
+    city: str | None = None,
+    lat: float | None = None,
+    lon: float | None = None,
     disease: str,
     confidence: float | None = None,
     species: str | None = None,
@@ -312,7 +340,12 @@ def record_scan(
     locale: str | None = None,
     client_ip: str | None = None,
 ) -> int:
-    """Append a community-shared scan row. Returns the new row id."""
+    """Append a community-shared scan row. Returns the new row id.
+
+    ``region`` is the subdivision (nearby key); ``city`` + ``lat``/``lon`` are
+    the finer display label and the MaxMind city centroid — all server-derived
+    from the uploader IP.
+    """
     init_db()
     now = int(time.time())
     ip_hash = hash_client_ip(client_ip)
@@ -344,15 +377,19 @@ def record_scan(
         wants_opinion = 1 if pending else 0
         cur = conn.execute(
             "INSERT INTO community_scans ("
-            "  scan_id, user_pseudo_id, country, region, disease, confidence, "
+            "  scan_id, user_pseudo_id, country, region, city, lat, lon, "
+            "  disease, confidence, "
             "  species, species_lower, species_score, thumb_path, locale, "
             "  client_ip_hash, wants_opinion, public_id, created_at"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 scan_id,
                 user_pseudo_id,
                 country,
                 region_value,
+                city,
+                lat,
+                lon,
                 disease,
                 confidence,
                 species,
@@ -678,8 +715,7 @@ def scans_by_species(
         params.extend(_HIDDEN_COMMUNITY_DISEASES)
     with _connect() as conn:
         rows = conn.execute(
-            "SELECT scan_id, country, region, disease, confidence, species, "
-            "species_score, thumb_path, locale, created_at, wants_opinion "
+            f"SELECT {_FEED_COLUMNS} "
             "FROM community_scans WHERE species_lower = ?"
             + extra
             + " ORDER BY created_at DESC LIMIT ?",
@@ -696,37 +732,28 @@ def nearby_scans(
     species: str | None = None,
     limit: int = 20,
     exclude_user_pseudo_id: str | None = None,
+    strict_region: bool = False,
 ) -> list[dict]:
     """Return the most recent shared scans within ``country``.
 
-    Optimized to reuse a single database connection and execute sargable
-    queries using the indexed ``species_lower`` column.
+    ``region`` is the "nearby" grouping key (the MaxMind subdivision). When
+    given, results are scoped to it first, then widened to the rest of the
+    country to fill the feed. Everything stays inside ``country`` — there is
+    no cross-country / worldwide bucket.
+
+    ``strict_region`` (the feed's "nearby" toggle) keeps the disease-agnostic
+    result inside the subdivision — no country-wide widening — so the toggle
+    actually changes what's shown.
     """
     init_db()
     limit = max(1, min(int(limit), 50))
 
     with _connect() as conn:
-        _SELECT = (
-            "SELECT scan_id, country, region, disease, confidence, species, "
-            "species_score, thumb_path, locale, created_at, wants_opinion, "
-            "user_pseudo_id FROM community_scans WHERE "
-        )
+        _SELECT = f"SELECT {_FEED_COLUMNS} FROM community_scans WHERE "
 
         def _query(where_extra: str, params: list, take: int) -> list[dict]:
             sql = (
                 _SELECT + "country = ? "
-                + where_extra
-                + " ORDER BY created_at DESC LIMIT ?"
-            )
-            rows = conn.execute(sql, (*params, take)).fetchall()
-            return [_row_to_dict(r) for r in rows]
-
-        def _query_global(where_extra: str, params: list, take: int) -> list[dict]:
-            """Same as ``_query`` but WITHOUT the country filter — the
-            last-resort fallback so a thin (or mis-detected) country
-            bucket still fills the feed from the wider corpus."""
-            sql = (
-                _SELECT + "1=1 "
                 + where_extra
                 + " ORDER BY created_at DESC LIMIT ?"
             )
@@ -795,35 +822,10 @@ def nearby_scans(
         if not disease:
             if len(out) < limit and region_clean:
                 _append_unique(_query(region_extra, region_params, limit))
-            if len(out) < limit:
+            # Country-wide fill — skipped in strict "nearby" mode so the
+            # subdivision toggle isn't silently widened to the whole country.
+            if len(out) < limit and not (strict_region and region_clean):
                 _append_unique(_query(base_extra, base_params, limit))
-        # Cross-country (global) fallbacks — the country bucket can be empty
-        # (a low-traffic region, or a scan whose server-side IP country didn't
-        # match the viewer's), which used to leave the feed blank even when the
-        # corpus had plenty of relevant scans. Widening to the whole corpus as a
-        # last resort mirrors the trending module's region→country→global
-        # fallback and honours the "always fill the feed" promise above.
-        # ``base_extra`` is just the exclude-user + hidden-disease AND-clauses
-        # (no country), so it composes directly onto a country-agnostic WHERE;
-        # ``base_params[1:]`` drops the leading country placeholder.
-        global_params = base_params[1:]
-        if len(out) < limit:
-            if disease and species_clean:
-                # Keep the disease AND species relevance even when widening —
-                # a disease-scoped strip must never surface a different verdict.
-                _append_unique(_query_global(
-                    base_extra + " AND disease = ? AND species_lower = ?",
-                    global_params + [disease, species_lower],
-                    limit,
-                ))
-            if len(out) < limit and disease:
-                _append_unique(_query_global(
-                    base_extra + " AND disease = ?",
-                    global_params + [disease],
-                    limit,
-                ))
-            if len(out) < limit and not disease:
-                _append_unique(_query_global(base_extra, global_params, limit))
         return out[:limit]
 
 
@@ -907,16 +909,30 @@ def region_summary(
     }
 
 
-def popular_snapshot(country: str | None, *, limit: int = 8) -> dict:
-    """Live popular species + diseases for one country bucket."""
+def popular_snapshot(
+    country: str | None,
+    region: str | None = None,
+    *,
+    limit: int = 10,
+) -> dict:
+    """Live popular species + diseases for one scope.
+
+    ``country`` alone scopes to the country; adding ``region`` (the MaxMind
+    subdivision) narrows to the "nearby" bucket. The caller runs the
+    nearby → country ladder by calling this twice.
+    """
     init_db()
     country_clean = (country or "").strip()
+    region_clean = (region or "").strip()
     limit = max(1, min(int(limit), 20))
     where = ""
     params: tuple = ()
     if country_clean:
         where = " AND country = ?"
         params = (country_clean,)
+        if region_clean:
+            where += " AND region = ?"
+            params = (country_clean, region_clean)
     hidden_clause = _hidden_clause()
     with _connect() as conn:
         total = int(conn.execute(
@@ -952,92 +968,6 @@ def popular_snapshot(country: str | None, *, limit: int = 8) -> dict:
             for r in disease_rows
         ],
     }
-
-
-# A scope must have at least this many scans in the window to be served;
-# thinner scopes widen (region → country → global) so the Home widget is
-# useful from day one in low-traffic regions.
-_TRENDING_MIN_SCANS = 3
-
-
-def trending(
-    country: str | None = None,
-    region: str | None = None,
-    *,
-    days: int = 7,
-    limit: int = 6,
-) -> dict:
-    """Trending species + diseases for the Home screen's "trending nearby"
-    module. Widening fallback so the module never renders empty: try
-    country+region, then country, then global — a scope is accepted once it
-    has at least ``_TRENDING_MIN_SCANS`` rows in the window (the last scope,
-    global, is returned regardless). Hidden diseases (not_a_plant) excluded.
-    """
-    init_db()
-    since = int(time.time()) - max(1, int(days)) * 86_400
-    limit = max(1, min(int(limit), 20))
-    country_clean = (country or "").strip()
-    region_clean = (region or "").strip()
-
-    scopes: list[tuple[str, str, tuple]] = []
-    if country_clean and region_clean:
-        scopes.append(("region", " AND country = ? AND region = ?",
-                       (country_clean, region_clean)))
-    if country_clean:
-        scopes.append(("country", " AND country = ?", (country_clean,)))
-    scopes.append(("global", "", ()))
-
-    hidden_clause = _hidden_clause()
-    with _connect() as conn:
-        for scope, where, params in scopes:
-            full_params = (since, *params, *_HIDDEN_COMMUNITY_DISEASES)
-            total = int(conn.execute(
-                "SELECT COUNT(*) FROM community_scans "
-                "WHERE created_at >= ?" + where + hidden_clause,
-                full_params,
-            ).fetchone()[0])
-            if total < _TRENDING_MIN_SCANS and scope != "global":
-                continue
-            species_rows = conn.execute(
-                "SELECT MAX(species) AS sp, COUNT(*) AS n FROM community_scans "
-                "WHERE created_at >= ? AND species_lower IS NOT NULL "
-                "AND species_lower != ''" + where + hidden_clause +
-                " GROUP BY species_lower ORDER BY n DESC LIMIT ?",
-                (*full_params, limit),
-            ).fetchall()
-            disease_rows = conn.execute(
-                "SELECT disease, COUNT(*) AS n FROM community_scans "
-                "WHERE created_at >= ?" + where + hidden_clause +
-                " GROUP BY disease ORDER BY n DESC LIMIT ?",
-                (*full_params, limit),
-            ).fetchall()
-            return {
-                "scope": scope,
-                "country": country_clean if scope != "global" else None,
-                "region": region_clean if scope == "region" else None,
-                "window_days": max(1, int(days)),
-                "total": total,
-                "top_species": [
-                    {
-                        "species": str(r[0]),
-                        "count": int(r[1]),
-                        "percent": int(round((int(r[1]) / total) * 100)) if total else 0,
-                    }
-                    for r in species_rows
-                ],
-                "top_diseases": [
-                    {
-                        "disease": str(r[0]),
-                        "count": int(r[1]),
-                        "percent": int(round((int(r[1]) / total) * 100)) if total else 0,
-                    }
-                    for r in disease_rows
-                ],
-            }
-    # unreachable (the global scope always returns) — defensive default
-    return {"scope": "global", "country": None, "region": None,
-            "window_days": max(1, int(days)), "total": 0,
-            "top_species": [], "top_diseases": []}
 
 
 def delete_for_user(user_pseudo_id: str) -> int:
@@ -1146,22 +1076,26 @@ def _row_to_dict(row: tuple) -> dict:
     return {
         # Real scan_id — INTERNAL ONLY. Viewer-facing endpoints must
         # replace it with ``public_id`` before serialising (see the
-        # nearby / by-species handlers in main.py).
+        # nearby / by-species handlers in main.py). Column order matches
+        # ``_FEED_COLUMNS``.
         "scan_id": row[0],
         "public_id": public_scan_token(str(row[0])),
         "country": row[1] or "",
         "region": row[2] or "",
-        "disease": row[3],
-        "confidence": float(row[4]) if row[4] is not None else None,
-        "species": row[5],
-        "species_score": float(row[6]) if row[6] is not None else None,
-        "thumb_path": row[7],
-        "locale": row[8],
-        "created_at": int(row[9]),
-        "wants_opinion": bool(row[10]) if len(row) > 10 else False,
+        "city": row[3] or "",
+        "lat": float(row[4]) if row[4] is not None else None,
+        "lon": float(row[5]) if row[5] is not None else None,
+        "disease": row[6],
+        "confidence": float(row[7]) if row[7] is not None else None,
+        "species": row[8],
+        "species_score": float(row[9]) if row[9] is not None else None,
+        "thumb_path": row[10],
+        "locale": row[11],
+        "created_at": int(row[12]),
+        "wants_opinion": bool(row[13]) if len(row) > 13 else False,
         # One-way, stable per author so the client can show a
         # consistent (but anonymous) avatar — never the raw pseudo id.
-        "author_token": _author_token(row[11]) if len(row) > 11 else None,
+        "author_token": _author_token(row[14]) if len(row) > 14 else None,
     }
 
 
@@ -1245,5 +1179,4 @@ __all__ = [
     "scans_by_species",
     "set_wants_opinion",
     "stats_snapshot",
-    "trending",
 ]

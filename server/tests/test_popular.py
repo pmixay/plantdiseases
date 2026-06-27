@@ -20,27 +20,34 @@ def _no_wikipedia(monkeypatch):
     monkeypatch.setattr(
         server_main,
         "community_popular_snapshot",
-        lambda country: {"total": 0, "top_species": [], "top_diseases": []},
+        lambda country, region=None, *, limit=10: {
+            "total": 0, "top_species": [], "top_diseases": [],
+        },
     )
     with server_main._popular_lock:
         server_main._popular_cache.clear()
     yield
 
 
-def test_popular_global_shape(client):
+def test_popular_default_country_placeholder_shape(client):
+    # No country + no geo + no scans -> default country (RU) + curated
+    # placeholder; there is no "worldwide" bucket any more.
     r = client.get("/api/popular?locale=en")
     assert r.status_code == 200
     body = r.json()
     assert r.headers["cache-control"] == "public, max-age=7200"
-    assert body["scope"] == "global"
+    assert body["scope"] == "country"
+    assert body["country"] == "RU"
+    assert body["source"] == "placeholder"
     assert body["locale"] == "en"
     assert body["items"]
     item = body["items"][0]
     assert {"scientific", "common_en", "common_ru", "image_url", "count", "percent"} <= set(item)
     assert item["image_url"].startswith("https://img/")
+    assert item["percent"] == 0  # placeholder carries no percentages
 
 
-def test_popular_known_country_is_curated(client):
+def test_popular_known_country_placeholder_is_curated(client):
     from popular_plants import BY_REGION
 
     r = client.get("/api/popular?country=RU&locale=ru")
@@ -48,24 +55,40 @@ def test_popular_known_country_is_curated(client):
     body = r.json()
     assert body["scope"] == "country"
     assert body["country"] == "RU"
+    assert body["source"] == "placeholder"
     served = [i["scientific"] for i in body["items"]]
     assert served == [p.scientific for p in BY_REGION["RU"]]
 
 
-def test_popular_no_country_no_geo_is_global(client):
-    # No country param and no geo header -> global scope (no network geoip in tests).
-    r = client.get("/api/popular")
-    assert r.status_code == 200
-    assert r.json()["scope"] == "global"
+def test_popular_caps_at_ten_cards(client, monkeypatch):
+    import main as server_main
+
+    monkeypatch.setattr(
+        server_main, "community_popular_snapshot",
+        lambda country, region=None, *, limit=10: {
+            "total": 100,
+            "top_species": [
+                {"species": f"Plant {i}", "count": 100 - i, "percent": 50}
+                for i in range(20)
+            ],
+            "top_diseases": [
+                {"disease": f"d{i}", "count": 100 - i, "percent": 50}
+                for i in range(20)
+            ],
+        },
+    )
+    body = client.get("/api/popular?country=US&locale=en").json()
+    assert len(body["items"]) == 10
+    assert len(body["top_diseases"]) == 10
 
 
-def test_popular_prefers_live_community_data(client, monkeypatch):
+def test_popular_uses_live_country_data(client, monkeypatch):
     import main as server_main
 
     monkeypatch.setattr(
         server_main,
         "community_popular_snapshot",
-        lambda country: {
+        lambda country, region=None, *, limit=10: {
             "total": 5,
             "top_species": [{"species": "Ficus elastica", "count": 3, "percent": 60}],
             "top_diseases": [{"disease": "leaf_spot", "count": 2, "percent": 40}],
@@ -74,7 +97,8 @@ def test_popular_prefers_live_community_data(client, monkeypatch):
     r = client.get("/api/popular?country=US&locale=en")
     assert r.status_code == 200
     body = r.json()
-    assert body["source"] == "community"
+    # No geo subdivision in tests -> country scope (not nearby).
+    assert body["source"] == "country"
     assert body["country_name_en"] == "United States"
     assert body["items"][0]["scientific"] == "Ficus elastica"
     assert body["items"][0]["count"] == 3
