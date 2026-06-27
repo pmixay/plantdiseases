@@ -3,16 +3,19 @@ package com.plantdiseases.app.util
 import android.content.Context
 
 /**
- * Sharing state for the community scan corpus.
+ * Opt-in state for the community scan corpus.
  *
- * Default is ON so fresh installs contribute anonymised scans without asking
- * Android for device location. The Profile switch can turn uploads off, and
- * Delete-my-contributions still clears any rows already shared.
+ * Default is OFF: a fresh install neither contributes nor pulls community data
+ * until the user explicitly opts in IN CONTEXT — by tapping "Enable" on the
+ * result screen's "similar scans" card or on the Nearby screen. Enabling
+ * requests ``ACCESS_COARSE_LOCATION`` (so scans can be grouped by area) and
+ * flips this on; nothing is shared before that. Delete-my-contributions still
+ * clears any rows already shared.
  */
 object CommunityPrefs {
     private const val PREFS_NAME = "plantdiseases_community"
     private const val KEY_ENABLED = "uploads_enabled"
-    internal const val DEFAULT_UPLOADS_ENABLED = true
+    internal const val DEFAULT_UPLOADS_ENABLED = false
 
     fun uploadsEnabled(context: Context): Boolean =
         prefs(context).getBoolean(KEY_ENABLED, DEFAULT_UPLOADS_ENABLED)
@@ -21,7 +24,7 @@ object CommunityPrefs {
         prefs(context).edit().putBoolean(KEY_ENABLED, enabled).apply()
     }
 
-    /** Preserve the old call site shape for code that explicitly enables sharing. */
+    /** Opt the user into community features from an in-context "Enable" tap. */
     fun enable(context: Context) = setUploadsEnabled(context, true)
 
     private fun prefs(context: Context) = context.applicationContext

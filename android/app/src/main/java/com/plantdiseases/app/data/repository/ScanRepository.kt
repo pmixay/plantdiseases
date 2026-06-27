@@ -1019,6 +1019,8 @@ class ScanRepository(
         userPseudoId: String,
         country: String? = null,
         region: String = "",
+        lat: Double? = null,
+        lon: Double? = null,
         disease: String,
         confidence: Float? = null,
         species: String? = null,
@@ -1040,6 +1042,8 @@ class ScanRepository(
                                 // Optional fields — only sent when present/non-blank,
                                 // matching the old `text()` helper exactly.
                                 region.takeIf { it.isNotBlank() }?.let { append("region", it) }
+                                lat?.let { append("lat", it.toString()) }
+                                lon?.let { append("lon", it.toString()) }
                                 confidence?.let { append("confidence", it.toString()) }
                                 species?.takeIf { it.isNotBlank() }?.let { append("species", it) }
                                 speciesScore?.let { append("species_score", it.toString()) }
@@ -1083,6 +1087,8 @@ class ScanRepository(
     suspend fun communityNearby(
         country: String? = null,
         region: String? = null,
+        lat: Double? = null,
+        lon: Double? = null,
         disease: String?,
         species: String? = null,
         userPseudoId: String?,
@@ -1094,6 +1100,8 @@ class ScanRepository(
                 val response = apiClient.httpClient.get("api/community/nearby") {
                     country?.takeIf { it.isNotBlank() }?.let { parameter("country", it) }
                     region?.takeIf { it.isNotBlank() }?.let { parameter("region", it) }
+                    lat?.let { parameter("lat", it) }
+                    lon?.let { parameter("lon", it) }
                     disease?.takeIf { it.isNotBlank() }?.let { parameter("disease", it) }
                     species?.takeIf { it.isNotBlank() }?.let { parameter("species", it) }
                     userPseudoId?.takeIf { it.isNotBlank() }?.let {

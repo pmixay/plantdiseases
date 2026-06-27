@@ -196,11 +196,15 @@ class PlantApiClient(
     suspend fun popular(
         country: String? = null,
         region: String? = null,
+        lat: Double? = null,
+        lon: Double? = null,
         locale: String = "en",
     ): PopularResponse? {
         val response = httpClient.get("api/popular") {
             country?.let { parameter("country", it) }
             region?.let { parameter("region", it) }
+            lat?.let { parameter("lat", it) }
+            lon?.let { parameter("lon", it) }
             parameter("locale", locale)
         }
         return if (response.status.isSuccess()) response.body() else null

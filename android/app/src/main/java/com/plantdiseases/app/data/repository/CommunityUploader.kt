@@ -8,6 +8,7 @@ import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.AnalysisResponse
 import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.RegionResolver
 import com.plantdiseases.app.util.TelemetryIds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -57,10 +58,18 @@ class CommunityUploader(
         val locale = if (LocaleHelper.isRussian(context)) "ru" else "en"
         val pseudoId = TelemetryIds.userPseudoId(context)
         val scanId = scan.clientScanId.ifBlank { return@withContext UploadOutcome.MissingScanId }
+        // Opt-in is confirmed above, so reading the coarse location here is the
+        // "check user location on every scan" step — attaches where the scan
+        // was taken so it can be grouped by the 25 km nearby radius.
+        val region = runCatching { RegionResolver.resolveRegion(context) }.getOrNull()
 
         val result = scanRepository.uploadCommunityScan(
             scanId = scanId,
             userPseudoId = pseudoId,
+            country = region?.country,
+            region = region?.locality.orEmpty(),
+            lat = region?.lat,
+            lon = region?.lon,
             disease = disease,
             confidence = analysis.confidence,
             species = species,
@@ -109,9 +118,14 @@ class CommunityUploader(
         val thumb = makeThumbnail(scan)
         val locale = if (LocaleHelper.isRussian(context)) "ru" else "en"
         val pseudoId = TelemetryIds.userPseudoId(context)
+        val region = runCatching { RegionResolver.resolveRegion(context) }.getOrNull()
         val result = scanRepository.uploadCommunityScan(
             scanId = scanId,
             userPseudoId = pseudoId,
+            country = region?.country,
+            region = region?.locality.orEmpty(),
+            lat = region?.lat,
+            lon = region?.lon,
             disease = disease,
             confidence = scan.confidence,
             species = scan.speciesScientific,

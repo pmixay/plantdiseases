@@ -20,8 +20,10 @@ import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityNearbyScansBinding
 import com.plantdiseases.app.databinding.SheetNearbyFilterBinding
 import com.plantdiseases.app.ui.result.CommunityOpinionSheet
+import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.RegionResolver
 import com.plantdiseases.app.util.TelemetryIds
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
@@ -49,8 +51,26 @@ class NearbyScansActivity : AppCompatActivity() {
     private var sortNewestFirst = true
     private var typeFilter: String? = null
     private var filterMenuItem: MenuItem? = null
-    // Server-side scope filter: "nearby" (the user's subdivision) or "country".
+    // Server-side scope filter: "nearby" (~25 km radius) or "country".
     private var scope = "nearby"
+
+    // In-context opt-in: tapping Enable requests coarse location (+ notifications
+    // on 13+), flips community on, and reloads the feed.
+    private val communityPermissionLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions(),
+    ) { _ ->
+        com.plantdiseases.app.util.CommunityPrefs.enable(this)
+        com.plantdiseases.app.push.PushManager.registerIfEnabled(this)
+        load(isRefresh = false)
+    }
+
+    private fun requestCommunityOptIn() {
+        val perms = mutableListOf(android.Manifest.permission.ACCESS_COARSE_LOCATION)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            perms += android.Manifest.permission.POST_NOTIFICATIONS
+        }
+        communityPermissionLauncher.launch(perms.toTypedArray())
+    }
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
@@ -73,7 +93,7 @@ class NearbyScansActivity : AppCompatActivity() {
         binding.toolbar.setNavigationOnClickListener { finish() }
         setupFilterMenu()
 
-        // Nearby (subdivision) vs Country scope — reload the feed on change.
+        // Nearby (~25 km) vs Country scope — reload the feed on change.
         binding.cgScope.setOnCheckedStateChangeListener { _, checked ->
             val next = if (checked.firstOrNull() == R.id.chip_scope_country) "country" else "nearby"
             if (next != scope) {
@@ -81,6 +101,7 @@ class NearbyScansActivity : AppCompatActivity() {
                 load(isRefresh = false)
             }
         }
+        binding.btnEnableCommunity.setOnClickListener { requestCommunityOptIn() }
 
         adapter = NearbyScansAdapter(
             displayName = { key -> DiseaseLabels.displayName(key, isRu) ?: key },
@@ -126,10 +147,23 @@ class NearbyScansActivity : AppCompatActivity() {
     private fun load(isRefresh: Boolean) {
         // Community is opt-in. Until the user opts in, show an Enable prompt
         // instead of reading their location / hitting the network.
+        if (!CommunityPrefs.uploadsEnabled(this)) {
+            showEnablePrompt()
+            return
+        }
         if (!isRefresh) showLoading()
         lifecycleScope.launch {
             val pseudoId = TelemetryIds.userPseudoId(this@NearbyScansActivity)
+            // Refresh location on every (re)load so "nearby" reflects where the
+            // user actually is right now.
+            val region = runCatching {
+                RegionResolver.resolveRegion(this@NearbyScansActivity)
+            }.getOrNull()
             val result = scanRepository.communityNearby(
+                country = region?.country,
+                region = region?.locality,
+                lat = region?.lat,
+                lon = region?.lon,
                 // No disease filter — the feed surfaces the whole scope.
                 disease = null,
                 userPseudoId = pseudoId,
@@ -156,11 +190,26 @@ class NearbyScansActivity : AppCompatActivity() {
         }
     }
 
+    /** Opt-in prompt shown until the user enables community. */
+    private fun showEnablePrompt() {
+        binding.swipeRefresh.isRefreshing = false
+        binding.stateLayout.visibility = View.VISIBLE
+        binding.progress.visibility = View.GONE
+        binding.ivStateIcon.visibility = View.VISIBLE
+        binding.tvState.text = getString(R.string.community_enable_blurb)
+        binding.btnEnableCommunity.visibility = View.VISIBLE
+        binding.cgScope.visibility = View.GONE
+        filterMenuItem?.isVisible = false
+        binding.rvNearby.visibility = View.GONE
+    }
+
     private fun showLoading() {
         binding.stateLayout.visibility = View.VISIBLE
         binding.progress.visibility = View.VISIBLE
         binding.ivStateIcon.visibility = View.GONE
         binding.tvState.text = getString(R.string.nearby_scans_loading)
+        binding.btnEnableCommunity.visibility = View.GONE
+        binding.cgScope.visibility = View.VISIBLE
         filterMenuItem?.isVisible = false
         binding.rvNearby.visibility = View.GONE
     }
@@ -170,12 +219,16 @@ class NearbyScansActivity : AppCompatActivity() {
         binding.progress.visibility = View.GONE
         binding.ivStateIcon.visibility = View.VISIBLE
         binding.tvState.text = message
+        binding.btnEnableCommunity.visibility = View.GONE
+        binding.cgScope.visibility = View.VISIBLE
         filterMenuItem?.isVisible = false
         binding.rvNearby.visibility = View.GONE
     }
 
     private fun showFeed(items: List<CommunityScanItem>) {
         allItems = items
+        binding.btnEnableCommunity.visibility = View.GONE
+        binding.cgScope.visibility = View.VISIBLE
         filterMenuItem?.isVisible = true
         applyFilterAndSort()
     }

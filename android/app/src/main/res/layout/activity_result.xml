@@ -704,6 +704,21 @@
                         android:clipToPadding="false"
                         android:paddingEnd="@dimen/space_md" />
 
+                    <!-- In-context opt-in: shown only when community is OFF.
+                         Tapping enables community + requests coarse location,
+                         then the card loads the nearby feed. -->
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_enable_similar"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_md"
+                        android:text="@string/community_enable_cta"
+                        android:textAllCaps="false"
+                        android:visibility="gone"
+                        app:icon="@drawable/ic_garden"
+                        app:cornerRadius="@dimen/radius_md" />
+
                 </LinearLayout>
 
             </com.google.android.material.card.MaterialCardView>

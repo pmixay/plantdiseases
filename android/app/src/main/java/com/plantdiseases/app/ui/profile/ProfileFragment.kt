@@ -167,8 +167,9 @@ class ProfileFragment : Fragment() {
                 androidx.work.WorkManager.getInstance(ctx).cancelUniqueWork("opinion_check_now")
             }
         }
-        // Community sharing is default-on and scoped by the server. Keep the
-        // destructive delete-my-shared-data control here.
+        // Community sharing is opt-in in context (the result screen's similar-
+        // scans card / the Nearby screen). Keep the destructive
+        // delete-my-shared-data control here.
         binding.btnDeleteCommunity.setOnClickListener {
             MaterialAlertDialogBuilder(ctx)
                 .setTitle(R.string.community_delete_title)

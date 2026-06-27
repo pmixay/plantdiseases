@@ -119,6 +119,19 @@
                     android:textAppearance="@style/TextAppearance.App.Body"
                     android:textColor="@color/on_surface_secondary" />
 
+                <!-- Shown only when community is OFF: in-context opt-in. -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_enable_community"
+                    style="@style/Widget.Material3.Button.TonalButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_lg"
+                    android:text="@string/community_enable_cta"
+                    android:textAllCaps="false"
+                    android:visibility="gone"
+                    app:icon="@drawable/ic_community"
+                    app:cornerRadius="@dimen/radius_md" />
+
             </LinearLayout>
 
         </FrameLayout>

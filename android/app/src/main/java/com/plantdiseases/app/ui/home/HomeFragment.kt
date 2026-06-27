@@ -37,9 +37,11 @@ import com.plantdiseases.app.ui.community.NearbyScansActivity
 import com.plantdiseases.app.ui.guide.GuideDetailActivity
 import com.plantdiseases.app.ui.species.SpeciesDetailActivity
 import com.plantdiseases.app.ui.symptom.SymptomCheckerActivity
+import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.DiseaseCatalog
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.Haptics
+import com.plantdiseases.app.util.RegionResolver
 import com.plantdiseases.app.util.SpeciesCatalog
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
@@ -261,21 +263,36 @@ class HomeFragment : Fragment() {
 
     // ── Popular carousels (plants + diseases) ───────────────────────
     // Both carousels are driven by /api/popular, which runs one ladder
-    // (nearby → country → curated placeholder) and returns per-item scan
-    // shares. The server resolves the scope from the requester IP.
+    // (nearby → country → worldwide → curated placeholder) and returns
+    // per-item scan shares. Location is sent only when the user opted into
+    // community; otherwise the server returns the worldwide bundle.
     private fun loadPopular() {
+        val appContext = requireContext().applicationContext
         viewLifecycleOwner.lifecycleScope.launch {
-            val cacheKey = "popular:v3:server|$locale"
+            val region = if (CommunityPrefs.uploadsEnabled(appContext)) {
+                runCatching { RegionResolver.resolveRegion(appContext) }.getOrNull()
+            } else {
+                null
+            }
+            val cacheKey = "popular:v4:" +
+                "${region?.country.orEmpty()}|${region?.lat ?: ""},${region?.lon ?: ""}|$locale"
             val popular = com.plantdiseases.app.util.ResponseCache
                 .get(cacheKey, PopularResponse::class.java)
-                ?: runCatching { apiClient.popular(locale = locale) }
-                    .getOrNull()?.takeIf { it.items.isNotEmpty() }?.also {
-                        com.plantdiseases.app.util.ResponseCache.put(
-                            cacheKey,
-                            it,
-                            com.plantdiseases.app.util.ResponseCache.TTL_POPULAR_MS,
-                        )
-                    }
+                ?: runCatching {
+                    apiClient.popular(
+                        country = region?.country,
+                        region = region?.locality,
+                        lat = region?.lat,
+                        lon = region?.lon,
+                        locale = locale,
+                    )
+                }.getOrNull()?.takeIf { it.items.isNotEmpty() }?.also {
+                    com.plantdiseases.app.util.ResponseCache.put(
+                        cacheKey,
+                        it,
+                        com.plantdiseases.app.util.ResponseCache.TTL_POPULAR_MS,
+                    )
+                }
             val b = _binding ?: return@launch
             renderSpecies(b, popular)
             renderDiseases(b, popular)
@@ -321,23 +338,29 @@ class HomeFragment : Fragment() {
     }
 
     private fun setPopularTitle(b: FragmentHomeBinding, popular: PopularResponse?) {
-        // "Popular near <subdivision>" for a nearby scope, else "Popular in
-        // <country>". There is no worldwide title any more — every scope is a
-        // real place (the placeholder still carries the default country).
+        // "Popular near <city>" (nearby) / "Popular in <country>" (country) /
+        // "Popular worldwide" (no location). The place word always gets the
+        // green gradient.
         val country = (if (isRu) popular?.countryNameRu else popular?.countryNameEn)
             ?.takeIf { it.isNotBlank() }
         val region = popular?.region?.takeIf { it.isNotBlank() }
         val accent: String
         val title: String
-        if (popular?.source == "nearby" && region != null) {
-            accent = region
-            title = getString(R.string.home_popular_near, region)
-        } else {
-            accent = country ?: getString(R.string.home_popular_species)
-            title = if (country != null) {
-                getString(R.string.home_popular_in_country, country)
-            } else {
-                getString(R.string.home_popular_species)
+        when {
+            popular?.source == "nearby" && region != null -> {
+                accent = region
+                title = getString(R.string.home_popular_near, region)
+            }
+            country != null -> {
+                accent = country
+                title = getString(R.string.home_popular_in_country, country)
+            }
+            else -> {
+                // Worldwide (community off / no scans anywhere). Accent the
+                // word(s) after the leading "Popular" / "Популярно".
+                title = getString(R.string.home_popular_worldwide)
+                val sp = title.indexOf(' ')
+                accent = if (sp in 0 until title.lastIndex) title.substring(sp + 1) else title
             }
         }
         // Gradient-accent the place name (everything matched in the title).

@@ -227,6 +227,9 @@
     <!-- Community scope toggle -->
     <string name="community_filter_nearby">Рядом</string>
     <string name="community_filter_country">Страна</string>
+    <!-- In-context community opt-in -->
+    <string name="community_enable_cta">Включить сообщество</string>
+    <string name="community_enable_blurb">Смотрите сканы садоводов рядом с вами и спрашивайте второе мнение. Включение анонимно делится вашими сканами и использует примерное местоположение.</string>
     <!-- Nearby scans sort & filter overlay -->
     <string name="nearby_filter_title">Сортировка и фильтр</string>
     <string name="nearby_filter_by_date">По дате</string>

@@ -231,6 +231,9 @@
     <!-- Community scope toggle -->
     <string name="community_filter_nearby">Nearby</string>
     <string name="community_filter_country">Country</string>
+    <!-- In-context community opt-in -->
+    <string name="community_enable_cta">Enable community</string>
+    <string name="community_enable_blurb">See scans from growers near you and ask for a second opinion. Enabling shares your scans anonymously and uses your approximate location.</string>
     <!-- Nearby scans sort & filter overlay -->
     <string name="nearby_filter_title">Sort &amp; filter</string>
     <string name="nearby_filter_by_date">By date</string>
