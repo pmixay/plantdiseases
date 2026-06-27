@@ -191,7 +191,7 @@
     <string name="similar_scans_subtitle_region">Recent community diagnoses in %1$s</string>
     <string name="similar_scans_subtitle_no_region">No country feed is available yet.</string>
     <string name="similar_scans_empty">No community scans yet — your scan will be the first.</string>
-    <string name="similar_scans_enable_prompt">See community scans and contribute yours.</string>
+    <string name="similar_scans_enable_prompt">Want to see what people are scanning nearby?</string>
     <!-- Community second opinion -->
     <string name="community_opinion_title">Get a second opinion</string>
     <string name="community_opinion_subtitle">Ask the community what they think — and weigh in on others\' scans.</string>
@@ -203,7 +203,6 @@
     <string name="community_opinion_disagree">Disagree</string>
     <string name="community_opinion_confidence">Confidence %1$d%%</string>
     <string name="community_opinion_species_fmt">%1$s (%2$d%%)</string>
-    <string name="similar_scans_enable_prompt">Want to see what people are scanning nearby?</string>
     <string name="community_opinion_consensus_prefix">Community so far: %1$s</string>
     <string name="community_opinion_empty">No opinions yet — be the first to weigh in.</string>
     <string name="community_opinion_thanks">Thanks for your opinion!</string>
