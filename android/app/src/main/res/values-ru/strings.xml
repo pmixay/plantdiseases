@@ -867,6 +867,7 @@
     <string name="identify_pick_candidate">Какое из них ваше растение?</string>
     <string name="identify_retake">Переснять</string>
     <string name="species_common_problems">Частые проблемы этого вида</string>
+    <string name="species_problems_loading">Подбираем проблемы, характерные для этого растения…</string>
     <string name="species_problems_ai_note">Наиболее вероятны для этого вида — нажмите, чтобы открыть руководство.</string>
     <string name="species_problems_guide_note">Болезни комнатных растений, которые умеет распознавать приложение, — нажмите, чтобы узнать больше.</string>
 

@@ -103,7 +103,12 @@ class SpeciesDetailActivity : AppCompatActivity() {
             )
         }
 
+        // Three independent loads run concurrently: the Wikipedia blurb/photo,
+        // the care plan, and the (slow, AI) common-problems list. Each renders
+        // as soon as it's ready, with its own loading state, so one slow call
+        // never blanks the whole screen.
         loadDetail()
+        loadCare()
         loadDiseases()
     }
 
@@ -135,28 +140,40 @@ class SpeciesDetailActivity : AppCompatActivity() {
             } else {
                 binding.tvSpeciesExtract.text = getString(R.string.identify_no_info)
             }
+        }
+    }
 
+    /** Care-at-a-glance, on its own coroutine so it isn't gated behind the
+     *  Wikipedia fetch. Shows the card with a loading line immediately, then
+     *  fills it (or hides the card if there's nothing useful to show). */
+    private fun loadCare() {
+        binding.cardCare.visibility = View.VISIBLE
+        binding.tvCareBody.text = getString(R.string.identify_loading)
+        lifecycleScope.launch {
             val plan = scanRepository.fetchCarePlan(
                 CarePlanRequest(disease = "healthy", species = scientificName, locale = locale),
             ).getOrNull()
-            if (plan != null) {
+            val lines = if (plan != null) {
                 val watering = when {
                     plan.wateringDaysIsAsNeeded -> getString(R.string.identify_water_as_needed)
                     plan.wateringDaysInt != null ->
                         getString(R.string.identify_water_days, plan.wateringDaysInt)
                     else -> null
                 }
-                val lines = listOfNotNull(
+                listOfNotNull(
                     getString(R.string.identify_light_tier, prettyTier(plan.lightTier)),
                     watering,
                     plan.humidityTarget.takeIf { it.isNotBlank() }
                         ?.let { getString(R.string.identify_humidity, it) },
                     if (plan.toxicToPets) getString(R.string.identify_toxic_pets) else null,
                 )
-                if (lines.isNotEmpty()) {
-                    binding.cardCare.visibility = View.VISIBLE
-                    binding.tvCareBody.text = lines.joinToString("\n")
-                }
+            } else {
+                emptyList()
+            }
+            if (lines.isNotEmpty()) {
+                binding.tvCareBody.text = lines.joinToString("\n")
+            } else {
+                binding.cardCare.visibility = View.GONE
             }
         }
     }
@@ -222,9 +239,15 @@ class SpeciesDetailActivity : AppCompatActivity() {
     }
 
     private fun loadDiseases() {
+        // Reveal the section with a loading state up-front so a slow (first-time)
+        // AI lookup reads as "finding problems…", not an empty gap that looks
+        // like the app is broken. Cached per (name, locale) server- AND
+        // client-side, so reopening the species renders the list instantly.
+        binding.tvDiseasesTitle.visibility = View.VISIBLE
+        binding.tvDiseasesSubtitle.visibility = View.VISIBLE
+        binding.tvDiseasesSubtitle.setText(R.string.species_problems_loading)
+        binding.pbDiseases.visibility = View.VISIBLE
         lifecycleScope.launch {
-            // Cached per (name, locale) — the slow AI lookup runs once, then
-            // reopening the species renders the list instantly.
             val resp = scanRepository
                 .fetchSpeciesDiseases(scientificName, commonName, locale)
                 .getOrNull()
@@ -233,6 +256,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
             } else {
                 emptyList()
             }
+            binding.pbDiseases.visibility = View.GONE
             renderDiseases(aiItems)
         }
     }
