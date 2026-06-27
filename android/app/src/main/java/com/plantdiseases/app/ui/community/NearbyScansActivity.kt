@@ -51,6 +51,7 @@ class NearbyScansActivity : AppCompatActivity() {
     private var sortNewestFirst = true
     private var typeFilter: String? = null
     private var filterMenuItem: MenuItem? = null
+
     // Server-side scope filter: "nearby" (~25 km radius) or "country".
     private var scope = "nearby"
 
