@@ -3,16 +3,32 @@ package com.plantdiseases.app.ui.community
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.RectF
+import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.os.Bundle
 import android.view.View
+import android.view.ViewGroup
+import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updateLayoutParams
+import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.bumptech.glide.Glide
+import com.bumptech.glide.request.target.CustomTarget
+import com.bumptech.glide.request.transition.Transition
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.CommunityHeatmapResponse
@@ -24,6 +40,7 @@ import com.plantdiseases.app.util.DiseaseCatalog
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.RegionResolver
+import com.plantdiseases.app.util.ServerConfig
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
@@ -37,7 +54,6 @@ import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polygon
 import java.io.File
-import java.util.Locale
 
 /**
  * Full-screen community scans map (osmdroid). Zoomed out it paints a
@@ -51,7 +67,7 @@ class CommunityMapActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityCommunityMapBinding
     private val scanRepository: ScanRepository by inject()
-    private val isRu: Boolean get() = Locale.getDefault().language == "ru"
+    private val isRu: Boolean get() = LocaleHelper.isRussian(this)
     private var loadJob: Job? = null
 
     private val locationPermission = registerForActivityResult(
@@ -77,6 +93,7 @@ class CommunityMapActivity : AppCompatActivity() {
         setContentView(binding.root)
         binding.toolbar.setNavigationOnClickListener { finish() }
         binding.fabNearMe.setOnClickListener { onNearMe() }
+        applyWindowInsets()
 
         binding.map.apply {
             setTileSource(TileSourceFactory.MAPNIK)
@@ -188,28 +205,110 @@ class CommunityMapActivity : AppCompatActivity() {
         binding.map.invalidate()
     }
 
-    /** One marker per scan; scans at the same ~1 km point collapse to a single
-     *  marker that opens the group list on tap. */
+    /** Inset the toolbar below the status bar and lift the FAB above the nav
+     *  bar. The map itself stays edge-to-edge (full-bleed); only its chrome
+     *  must not hide under the system bars. */
+    private fun applyWindowInsets() {
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        val fabBaseMargin = resources.getDimensionPixelSize(R.dimen.space_lg)
+        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            binding.appBar.updatePadding(top = bars.top)
+            binding.fabNearMe.updateLayoutParams<ViewGroup.MarginLayoutParams> {
+                bottomMargin = fabBaseMargin + bars.bottom
+            }
+            insets
+        }
+    }
+
+    /** Zoom-aware markers. Scans are bucketed by a fixed SCREEN-pixel grid, so
+     *  pins that would visually overlap at the current zoom collapse into one
+     *  cluster; zooming in shrinks each cell in world terms, so clusters break
+     *  apart and spread. A lone scan shows its actual thumbnail; a cluster
+     *  shows a count badge. */
     private fun drawMarkers(items: List<CommunityScanItem>) {
         binding.map.overlays.clear()
-        items.filter { it.lat != null && it.lon != null }
-            .groupBy { it.lat to it.lon }
-            .forEach { (coord, group) ->
-                val marker = Marker(binding.map).apply {
-                    position = GeoPoint(coord.first!!, coord.second!!)
-                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                    icon = markerIcon(group.first().disease)
-                    if (group.size > 1) {
-                        title = getString(R.string.community_map_group_title, group.size)
-                    }
-                    setOnMarkerClickListener { _, _ ->
-                        if (group.size == 1) openScan(group.first()) else openGroup(group)
-                        true
-                    }
-                }
-                binding.map.overlays.add(marker)
-            }
+        val located = items.filter { it.lat != null && it.lon != null }
+        if (located.isEmpty()) {
+            binding.map.invalidate()
+            return
+        }
+        val projection = binding.map.projection
+        val cellPx = (CLUSTER_CELL_DP * resources.displayMetrics.density).toInt().coerceAtLeast(1)
+        val buckets = LinkedHashMap<Long, MutableList<CommunityScanItem>>()
+        for (item in located) {
+            val pt = projection.toPixels(GeoPoint(item.lat!!, item.lon!!), null)
+            val gx = Math.floorDiv(pt.x, cellPx).toLong()
+            val gy = Math.floorDiv(pt.y, cellPx).toLong()
+            val key = (gx shl 32) xor (gy and 0xffffffffL)
+            buckets.getOrPut(key) { mutableListOf() }.add(item)
+        }
+        for (group in buckets.values) {
+            if (group.size == 1) addScanMarker(group.first()) else addClusterMarker(group)
+        }
         binding.map.invalidate()
+    }
+
+    /** A single scan: disease-icon pin first, swapped for the real thumbnail
+     *  once Glide loads it (so close-up the map shows the actual scans). */
+    private fun addScanMarker(item: CommunityScanItem) {
+        val marker = Marker(binding.map).apply {
+            position = GeoPoint(item.lat!!, item.lon!!)
+            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+            icon = markerIcon(item.disease)
+            setOnMarkerClickListener { _, _ ->
+                openScan(item)
+                true
+            }
+        }
+        binding.map.overlays.add(marker)
+        loadThumbInto(marker, item)
+    }
+
+    /** Several scans collapsed at this zoom: a count badge that zooms in to
+     *  spread them, or lists them when they're already truly co-located. */
+    private fun addClusterMarker(group: List<CommunityScanItem>) {
+        val avgLat = group.mapNotNull { it.lat }.average()
+        val avgLon = group.mapNotNull { it.lon }.average()
+        val center = GeoPoint(avgLat, avgLon)
+        val marker = Marker(binding.map).apply {
+            position = center
+            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+            icon = clusterIcon(group.size)
+            setOnMarkerClickListener { _, _ ->
+                onClusterTap(group, center)
+                true
+            }
+        }
+        binding.map.overlays.add(marker)
+    }
+
+    private fun onClusterTap(group: List<CommunityScanItem>, center: GeoPoint) {
+        val zoom = binding.map.zoomLevelDouble
+        if (zoom < binding.map.maxZoomLevel - 0.5) {
+            // Zoom toward the cluster so the grid cells shrink and the pins fan out.
+            binding.map.controller.animateTo(center, zoom + 2.0, MAP_ZOOM_ANIM_MS)
+        } else {
+            // Already as deep as the tiles go and still stacked → list them.
+            openGroup(group)
+        }
+    }
+
+    private fun loadThumbInto(marker: Marker, item: CommunityScanItem) {
+        val thumb = item.thumbPath
+        if (thumb.isNullOrBlank()) return
+        val url = "${ServerConfig.baseUrl}api/community/thumb/$thumb"
+        val sizePx = (MARKER_SIZE_DP * resources.displayMetrics.density).toInt().coerceAtLeast(1)
+        Glide.with(this).asBitmap().load(url).circleCrop().override(sizePx, sizePx)
+            .into(object : CustomTarget<Bitmap>() {
+                override fun onResourceReady(resource: Bitmap, transition: Transition<in Bitmap>?) {
+                    if (isFinishing || isDestroyed) return
+                    marker.icon = ringedThumb(resource)
+                    binding.map.invalidate()
+                }
+
+                override fun onLoadCleared(placeholder: Drawable?) = Unit
+            })
     }
 
     private fun markerIcon(disease: String): Drawable? {
@@ -217,6 +316,58 @@ class CommunityMapActivity : AppCompatActivity() {
         return ContextCompat.getDrawable(this, res)?.mutate()?.also {
             it.setTint(ContextCompat.getColor(this, R.color.disease_red))
         }
+    }
+
+    /** Wrap a (circle-cropped) thumbnail in a white ring so it reads as a pin
+     *  against busy map tiles. */
+    private fun ringedThumb(src: Bitmap): Drawable {
+        val density = resources.displayMetrics.density
+        val size = (MARKER_SIZE_DP * density).toInt().coerceAtLeast(1)
+        val out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(out)
+        val c = size / 2f
+        canvas.drawCircle(c, c, c, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE })
+        val inset = 2f * density
+        val dst = RectF(inset, inset, size - inset, size - inset)
+        canvas.drawBitmap(src, null, dst, Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
+        return BitmapDrawable(resources, out)
+    }
+
+    /** A filled circle badge with the grouped-scan count. */
+    private fun clusterIcon(count: Int): Drawable {
+        val density = resources.displayMetrics.density
+        val size = (MARKER_SIZE_DP * density).toInt().coerceAtLeast(1)
+        val out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(out)
+        val c = size / 2f
+        canvas.drawCircle(
+            c,
+            c,
+            c - density,
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = ContextCompat.getColor(this@CommunityMapActivity, R.color.primary)
+            },
+        )
+        canvas.drawCircle(
+            c,
+            c,
+            c - density,
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.WHITE
+                style = Paint.Style.STROKE
+                strokeWidth = 2f * density
+            },
+        )
+        val label = if (count > 99) "99+" else count.toString()
+        val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textAlign = Paint.Align.CENTER
+            isFakeBoldText = true
+            textSize = (if (count > 99) 12f else 15f) * density
+        }
+        val baseline = c - (textPaint.descent() + textPaint.ascent()) / 2f
+        canvas.drawText(label, c, baseline, textPaint)
+        return BitmapDrawable(resources, out)
     }
 
     private fun openScan(item: CommunityScanItem) {
@@ -232,9 +383,14 @@ class CommunityMapActivity : AppCompatActivity() {
     private fun openGroup(group: List<CommunityScanItem>) {
         val dialog = BottomSheetDialog(this)
         val pad = (12 * resources.displayMetrics.density).toInt()
+        val header = TextView(this).apply {
+            text = getString(R.string.community_map_group_title, group.size)
+            setPadding(pad + pad, pad + pad, pad, pad)
+            setTextAppearance(R.style.TextAppearance_App_Title)
+        }
         val list = RecyclerView(this).apply {
             layoutManager = LinearLayoutManager(this@CommunityMapActivity)
-            setPadding(0, pad, 0, pad)
+            setPadding(0, 0, 0, pad)
             clipToPadding = false
         }
         val adapter = NearbyScansAdapter(
@@ -246,7 +402,12 @@ class CommunityMapActivity : AppCompatActivity() {
         )
         list.adapter = adapter
         adapter.submit(group)
-        dialog.setContentView(list)
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(header)
+            addView(list)
+        }
+        dialog.setContentView(container)
         dialog.show()
     }
 
@@ -300,5 +461,8 @@ class CommunityMapActivity : AppCompatActivity() {
         private const val NEAR_ME_ZOOM = 11.0
         private const val MARKER_ZOOM = 11.0 // at/above → individual markers; below → heat
         private const val MAP_DEBOUNCE_MS = 400L
+        private const val MAP_ZOOM_ANIM_MS = 500L
+        private const val MARKER_SIZE_DP = 40 // thumbnail + cluster-badge pin size
+        private const val CLUSTER_CELL_DP = 64 // screen-pixel grid; pins closer than this collapse
     }
 }
