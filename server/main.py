@@ -93,6 +93,9 @@ try:
         opinion_counts_for_user as community_opinion_counts_for_user,
     )
     from .community import (
+        opinion_open as community_opinion_open,
+    )
+    from .community import (
         opinions_by_author as community_opinions_by_author,
     )
     from .community import (
@@ -220,6 +223,9 @@ except ImportError:
     )
     from community import (
         opinion_counts_for_user as community_opinion_counts_for_user,
+    )
+    from community import (
+        opinion_open as community_opinion_open,
     )
     from community import (
         opinions_by_author as community_opinions_by_author,
@@ -3206,6 +3212,11 @@ async def community_opinion_submit(payload: CommunityOpinionRequest, request: Re
     known = await loop.run_in_executor(None, lambda: community_scan_exists(sid))
     if not known:
         raise HTTPException(status_code=422, detail="Unknown scan")
+    # Public handles rotate every 30 days; a scan older than that goes
+    # read-only so stale photos can't keep collecting opinions.
+    fresh = await loop.run_in_executor(None, lambda: community_opinion_open(sid))
+    if not fresh:
+        raise HTTPException(status_code=410, detail="Scan too old for new opinions")
     try:
         await loop.run_in_executor(
             None,
@@ -3230,7 +3241,7 @@ async def community_opinion_submit(payload: CommunityOpinionRequest, request: Re
         try:
             owner = community_owner_of(sid)
             if owner and owner != author:
-                push_send_opinion(owner, sid, disease, payload.note)
+                push_send_opinion(owner, sid, disease, payload.note, payload.nickname)
         except Exception as exc:  # noqa: BLE001
             logger.debug("Opinion push failed: %s", exc)
 

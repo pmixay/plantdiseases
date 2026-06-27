@@ -826,6 +826,53 @@ def test_opinion_on_unknown_scan_rejected(client, isolated_community):
     assert r.status_code == 422
 
 
+def test_opinion_on_rotated_scan_rejected_410(client, isolated_community):
+    """Public handles rotate every 30 days; a scan older than that goes
+    read-only and a new opinion against it is refused with 410 Gone."""
+    import time as _time
+
+    import community as comm
+
+    db_path, _ = isolated_community
+    client.post(
+        "/api/community/scan",
+        data=_form(
+            scan_id="staleshared01",
+            user_pseudo_id="pseudo-owner-1",
+            region="Paris", country="FR",
+            disease="leaf_spot",
+        ),
+    )
+    token = comm.public_scan_token("staleshared01")
+    # A fresh opinion lands fine.
+    fresh = client.post(
+        "/api/community/opinion",
+        json={
+            "scan_id": token,
+            "user_pseudo_id": "pseudo-viewer-1",
+            "suggested_disease": "powdery_mildew",
+        },
+    )
+    assert fresh.status_code == 200, fresh.text
+
+    # Backdate the scan past the rotation window → new opinions refused.
+    stale = int(_time.time()) - (comm.IDENTITY_ROTATION_DAYS + 1) * 86_400
+    with sqlite3.connect(str(db_path)) as conn:
+        conn.execute(
+            "UPDATE community_scans SET created_at = ? WHERE scan_id = ?",
+            (stale, "staleshared01"),
+        )
+    r = client.post(
+        "/api/community/opinion",
+        json={
+            "scan_id": token,
+            "user_pseudo_id": "pseudo-viewer-2",
+            "suggested_disease": "healthy",
+        },
+    )
+    assert r.status_code == 410, r.text
+
+
 def test_legacy_rows_backfilled_with_public_id_and_thumb_rename(tmp_path, monkeypatch):
     """Rows + thumbnails created before the public_id column existed get
     migrated on init: token assigned, thumbnail renamed off the real id."""

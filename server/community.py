@@ -141,6 +141,16 @@ _initialised = False
 # id server-side, so existing app builds keep working unchanged.
 _PUBLIC_TOKEN_PREFIX = "cs"
 
+# Public identifiers rotate every 30 days so a user's community activity can't
+# be linked across windows; a scan older than this also stops accepting new
+# opinions (its public handle has rotated).
+IDENTITY_ROTATION_DAYS = 30
+_IDENTITY_ROTATION_S = IDENTITY_ROTATION_DAYS * 86_400
+
+
+def _identity_epoch() -> int:
+    return int(time.time() // _IDENTITY_ROTATION_S)
+
 
 def public_scan_token(scan_id: str) -> str:
     """Deterministic, non-reversible public token for one scan_id."""
@@ -176,6 +186,22 @@ def scan_exists(scan_id: str) -> bool:
     with _connect() as conn:
         return conn.execute(
             "SELECT 1 FROM community_scans WHERE scan_id = ? LIMIT 1", (sid,),
+        ).fetchone() is not None
+
+
+def opinion_open(scan_id: str, max_age_days: int = IDENTITY_ROTATION_DAYS) -> bool:
+    """True when a shared scan still accepts opinions — it exists AND is newer
+    than ``max_age_days``. Old scans go read-only (their public handle has
+    rotated), so the community can't keep weighing in on stale photos."""
+    sid = (scan_id or "").strip()
+    if not sid:
+        return False
+    init_db()
+    cutoff = int(time.time()) - max_age_days * 86_400
+    with _connect() as conn:
+        return conn.execute(
+            "SELECT 1 FROM community_scans WHERE scan_id = ? AND created_at >= ? LIMIT 1",
+            (sid, cutoff),
         ).fetchone() is not None
 
 # Disease classes that should never surface in the community feed.
@@ -1096,12 +1122,13 @@ def prune_older_than(days: int) -> int:
 
 
 def _author_token(user_pseudo_id: str | None) -> str | None:
-    """Stable, non-reversible per-author token for anonymous avatars.
-    A short sha256 prefix of the pseudo id — same user => same token,
-    but the pseudo id can't be recovered from it."""
+    """Rotating, non-reversible per-author token for anonymous avatars. Mixes
+    the 30-day epoch so the same user maps to a new token each window — the
+    pseudo id can't be recovered, and activity isn't linkable across windows."""
     if not user_pseudo_id:
         return None
-    return hashlib.sha256(str(user_pseudo_id).encode("utf-8")).hexdigest()[:12]
+    seed = f"{user_pseudo_id}|{_identity_epoch()}"
+    return hashlib.sha256(seed.encode("utf-8")).hexdigest()[:12]
 
 
 def _row_to_dict(row: tuple) -> dict:
@@ -1198,6 +1225,7 @@ __all__ = [
     "nearby_scans",
     "opinion_counts",
     "opinion_counts_for_user",
+    "opinion_open",
     "opinions_by_author",
     "opinions_for",
     "owner_of",
