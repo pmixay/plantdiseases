@@ -68,16 +68,34 @@ class SpeciesCardController(
         binding.tvSpeciesSource.visibility = View.GONE
         binding.tvSpeciesCommunityLabel.visibility = View.GONE
         binding.rvSpeciesCommunity.visibility = View.GONE
-        if (sci != null) loadEnrichment(sci)
+        if (sci != null) loadEnrichment(sci, common)
     }
 
-    private fun loadEnrichment(scientific: String) {
+    private fun loadEnrichment(scientific: String, common: String?) {
         val isRu = LocaleHelper.isRussian(activity)
         val pseudoId = TelemetryIds.userPseudoId(activity)
 
         activity.lifecycleScope.launch {
             scanRepository.getSpeciesInfo(scientific, if (isRu) "ru" else "en").onSuccess { info ->
                 if (!info.available) return@onSuccess
+                // Localized display name: a Russian user gets the Russian
+                // Wikipedia title when PlantNet only returned an English/blank
+                // label (its RU common-name coverage is thin). PlantNet's name
+                // is kept when it's already localized (Cyrillic), and the
+                // English experience is unchanged.
+                val localized = info.title?.takeIf { it.isNotBlank() }
+                val displayName = when {
+                    isRu && (common == null || !hasCyrillic(common)) ->
+                        localized ?: common ?: scientific
+                    else -> common ?: localized ?: scientific
+                }
+                binding.tvSpeciesBest.text = displayName
+                binding.tvSpeciesScientific.visibility =
+                    if (scientific.equals(displayName, ignoreCase = true)) {
+                        View.GONE
+                    } else {
+                        View.VISIBLE
+                    }
                 info.extract?.takeIf { it.isNotBlank() }?.let {
                     binding.tvSpeciesBlurb.text = it
                     binding.tvSpeciesBlurb.visibility = View.VISIBLE
@@ -137,4 +155,8 @@ class SpeciesCardController(
             }
         }
     }
+
+    /** Cyrillic presence means PlantNet already returned a Russian common
+     *  name, so we keep it instead of overriding with the Wikipedia title. */
+    private fun hasCyrillic(s: String): Boolean = s.any { it in 'Ѐ'..'ӿ' }
 }
