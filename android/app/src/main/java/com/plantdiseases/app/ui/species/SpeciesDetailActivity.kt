@@ -290,8 +290,18 @@ class SpeciesDetailActivity : AppCompatActivity() {
             // instantly with NO loading flash, so reopening clearly feels cached
             // rather than re-fetched. Only a genuine miss shows the loading state.
             val cached = scanRepository.cachedSpeciesDiseases(scientificName, locale)
-            if (cached?.available == true) {
-                renderDiseases(cached.diseases.filter { it.name.isNotBlank() })
+            if (cached != null) {
+                // Render straight from the client cache — either a real AI list
+                // or a cached "unavailable" marker that renders the bundled
+                // guide. Either way: no loading flash and no network re-hit when
+                // reopening the same species.
+                renderDiseases(
+                    if (cached.available) {
+                        cached.diseases.filter { it.name.isNotBlank() }
+                    } else {
+                        emptyList()
+                    },
+                )
                 return@launch
             }
             // Miss → reveal the section with a loading state so a slow (first-

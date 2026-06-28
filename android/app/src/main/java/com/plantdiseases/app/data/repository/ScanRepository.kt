@@ -1262,16 +1262,21 @@ class ScanRepository(
             try {
                 val body = apiClient.speciesDiseases(name, common, locale)
                 if (body != null) {
-                    // Only a real AI hit is worth keeping; a transient
-                    // unavailable (no key / failure) falls back to the offline
-                    // guide and should re-try next open.
-                    if (body.available) {
-                        com.plantdiseases.app.util.ResponseCache.put(
-                            cacheKey,
-                            body,
-                            com.plantdiseases.app.util.ResponseCache.TTL_SPECIES_MS,
-                        )
-                    }
+                    // Cache the answer either way so reopening the same species
+                    // never re-fetches: a real AI hit stays a week; an
+                    // "unavailable" answer (which renders the bundled guide) is
+                    // kept only briefly so it still retries within the day once
+                    // the AI becomes available. Only a hard network failure
+                    // (body == null) is left uncached to retry on next open.
+                    com.plantdiseases.app.util.ResponseCache.put(
+                        cacheKey,
+                        body,
+                        if (body.available) {
+                            com.plantdiseases.app.util.ResponseCache.TTL_SPECIES_MS
+                        } else {
+                            com.plantdiseases.app.util.ResponseCache.TTL_SPECIES_MISS_MS
+                        },
+                    )
                     Result.success(body)
                 } else {
                     Result.failure(Exception("species-diseases failed"))
