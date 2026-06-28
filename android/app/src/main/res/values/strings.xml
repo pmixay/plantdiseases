@@ -191,7 +191,7 @@
     <string name="similar_scans_subtitle_region">Recent community diagnoses in %1$s</string>
     <string name="similar_scans_subtitle_no_region">No country feed is available yet.</string>
     <string name="similar_scans_empty">No community scans yet — your scan will be the first.</string>
-    <string name="similar_scans_enable_prompt">See community scans and contribute yours.</string>
+    <string name="similar_scans_enable_prompt">Want to see what people are scanning nearby?</string>
     <!-- Community second opinion -->
     <string name="community_opinion_title">Get a second opinion</string>
     <string name="community_opinion_subtitle">Ask the community what they think — and weigh in on others\' scans.</string>
@@ -199,11 +199,17 @@
     <string name="community_opinion_pick_label">What do you think it is?</string>
     <string name="community_opinion_note_hint">Add a note (optional)</string>
     <string name="community_opinion_send">Post opinion</string>
+    <string name="community_opinion_agree">Agree</string>
+    <string name="community_opinion_disagree">Disagree</string>
+    <string name="community_opinion_confidence">Confidence %1$d%%</string>
+    <string name="community_opinion_species_fmt">%1$s (%2$d%%)</string>
     <string name="community_opinion_consensus_prefix">Community so far: %1$s</string>
     <string name="community_opinion_empty">No opinions yet — be the first to weigh in.</string>
     <string name="community_opinion_thanks">Thanks for your opinion!</string>
     <string name="community_opinion_error">Couldn\'t reach the community. Try again.</string>
     <string name="community_opinions_badge">%1$d opinions</string>
+    <string name="community_distance_near">≈ %1$d km near you</string>
+    <string name="community_opinion_photo_desc">Shared plant scan</string>
     <string name="result_view_opinions">%1$d community opinions</string>
     <string name="result_view_activity">%1$d opinions · %2$d views</string>
     <string name="gallery_community_badge">💬 %1$d</string>
@@ -228,6 +234,26 @@
     <string name="nearby_scans_cd">Community scans</string>
     <string name="nearby_scans_loading">Finding community scans…</string>
     <string name="nearby_scans_second_opinion">Second opinion</string>
+    <!-- Community scope toggle -->
+    <string name="community_filter_nearby">Nearby</string>
+    <string name="community_filter_country">Country</string>
+    <!-- Community scans map -->
+    <string name="community_map_title">Community map</string>
+    <string name="nearby_action_map">Map</string>
+    <string name="community_map_near_me">Near me</string>
+    <string name="nearby_action_disable">Leave community</string>
+    <string name="community_disable_title">Leave community?</string>
+    <string name="community_disable_body">You\'ll stop sharing scans and receiving opinions. Scans you\'ve already shared stay until you delete them from Profile.</string>
+    <string name="community_disable_confirm">Leave</string>
+    <string name="community_map_zoom_in">Zoom in to see individual scans</string>
+    <string name="community_map_truncated">Showing the latest scans — zoom in to see all</string>
+    <string name="community_map_empty">No community scans in this area yet</string>
+    <string name="community_map_group_title">%1$d scans here</string>
+    <string name="community_map_legend_less">Fewer</string>
+    <string name="community_map_legend_more">More</string>
+    <!-- In-context community opt-in -->
+    <string name="community_enable_cta">Enable community</string>
+    <string name="community_enable_blurb">See scans from growers near you and ask for a second opinion. Enabling shares your scans anonymously and uses your approximate location.</string>
     <!-- Nearby scans sort & filter overlay -->
     <string name="nearby_filter_title">Sort &amp; filter</string>
     <string name="nearby_filter_by_date">By date</string>
@@ -241,6 +267,8 @@
     <!-- Community consent + Profile toggle -->
     <string name="community_toggle_title">Share scans with the community</string>
     <string name="community_toggle_subtitle">Country + diagnosis + 512px thumbnail. Off keeps everything on-device.</string>
+    <string name="community_features_title">Enable community features</string>
+    <string name="community_features_subtitle">Share scans anonymously, get second opinions, and see scans from growers near you. Off turns the community off entirely and keeps everything on-device.</string>
     <string name="community_profile_subtitle">Anonymous sharing is enabled after data consent. Country comes from the server, not your device location.</string>
     <string name="community_scope_global">worldwide</string>
     <string name="opinion_notifications_title">Receive community opinions</string>
@@ -248,6 +276,7 @@
     <string name="community_delete_title">Delete my contributions</string>
     <string name="opinion_notif_title">New second opinion</string>
     <string name="opinion_notif_body">Someone weighed in on your %1$s scan</string>
+    <string name="opinion_notif_body_named">%1$s weighed in on your %2$s scan</string>
     <string name="opinion_notif_with_note">Suggested diagnosis: %1$s\n\n“%2$s”</string>
     <string name="channel_plant_reminders_name">Plant Reminders</string>
     <string name="channel_plant_reminders_desc">Care schedule reminders for your plants</string>
@@ -787,6 +816,7 @@
     <string name="home_popular_diseases">Popular diseases</string>
     <string name="home_popular_species">Popular houseplants</string>
     <string name="home_popular_in_country">Popular in %1$s</string>
+    <string name="home_popular_near">Popular near %1$s</string>
     <string name="home_popular_worldwide">Popular worldwide</string>
     <string name="home_popular_percent">%1$d%% of community scans</string>
     <string name="home_species_popular_tag">Popular</string>
@@ -841,6 +871,7 @@
     <string name="identify_pick_candidate">Which one is your plant?</string>
     <string name="identify_retake">Retake</string>
     <string name="species_common_problems">Common problems to watch for</string>
+    <string name="species_problems_loading">Finding the problems most common for this plant…</string>
     <string name="species_problems_ai_note">Most likely for this species — tap one for the full care guide.</string>
     <string name="species_problems_guide_note">Houseplant conditions this app can diagnose — tap one to learn more.</string>
 

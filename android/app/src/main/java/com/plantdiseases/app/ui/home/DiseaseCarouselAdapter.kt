@@ -54,6 +54,9 @@ class DiseaseCarouselAdapter(
         val item = items[position]
         holder.binding.tvDiseaseName.text = item.title
         holder.binding.tvDiseaseSub.text = item.subtitle
+        // Blank subtitle (placeholder / sub-1% share) → hide, no empty gap.
+        holder.binding.tvDiseaseSub.visibility =
+            if (item.subtitle.isBlank()) android.view.View.GONE else android.view.View.VISIBLE
         holder.binding.root.setOnClickListener { onClick(item) }
         bindPhoto(holder, item)
     }

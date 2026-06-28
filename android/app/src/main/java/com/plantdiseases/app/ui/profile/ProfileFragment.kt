@@ -38,7 +38,6 @@ import com.plantdiseases.app.ui.result.CommunityOpinionSheet
 import com.plantdiseases.app.ui.widget.BarChartView
 import com.plantdiseases.app.util.AutosavePrefs
 import com.plantdiseases.app.util.LocaleHelper
-import com.plantdiseases.app.util.OpinionPrefs
 import com.plantdiseases.app.util.TelemetryIds
 import com.plantdiseases.app.util.ThemeHelper
 import kotlinx.coroutines.launch
@@ -76,15 +75,6 @@ class ProfileFragment : Fragment() {
                 Toast.LENGTH_LONG,
             ).show()
         }
-    }
-
-    private val opinionNotificationLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (_binding == null) return@registerForActivityResult
-        OpinionPrefs.setNotificationsEnabled(requireContext(), granted)
-        binding.switchOpinionNotifications.isChecked = granted
-        if (granted) startOpinionDelivery()
     }
 
     override fun onCreateView(
@@ -156,19 +146,9 @@ class ProfileFragment : Fragment() {
 
     private fun setupCommunityControls() {
         val ctx = requireContext()
-        binding.switchOpinionNotifications.isChecked =
-            OpinionPrefs.notificationsEnabled(ctx)
-        binding.switchOpinionNotifications.setOnCheckedChangeListener { _, checked ->
-            if (checked) {
-                enableOpinionNotifications()
-            } else {
-                OpinionPrefs.setNotificationsEnabled(ctx, false)
-                androidx.work.WorkManager.getInstance(ctx).cancelUniqueWork("opinion_check")
-                androidx.work.WorkManager.getInstance(ctx).cancelUniqueWork("opinion_check_now")
-            }
-        }
-        // Community sharing is default-on and scoped by the server. Keep the
-        // destructive delete-my-shared-data control here.
+        // Enabling/disabling community now lives inside the community screen.
+        // Profile keeps only the destructive delete-my-shared-data control — a
+        // data right, available regardless of the current on/off state.
         binding.btnDeleteCommunity.setOnClickListener {
             MaterialAlertDialogBuilder(ctx)
                 .setTitle(R.string.community_delete_title)
@@ -179,26 +159,6 @@ class ProfileFragment : Fragment() {
                 }
                 .show()
         }
-    }
-
-    private fun enableOpinionNotifications() {
-        val ctx = requireContext()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            opinionNotificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            return
-        }
-        OpinionPrefs.setNotificationsEnabled(ctx, true)
-        startOpinionDelivery()
-    }
-
-    private fun startOpinionDelivery() {
-        val app = requireActivity().application as com.plantdiseases.app.PlantDiseasesApp
-        app.scheduleOpinionChecks()
-        app.checkOpinionsNow()
-        com.plantdiseases.app.push.PushManager.registerIfEnabled(requireContext())
     }
 
     private fun deleteCommunityContributions() {

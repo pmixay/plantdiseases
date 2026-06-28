@@ -28,8 +28,8 @@ import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.SpeciesDiseaseItem
-import com.plantdiseases.app.data.remote.PlantApiClient
 import com.plantdiseases.app.data.repository.PlantRepository
+import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivitySpeciesDetailBinding
 import com.plantdiseases.app.ui.guide.GuideDetailActivity
 import com.plantdiseases.app.util.DiseaseCatalog
@@ -50,7 +50,7 @@ import java.util.Locale
 class SpeciesDetailActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivitySpeciesDetailBinding
-    private val apiClient: PlantApiClient by inject()
+    private val scanRepository: ScanRepository by inject()
     private val plantRepository: PlantRepository by inject()
     private val isRu: Boolean get() = Locale.getDefault().language == "ru"
     private val locale: String get() = if (isRu) "ru" else "en"
@@ -103,7 +103,12 @@ class SpeciesDetailActivity : AppCompatActivity() {
             )
         }
 
+        // Three independent loads run concurrently: the Wikipedia blurb/photo,
+        // the care plan, and the (slow, AI) common-problems list. Each renders
+        // as soon as it's ready, with its own loading state, so one slow call
+        // never blanks the whole screen.
         loadDetail()
+        loadCare()
         loadDiseases()
     }
 
@@ -111,15 +116,16 @@ class SpeciesDetailActivity : AppCompatActivity() {
         binding.progress.visibility = View.VISIBLE
         binding.tvSpeciesExtract.text = getString(R.string.identify_loading)
         lifecycleScope.launch {
-            val info = runCatching {
-                apiClient.speciesInfo(scientificName, locale)
-            }.getOrNull()
+            // Cached per (name, locale) — reopening the same species serves
+            // the stored Wikipedia blurb/photo instead of re-fetching.
+            val info = scanRepository.getSpeciesInfo(scientificName, locale).getOrNull()
             binding.progress.visibility = View.GONE
             if (info?.available == true) {
                 binding.tvSpeciesExtract.text =
                     info.extract ?: getString(R.string.identify_no_info)
                 info.imageUrl?.let { url ->
-                    Glide.with(this@SpeciesDetailActivity).load(url)
+                    Glide.with(this@SpeciesDetailActivity)
+                        .load(com.plantdiseases.app.util.ServerConfig.photoUrl(url))
                         .placeholder(R.drawable.ic_plant_placeholder)
                         .diskCacheStrategy(DiskCacheStrategy.ALL)
                         .into(binding.ivSpeciesHero)
@@ -134,30 +140,40 @@ class SpeciesDetailActivity : AppCompatActivity() {
             } else {
                 binding.tvSpeciesExtract.text = getString(R.string.identify_no_info)
             }
+        }
+    }
 
-            val plan = runCatching {
-                apiClient.carePlan(
-                    CarePlanRequest(disease = "healthy", species = scientificName, locale = locale),
-                )
-            }.getOrNull()
-            if (plan != null) {
+    /** Care-at-a-glance, on its own coroutine so it isn't gated behind the
+     *  Wikipedia fetch. Shows the card with a loading line immediately, then
+     *  fills it (or hides the card if there's nothing useful to show). */
+    private fun loadCare() {
+        binding.cardCare.visibility = View.VISIBLE
+        binding.tvCareBody.text = getString(R.string.identify_loading)
+        lifecycleScope.launch {
+            val plan = scanRepository.fetchCarePlan(
+                CarePlanRequest(disease = "healthy", species = scientificName, locale = locale),
+            ).getOrNull()
+            val lines = if (plan != null) {
                 val watering = when {
                     plan.wateringDaysIsAsNeeded -> getString(R.string.identify_water_as_needed)
                     plan.wateringDaysInt != null ->
                         getString(R.string.identify_water_days, plan.wateringDaysInt)
                     else -> null
                 }
-                val lines = listOfNotNull(
+                listOfNotNull(
                     getString(R.string.identify_light_tier, prettyTier(plan.lightTier)),
                     watering,
                     plan.humidityTarget.takeIf { it.isNotBlank() }
                         ?.let { getString(R.string.identify_humidity, it) },
                     if (plan.toxicToPets) getString(R.string.identify_toxic_pets) else null,
                 )
-                if (lines.isNotEmpty()) {
-                    binding.cardCare.visibility = View.VISIBLE
-                    binding.tvCareBody.text = lines.joinToString("\n")
-                }
+            } else {
+                emptyList()
+            }
+            if (lines.isNotEmpty()) {
+                binding.tvCareBody.text = lines.joinToString("\n")
+            } else {
+                binding.cardCare.visibility = View.GONE
             }
         }
     }
@@ -185,7 +201,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 contentDescription = null
             }
             Glide.with(this)
-                .load(url)
+                .load(com.plantdiseases.app.util.ServerConfig.photoUrl(url))
                 .placeholder(R.drawable.ic_plant_placeholder)
                 .diskCacheStrategy(DiskCacheStrategy.ALL)
                 // Decode straight to the 120dp thumbnail size instead of the
@@ -224,14 +240,29 @@ class SpeciesDetailActivity : AppCompatActivity() {
 
     private fun loadDiseases() {
         lifecycleScope.launch {
-            val resp = runCatching {
-                apiClient.speciesDiseases(scientificName, commonName, locale)
-            }.getOrNull()
+            // Peek the client cache first: a previously-opened species renders
+            // instantly with NO loading flash, so reopening clearly feels cached
+            // rather than re-fetched. Only a genuine miss shows the loading state.
+            val cached = scanRepository.cachedSpeciesDiseases(scientificName, locale)
+            if (cached?.available == true) {
+                renderDiseases(cached.diseases.filter { it.name.isNotBlank() })
+                return@launch
+            }
+            // Miss → reveal the section with a loading state so a slow (first-
+            // time) AI lookup reads as "finding problems…", not an empty gap.
+            binding.tvDiseasesTitle.visibility = View.VISIBLE
+            binding.tvDiseasesSubtitle.visibility = View.VISIBLE
+            binding.tvDiseasesSubtitle.setText(R.string.species_problems_loading)
+            binding.pbDiseases.visibility = View.VISIBLE
+            val resp = scanRepository
+                .fetchSpeciesDiseases(scientificName, commonName, locale)
+                .getOrNull()
             val aiItems = if (resp?.available == true) {
                 resp.diseases.filter { it.name.isNotBlank() }
             } else {
                 emptyList()
             }
+            binding.pbDiseases.visibility = View.GONE
             renderDiseases(aiItems)
         }
     }
@@ -244,7 +275,11 @@ class SpeciesDetailActivity : AppCompatActivity() {
         if (aiItems.isNotEmpty()) {
             binding.tvDiseasesSubtitle.setText(R.string.species_problems_ai_note)
             aiItems.forEach { item ->
+                // Match by class key first, then by display name, so the row
+                // picks up the same icon as the disease guide/book instead of
+                // the generic placeholder.
                 val guide = item.docKey?.let { DiseaseCatalog.guideItemForClass(it) }
+                    ?: DiseaseCatalog.guideItemForName(item.name)
                 addDiseaseRow(
                     name = item.name,
                     note = item.note,

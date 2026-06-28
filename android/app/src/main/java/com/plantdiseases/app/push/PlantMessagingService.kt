@@ -17,7 +17,7 @@ import org.koin.android.ext.android.inject
  * in every app state and we build the localized notification ourselves.
  *
  * Expected data payload: { type: "opinion", scan_id: <clientScanId>,
- * disease: <class_key> }.
+ * disease: <class_key>, note: <text>, nickname: <responder handle> }.
  */
 class PlantMessagingService : FirebaseMessagingService() {
 
@@ -43,10 +43,11 @@ class PlantMessagingService : FirebaseMessagingService() {
         if (scanId.isBlank()) return
         val disease = data["disease"].orEmpty()
         val note = data["note"].orEmpty()
+        val nickname = data["nickname"].orEmpty()
         // onMessageReceived already runs off the main thread; the scan lookup +
         // notify is quick and well within FCM's processing window.
         runBlocking {
-            OpinionNotifier.notifyNewOpinion(applicationContext, scanId, disease, note)
+            OpinionNotifier.notifyNewOpinion(applicationContext, scanId, disease, note, nickname)
         }
     }
 }

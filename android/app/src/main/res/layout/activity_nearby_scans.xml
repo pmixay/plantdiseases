@@ -29,6 +29,35 @@
             app:titleTextAppearance="@style/TextAppearance.App.Toolbar"
             app:titleTextColor="@color/toolbar_title" />
 
+        <!-- Scope toggle: "Nearby" (the user's subdivision) vs "Country". -->
+        <com.google.android.material.chip.ChipGroup
+            android:id="@+id/cg_scope"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:paddingHorizontal="@dimen/space_lg"
+            android:paddingBottom="@dimen/space_sm"
+            app:singleLine="true"
+            app:singleSelection="true"
+            app:selectionRequired="true">
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chip_scope_nearby"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:text="@string/community_filter_nearby" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chip_scope_country"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/community_filter_country" />
+
+        </com.google.android.material.chip.ChipGroup>
+
     </com.google.android.material.appbar.AppBarLayout>
 
     <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
@@ -89,6 +118,19 @@
                     android:text="@string/nearby_scans_loading"
                     android:textAppearance="@style/TextAppearance.App.Body"
                     android:textColor="@color/on_surface_secondary" />
+
+                <!-- Shown only when community is OFF: in-context opt-in. -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_enable_community"
+                    style="@style/Widget.Material3.Button.TonalButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_lg"
+                    android:text="@string/community_enable_cta"
+                    android:textAllCaps="false"
+                    android:visibility="gone"
+                    app:icon="@drawable/ic_community"
+                    app:cornerRadius="@dimen/radius_md" />
 
             </LinearLayout>
 

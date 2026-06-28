@@ -1019,11 +1019,14 @@ class ScanRepository(
         userPseudoId: String,
         country: String? = null,
         region: String = "",
+        lat: Double? = null,
+        lon: Double? = null,
         disease: String,
         confidence: Float? = null,
         species: String? = null,
         speciesScore: Float? = null,
         locale: String? = null,
+        nickname: String? = null,
         thumbnail: File? = null,
     ): Result<com.plantdiseases.app.data.model.CommunityScanUploadResponse> =
         withContext(Dispatchers.IO) {
@@ -1040,10 +1043,13 @@ class ScanRepository(
                                 // Optional fields — only sent when present/non-blank,
                                 // matching the old `text()` helper exactly.
                                 region.takeIf { it.isNotBlank() }?.let { append("region", it) }
+                                lat?.let { append("lat", it.toString()) }
+                                lon?.let { append("lon", it.toString()) }
                                 confidence?.let { append("confidence", it.toString()) }
                                 species?.takeIf { it.isNotBlank() }?.let { append("species", it) }
                                 speciesScore?.let { append("species_score", it.toString()) }
                                 locale?.takeIf { it.isNotBlank() }?.let { append("locale", it) }
+                                nickname?.takeIf { it.isNotBlank() }?.let { append("nickname", it) }
                                 thumbnail?.takeIf { it.exists() }?.let { f ->
                                     append(
                                         "image",
@@ -1083,21 +1089,27 @@ class ScanRepository(
     suspend fun communityNearby(
         country: String? = null,
         region: String? = null,
+        lat: Double? = null,
+        lon: Double? = null,
         disease: String?,
         species: String? = null,
         userPseudoId: String?,
         limit: Int = 12,
+        scope: String? = null,
     ): Result<com.plantdiseases.app.data.model.CommunityScansResponse> =
         withContext(Dispatchers.IO) {
             try {
                 val response = apiClient.httpClient.get("api/community/nearby") {
                     country?.takeIf { it.isNotBlank() }?.let { parameter("country", it) }
                     region?.takeIf { it.isNotBlank() }?.let { parameter("region", it) }
+                    lat?.let { parameter("lat", it) }
+                    lon?.let { parameter("lon", it) }
                     disease?.takeIf { it.isNotBlank() }?.let { parameter("disease", it) }
                     species?.takeIf { it.isNotBlank() }?.let { parameter("species", it) }
                     userPseudoId?.takeIf { it.isNotBlank() }?.let {
                         parameter("user_pseudo_id", it)
                     }
+                    scope?.takeIf { it.isNotBlank() }?.let { parameter("scope", it) }
                     parameter("limit", limit)
                 }
                 when (response.status.value) {
@@ -1113,6 +1125,74 @@ class ScanRepository(
             }
         }
 
+    /** Individual community scans inside a map bbox (zoomed-in markers). */
+    suspend fun communityMap(
+        minLat: Double,
+        minLon: Double,
+        maxLat: Double,
+        maxLon: Double,
+        disease: String? = null,
+        days: Int = 30,
+        userPseudoId: String? = null,
+        limit: Int = 300,
+    ): Result<com.plantdiseases.app.data.model.CommunityScansResponse> =
+        withContext(Dispatchers.IO) {
+            try {
+                val response = apiClient.httpClient.get("api/community/map") {
+                    parameter("min_lat", minLat)
+                    parameter("min_lon", minLon)
+                    parameter("max_lat", maxLat)
+                    parameter("max_lon", maxLon)
+                    disease?.takeIf { it.isNotBlank() }?.let { parameter("disease", it) }
+                    parameter("days", days)
+                    userPseudoId?.takeIf { it.isNotBlank() }?.let {
+                        parameter("user_pseudo_id", it)
+                    }
+                    parameter("limit", limit)
+                }
+                when (response.status.value) {
+                    in 200..299 -> Result.success(
+                        response.body<com.plantdiseases.app.data.model.CommunityScansResponse>(),
+                    )
+                    else -> Result.failure(Exception("Community map failed: ${response.status.value}"))
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+    /** K-anonymized scan density for the zoomed-out map heat layer. */
+    suspend fun communityHeatmap(
+        minLat: Double,
+        minLon: Double,
+        maxLat: Double,
+        maxLon: Double,
+        disease: String? = null,
+        days: Int = 30,
+    ): Result<com.plantdiseases.app.data.model.CommunityHeatmapResponse> =
+        withContext(Dispatchers.IO) {
+            try {
+                val response = apiClient.httpClient.get("api/community/heatmap") {
+                    parameter("min_lat", minLat)
+                    parameter("min_lon", minLon)
+                    parameter("max_lat", maxLat)
+                    parameter("max_lon", maxLon)
+                    disease?.takeIf { it.isNotBlank() }?.let { parameter("disease", it) }
+                    parameter("days", days)
+                }
+                when (response.status.value) {
+                    in 200..299 -> Result.success(
+                        response.body<com.plantdiseases.app.data.model.CommunityHeatmapResponse>(),
+                    )
+                    else -> Result.failure(
+                        Exception("Community heatmap failed: ${response.status.value}"),
+                    )
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
     /** Localized Wikipedia blurb + lead image for a scientific name. */
     suspend fun getSpeciesInfo(
         name: String,
@@ -1121,7 +1201,9 @@ class ScanRepository(
         withContext(Dispatchers.IO) {
             // Wikipedia blurb + lead image are stable per (name, locale) — cache
             // once available so the result screen doesn't re-fetch every open.
-            val cacheKey = "species:v1:${name.trim().lowercase()}|$locale"
+            // v2: image_url/images are now server-proxied (api/plant-photo) — bump
+            // so cached v1 entries with raw Wikimedia URLs are re-fetched.
+            val cacheKey = "species:v2:${name.trim().lowercase()}|$locale"
             com.plantdiseases.app.util.ResponseCache
                 .get(cacheKey, com.plantdiseases.app.data.model.SpeciesInfoResponse::class.java)
                 ?.let { return@withContext Result.success(it) }
@@ -1140,6 +1222,59 @@ class ScanRepository(
                     Result.success(body)
                 } else {
                     Result.failure(Exception("species-info failed"))
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+    private fun speciesDiseasesCacheKey(name: String, locale: String): String =
+        "species_diseases:v1:${name.trim().lowercase()}|$locale"
+
+    /** Peek the client cache for a previously-fetched species-diseases list,
+     *  without ever hitting the network. Lets the UI render a reopened species
+     *  instantly (no loading flash) instead of looking like it re-fetches. */
+    suspend fun cachedSpeciesDiseases(
+        name: String,
+        locale: String,
+    ): com.plantdiseases.app.data.model.SpeciesDiseasesResponse? =
+        withContext(Dispatchers.IO) {
+            com.plantdiseases.app.util.ResponseCache.get(
+                speciesDiseasesCacheKey(name, locale),
+                com.plantdiseases.app.data.model.SpeciesDiseasesResponse::class.java,
+            )
+        }
+
+    /** Conditions a species is commonly affected by (AI, best-effort). The
+     *  answer is stable per (name, locale), and the LLM call is slow, so cache
+     *  a real (`available`) result — reopening the species no longer re-hits
+     *  the model and re-renders the list from scratch. */
+    suspend fun fetchSpeciesDiseases(
+        name: String,
+        common: String?,
+        locale: String,
+    ): Result<com.plantdiseases.app.data.model.SpeciesDiseasesResponse> =
+        withContext(Dispatchers.IO) {
+            val cacheKey = speciesDiseasesCacheKey(name, locale)
+            com.plantdiseases.app.util.ResponseCache
+                .get(cacheKey, com.plantdiseases.app.data.model.SpeciesDiseasesResponse::class.java)
+                ?.let { return@withContext Result.success(it) }
+            try {
+                val body = apiClient.speciesDiseases(name, common, locale)
+                if (body != null) {
+                    // Only a real AI hit is worth keeping; a transient
+                    // unavailable (no key / failure) falls back to the offline
+                    // guide and should re-try next open.
+                    if (body.available) {
+                        com.plantdiseases.app.util.ResponseCache.put(
+                            cacheKey,
+                            body,
+                            com.plantdiseases.app.util.ResponseCache.TTL_SPECIES_MS,
+                        )
+                    }
+                    Result.success(body)
+                } else {
+                    Result.failure(Exception("species-diseases failed"))
                 }
             } catch (e: Exception) {
                 Result.failure(e)

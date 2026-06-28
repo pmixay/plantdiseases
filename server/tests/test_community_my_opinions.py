@@ -47,6 +47,21 @@ def test_counts_only_for_my_scans_and_exclude_my_own_opinions(comm):
     assert isinstance(by_id["mine1"]["latest_at"], int)
 
 
+def test_latest_nickname_is_returned_for_poll_notification(comm):
+    """The poll surfaces the most-recent outside responder's nickname so the
+    fallback notification can name who weighed in (matching the FCM push)."""
+    comm.record_scan(scan_id="mine1", user_pseudo_id="owner", country="GB",
+                     region="London", disease="leaf_spot")
+    comm.record_opinion(scan_id="mine1", author_pseudo_id="alice",
+                        suggested_disease="blight", nickname="Leafy Sage 7")
+    comm.record_opinion(scan_id="mine1", author_pseudo_id="bob",
+                        suggested_disease="leaf_spot", nickname="Mossy Baron 3")
+
+    scan = comm.opinion_counts_for_user("owner")["scans"][0]
+    # Newest opinion (bob) wins the latest_nickname slot.
+    assert scan["latest_nickname"] == "Mossy Baron 3"
+
+
 def test_empty_for_user_with_no_opinions(comm):
     comm.record_scan(scan_id="x", user_pseudo_id="owner", country="GB",
                      region="London", disease="healthy")

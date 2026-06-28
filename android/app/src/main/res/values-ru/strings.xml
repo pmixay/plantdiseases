@@ -188,7 +188,7 @@
     <string name="similar_scans_subtitle_region">Недавние диагнозы сообщества в %1$s</string>
     <string name="similar_scans_subtitle_no_region">Лента страны пока недоступна.</string>
     <string name="similar_scans_empty">Сканов сообщества пока нет — ваш будет первым.</string>
-    <string name="similar_scans_enable_prompt">Смотрите сканы сообщества и делитесь своими.</string>
+    <string name="similar_scans_enable_prompt">Хотите видеть, что сканируют рядом?</string>
     <!-- Community second opinion -->
     <string name="community_opinion_title">Второе мнение</string>
     <string name="community_opinion_subtitle">Спросите сообщество — и оцените чужие сканы.</string>
@@ -196,11 +196,17 @@
     <string name="community_opinion_pick_label">Что это, по-вашему?</string>
     <string name="community_opinion_note_hint">Комментарий (необязательно)</string>
     <string name="community_opinion_send">Отправить мнение</string>
+    <string name="community_opinion_agree">Согласен</string>
+    <string name="community_opinion_disagree">Не согласен</string>
+    <string name="community_opinion_confidence">Точность %1$d%%</string>
+    <string name="community_opinion_species_fmt">%1$s (%2$d%%)</string>
     <string name="community_opinion_consensus_prefix">Мнения сообщества: %1$s</string>
     <string name="community_opinion_empty">Пока нет мнений — будьте первым.</string>
     <string name="community_opinion_thanks">Спасибо за ваше мнение!</string>
     <string name="community_opinion_error">Не удалось связаться с сообществом. Повторите.</string>
     <string name="community_opinions_badge">Мнений: %1$d</string>
+    <string name="community_distance_near">≈ %1$d км рядом с вами</string>
+    <string name="community_opinion_photo_desc">Снимок растения сообщества</string>
     <string name="result_view_opinions">Мнений сообщества: %1$d</string>
     <string name="result_view_activity">Мнений: %1$d · просмотров: %2$d</string>
     <string name="gallery_community_badge">💬 %1$d</string>
@@ -224,6 +230,26 @@
     <string name="nearby_scans_cd">Сканы сообщества</string>
     <string name="nearby_scans_loading">Ищем сканы сообщества…</string>
     <string name="nearby_scans_second_opinion">Второе мнение</string>
+    <!-- Community scope toggle -->
+    <string name="community_filter_nearby">Рядом</string>
+    <string name="community_filter_country">Страна</string>
+    <!-- Community scans map -->
+    <string name="community_map_title">Карта сообщества</string>
+    <string name="nearby_action_map">Карта</string>
+    <string name="community_map_near_me">Рядом со мной</string>
+    <string name="nearby_action_disable">Покинуть сообщество</string>
+    <string name="community_disable_title">Покинуть сообщество?</string>
+    <string name="community_disable_body">Вы перестанете делиться сканами и получать мнения. Уже опубликованные сканы останутся, пока вы не удалите их в профиле.</string>
+    <string name="community_disable_confirm">Покинуть</string>
+    <string name="community_map_zoom_in">Приблизьте, чтобы увидеть отдельные сканы</string>
+    <string name="community_map_truncated">Показаны последние сканы — приблизьте, чтобы увидеть все</string>
+    <string name="community_map_empty">В этой области пока нет сканов сообщества</string>
+    <string name="community_map_group_title">Сканов здесь: %1$d</string>
+    <string name="community_map_legend_less">Меньше</string>
+    <string name="community_map_legend_more">Больше</string>
+    <!-- In-context community opt-in -->
+    <string name="community_enable_cta">Включить сообщество</string>
+    <string name="community_enable_blurb">Смотрите сканы садоводов рядом с вами и спрашивайте второе мнение. Включение анонимно делится вашими сканами и использует примерное местоположение.</string>
     <!-- Nearby scans sort & filter overlay -->
     <string name="nearby_filter_title">Сортировка и фильтр</string>
     <string name="nearby_filter_by_date">По дате</string>
@@ -235,6 +261,8 @@
     <string name="community_vote_percent">%1$d%%</string>
     <string name="community_toggle_title">Делиться сканами с сообществом</string>
     <string name="community_toggle_subtitle">Страна + диагноз + миниатюра 512px. Можно выключить — всё останется на устройстве.</string>
+    <string name="community_features_title">Включить функции сообщества</string>
+    <string name="community_features_subtitle">Анонимно делитесь сканами, получайте вторые мнения и смотрите сканы садоводов рядом. Выключение полностью отключает сообщество — всё останется на устройстве.</string>
     <string name="community_profile_subtitle">Анонимный обмен включен после согласия на данные. Страну определяет сервер, а не геолокация устройства.</string>
     <string name="community_scope_global">по всему миру</string>
     <string name="opinion_notifications_title">Получать мнения сообщества</string>
@@ -242,6 +270,7 @@
     <string name="community_delete_title">Удалить мои данные из сообщества</string>
     <string name="opinion_notif_title">Новое второе мнение</string>
     <string name="opinion_notif_body">Кто-то оставил мнение о вашем скане: %1$s</string>
+    <string name="opinion_notif_body_named">%1$s оставил(а) мнение о вашем скане: %2$s</string>
     <string name="opinion_notif_with_note">Предложенный диагноз: %1$s\n\n«%2$s»</string>
     <string name="channel_plant_reminders_name">Напоминания о растениях</string>
     <string name="channel_plant_reminders_desc">Напоминания по графику ухода за вашими растениями</string>
@@ -779,6 +808,7 @@
     <string name="home_popular_diseases">Частые болезни</string>
     <string name="home_popular_species">Популярные растения</string>
     <string name="home_popular_in_country">Популярно: %1$s</string>
+    <string name="home_popular_near">Популярно рядом: %1$s</string>
     <string name="home_popular_worldwide">Популярно во всем мире</string>
     <string name="home_popular_percent">%1$d%% сканов сообщества</string>
     <string name="home_species_popular_tag">Популярное</string>
@@ -837,6 +867,7 @@
     <string name="identify_pick_candidate">Какое из них ваше растение?</string>
     <string name="identify_retake">Переснять</string>
     <string name="species_common_problems">Частые проблемы этого вида</string>
+    <string name="species_problems_loading">Подбираем проблемы, характерные для этого растения…</string>
     <string name="species_problems_ai_note">Наиболее вероятны для этого вида — нажмите, чтобы открыть руководство.</string>
     <string name="species_problems_guide_note">Болезни комнатных растений, которые умеет распознавать приложение, — нажмите, чтобы узнать больше.</string>
 

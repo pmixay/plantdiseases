@@ -541,7 +541,8 @@
 
         </LinearLayout>
 
-        <!-- Community contributions: share toggle + delete-my-data. -->
+        <!-- Community contributions: delete-my-data. Enabling/disabling
+             community now lives inside the community screen itself. -->
         <com.google.android.material.card.MaterialCardView
             style="@style/App.GlassCard"
             android:layout_width="match_parent"
@@ -560,9 +561,9 @@
                     android:textAppearance="@style/TextAppearance.App.Title"
                     android:accessibilityHeading="true" />
 
-                <!-- Community sharing is default-on and server-scoped. This
-                     card explains that + keeps the delete-my-shared-data
-                     control. -->
+                <!-- Community sharing is opt-in and managed inside the community
+                     screen; Profile keeps only the delete-my-shared-data control
+                     (your data rights, independent of the on/off state). -->
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -572,49 +573,12 @@
                     android:textColor="@color/on_surface_secondary"
                     android:lineSpacingExtra="1dp" />
 
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_md"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical">
-
-                    <LinearLayout
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:orientation="vertical">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/opinion_notifications_title"
-                            android:textAppearance="@style/TextAppearance.App.Title" />
-
-                        <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/space_xxs"
-                            android:text="@string/opinion_notifications_subtitle"
-                            android:textSize="@dimen/text_body_sm"
-                            android:textColor="@color/on_surface_secondary"
-                            android:lineSpacingExtra="1dp" />
-                    </LinearLayout>
-
-                    <com.google.android.material.materialswitch.MaterialSwitch
-                        android:id="@+id/switch_opinion_notifications"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="@dimen/space_md"
-                        android:contentDescription="@string/opinion_notifications_title" />
-                </LinearLayout>
-
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_delete_community"
                     style="@style/Widget.Material3.Button.TextButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_sm"
+                    android:layout_marginTop="@dimen/space_md"
                     android:layout_marginStart="-8dp"
                     android:text="@string/community_delete_title"
                     android:textColor="@color/disease_red"

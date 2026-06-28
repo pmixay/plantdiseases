@@ -108,14 +108,17 @@
     if (html != null) e.innerHTML = html;
     return e;
   }
-  // green-scale for heatmap intensity (0..100)
+  // green-scale for heatmap intensity (0..100) — a fresh, light ramp (mint ->
+  // bright brand green) so even the strong-diagonal cells stay airy on the dark
+  // band instead of going deep-forest dark.
   function heat(v) {
     var x = Math.max(0, Math.min(100, v)) / 100;
-    // light mint -> deep brand green
-    var c0 = [233, 246, 236], c1 = [14, 110, 56];
-    var r = Math.round(c0[0] + (c1[0] - c0[0]) * x);
-    var g = Math.round(c0[1] + (c1[1] - c0[1]) * x);
-    var b = Math.round(c0[2] + (c1[2] - c0[2]) * x);
+    // ease so most off-diagonal (small) values read as pale mint, not grey
+    var e = Math.pow(x, 0.85);
+    var c0 = [236, 250, 241], c1 = [47, 191, 94];
+    var r = Math.round(c0[0] + (c1[0] - c0[0]) * e);
+    var g = Math.round(c0[1] + (c1[1] - c0[1]) * e);
+    var b = Math.round(c0[2] + (c1[2] - c0[2]) * e);
     return 'rgb(' + r + ',' + g + ',' + b + ')';
   }
   function nColor(n) { return n >= 100 ? 'var(--acc-green)' : n >= 50 ? 'var(--acc-amber)' : 'var(--acc-red)'; }
@@ -250,7 +253,8 @@
         var v = CM[rk][ck] || 0;
         var cell = el('div', 'cm-cell' + (rk === ck ? ' diag' : ''), v > 0 ? v : '');
         cell.style.background = heat(v);
-        if (v >= 45) cell.style.color = '#fff';
+        // Dark ink on every cell now that the ramp stays light — keeps the
+        // matrix airy instead of dark-green cells with white text.
         cell.setAttribute('data-v', v);
         cell.addEventListener('mousemove', function (e) {
           showTip('<b>' + lbl(rk) + '</b> → ' + lbl(ck) + '<br>' + t('доля строки','row share') + ': <b>' + v + '%</b>' + (rk === ck ? '<br><span class="muted">' + t('верный диагноз','correct') + '</span>' : ''), e.clientX, e.clientY);

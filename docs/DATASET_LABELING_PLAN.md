@@ -242,10 +242,13 @@ eval). Near-dup sweep on fold-in (pHash ≤ 6, strongest provenance wins:
 - Server: `ruff check .` + `pytest tests -q` (scan recording, `route_scan`, the
   value-driven keep gate, feedback fold-back, export — `tests/test_scan_recording.py`,
   `tests/test_feedback_labeling_wiring.py`, `tests/test_labeling.py`,
-  `tests/test_export_data.py`; `tests/test_openapi_contract.py` pins that
-  `/api/label/*` no longer exists).
-- Android: `./gradlew lintDebug testDebugUnitTest assembleRelease`; fresh install
-  ends onboarding on the consent page.
+  `tests/test_export_data.py`). The `/api/label/*` routes no longer exist
+  (`tests/test_openapi_contract.py` pins the path set).
+- Android: `./gradlew ktlintCheck detekt testDebugUnitTest assembleRelease`; manual —
+  fresh install ends onboarding on the consent page (Skip jumps to it,
+  Agree required).
+- Live: scan → row in `candidates` with `source='user_scan'` carrying
+  `model_pred`; negative feedback → row flips to `source='user_feedback'`.
 - Export: `python -m server.tools.export_data` → `tar.gz` of all three stores.
 
 ## Risks
