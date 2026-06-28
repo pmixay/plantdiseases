@@ -62,7 +62,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingHorizontal="@dimen/space_lg"
+            android:paddingHorizontal="@dimen/content_gutter"
             android:paddingTop="@dimen/space_lg"
             android:paddingBottom="@dimen/space_3xl" />
 

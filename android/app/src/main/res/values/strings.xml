@@ -864,7 +864,6 @@
     <string name="identify_water_days">Water about every %1$d days</string>
     <string name="identify_water_as_needed">Water when the top soil is dry</string>
     <string name="identify_humidity">Humidity: %1$s</string>
-    <string name="identify_toxic_pets">⚠ Toxic to pets</string>
     <string name="identify_add_garden">Add to garden</string>
     <string name="identify_scan_health">Scan health</string>
     <string name="identify_added_garden">Added to your garden</string>

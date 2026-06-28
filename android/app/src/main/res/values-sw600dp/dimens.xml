@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ~7" tablets (smallest width >= 600dp): wider content gutter so reading
+     content doesn't stretch the full tablet width. -->
+<resources>
+    <dimen name="content_gutter">40dp</dimen>
+</resources>

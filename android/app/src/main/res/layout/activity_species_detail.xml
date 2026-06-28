@@ -57,7 +57,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:clipToPadding="false"
-                android:paddingHorizontal="@dimen/space_lg"
+                android:paddingHorizontal="@dimen/content_gutter"
                 android:paddingTop="@dimen/space_md"
                 android:scrollbars="none"
                 android:visibility="gone">
@@ -73,7 +73,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:paddingHorizontal="@dimen/space_lg"
+                android:paddingHorizontal="@dimen/content_gutter"
                 android:paddingTop="@dimen/space_lg">
 
                 <TextView
@@ -153,6 +153,63 @@
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
+                <!-- Pet-toxicity card — same surface the scan result uses
+                     (icon + title + body, red for toxic / green for pet-safe),
+                     populated from the care plan's toxicity fields. Replaces
+                     the old barely-visible "Toxic to pets" text line. -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/card_toxicity"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_md"
+                    android:visibility="gone"
+                    app:cardCornerRadius="@dimen/radius_lg"
+                    app:cardElevation="0dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:padding="@dimen/space_lg">
+
+                        <ImageView
+                            android:id="@+id/iv_toxicity_icon"
+                            android:layout_width="32dp"
+                            android:layout_height="32dp"
+                            android:src="@drawable/ic_warning"
+                            android:contentDescription="@null"
+                            android:importantForAccessibility="no" />
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginStart="@dimen/space_md"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:id="@+id/tv_toxicity_title"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:textSize="@dimen/text_body"
+                                android:fontFamily="sans-serif-medium" />
+
+                            <TextView
+                                android:id="@+id/tv_toxicity_body"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/space_xs"
+                                android:textSize="@dimen/text_body_sm"
+                                android:textColor="@color/on_surface_secondary"
+                                android:lineSpacingExtra="2dp" />
+
+                        </LinearLayout>
+
+                    </LinearLayout>
+
+                </com.google.android.material.card.MaterialCardView>
+
                 <!-- Common problems for this species (AI list with guide
                      links, or the bundled disease guide as fallback). Rows
                      built programmatically by SpeciesDetailActivity. -->
@@ -192,16 +249,21 @@
                     android:orientation="vertical"
                     android:visibility="gone" />
 
+                <!-- baselineAligned=false + match_parent heights keep both
+                     buttons the same height even when one label wraps to two
+                     lines at a large font scale (they'd otherwise sit at
+                     different levels). -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_lg"
+                    android:baselineAligned="false"
                     android:orientation="horizontal">
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btn_add_garden"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
+                        android:layout_height="match_parent"
                         android:layout_weight="1"
                         android:layout_marginEnd="@dimen/space_sm"
                         android:text="@string/identify_add_garden" />
@@ -210,7 +272,7 @@
                         android:id="@+id/btn_scan_health"
                         style="@style/Widget.Material3.Button.TonalButton"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
+                        android:layout_height="match_parent"
                         android:layout_weight="1"
                         android:layout_marginStart="@dimen/space_sm"
                         android:text="@string/identify_scan_health" />
