@@ -38,6 +38,7 @@ import re
 import threading
 import time
 from collections import OrderedDict
+from pathlib import Path
 from typing import Any
 
 try:
@@ -124,6 +125,49 @@ class _LRU:
     def __len__(self) -> int:  # for /api/metrics
         with self._lock:
             return len(self._d)
+
+
+# Root for persistent on-disk caches. The in-memory _LRU above is wiped on
+# every restart/deploy and is per-worker, so an expensive, stable LLM result
+# (e.g. a species' common diseases — a ~10-20s OpenRouter call) was paid for
+# again after each restart and on every fresh app install. _DiskCache layers a
+# JSON-per-key store behind the _LRU so a successful result survives restarts
+# and is shared across workers.
+_AI_CACHE_DIR = Path(get_str("AI_CACHE_DIR", str(Path(__file__).resolve().parent / "ai_cache")))
+
+
+class _DiskCache:
+    """Persistent JSON disk cache for expensive, stable results. Best-effort:
+    any I/O error degrades to a miss/no-op so it never breaks the request."""
+
+    def __init__(self, subdir: str, ttl_seconds: float | None = None):
+        self.ttl = float(ttl_seconds) if ttl_seconds else None
+        self.dir = _AI_CACHE_DIR / subdir
+
+    def _path(self, key: str) -> Path:
+        digest = hashlib.sha256(key.encode("utf-8")).hexdigest()[:32]
+        return self.dir / f"{digest}.json"
+
+    def get(self, key: str) -> Any | None:
+        try:
+            with open(self._path(key), encoding="utf-8") as fh:
+                env = json.load(fh)
+        except (OSError, ValueError):
+            return None
+        if self.ttl and time.time() - float(env.get("saved_at", 0)) > self.ttl:
+            return None
+        return env.get("payload")
+
+    def put(self, key: str, payload: Any) -> None:
+        try:
+            self.dir.mkdir(parents=True, exist_ok=True)
+            path = self._path(key)
+            tmp = path.with_suffix(".tmp")
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump({"saved_at": time.time(), "payload": payload}, fh, ensure_ascii=False)
+            tmp.replace(path)  # atomic publish so a reader never sees a half-write
+        except OSError as exc:
+            logger.debug("disk cache write failed for %s: %s", self.dir.name, exc)
 
 
 _PLANTNET_CACHE = _LRU(PLANTNET_CACHE_SIZE, PLANTNET_CACHE_TTL_SECONDS)
@@ -610,6 +654,10 @@ SPECIES_DISEASES_CACHE_SIZE = get_int("SPECIES_DISEASES_CACHE_SIZE", 256)
 SPECIES_DISEASES_CACHE_TTL_SECONDS = get_int("SPECIES_DISEASES_CACHE_TTL_SECONDS", 7 * 24 * 3600)
 SPECIES_DISEASES_MAX_TOKENS = get_int("SPECIES_DISEASES_MAX_TOKENS", 400)
 _SPECIES_DISEASES_CACHE = _LRU(SPECIES_DISEASES_CACHE_SIZE, SPECIES_DISEASES_CACHE_TTL_SECONDS)
+# Persistent layer behind the LRU: the species→diseases LLM answer is stable,
+# so once paid for it's reused across restarts and fresh installs instead of
+# re-running the ~10-20s OpenRouter call every time.
+_SPECIES_DISEASES_DISK = _DiskCache("species_diseases", SPECIES_DISEASES_CACHE_TTL_SECONDS)
 
 # Disease-guide keys the Android client can deep-link (mirrors the app's
 # DiseaseCatalog). The model may tag an item with one of these; anything
@@ -701,6 +749,12 @@ def species_common_diseases(
     cached = _SPECIES_DISEASES_CACHE.get(cache_key)
     if cached is not None:
         return {**copy.deepcopy(cached), "cached": True}
+    # Fall through to the persistent layer before paying for the LLM again —
+    # this is what survives a server restart / a fresh app install.
+    disk_hit = _SPECIES_DISEASES_DISK.get(cache_key)
+    if disk_hit is not None:
+        _SPECIES_DISEASES_CACHE.put(cache_key, disk_hit)
+        return {**copy.deepcopy(disk_hit), "cached": True}
 
     lang_word = "Russian" if lang == "ru" else "English"
     common = (common_name or "").strip()
@@ -730,6 +784,7 @@ def species_common_diseases(
         "source": "openrouter",
     }
     _SPECIES_DISEASES_CACHE.put(cache_key, response)
+    _SPECIES_DISEASES_DISK.put(cache_key, response)
     return response
 
 

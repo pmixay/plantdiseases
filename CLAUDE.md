@@ -32,7 +32,7 @@ training recipe).
 
 > **Don't build/compile/train locally — lean on CI and Colab.**
 > - **Builds & checks run in CI** (`.github/workflows/ci.yml` on every push to
->   `claude/**`): server `ruff` + `pytest`, Android `lintDebug` + `testDebugUnitTest`
+>   `claude/**`): server `ruff` + `pytest`, Android `ktlintCheck` + `detekt` + `testDebugUnitTest`
 >   + R8 `assembleRelease`. Don't kick off full local Gradle/Docker builds to "verify" —
 >   push and let CI do it. Reading code, editing, and (cheap) targeted `pytest`/single
 >   unit tests are fine; a full `assembleRelease` or `docker compose build` is not.
@@ -60,7 +60,7 @@ pytest tests/test_endpoints.py::test_name -q   # single test
 
 ### Android (`cd android`)
 ```bash
-./gradlew lintDebug testDebugUnitTest    # what CI runs (lint + JVM unit tests)
+./gradlew ktlintCheck detekt testDebugUnitTest    # what CI runs (ktlint + detekt + JVM unit tests)
 ./gradlew testDebugUnitTest --tests "com.plantdiseases.app.util.CareScheduleTest"   # single test
 ./gradlew assembleRelease                # R8/minified release APK (the shipping artefact)
 ./gradlew :app:assembleDebug -PAPI_BASE_URL=http://10.0.2.2:8000/   # point at a local server

@@ -40,6 +40,10 @@ class GuideDetailActivity : AppCompatActivity() {
             // Pad the app-bar container so the toolbar sits fully below the
             // status bar instead of being squeezed inside its fixed height.
             binding.appbar.updatePadding(top = bars.top)
+            // And pad the scroll content past the nav bar — without this the
+            // bottom "Scan a plant for this" CTA draws under the system
+            // navigation bar and can't be scrolled into reach.
+            binding.guideScroll.updatePadding(bottom = bars.bottom)
             insets
         }
         binding.guideDetailToolbar.setNavigationOnClickListener { finish() }

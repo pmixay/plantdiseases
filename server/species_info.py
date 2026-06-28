@@ -77,15 +77,18 @@ def fetch_species_info(scientific_name: str | None, lang: str = "en") -> dict | 
         localized = _localized_title(name, lang)
         if localized:
             payload = _fetch(localized, lang)
-    if payload is None and lang != "en":
-        # The localized wiki often lacks a SPECIES page for an obscure plant
-        # (e.g. ru has no "Didymochlaena truncatula") but DOES have the GENUS
-        # article — which still gives a useful localized blurb. Try the genus
-        # in the user's language before giving up to English.
+    if payload is None:
+        # The wiki often lacks a SPECIES page for an obscure plant but DOES
+        # have the GENUS article — which still gives a useful blurb + a
+        # representative photo. This applies to EVERY language, including
+        # English (e.g. en has "Spathiphyllum" but not "Spathiphyllum
+        # blandum"): without it an English-locale popular card for an
+        # uncommon community scan showed only the bare binomial and no image,
+        # while Russian — which already had this fallback — worked fine.
         genus = name.split()[0] if name.split() else ""
         if genus and genus.lower() != name.lower():
             payload = _fetch(genus, lang)
-            if payload is None:
+            if payload is None and lang != "en":
                 localized_genus = _localized_title(genus, lang)
                 if localized_genus:
                     payload = _fetch(localized_genus, lang)

@@ -344,7 +344,7 @@ reused without corrupting the eval:
   `tests/test_feedback_labeling_wiring.py`, `tests/test_labeling.py`,
   `tests/test_export_data.py`). The `/api/label/*` routes no longer exist
   (`tests/test_openapi_contract.py` pins the path set).
-- Android: `./gradlew lintDebug testDebugUnitTest assembleRelease`; manual —
+- Android: `./gradlew ktlintCheck detekt testDebugUnitTest assembleRelease`; manual —
   fresh install ends onboarding on the consent page (Skip jumps to it,
   Agree required).
 - Live: scan → row in `candidates` with `source='user_scan'` carrying

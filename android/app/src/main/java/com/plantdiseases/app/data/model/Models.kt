@@ -240,6 +240,7 @@ data class ScanOpinionItem(
     @SerializedName("opinion_count") @SerialName("opinion_count") val opinionCount: Int = 0,
     @SerializedName("latest_at") @SerialName("latest_at") val latestAt: Long = 0,
     @SerializedName("view_count") @SerialName("view_count") val viewCount: Int = 0,
+    @SerializedName("latest_nickname") @SerialName("latest_nickname") val latestNickname: String? = null,
 )
 
 /** Describes the server-hosted Aqua on-device model (GET /api/aqua/manifest)
@@ -294,6 +295,9 @@ data class CommunityScansResponse(
     @SerializedName("country") @SerialName("country") val country: String? = null,
     @SerializedName("country_name_en") @SerialName("country_name_en") val countryNameEn: String? = null,
     @SerializedName("country_name_ru") @SerialName("country_name_ru") val countryNameRu: String? = null,
+    // True on the map endpoint when the bbox held more scans than the cap, so
+    // the UI can prompt "zoom in to see all". Null/false on the feed.
+    @SerializedName("truncated") @SerialName("truncated") val truncated: Boolean = false,
 )
 
 @Serializable
@@ -304,7 +308,15 @@ data class CommunityScanItem(
     // String params). Defaulting degrades one bad row to blank instead.
     @SerializedName("scan_id") @SerialName("scan_id") val scanId: String = "",
     @SerializedName("country") @SerialName("country") val country: String = "",
+    // Localized country name resolved server-side (e.g. "Poland" / "Польша"),
+    // so cards render a real place name instead of the raw "PL" ISO code.
+    // Null on older responses — callers fall back to [country].
+    @SerializedName("country_name_en") @SerialName("country_name_en") val countryNameEn: String? = null,
+    @SerializedName("country_name_ru") @SerialName("country_name_ru") val countryNameRu: String? = null,
+    // `region` is the subdivision (nearby key); `city` is the finer label —
+    // cards prefer city, falling back to region.
     @SerializedName("region") @SerialName("region") val region: String = "",
+    @SerializedName("city") @SerialName("city") val city: String = "",
     @SerializedName("disease") @SerialName("disease") val disease: String = "",
     @SerializedName("confidence") @SerialName("confidence") val confidence: Float? = null,
     @SerializedName("species") @SerialName("species") val species: String? = null,
@@ -313,12 +325,46 @@ data class CommunityScanItem(
     @SerializedName("locale") @SerialName("locale") val locale: String? = null,
     @SerializedName("created_at") @SerialName("created_at") val createdAt: Long = 0L,
     @SerializedName("opinion_count") @SerialName("opinion_count") val opinionCount: Int = 0,
+    // How many people opened this shared scan (server-attached on the feed);
+    // shown as a small overlay count on the card thumbnail.
+    @SerializedName("view_count") @SerialName("view_count") val viewCount: Int = 0,
     // The scanner flagged this scan as wanting a community second opinion
     // (they were unsure and are waiting for others to weigh in).
     @SerializedName("wants_opinion") @SerialName("wants_opinion") val wantsOpinion: Boolean = false,
     // Stable, anonymous per-author token (a sha256 prefix of the pseudo id —
     // never the id itself). Same author ⇒ same token ⇒ same generated avatar.
     @SerializedName("author_token") @SerialName("author_token") val authorToken: String? = null,
+    // Author's plant-vibe display handle (e.g. "Томатный Король 42"); the
+    // avatar monogram/colour are derived from it on-device.
+    @SerializedName("nickname") @SerialName("nickname") val nickname: String? = null,
+    // Approximate great-circle distance from the requester, in km, computed
+    // server-side (the raw coords never leave the server). Null when the feed
+    // had no requester anchor (country/worldwide scope). Shown as "≈ N km near
+    // you" on nearby cards.
+    @SerializedName("distance_km") @SerialName("distance_km") val distanceKm: Float? = null,
+    // ~1 km-rounded coords — populated only by the map endpoint (the feed
+    // strips them), so the map can pin a marker. Null elsewhere.
+    @SerializedName("lat") @SerialName("lat") val lat: Double? = null,
+    @SerializedName("lon") @SerialName("lon") val lon: Double? = null,
+)
+
+/** /api/community/heatmap — k-anonymized scan density for the zoomed-out map
+ *  layer. Each cell is a center point + a scan count (>= the server's k). */
+@Serializable
+data class CommunityHeatmapResponse(
+    @SerializedName("cells") @SerialName("cells") val cells: List<CommunityHeatCell> = emptyList(),
+    @SerializedName("cell_size_deg") @SerialName("cell_size_deg") val cellSizeDeg: Double = 0.0,
+    @SerializedName("max_count") @SerialName("max_count") val maxCount: Int = 0,
+    @SerializedName("total") @SerialName("total") val total: Int = 0,
+    @SerializedName("k") @SerialName("k") val k: Int = 0,
+    @SerializedName("days") @SerialName("days") val days: Int = 0,
+)
+
+@Serializable
+data class CommunityHeatCell(
+    @SerializedName("lat") @SerialName("lat") val lat: Double = 0.0,
+    @SerializedName("lon") @SerialName("lon") val lon: Double = 0.0,
+    @SerializedName("count") @SerialName("count") val count: Int = 0,
 )
 
 @Serializable
@@ -360,6 +406,7 @@ data class CommunityOpinionRequest(
     @SerializedName("user_pseudo_id") @SerialName("user_pseudo_id") val userPseudoId: String,
     @SerializedName("suggested_disease") @SerialName("suggested_disease") val suggestedDisease: String,
     @SerializedName("note") @SerialName("note") val note: String? = null,
+    @SerializedName("nickname") @SerialName("nickname") val nickname: String? = null,
 )
 
 /** /api/community/request-opinion request body. The scanner flags their
@@ -386,6 +433,7 @@ data class CommunityOpinion(
     @SerializedName("note") @SerialName("note") val note: String = "",
     @SerializedName("created_at") @SerialName("created_at") val createdAt: Long = 0L,
     @SerializedName("scan_id") @SerialName("scan_id") val scanId: String = "",
+    @SerializedName("nickname") @SerialName("nickname") val nickname: String? = null,
 )
 
 /** /api/community/opinions/{scan_id} response. POST /opinion returns the
@@ -457,22 +505,7 @@ enum class GuideCategory {
     PESTS
 }
 
-/** /api/community/trending — the Home screen's "trending nearby" module.
- *  `scope` reports how far the server had to widen (region/country/global)
- *  so the UI can label the card honestly. */
-@Serializable
-data class TrendingResponse(
-    @SerializedName("scope") @SerialName("scope") val scope: String = "global",
-    @SerializedName("country") @SerialName("country") val country: String? = null,
-    @SerializedName("country_name_en") @SerialName("country_name_en") val countryNameEn: String? = null,
-    @SerializedName("country_name_ru") @SerialName("country_name_ru") val countryNameRu: String? = null,
-    @SerializedName("region") @SerialName("region") val region: String? = null,
-    @SerializedName("window_days") @SerialName("window_days") val windowDays: Int = 7,
-    @SerializedName("total") @SerialName("total") val total: Int = 0,
-    @SerializedName("top_species") @SerialName("top_species") val topSpecies: List<TrendingSpecies> = emptyList(),
-    @SerializedName("top_diseases") @SerialName("top_diseases") val topDiseases: List<TrendingDisease> = emptyList(),
-)
-
+/** Popular species/diseases row entries (shared by /api/popular). */
 @Serializable
 data class TrendingSpecies(
     @SerializedName("species") @SerialName("species") val species: String = "",
@@ -630,10 +663,15 @@ data class PopularResponse(
     @SerializedName("country") @SerialName("country") val country: String? = null,
     @SerializedName("country_name_en") @SerialName("country_name_en") val countryNameEn: String? = null,
     @SerializedName("country_name_ru") @SerialName("country_name_ru") val countryNameRu: String? = null,
+    // Subdivision label when the bundle is scoped to the "nearby" bucket; null
+    // for country / placeholder scopes.
+    @SerializedName("region") @SerialName("region") val region: String? = null,
     @SerializedName("locale") @SerialName("locale") val locale: String? = null,
     @SerializedName("items") @SerialName("items") val items: List<PopularItem> = emptyList(),
     @SerializedName("top_diseases") @SerialName("top_diseases") val topDiseases: List<TrendingDisease> = emptyList(),
     @SerializedName("total") @SerialName("total") val total: Int = 0,
+    // "nearby" | "country" | "placeholder" — drives the title + whether the
+    // carousels show "P% of scans" (suppressed for the placeholder).
     @SerializedName("source") @SerialName("source") val source: String? = null,
 )
 

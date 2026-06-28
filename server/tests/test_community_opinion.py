@@ -61,6 +61,52 @@ def test_daily_opinion_count_guards_none(comm):
     assert comm.daily_opinion_count_for_ip_hash(None) == 0
 
 
+def test_opinion_open_respects_30_day_cutoff(comm):
+    """A freshly shared scan accepts opinions; once its public handle has
+    rotated (older than 30 days) it goes read-only."""
+    comm.record_scan(
+        scan_id="fresh", user_pseudo_id="owner", country="PL",
+        disease="leaf_spot",
+    )
+    assert comm.opinion_open("fresh") is True
+
+    # Backdate the row past the rotation window and confirm it closes.
+    import time as _t
+    stale = int(_t.time()) - (comm.IDENTITY_ROTATION_DAYS + 1) * 86_400
+    with comm._connect() as conn:
+        conn.execute(
+            "UPDATE community_scans SET created_at = ? WHERE scan_id = ?",
+            (stale, "fresh"),
+        )
+    assert comm.opinion_open("fresh") is False
+    # The scan row itself still exists — only new opinions are blocked.
+    assert comm.scan_exists("fresh") is True
+
+
+def test_opinion_open_unknown_scan_is_false(comm):
+    assert comm.opinion_open("nope") is False
+    assert comm.opinion_open("") is False
+
+
+def test_author_token_rotates_with_identity_epoch(comm):
+    """The per-feed author token is stable within a 30-day window but differs
+    across windows, so activity can't be linked across rotations."""
+    import time as _t
+
+    real_time = _t.time
+    base = real_time()
+    try:
+        _t.time = lambda: base
+        tok_now = comm._author_token("user-xyz")
+        # Same window → same token.
+        assert comm._author_token("user-xyz") == tok_now
+        # A window later → different token for the same user.
+        _t.time = lambda: base + (comm.IDENTITY_ROTATION_DAYS + 1) * 86_400
+        assert comm._author_token("user-xyz") != tok_now
+    finally:
+        _t.time = real_time
+
+
 def test_one_opinion_per_author_per_scan(comm):
     """A second submit by the same author on the same scan is ignored — the
     original opinion stands (the client locks its input to match)."""

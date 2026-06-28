@@ -14,14 +14,17 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.StaggeredGridLayoutManager
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.chip.Chip
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.CommunityScanItem
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityNearbyScansBinding
 import com.plantdiseases.app.databinding.SheetNearbyFilterBinding
 import com.plantdiseases.app.ui.result.CommunityOpinionSheet
+import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.RegionResolver
 import com.plantdiseases.app.util.TelemetryIds
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
@@ -49,6 +52,28 @@ class NearbyScansActivity : AppCompatActivity() {
     private var sortNewestFirst = true
     private var typeFilter: String? = null
     private var filterMenuItem: MenuItem? = null
+    private var disableMenuItem: MenuItem? = null
+
+    // Server-side scope filter: "nearby" (~30 km radius) or "country".
+    private var scope = "nearby"
+
+    // In-context opt-in: tapping Enable requests coarse location (+ notifications
+    // on 13+), flips community on, and reloads the feed.
+    private val communityPermissionLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions(),
+    ) { _ ->
+        com.plantdiseases.app.util.CommunityPrefs.enable(this)
+        com.plantdiseases.app.push.PushManager.registerIfEnabled(this)
+        load(isRefresh = false)
+    }
+
+    private fun requestCommunityOptIn() {
+        val perms = mutableListOf(android.Manifest.permission.ACCESS_COARSE_LOCATION)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            perms += android.Manifest.permission.POST_NOTIFICATIONS
+        }
+        communityPermissionLauncher.launch(perms.toTypedArray())
+    }
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
@@ -71,6 +96,16 @@ class NearbyScansActivity : AppCompatActivity() {
         binding.toolbar.setNavigationOnClickListener { finish() }
         setupFilterMenu()
 
+        // Nearby (~30 km) vs Country scope — reload the feed on change.
+        binding.cgScope.setOnCheckedStateChangeListener { _, checked ->
+            val next = if (checked.firstOrNull() == R.id.chip_scope_country) "country" else "nearby"
+            if (next != scope) {
+                scope = next
+                load(isRefresh = false)
+            }
+        }
+        binding.btnEnableCommunity.setOnClickListener { requestCommunityOptIn() }
+
         adapter = NearbyScansAdapter(
             displayName = { key -> DiseaseLabels.displayName(key, isRu) ?: key },
             onSecondOpinion = { item ->
@@ -82,7 +117,7 @@ class NearbyScansActivity : AppCompatActivity() {
                 }
                 CommunityOpinionSheet.show(
                     supportFragmentManager,
-                    item.scanId,
+                    item,
                     DiseaseLabels.displayName(item.disease, isRu) ?: item.disease,
                 )
             },
@@ -100,29 +135,76 @@ class NearbyScansActivity : AppCompatActivity() {
     private fun setupFilterMenu() {
         binding.toolbar.inflateMenu(R.menu.nearby_scans_menu)
         filterMenuItem = binding.toolbar.menu.findItem(R.id.action_filter)
+        disableMenuItem = binding.toolbar.menu.findItem(R.id.action_disable_community)
         // Hidden until a feed loads — filtering an empty screen is a no-op.
         filterMenuItem?.isVisible = false
+        // "Leave community" only makes sense once the user is in it.
+        disableMenuItem?.isVisible = CommunityPrefs.uploadsEnabled(this)
         binding.toolbar.setOnMenuItemClickListener { item ->
-            if (item.itemId == R.id.action_filter) {
-                showFilterSheet()
-                true
-            } else {
-                false
+            when (item.itemId) {
+                R.id.action_map -> {
+                    startActivity(
+                        android.content.Intent(this, CommunityMapActivity::class.java),
+                    )
+                    true
+                }
+                R.id.action_filter -> {
+                    showFilterSheet()
+                    true
+                }
+                R.id.action_disable_community -> {
+                    confirmLeaveCommunity()
+                    true
+                }
+                else -> false
             }
         }
+    }
+
+    /** Turn community off from inside the community screen (the on/off control
+     *  no longer lives in Profile). Stops sharing + opinion delivery; already
+     *  shared scans persist until the user deletes them from Profile. */
+    private fun confirmLeaveCommunity() {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.community_disable_title)
+            .setMessage(R.string.community_disable_body)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.community_disable_confirm) { _, _ ->
+                CommunityPrefs.setUploadsEnabled(this, false) // also stops opinions
+                androidx.work.WorkManager.getInstance(this).cancelUniqueWork("opinion_check")
+                androidx.work.WorkManager.getInstance(this).cancelUniqueWork("opinion_check_now")
+                disableMenuItem?.isVisible = false
+                showEnablePrompt()
+            }
+            .show()
     }
 
     private fun load(isRefresh: Boolean) {
         // Community is opt-in. Until the user opts in, show an Enable prompt
         // instead of reading their location / hitting the network.
+        if (!CommunityPrefs.uploadsEnabled(this)) {
+            showEnablePrompt()
+            return
+        }
+        disableMenuItem?.isVisible = true
         if (!isRefresh) showLoading()
         lifecycleScope.launch {
             val pseudoId = TelemetryIds.userPseudoId(this@NearbyScansActivity)
+            // Refresh location on every (re)load so "nearby" reflects where the
+            // user actually is right now.
+            val region = runCatching {
+                RegionResolver.resolveRegion(this@NearbyScansActivity)
+            }.getOrNull()
             val result = scanRepository.communityNearby(
-                // No disease filter — the feed surfaces the whole region.
+                country = region?.country,
+                region = region?.locality,
+                lat = region?.lat,
+                lon = region?.lon,
+                // No disease filter — the feed surfaces the whole scope.
                 disease = null,
                 userPseudoId = pseudoId,
-                limit = 30,
+                limit = 100,
+                scope = scope,
             )
             binding.swipeRefresh.isRefreshing = false
             result.onSuccess { response ->
@@ -144,11 +226,27 @@ class NearbyScansActivity : AppCompatActivity() {
         }
     }
 
+    /** Opt-in prompt shown until the user enables community. */
+    private fun showEnablePrompt() {
+        binding.swipeRefresh.isRefreshing = false
+        binding.stateLayout.visibility = View.VISIBLE
+        binding.progress.visibility = View.GONE
+        binding.ivStateIcon.visibility = View.VISIBLE
+        binding.tvState.text = getString(R.string.community_enable_blurb)
+        binding.btnEnableCommunity.visibility = View.VISIBLE
+        binding.cgScope.visibility = View.GONE
+        filterMenuItem?.isVisible = false
+        disableMenuItem?.isVisible = false
+        binding.rvNearby.visibility = View.GONE
+    }
+
     private fun showLoading() {
         binding.stateLayout.visibility = View.VISIBLE
         binding.progress.visibility = View.VISIBLE
         binding.ivStateIcon.visibility = View.GONE
         binding.tvState.text = getString(R.string.nearby_scans_loading)
+        binding.btnEnableCommunity.visibility = View.GONE
+        binding.cgScope.visibility = View.VISIBLE
         filterMenuItem?.isVisible = false
         binding.rvNearby.visibility = View.GONE
     }
@@ -158,12 +256,16 @@ class NearbyScansActivity : AppCompatActivity() {
         binding.progress.visibility = View.GONE
         binding.ivStateIcon.visibility = View.VISIBLE
         binding.tvState.text = message
+        binding.btnEnableCommunity.visibility = View.GONE
+        binding.cgScope.visibility = View.VISIBLE
         filterMenuItem?.isVisible = false
         binding.rvNearby.visibility = View.GONE
     }
 
     private fun showFeed(items: List<CommunityScanItem>) {
         allItems = items
+        binding.btnEnableCommunity.visibility = View.GONE
+        binding.cgScope.visibility = View.VISIBLE
         filterMenuItem?.isVisible = true
         applyFilterAndSort()
     }

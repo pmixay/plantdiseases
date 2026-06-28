@@ -84,7 +84,7 @@ class SpeciesCardController(
                 }
                 info.imageUrl?.takeIf { it.isNotBlank() }?.let { url ->
                     Glide.with(activity)
-                        .load(url)
+                        .load(com.plantdiseases.app.util.ServerConfig.photoUrl(url))
                         .diskCacheStrategy(DiskCacheStrategy.ALL)
                         .transform(CenterCrop(), RoundedCorners(24))
                         .into(binding.ivSpeciesPhoto)
@@ -117,7 +117,7 @@ class SpeciesCardController(
                 }
                 CommunityOpinionSheet.show(
                     activity.supportFragmentManager,
-                    item.scanId,
+                    item,
                     DiseaseLabels.displayName(item.disease, isRu) ?: item.disease,
                 )
             },

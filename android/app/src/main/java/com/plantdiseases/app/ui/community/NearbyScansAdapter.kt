@@ -12,6 +12,7 @@ import com.google.android.material.button.MaterialButton
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.CommunityScanItem
 import com.plantdiseases.app.util.Avatars
+import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.ServerConfig
 import com.plantdiseases.app.util.ThumbLoader
 
@@ -53,30 +54,42 @@ class NearbyScansAdapter(
         private val photo: ImageView = itemView.findViewById(R.id.iv_nearby_photo)
         private val label: TextView = itemView.findViewById(R.id.tv_nearby_label)
         private val meta: TextView = itemView.findViewById(R.id.tv_nearby_meta)
-        private val opinions: TextView = itemView.findViewById(R.id.tv_nearby_opinions)
+        private val whenLine: TextView = itemView.findViewById(R.id.tv_nearby_when)
+        private val countsPill: View = itemView.findViewById(R.id.ll_nearby_counts)
+        private val views: TextView = itemView.findViewById(R.id.tv_nearby_views)
+        private val comments: TextView = itemView.findViewById(R.id.tv_nearby_comments)
         private val wantsOpinion: TextView = itemView.findViewById(R.id.tv_nearby_wants_opinion)
         private val opinionBtn: MaterialButton = itemView.findViewById(R.id.btn_nearby_opinion)
         private val avatar: TextView = itemView.findViewById(R.id.tv_nearby_avatar)
 
         fun bind(item: CommunityScanItem) {
-            label.text = displayName(item.disease)
-            meta.text = buildMeta(item)
-            // Anonymous, deterministic author avatar — same author ⇒ same
-            // colour + monogram across the feed.
-            avatar.text = Avatars.monogramFor(item.authorToken)
+            // Identity line = the author's plant-vibe nickname (the diagnosis
+            // moves into the meta). Old rows with no nickname fall back to the
+            // disease label so the line is never empty.
+            val nick = item.nickname?.takeIf { it.isNotBlank() }
+            label.text = nick ?: displayName(item.disease)
+            meta.text = buildMeta(item, includeDisease = nick != null)
+            // Distance + time live on their own line so a long place name can't
+            // ellipsize them away (the whole point of the "near you" feed).
+            val whenText = buildWhen(item)
+            whenLine.text = whenText
+            whenLine.visibility = if (whenText.isEmpty()) View.GONE else View.VISIBLE
+            // Avatar derived on-device from the nickname (or the legacy token).
+            val seed = nick ?: item.authorToken
+            avatar.text =
+                if (nick != null) Avatars.monogramForNick(nick) else Avatars.monogramFor(item.authorToken)
             avatar.backgroundTintList =
-                android.content.res.ColorStateList.valueOf(Avatars.colorFor(item.authorToken))
+                android.content.res.ColorStateList.valueOf(Avatars.colorFor(seed))
             wantsOpinion.visibility = if (item.wantsOpinion) View.VISIBLE else View.GONE
 
-            if (item.opinionCount > 0) {
-                opinions.text = itemView.context.getString(
-                    R.string.community_opinions_badge,
-                    item.opinionCount,
-                )
-                opinions.visibility = View.VISIBLE
-            } else {
-                opinions.visibility = View.GONE
-            }
+            // Views + comments(opinions) overlay on the photo. Each part shows
+            // only when its count is non-zero; the pill hides when both are 0.
+            views.text = item.viewCount.toString()
+            views.visibility = if (item.viewCount > 0) View.VISIBLE else View.GONE
+            comments.text = item.opinionCount.toString()
+            comments.visibility = if (item.opinionCount > 0) View.VISIBLE else View.GONE
+            countsPill.visibility =
+                if (item.viewCount > 0 || item.opinionCount > 0) View.VISIBLE else View.GONE
 
             val click = View.OnClickListener { onSecondOpinion(item) }
             opinionBtn.setOnClickListener(click)
@@ -92,15 +105,45 @@ class NearbyScansAdapter(
             ThumbLoader.load(shimmer, photo, url)
         }
 
-        /** "Region, Country · 2h ago" — drops missing pieces gracefully. */
-        private fun buildMeta(item: CommunityScanItem): String {
-            val region = formatRegion(item.region, item.country)
-            val time = formatTimeAgo(item.createdAt)
-            return when {
-                region.isNotEmpty() && time.isNotEmpty() -> "$region · $time"
-                region.isNotEmpty() -> region
-                else -> time
+        /** "Powdery mildew · Warsaw, Poland" — the disease is included only when
+         *  the identity line shows the nickname (else it'd repeat). Distance +
+         *  time move to [buildWhen] so a long place name can't push them off the
+         *  end of this single (ellipsized) line. Missing pieces drop out. */
+        private fun buildMeta(item: CommunityScanItem, includeDisease: Boolean): String {
+            val locality = item.city.ifBlank { item.region }
+            return listOf(
+                if (includeDisease) displayName(item.disease) else "",
+                formatRegion(locality, countryLabel(item)),
+            ).filter { it.isNotEmpty() }.joinToString(" · ")
+        }
+
+        /** "≈ 3 km near you · 2h" — the distance (nearby scope only) + the
+         *  relative time, on their own always-visible line. */
+        private fun buildWhen(item: CommunityScanItem): String =
+            listOf(
+                formatDistance(item.distanceKm),
+                formatTimeAgo(item.createdAt),
+            ).filter { it.isNotEmpty() }.joinToString(" · ")
+
+        /** "≈ N km near you" — coords are rounded to ~1 km server-side, so we
+         *  floor the display at 1 km rather than show a misleading "0 km".
+         *  Empty when the feed had no requester anchor (country/worldwide). */
+        private fun formatDistance(distanceKm: Float?): String {
+            if (distanceKm == null) return ""
+            val km = Math.round(distanceKm).coerceAtLeast(1)
+            return itemView.context.getString(R.string.community_distance_near, km)
+        }
+
+        /** Localized country NAME (e.g. "Poland"/"Польша") the server resolved,
+         *  falling back to the raw [CommunityScanItem.country] code only for
+         *  older/cached responses that predate the localized fields. */
+        private fun countryLabel(item: CommunityScanItem): String {
+            val name = if (LocaleHelper.isRussian(itemView.context)) {
+                item.countryNameRu
+            } else {
+                item.countryNameEn
             }
+            return (name ?: item.country)
         }
 
         private fun formatRegion(region: String, country: String): String {

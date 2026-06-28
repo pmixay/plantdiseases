@@ -135,14 +135,16 @@ def _ensure_fcm() -> bool:
 
 def send_opinion_push(
     owner_pseudo_id: str, scan_id: str, disease: str, note: str | None = None,
+    nickname: str | None = None,
 ) -> int:
     """Send a high-priority data push to every device the owner registered.
 
-    The payload carries the suggested-diagnosis class key (localised on-device)
-    and the responder's optional free-text note, so the notification can show
-    both. Returns the number of messages attempted (0 when push is disabled or
-    the owner has no tokens). Stale tokens (unregistered / sender mismatch) are
-    pruned. Best-effort — never raises into the request path.
+    The payload carries the suggested-diagnosis class key (localised on-device),
+    the responder's optional free-text note, and their plant-vibe nickname, so
+    the notification can name who weighed in. Returns the number of messages
+    attempted (0 when push is disabled or the owner has no tokens). Stale tokens
+    (unregistered / sender mismatch) are pruned. Best-effort — never raises into
+    the request path.
     """
     if not _ensure_fcm():
         return 0
@@ -160,6 +162,7 @@ def send_opinion_push(
         "scan_id": str(scan_id),
         "disease": str(disease or ""),
         "note": (note or "").strip()[:240],
+        "nickname": (nickname or "").strip()[:48],
     }
     stale: list[str] = []
     sent = 0

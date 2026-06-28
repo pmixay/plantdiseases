@@ -77,7 +77,7 @@ def test_nearby_strict_disease_filter_no_other_diseases(comm):
                          region="London", disease="healthy")
     # A disease-scoped query must NEVER pad with other diseases, even when
     # the same-disease bucket is thin.
-    rows = comm.nearby_scans(country="GB", region="London",
+    rows = comm.nearby_scans(country="GB", scope="country",
                              disease="leaf_spot", limit=12)
     assert [r["scan_id"] for r in rows] == ["d1"]
     assert all(r["disease"] == "leaf_spot" for r in rows)
@@ -88,7 +88,7 @@ def test_nearby_without_disease_still_returns_everything(comm):
                      region="London", disease="leaf_spot")
     comm.record_scan(scan_id="b", user_pseudo_id="u2", country="GB",
                      region="London", disease="healthy")
-    rows = comm.nearby_scans(country="GB", region="London", limit=12)
+    rows = comm.nearby_scans(country="GB", scope="country", limit=12)
     assert {r["scan_id"] for r in rows} == {"a", "b"}
 
 

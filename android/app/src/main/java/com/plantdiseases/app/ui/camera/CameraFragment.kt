@@ -496,9 +496,9 @@ class CameraFragment : Fragment() {
         continueCaptureFlow()
     }
 
-    /** Second stage of the shutter flow. Community uploads are
-     *  default-on and the toggle lives in Profile, so we skip
-     *  straight to capture. */
+    /** Second stage of the shutter flow. Community sharing is opt-in and
+     *  gated downstream in the uploader (the toggle lives in Profile), so
+     *  capture itself proceeds unconditionally. */
     private fun continueCaptureFlow() {
         takePhoto()
     }

@@ -31,6 +31,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import logging
+import math
 import sqlite3
 import threading
 import time
@@ -38,9 +39,11 @@ from pathlib import Path
 
 try:
     from .config import get_str  # type: ignore[import-not-found]
+    from .countries import to_iso_alpha2
     from .feedback import hash_client_ip
 except ImportError:
     from config import get_str
+    from countries import to_iso_alpha2
     from feedback import hash_client_ip
 
 logger = logging.getLogger(__name__)
@@ -60,7 +63,15 @@ CREATE TABLE IF NOT EXISTS community_scans (
     scan_id         TEXT    NOT NULL,
     user_pseudo_id  TEXT    NOT NULL,
     country         TEXT,
+    -- ``region`` holds the city (the display locality); ``city`` mirrors it.
+    -- lat/lon are the device's COARSE location rounded to ~1 km (never precise
+    -- GPS) for the ~30 km "nearby" radius + the scans heat-map. All are
+    -- client-supplied by the opted-in uploader. ``nickname`` is the author's
+    -- generated plant-vibe handle shown in the feed.
     region          TEXT    NOT NULL,
+    city            TEXT,
+    lat             REAL,
+    lon             REAL,
     disease         TEXT    NOT NULL,
     confidence      REAL,
     species         TEXT,
@@ -68,6 +79,7 @@ CREATE TABLE IF NOT EXISTS community_scans (
     species_score   REAL,
     thumb_path      TEXT,
     locale          TEXT,
+    nickname        TEXT,
     client_ip_hash  TEXT,
     wants_opinion   INTEGER NOT NULL DEFAULT 0,
     public_id       TEXT,
@@ -82,6 +94,9 @@ CREATE INDEX IF NOT EXISTS ix_community_created         ON community_scans(creat
 CREATE INDEX IF NOT EXISTS ix_community_country         ON community_scans(country, created_at);
 CREATE INDEX IF NOT EXISTS ix_community_country_region  ON community_scans(country, region, created_at);
 CREATE INDEX IF NOT EXISTS ix_community_species_lower   ON community_scans(species_lower);
+-- NOTE: ix_community_geo is created in init_db AFTER the lat/lon column
+-- migration — putting it here crashes executescript on a legacy DB whose
+-- table predates those columns (same reason as ix_community_public_id).
 
 CREATE TABLE IF NOT EXISTS community_opinions (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -89,6 +104,7 @@ CREATE TABLE IF NOT EXISTS community_opinions (
     author_pseudo_id  TEXT    NOT NULL,
     suggested_disease TEXT    NOT NULL,
     note              TEXT,
+    nickname          TEXT,
     client_ip_hash    TEXT,
     created_at        INTEGER NOT NULL
 );
@@ -127,6 +143,16 @@ _initialised = False
 # id server-side, so existing app builds keep working unchanged.
 _PUBLIC_TOKEN_PREFIX = "cs"
 
+# Public identifiers rotate every 30 days so a user's community activity can't
+# be linked across windows; a scan older than this also stops accepting new
+# opinions (its public handle has rotated).
+IDENTITY_ROTATION_DAYS = 30
+_IDENTITY_ROTATION_S = IDENTITY_ROTATION_DAYS * 86_400
+
+
+def _identity_epoch() -> int:
+    return int(time.time() // _IDENTITY_ROTATION_S)
+
 
 def public_scan_token(scan_id: str) -> str:
     """Deterministic, non-reversible public token for one scan_id."""
@@ -164,12 +190,60 @@ def scan_exists(scan_id: str) -> bool:
             "SELECT 1 FROM community_scans WHERE scan_id = ? LIMIT 1", (sid,),
         ).fetchone() is not None
 
+
+def opinion_open(scan_id: str, max_age_days: int = IDENTITY_ROTATION_DAYS) -> bool:
+    """True when a shared scan still accepts opinions — it exists AND is newer
+    than ``max_age_days``. Old scans go read-only (their public handle has
+    rotated), so the community can't keep weighing in on stale photos."""
+    sid = (scan_id or "").strip()
+    if not sid:
+        return False
+    init_db()
+    cutoff = int(time.time()) - max_age_days * 86_400
+    with _connect() as conn:
+        return conn.execute(
+            "SELECT 1 FROM community_scans WHERE scan_id = ? AND created_at >= ? LIMIT 1",
+            (sid, cutoff),
+        ).fetchone() is not None
+
 # Disease classes that should never surface in the community feed.
 # ``not_a_plant`` rows are uninteresting to other users (and often
 # faces / objects / random photos), so we silently hide them from
 # both the carousel and the summary aggregates. Existing rows stay
 # on disk for retraining; only the read paths filter them out.
 _HIDDEN_COMMUNITY_DISEASES = ("not_a_plant",)
+
+# Column list shared by every feed query so the positional ``_row_to_dict``
+# reader can't drift between callers. Order is load-bearing — keep in sync.
+_FEED_COLUMNS = (
+    "scan_id, country, region, city, lat, lon, disease, confidence, "
+    "species, species_score, thumb_path, locale, created_at, wants_opinion, "
+    "user_pseudo_id, nickname"
+)
+
+# "Nearby" radius for the coords-based feed + popular scope (km). The client
+# resolves coarse location; we group within this radius of it.
+NEARBY_RADIUS_KM = 30.0
+
+
+def _bbox(lat: float, lon: float, radius_km: float) -> tuple[float, float, float, float]:
+    """(min_lat, max_lat, min_lon, max_lon) box ~``radius_km`` around a point.
+    A cheap prefilter for the indexed lat/lon columns; callers refine to a true
+    circle with :func:`_haversine_km` where exactness matters."""
+    dlat = radius_km / 111.0
+    coslat = math.cos(math.radians(lat))
+    dlon = radius_km / (111.0 * coslat) if abs(coslat) > 1e-6 else 180.0
+    return (lat - dlat, lat + dlat, lon - dlon, lon + dlon)
+
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Great-circle distance in km."""
+    r = 6371.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlmb = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlmb / 2) ** 2
+    return 2 * r * math.asin(min(1.0, math.sqrt(a)))
 
 
 def _hidden_clause(table_alias: str = "") -> str:
@@ -222,6 +296,16 @@ def init_db() -> None:
             _add_column_if_missing(conn, "community_scans", "species_lower", "TEXT")
             conn.execute("CREATE INDEX IF NOT EXISTS ix_community_species_lower ON community_scans(species_lower)")
             conn.execute("UPDATE community_scans SET species_lower = LOWER(species) WHERE species IS NOT NULL AND species_lower IS NULL")
+            # MaxMind-derived precise location (city + centroid) for the
+            # "nearby" feed/popular grouping and the scans heat-map. Legacy
+            # rows leave these NULL — they group by their old ``region`` only.
+            _add_column_if_missing(conn, "community_scans", "city", "TEXT")
+            _add_column_if_missing(conn, "community_scans", "lat", "REAL")
+            _add_column_if_missing(conn, "community_scans", "lon", "REAL")
+            conn.execute("CREATE INDEX IF NOT EXISTS ix_community_geo ON community_scans(lat, lon)")
+            # Author's generated plant-vibe handle (community display name).
+            _add_column_if_missing(conn, "community_scans", "nickname", "TEXT")
+            _add_column_if_missing(conn, "community_opinions", "nickname", "TEXT")
             # "Wants a second opinion" flag — set after upload by the
             # scanner via /api/community/request-opinion. Older rows
             # default to 0 (no request).
@@ -233,8 +317,36 @@ def init_db() -> None:
                 "ON community_scans(public_id)"
             )
             _backfill_public_ids(conn)
+            _canonicalize_countries(conn)
         _initialised = True
         logger.info("Community DB ready at %s", COMMUNITY_DB_PATH)
+
+
+def _canonicalize_countries(conn: sqlite3.Connection) -> None:
+    """One-off migration: fold legacy country buckets to ISO alpha-2 codes.
+
+    Older rows stored whatever the client sent — an ISO code ("RU"), an
+    English name ("Russia") or a localized name ("Россия") — so one country
+    was split across several buckets and the popular / nearby aggregation
+    disagreed per locale. Canonicalizing here (and on every write going
+    forward) collapses them into one ``RU`` bucket. Idempotent: a code maps
+    to itself, so re-running is a no-op.
+    """
+    rows = conn.execute(
+        "SELECT DISTINCT country FROM community_scans "
+        "WHERE country IS NOT NULL AND country != ''",
+    ).fetchall()
+    changed = 0
+    for (country,) in rows:
+        canon = to_iso_alpha2(str(country))
+        if canon and canon != country:
+            conn.execute(
+                "UPDATE community_scans SET country = ? WHERE country = ?",
+                (canon, country),
+            )
+            changed += 1
+    if changed:
+        logger.info("Community: canonicalized %d legacy country bucket(s)", changed)
 
 
 def _backfill_public_ids(conn: sqlite3.Connection) -> None:
@@ -304,18 +416,32 @@ def record_scan(
     user_pseudo_id: str,
     country: str,
     region: str = "",
+    city: str | None = None,
+    lat: float | None = None,
+    lon: float | None = None,
     disease: str,
     confidence: float | None = None,
     species: str | None = None,
     species_score: float | None = None,
     image_bytes: bytes | None = None,
     locale: str | None = None,
+    nickname: str | None = None,
     client_ip: str | None = None,
 ) -> int:
-    """Append a community-shared scan row. Returns the new row id."""
+    """Append a community-shared scan row. Returns the new row id.
+
+    ``region``/``city`` are the display locality and ``lat``/``lon`` the
+    rounded coarse coords — all client-supplied. ``nickname`` is the author's
+    generated plant-vibe handle shown in the feed.
+    """
     init_db()
     now = int(time.time())
     ip_hash = hash_client_ip(client_ip)
+    # Canonicalize the country bucket to an ISO alpha-2 code at the write so
+    # the corpus never splits one country across code / name / localized-name
+    # representations (the HTTP layer already canonicalizes, but a direct
+    # caller — tests, future code — gets the same guarantee).
+    country = to_iso_alpha2(country)
     region_value = region or ""
     species_lower = species.lower() if species else None
     with _write_lock, _connect() as conn:
@@ -344,15 +470,19 @@ def record_scan(
         wants_opinion = 1 if pending else 0
         cur = conn.execute(
             "INSERT INTO community_scans ("
-            "  scan_id, user_pseudo_id, country, region, disease, confidence, "
+            "  scan_id, user_pseudo_id, country, region, city, lat, lon, "
+            "  disease, confidence, "
             "  species, species_lower, species_score, thumb_path, locale, "
-            "  client_ip_hash, wants_opinion, public_id, created_at"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "  nickname, client_ip_hash, wants_opinion, public_id, created_at"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 scan_id,
                 user_pseudo_id,
                 country,
                 region_value,
+                city,
+                lat,
+                lon,
                 disease,
                 confidence,
                 species,
@@ -360,6 +490,7 @@ def record_scan(
                 species_score,
                 thumb_path,
                 locale,
+                (nickname or None),
                 ip_hash,
                 wants_opinion,
                 public_scan_token(scan_id),
@@ -411,6 +542,7 @@ def record_opinion(
     author_pseudo_id: str,
     suggested_disease: str,
     note: str | None = None,
+    nickname: str | None = None,
     client_ip: str | None = None,
 ) -> int:
     """Append one community 'second opinion' on a shared scan. Returns row id."""
@@ -418,6 +550,7 @@ def record_opinion(
     now = int(time.time())
     ip_hash = hash_client_ip(client_ip)
     note_clean = (note or "").strip()[:500] or None
+    nick_clean = (nickname or "").strip()[:48] or None
     with _write_lock, _connect() as conn:
         # One opinion per author per scan. If this install already weighed in,
         # keep the original (the client locks its input too) and return that
@@ -432,9 +565,10 @@ def record_opinion(
         cur = conn.execute(
             "INSERT INTO community_opinions ("
             "  scan_id, author_pseudo_id, suggested_disease, note, "
-            "  client_ip_hash, created_at"
-            ") VALUES (?, ?, ?, ?, ?, ?)",
-            (scan_id, author_pseudo_id, suggested_disease, note_clean, ip_hash, now),
+            "  nickname, client_ip_hash, created_at"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (scan_id, author_pseudo_id, suggested_disease, note_clean,
+             nick_clean, ip_hash, now),
         )
         return int(cur.lastrowid or 0)
 
@@ -451,7 +585,7 @@ def opinions_for(scan_id: str, *, limit: int = 50) -> dict:
     limit = max(1, min(int(limit), 100))
     with _connect() as conn:
         rows = conn.execute(
-            "SELECT suggested_disease, note, created_at "
+            "SELECT suggested_disease, note, created_at, nickname "
             "FROM community_opinions WHERE scan_id = ? "
             "ORDER BY created_at DESC LIMIT ?",
             (scan_id, limit),
@@ -463,7 +597,8 @@ def opinions_for(scan_id: str, *, limit: int = 50) -> dict:
             (scan_id,),
         ).fetchall()
     opinions = [
-        {"suggested_disease": str(r[0]), "note": r[1] or "", "created_at": int(r[2])}
+        {"suggested_disease": str(r[0]), "note": r[1] or "",
+         "created_at": int(r[2]), "nickname": (r[3] if len(r) > 3 else None) or None}
         for r in rows
     ]
     consensus = [{"disease": str(t[0]), "count": int(t[1])} for t in tally]
@@ -484,7 +619,8 @@ def opinion_counts_for_user(user_pseudo_id: str, *, limit: int = 200) -> dict:
     "someone weighed in on your <disease> scan".
 
     Shape::
-        {"scans": [{"scan_id", "disease", "opinion_count", "latest_at"}, ...],
+        {"scans": [{"scan_id", "disease", "opinion_count", "latest_at",
+                    "view_count", "latest_nickname"}, ...],
          "total_opinions": N}
     """
     init_db()
@@ -495,7 +631,10 @@ def opinion_counts_for_user(user_pseudo_id: str, *, limit: int = 200) -> dict:
     with _connect() as conn:
         rows = conn.execute(
             "SELECT s.scan_id, s.disease, COUNT(o.id) AS n, MAX(o.created_at) AS latest, "
-            "  (SELECT COUNT(*) FROM community_scan_views v WHERE v.scan_id = s.scan_id) AS views "
+            "  (SELECT COUNT(*) FROM community_scan_views v WHERE v.scan_id = s.scan_id) AS views, "
+            "  (SELECT o2.nickname FROM community_opinions o2 "
+            "     WHERE o2.scan_id = s.scan_id AND o2.author_pseudo_id != s.user_pseudo_id "
+            "     ORDER BY o2.created_at DESC LIMIT 1) AS latest_nick "
             "FROM community_scans s "
             "JOIN community_opinions o "
             "  ON o.scan_id = s.scan_id AND o.author_pseudo_id != s.user_pseudo_id "
@@ -507,7 +646,8 @@ def opinion_counts_for_user(user_pseudo_id: str, *, limit: int = 200) -> dict:
     scans = [
         {"scan_id": str(r[0]), "disease": str(r[1]),
          "opinion_count": int(r[2]), "latest_at": int(r[3]),
-         "view_count": int(r[4])}
+         "view_count": int(r[4]),
+         "latest_nickname": (r[5] if len(r) > 5 else None) or None}
         for r in rows
     ]
     return {
@@ -678,111 +818,248 @@ def scans_by_species(
         params.extend(_HIDDEN_COMMUNITY_DISEASES)
     with _connect() as conn:
         rows = conn.execute(
-            "SELECT scan_id, country, region, disease, confidence, species, "
-            "species_score, thumb_path, locale, created_at, wants_opinion "
+            f"SELECT {_FEED_COLUMNS} "
             "FROM community_scans WHERE species_lower = ?"
             + extra
             + " ORDER BY created_at DESC LIMIT ?",
             (*params, limit),
         ).fetchall()
-    return [_row_to_dict(r) for r in rows]
+    out = [_row_to_dict(r) for r in rows]
+    # This cross-region strip has no requester anchor to measure from, so we
+    # just drop the raw coords (never leaked to viewers); no distance shown.
+    for row in out:
+        row.pop("lat", None)
+        row.pop("lon", None)
+    return out
 
 
 def nearby_scans(
     *,
-    country: str,
-    region: str | None = None,
+    country: str | None = None,
+    lat: float | None = None,
+    lon: float | None = None,
+    radius_km: float = NEARBY_RADIUS_KM,
     disease: str | None = None,
     species: str | None = None,
     limit: int = 20,
     exclude_user_pseudo_id: str | None = None,
+    scope: str = "nearby",
 ) -> list[dict]:
-    """Return the most recent shared scans within ``country``.
+    """Most recent shared scans for one scope.
 
-    Optimized to reuse a single database connection and execute sargable
-    queries using the indexed ``species_lower`` column.
+    ``scope="nearby"`` (default) selects scans within ``radius_km`` of
+    ``lat``/``lon`` (the requester's coarse location); ``scope="country"``
+    selects the whole ``country``. A *disease-scoped* call (the result-screen
+    "similar scans" carousel) widens nearby→country to stay filled but never
+    crosses to a different disease; the disease-agnostic feed stays strictly
+    in its scope so the Nearby/Country toggle actually changes what's shown.
     """
     init_db()
-    limit = max(1, min(int(limit), 50))
+    if country:
+        country = to_iso_alpha2(country)
+    limit = max(1, min(int(limit), 100))
+    has_coords = lat is not None and lon is not None
+    nearby = scope != "country"
 
     with _connect() as conn:
-        def _query(where_extra: str, params: list, take: int) -> list[dict]:
-            sql = (
-                "SELECT scan_id, country, region, disease, confidence, species, "
-                "species_score, thumb_path, locale, created_at, wants_opinion, "
-                "user_pseudo_id "
-                "FROM community_scans WHERE country = ? "
-                + where_extra
-                + " ORDER BY created_at DESC LIMIT ?"
-            )
-            rows = conn.execute(sql, (*params, take)).fetchall()
-            return [_row_to_dict(r) for r in rows]
-
-        base_params: list = [country]
-        base_extra = ""
+        common = ""
+        cparams: list = []
         if exclude_user_pseudo_id:
-            base_extra += " AND user_pseudo_id != ?"
-            base_params.append(exclude_user_pseudo_id)
+            common += " AND user_pseudo_id != ?"
+            cparams.append(exclude_user_pseudo_id)
         if _HIDDEN_COMMUNITY_DISEASES:
-            base_extra += _hidden_clause()
-            base_params.extend(_HIDDEN_COMMUNITY_DISEASES)
-        region_clean = (region or "").strip()
-        region_extra = base_extra
-        region_params = list(base_params)
-        if region_clean:
-            region_extra += " AND region = ?"
-            region_params.append(region_clean)
-        species_clean = (species or "").strip()
-        species_lower = species_clean.lower() if species_clean else ""
+            common += _hidden_clause()
+            cparams.extend(_HIDDEN_COMMUNITY_DISEASES)
 
+        # Geo scopes, most specific first. A disease-scoped carousel widens
+        # nearby→country; the plain feed stays in a single scope.
+        widen = disease is not None
+        geo_scopes: list[tuple[str, list, bool]] = []
+        if nearby and has_coords:
+            min_lat, max_lat, min_lon, max_lon = _bbox(lat, lon, radius_km)
+            geo_scopes.append((
+                " AND lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?",
+                [min_lat, max_lat, min_lon, max_lon], True,
+            ))
+        if country and (scope == "country" or widen or not has_coords):
+            geo_scopes.append((" AND country = ?", [country], False))
+
+        species_lower = (species or "").strip().lower()
         seen: set[str] = set()
         out: list[dict] = []
 
-        def _append_unique(rows: list[dict]) -> None:
+        def _run(geo_clause, geo_params, dz_clause, dz_params, refine):
+            # Over-fetch when we'll refine the box to a true circle so the
+            # post-filter still has ~limit rows to offer.
+            take = limit * 3 if refine else limit
+            sql = (
+                f"SELECT {_FEED_COLUMNS} FROM community_scans WHERE 1=1"
+                + geo_clause + common + dz_clause
+                + " ORDER BY created_at DESC LIMIT ?"
+            )
+            rows = [
+                _row_to_dict(r)
+                for r in conn.execute(
+                    sql, (*geo_params, *cparams, *dz_params, take),
+                ).fetchall()
+            ]
+            if refine:
+                rows = [
+                    r for r in rows
+                    if r["lat"] is not None and r["lon"] is not None
+                    and _haversine_km(lat, lon, r["lat"], r["lon"]) <= radius_km
+                ]
             for row in rows:
-                sid = row["scan_id"]
-                if sid in seen:
+                if row["scan_id"] in seen:
                     continue
                 out.append(row)
-                seen.add(sid)
+                seen.add(row["scan_id"])
 
-        # Buckets ordered most → least specific
-        if disease and species_clean and region_clean:
-            _append_unique(_query(
-                region_extra + " AND disease = ? AND species_lower = ?",
-                region_params + [disease, species_lower],
-                limit,
-            ))
-        if len(out) < limit and disease and species_clean:
-            _append_unique(_query(
-                base_extra + " AND disease = ? AND species_lower = ?",
-                base_params + [disease, species_lower],
-                limit,
-            ))
-        if len(out) < limit and disease and region_clean:
-            _append_unique(_query(
-                region_extra + " AND disease = ?",
-                region_params + [disease],
-                limit,
-            ))
-        if len(out) < limit and disease:
-            _append_unique(_query(
-                base_extra + " AND disease = ?",
-                base_params + [disease],
-                limit,
-            ))
-        # Disease-agnostic fallback buckets (region-only, then
-        # country-only). These pad the feed with *other* diseases, so we
-        # only reach for them when the caller did NOT scope to a disease.
-        # A disease-scoped "similar scans" request must never return rows
-        # of a different disease — better to return fewer (or none) than
-        # to mislead the user with unrelated verdicts.
-        if not disease:
-            if len(out) < limit and region_clean:
-                _append_unique(_query(region_extra, region_params, limit))
-            if len(out) < limit:
-                _append_unique(_query(base_extra, base_params, limit))
-        return out[:limit]
+        for geo_clause, geo_params, refine in geo_scopes:
+            if len(out) >= limit:
+                break
+            if disease and species_lower:
+                _run(geo_clause, geo_params,
+                     " AND disease = ? AND species_lower = ?",
+                     [disease, species_lower], refine)
+            if len(out) < limit and disease:
+                _run(geo_clause, geo_params, " AND disease = ?", [disease], refine)
+            if len(out) < limit and not disease:
+                _run(geo_clause, geo_params, "", [], refine)
+        result = out[:limit]
+        # Attach an approximate distance from the requester ("~5 km near you")
+        # and DROP the raw coords — a viewer gets the distance, never another
+        # user's ~1 km location. Distance is omitted when we lack either point.
+        for row in result:
+            rlat, rlon = row.get("lat"), row.get("lon")
+            if has_coords and rlat is not None and rlon is not None:
+                row["distance_km"] = round(_haversine_km(lat, lon, rlat, rlon), 1)
+            else:
+                row["distance_km"] = None
+            row.pop("lat", None)
+            row.pop("lon", None)
+        return result
+
+
+def map_scans(
+    min_lat: float,
+    max_lat: float,
+    min_lon: float,
+    max_lon: float,
+    *,
+    disease: str | None = None,
+    days: int = 30,
+    limit: int = 300,
+    exclude_user_pseudo_id: str | None = None,
+) -> dict:
+    """Individual shared scans inside a bbox — the zoomed-in map markers.
+
+    Unlike the feed (:func:`nearby_scans`), this KEEPS each scan's ~1 km-rounded
+    ``lat``/``lon`` so the client can pin a marker: the user explicitly wants
+    individual scans on the map, and the coords are already coarse + anonymous
+    (public token + nickname, never the real scan_id). ``not_a_plant`` excluded;
+    newest-first, capped at ``limit`` (``truncated`` flags an over-full bbox so
+    the UI can prompt "zoom in to see all")."""
+    init_db()
+    limit = max(1, min(int(limit), 500))
+    days = max(1, min(int(days), 90))
+    cutoff = int(time.time()) - days * 86_400
+    clause = (
+        " AND lat IS NOT NULL AND lon IS NOT NULL"
+        " AND lat BETWEEN ? AND ? AND lon BETWEEN ? AND ? AND created_at >= ?"
+    )
+    params: list = [min_lat, max_lat, min_lon, max_lon, cutoff]
+    if exclude_user_pseudo_id:
+        clause += " AND user_pseudo_id != ?"
+        params.append(exclude_user_pseudo_id)
+    if disease:
+        clause += " AND disease = ?"
+        params.append(disease)
+    clause += _hidden_clause()
+    params.extend(_HIDDEN_COMMUNITY_DISEASES)
+    with _connect() as conn:
+        rows = conn.execute(
+            f"SELECT {_FEED_COLUMNS} FROM community_scans WHERE 1=1"
+            + clause
+            + " ORDER BY created_at DESC LIMIT ?",
+            (*params, limit + 1),
+        ).fetchall()
+    truncated = len(rows) > limit
+    # _row_to_dict keeps lat/lon — the map needs them (the feed strips them).
+    return {"items": [_row_to_dict(r) for r in rows[:limit]], "truncated": truncated}
+
+
+_DENSITY_K = 3
+
+
+def _density_cell_size(lat_span: float) -> float:
+    """Grid-cell size (deg) for a bbox's latitude span — coarser when zoomed
+    out, floored at 0.05° (~5.5 km, ~5x the ~1.1 km storage rounding) so a cell
+    always blends many distinct positions and no single ~1 km scan is
+    pinpointable."""
+    if lat_span > 40:
+        return 1.0
+    if lat_span > 15:
+        return 0.5
+    if lat_span > 5:
+        return 0.2
+    if lat_span > 2:
+        return 0.1
+    return 0.05
+
+
+def density_grid(
+    min_lat: float,
+    max_lat: float,
+    min_lon: float,
+    max_lon: float,
+    *,
+    disease: str | None = None,
+    days: int = 30,
+    k: int = _DENSITY_K,
+) -> dict:
+    """K-anonymized scan density for the zoomed-out heat layer.
+
+    Buckets the (already 2-dp-rounded) coords into grid cells and returns only
+    cells holding >= ``k`` scans AFTER the disease/time filter, so a returned
+    cell never represents fewer than ``k`` scans; ``not_a_plant`` excluded. The
+    map receives cell centers + counts only — never per-scan coords."""
+    init_db()
+    days = max(1, min(int(days), 90))
+    cutoff = int(time.time()) - days * 86_400
+    cell = _density_cell_size(max_lat - min_lat)
+    disease_clause = ""
+    disease_params: list = []
+    if disease:
+        disease_clause = " AND disease = ?"
+        disease_params.append(disease)
+    hidden_clause = _hidden_clause()
+    # SQLite CAST(.. AS INTEGER) truncates toward zero — wrong floor for negative
+    # (W/S) coords — so floor with ROUND(z/cell - 0.5) to bucket on a stable grid.
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT CAST(ROUND(lat/? - 0.5) AS INTEGER) AS ilat,"
+            "       CAST(ROUND(lon/? - 0.5) AS INTEGER) AS ilon, COUNT(*) AS n "
+            "FROM community_scans "
+            "WHERE lat IS NOT NULL AND lon IS NOT NULL "
+            "  AND lat BETWEEN ? AND ? AND lon BETWEEN ? AND ? AND created_at >= ?"
+            + disease_clause + hidden_clause
+            + " GROUP BY ilat, ilon HAVING n >= ?",
+            (cell, cell, min_lat, max_lat, min_lon, max_lon, cutoff,
+             *disease_params, *_HIDDEN_COMMUNITY_DISEASES, int(k)),
+        ).fetchall()
+    cells = [
+        {"lat": round(r[0] * cell, 6), "lon": round(r[1] * cell, 6), "count": int(r[2])}
+        for r in rows
+    ]
+    return {
+        "cells": cells,
+        "cell_size_deg": cell,
+        "max_count": max((c["count"] for c in cells), default=0),
+        "total": sum(c["count"] for c in cells),
+        "k": int(k),
+        "days": days,
+    }
 
 
 def region_summary(
@@ -793,6 +1070,7 @@ def region_summary(
 ) -> dict:
     """Aggregate the corpus for one country (or country+region)."""
     init_db()
+    country = to_iso_alpha2(country)
     now = int(time.time())
     week_ago = now - 7 * 86_400
     region_clean = (region or "").strip()
@@ -865,14 +1143,34 @@ def region_summary(
     }
 
 
-def popular_snapshot(country: str | None, *, limit: int = 8) -> dict:
-    """Live popular species + diseases for one country bucket."""
+def popular_snapshot(
+    country: str | None = None,
+    *,
+    lat: float | None = None,
+    lon: float | None = None,
+    radius_km: float = NEARBY_RADIUS_KM,
+    limit: int = 10,
+) -> dict:
+    """Live popular species + diseases for one scope.
+
+    Scope precedence: coords (the ~30 km "nearby" box) → ``country`` →
+    worldwide (no filter). The caller runs the nearby → country → worldwide
+    ladder by calling this with progressively wider arguments.
+
+    The nearby scope uses the bounding box (not a refined circle) — for a
+    popularity *aggregate* the square is plenty; the visible feed
+    (:func:`nearby_scans`) is the one that refines to a true radius.
+    """
     init_db()
-    country_clean = (country or "").strip()
+    country_clean = to_iso_alpha2(country)
     limit = max(1, min(int(limit), 20))
     where = ""
     params: tuple = ()
-    if country_clean:
+    if lat is not None and lon is not None:
+        min_lat, max_lat, min_lon, max_lon = _bbox(lat, lon, radius_km)
+        where = " AND lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?"
+        params = (min_lat, max_lat, min_lon, max_lon)
+    elif country_clean:
         where = " AND country = ?"
         params = (country_clean,)
     hidden_clause = _hidden_clause()
@@ -910,92 +1208,6 @@ def popular_snapshot(country: str | None, *, limit: int = 8) -> dict:
             for r in disease_rows
         ],
     }
-
-
-# A scope must have at least this many scans in the window to be served;
-# thinner scopes widen (region → country → global) so the Home widget is
-# useful from day one in low-traffic regions.
-_TRENDING_MIN_SCANS = 3
-
-
-def trending(
-    country: str | None = None,
-    region: str | None = None,
-    *,
-    days: int = 7,
-    limit: int = 6,
-) -> dict:
-    """Trending species + diseases for the Home screen's "trending nearby"
-    module. Widening fallback so the module never renders empty: try
-    country+region, then country, then global — a scope is accepted once it
-    has at least ``_TRENDING_MIN_SCANS`` rows in the window (the last scope,
-    global, is returned regardless). Hidden diseases (not_a_plant) excluded.
-    """
-    init_db()
-    since = int(time.time()) - max(1, int(days)) * 86_400
-    limit = max(1, min(int(limit), 20))
-    country_clean = (country or "").strip()
-    region_clean = (region or "").strip()
-
-    scopes: list[tuple[str, str, tuple]] = []
-    if country_clean and region_clean:
-        scopes.append(("region", " AND country = ? AND region = ?",
-                       (country_clean, region_clean)))
-    if country_clean:
-        scopes.append(("country", " AND country = ?", (country_clean,)))
-    scopes.append(("global", "", ()))
-
-    hidden_clause = _hidden_clause()
-    with _connect() as conn:
-        for scope, where, params in scopes:
-            full_params = (since, *params, *_HIDDEN_COMMUNITY_DISEASES)
-            total = int(conn.execute(
-                "SELECT COUNT(*) FROM community_scans "
-                "WHERE created_at >= ?" + where + hidden_clause,
-                full_params,
-            ).fetchone()[0])
-            if total < _TRENDING_MIN_SCANS and scope != "global":
-                continue
-            species_rows = conn.execute(
-                "SELECT MAX(species) AS sp, COUNT(*) AS n FROM community_scans "
-                "WHERE created_at >= ? AND species_lower IS NOT NULL "
-                "AND species_lower != ''" + where + hidden_clause +
-                " GROUP BY species_lower ORDER BY n DESC LIMIT ?",
-                (*full_params, limit),
-            ).fetchall()
-            disease_rows = conn.execute(
-                "SELECT disease, COUNT(*) AS n FROM community_scans "
-                "WHERE created_at >= ?" + where + hidden_clause +
-                " GROUP BY disease ORDER BY n DESC LIMIT ?",
-                (*full_params, limit),
-            ).fetchall()
-            return {
-                "scope": scope,
-                "country": country_clean if scope != "global" else None,
-                "region": region_clean if scope == "region" else None,
-                "window_days": max(1, int(days)),
-                "total": total,
-                "top_species": [
-                    {
-                        "species": str(r[0]),
-                        "count": int(r[1]),
-                        "percent": int(round((int(r[1]) / total) * 100)) if total else 0,
-                    }
-                    for r in species_rows
-                ],
-                "top_diseases": [
-                    {
-                        "disease": str(r[0]),
-                        "count": int(r[1]),
-                        "percent": int(round((int(r[1]) / total) * 100)) if total else 0,
-                    }
-                    for r in disease_rows
-                ],
-            }
-    # unreachable (the global scope always returns) — defensive default
-    return {"scope": "global", "country": None, "region": None,
-            "window_days": max(1, int(days)), "total": 0,
-            "top_species": [], "top_diseases": []}
 
 
 def delete_for_user(user_pseudo_id: str) -> int:
@@ -1092,34 +1304,42 @@ def prune_older_than(days: int) -> int:
 
 
 def _author_token(user_pseudo_id: str | None) -> str | None:
-    """Stable, non-reversible per-author token for anonymous avatars.
-    A short sha256 prefix of the pseudo id — same user => same token,
-    but the pseudo id can't be recovered from it."""
+    """Rotating, non-reversible per-author token for anonymous avatars. Mixes
+    the 30-day epoch so the same user maps to a new token each window — the
+    pseudo id can't be recovered, and activity isn't linkable across windows."""
     if not user_pseudo_id:
         return None
-    return hashlib.sha256(str(user_pseudo_id).encode("utf-8")).hexdigest()[:12]
+    seed = f"{user_pseudo_id}|{_identity_epoch()}"
+    return hashlib.sha256(seed.encode("utf-8")).hexdigest()[:12]
 
 
 def _row_to_dict(row: tuple) -> dict:
     return {
         # Real scan_id — INTERNAL ONLY. Viewer-facing endpoints must
         # replace it with ``public_id`` before serialising (see the
-        # nearby / by-species handlers in main.py).
+        # nearby / by-species handlers in main.py). Column order matches
+        # ``_FEED_COLUMNS``.
         "scan_id": row[0],
         "public_id": public_scan_token(str(row[0])),
         "country": row[1] or "",
         "region": row[2] or "",
-        "disease": row[3],
-        "confidence": float(row[4]) if row[4] is not None else None,
-        "species": row[5],
-        "species_score": float(row[6]) if row[6] is not None else None,
-        "thumb_path": row[7],
-        "locale": row[8],
-        "created_at": int(row[9]),
-        "wants_opinion": bool(row[10]) if len(row) > 10 else False,
+        "city": row[3] or "",
+        "lat": float(row[4]) if row[4] is not None else None,
+        "lon": float(row[5]) if row[5] is not None else None,
+        "disease": row[6],
+        "confidence": float(row[7]) if row[7] is not None else None,
+        "species": row[8],
+        "species_score": float(row[9]) if row[9] is not None else None,
+        "thumb_path": row[10],
+        "locale": row[11],
+        "created_at": int(row[12]),
+        "wants_opinion": bool(row[13]) if len(row) > 13 else False,
         # One-way, stable per author so the client can show a
         # consistent (but anonymous) avatar — never the raw pseudo id.
-        "author_token": _author_token(row[11]) if len(row) > 11 else None,
+        "author_token": _author_token(row[14]) if len(row) > 14 else None,
+        # Author's generated plant-vibe handle (community display name); the
+        # client also derives the avatar monogram/colour from it on-device.
+        "nickname": (row[15] if len(row) > 15 else None) or None,
     }
 
 
@@ -1183,10 +1403,13 @@ __all__ = [
     "daily_write_count_for_ip_hash",
     "delete_for_user",
     "get_user_data",
+    "density_grid",
     "init_db",
+    "map_scans",
     "nearby_scans",
     "opinion_counts",
     "opinion_counts_for_user",
+    "opinion_open",
     "opinions_by_author",
     "opinions_for",
     "owner_of",
@@ -1203,5 +1426,4 @@ __all__ = [
     "scans_by_species",
     "set_wants_opinion",
     "stats_snapshot",
-    "trending",
 ]

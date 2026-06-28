@@ -6,8 +6,9 @@ import org.junit.Test
 class CommunityAndOpinionPrefsTest {
 
     @Test
-    fun communitySharingDefaultsOn() {
-        assertThat(CommunityPrefs.DEFAULT_UPLOADS_ENABLED).isTrue()
+    fun communitySharingDefaultsOff() {
+        // Opt-in: nothing is shared until the user enables community in context.
+        assertThat(CommunityPrefs.DEFAULT_UPLOADS_ENABLED).isFalse()
     }
 
     @Test

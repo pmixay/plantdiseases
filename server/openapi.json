@@ -3,7 +3,7 @@
   "info": {
     "title": "PlantDiseases API",
     "description": "AI-powered plant disease detection — two-stage pipeline",
-    "version": "2.5.0"
+    "version": "2.2"
   },
   "paths": {
     "/api/health": {
@@ -399,7 +399,7 @@
     "/api/feedback/image": {
       "post": {
         "summary": "Feedback Image Upload",
-        "description": "Persist the original image bytes for a negative-feedback row.\n\nCalled by the Android client immediately after a successful\n``correct=false`` ``/api/feedback`` submission. The image is\nwritten to ``FEEDBACK_IMG_DIR`` keyed by SHA-256 of the bytes,\nand the most recent feedback row for ``scan_id`` is updated\nin-place with ``image_path``. Same per-IP rate limit and\nscan-id-was-issued gate as ``/api/feedback`` so a hostile\nclient can't spray arbitrary bytes at the corpus.\n\nPrivacy note: photo storage for model improvement is disclosed in\nthe first-launch consent screen (and the feedback sheet copy); the\nimage is also anonymized (EXIF-stripped, downscaled) before it\nreaches the labeling queue. The community delete-for-user path\ncascades through feedback rows AND the labeling candidates keyed\nby this user's scan_ids, so \"delete my data\" purges these too.",
+        "description": "Persist the original image bytes for a negative-feedback row.\n\nCalled by the Android client immediately after a successful\n``correct=false`` ``/api/feedback`` submission. The image is\nwritten to ``FEEDBACK_IMG_DIR`` keyed by SHA-256 of the bytes,\nand the most recent feedback row for ``scan_id`` is updated\nin-place with ``image_path``. Same per-IP rate limit and\nscan-id-was-issued gate as ``/api/feedback`` so a hostile\nclient can't spray arbitrary bytes at the corpus.\n\nPrivacy note: photo storage for model improvement is disclosed in\nthe first-launch consent screen (and the feedback sheet copy); the\nimage is also anonymized (EXIF-stripped, downscaled) before it\nreaches the collection store. The community delete-for-user path\ncascades through feedback rows AND the labeling candidates keyed\nby this user's scan_ids, so \"delete my data\" purges these too.",
         "operationId": "feedback_image_upload_api_feedback_image_post",
         "requestBody": {
           "content": {
@@ -436,7 +436,7 @@
     "/api/community/scan": {
       "post": {
         "summary": "Community Scan Upload",
-        "description": "Append one community-shared scan to the corpus.\n\nHierarchy: ``country`` is the canonical top bucket (required),\n``region`` is the optional sub-country locality. The image is\noptional — when omitted we still store the row, just without a\nthumbnail.",
+        "description": "Append one community-shared scan to the corpus.\n\nLocation is supplied by the opted-in client from its coarse location\n(``country`` + ``region`` city + rounded ``lat``/``lon``) — there is no\nserver-side IP geolocation. ``nickname`` is the author's generated handle.\nThe image is optional.",
         "operationId": "community_scan_upload_api_community_scan_post",
         "requestBody": {
           "content": {
@@ -734,7 +734,7 @@
     "/api/community/nearby": {
       "get": {
         "summary": "Community Scan Nearby",
-        "description": "List the most recent community-shared scans within ``country``.\n\n``region`` narrows the result set to a sub-country locality\n(city / admin area) when supplied. ``species`` (scientific name,\nexact match) narrows further so the carousel only shows scans of\nthe same plant — without it, \"Ficus elastica with leaf spot\"\nappears next to \"Monstera with leaf spot\" and conflates two\ndifferent care routines.\n\nFall-through ordering inside ``nearby_scans`` is most-specific\nfirst: same disease+species+region → same disease+species → …\n→ same country (any disease). The carousel always fills up to\n``limit`` so a thin local bucket still surfaces something.",
+        "description": "List the most recent community-shared scans near the requester.\n\nLocation is supplied by the opted-in client (coarse ``lat``/``lon`` +\nreverse-geocoded ``country``/``region`` city). ``scope`` is the app's\nfilter toggle: ``nearby`` (default) restricts the feed to a ~30 km radius\nof the coords; ``country`` widens to the whole country. ``species`` +\n``disease`` narrow the result-screen \"similar scans\" carousel, which\nwidens nearby→country to stay filled.",
         "operationId": "community_scan_nearby_api_community_nearby_get",
         "parameters": [
           {
@@ -767,6 +767,38 @@
                 }
               ],
               "title": "Region"
+            }
+          },
+          {
+            "name": "lat",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lat"
+            }
+          },
+          {
+            "name": "lon",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lon"
             }
           },
           {
@@ -826,6 +858,22 @@
               ],
               "title": "User Pseudo Id"
             }
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scope"
+            }
           }
         ],
         "responses": {
@@ -850,30 +898,50 @@
         }
       }
     },
-    "/api/community/trending": {
+    "/api/community/map": {
       "get": {
-        "summary": "Community Trending Endpoint",
-        "description": "Trending species + diseases for the Home screen's \"trending nearby\"\nmodule. Unlike /community/nearby, ``country`` is OPTIONAL and an invalid\nvalue degrades to the wider scope instead of 422 — this is a discovery\nwidget that must never error a fresh install with no location. The\nresponse widens region → country → global until a scope has enough data\n(``scope`` reports which one was served).",
-        "operationId": "community_trending_endpoint_api_community_trending_get",
+        "summary": "Community Map",
+        "description": "Individual community scans inside a bbox — the zoomed-in map markers.\n\nEach scan carries its ~1 km-rounded coords + the PUBLIC token (never the\nreal scan_id), so the app can pin a marker and open the existing opinion\nsheet. Public (no opt-in to view); ``not_a_plant`` excluded; ``truncated``\nsignals an over-full bbox.",
+        "operationId": "community_map_api_community_map_get",
         "parameters": [
           {
-            "name": "country",
+            "name": "min_lat",
             "in": "query",
-            "required": false,
+            "required": true,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Country"
+              "type": "number",
+              "title": "Min Lat"
             }
           },
           {
-            "name": "region",
+            "name": "min_lon",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "title": "Min Lon"
+            }
+          },
+          {
+            "name": "max_lat",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "title": "Max Lat"
+            }
+          },
+          {
+            "name": "max_lon",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "title": "Max Lon"
+            }
+          },
+          {
+            "name": "disease",
             "in": "query",
             "required": false,
             "schema": {
@@ -885,7 +953,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Region"
+              "title": "Disease"
             }
           },
           {
@@ -894,8 +962,24 @@
             "required": false,
             "schema": {
               "type": "integer",
-              "default": 7,
+              "default": 30,
               "title": "Days"
+            }
+          },
+          {
+            "name": "user_pseudo_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Pseudo Id"
             }
           },
           {
@@ -904,8 +988,99 @@
             "required": false,
             "schema": {
               "type": "integer",
-              "default": 6,
+              "default": 300,
               "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/community/heatmap": {
+      "get": {
+        "summary": "Community Heatmap",
+        "description": "K-anonymized scan density (grid cells) for the zoomed-out heat layer.\n\nPublic; returns only cell centers + counts (each ≥ 3 scans), never per-scan\ncoords; ``not_a_plant`` excluded.",
+        "operationId": "community_heatmap_api_community_heatmap_get",
+        "parameters": [
+          {
+            "name": "min_lat",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "title": "Min Lat"
+            }
+          },
+          {
+            "name": "min_lon",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "title": "Min Lon"
+            }
+          },
+          {
+            "name": "max_lat",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "title": "Max Lat"
+            }
+          },
+          {
+            "name": "max_lon",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "title": "Max Lon"
+            }
+          },
+          {
+            "name": "disease",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Disease"
+            }
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 30,
+              "title": "Days"
             }
           }
         ],
@@ -1184,6 +1359,77 @@
         }
       }
     },
+    "/api/plant-photo": {
+      "get": {
+        "summary": "Plant Photo",
+        "description": "Proxy + cache an external plant photo so the app loads it from this\nserver's domain — reliable where Wikimedia is throttled/blocked.\n\nTwo ways to address a photo:\n- ``u`` — a (URL-encoded) source URL (used for species-detail extra photos);\n- ``name`` — a scientific name the proxy *fully resolves* to its Wikipedia\n  lead image server-side (used by the popular carousel, so a species that\n  only just became popular still resolves a photo on demand).\n\nOnly Wikimedia/Wikipedia hosts are ever fetched. 404 when the photo can't be\ncached (no image, fetch failure, or a non-raster format) — the client then\nshows its plant placeholder, the same graceful fallback as before.",
+        "operationId": "plant_photo_api_plant_photo_get",
+        "parameters": [
+          {
+            "name": "u",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "U"
+            }
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Name"
+            }
+          },
+          {
+            "name": "locale",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "en",
+              "title": "Locale"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/guide/manifest": {
       "get": {
         "summary": "Guide Manifest",
@@ -1352,7 +1598,7 @@
     "/api/popular": {
       "get": {
         "summary": "Popular Endpoint",
-        "description": "Personalized popular-houseplants bundle with lead images pre-resolved.\n\nCountry comes from the client when given, else server-side IP geolocation,\nelse a global list. Cached per (country, locale) for a day so the\nper-species Wikipedia calls aren't repeated.",
+        "description": "Personalized popular-houseplants bundle with lead images pre-resolved.\n\nLocation is supplied by the opted-in client (coarse ``lat``/``lon`` +\nreverse-geocoded ``country``/``region`` city); a request with none gets the\nworldwide bundle. Cached per (country, coords, locale); a stale entry is\nserved immediately and refreshed in the background so a user never waits on\nthe per-species Wikipedia calls.",
         "operationId": "popular_endpoint_api_popular_get",
         "parameters": [
           {
@@ -1385,6 +1631,38 @@
                 }
               ],
               "title": "Region"
+            }
+          },
+          {
+            "name": "lat",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lat"
+            }
+          },
+          {
+            "name": "lon",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lon"
             }
           },
           {
@@ -1448,13 +1726,42 @@
             "title": "User Pseudo Id"
           },
           "country": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Country"
           },
           "region": {
             "type": "string",
             "title": "Region",
             "default": ""
+          },
+          "lat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lat"
+          },
+          "lon": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lon"
           },
           "disease": {
             "type": "string",
@@ -1504,6 +1811,17 @@
             ],
             "title": "Locale"
           },
+          "nickname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nickname"
+          },
           "image": {
             "anyOf": [
               {
@@ -1521,7 +1839,6 @@
         "required": [
           "scan_id",
           "user_pseudo_id",
-          "country",
           "disease"
         ],
         "title": "Body_community_scan_upload_api_community_scan_post"
@@ -1681,6 +1998,18 @@
               }
             ],
             "title": "Note"
+          },
+          "nickname": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nickname"
           }
         },
         "type": "object",
@@ -1990,58 +2319,6 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
-      },
-      "LabelLoginRequest": {
-        "properties": {
-          "password": {
-            "type": "string",
-            "title": "Password"
-          }
-        },
-        "type": "object",
-        "required": [
-          "password"
-        ],
-        "title": "LabelLoginRequest"
-      },
-      "LabelVerdictBatch": {
-        "properties": {
-          "verdicts": {
-            "items": {
-              "$ref": "#/components/schemas/LabelVerdictItem"
-            },
-            "type": "array",
-            "title": "Verdicts"
-          }
-        },
-        "type": "object",
-        "required": [
-          "verdicts"
-        ],
-        "title": "LabelVerdictBatch"
-      },
-      "LabelVerdictItem": {
-        "properties": {
-          "id": {
-            "type": "integer",
-            "title": "Id"
-          },
-          "verdict": {
-            "type": "string",
-            "enum": [
-              "yes",
-              "no",
-              "not_sure"
-            ],
-            "title": "Verdict"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "verdict"
-        ],
-        "title": "LabelVerdictItem"
       },
       "ProgressionRequest": {
         "properties": {

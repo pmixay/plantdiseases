@@ -11,8 +11,10 @@ import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.repository.CommunityUploader
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
+import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.OpinionPrefs
+import com.plantdiseases.app.util.RegionResolver
 import com.plantdiseases.app.util.SimilarScans
 import com.plantdiseases.app.util.TelemetryIds
 import kotlinx.coroutines.launch
@@ -32,6 +34,7 @@ import org.koin.core.component.inject
 class CommunityController(
     private val activity: AppCompatActivity,
     private val binding: ActivityResultBinding,
+    private val onEnableCommunity: (rerun: () -> Unit) -> Unit,
     private val ensureNotificationPermission: () -> Unit,
 ) : KoinComponent {
     private val repository: ScanRepository by inject()
@@ -186,10 +189,25 @@ class CommunityController(
         val card = binding.cardSimilarScans
         val rv = binding.rvSimilarScans
         val empty = binding.tvSimilarEmpty
+        val enableBtn = binding.btnEnableSimilar
         // Default state: hidden until the network call returns.
         card.visibility = View.GONE
         rv.visibility = View.GONE
         empty.visibility = View.GONE
+        enableBtn.visibility = View.GONE
+
+        // Community is opt-in: until the user enables it, show the card with an
+        // Enable CTA instead of reading location or hitting the network.
+        if (!CommunityPrefs.uploadsEnabled(activity)) {
+            card.visibility = View.VISIBLE
+            binding.tvSimilarSubtitle.text =
+                activity.getString(R.string.similar_scans_enable_prompt)
+            enableBtn.visibility = View.VISIBLE
+            enableBtn.setOnClickListener {
+                onEnableCommunity { bindSimilarScans(scan, repository, isRu) }
+            }
+            return
+        }
 
         // Scope the carousel by the verdict the user actually SAW — the
         // server's reroute-aware displayed class — not the raw argmax.
@@ -202,7 +220,7 @@ class CommunityController(
                 recordView(item.scanId, pseudoId)
                 CommunityOpinionSheet.show(
                     activity.supportFragmentManager,
-                    item.scanId,
+                    item,
                     displayName(item.disease, isRu),
                 )
             },
@@ -229,7 +247,14 @@ class CommunityController(
         val rv = binding.rvSimilarScans
         val empty = binding.tvSimilarEmpty
         activity.lifecycleScope.launch {
+            // Opt-in is confirmed before we get here, so reading coarse
+            // location for the nearby scope is expected.
+            val region = runCatching { RegionResolver.resolveRegion(activity) }.getOrNull()
             repository.communityNearby(
+                country = region?.country,
+                region = region?.locality,
+                lat = region?.lat,
+                lon = region?.lon,
                 disease = disease,
                 // Narrow by detected scientific name so "Powdery mildew on
                 // Monstera" doesn't render Ficus thumbnails. Server falls back

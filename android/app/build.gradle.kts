@@ -292,6 +292,11 @@ dependencies {
     // ViewPager2
     implementation("androidx.viewpager2:viewpager2:1.1.0")
 
+    // osmdroid — OpenStreetMap renderer for the community scans map. Keyless,
+    // no Play Services (mavenCentral). We draw the aggregated heat cells +
+    // scan markers ourselves; OSM raster tiles need a descriptive User-Agent.
+    implementation("org.osmdroid:osmdroid-android:6.1.20")
+
     // Preferences DataStore
     implementation("androidx.datastore:datastore-preferences:1.1.1")
 

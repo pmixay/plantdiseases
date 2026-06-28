@@ -8,6 +8,8 @@ import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.model.AnalysisResponse
 import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.Nicknames
+import com.plantdiseases.app.util.RegionResolver
 import com.plantdiseases.app.util.TelemetryIds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -19,8 +21,8 @@ import java.io.FileOutputStream
  * scan corpus.
  *
  * Responsibilities, in order:
- *   1. Confirm uploads are enabled (default ON after the first-run
- *      consent sheet — see [CommunityPrefs]).
+ *   1. Confirm uploads are enabled (opt-in, default OFF — the user
+ *      enables community in-context; see [CommunityPrefs]).
  *   2. Generate a 512px JPEG thumbnail in the app's cache dir so the
  *      upload stays under the server's COMMUNITY_MAX_THUMB_BYTES
  *      ceiling.
@@ -57,15 +59,24 @@ class CommunityUploader(
         val locale = if (LocaleHelper.isRussian(context)) "ru" else "en"
         val pseudoId = TelemetryIds.userPseudoId(context)
         val scanId = scan.clientScanId.ifBlank { return@withContext UploadOutcome.MissingScanId }
+        // Opt-in is confirmed above, so reading the coarse location here is the
+        // "check user location on every scan" step — attaches where the scan
+        // was taken so it can be grouped by the 30 km nearby radius.
+        val region = runCatching { RegionResolver.resolveRegion(context) }.getOrNull()
 
         val result = scanRepository.uploadCommunityScan(
             scanId = scanId,
             userPseudoId = pseudoId,
+            country = region?.country,
+            region = region?.locality.orEmpty(),
+            lat = region?.lat,
+            lon = region?.lon,
             disease = disease,
             confidence = analysis.confidence,
             species = species,
             speciesScore = score,
             locale = locale,
+            nickname = Nicknames.nickname(context),
             thumbnail = thumb,
         )
         // The thumbnail is a transient cache file; delete it once the
@@ -109,14 +120,20 @@ class CommunityUploader(
         val thumb = makeThumbnail(scan)
         val locale = if (LocaleHelper.isRussian(context)) "ru" else "en"
         val pseudoId = TelemetryIds.userPseudoId(context)
+        val region = runCatching { RegionResolver.resolveRegion(context) }.getOrNull()
         val result = scanRepository.uploadCommunityScan(
             scanId = scanId,
             userPseudoId = pseudoId,
+            country = region?.country,
+            region = region?.locality.orEmpty(),
+            lat = region?.lat,
+            lon = region?.lon,
             disease = disease,
             confidence = scan.confidence,
             species = scan.speciesScientific,
             speciesScore = scan.speciesScore,
             locale = locale,
+            nickname = Nicknames.nickname(context),
             thumbnail = thumb,
         )
         thumb?.let { runCatching { it.delete() } }

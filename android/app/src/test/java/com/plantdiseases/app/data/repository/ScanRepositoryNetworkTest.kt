@@ -341,29 +341,6 @@ class ScanRepositoryNetworkTest {
         assertThat(req.path).contains("locale=ru")
     }
 
-    // --- GET /api/community/trending (Ktor) ---
-
-    @Test
-    fun communityTrending_success_parsesTopListsAndQueries() {
-        server.enqueue(
-            MockResponse().setResponseCode(200)
-                .setHeader("Content-Type", "application/json")
-                .setBody(
-                    """{"scope":"country","top_species":[{"species":"Ficus","count":3}],""" +
-                        """"top_diseases":[]}""",
-                ),
-        )
-        val resp = runBlocking { client.communityTrending(country = "US", region = "CA") }
-        assertThat(resp?.scope).isEqualTo("country")
-        assertThat(resp?.topSpecies).hasSize(1)
-        assertThat(resp?.topSpecies?.get(0)?.species).isEqualTo("Ficus")
-        val req = server.takeRequest()
-        assertThat(req.path).startsWith("/api/community/trending")
-        assertThat(req.path).contains("country=US")
-        assertThat(req.path).contains("region=CA")
-        assertThat(req.path).contains("days=7")
-    }
-
     // --- POST /api/care-plan (Ktor, custom watering_days serializer) ---
 
     @Test

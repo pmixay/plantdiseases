@@ -67,43 +67,51 @@ def test_community_scan_upload_minimal(client, isolated_community):
     assert body["id"] > 0
 
 
-def test_community_scan_upload_country_from_geo_header(client, isolated_community):
+def test_community_scan_upload_stores_client_location(client, isolated_community):
+    # Location is now supplied by the (opted-in) client: country + city + the
+    # rounded coarse coords. There is no server-side IP/header geo.
     db_path, _ = isolated_community
     r = client.post(
         "/api/community/scan",
-        headers={"cf-ipcountry": "US"},
         data=_form(
             scan_id="scangeo001",
             user_pseudo_id="pseudogeo01",
+            country="US", region="Austin",
+            lat=30.27, lon=-97.74,
             disease="powdery_mildew",
         ),
     )
     assert r.status_code == 200, r.text
     with sqlite3.connect(db_path) as conn:
         row = conn.execute(
-            "SELECT country FROM community_scans WHERE scan_id = ?",
+            "SELECT country, region, city, lat, lon FROM community_scans WHERE scan_id = ?",
             ("scangeo001",),
         ).fetchone()
     assert row[0] == "US"
+    assert row[1] == "Austin" and row[2] == "Austin"
+    assert abs(row[3] - 30.27) < 1e-6 and abs(row[4] - (-97.74)) < 1e-6
 
 
-def test_community_scan_upload_no_geo_uses_global_bucket(client, isolated_community):
+def test_community_scan_upload_no_location_stores_empty_country(client, isolated_community):
+    # No client location (community off / permission denied) → empty country;
+    # such rows only surface in the worldwide aggregate, never "RU"/"GLOBAL".
     db_path, _ = isolated_community
     r = client.post(
         "/api/community/scan",
         data=_form(
-            scan_id="scanglobal1",
-            user_pseudo_id="pseudoglobal1",
+            scan_id="scandefault1",
+            user_pseudo_id="pseudodefault1",
             disease="healthy",
         ),
     )
     assert r.status_code == 200, r.text
     with sqlite3.connect(db_path) as conn:
         row = conn.execute(
-            "SELECT country FROM community_scans WHERE scan_id = ?",
-            ("scanglobal1",),
+            "SELECT country, lat FROM community_scans WHERE scan_id = ?",
+            ("scandefault1",),
         ).fetchone()
-    assert row[0] == "GLOBAL"
+    assert row[0] == ""
+    assert row[1] is None
 
 
 def test_community_scan_upload_with_thumbnail(client, isolated_community):
@@ -154,6 +162,30 @@ def test_community_scan_rejects_bad_region(client, isolated_community):
         ),
     )
     assert r.status_code == 422
+
+
+def test_community_scan_accepts_unicode_region(client, isolated_community):
+    """Region validation is Unicode-aware: Cyrillic / accented place names
+    pass (it filters control chars + injection punctuation, not non-Latin
+    letters). The country name additionally canonicalizes to its ISO code
+    ("Россия" -> "RU") while the locality is preserved verbatim."""
+    db_path, _ = isolated_community
+    r = client.post(
+        "/api/community/scan",
+        data=_form(
+            scan_id="scanru000001",
+            user_pseudo_id="pseudoabc123",
+            country="Россия", region="Москва",
+            disease="healthy",
+        ),
+    )
+    assert r.status_code == 200, r.text
+    with sqlite3.connect(str(db_path)) as conn:
+        row = conn.execute(
+            "SELECT country, region FROM community_scans WHERE scan_id = ?",
+            ("scanru000001",),
+        ).fetchone()
+    assert row == ("RU", "Москва")
 
 
 def test_community_scan_rejects_short_scan_id(client, isolated_community):
@@ -420,7 +452,9 @@ def test_community_nearby_handles_empty_region(client, isolated_community):
     assert r.json()["summary"]["total"] == 0
 
 
-def test_community_nearby_country_optional_uses_geo_header(client, isolated_community):
+def test_community_nearby_country_param(client, isolated_community):
+    # Location is client-supplied now (no header geo); a country-scoped query
+    # passes country explicitly.
     client.post(
         "/api/community/scan",
         data=_form(
@@ -430,13 +464,119 @@ def test_community_nearby_country_optional_uses_geo_header(client, isolated_comm
             disease="healthy",
         ),
     )
-    r = client.get("/api/community/nearby", headers={"cf-ipcountry": "US"})
+    r = client.get(
+        "/api/community/nearby",
+        params={"country": "US", "scope": "country", "user_pseudo_id": "pseudo-viewer-q"},
+    )
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["scope"] == "country"
     assert body["country"] == "US"
     assert body["summary"]["country_name_en"] == "United States"
     assert len(body["items"]) == 1
+
+
+# ── nearby (30 km radius) vs country filter toggle ─────────────────
+
+
+def test_community_nearby_scope_toggle(client, isolated_community):
+    """`scope=nearby` restricts the feed to a ~30 km radius of the requester's
+    coords; `scope=country` widens to the whole country. Coords ride in on the
+    upload's lat/lon and the query's lat/lon."""
+    # Two scans ~3 km apart in Warsaw, one ~300 km away in Gdańsk — all PL.
+    client.post("/api/community/scan", data=_form(
+        scan_id="nearwarsaw01", user_pseudo_id="pseudo-near-a",
+        country="PL", region="Warsaw", lat=52.23, lon=21.01, disease="leaf_spot"))
+    client.post("/api/community/scan", data=_form(
+        scan_id="nearwarsaw02", user_pseudo_id="pseudo-near-a",
+        country="PL", region="Warsaw", lat=52.25, lon=21.03, disease="leaf_spot"))
+    client.post("/api/community/scan", data=_form(
+        scan_id="fargdansk001", user_pseudo_id="pseudo-near-a",
+        country="PL", region="Gdansk", lat=54.35, lon=18.65, disease="leaf_spot"))
+
+    import community as comm
+    # nearby (within 30 km of Warsaw): only the two Warsaw scans.
+    near = client.get("/api/community/nearby", params={
+        "country": "PL", "lat": 52.24, "lon": 21.02, "scope": "nearby",
+        "user_pseudo_id": "pseudo-viewer-z"}).json()
+    assert near["scope"] == "nearby"
+    assert {it["scan_id"] for it in near["items"]} == {
+        comm.public_scan_token("nearwarsaw01"),
+        comm.public_scan_token("nearwarsaw02"),
+    }
+
+    # country: all three PL scans regardless of distance.
+    whole = client.get("/api/community/nearby", params={
+        "country": "PL", "scope": "country",
+        "user_pseudo_id": "pseudo-viewer-z"}).json()
+    assert whole["scope"] == "country"
+    assert {it["scan_id"] for it in whole["items"]} == {
+        comm.public_scan_token("nearwarsaw01"),
+        comm.public_scan_token("nearwarsaw02"),
+        comm.public_scan_token("fargdansk001"),
+    }
+
+
+def test_community_nearby_attaches_distance_and_hides_coords(client, isolated_community):
+    """Nearby feed rows carry an approximate distance from the requester
+    ('~5 km near you') but NEVER the other user's raw coords."""
+    client.post("/api/community/scan", data=_form(
+        scan_id="distnearwarsaw", user_pseudo_id="pseudo-near-a",
+        country="PL", region="Warsaw", lat=52.23, lon=21.01, disease="leaf_spot"))
+    items = client.get("/api/community/nearby", params={
+        "country": "PL", "lat": 52.24, "lon": 21.02, "scope": "nearby",
+        "user_pseudo_id": "pseudo-viewer-z"}).json()["items"]
+    assert len(items) == 1
+    item = items[0]
+    # Distance present, within the radius, and coords stripped.
+    assert item["distance_km"] is not None
+    assert 0 <= item["distance_km"] <= 30
+    assert "lat" not in item and "lon" not in item
+
+
+def test_community_nearby_no_viewer_coords_omits_distance(client, isolated_community):
+    """Country scope (no requester coords) → distance is null, coords stripped."""
+    client.post("/api/community/scan", data=_form(
+        scan_id="distcountry001", user_pseudo_id="pseudo-other-y",
+        country="US", disease="healthy"))
+    item = client.get("/api/community/nearby", params={
+        "country": "US", "scope": "country",
+        "user_pseudo_id": "pseudo-viewer-q"}).json()["items"][0]
+    assert item["distance_km"] is None
+    assert "lat" not in item and "lon" not in item
+
+
+# ── Localized per-item country names (no raw "PL" codes) ────────────
+
+
+def test_community_nearby_localizes_item_country(client, isolated_community):
+    """Feed rows carry localized country NAMES so cards render 'Poland' /
+    'Польша' instead of the raw 'PL' ISO code."""
+    client.post("/api/community/scan", data=_form(
+        scan_id="localename01", user_pseudo_id="pseudo-pl-b",
+        country="PL", region="Warsaw", disease="leaf_spot"))
+    item = client.get(
+        "/api/community/nearby",
+        params={"country": "PL", "scope": "country",
+                "user_pseudo_id": "pseudo-viewer-x"},
+    ).json()["items"][0]
+    assert item["country"] == "PL"
+    assert item["country_name_en"] == "Poland"
+    assert item["country_name_ru"] == "Польша"
+
+
+def test_community_scan_nickname_round_trips(client, isolated_community):
+    """The author's generated plant-vibe handle rides along on the upload and
+    comes back on the feed row (incl. a Cyrillic handle)."""
+    client.post("/api/community/scan", data=_form(
+        scan_id="nicktest0001", user_pseudo_id="pseudo-nick-a",
+        country="PL", region="Warsaw", lat=52.23, lon=21.01,
+        disease="leaf_spot", nickname="Томатный Король 42"))
+    item = client.get(
+        "/api/community/nearby",
+        params={"country": "PL", "scope": "country", "user_pseudo_id": "pseudo-viewer"},
+    ).json()["items"][0]
+    assert item["nickname"] == "Томатный Король 42"
 
 
 # ── Delete-for-user ─────────────────────────────────────────────────
@@ -505,21 +645,15 @@ def test_metrics_surfaces_community_block(client, isolated_community):
 
 
 def test_country_groups_with_region_breakdown(client, isolated_community):
-    """The corpus stores country + region separately. A country-only
-    nearby query returns every locality; a country+region query
-    narrows to one city. Legacy "City, Country" composite writes
-    auto-split via the backward-compat fallback so older clients
-    still land in the right column.
-    """
+    """The corpus stores country + city (in the ``region`` column). A
+    country-scoped query returns every city and surfaces a top-cities
+    breakdown in the summary."""
     db_path, _ = isolated_community
     writes = (
-        # New hierarchy: explicit country + region.
         dict(scan_id="scangb-london-1", country="GB", region="London"),
         dict(scan_id="scangb-london-2", country="GB", region="London"),
         dict(scan_id="scangb-mancunian1", country="GB", region="Manchester"),
-        # Legacy: composite "City, Country" sent as region with no
-        # explicit country. The endpoint splits on the last comma.
-        dict(scan_id="scangb-legacy001", region="Bristol", country="GB"),
+        dict(scan_id="scangb-bristol001", country="GB", region="Bristol"),
     )
     for w in writes:
         r = client.post(
@@ -527,15 +661,14 @@ def test_country_groups_with_region_breakdown(client, isolated_community):
             data=_form(
                 scan_id=w["scan_id"],
                 user_pseudo_id="pseudo-gb-mixed",
-                country=w.get("country"),
-                region=w.get("region"),
+                country=w["country"],
+                region=w["region"],
                 disease="healthy",
             ),
         )
         assert r.status_code == 200, r.text
 
-    # Persisted country column must always be "GB"; region carries
-    # the locality.
+    # Persisted country is "GB"; the region column carries the city.
     with sqlite3.connect(str(db_path)) as conn:
         rows = conn.execute(
             "SELECT country, region FROM community_scans ORDER BY id"
@@ -543,35 +676,14 @@ def test_country_groups_with_region_breakdown(client, isolated_community):
     assert {row[0] for row in rows} == {"GB"}
     assert {row[1] for row in rows} == {"London", "Manchester", "Bristol"}
 
-    # Country-only nearby returns everything.
+    # Country-scoped query returns everything + a top-cities breakdown.
     r_country = client.get(
-        "/api/community/nearby", params={"country": "GB"},
+        "/api/community/nearby", params={"country": "GB", "scope": "country"},
     ).json()
     assert r_country["summary"]["total"] == 4
     assert r_country["summary"]["country"] == "GB"
-    assert r_country["summary"]["region"] is None
-    # Top regions surfaced for the breakdown view.
     top_region_names = {r["region"] for r in r_country["summary"]["top_regions"]}
     assert top_region_names >= {"London", "Manchester", "Bristol"}
-
-    # Country + region narrows to the matching locality. We still
-    # populate the carousel by widening to the country when the
-    # locality alone has < limit rows — Bristol has 1 row, so the
-    # response includes other GB localities as fillers.
-    r_london = client.get(
-        "/api/community/nearby", params={"country": "GB", "region": "London"},
-    ).json()
-    assert r_london["summary"]["total"] == 2
-    assert r_london["summary"]["region"] == "London"
-    london_first = [it for it in r_london["items"] if it["region"] == "London"]
-    assert len(london_first) == 2
-
-    # Legacy "City, Country" composite on the read path also lands.
-    r_legacy = client.get(
-        "/api/community/nearby", params={"region": "Bristol", "country": "GB"},
-    ).json()
-    assert r_legacy["summary"]["country"] == "GB"
-    assert r_legacy["summary"]["region"] == "Bristol"
 
 
 # ── Regression: thumbnail magic-byte validation ─────────────────────
@@ -765,6 +877,53 @@ def test_opinion_on_unknown_scan_rejected(client, isolated_community):
         },
     )
     assert r.status_code == 422
+
+
+def test_opinion_on_rotated_scan_rejected_410(client, isolated_community):
+    """Public handles rotate every 30 days; a scan older than that goes
+    read-only and a new opinion against it is refused with 410 Gone."""
+    import time as _time
+
+    import community as comm
+
+    db_path, _ = isolated_community
+    client.post(
+        "/api/community/scan",
+        data=_form(
+            scan_id="staleshared01",
+            user_pseudo_id="pseudo-owner-1",
+            region="Paris", country="FR",
+            disease="leaf_spot",
+        ),
+    )
+    token = comm.public_scan_token("staleshared01")
+    # A fresh opinion lands fine.
+    fresh = client.post(
+        "/api/community/opinion",
+        json={
+            "scan_id": token,
+            "user_pseudo_id": "pseudo-viewer-1",
+            "suggested_disease": "powdery_mildew",
+        },
+    )
+    assert fresh.status_code == 200, fresh.text
+
+    # Backdate the scan past the rotation window → new opinions refused.
+    stale = int(_time.time()) - (comm.IDENTITY_ROTATION_DAYS + 1) * 86_400
+    with sqlite3.connect(str(db_path)) as conn:
+        conn.execute(
+            "UPDATE community_scans SET created_at = ? WHERE scan_id = ?",
+            (stale, "staleshared01"),
+        )
+    r = client.post(
+        "/api/community/opinion",
+        json={
+            "scan_id": token,
+            "user_pseudo_id": "pseudo-viewer-2",
+            "suggested_disease": "healthy",
+        },
+    )
+    assert r.status_code == 410, r.text
 
 
 def test_legacy_rows_backfilled_with_public_id_and_thumb_rename(tmp_path, monkeypatch):
