@@ -68,7 +68,7 @@
         android:paddingHorizontal="@dimen/content_gutter"
         android:paddingVertical="@dimen/space_sm"
         android:background="@drawable/bg_glass_card_strong"
-        android:elevation="@dimen/glass_elevation"
+        android:elevation="6dp"
         android:visibility="gone"
         app:layout_behavior="@string/appbar_scrolling_view_behavior">
 

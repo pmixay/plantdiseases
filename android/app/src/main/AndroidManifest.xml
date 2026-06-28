@@ -41,6 +41,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:screenOrientation="portrait"
             android:theme="@style/Theme.PlantDiseases.Splash"
             android:windowSoftInputMode="adjustResize">
             <!--
@@ -63,7 +64,7 @@
         <activity
             android:name=".ui.onboarding.OnboardingActivity"
             android:exported="false"
-            android:configChanges="orientation|screenSize|screenLayout" />
+            android:screenOrientation="portrait" />
 
         <activity
             android:name=".ui.analysis.AnalysisActivity"
@@ -73,22 +74,22 @@
         <activity
             android:name=".ui.result.ResultActivity"
             android:exported="false"
-            android:configChanges="orientation|screenSize|screenLayout" />
+            android:screenOrientation="portrait" />
 
         <activity
             android:name=".ui.garden.PlantDetailActivity"
             android:exported="false"
-            android:configChanges="orientation|screenSize|screenLayout" />
+            android:screenOrientation="portrait" />
 
         <activity
             android:name=".ui.garden.PhotoViewerActivity"
             android:exported="false"
-            android:configChanges="orientation|screenSize|screenLayout" />
+            android:screenOrientation="portrait" />
 
         <activity
             android:name=".ui.garden.PhotoCompareActivity"
             android:exported="false"
-            android:configChanges="orientation|screenSize|screenLayout" />
+            android:screenOrientation="portrait" />
 
         <activity
             android:name=".ui.camera.LightMeterActivity"
@@ -98,21 +99,22 @@
         <activity
             android:name=".ui.camera.WaterCalculatorActivity"
             android:exported="false"
-            android:configChanges="orientation|screenSize|screenLayout" />
+            android:screenOrientation="portrait" />
 
         <activity
             android:name=".ui.community.NearbyScansActivity"
             android:exported="false"
-            android:configChanges="orientation|screenSize|screenLayout" />
+            android:screenOrientation="portrait" />
 
         <activity
             android:name=".ui.community.CommunityMapActivity"
-            android:exported="false" />
+            android:exported="false"
+            android:screenOrientation="portrait" />
 
         <activity
             android:name=".ui.symptom.SymptomCheckerActivity"
             android:exported="false"
-            android:configChanges="orientation|screenSize|screenLayout" />
+            android:screenOrientation="portrait" />
 
         <activity
             android:name=".ui.identify.SpeciesIdentifyActivity"
@@ -122,12 +124,12 @@
         <activity
             android:name=".ui.species.SpeciesDetailActivity"
             android:exported="false"
-            android:configChanges="orientation|screenSize|screenLayout" />
+            android:screenOrientation="portrait" />
 
         <activity
             android:name=".ui.guide.GuideDetailActivity"
             android:exported="false"
-            android:configChanges="orientation|screenSize|screenLayout" />
+            android:screenOrientation="portrait" />
 
         <!-- Re-declare the cropper activity (merged with the library's
              entry) purely to give it an action-bar theme styled with the
@@ -136,8 +138,9 @@
         <activity
             android:name="com.canhub.cropper.CropImageActivity"
             android:exported="false"
+            android:screenOrientation="portrait"
             android:theme="@style/Theme.PlantDiseases.Crop"
-            tools:replace="android:exported" />
+            tools:replace="android:exported,android:screenOrientation" />
 
         <receiver
             android:name=".worker.ReminderActionReceiver"
