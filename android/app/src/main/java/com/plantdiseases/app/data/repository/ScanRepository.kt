@@ -1228,6 +1228,23 @@ class ScanRepository(
             }
         }
 
+    private fun speciesDiseasesCacheKey(name: String, locale: String): String =
+        "species_diseases:v1:${name.trim().lowercase()}|$locale"
+
+    /** Peek the client cache for a previously-fetched species-diseases list,
+     *  without ever hitting the network. Lets the UI render a reopened species
+     *  instantly (no loading flash) instead of looking like it re-fetches. */
+    suspend fun cachedSpeciesDiseases(
+        name: String,
+        locale: String,
+    ): com.plantdiseases.app.data.model.SpeciesDiseasesResponse? =
+        withContext(Dispatchers.IO) {
+            com.plantdiseases.app.util.ResponseCache.get(
+                speciesDiseasesCacheKey(name, locale),
+                com.plantdiseases.app.data.model.SpeciesDiseasesResponse::class.java,
+            )
+        }
+
     /** Conditions a species is commonly affected by (AI, best-effort). The
      *  answer is stable per (name, locale), and the LLM call is slow, so cache
      *  a real (`available`) result — reopening the species no longer re-hits
@@ -1238,7 +1255,7 @@ class ScanRepository(
         locale: String,
     ): Result<com.plantdiseases.app.data.model.SpeciesDiseasesResponse> =
         withContext(Dispatchers.IO) {
-            val cacheKey = "species_diseases:v1:${name.trim().lowercase()}|$locale"
+            val cacheKey = speciesDiseasesCacheKey(name, locale)
             com.plantdiseases.app.util.ResponseCache
                 .get(cacheKey, com.plantdiseases.app.data.model.SpeciesDiseasesResponse::class.java)
                 ?.let { return@withContext Result.success(it) }

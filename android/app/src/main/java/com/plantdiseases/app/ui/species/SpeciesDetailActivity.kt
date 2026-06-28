@@ -239,15 +239,21 @@ class SpeciesDetailActivity : AppCompatActivity() {
     }
 
     private fun loadDiseases() {
-        // Reveal the section with a loading state up-front so a slow (first-time)
-        // AI lookup reads as "finding problems…", not an empty gap that looks
-        // like the app is broken. Cached per (name, locale) server- AND
-        // client-side, so reopening the species renders the list instantly.
-        binding.tvDiseasesTitle.visibility = View.VISIBLE
-        binding.tvDiseasesSubtitle.visibility = View.VISIBLE
-        binding.tvDiseasesSubtitle.setText(R.string.species_problems_loading)
-        binding.pbDiseases.visibility = View.VISIBLE
         lifecycleScope.launch {
+            // Peek the client cache first: a previously-opened species renders
+            // instantly with NO loading flash, so reopening clearly feels cached
+            // rather than re-fetched. Only a genuine miss shows the loading state.
+            val cached = scanRepository.cachedSpeciesDiseases(scientificName, locale)
+            if (cached?.available == true) {
+                renderDiseases(cached.diseases.filter { it.name.isNotBlank() })
+                return@launch
+            }
+            // Miss → reveal the section with a loading state so a slow (first-
+            // time) AI lookup reads as "finding problems…", not an empty gap.
+            binding.tvDiseasesTitle.visibility = View.VISIBLE
+            binding.tvDiseasesSubtitle.visibility = View.VISIBLE
+            binding.tvDiseasesSubtitle.setText(R.string.species_problems_loading)
+            binding.pbDiseases.visibility = View.VISIBLE
             val resp = scanRepository
                 .fetchSpeciesDiseases(scientificName, commonName, locale)
                 .getOrNull()
