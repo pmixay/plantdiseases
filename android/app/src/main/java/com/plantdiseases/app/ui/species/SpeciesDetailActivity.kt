@@ -27,6 +27,7 @@ import com.google.android.material.card.MaterialCardView
 import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.CarePlanRequest
+import com.plantdiseases.app.data.model.CarePlanResponse
 import com.plantdiseases.app.data.model.SpeciesDiseaseItem
 import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
@@ -165,7 +166,6 @@ class SpeciesDetailActivity : AppCompatActivity() {
                     watering,
                     plan.humidityTarget.takeIf { it.isNotBlank() }
                         ?.let { getString(R.string.identify_humidity, it) },
-                    if (plan.toxicToPets) getString(R.string.identify_toxic_pets) else null,
                 )
             } else {
                 emptyList()
@@ -175,8 +175,54 @@ class SpeciesDetailActivity : AppCompatActivity() {
             } else {
                 binding.cardCare.visibility = View.GONE
             }
+            // Pet toxicity now renders as its own card (below), not a dim line
+            // tacked onto the care text.
+            bindToxicity(plan)
         }
     }
+
+    /** Pet-toxicity card — the same surface the scan result shows
+     *  (DiagnosisContentController.bindToxicity): red when the species is a
+     *  known pet hazard, green when it's confirmed pet-safe, hidden when the
+     *  server couldn't pin toxicity to a species (``source != "db"``). */
+    private fun bindToxicity(plan: CarePlanResponse?) {
+        val card = binding.cardToxicity
+        if (plan == null || plan.toxicitySource != "db") {
+            card.visibility = View.GONE
+            return
+        }
+        card.visibility = View.VISIBLE
+        if (plan.toxicToPets) {
+            card.setCardBackgroundColor(getColor(R.color.disease_red_bg))
+            binding.ivToxicityIcon.setImageResource(R.drawable.ic_warning)
+            binding.ivToxicityIcon.setColorFilter(getColor(R.color.disease_red))
+            binding.tvToxicityTitle.setTextColor(getColor(R.color.disease_red))
+            binding.tvToxicityTitle.setText(R.string.toxicity_toxic_title)
+            binding.tvToxicityBody.setTextColor(getColor(R.color.disease_red))
+            binding.tvToxicityBody.text = getString(
+                R.string.toxicity_toxic_body,
+                plan.toxicSpeciesList.joinToString(", ") { localizeToxicSpecies(it) },
+            )
+        } else {
+            card.setCardBackgroundColor(getColor(R.color.healthy_green_bg))
+            binding.ivToxicityIcon.setImageResource(R.drawable.ic_healthy)
+            binding.ivToxicityIcon.setColorFilter(getColor(R.color.healthy_green))
+            binding.tvToxicityTitle.setTextColor(getColor(R.color.healthy_green))
+            binding.tvToxicityTitle.setText(R.string.toxicity_safe_title)
+            binding.tvToxicityBody.setTextColor(getColor(R.color.healthy_green))
+            binding.tvToxicityBody.setText(R.string.toxicity_safe_body)
+        }
+    }
+
+    /** Localize the ASPCA toxic-species tokens (a closed set: cats / dogs /
+     *  horses); unknown tokens pass through unchanged. */
+    private fun localizeToxicSpecies(token: String): String =
+        when (token.trim().lowercase()) {
+            "cats", "cat" -> getString(R.string.toxicity_animal_cats)
+            "dogs", "dog" -> getString(R.string.toxicity_animal_dogs)
+            "horses", "horse" -> getString(R.string.toxicity_animal_horses)
+            else -> token
+        }
 
     /** Horizontal strip of extra reference photos from the species' Wikipedia
      *  media-list. Each thumbnail is rounded; no-op when the list is empty. */
