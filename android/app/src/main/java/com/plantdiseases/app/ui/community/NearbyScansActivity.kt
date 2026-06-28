@@ -123,7 +123,10 @@ class NearbyScansActivity : AppCompatActivity() {
             },
         )
         binding.rvNearby.layoutManager =
-            StaggeredGridLayoutManager(2, StaggeredGridLayoutManager.VERTICAL)
+            StaggeredGridLayoutManager(
+                resources.getInteger(R.integer.community_span_count),
+                StaggeredGridLayoutManager.VERTICAL,
+            )
         binding.rvNearby.adapter = adapter
 
         binding.swipeRefresh.setColorSchemeResources(R.color.primary)

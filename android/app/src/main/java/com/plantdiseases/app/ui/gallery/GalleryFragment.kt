@@ -77,7 +77,8 @@ class GalleryFragment : Fragment() {
             }
         )
 
-        binding.rvGallery.layoutManager = GridLayoutManager(requireContext(), 2)
+        binding.rvGallery.layoutManager =
+            GridLayoutManager(requireContext(), resources.getInteger(R.integer.gallery_span_count))
         binding.rvGallery.adapter = adapter
 
         setupStaggerAnimation()

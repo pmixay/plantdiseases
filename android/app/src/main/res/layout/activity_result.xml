@@ -65,7 +65,7 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:paddingHorizontal="@dimen/space_lg"
+        android:paddingHorizontal="@dimen/content_gutter"
         android:paddingVertical="@dimen/space_sm"
         android:background="@drawable/bg_glass_card_strong"
         android:elevation="@dimen/glass_elevation"
@@ -98,7 +98,8 @@
         android:id="@+id/skeleton_layout"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:padding="@dimen/space_lg"
+        android:paddingHorizontal="@dimen/content_gutter"
+        android:paddingVertical="@dimen/space_lg"
         android:visibility="visible"
         app:layout_behavior="@string/appbar_scrolling_view_behavior"
         app:shimmer_auto_start="true"
@@ -153,7 +154,8 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="@dimen/space_lg">
+            android:paddingHorizontal="@dimen/content_gutter"
+            android:paddingVertical="@dimen/space_lg">
 
             <!-- Plant image with heatmap overlay -->
             <com.google.android.material.card.MaterialCardView
@@ -1051,7 +1053,7 @@
                 android:orientation="horizontal"
                 android:gravity="center"
                 android:paddingVertical="@dimen/space_md"
-                android:paddingHorizontal="@dimen/space_lg">
+                android:paddingHorizontal="@dimen/content_gutter">
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_add_to_garden"
