@@ -64,20 +64,23 @@ class for five versions. `val_realworld` disease macro-F1 **0.862** (int8),
 healthy recall 0.901, every disease class ≥ 0.81 recall. Aggregate is flat vs v4
 only because two classes now cap it (see v6). Full numbers: `MODEL_CARD.md`.
 
-## v6 — shipped (models 2.6.8 → 2.6.9)
+## v6 — shipped (model 2.6.8, 2026-06-29)
 
-> The v6 boundary negatives went in (+652 `healthy`, +359 `not_a_plant` over v5),
-> shipped first as **2.6.8 (2026-06-29)** and re-versioned as **2.6.9** (same trained
-> gamma artifacts — the 2.6.9 roll is app/docs, not a model change). Outcome is
-> **mixed, not solved**: `nutrient_deficiency` precision **0.679 → 0.747** (right
-> direction, still < 0.80) but recall slipped to **0.782**; `leaf_scorch` precision
-> **~flat 0.752** (recall 0.788); on the harder boundary `val_realworld` (n=2183)
-> healthy→disease false-fire is **8.4%**. The scorch/nutrient/healthy boundary is
-> still the binding weakness, so collection **continues into v7**.
+> The v6 boundary negatives went in (+652 `healthy`, +359 `not_a_plant` over v5).
+> Outcome is **mixed, not solved**: `nutrient_deficiency` precision **0.679 → 0.747**
+> (right direction, still < 0.80) but recall slipped to **0.782**; `leaf_scorch`
+> precision **~flat 0.752** (recall 0.788); on the harder boundary `val_realworld`
+> (n=2183) healthy→disease false-fire is **8.4%**. The scorch/nutrient/healthy
+> boundary is still the binding weakness, so collection **continues into v7**.
 
-## v7 — next version (a precision run, not a volume run)
+## v7 — next version (model 2.6.9, in training)
 
-> Carries the still-open v6 boundary work forward against the live **2.6.9** model:
+> **The next training run — not yet trained**, so 2.6.8 stays the shipped model
+> until 2.6.9's gate passes. 2.6.9 = dataset **v7** + the post-2.6.8 notebook fixes,
+> the headline being the **aqua-collapse fix** (the §5 export selector now ships the
+> near-lossless **float16** TFLite, ~2.9 MB, instead of the dynamic-range INT8 build
+> that collapsed MobileNetV3 to ≈0.01 macro-F1; §6 adds a degeneracy guard). On data,
+> v7 carries the still-open v6 boundary work forward against the live **2.6.8** model:
 > keep collecting confusion-pair negatives *and* hold a weak-class recall floor
 > (recall regressed when negatives went in), and re-test the LA-prior trim for
 > nutrient/scorch.
@@ -104,11 +107,11 @@ physiological classes; adding more positives makes it worse.
    if anything, cull the lowest-confidence existing positives.
 3. **Notebook lever (paired, not data):** the LA prior gives nutrient/leaf_scorch
    a large rare-class boost (0.058 / 0.095) that trades precision for recall.
-   Test a modest reduction **paired vs 2.6.9** on `val_realworld` — it may move
+   Test a modest reduction **paired vs 2.6.8** on `val_realworld` — it may move
    precision more cheaply than data.
 
 **Verify the right thing:** nutrient + leaf_scorch **precision up with recall
-not below ~0.80**, via a **paired bootstrap vs 2.6.9** on `val_realworld`
+not below ~0.80**, via a **paired bootstrap vs 2.6.8** on `val_realworld`
 (`tools/eval_bootstrap.py`) — NOT aggregate F1 (noise-flat at this margin;
 n≈82/97 → ±0.08). The precision/recall seesaw across nutrient ↔ scorch ↔ healthy
 is intrinsic; tune negatives in small increments and read BOTH P and R with CIs.
@@ -119,7 +122,7 @@ The user-facing harm is a **confident wrong diagnosis** — telling a *healthy* 
 diseased (needless treatment / chemicals / anxiety) or diagnosing a non-plant / blurry
 shot. So reliability here means **precision + honest uncertainty + refusing junk inputs**,
 not chasing headline macro-F1. v2.6.0 fired a disease label on **31% of hard
-boundary-healthy images**; v2.6.7 cut that to ~7% (2.6.9: healthy→disease **8.4%** on a
+boundary-healthy images**; v2.6.7 cut that to ~7% (2.6.8: healthy→disease **8.4%** on a
 harder boundary `val_realworld`) — driving it lower is the still-open v7 win.
 
 - **Asymmetry to honor:** a false disease alarm on a healthy plant is worse UX than a

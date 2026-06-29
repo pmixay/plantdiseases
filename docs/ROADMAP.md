@@ -4,23 +4,24 @@ Open work only — a checkbox to-do list (the code is the record). Companions:
 `DATASET_LABELING_PLAN.md` (data loop), `../DEPLOYMENT.md` (deploy + Android
 signing/FCM), `server/models/MODEL_CARD.md` (per-run metrics).
 
-## Model / data (open)
+## 2.6.9 — next train (dataset v7, not yet trained)
 
-- [ ] **Ship the fixed float16 aqua** — the shipped `gamma` bundle's on-device `aqua` INT8
-      TFLite collapses MobileNetV3 to near-constant output (§6 exact-metrics eval: realworld
-      disease macro-F1 ≈0.01 vs ≈0.82 for the float student). The §5 selector + §6 guard are
-      fixed to ship the **float16** build (~2.9 MB); re-run `aqua` mode and confirm the guard
-      is silent before any on-device release.
-- [ ] **v7 precision run** — keep collecting confusion-pair negatives **and** weak-class
-      positives (recall floor); re-test the LA-prior trim for nutrient/scorch. Full plan +
-      per-class targets in `DATASET_LABELING_PLAN.md` (the scorch/nutrient boundary is still
-      the binding weakness — data/precision-bound, not backbone-bound; §3 frozen probe ~0.91).
+`MODEL_VERSION` is bumped to 2.6.9 in the notebook (§1); **2.6.8 stays the shipped bundle
+until 2.6.9 trains and clears the gate.** The aqua-collapse fix already landed in the notebook
+(§5 ships the near-lossless **float16** TFLite, ~2.9 MB, not the dynamic-range INT8 that
+collapsed MobileNetV3 to ≈0.01 macro-F1; §6 degeneracy guard) — it deploys on-device once
+2.6.9 trains and the guard is confirmed silent.
+
+- [ ] **Train 2.6.9 on dataset v7** — keep collecting confusion-pair negatives **and**
+      weak-class positives (recall floor); re-test the LA-prior trim for nutrient/scorch
+      (paired vs 2.6.8). Plan + per-class targets in `DATASET_LABELING_PLAN.md` (scorch/nutrient
+      boundary still binding — data/precision-bound, not backbone-bound; §3 frozen probe ~0.91).
 
 ## Unveiling 2.7 — the leap
 
 > From "a good leaf classifier" to a **holistic, trustworthy plant doctor**. The revolution
 > is in **scope + real-world reliability + data scale**, not a bigger backbone alone (the
-> probe says features aren't the ceiling). 2.6.9's per-class results are now in hand —
+> probe says features aren't the ceiling). 2.6.8's per-class results are now in hand —
 > pick the exact levers from them; scaffold in parallel with continued v7 collection.
 
 **Monster ingredients (priority order):**
@@ -64,7 +65,7 @@ signing/FCM), `server/models/MODEL_CARD.md` (per-run metrics).
 - **No dedicated eval benchmark** — the stable test split was removed (it stole scarce
   weak-class data); judge versions by per-class precision/recall CIs + runtime safety,
   never a small cross-version F1 delta.
-- **No new disease classes until the scorch/nutrient boundary is stable** — 2.6.9 held the
+- **No new disease classes until the scorch/nutrient boundary is stable** — 2.6.8 held the
   9-class set and it still isn't solved; scope expansion (edema / sunburn / root rot) waits
   for **2.7**.
 - **Target store: RuStore** (RU audience; app already bilingual). No Google Play for now.
