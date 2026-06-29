@@ -14,6 +14,7 @@ import com.bumptech.glide.load.resource.bitmap.CenterCrop
 import com.bumptech.glide.load.resource.bitmap.RoundedCorners
 import com.google.android.material.card.MaterialCardView
 import com.plantdiseases.app.R
+import com.plantdiseases.app.ui.common.ContentLinks
 
 /**
  * Shared renderer for a [com.plantdiseases.app.data.model.GuideItem]'s
@@ -82,7 +83,7 @@ object GuideContentRenderer {
     }
 
     private fun introView(ctx: Context, body: String): View = TextView(ctx).apply {
-        text = body
+        ContentLinks.apply(this, body)
         textSize = 15f
         setTextColor(ContextCompat.getColor(ctx, R.color.on_surface))
         setLineSpacing(dp(ctx, 3).toFloat(), 1f)
@@ -108,7 +109,7 @@ object GuideContentRenderer {
         )
         col.addView(
             TextView(ctx).apply {
-                text = body
+                ContentLinks.apply(this, body)
                 textSize = 15f
                 setTextColor(ContextCompat.getColor(ctx, R.color.on_surface))
                 setLineSpacing(dp(ctx, 3).toFloat(), 1f)

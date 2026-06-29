@@ -884,9 +884,9 @@
     <string name="tip_scanning_title">How to take a good scan photo</string>
     <string name="tip_scanning_body">Fill the frame with a single leaf, use daylight, and hold the phone steady — the scanner auto-fires when the frame is sharp. Avoid backlight and wet, glossy reflections; photograph the most affected leaf, including some healthy tissue for contrast.</string>
     <string name="tip_results_title">Understanding your results</string>
-    <string name="tip_results_body">The confidence score is calibrated: when the app isn\'t sure it shows several candidate conditions instead of guessing. Treat the result as guidance, check the alternatives card, and use a second photo or the symptom checker when the model says it\'s uncertain.</string>
+    <string name="tip_results_body">The confidence score is calibrated: when the app isn\'t sure it shows several candidate conditions instead of guessing. Treat the result as guidance, check the alternatives card, and use a second photo or the [symptom checker](tool:symptom) when the model says it\'s uncertain.</string>
     <string name="tip_watering_title">Watering basics</string>
-    <string name="tip_watering_body">Overwatering kills more houseplants than drought. Check the top 2–3 cm of soil with a finger — water only when it\'s dry, then water thoroughly until it drains. Use the Watering helper for a per-plant starting point and adjust by season.</string>
+    <string name="tip_watering_body">Overwatering kills more houseplants than drought. Check the top 2–3 cm of soil with a finger — water only when it\'s dry, then water thoroughly until it drains. Use the [Water Calculator](tool:water) for a per-plant starting point and adjust by season.</string>
     <string name="tip_community_title">Community &amp; your data</string>
     <string name="tip_community_body">Share scans to see what\'s common in your country and get second opinions from other growers. Photos are anonymized (metadata stripped) and you can delete everything you\'ve shared from Profile at any time.</string>
 </resources>

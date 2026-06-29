@@ -688,7 +688,7 @@ PREVENTION:
             descriptionEn = "How to water houseplants correctly",
             descriptionRu = "Как правильно поливать комнатные растения",
             contentEn = """
-Proper watering is the single most important factor in houseplant health. Most problems come from overwatering.
+Proper watering is the single most important factor in houseplant health. Most problems come from overwatering. Not sure how much to give? The [Water Calculator](tool:water) estimates a per-plant starting point.
 
 GOLDEN RULES:
 1. Check before watering — stick your finger 2-3 cm into soil
@@ -714,9 +714,13 @@ TIPS:
 • Group plants by water needs
 • Consider self-watering pots for consistent moisture
 • Rainwater or filtered water is ideal
+
+SEE ALSO:
+• [Light Requirements](guide:light_guide)
+• [Humidity Control](guide:humidity_guide)
             """.trimIndent(),
             contentRu = """
-Правильный полив — самый важный фактор здоровья комнатных растений. Большинство проблем связано с переувлажнением.
+Правильный полив — самый важный фактор здоровья комнатных растений. Большинство проблем связано с переувлажнением. Не уверены, сколько лить? [Калькулятор полива](tool:water) подскажет стартовую норму для растения.
 
 ЗОЛОТЫЕ ПРАВИЛА:
 1. Проверяйте перед поливом — воткните палец на 2-3 см в почву
@@ -742,6 +746,10 @@ TIPS:
 • Группируйте растения по потребности в воде
 • Рассмотрите горшки с автополивом
 • Дождевая или фильтрованная вода — идеальный вариант
+
+СМ. ТАКЖЕ:
+• [Требования к освещению](guide:light_guide)
+• [Контроль влажности](guide:humidity_guide)
             """.trimIndent(),
             iconRes = R.drawable.ic_watering,
             category = GuideCategory.WATERING
