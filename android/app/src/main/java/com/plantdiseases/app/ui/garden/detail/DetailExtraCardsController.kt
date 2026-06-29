@@ -27,6 +27,7 @@ import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.ImageUtils.formatRelativeDate
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.localizedSpeciesName
 import kotlinx.coroutines.launch
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
@@ -75,13 +76,21 @@ class DetailExtraCardsController(
             ).apply { topMargin = 12.dp() }
         }
 
+        val isRu = LocaleHelper.isRussian(activity)
+        // Server lookup wants the most precise species (scientific first), raw.
         val speciesHint = plant.scientificName?.takeIf { it.isNotBlank() }
             ?: plant.commonName?.takeIf { it.isNotBlank() }
             ?: plant.species?.takeIf { it.isNotBlank() }
+        // Card display: localized — never an English common name for a RU user.
+        val speciesDisplay = localizedSpeciesName(
+            plant.scientificName,
+            plant.commonName ?: plant.species,
+            isRu,
+        ) ?: speciesHint
 
         val latestScan = scans.maxByOrNull { it.timestamp }
         if (latestScan == null) {
-            card.showAwaitingScan(speciesHint) {
+            card.showAwaitingScan(speciesDisplay) {
                 Toast.makeText(
                     activity,
                     R.string.care_plan_awaiting_scan_toast,
@@ -92,9 +101,8 @@ class DetailExtraCardsController(
             return card
         }
 
-        card.showLoading(speciesHint)
+        card.showLoading(speciesDisplay)
         val classKey = resolveClassKey(latestScan)
-        val isRu = LocaleHelper.isRussian(activity)
 
         activity.lifecycleScope.launch {
             val request = CarePlanRequest(
@@ -107,7 +115,7 @@ class DetailExtraCardsController(
             result.onSuccess { plan ->
                 card.bind(
                     plan = plan,
-                    speciesDisplay = speciesHint,
+                    speciesDisplay = speciesDisplay,
                     showApplyToReminders = true,
                     onApplyToReminders = { applied ->
                         ReminderScheduleSheet.showWithCarePlanDefaults(

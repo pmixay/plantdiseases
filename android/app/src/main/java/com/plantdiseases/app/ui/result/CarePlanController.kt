@@ -68,15 +68,18 @@ class CarePlanController(
             // Prefer the species attached to the saved garden plant; otherwise
             // fall back to the PlantNet species detected for this scan so the
             // care plan is species-specific even before "Add to garden".
-            val plantSpecies = scan.plantId?.let { pid ->
-                val plant = plantRepository.getPlant(pid)
-                plant?.scientificName?.takeIf { it.isNotBlank() }
-                    ?: plant?.commonName?.takeIf { it.isNotBlank() }
-                    ?: plant?.species?.takeIf { it.isNotBlank() }
-            }
+            val plant = scan.plantId?.let { plantRepository.getPlant(it) }
+            val sciName = plant?.scientificName?.takeIf { it.isNotBlank() }
                 ?: scan.speciesScientific?.takeIf { it.isNotBlank() }
+            val commonName = plant?.commonName?.takeIf { it.isNotBlank() }
+                ?: plant?.species?.takeIf { it.isNotBlank() }
                 ?: scan.speciesCommon?.takeIf { it.isNotBlank() }
-            view.showLoading(plantSpecies)
+            // Server lookup wants the most precise species (scientific first), raw.
+            val plantSpecies = sciName ?: commonName
+            // Card display: localized — never an English common name for a RU user.
+            val speciesDisplay =
+                com.plantdiseases.app.util.localizedSpeciesName(sciName, commonName, isRu) ?: plantSpecies
+            view.showLoading(speciesDisplay)
 
             val request = CarePlanRequest(
                 disease = classKey,
@@ -87,7 +90,7 @@ class CarePlanController(
             scanRepository.fetchCarePlan(request).onSuccess { plan ->
                 view.bind(
                     plan = plan,
-                    speciesDisplay = plantSpecies,
+                    speciesDisplay = speciesDisplay,
                     showApplyToReminders = scan.plantId != null,
                     onApplyToReminders = { applied -> applyToReminders(scan, applied) },
                 )

@@ -23,6 +23,8 @@ import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.ui.garden.ReminderScheduleSheet
 import com.plantdiseases.app.util.Haptics
+import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.localizedSpeciesName
 import kotlinx.coroutines.launch
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
@@ -124,7 +126,11 @@ class DetailHeaderController(
         )
         body.addView(
             TextView(activity).apply {
-                text = plant.species?.takeIf { it.isNotBlank() } ?: activity.getString(R.string.plant_species_unknown)
+                text = localizedSpeciesName(
+                    plant.scientificName,
+                    plant.commonName ?: plant.species,
+                    LocaleHelper.isRussian(activity),
+                ) ?: activity.getString(R.string.plant_species_unknown)
                 textSize = 15f
                 setTextColor(activity.getColor(R.color.hero_stat_text))
                 alpha = 0.82f
