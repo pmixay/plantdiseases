@@ -66,7 +66,38 @@ The production artefact is an ONNX graph and the runtime is
 **architecture-neutral** — it serves whatever backbone+head the shipped
 bundle declares (`classes.json -> architecture`):
 
-- **v2.6.7 (shipped, `gamma`; trained on dataset supplement v5):** same recipe as
+- **v2.6.8 (shipped, `gamma`; trained on the early-v6 precision/safety supplement):**
+  same recipe as v2.6.7, on an **expanded** dataset — +1.7k train rows over v2.6.7
+  (12.1k → 13.8k), the growth concentrated in the v6 *boundary-negative* signature:
+  **+652 `healthy`** and **+359 `not_a_plant`** (hard-healthy / scorch- and
+  nutrient-lookalike negatives) plus modest disease top-ups. `val_realworld` also grew
+  and got harder (1854 → 2183). **One structural change:** the stable `make_test_split`
+  carve (the "final test" slice v2.6.7 added) was **removed**. It stole scarce weak-class rows, and each
+  version's `val_realworld` drifts in composition, so a small cross-version macro-F1
+  delta is eval-set noise, not a model change (the v2.6.0↔v2.6.7 "regression" was
+  exactly that artifact). The ship gate is now an **absolute** floor on `val_realworld`
+  (disease macro-F1 ≥ 0.70, no disease-class recall 0, healthy-bias < 1.5, healthy
+  recall ≥ 0.70) plus per-class P/R-with-CIs and the false-disease-fire rate — no
+  "beat the live model" benchmark. Headline `val_realworld` (n=2183): disease macro-F1
+  **0.858** (int8) / 0.854 (fp32), in-domain disease macro-F1 **0.890**, overall
+  accuracy **91.3%**, healthy recall 0.912, healthy→disease false-fire **8.4%**.
+  **Ships INT8** (`classifier_int8.onnx`, 22.5 MB): INT8 is statistically tied with
+  FP32 (paired-bootstrap int8−fp32 +0.004, CI [−0.007, +0.014], p=0.76, n.s.).
+  Calibration re-fit on the **int8** path: T=0.849, RAPS α=0.2 → coverage **0.988**,
+  mean set size **1.87** (cal n=999). OOD keeps the embedding k-NN gate. Detector
+  mAP50 **0.814**. **Weakness (v6 target, unchanged):** the two physiological classes
+  stay precision-bound — `nutrient_deficiency` P **0.747** / R 0.782 (precision up from
+  v2.6.7's 0.679 but recall slipped on a harder boundary-heavy val set) and
+  `leaf_scorch_underwatering` P **0.752** / R 0.788 (~flat); both still under the 0.80
+  precision target and alone hold macro-F1 below 0.90.
+  **⚠ On-device aqua caveat (this bundle):** the `aqua/aqua_classifier.tflite` shipped
+  in *this* archive is the **dynamic-range INT8** build, which **collapses
+  MobileNetV3-Small to near-constant output** — the §6 exact-metrics eval measured
+  `val_realworld` disease macro-F1 ≈ **0.01** (vs ≈0.82 for the float student, which is
+  healthy). **Do not deploy this bundle's aqua model.** The notebook §5 selector + §6
+  degeneracy guard were fixed to ship the near-lossless **float16** build (~2.9 MB)
+  instead; re-run the `aqua` mode to regenerate before any on-device release.
+- **v2.6.7 (`gamma`; trained on dataset supplement v5 — superseded by v2.6.8):** same recipe as
   v2.6.5/v2.6.6. **Two structural changes landed.** (1) The *agricultural* Kaggle
   strawberry Botrytis proxy was **removed entirely**; `gray_mold_botrytis` now trains
   on clean foliage only (iNat 606 + supplement 255 + DoctorP 96 → 339 train) and is
