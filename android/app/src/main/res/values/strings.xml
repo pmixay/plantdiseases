@@ -670,6 +670,8 @@
     <string name="watering_method_soak_and_drain">Water thoroughly until it drains, then empty the saucer</string>
     <string name="care_plan_detail_soil_mix">Soil mix</string>
     <string name="care_plan_detail_npk">Fertiliser NPK</string>
+    <string name="care_plan_detail_fertilise_howto">How to feed</string>
+    <string name="care_plan_fertilise_howto_value">A balanced liquid houseplant fertiliser diluted to half strength — e.g. an all-purpose 10-10-10 feed, only during active growth.</string>
     <string name="care_plan_detail_light_lux">Light (lux)</string>
     <string name="care_plan_detail_humidity">Humidity band</string>
     <string name="care_plan_detail_temperature">Temperature</string>

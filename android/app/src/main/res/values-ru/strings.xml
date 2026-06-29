@@ -669,6 +669,8 @@
     <string name="watering_method_soak_and_drain">Полейте обильно до стекания, затем опорожните поддон</string>
     <string name="care_plan_detail_soil_mix">Грунт</string>
     <string name="care_plan_detail_npk">NPK удобрения</string>
+    <string name="care_plan_detail_fertilise_howto">Чем подкармливать</string>
+    <string name="care_plan_fertilise_howto_value">Сбалансированное жидкое удобрение для комнатных растений, разведённое вдвое — например, универсальное 10-10-10, только в период активного роста.</string>
     <string name="care_plan_detail_light_lux">Освещение (люкс)</string>
     <string name="care_plan_detail_humidity">Влажность</string>
     <string name="care_plan_detail_temperature">Температура</string>

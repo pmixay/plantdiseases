@@ -26,6 +26,10 @@ import com.plantdiseases.app.util.ThumbLoader
 class SimilarScansAdapter(
     private val displayName: (String) -> String,
     private val onClick: (CommunityScanItem) -> Unit = {},
+    // Preview mode: render each cell as a compact "mini scan result" — diagnosis
+    // + detected species — instead of the publisher nickname / distance / opinion
+    // affordances. Used by the species card's "others' scans" strip.
+    private val preview: Boolean = false,
 ) : RecyclerView.Adapter<SimilarScansAdapter.VH>() {
 
     private var items: List<CommunityScanItem> = emptyList()
@@ -58,25 +62,38 @@ class SimilarScansAdapter(
 
         fun bind(item: CommunityScanItem) {
             itemView.setOnClickListener { onClick(item) }
-            // Publisher nick; fall back to the disease label for old rows that
-            // predate nicknames so the line is never empty.
-            label.text = item.nickname?.takeIf { it.isNotBlank() } ?: displayName(item.disease)
-            // Distance only — no place name. Hidden when the feed had no
-            // location anchor (country/worldwide scope) so we never show a
-            // misleading "0 km" or an empty line.
-            val distanceText = formatDistance(item.distanceKm)
-            distance.text = distanceText
-            distance.visibility = if (distanceText.isEmpty()) View.GONE else View.VISIBLE
-            time.text = formatTimeAgo(item.createdAt)
-            wantsOpinion.visibility = if (item.wantsOpinion) View.VISIBLE else View.GONE
-            if (item.opinionCount > 0) {
-                opinions.text = itemView.context.getString(
-                    R.string.community_opinions_badge,
-                    item.opinionCount,
-                )
-                opinions.visibility = View.VISIBLE
-            } else {
+            if (preview) {
+                // Compact mini scan result: diagnosis on top, detected species
+                // below. No nickname / distance / time / opinion affordances.
+                label.text = displayName(item.disease)
+                val species = item.species?.takeIf { it.isNotBlank() }
+                distance.text = species.orEmpty()
+                distance.visibility = if (species == null) View.GONE else View.VISIBLE
+                time.visibility = View.GONE
                 opinions.visibility = View.GONE
+                wantsOpinion.visibility = View.GONE
+            } else {
+                // Publisher nick; fall back to the disease label for old rows that
+                // predate nicknames so the line is never empty.
+                label.text = item.nickname?.takeIf { it.isNotBlank() } ?: displayName(item.disease)
+                // Distance only — no place name. Hidden when the feed had no
+                // location anchor (country/worldwide scope) so we never show a
+                // misleading "0 km" or an empty line.
+                val distanceText = formatDistance(item.distanceKm)
+                distance.text = distanceText
+                distance.visibility = if (distanceText.isEmpty()) View.GONE else View.VISIBLE
+                time.text = formatTimeAgo(item.createdAt)
+                time.visibility = View.VISIBLE
+                wantsOpinion.visibility = if (item.wantsOpinion) View.VISIBLE else View.GONE
+                if (item.opinionCount > 0) {
+                    opinions.text = itemView.context.getString(
+                        R.string.community_opinions_badge,
+                        item.opinionCount,
+                    )
+                    opinions.visibility = View.VISIBLE
+                } else {
+                    opinions.visibility = View.GONE
+                }
             }
 
             // ServerConfig.baseUrl ends with `/`; relative path appended.

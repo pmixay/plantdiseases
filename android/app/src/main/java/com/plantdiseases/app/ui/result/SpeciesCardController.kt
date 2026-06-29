@@ -127,13 +127,16 @@ class SpeciesCardController(
 
         val adapter = SimilarScansAdapter(
             displayName = { key -> DiseaseLabels.displayName(key, isRu) ?: key },
+            // Compact preview cells (diagnosis + detected species), and tapping
+            // opens a READ-ONLY view — no leaving second opinions from here.
+            preview = true,
             onClick = { item ->
                 if (item.scanId.isNotBlank() && pseudoId.isNotBlank()) {
                     activity.lifecycleScope.launch {
                         scanRepository.recordCommunityView(item.scanId, pseudoId)
                     }
                 }
-                CommunityOpinionSheet.show(
+                CommunityOpinionSheet.showReadOnly(
                     activity.supportFragmentManager,
                     item,
                     DiseaseLabels.displayName(item.disease, isRu) ?: item.disease,

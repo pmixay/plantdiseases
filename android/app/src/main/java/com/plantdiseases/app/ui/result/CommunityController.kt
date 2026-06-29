@@ -11,6 +11,7 @@ import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.repository.CommunityUploader
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
+import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.OpinionPrefs
 import com.plantdiseases.app.util.RegionResolver
@@ -218,6 +219,20 @@ class CommunityController(
         )
         rv.adapter = adapter
         rv.layoutManager = LinearLayoutManager(activity, LinearLayoutManager.HORIZONTAL, false)
+
+        // Browsing the read-only strip is decoupled from the opt-in (it loads
+        // regardless). But when community is OFF, restore the in-context
+        // "enable community" suggestion on this card so the user can start
+        // participating; tapping opts in, then refreshes the feed.
+        if (!CommunityPrefs.uploadsEnabled(activity)) {
+            binding.btnEnableSimilar.visibility = View.VISIBLE
+            binding.btnEnableSimilar.setOnClickListener {
+                CommunityPrefs.enable(activity)
+                ensureNotificationPermission()
+                binding.btnEnableSimilar.visibility = View.GONE
+                fetchAndRender(adapter, diseaseKey, scan.speciesScientific, isRu)
+            }
+        }
 
         fetchAndRender(adapter, diseaseKey, scan.speciesScientific, isRu)
     }
