@@ -93,6 +93,25 @@ object ResponseCache {
         null
     }
 
+    /** A cached payload plus whether it is still within its TTL. */
+    data class Peek<T>(val value: T, val fresh: Boolean)
+
+    /** Read [key] WITHOUT deleting on expiry, reporting freshness. Lets a
+     *  caller paint a stale value instantly (so a slow network never blanks the
+     *  screen) and then refresh only when [Peek.fresh] is false —
+     *  stale-while-revalidate. Returns null only on a true miss / parse error /
+     *  not-initialised. */
+    fun <T> peek(key: String, clazz: Class<T>): Peek<T>? = try {
+        val file = fileFor(key)?.takeIf { it.isFile }
+        val env = file?.readText()?.let { gson.fromJson(it, Envelope::class.java) }
+        env?.payload?.let {
+            val fresh = env.ttlMs <= 0L || System.currentTimeMillis() - env.savedAt <= env.ttlMs
+            Peek(gson.fromJson(it, clazz), fresh)
+        }
+    } catch (_: Exception) {
+        null
+    }
+
     /** Store [value] under [key] with an optional time-to-live ([ttlMs]; 0 =
      *  never expires). Failures are swallowed — the cache must never break the
      *  request path. */

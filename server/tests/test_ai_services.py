@@ -142,6 +142,33 @@ def test_care_plan_offline_has_all_fields():
     assert plan["isolation"] is True  # powdery mildew quarantines
 
 
+def test_care_plan_polish_is_cached(tmp_path, monkeypatch):
+    """An identical care-plan request must hit the OpenRouter polish only
+    once — the second call is served from the cache."""
+    import ai_services as ai
+
+    monkeypatch.setattr(ai, "OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setattr(ai._CARE_PLAN_DISK, "dir", tmp_path / "care_plan_polish")
+    ai._CARE_PLAN_CACHE._d.clear()
+
+    calls = {"n": 0}
+
+    def fake_call(system, blocks, max_tokens=None):
+        calls["n"] += 1
+        return ("- Water every 5 days\n- Bright indirect light", 5, 10)
+
+    monkeypatch.setattr(ai, "_call_openrouter", fake_call)
+
+    kwargs = dict(disease="powdery_mildew", species="Begonia",
+                  light="bright_indirect", season="growing")
+    first = ai.generate_care_plan(**kwargs)
+    second = ai.generate_care_plan(**kwargs)
+
+    assert calls["n"] == 1, "polish should be cached after the first call"
+    assert first["summary_md"] == second["summary_md"]
+    assert second.get("cached") is True
+
+
 def test_care_plan_unknown_disease_falls_through():
     import ai_services as ai
 
