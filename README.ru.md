@@ -78,7 +78,7 @@ CLS-вектору DINOv2 ([`ood.py`](server/ood.py)), когда в компл�
 [`MODEL_CARD.md`](server/models/MODEL_CARD.md).
 
 **Семейства моделей.** Три уровня мощности (объявлены в
-`classes.json -> model_family`, отдаются через `/api/version`; клиент
+`classes.json -> model_family`, отдаются через `/api/capabilities`; клиент
 выбирает одно на каждое сканирование, а `/api/capabilities` сообщает,
 какие из них предлагает сервер):
 
@@ -153,45 +153,26 @@ cd server
 start.bat
 ```
 
-Скрипт создаёт виртуальное окружение, устанавливает PyTorch только для CPU
-плюс `requirements.txt` и запускает FastAPI на
-`http://localhost:8000`.
+Скрипт создаёт виртуальное окружение, ставит PyTorch только для CPU +
+`requirements.txt` и запускает FastAPI на `http://localhost:8000`.
 
-Веса модели + артефакты калибровки **не коммитятся** и **не скачиваются
-автоматически**. Предоставьте их отдельно: положите
-`detector.{pt,onnx}`, `classifier.onnx` (+ опциональный `classifier_int8.onnx`),
-`classes.json` и файлы калибровки (`temperature.json`,
-`conformal.json`, `model_card.json`) в `server/models/` перед запуском.
-`train_notebook.ipynb` §6b упакует их в архив для переноса. Сервер
-**падает сразу** — он отказывается стартовать, если отсутствует
-необходимый артефакт. Демо-заглушки нет.
+Веса модели **не коммитятся** и **не скачиваются автоматически** — сначала
+положите обученный набор (`detector.{pt,onnx}`, `classifier.onnx`,
+`classes.json`, JSON калибровки) в `server/models/`; без него сервер **падает
+сразу**, а `train_notebook.ipynb` §6b упакует их в архив. Продакшен-настройка
+(Docker, nginx/TLS, systemd, API-ключи, подпись Android/FCM) — в
+[`DEPLOYMENT.md`](DEPLOYMENT.md).
 
 ### Android-клиент
 
-1. Откройте `android/` в Android Studio (Hedgehog 2023.1+).
-2. Синхронизируйте Gradle, запустите на устройстве или эмуляторе.
-3. URL сервера зашивается на этапе сборки через
-   `BuildConfig.API_BASE_URL`. Переопределите при сборке:
+1. Откройте `android/` в Android Studio (Hedgehog 2023.1+), синхронизируйте
+   Gradle, запустите на устройстве/эмуляторе.
+2. URL сервера зашивается через `BuildConfig.API_BASE_URL`; переопределите при
+   сборке: `./gradlew :app:assembleDebug -PAPI_BASE_URL=http://192.168.1.42:8000/`.
 
-   ```bash
-   ./gradlew :app:assembleDebug -PAPI_BASE_URL=http://192.168.1.42:8000/
-   ```
-
-> Открытый HTTP разрешён только для IP-адресов, объявленных в
-> [`network_security_config.xml`](android/app/src/main/res/xml/network_security_config.xml).
-> Для продакшена терминируйте TLS перед сервером — см.
-> [`DEPLOYMENT.md`](DEPLOYMENT.md).
-
-### Опциональные интеграции
-
-| Функция | Ключ | Настройка |
-|---|---|---|
-| Определение вида | `PLANTNET_API_KEY` | <https://my.plantnet.org/account/doc> — см. [`DEPLOYMENT.md §1.1`](DEPLOYMENT.md#11-third-party-api-keys) |
-| ИИ-фитопатолог | `OPENROUTER_API_KEY` | <https://openrouter.ai> — см. [`DEPLOYMENT.md §1.1`](DEPLOYMENT.md#11-third-party-api-keys) |
-
-Без этих ключей сервер всё равно запускается и возвращает корректные
-ответы «недоступно»; клиент показывает понятные UX-сообщения, чтобы
-пользователь понимал, что функция настраивается, а не сломана.
+Подпись релиза, push (FCM), TLS и опциональные интеграции — `PLANTNET_API_KEY`
+(определение вида) и `OPENROUTER_API_KEY` (ИИ-фитопатолог); без них сервер
+работает и сообщает «недоступно» — описаны в [`DEPLOYMENT.md`](DEPLOYMENT.md).
 
 ---
 
@@ -200,9 +181,7 @@ start.bat
 | Метод | Путь | Описание |
 |---|---|---|
 | `GET`  | `/api/health`              | Проверка живости + аптайм + число классов |
-| `GET`  | `/api/version`             | Версия сервера + архитектура модели + семейство |
-| `GET`  | `/api/classes`             | Обучаемые классы с двуязычными названиями |
-| `GET`  | `/api/capabilities`        | Доступность по семействам (aqua / gamma / frontier) для выбора на экране сканирования |
+| `GET`  | `/api/capabilities`        | Доступность по семействам (aqua / gamma / frontier) **плюс** версия сервера, версия и архитектура модели, двуязычные метаданные классов (объединяет прежние `/api/version` и `/api/classes`) |
 | `GET`  | `/api/metrics`             | JSON-счётчики (запросы, ошибки, задержка, точность по классам из обратной связи) |
 | `GET`  | `/api/metrics/prometheus`  | Текстовая экспозиция Prometheus (v0.0.4) |
 | `POST` | `/api/analyze`             | Загрузка изображения → двуязычный диагноз (`?family=aqua\|gamma\|frontier`, по умолчанию `gamma`) |

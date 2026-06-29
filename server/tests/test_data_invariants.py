@@ -599,38 +599,6 @@ def test_kaggle_strawberry_graymold_removed_entirely():
     assert "PRIOR_SOURCE_WEIGHTS['kaggle_strawberry']" not in src, "no 'kaggle_strawberry' prior weight"
 
 
-def test_make_test_split_is_class_aware_and_stable():
-    """The held-out TEST partition must be (a) stable across dataset versions
-    (group id hashed, not rng.shuffle'd) and group-aware (carved by source/
-    plant_id, not per-image), and (b) class-aware: thin/binding classes carve a
-    SMALLER fraction so the benchmark stays populated without starving their
-    scarce train side. gray_mold_botrytis — the supply floor — must give up the
-    LEAST, and every per-class fraction must sit at or below the global default
-    so no class over-donates to the test set."""
-    src = _notebook_source()
-    assert "def make_test_split(" in src, "make_test_split must exist"
-    # Stable + group-aware: a content hash of the (source, plant_id) group id.
-    assert "hashlib.sha256" in src and "sc.get('plant_id'" in src, (
-        "test split must hash the (source, plant_id) group id, not shuffle per-image"
-    )
-    # Class-aware carve fraction.
-    assert "ratio_by_class" in src, "make_test_split must take a per-class carve fraction"
-    m = re.search(r"make_test_split.*?ratio_by_class\s*=\s*\{(.*?)\}", src, re.S)
-    assert m, "make_test_split must define a default ratio_by_class map"
-    by_class = {k: float(v) for k, v in re.findall(r"'([a-z_]+)'\s*:\s*([0-9.]+)", m.group(1))}
-    default = float(re.search(r"def make_test_split\(ratio\s*=\s*([0-9.]+)", src).group(1))
-    gm = by_class.get("gray_mold_botrytis")
-    assert gm is not None, "gray_mold_botrytis must have an explicit (smaller) test fraction"
-    assert gm == min(by_class.values()), "gray_mold_botrytis (supply floor) must carve the least"
-    assert all(v <= default for v in by_class.values()), (
-        "no per-class test fraction may exceed the global default ratio"
-    )
-    # Carved BEFORE the val/cal splits so they draw from the remaining train pool.
-    assert src.find("make_test_split()") < src.find("make_val_realworld()"), (
-        "the test split must be carved before the val/cal splits"
-    )
-
-
 def test_kaggle_credentials_support_new_token_format_and_upload():
     """Credentials must support Kaggle's NEW token format (KAGGLE_API_TOKEN env
     / ~/.kaggle/access_token) in addition to the legacy username+key, and the

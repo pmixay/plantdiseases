@@ -20,9 +20,9 @@ cp server/config.example.json server/config.json
 $EDITOR server/config.json
 ```
 
-`server/config.json` is gitignored. JSON sections (`server`, `limits`,
-`ai`, `plantnet`) are flattened so each leaf key maps to the same name
-as the legacy environment variable.
+`server/config.json` is gitignored. JSON sections (`server`, `models`,
+`limits`, `ai`, `plantnet`, `security`, `push`) are flattened so each leaf
+key maps to the same name as the legacy environment variable.
 
 | Key | Default | Purpose |
 |---|---|---|
@@ -45,6 +45,7 @@ as the legacy environment variable.
 | `openrouter_model` | `openai/gpt-oss-120b` | Pinned chat model. Pick anything OpenRouter exposes (e.g. `openai/gpt-4o-mini`, `meta-llama/llama-3.1-8b-instruct`). |
 | `openrouter_base_url` | `https://openrouter.ai/api/v1` | Override only for OpenRouter-compatible self-hosted gateways. |
 | `plantnet_api_key` | *(empty)* | PlantNet identify key (optional). |
+| `fcm_credentials_file` | *(empty)* | Path to a Firebase service-account JSON for FCM push (opinion notifications). Empty → push is a no-op. See §8.2. |
 
 ### 1.1 Third-party API keys
 
@@ -278,4 +279,70 @@ Run this on a real device with the production URL configured. Target: under 5 mi
 - [ ] Onboarding still launches from `Profile → How to Use`.
 - [ ] `Clear All History` empties stats and gallery.
 - [ ] Light Meter entry still opens.
+
+---
+
+## 8. Android release: signing & FCM
+
+The Android CI job (`.github/workflows/ci.yml`) runs lint + unit tests and assembles
+the **R8-minified release APK** on every push touching `android/**`. It works with
+**no** secrets — it falls back to the debug signing key and leaves push messaging
+dormant. Add the secrets below to ship an APK signed with your own key and to enable
+FCM. All Android secrets live in **GitHub → repo → Settings → Secrets and variables →
+Actions**; `app/build.gradle.kts` reads each from a Gradle property **or** the
+same-named env var, so nothing is committed.
+
+### 8.1 Release signing
+
+Generate an upload keystore (needs JDK `keytool`; keep the file + passwords safe — lose
+it and you can't publish updates to the same Play app):
+
+```bash
+keytool -genkeypair -v -keystore plantdiseases-release.jks -storetype PKCS12 \
+  -alias plantdiseases -keyalg RSA -keysize 2048 -validity 10000
+base64 -w0 plantdiseases-release.jks > keystore.b64   # macOS: base64 -i … -o keystore.b64
+```
+
+Create these repo secrets (with PKCS12 the key password equals the store password):
+
+| Secret | Value |
+|---|---|
+| `RELEASE_KEYSTORE_BASE64` | contents of `keystore.b64` |
+| `RELEASE_STORE_PASSWORD` | keystore password |
+| `RELEASE_KEY_ALIAS` | the alias (e.g. `plantdiseases`) |
+| `RELEASE_KEY_PASSWORD` | key password (= store password for PKCS12) |
+
+With all four set, CI decodes the keystore and emits a release-signed APK (artifact
+`app-release-apk`); absent them it uses the debug key (sideload-installable, not for
+Play). Don't commit the `.jks`/`keystore.b64`; delete `keystore.b64` after copying.
+Build locally with `./gradlew :app:assembleRelease -PRELEASE_STORE_FILE=/abs/path.jks
+-PRELEASE_STORE_PASSWORD=… -PRELEASE_KEY_ALIAS=plantdiseases -PRELEASE_KEY_PASSWORD=…`
+(or put the props in `~/.gradle/gradle.properties`, outside the repo).
+
+### 8.2 Firebase Cloud Messaging (FCM)
+
+Two distinct credential sets:
+
+- **Android client config** — `FCM_APP_ID`, `FCM_API_KEY`, `FCM_PROJECT_ID`,
+  `FCM_SENDER_ID` (from `google-services.json`: `mobilesdk_app_id`,
+  `api_key[0].current_key`, `project_id`, `project_number`). These are **public** —
+  shipped inside every APK — so per Google they are *not* secrets. Inject them as
+  Gradle props / GitHub secrets only to keep them out of the source tree, and harden
+  by **restricting the Android API key** in Google Cloud Console (Application
+  restrictions: Android apps + your package/SHA-1; API restrictions: Firebase/FCM).
+  Unset → the app builds fine and push stays dormant (`PushManager.isConfigured()` is
+  false; the client falls back to its WorkManager poll).
+- **Server send-credential** — the Firebase **service-account JSON** that can actually
+  send pushes. It is loaded from a path on the server via `push.fcm_credentials_file`
+  (config.json) / `FCM_CREDENTIALS_FILE` (env), read in `server/push.py`. **Not** in
+  this repo; empty → `/api/push/register` and sends are graceful no-ops.
+
+### 8.3 CI
+
+The `android` job exposes the secrets as env vars; the keystore is decoded only when
+`RELEASE_KEYSTORE_BASE64` is set, and one Gradle invocation runs everything:
+
+```bash
+./gradlew ktlintCheck detekt testDebugUnitTest assembleRelease --build-cache --configuration-cache --stacktrace
+```
 

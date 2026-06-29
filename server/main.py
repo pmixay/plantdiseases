@@ -384,35 +384,26 @@ except ImportError:
     from symptoms import diagnose as symptom_diagnose
 
 
-def _resolve_app_version() -> str:
-    """Resolve the served model/app version.
+_SERVER_VERSION = "1.0"
 
-    Prefer the package ``__version__``; when the server is run as a flat
-    module (``main:app`` in the Docker image) that import fails, so fall
-    back to the shipped model metadata (``models/classes.json ->
-    model_version``) rather than a hardcoded string that silently lags
-    the deployed model. Only if both are unavailable do we use a final
-    constant.
+
+def _resolve_app_version() -> str:
+    """Resolve the SERVER / release version.
+
+    This is decoupled from the MODEL version (``models/classes.json ->
+    model_version``, e.g. 2.6.8), which is surfaced separately by
+    ``/api/version``. Prefer the package ``__version__``; when the server runs
+    as a flat module (``main:app`` in the Docker image) that import fails, so
+    fall back to the same hardcoded server version (kept in sync with
+    ``__init__.py``) — never the model version, which would make the server
+    string track the model.
     """
     try:
         from . import __version__ as pkg_version  # type: ignore
 
         return str(pkg_version)
     except Exception:
-        pass
-    try:
-        # Honour a custom MODELS_DIR (mirrors the constant defined below;
-        # this helper runs at import time, before that constant exists).
-        models_dir = Path(get_str("MODELS_DIR", "models"))
-        meta = json.loads(
-            (models_dir / "classes.json").read_text(encoding="utf-8")
-        )
-        version = meta.get("model_version")
-        if version:
-            return str(version)
-    except Exception:
-        pass
-    return "2.2"
+        return _SERVER_VERSION
 
 
 APP_VERSION = _resolve_app_version()
@@ -1612,9 +1603,11 @@ async def capabilities():
         pass
 
     model: dict | None = None
+    model_version: str | None = None
     classes_list: list[dict] = []
     if base_ready:
         clf = pipeline.classifier
+        model_version = getattr(clf, "meta", {}).get("model_version")
         model = {
             "classifier_name": "plantvision",
             "model_family": clf.model_family,
@@ -1642,6 +1635,7 @@ async def capabilities():
         "families": families,
         "version": APP_VERSION,
         "server_version": APP_VERSION,
+        "model_version": model_version,
         "model": model,
         "classes": classes_list,
     }

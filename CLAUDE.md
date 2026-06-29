@@ -22,9 +22,9 @@ Three independent deliverables, each with its own toolchain:
 | `android/` | Kotlin, Gradle, Material 3 | The phone client (CameraX, Room, Ktor + kotlinx.serialization, Koin DI). |
 | `website/` | Static HTML/CSS/JS | Marketing/benchmark showcase, no build step (`python3 -m http.server`). |
 
-Key docs: `README.md` (overview + API table), `DEPLOYMENT.md` (production config),
-`docs/ROADMAP.md` (current model status + next steps), `docs/ANDROID_RELEASE.md`
-(signing/FCM), `docs/DATASET_LABELING_PLAN.md` (data loop),
+Key docs: `README.md` (overview + API table), `DEPLOYMENT.md` (production config
++ Android release signing/FCM), `docs/ROADMAP.md` (current model status + next
+steps), `docs/DATASET_LABELING_PLAN.md` (data loop),
 `server/models/MODEL_CARD.md`, `server/train_notebook.ipynb` (full
 training recipe).
 

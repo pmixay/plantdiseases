@@ -20,8 +20,8 @@ demo fallback. Validate before deploy with `scripts/check_bundle.py`.
 | `temperature.json` | prod | `{temperature, source∈{int8,fp32_fallback}, tta}` |
 | `conformal.json` | optional | RAPS calibration; `fit_source` must match `temperature.source` |
 | `ood_embedding.npz` | conditional | required iff `classes.json → ood.embedding` is declared |
-| `model_card.json` | analysis | provenance, benchmarks, INT8-vs-FP32 paired CI, per-class recall CIs |
-| `training_metrics.json` | analysis | per-class recall + confusion matrices per slice |
+| `model_card.json` | analysis | provenance, benchmarks, INT8-vs-FP32 paired CI, per-class recall/precision CIs, `metrics_by_split` (with `eval_mode` = classifier-only vs end-to-end), and `aqua` (the shipped int8 TFLite student's per-split metrics + teacher→student drift, measured not guessed) |
+| `training_metrics.json` | analysis | per-class recall/precision + `supported_disease_macro_f1` + confusion matrices per slice |
 
 `classes.json` is the contract: its class set **must match the trained head
 exactly** or boot aborts (no migration shim). `check_bundle.py` cross-checks the

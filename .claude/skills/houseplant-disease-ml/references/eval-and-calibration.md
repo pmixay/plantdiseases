@@ -21,21 +21,37 @@ Three independent validation slices, **one ship gate**:
 |---|---|---|
 | `val_indomain` | drives early stopping in §4 | tracked; best head checkpoint restored |
 | `val_realworld` | **primary ship/no-ship gate** | see below |
-| `val_studio` | PlantVillage transfer / background-bias monitor | tracked, **never blocking** |
+| `val_studio` | PlantVillage transfer monitor (covers only ~4 of 9 classes) | tracked, **never blocking**; read `supported_disease_macro_f1` (macro-F1 over the classes *present* in the slice — the plain macro-F1 averages in zeros for the absent classes, ~0.43 vs ~0.99) |
 | `temperature_cal` | held-out, fits temperature T | — |
 | `conformal_cal` | held-out, fits RAPS `q_hat` (80/20 fit/audit when n≥200) | — |
 
 **Ship gate on `val_realworld`** (§6, `MIN_DISEASE_F1, MAX_HEALTHY_BIAS,
 MIN_HEALTHY_RECALL = 0.70, 1.50, 0.70`):
-- disease **macro-F1 ≥ 0.70** (and must not regress below the live model)
+- disease **macro-F1 ≥ 0.70**
 - **no disease class with recall = 0**
 - **healthy-bias < 1.5** (model isn't just predicting "healthy" everywhere)
 - **healthy recall ≥ 0.70** (controls false-positive disease alarms)
 
 Nothing writes to `models/` until this passes. *Portable principle:* separate
 the metric that **stops training** (in-domain) from the metric that **gates
-shipping** (real-world), and make the gate a small set of must-not-regress
-floors, not a single mean.
+shipping** (real-world), and make the gate a small set of floors, not a single mean.
+
+### No cross-version benchmark — judge by per-class P/R + safety (2026-06)
+
+There is **no fixed held-out benchmark** (the stable `make_test_split` carve was
+removed — it stole scarce weak-class data, and each version's `val_realworld`
+drifts in composition, so a small cross-version macro-F1 delta is eval-set noise,
+not a model change — the v2.6.0↔v2.6.7 "regression" was exactly this artifact).
+The gate is therefore an **absolute** floor, not a "beat the live model" check.
+Judge a new version by signals that need no benchmark:
+- **per-class precision AND recall with CIs** (`model_card.json` ships both) — the
+  current binding weakness is *precision* (`nutrient_deficiency` / `leaf_scorch`
+  over-predict), not recall;
+- the **false-disease-fire rate** on healthy/boundary inputs — the user-facing
+  reliability headline (a confident wrong diagnosis on a healthy plant is the harm);
+- conformal coverage ≥ target; OOD/blur still reject junk.
+For a real A/B, run a **one-off** `paired_bootstrap` of candidate vs live model on
+an identical set (`tools/eval_bootstrap.py`) — a manual check, not a maintained gate.
 
 ## "Disease" macro-F1 — the exact definition
 

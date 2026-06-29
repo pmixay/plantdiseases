@@ -44,7 +44,7 @@ jobs:
       # Release signing (optional). Set these repo secrets to ship an APK
       # signed with your own upload key; leave them unset and the build falls
       # back to the debug key (installable for sideload). RELEASE_KEYSTORE_BASE64
-      # is a base64-encoded .jks — see docs/ANDROID_RELEASE.md.
+      # is a base64-encoded .jks — see DEPLOYMENT.md (Android release).
       RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
       RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
       RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
