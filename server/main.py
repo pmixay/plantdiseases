@@ -391,7 +391,7 @@ def _resolve_app_version() -> str:
     """Resolve the SERVER / release version.
 
     This is decoupled from the MODEL version (``models/classes.json ->
-    model_version``, e.g. 2.6.8), which is surfaced separately by
+    model_version``, e.g. 2.6.9), which is surfaced separately by
     ``/api/version``. Prefer the package ``__version__``; when the server runs
     as a flat module (``main:app`` in the Docker image) that import fails, so
     fall back to the same hardcoded server version (kept in sync with

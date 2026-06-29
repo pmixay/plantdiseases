@@ -66,7 +66,18 @@ The production artefact is an ONNX graph and the runtime is
 **architecture-neutral** — it serves whatever backbone+head the shipped
 bundle declares (`classes.json -> architecture`):
 
-- **v2.6.8 (shipped, `gamma`; trained on the early-v6 precision/safety supplement):**
+- **v2.6.9 (shipped, `gamma`):** ships the **same trained gamma artifacts as v2.6.8** —
+  identical recipe and dataset (the v6 precision/safety supplement); no new training landed,
+  so the metrics carry over unchanged: `val_realworld` (n=2183) disease macro-F1 **0.858**
+  (int8) / 0.854 (fp32), in-domain **0.890**, overall accuracy **91.3%**, healthy recall
+  0.912, healthy→disease false-fire **8.4%**; T=0.849, RAPS α=0.2 → coverage **0.988**, set
+  size **1.87**; detector mAP50 **0.814**. The version roll marks this release cycle (app
+  decomposition + dataset-plan v7 + roadmap), **not a model change**. The binding weaknesses
+  are therefore unchanged and carried into **v7**: the two physiological classes stay
+  precision-bound (`nutrient_deficiency` P **0.747** / R 0.782, `leaf_scorch_underwatering`
+  P **0.752** / R 0.788, both under the 0.80 target) and the on-device `aqua` caveat below
+  still applies (re-run `aqua` for the float16 fix before any on-device release).
+- **v2.6.8 (superseded by v2.6.9; `gamma`; trained on the early-v6 precision/safety supplement):**
   same recipe as v2.6.7, on an **expanded** dataset — +1.7k train rows over v2.6.7
   (12.1k → 13.8k), the growth concentrated in the v6 *boundary-negative* signature:
   **+652 `healthy`** and **+359 `not_a_plant`** (hard-healthy / scorch- and

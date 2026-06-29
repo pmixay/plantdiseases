@@ -20,7 +20,7 @@ A standalone, responsive, bilingual (RU / EN) one-page site that presents the
   95% CIs, in-domain vs real-world paired bars, and a conformal-coverage
   gauge. Every element has a hover tooltip with exact values, the charts
   animate in on scroll, and they re-render live when the language is toggled.
-  Data comes straight from the PlantVision 2.6.8 · gamma evaluation report.
+  Data comes straight from the PlantVision 2.6.9 · gamma evaluation report.
 - **`assets/screens/`** — the only raster assets: real in-app screenshots
   (Scanner, Result, Garden, Gallery, Guide, Community "Scans near you").
 
