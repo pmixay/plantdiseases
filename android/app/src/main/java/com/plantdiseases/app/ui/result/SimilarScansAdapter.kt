@@ -10,14 +10,15 @@ import androidx.recyclerview.widget.RecyclerView
 import com.facebook.shimmer.ShimmerFrameLayout
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.CommunityScanItem
-import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.ServerConfig
 import com.plantdiseases.app.util.ThumbLoader
 
 /**
  * Horizontal carousel adapter for the "Similar scans near you" card.
  *
- * Each cell renders disease label, region, and relative time. Thumbnails
+ * Each cell renders the publisher's nickname, approximate distance ("≈ N km
+ * near you"), and relative time — no place name (geo stays on the server).
+ * Cards are ordered newest-first (the server's order). Thumbnails
  * load via Glide from /api/community/thumb/<filename>; cells without a
  * thumb_path fall back to a tinted leaf icon so the card stays usable
  * when the server didn't persist a thumbnail.
@@ -50,15 +51,22 @@ class SimilarScansAdapter(
         private val shimmer: ShimmerFrameLayout = itemView.findViewById(R.id.shimmer_similar_thumb)
         private val image: ImageView = itemView.findViewById(R.id.iv_similar_thumb)
         private val label: TextView = itemView.findViewById(R.id.tv_similar_label)
-        private val region: TextView = itemView.findViewById(R.id.tv_similar_region)
+        private val distance: TextView = itemView.findViewById(R.id.tv_similar_distance)
         private val time: TextView = itemView.findViewById(R.id.tv_similar_time)
         private val opinions: TextView = itemView.findViewById(R.id.tv_similar_opinions)
         private val wantsOpinion: TextView = itemView.findViewById(R.id.tv_similar_wants_opinion)
 
         fun bind(item: CommunityScanItem) {
             itemView.setOnClickListener { onClick(item) }
-            label.text = displayName(item.disease)
-            region.text = formatRegion(item.city.ifBlank { item.region }, countryLabel(item))
+            // Publisher nick; fall back to the disease label for old rows that
+            // predate nicknames so the line is never empty.
+            label.text = item.nickname?.takeIf { it.isNotBlank() } ?: displayName(item.disease)
+            // Distance only — no place name. Hidden when the feed had no
+            // location anchor (country/worldwide scope) so we never show a
+            // misleading "0 km" or an empty line.
+            val distanceText = formatDistance(item.distanceKm)
+            distance.text = distanceText
+            distance.visibility = if (distanceText.isEmpty()) View.GONE else View.VISIBLE
             time.text = formatTimeAgo(item.createdAt)
             wantsOpinion.visibility = if (item.wantsOpinion) View.VISIBLE else View.GONE
             if (item.opinionCount > 0) {
@@ -81,27 +89,13 @@ class SimilarScansAdapter(
             ThumbLoader.load(shimmer, image, url)
         }
 
-        /** Localized country NAME (e.g. "Poland"/"Польша") the server resolved,
-         *  falling back to the raw [CommunityScanItem.country] code only for
-         *  older/cached responses that predate the localized fields. */
-        private fun countryLabel(item: CommunityScanItem): String {
-            val name = if (LocaleHelper.isRussian(itemView.context)) {
-                item.countryNameRu
-            } else {
-                item.countryNameEn
-            }
-            return (name ?: item.country)
-        }
-
-        private fun formatRegion(region: String, country: String): String {
-            val r = region.trim()
-            val c = country.trim()
-            return when {
-                r.isNotEmpty() && c.isNotEmpty() -> "$r, $c"
-                r.isNotEmpty() -> r
-                c.isNotEmpty() -> c
-                else -> ""
-            }
+        /** "≈ N km near you" — coords are rounded to ~1 km server-side, so we
+         *  floor the display at 1 km rather than show a misleading "0 km".
+         *  Empty when the feed had no requester anchor (country/worldwide). */
+        private fun formatDistance(distanceKm: Float?): String {
+            if (distanceKm == null) return ""
+            val km = Math.round(distanceKm).coerceAtLeast(1)
+            return itemView.context.getString(R.string.community_distance_near, km)
         }
 
         private fun formatTimeAgo(createdAtSec: Long): String {

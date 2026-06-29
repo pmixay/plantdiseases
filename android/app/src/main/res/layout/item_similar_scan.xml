@@ -2,11 +2,12 @@
 <!--
     Single cell in the "Similar scans near you" carousel.
 
-    Each cell is a 160dp-wide card: thumbnail on top, disease name +
-    region + relative time below. Tapping the cell logs but doesn't
-    navigate yet — the corpus exposes anonymised regional context, not
-    other users' history. Width is fixed so the horizontal RecyclerView
-    snaps evenly regardless of label length.
+    Each cell is a 160dp-wide card: thumbnail on top, publisher nickname +
+    approximate distance ("≈ N km near you") + relative time below — no
+    place name (geo stays server-side). Tapping opens a read-only browse of
+    the community discussion; leaving a second opinion is not possible here.
+    Width is fixed so the horizontal RecyclerView snaps evenly regardless of
+    label length.
 -->
 <com.google.android.material.card.MaterialCardView
     xmlns:android="http://schemas.android.com/apk/res/android"
@@ -63,7 +64,7 @@
                 android:ellipsize="end" />
 
             <TextView
-                android:id="@+id/tv_similar_region"
+                android:id="@+id/tv_similar_distance"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="2dp"
@@ -90,8 +91,9 @@
                 android:fontFamily="sans-serif-medium"
                 android:visibility="gone" />
 
-            <!-- Shown when the scanner flagged this scan as wanting a
-                 community second opinion — taps open the opinion sheet. -->
+            <!-- Informational: the scanner flagged this scan as wanting a
+                 community second opinion. The strip is read-only, so this is a
+                 label, not a call to action. -->
             <TextView
                 android:id="@+id/tv_similar_wants_opinion"
                 android:layout_width="wrap_content"

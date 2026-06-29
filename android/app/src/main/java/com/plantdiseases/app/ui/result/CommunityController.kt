@@ -204,8 +204,12 @@ class CommunityController(
         val adapter = SimilarScansAdapter(
             displayName = { key -> displayName(key, isRu) },
             onClick = { item ->
+                // Read-only browse: viewing similar cases works with community
+                // off, but leaving a second opinion (participation) does not
+                // happen from this strip — that stays behind the opt-in on the
+                // "near you" screen.
                 recordView(item.scanId, pseudoId)
-                CommunityOpinionSheet.show(
+                CommunityOpinionSheet.showReadOnly(
                     activity.supportFragmentManager,
                     item,
                     displayName(item.disease, isRu),
@@ -259,7 +263,8 @@ class CommunityController(
                 } ?: activity.getString(R.string.community_scope_global)
                 // Restrict to genuinely similar scans client-side too, so a
                 // cached response from an older deployment can't leak unrelated
-                // verdicts/species into a "similar to this" strip.
+                // verdicts/species into a "similar to this" strip. Order stays
+                // the server's newest-first.
                 val items = SimilarScans.filterSimilar(response.items, disease, speciesScientific)
 
                 if (items.isEmpty()) {

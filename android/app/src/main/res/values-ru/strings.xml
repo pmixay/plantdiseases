@@ -220,7 +220,7 @@
     <string name="result_second_opinion_view">Посмотреть мнения (%1$d)</string>
     <string name="result_second_opinion_failed">Не удалось запросить второе мнение. Попробуйте ещё раз.</string>
     <string name="community_opinion_replies_title">Второе мнение сообщества</string>
-    <string name="community_opinion_replies_subtitle">Что сообщество думает о вашем скане.</string>
+    <string name="community_opinion_replies_subtitle">Что сообщество думает об этом скане.</string>
     <string name="community_opinion_locked">Вы уже оставили своё второе мнение по этому скану.</string>
     <string name="community_opinion_replies_empty">Пока нет второго мнения. Загляните позже.</string>
     <string name="community_wants_opinion_badge">Ждёт второго мнения</string>
