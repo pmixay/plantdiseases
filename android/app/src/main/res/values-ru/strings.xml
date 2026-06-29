@@ -188,7 +188,6 @@
     <string name="similar_scans_subtitle_region">Недавние диагнозы сообщества в %1$s</string>
     <string name="similar_scans_subtitle_no_region">Лента страны пока недоступна.</string>
     <string name="similar_scans_empty">Сканов сообщества пока нет — ваш будет первым.</string>
-    <string name="similar_scans_enable_prompt">Хотите видеть, что сканируют рядом?</string>
     <!-- Community second opinion -->
     <string name="community_opinion_title">Второе мнение</string>
     <string name="community_opinion_subtitle">Спросите сообщество — и оцените чужие сканы.</string>

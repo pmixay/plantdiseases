@@ -31,6 +31,8 @@ def isolated_community(tmp_path, monkeypatch):
     server_main.community_stats_snapshot = comm.stats_snapshot
     server_main.community_delete_for_user = comm.delete_for_user
     server_main.community_set_wants_opinion = comm.set_wants_opinion
+    server_main.community_wants_opinion = comm.wants_opinion
+    server_main.community_owner_of = comm.owner_of
     server_main.init_community_db = comm.init_db
     server_main.COMMUNITY_THUMB_DIR = comm.COMMUNITY_THUMB_DIR
     yield db_path, thumb_dir
@@ -865,6 +867,48 @@ def test_feed_token_round_trip_for_opinions_and_views(client, isolated_community
     # Viewer reads under the token and sees the same.
     via_token = client.get(f"/api/community/opinions/{token}").json()
     assert len(via_token["opinions"]) == 1
+
+
+def test_opinion_push_only_when_owner_requested(client, isolated_community, monkeypatch):
+    """The owner is only pushed about a new opinion when they explicitly asked
+    for a second opinion. Sharing a scan to the corpus is not such a request."""
+    import main as server_main
+
+    pushes: list[tuple] = []
+    monkeypatch.setattr(
+        server_main, "push_send_opinion",
+        lambda owner, sid, disease, note, nickname: pushes.append((owner, sid, disease)),
+    )
+
+    # Two shared scans by the same owner; only the second is flagged for input.
+    for sid in ("nudgeoff0001", "nudgeon00001"):
+        client.post(
+            "/api/community/scan",
+            data=_form(
+                scan_id=sid, user_pseudo_id="pseudo-owner-9",
+                region="Paris", country="FR", disease="leaf_spot",
+            ),
+        )
+    client.post(
+        "/api/community/request-opinion",
+        json={"scan_id": "nudgeon00001", "user_pseudo_id": "pseudo-owner-9"},
+    )
+
+    # A viewer weighs in on both scans.
+    for sid in ("nudgeoff0001", "nudgeon00001"):
+        r = client.post(
+            "/api/community/opinion",
+            json={
+                "scan_id": sid,
+                "user_pseudo_id": "pseudo-viewer-9",
+                "suggested_disease": "powdery_mildew",
+            },
+        )
+        assert r.status_code == 200, r.text
+
+    # Only the requested scan triggered a push to the owner.
+    assert [p[1] for p in pushes] == ["nudgeon00001"]
+    assert pushes[0][0] == "pseudo-owner-9"
 
 
 def test_opinion_on_unknown_scan_rejected(client, isolated_community):

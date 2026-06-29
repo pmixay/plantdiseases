@@ -191,7 +191,6 @@
     <string name="similar_scans_subtitle_region">Recent community diagnoses in %1$s</string>
     <string name="similar_scans_subtitle_no_region">No country feed is available yet.</string>
     <string name="similar_scans_empty">No community scans yet — your scan will be the first.</string>
-    <string name="similar_scans_enable_prompt">Want to see what people are scanning nearby?</string>
     <!-- Community second opinion -->
     <string name="community_opinion_title">Get a second opinion</string>
     <string name="community_opinion_subtitle">Ask the community what they think — and weigh in on others\' scans.</string>
