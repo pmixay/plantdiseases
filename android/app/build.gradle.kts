@@ -39,7 +39,7 @@ android {
         // normally live in google-services.json). They are NOT injected with
         // any default here — they must be supplied at build time via a Gradle
         // property, a same-named environment variable, or (in CI) a GitHub
-        // Actions secret. See docs/ANDROID_RELEASE.md.
+        // Actions secret. See DEPLOYMENT.md (Android release).
         //   ./gradlew :app:assembleRelease -PFCM_APP_ID=... -PFCM_API_KEY=...
         // When any of them is blank the app builds fine and push messaging
         // simply stays dormant (PushManager.isConfigured() returns false and
@@ -75,7 +75,7 @@ android {
             // plain env from GitHub Actions secrets. When RELEASE_STORE_FILE is
             // absent the release build falls back to the debug key (see below),
             // which keeps local/CI sideload builds installable without a
-            // keystore. See docs/ANDROID_RELEASE.md.
+            // keystore. See DEPLOYMENT.md (Android release).
             fun signProp(name: String): String? =
                 (project.findProperty(name) as String?)?.takeIf { it.isNotEmpty() }
                     ?: System.getenv(name)?.takeIf { it.isNotEmpty() }

@@ -1,8 +1,8 @@
 # PlantVision — roadmap
 
 Open work only — a checkbox to-do list (the code is the record). Companions:
-`DATASET_LABELING_PLAN.md` (data loop), `ANDROID_RELEASE.md` (build/signing),
-`server/models/MODEL_CARD.md` (per-run metrics).
+`DATASET_LABELING_PLAN.md` (data loop), `../DEPLOYMENT.md` (deploy + Android
+signing/FCM), `server/models/MODEL_CARD.md` (per-run metrics).
 
 ## Where we are (stage)
 

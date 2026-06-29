@@ -78,7 +78,7 @@ Detailed training recipe lives in
 [`MODEL_CARD.md`](server/models/MODEL_CARD.md).
 
 **Model families.** Three capacity tiers (declared in
-`classes.json -> model_family`, surfaced by `/api/version`; the client picks
+`classes.json -> model_family`, surfaced by `/api/capabilities`; the client picks
 one per scan and `/api/capabilities` reports which the server offers):
 
 | Family | Backbone | Input | Where it runs |
@@ -149,45 +149,26 @@ cd server
 start.bat
 ```
 
-The script creates a virtual environment, installs CPU-only PyTorch
-plus `requirements.txt`, and launches FastAPI on
-`http://localhost:8000`.
+The script creates a virtualenv, installs CPU-only PyTorch + `requirements.txt`,
+and serves FastAPI on `http://localhost:8000`.
 
-Model weights + calibration artefacts are **not committed** and are
-**not auto-downloaded**. Provision them out of band: drop
-`detector.{pt,onnx}`, `classifier.onnx` (+ optional `classifier_int8.onnx`),
-`classes.json`, and the calibration files (`temperature.json`,
-`conformal.json`, `model_card.json`) into `server/models/` before
-starting. `train_notebook.ipynb` §6b tars these for you to copy across.
-The server is **fail-fast** — it refuses to start if a required artefact
-is missing. There is no demo fallback.
+Model weights are **not committed** and **not auto-downloaded** — drop the trained
+bundle (`detector.{pt,onnx}`, `classifier.onnx`, `classes.json`, calibration JSON)
+into `server/models/` first; the server is **fail-fast** without them, and
+`train_notebook.ipynb` §6b tars them for you. Production setup (Docker, nginx/TLS,
+systemd, API keys, Android signing/FCM) lives in [`DEPLOYMENT.md`](DEPLOYMENT.md).
 
 ### Android client
 
-1. Open `android/` in Android Studio (Hedgehog 2023.1+).
-2. Sync Gradle, run on a device or emulator.
-3. The server URL is baked in at build time via
-   `BuildConfig.API_BASE_URL`. Override at build time:
+1. Open `android/` in Android Studio (Hedgehog 2023.1+), sync Gradle, run on a
+   device or emulator.
+2. The server URL is baked in via `BuildConfig.API_BASE_URL`; override per build:
+   `./gradlew :app:assembleDebug -PAPI_BASE_URL=http://192.168.1.42:8000/`.
 
-   ```bash
-   ./gradlew :app:assembleDebug -PAPI_BASE_URL=http://192.168.1.42:8000/
-   ```
-
-> Cleartext HTTP is allowed only for the IPs declared in
-> [`network_security_config.xml`](android/app/src/main/res/xml/network_security_config.xml).
-> Terminate TLS in front of the server for production deployments — see
-> [`DEPLOYMENT.md`](DEPLOYMENT.md).
-
-### Optional integrations
-
-| Feature | Key | Setup |
-|---|---|---|
-| Species identification | `PLANTNET_API_KEY` | <https://my.plantnet.org/account/doc> — see [`DEPLOYMENT.md §1.1`](DEPLOYMENT.md#11-third-party-api-keys) |
-| AI plant doctor | `OPENROUTER_API_KEY` | <https://openrouter.ai> — see [`DEPLOYMENT.md §1.1`](DEPLOYMENT.md#11-third-party-api-keys) |
-
-Without these keys the server still starts and returns graceful
-"unavailable" payloads; the client renders specific UX messages so
-the user knows the feature is configurable, not broken.
+Release signing, FCM push, TLS, and the optional integrations — `PLANTNET_API_KEY`
+(species ID) and `OPENROUTER_API_KEY` (AI doctor); the server runs fine without them
+and reports each as "unavailable" — are all covered in
+[`DEPLOYMENT.md`](DEPLOYMENT.md).
 
 ---
 
@@ -278,15 +259,17 @@ plantdiseases/
 
 ## Documentation
 
-- [`DEPLOYMENT.md`](DEPLOYMENT.md) — production configuration, Docker
-  Compose, nginx + Let's Encrypt, systemd, monitoring, pre-launch
-  checklist, post-deploy smoke QA.
-- [`server/models/MODEL_CARD.md`](server/models/MODEL_CARD.md) —
-  classifier architecture, training data, calibration, intended use,
-  known limitations.
-- [`server/train_notebook.ipynb`](server/train_notebook.ipynb) — full
-  training recipe (group-aware splits + leakage guard, the three model
-  families, Aqua knowledge-distillation → TFLite, calibration + ONNX export).
+- [`DEPLOYMENT.md`](DEPLOYMENT.md) — production config, Docker Compose, nginx +
+  Let's Encrypt, systemd, monitoring, pre-launch checklist, smoke QA, and Android
+  release signing / FCM.
+- [`server/models/MODEL_CARD.md`](server/models/MODEL_CARD.md) — classifier
+  architecture, training data, calibration, intended use, known limitations.
+- [`server/train_notebook.ipynb`](server/train_notebook.ipynb) — full training
+  recipe (group-aware splits + leakage guard, the three families, Aqua KD → TFLite,
+  calibration + ONNX export).
+- [`docs/ROADMAP.md`](docs/ROADMAP.md) — current model status + what's next.
+- [`docs/DATASET_LABELING_PLAN.md`](docs/DATASET_LABELING_PLAN.md) — the offline
+  data-collection + judging loop.
 
 ---
 

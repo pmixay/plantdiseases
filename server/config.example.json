@@ -59,5 +59,9 @@
     "scan_max_images": 20000,
     "scan_common_keep_rate": 0.1,
     "scan_daily_cap_per_class": 50
+  },
+  "push": {
+    "fcm_credentials_file": "",
+    "_fcm_note": "Path to a Firebase service-account JSON for FCM HTTP v1 push (opinion notifications). Empty => push is a no-op. Keep this file OUT of git. The Android FCM *client* values (FCM_APP_ID / API_KEY / PROJECT_ID / SENDER_ID) are NOT server config — they live in the app build (see DEPLOYMENT.md)."
   }
 }
