@@ -170,6 +170,40 @@ class _DiskCache:
             logger.debug("disk cache write failed for %s: %s", self.dir.name, exc)
 
 
+def _probe_ai_cache_writable() -> bool:
+    """Surface a silently-unwritable AI_CACHE_DIR at startup.
+
+    The disk cache is best-effort (writes swallow OSError), so when AI_CACHE_DIR
+    is read-only — common in containers where only ``/tmp`` is writable — the
+    persistent layer silently never works: each worker falls back to its own
+    in-memory LRU, so an LLM care-plan / species-diseases result another worker
+    already paid for is re-fetched (~10-20 s) by every cold worker and lost on
+    restart. That is exactly the "another user loaded it but it's still slow for
+    me" symptom; one clear warning beats a silent perf cliff.
+    """
+    try:
+        _AI_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        probe = _AI_CACHE_DIR / ".write_probe"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink()
+        return True
+    except OSError as exc:
+        logger.warning(
+            "AI_CACHE_DIR %s is not writable (%s): LLM care-plan / "
+            "species-diseases results will NOT persist across restarts or be "
+            "shared across workers, so every cold worker re-pays the slow "
+            "OpenRouter call. Point AI_CACHE_DIR at a writable (ideally shared) "
+            "volume so the species card's common problems + short care plan load "
+            "fast for everyone after the first fetch.",
+            _AI_CACHE_DIR, exc,
+        )
+        return False
+
+
+# Probe once at import so a misconfigured cache dir is visible in the logs.
+_AI_CACHE_WRITABLE = _probe_ai_cache_writable()
+
+
 _PLANTNET_CACHE = _LRU(PLANTNET_CACHE_SIZE, PLANTNET_CACHE_TTL_SECONDS)
 
 
