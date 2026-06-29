@@ -563,7 +563,7 @@
     <string name="water_calc_tip_general">Water thoroughly until it drains, then let the top 2–3 cm dry before the next round.</string>
     <string name="water_calc_disclaimer">A starting point, not a rule — always check the top soil with your finger before watering.</string>
     <!-- Plant detail → Water Calculator shortcut -->
-    <string name="water_calc_entry_title">Calculate watering</string>
+    <string name="water_calc_entry_title">Water Calculator</string>
     <string name="water_calc_entry_subtitle">Estimate how much and how often to water this plant.</string>
 
     <!-- Accessibility: state announced on the selected model-family row -->
@@ -800,9 +800,8 @@
     <string name="home_scan_sub">Diagnose a disease from a photo</string>
     <string name="home_identify_title">Identify plant</string>
     <string name="home_identify_sub">What species is this?</string>
-    <string name="home_tools">Tools</string>
     <string name="home_tool_light">Light meter</string>
-    <string name="home_tool_water">Watering helper</string>
+    <string name="home_tool_water">Water Calculator</string>
     <string name="home_tool_symptom">Symptom check</string>
     <string name="home_tool_guide">Disease guide</string>
     <string name="home_trending">Trending in your country</string>

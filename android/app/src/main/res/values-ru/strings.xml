@@ -563,7 +563,7 @@
     <string name="water_calc_tip_general">Поливайте обильно, пока не потечёт из дренажа, затем дайте просохнуть верхним 2–3 см.</string>
     <string name="water_calc_disclaimer">Это отправная точка, а не правило — перед поливом всегда проверяйте верхний слой земли пальцем.</string>
     <!-- Plant detail → Water Calculator shortcut -->
-    <string name="water_calc_entry_title">Рассчитать полив</string>
+    <string name="water_calc_entry_title">Калькулятор полива</string>
     <string name="water_calc_entry_subtitle">Оцените, сколько и как часто поливать это растение.</string>
 
     <!-- Accessibility: state announced on the selected model-family row -->
@@ -792,9 +792,8 @@
     <string name="home_scan_sub">Диагноз болезни по фото</string>
     <string name="home_identify_title">Определить растение</string>
     <string name="home_identify_sub">Что это за вид?</string>
-    <string name="home_tools">Инструменты</string>
     <string name="home_tool_light">Люксметр</string>
-    <string name="home_tool_water">Помощник полива</string>
+    <string name="home_tool_water">Калькулятор полива</string>
     <string name="home_tool_symptom">Проверка симптомов</string>
     <string name="home_tool_guide">Справочник болезней</string>
     <string name="home_trending">В вашей стране</string>
