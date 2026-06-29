@@ -7,6 +7,7 @@ cached), the non-raster rejection, and the /api/plant-photo endpoint.
 from __future__ import annotations
 
 import importlib
+import io
 
 import pytest
 
@@ -82,6 +83,28 @@ def test_endpoint_serves_cached_photo(client, tmp_path, monkeypatch):
     )
     assert r.status_code == 200, r.text
     assert r.headers["content-type"].startswith("image/")
+
+
+def test_endpoint_downscales_to_webp(client, tmp_path, monkeypatch):
+    """A real full-res source is served as a downscaled WebP (the main-screen
+    bad-internet win), not the multi-MB original. Backward compatible: any
+    Glide client decodes WebP by magic bytes."""
+    from PIL import Image
+
+    import main as server_main
+    src = tmp_path / "big.png"
+    Image.new("RGB", (2400, 1600), (10, 120, 30)).save(src, format="PNG")
+    monkeypatch.setattr(server_main, "plant_photo_get_or_fetch", lambda u: src)
+    r = client.get(
+        "/api/plant-photo", params={"u": "https://upload.wikimedia.org/big.png"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"] == "image/webp"
+    # RIFF....WEBP magic — a real WebP, and downscaled to the 1000px bound.
+    assert r.content[:4] == b"RIFF" and r.content[8:12] == b"WEBP"
+    w, h = Image.open(io.BytesIO(r.content)).size
+    assert max(w, h) <= server_main._PLANT_PHOTO_MAX_SIDE
+    assert len(r.content) < src.stat().st_size  # smaller than the PNG original
 
 
 def test_endpoint_rejects_disallowed_host(client):

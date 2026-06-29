@@ -26,6 +26,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.bumptech.glide.Glide
+import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.PopularResponse
@@ -266,9 +267,18 @@ class HomeFragment : Fragment() {
             }
             val cacheKey = "popular:v5:" +
                 "${region?.country.orEmpty()}|${region?.lat ?: ""},${region?.lon ?: ""}|$locale"
-            val popular = com.plantdiseases.app.util.ResponseCache
-                .get(cacheKey, PopularResponse::class.java)
-                ?: runCatching {
+            // Stale-while-revalidate: paint the last cached bundle immediately
+            // (even if its 2-min TTL lapsed) so the main screen never blanks on
+            // a slow connection, then refresh in the background only when stale.
+            val cached = com.plantdiseases.app.util.ResponseCache
+                .peek(cacheKey, PopularResponse::class.java)
+            cached?.let {
+                val b = _binding ?: return@launch
+                renderSpecies(b, it.value)
+                renderDiseases(b, it.value)
+            }
+            if (cached == null || !cached.fresh) {
+                val fresh = runCatching {
                     apiClient.popular(
                         country = region?.country,
                         region = region?.locality,
@@ -276,16 +286,23 @@ class HomeFragment : Fragment() {
                         lon = region?.lon,
                         locale = locale,
                     )
-                }.getOrNull()?.takeIf { it.items.isNotEmpty() }?.also {
+                }.getOrNull()?.takeIf { it.items.isNotEmpty() }
+                if (fresh != null) {
                     com.plantdiseases.app.util.ResponseCache.put(
                         cacheKey,
-                        it,
+                        fresh,
                         com.plantdiseases.app.util.ResponseCache.TTL_POPULAR_MS,
                     )
+                    val b = _binding ?: return@launch
+                    renderSpecies(b, fresh)
+                    renderDiseases(b, fresh)
+                } else if (cached == null) {
+                    // No cache and no network → fall back to the bundled list.
+                    val b = _binding ?: return@launch
+                    renderSpecies(b, null)
+                    renderDiseases(b, null)
                 }
-            val b = _binding ?: return@launch
-            renderSpecies(b, popular)
-            renderDiseases(b, popular)
+            }
         }
     }
 
@@ -404,6 +421,9 @@ class HomeFragment : Fragment() {
         if (cached != null) {
             Glide.with(target).load(com.plantdiseases.app.util.ServerConfig.photoUrl(cached))
                 .placeholder(R.drawable.ic_plant_placeholder)
+                // Disk-cache the bytes (like every other call site) so a slow
+                // connection only ever downloads each carousel photo once.
+                .diskCacheStrategy(DiskCacheStrategy.ALL)
                 // Fall back to the general plant icon when the photo can't load
                 // (e.g. a species like Aloe whose lead image fails to resolve),
                 // so the card never ends up blank.
@@ -420,6 +440,7 @@ class HomeFragment : Fragment() {
             if (url != null) {
                 Glide.with(target).load(com.plantdiseases.app.util.ServerConfig.photoUrl(url))
                     .placeholder(R.drawable.ic_plant_placeholder)
+                    .diskCacheStrategy(DiskCacheStrategy.ALL)
                     .error(R.drawable.ic_plant_placeholder)
                     .into(target)
             }

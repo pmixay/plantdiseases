@@ -1491,15 +1491,42 @@ def _enforce_canonical_dosages(text: str, plan: dict) -> bool:
     return True
 
 
+# Care-plan LLM polish is deterministic in its input (the rule-engine plan +
+# locale), so the ~10-20s OpenRouter rewrite is cached with the same long TTL
+# and disk-persistence as species_common_diseases — otherwise every care-plan
+# request re-paid for an identical prose summary.
+CARE_PLAN_CACHE_SIZE = get_int("CARE_PLAN_CACHE_SIZE", 256)
+CARE_PLAN_CACHE_TTL_SECONDS = get_int("CARE_PLAN_CACHE_TTL_SECONDS", 7 * 24 * 3600)
+_CARE_PLAN_CACHE = _LRU(CARE_PLAN_CACHE_SIZE, CARE_PLAN_CACHE_TTL_SECONDS)
+_CARE_PLAN_DISK = _DiskCache("care_plan_polish", CARE_PLAN_CACHE_TTL_SECONDS)
+
+
 def _polish_plan_with_llm(plan: dict, locale: str) -> dict:
     """Optional LLM polish step. Returns the plan with a friendly
     Markdown summary attached, or the input plan unchanged on failure.
 
     A deterministic fallback Markdown summary is always present (added
     upstream in ``generate_care_plan``); the LLM only replaces it.
+
+    The polished summary is cached (in-memory + disk) keyed on the
+    deterministic plan content, so an identical (disease, species, light,
+    locale, season) tuple never re-pays for the OpenRouter rewrite.
     """
     if not _chat_api_key_present():
         return plan
+    # Key on the plan content itself: it's deterministic in the care-plan
+    # inputs and already carries the resolved ``season`` and ``summary_md``,
+    # so this captures the full request shape without re-deriving it. The
+    # incoming ``summary_md`` is the deterministic fallback we're about to
+    # replace, so it's part of the stable key, not noise.
+    cache_key = json.dumps(plan, sort_keys=True, ensure_ascii=False) + f"|{locale}"
+    polished = _CARE_PLAN_CACHE.get(cache_key)
+    if polished is None:
+        polished = _CARE_PLAN_DISK.get(cache_key)
+        if polished is not None:
+            _CARE_PLAN_CACHE.put(cache_key, polished)
+    if polished is not None:
+        return {**plan, "summary_md": polished, "cached": True}
     locale_hint = (
         "Write the summary in Russian." if locale.lower().startswith("ru")
         else "Write the summary in English."
@@ -1514,6 +1541,8 @@ def _polish_plan_with_llm(plan: dict, locale: str) -> dict:
     try:
         polish, _, _ = _call_openrouter(system, user_blocks, max_tokens=400)
         if polish and _enforce_canonical_dosages(polish, plan):
+            _CARE_PLAN_CACHE.put(cache_key, polish)
+            _CARE_PLAN_DISK.put(cache_key, polish)
             plan = {**plan, "summary_md": polish}
     except Exception as e:  # noqa: BLE001
         logger.info("Care-plan polish skipped: %s", e)
