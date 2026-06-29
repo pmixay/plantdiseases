@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Grid column counts. Overridden per smallest-width bucket
+     (values-sw600dp / values-sw720dp) so the photo gallery and the community
+     feed use more columns on tablets instead of two oversized ones. -->
+<resources>
+    <integer name="gallery_span_count">2</integer>
+    <integer name="community_span_count">2</integer>
+</resources>

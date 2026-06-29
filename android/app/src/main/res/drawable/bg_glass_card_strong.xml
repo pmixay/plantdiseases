@@ -1,11 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Light-mode strong card surface — flat opaque white. The frosted
-    variant lives under res/drawable-night/ for dark mode.
+    Light-mode strong card surface — flat opaque white with a visible
+    hairline stroke so a foreground element (e.g. the scan-result sticky
+    header) reads as distinct from the content scrolling beneath it. The
+    frosted variant lives under res/drawable-night/ for dark mode.
 -->
 <shape
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
     <solid android:color="@color/surface" />
+    <stroke
+        android:width="@dimen/glass_stroke_width"
+        android:color="@color/card_stroke" />
     <corners android:radius="@dimen/radius_lg" />
 </shape>

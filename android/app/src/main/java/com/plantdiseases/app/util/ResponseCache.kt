@@ -38,6 +38,14 @@ object ResponseCache {
     val TTL_CARE_PLAN_MS: Long = TimeUnit.DAYS.toMillis(7)
     val TTL_TRENDING_MS: Long = TimeUnit.HOURS.toMillis(1)
 
+    // A species whose AI "common problems" came back unavailable (no key /
+    // quota / transient failure → the UI renders the bundled offline guide) is
+    // cached briefly, so reopening the same species is instant instead of
+    // re-hitting the network and flashing a spinner every time. The short
+    // window means it still retries within the day, picking up the AI list
+    // once it becomes available.
+    val TTL_SPECIES_MISS_MS: Long = TimeUnit.HOURS.toMillis(6)
+
     // The popular bundle is a live community-scan aggregate, so cache it only
     // very briefly — a new nearby scan should surface near-live, not after
     // half an hour. The server invalidates its own bundle cache on every

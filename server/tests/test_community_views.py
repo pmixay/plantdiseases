@@ -88,6 +88,8 @@ def test_opinions_for_includes_view_count(comm):
 
 def test_opinion_counts_for_user_carries_views(comm):
     _scan(comm, scan_id="s1", owner="owner")
+    # The poll only surfaces scans the owner asked the community about.
+    comm.set_wants_opinion("s1", "owner")
     # An opinion from someone else is what makes the scan show up here.
     comm.record_opinion(scan_id="s1", author_pseudo_id="other",
                         suggested_disease="leaf_spot")

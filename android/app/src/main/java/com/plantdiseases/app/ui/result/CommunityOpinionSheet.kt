@@ -487,6 +487,30 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
             }.show(fm, TAG)
         }
 
+        /** Read-only browse for the result-screen "similar scans" strip: shows
+         *  the scan's photo + diagnosis context + community consensus/replies
+         *  with NO way to leave an opinion. Browsing similar cases is decoupled
+         *  from community participation (leaving opinions), which stays behind
+         *  the opt-in on the dedicated "near you" screen. */
+        fun showReadOnly(
+            fm: FragmentManager,
+            item: com.plantdiseases.app.data.model.CommunityScanItem,
+            currentDisplayName: String?,
+        ) {
+            CommunityOpinionSheet().apply {
+                arguments = bundleOf(
+                    ARG_SCAN_ID to item.scanId,
+                    ARG_CURRENT_NAME to currentDisplayName,
+                    ARG_DISEASE_KEY to item.disease,
+                    ARG_CONFIDENCE to (item.confidence ?: -1f),
+                    ARG_SPECIES to item.species,
+                    ARG_SPECIES_SCORE to (item.speciesScore ?: -1f),
+                    ARG_THUMB to item.thumbPath,
+                    ARG_VIEW_ONLY to true,
+                )
+            }.show(fm, TAG)
+        }
+
         /** Minimal opener for callers that only have a scan_id + label (e.g.
          *  "my opinions"): no diagnosis context, so Agree falls back to the
          *  picker. */

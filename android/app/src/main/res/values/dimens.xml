@@ -11,6 +11,13 @@
     <dimen name="space_3xl">32dp</dimen>
     <dimen name="space_4xl">40dp</dimen>
 
+    <!-- Screen-edge content gutter. 16dp on phones (matches space_lg);
+         widened on large screens (values-sw600dp / values-sw720dp) so text
+         lines don't stretch edge-to-edge and cards don't balloon on tablets.
+         Apply to a screen's top-level content container, NOT to internal card
+         padding (which should stay space_lg). -->
+    <dimen name="content_gutter">16dp</dimen>
+
     <!-- ─── Corner radii ─────────────────────────────────────────── -->
     <dimen name="radius_sm">12dp</dimen>
     <dimen name="radius_md">16dp</dimen>

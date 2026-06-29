@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ~7" tablets (smallest width >= 600dp). -->
+<resources>
+    <integer name="gallery_span_count">3</integer>
+    <integer name="community_span_count">2</integer>
+</resources>

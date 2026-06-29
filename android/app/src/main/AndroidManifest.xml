@@ -41,6 +41,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:screenOrientation="portrait"
             android:theme="@style/Theme.PlantDiseases.Splash"
             android:windowSoftInputMode="adjustResize">
             <!--
@@ -107,7 +108,8 @@
 
         <activity
             android:name=".ui.community.CommunityMapActivity"
-            android:exported="false" />
+            android:exported="false"
+            android:screenOrientation="portrait" />
 
         <activity
             android:name=".ui.symptom.SymptomCheckerActivity"
@@ -136,8 +138,9 @@
         <activity
             android:name="com.canhub.cropper.CropImageActivity"
             android:exported="false"
+            android:screenOrientation="portrait"
             android:theme="@style/Theme.PlantDiseases.Crop"
-            tools:replace="android:exported" />
+            tools:replace="android:exported,android:screenOrientation" />
 
         <receiver
             android:name=".worker.ReminderActionReceiver"

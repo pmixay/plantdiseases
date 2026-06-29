@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ~10" tablets (smallest width >= 720dp): wider still. -->
+<resources>
+    <dimen name="content_gutter">72dp</dimen>
+</resources>

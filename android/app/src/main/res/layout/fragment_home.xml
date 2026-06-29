@@ -27,7 +27,7 @@
             android:id="@+id/tv_greeting"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:paddingHorizontal="@dimen/space_lg"
+            android:paddingHorizontal="@dimen/content_gutter"
             android:fontFamily="sans-serif-medium"
             android:textColor="@color/on_surface"
             android:textSize="@dimen/text_headline" />
@@ -37,7 +37,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
-            android:paddingHorizontal="@dimen/space_lg"
+            android:paddingHorizontal="@dimen/content_gutter"
             android:text="@string/home_subtitle"
             android:textColor="@color/on_surface_secondary"
             android:textSize="@dimen/text_body" />
@@ -48,7 +48,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/space_lg"
             android:orientation="horizontal"
-            android:paddingHorizontal="@dimen/space_lg">
+            android:paddingHorizontal="@dimen/content_gutter">
 
             <!-- Both hero cards use match_parent height against a wrap_content
                  row: a horizontal LinearLayout then stretches the shorter card
@@ -147,7 +147,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/space_md"
             android:orientation="horizontal"
-            android:paddingHorizontal="@dimen/space_lg">
+            android:paddingHorizontal="@dimen/content_gutter">
 
             <LinearLayout
                 android:id="@+id/tile_tools"
@@ -191,7 +191,7 @@
                 android:layout_height="wrap_content"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
-                android:paddingHorizontal="@dimen/space_lg">
+                android:paddingHorizontal="@dimen/content_gutter">
 
                 <TextView
                     android:id="@+id/tv_species_title"
@@ -214,12 +214,12 @@
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/rv_species"
                 android:layout_width="match_parent"
-                android:layout_height="184dp"
+                android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_sm"
                 android:clipToPadding="false"
                 android:nestedScrollingEnabled="false"
                 android:orientation="horizontal"
-                android:paddingHorizontal="@dimen/space_lg" />
+                android:paddingHorizontal="@dimen/content_gutter" />
         </LinearLayout>
 
         <!-- Popular diseases -->
@@ -234,7 +234,7 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:paddingHorizontal="@dimen/space_lg"
+                android:paddingHorizontal="@dimen/content_gutter"
                 android:text="@string/home_popular_diseases"
                 android:textColor="@color/on_surface"
                 android:textSize="@dimen/text_title_sm"
@@ -243,12 +243,12 @@
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/rv_popular"
                 android:layout_width="match_parent"
-                android:layout_height="166dp"
+                android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_sm"
                 android:clipToPadding="false"
                 android:nestedScrollingEnabled="false"
                 android:orientation="horizontal"
-                android:paddingHorizontal="@dimen/space_lg" />
+                android:paddingHorizontal="@dimen/content_gutter" />
         </LinearLayout>
 
         <!-- Disease guide -->
@@ -263,7 +263,7 @@
                 android:layout_height="wrap_content"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
-                android:paddingHorizontal="@dimen/space_lg">
+                android:paddingHorizontal="@dimen/content_gutter">
 
                 <TextView
                     android:layout_width="0dp"
@@ -287,12 +287,12 @@
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/rv_guide"
                 android:layout_width="match_parent"
-                android:layout_height="166dp"
+                android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_sm"
                 android:clipToPadding="false"
                 android:nestedScrollingEnabled="false"
                 android:orientation="horizontal"
-                android:paddingHorizontal="@dimen/space_lg" />
+                android:paddingHorizontal="@dimen/content_gutter" />
         </LinearLayout>
 
     </LinearLayout>
