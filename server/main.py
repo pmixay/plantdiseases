@@ -156,6 +156,9 @@ try:
     from .community import (
         view_counts as community_view_counts,
     )
+    from .community import (
+        wants_opinion as community_wants_opinion,
+    )
     from .config import get, get_bool, get_float, get_int, get_list, get_str
     from .countries import COUNTRY_NAMES, to_iso_alpha2
     from .diseases_data import (
@@ -312,6 +315,9 @@ except ImportError:
     )
     from community import (
         view_counts as community_view_counts,
+    )
+    from community import (
+        wants_opinion as community_wants_opinion,
     )
     from config import get, get_bool, get_float, get_int, get_list, get_str
     from countries import COUNTRY_NAMES, to_iso_alpha2
@@ -3254,10 +3260,14 @@ async def community_opinion_submit(payload: CommunityOpinionRequest, request: Re
 
     # Push the scan's owner a notification (best-effort; no-op when push isn't
     # configured). Skip self-opinions — you don't get pinged for your own note.
+    # Only owners who explicitly REQUESTED a second opinion get pushed: sharing
+    # a scan to the corpus is not a request to be notified.
     author = payload.user_pseudo_id.strip()
 
     def _push_owner() -> None:
         try:
+            if not community_wants_opinion(sid):
+                return
             owner = community_owner_of(sid)
             if owner and owner != author:
                 push_send_opinion(owner, sid, disease, payload.note, payload.nickname)

@@ -11,7 +11,6 @@ import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.repository.CommunityUploader
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
-import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.OpinionPrefs
 import com.plantdiseases.app.util.RegionResolver
@@ -34,7 +33,6 @@ import org.koin.core.component.inject
 class CommunityController(
     private val activity: AppCompatActivity,
     private val binding: ActivityResultBinding,
-    private val onEnableCommunity: (rerun: () -> Unit) -> Unit,
     private val ensureNotificationPermission: () -> Unit,
 ) : KoinComponent {
     private val repository: ScanRepository by inject()
@@ -189,25 +187,14 @@ class CommunityController(
         val card = binding.cardSimilarScans
         val rv = binding.rvSimilarScans
         val empty = binding.tvSimilarEmpty
-        val enableBtn = binding.btnEnableSimilar
-        // Default state: hidden until the network call returns.
+        // Default state: hidden until the network call returns. Seeing similar
+        // scans (and leaving second opinions on them) does NOT require sharing
+        // your own scans — it's decoupled from the community opt-in, so we
+        // always fetch regardless of CommunityPrefs.uploadsEnabled().
         card.visibility = View.GONE
         rv.visibility = View.GONE
         empty.visibility = View.GONE
-        enableBtn.visibility = View.GONE
-
-        // Community is opt-in: until the user enables it, show the card with an
-        // Enable CTA instead of reading location or hitting the network.
-        if (!CommunityPrefs.uploadsEnabled(activity)) {
-            card.visibility = View.VISIBLE
-            binding.tvSimilarSubtitle.text =
-                activity.getString(R.string.similar_scans_enable_prompt)
-            enableBtn.visibility = View.VISIBLE
-            enableBtn.setOnClickListener {
-                onEnableCommunity { bindSimilarScans(scan, repository, isRu) }
-            }
-            return
-        }
+        binding.btnEnableSimilar.visibility = View.GONE
 
         // Scope the carousel by the verdict the user actually SAW — the
         // server's reroute-aware displayed class — not the raw argmax.
@@ -217,8 +204,12 @@ class CommunityController(
         val adapter = SimilarScansAdapter(
             displayName = { key -> displayName(key, isRu) },
             onClick = { item ->
+                // Read-only browse: viewing similar cases works with community
+                // off, but leaving a second opinion (participation) does not
+                // happen from this strip — that stays behind the opt-in on the
+                // "near you" screen.
                 recordView(item.scanId, pseudoId)
-                CommunityOpinionSheet.show(
+                CommunityOpinionSheet.showReadOnly(
                     activity.supportFragmentManager,
                     item,
                     displayName(item.disease, isRu),
@@ -247,8 +238,9 @@ class CommunityController(
         val rv = binding.rvSimilarScans
         val empty = binding.tvSimilarEmpty
         activity.lifecycleScope.launch {
-            // Opt-in is confirmed before we get here, so reading coarse
-            // location for the nearby scope is expected.
+            // Best-effort coarse location for the nearby scope; if it's
+            // unavailable (e.g. the user never granted location), the server
+            // widens to country/global scope, so the carousel still fills.
             val region = runCatching { RegionResolver.resolveRegion(activity) }.getOrNull()
             repository.communityNearby(
                 country = region?.country,
@@ -271,7 +263,8 @@ class CommunityController(
                 } ?: activity.getString(R.string.community_scope_global)
                 // Restrict to genuinely similar scans client-side too, so a
                 // cached response from an older deployment can't leak unrelated
-                // verdicts/species into a "similar to this" strip.
+                // verdicts/species into a "similar to this" strip. Order stays
+                // the server's newest-first.
                 val items = SimilarScans.filterSimilar(response.items, disease, speciesScientific)
 
                 if (items.isEmpty()) {

@@ -191,7 +191,6 @@
     <string name="similar_scans_subtitle_region">Recent community diagnoses in %1$s</string>
     <string name="similar_scans_subtitle_no_region">No country feed is available yet.</string>
     <string name="similar_scans_empty">No community scans yet — your scan will be the first.</string>
-    <string name="similar_scans_enable_prompt">Want to see what people are scanning nearby?</string>
     <!-- Community second opinion -->
     <string name="community_opinion_title">Get a second opinion</string>
     <string name="community_opinion_subtitle">Ask the community what they think — and weigh in on others\' scans.</string>
@@ -224,7 +223,7 @@
     <string name="result_second_opinion_view">View second opinions (%1$d)</string>
     <string name="result_second_opinion_failed">Couldn\'t request a second opinion. Try again.</string>
     <string name="community_opinion_replies_title">Community second opinions</string>
-    <string name="community_opinion_replies_subtitle">What the community thinks about your scan.</string>
+    <string name="community_opinion_replies_subtitle">What the community thinks about this scan.</string>
     <string name="community_opinion_locked">You\'ve already shared your second opinion on this scan.</string>
     <string name="community_opinion_replies_empty">No second opinions yet. Check back soon.</string>
     <string name="community_wants_opinion_badge">Wants a second opinion</string>

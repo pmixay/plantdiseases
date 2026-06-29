@@ -67,32 +67,7 @@ class ResultActivity : AppCompatActivity() {
     private val gardenAttach by lazy { GardenAttachController(this, binding) }
     private val share by lazy { ShareController(this) }
     private val community by lazy {
-        CommunityController(this, binding, ::onEnableCommunity, ::ensureNotificationPermission)
-    }
-
-    // In-context community opt-in: tapping "Enable" on the similar-scans card
-    // requests coarse location (+ notifications on 13+) and, whatever the
-    // outcome, re-renders the gated section via this stored lambda.
-    private var pendingCommunityRerun: (() -> Unit)? = null
-    private val communityPermissionLauncher = registerForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions(),
-    ) { _ ->
-        // Opting in is consent to share — flip the pref on regardless of which
-        // permissions were granted (a denied location just means coarser/no
-        // nearby grouping, not "off").
-        com.plantdiseases.app.util.CommunityPrefs.enable(this)
-        com.plantdiseases.app.push.PushManager.registerIfEnabled(this)
-        pendingCommunityRerun?.invoke()
-        pendingCommunityRerun = null
-    }
-
-    private fun onEnableCommunity(rerun: () -> Unit) {
-        pendingCommunityRerun = rerun
-        val perms = mutableListOf(android.Manifest.permission.ACCESS_COARSE_LOCATION)
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            perms += android.Manifest.permission.POST_NOTIFICATIONS
-        }
-        communityPermissionLauncher.launch(perms.toTypedArray())
+        CommunityController(this, binding, ::ensureNotificationPermission)
     }
 
     // Notifications-only prompt, fired when the user asks for a second opinion

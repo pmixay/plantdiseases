@@ -613,10 +613,15 @@ def opinion_counts_for_user(user_pseudo_id: str, *, limit: int = 200) -> dict:
     """Opinion counts on a user's OWN shared scans — drives the client's
     "someone left a second opinion" notification poll.
 
-    Each of the caller's scans that has at least one opinion FROM SOMEONE ELSE
-    (your own opinions on your scan don't notify you), with the count, the
-    latest opinion timestamp, and the scan's disease so the client can say
-    "someone weighed in on your <disease> scan".
+    Restricted to scans whose owner explicitly REQUESTED a second opinion
+    (see :func:`set_wants_opinion`): sharing a scan to the corpus is not a
+    request to be pinged, so opinions on scans the owner never asked about
+    don't drive notifications.
+
+    Each of the caller's requested scans that has at least one opinion FROM
+    SOMEONE ELSE (your own opinions on your scan don't notify you), with the
+    count, the latest opinion timestamp, and the scan's disease so the client
+    can say "someone weighed in on your <disease> scan".
 
     Shape::
         {"scans": [{"scan_id", "disease", "opinion_count", "latest_at",
@@ -639,6 +644,8 @@ def opinion_counts_for_user(user_pseudo_id: str, *, limit: int = 200) -> dict:
             "JOIN community_opinions o "
             "  ON o.scan_id = s.scan_id AND o.author_pseudo_id != s.user_pseudo_id "
             "WHERE s.user_pseudo_id = ? "
+            "  AND EXISTS (SELECT 1 FROM community_opinion_requests r "
+            "              WHERE r.scan_id = s.scan_id) "
             "GROUP BY s.scan_id, s.disease "
             "ORDER BY latest DESC LIMIT ?",
             (uid, limit),
@@ -699,6 +706,27 @@ def owner_of(scan_id: str) -> str | None:
             "SELECT user_pseudo_id FROM community_scans WHERE scan_id = ?", (sid,),
         ).fetchone()
     return str(row[0]) if row else None
+
+
+def wants_opinion(scan_id: str) -> bool:
+    """True iff the scan's owner explicitly asked the community to weigh in.
+
+    Notifications about new opinions are only sent for scans whose owner
+    raised their hand via :func:`set_wants_opinion` — merely sharing a scan
+    to the corpus is not a request to be pinged. The durable
+    ``community_opinion_requests`` store is the source of truth (it survives
+    the upload/flag race), so we check it rather than the materialised
+    ``wants_opinion`` column."""
+    sid = (scan_id or "").strip()
+    if not sid:
+        return False
+    init_db()
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM community_opinion_requests WHERE scan_id = ? LIMIT 1",
+            (sid,),
+        ).fetchone()
+    return row is not None
 
 
 def record_view(scan_id: str, viewer_pseudo_id: str) -> bool:
@@ -1426,4 +1454,5 @@ __all__ = [
     "scans_by_species",
     "set_wants_opinion",
     "stats_snapshot",
+    "wants_opinion",
 ]
