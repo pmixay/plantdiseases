@@ -274,11 +274,14 @@ class ScanRepository(
      */
     suspend fun fetchCarePlan(request: CarePlanRequest): Result<CarePlanResponse> =
         withContext(Dispatchers.IO) {
-            // Care plans are deterministic per (disease, species, light, locale)
-            // and expensive to generate, so serve from the persistent cache once
-            // fetched — reopening a result no longer re-hits the LLM.
-            val cacheKey = "careplan:v1:${request.disease}|${request.species}" +
-                "|${request.light}|${request.locale}"
+            // Care plans are deterministic per (disease, species, light, locale,
+            // season) and expensive to generate, so serve from the persistent
+            // cache once fetched — reopening a result no longer re-hits the LLM.
+            // `season` is part of the key: the server's plan differs by season
+            // (dormant stretches watering / pauses feeding), so an explicit
+            // season must not collide with another on the same cache entry.
+            val cacheKey = "careplan:v2:${request.disease}|${request.species}" +
+                "|${request.light}|${request.locale}|${request.season ?: ""}"
             com.plantdiseases.app.util.ResponseCache
                 .get(cacheKey, CarePlanResponse::class.java)
                 ?.let { return@withContext Result.success(it) }

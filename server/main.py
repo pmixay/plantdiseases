@@ -3619,7 +3619,8 @@ async def species_info_endpoint(name: str, locale: str = "en"):
         None, lambda: fetch_species_info(n, lang),
     )
     if info is None:
-        return JSONResponse(content={"available": False})
+        # Don't let an intermediary cache a transient Wikipedia miss.
+        return JSONResponse(content={"available": False}, headers={"Cache-Control": "no-store"})
     # Route the Wikipedia photos through the server's cache so the app loads
     # them from our domain (reliable where Wikimedia is blocked). Unproxyable
     # entries drop to None/out so the card just omits them.
@@ -3628,7 +3629,13 @@ async def species_info_endpoint(name: str, locale: str = "en"):
         "image_url": plant_photo_proxy(info.get("image_url")),
         "images": [p for p in (plant_photo_proxy(i) for i in info.get("images") or []) if p],
     }
-    return JSONResponse(content={"available": True, **proxied})
+    # Species facts are stable; carry a long Cache-Control so a CDN / HTTP cache
+    # reuses it too (symmetric with /species-diseases). The app has its own
+    # 7-day ResponseCache, so this mainly helps any intermediary layer.
+    return JSONResponse(
+        content={"available": True, **proxied},
+        headers={"Cache-Control": "public, max-age=604800"},
+    )
 
 
 @api_router.get("/species-diseases")
@@ -3739,9 +3746,21 @@ async def plant_photo(request: Request, u: str | None = None,
     path = await loop.run_in_executor(None, lambda: plant_photo_get_or_fetch(url))
     if path is None:
         raise HTTPException(status_code=404, detail="Photo unavailable")
+    # Wikimedia lead images come at full resolution (often multi-MB) — the home
+    # carousel pulls ~10 of them, the worst payload on the main screen for a
+    # slow connection. Downscale + WebP-transcode to a phone-sized variant once
+    # and serve that; fall back to the original bytes if transcoding fails.
+    # Backward compatible: Glide decodes WebP transparently on any app version.
+    webp = await loop.run_in_executor(
+        None, lambda: _webp_variant(path, _PLANT_PHOTO_MAX_SIDE, _PLANT_PHOTO_QUALITY),
+    )
+    serve, media = (
+        (webp, "image/webp") if webp is not None
+        else (path, plant_photo_media_type(path))
+    )
     return _cached_image_response(
-        request, path,
-        media_type=plant_photo_media_type(path),
+        request, serve,
+        media_type=media,
         cache_control="public, max-age=604800",
     )
 
@@ -3758,33 +3777,34 @@ async def guide_manifest():
     return {"count": len(keys), "keys": keys}
 
 
-# Guide photos ship as large PNGs (80–565 KB of photographic content —
-# the worst case for PNG). We transcode each to a downscaled WebP once,
-# lazily, into a sibling cache dir and serve that instead: ~10× fewer
-# bytes for visually identical strips. The variant is keyed by the
-# source file's mtime so replacing a photo in a release regenerates it.
-_GUIDE_WEBP_DIR_NAME = ".webp"
-_GUIDE_WEBP_MAX_SIDE = 800
-_GUIDE_WEBP_QUALITY = 80
-_guide_webp_lock = threading.Lock()
+# Large source images (guide PNGs, full-res Wikimedia plant photos) are
+# downscaled + re-encoded to WebP once, lazily, into a sibling cache dir and
+# served instead: far fewer bytes for a visually identical phone-sized image.
+# The variant is keyed by the source file's mtime so a replaced source
+# regenerates it. WebP is decoded transparently by Glide on any app vintage
+# (it sniffs magic bytes, not the URL/extension), so this is backward
+# compatible with already-shipped clients.
+_WEBP_DIR_NAME = ".webp"
+_webp_lock = threading.Lock()
 
 
-def _guide_webp_variant(src: Path) -> Path | None:
-    """Return the cached WebP variant for ``src``, generating it if stale.
+def _webp_variant(src: Path, max_side: int, quality: int) -> Path | None:
+    """Return a cached downscaled-WebP variant of ``src`` (``max_side`` px on
+    the longest edge, ``quality`` 0–100), generating it if stale.
 
-    Any failure (PIL hiccup, unwritable dir) returns ``None`` and the
-    caller falls back to serving the original PNG — the optimisation
-    must never take the endpoint down.
+    Any failure (PIL hiccup, unwritable dir) returns ``None`` and the caller
+    falls back to serving the original — the optimisation must never take the
+    endpoint down.
     """
     try:
-        out_dir = src.parent / _GUIDE_WEBP_DIR_NAME
+        out_dir = src.parent / _WEBP_DIR_NAME
         out = out_dir / f"{src.stem}.webp"
         src_mtime = src.stat().st_mtime
         if out.is_file() and out.stat().st_mtime >= src_mtime:
             return out
         # One transcode at a time — two concurrent first requests for the
         # same key must not interleave writes into the same target file.
-        with _guide_webp_lock:
+        with _webp_lock:
             if out.is_file() and out.stat().st_mtime >= src_mtime:
                 return out
             out_dir.mkdir(parents=True, exist_ok=True)
@@ -3792,19 +3812,37 @@ def _guide_webp_variant(src: Path) -> Path | None:
             img.load()
             img = img.convert("RGB")
             w, h = img.size
-            scale = _GUIDE_WEBP_MAX_SIDE / float(max(w, h))
+            scale = max_side / float(max(w, h))
             if scale < 1.0:
                 img = img.resize(
                     (max(1, int(w * scale)), max(1, int(h * scale))),
                     Image.LANCZOS,
                 )
             tmp = out.with_suffix(".webp.tmp")
-            img.save(tmp, format="WEBP", quality=_GUIDE_WEBP_QUALITY, method=4)
+            img.save(tmp, format="WEBP", quality=quality, method=4)
             tmp.replace(out)
         return out
-    except Exception as exc:  # noqa: BLE001 — fall back to the original PNG
-        logger.warning("Guide WebP transcode failed for %s: %s", src, exc)
+    except Exception as exc:  # noqa: BLE001 — fall back to the original
+        logger.warning("WebP transcode failed for %s: %s", src, exc)
         return None
+
+
+# Guide photos ship as large PNGs (80–565 KB of photographic content — the
+# worst case for PNG); 800 px is plenty for the in-app example strips.
+_GUIDE_WEBP_MAX_SIDE = 800
+_GUIDE_WEBP_QUALITY = 80
+
+
+def _guide_webp_variant(src: Path) -> Path | None:
+    return _webp_variant(src, _GUIDE_WEBP_MAX_SIDE, _GUIDE_WEBP_QUALITY)
+
+
+# Plant-photo proxy: this one URL feeds both the small home carousel and the
+# species-detail hero, so 1000 px keeps the hero crisp while still cutting a
+# multi-MB Wikimedia original to tens of KB. Config-driven so a deploy can tune
+# the bandwidth/quality trade-off without a code change.
+_PLANT_PHOTO_MAX_SIDE = get_int("PLANT_PHOTO_MAX_SIDE", 1000)
+_PLANT_PHOTO_QUALITY = get_int("PLANT_PHOTO_QUALITY", 80)
 
 
 @api_router.get("/guide/photo/{key}")
