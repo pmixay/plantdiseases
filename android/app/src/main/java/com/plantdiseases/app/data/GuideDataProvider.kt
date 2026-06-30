@@ -1550,14 +1550,14 @@ PREVENTION:
      * Guide IDs that have a server-hosted example photo. These photos moved out
      * of the APK (server/static/guide/<key>.png, served by /api/guide/photo/)
      * to shrink the app; the client downloads + disk-caches them so they stay
-     * available offline after first view. Pure care topics and "healthy" ship
-     * none. Keep this set in sync with server/static/guide/.
+     * available offline after first view. Pure care topics ship none. Keep this
+     * set in sync with server/static/guide/.
      */
     private val EXAMPLE_PHOTO_KEYS = setOf(
         "powdery_mildew", "leaf_spot", "blight", "root_rot", "leaf_mold",
         "viral_disease", "rust", "botrytis", "spider_mites", "aphids",
         "mealybugs", "scale_insects", "leaf_scorch_underwatering",
-        "nutrient_deficiency", "edema", "sunburn_or_scorch",
+        "nutrient_deficiency", "edema", "sunburn_or_scorch", "pests", "healthy",
     )
 
     /** The example-photo key for a guide article, or null where none applies.
