@@ -69,14 +69,16 @@ OPENROUTER_MODEL = get_str("OPENROUTER_MODEL", "openai/gpt-oss-120b").strip()
 OPENROUTER_BASE_URL = get_str("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
 OPENROUTER_TOTAL_TIMEOUT = get_float("OPENROUTER_TOTAL_TIMEOUT", 20.0)
 # The default model (openai/gpt-oss-120b) is a REASONING model: its hidden
-# reasoning tokens are billed against max_tokens, so a small budget gets eaten
+# reasoning tokens are billed against max_tokens, so a SMALL budget gets eaten
 # by the reasoning trace and the actual answer is truncated mid-word
-# (finish_reason="length"). Every prompt here wants direct, short, structured
-# output, so reasoning is pure overhead — disable it by default (blank/unset)
-# and the whole budget goes to the answer. Set OPENROUTER_REASONING_EFFORT to
-# one of OpenRouter's documented levels (max/xhigh/high/medium/low/minimal/none)
-# to re-enable bounded reasoning, e.g. if OPENROUTER_MODEL is pointed at a model
-# that genuinely benefits from it.
+# (finish_reason="length"). The fix is a generous max_tokens (see
+# SPECIES_DISEASES_MAX_TOKENS) so the trace AND the answer both fit — NOT
+# disabling reasoning: {"reasoning": {"enabled": false}} is rejected outright by
+# some providers (Novita's gpt-oss endpoint 400s with "Reasoning is mandatory
+# for this endpoint and cannot be disabled"). So by default we send no reasoning
+# field at all (model default). Set OPENROUTER_REASONING_EFFORT to a documented
+# level (max/xhigh/high/medium/low/minimal/none) only to forward an explicit
+# budget — leaving it blank is the safe, provider-agnostic default.
 OPENROUTER_REASONING_EFFORT = get_str("OPENROUTER_REASONING_EFFORT", "").strip().lower()
 
 # Hard caps so a runaway client can't blow the budget. Tune via config
@@ -460,15 +462,14 @@ def _call_openrouter(
         "max_tokens": max_tokens or CHAT_MAX_TOKENS,
         "messages": messages,
     }
-    # Stop the reasoning trace from eating the answer's token budget (see
-    # OPENROUTER_REASONING_EFFORT). A recognised effort is passed through;
-    # anything else (incl. the default blank) disables reasoning so the whole
-    # budget goes to the answer. (reasoning.exclude is NOT used — it hides the
-    # trace but the model still reasons + bills, so it wouldn't free the budget.)
+    # Keep the reasoning trace from starving the answer via headroom (a generous
+    # max_tokens), NOT by disabling reasoning — see OPENROUTER_REASONING_EFFORT.
+    # By default send NO reasoning field (some providers reject {"enabled":false}
+    # and even effort "none"); only forward an explicit, recognised effort level
+    # when one is configured. (reasoning.exclude is deliberately unused — it
+    # hides the trace but the model still reasons + bills, so it can't help.)
     if OPENROUTER_REASONING_EFFORT in _OPENROUTER_REASONING_EFFORTS:
         payload["reasoning"] = {"effort": OPENROUTER_REASONING_EFFORT}
-    else:
-        payload["reasoning"] = {"enabled": False}
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",

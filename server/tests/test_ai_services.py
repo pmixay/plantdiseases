@@ -119,16 +119,17 @@ def _mock_openrouter_post(monkeypatch, *, finish_reason, content="answer", captu
     monkeypatch.setattr(requests, "post", _fake_post)
 
 
-def test_call_openrouter_disables_reasoning_by_default(monkeypatch):
-    """gpt-oss-120b bills hidden reasoning against max_tokens; we disable it so
-    the whole budget goes to the answer instead of truncating it."""
+def test_call_openrouter_omits_reasoning_by_default(monkeypatch):
+    """By default we send NO reasoning field: some providers reject
+    {"enabled": false} ("Reasoning is mandatory ... cannot be disabled" -> 400),
+    so we rely on a generous max_tokens for headroom, not on disabling it."""
     import ai_services as ai
 
     captured = {}
     _mock_openrouter_post(monkeypatch, finish_reason="stop", captured=captured)
     text, _tin, _tout = ai._call_openrouter("sys", [{"role": "user", "content": "hi"}])
     assert text == "answer"
-    assert captured["payload"]["reasoning"] == {"enabled": False}
+    assert "reasoning" not in captured["payload"]
 
 
 def test_call_openrouter_reasoning_effort_override(monkeypatch):
