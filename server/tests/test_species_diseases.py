@@ -95,7 +95,7 @@ def test_structured_success_and_cache(monkeypatch):
     monkeypatch.setattr(ai_services, "OPENROUTER_API_KEY", "test-key")
     calls = {"n": 0}
 
-    def fake_call(system_text, history, *, max_tokens=None):
+    def fake_call(system_text, history, *, max_tokens=None, require_complete=False):
         calls["n"] += 1
         assert "JSON" in system_text
         return (json.dumps({"diseases": [
@@ -124,7 +124,7 @@ def test_disk_cache_survives_inmemory_wipe(monkeypatch):
     monkeypatch.setattr(ai_services, "OPENROUTER_API_KEY", "test-key")
     calls = {"n": 0}
 
-    def fake_call(system_text, history, *, max_tokens=None):
+    def fake_call(system_text, history, *, max_tokens=None, require_complete=False):
         calls["n"] += 1
         return (json.dumps({"diseases": [
             {"name": "Root rot", "note": "Soggy soil; let it dry."},

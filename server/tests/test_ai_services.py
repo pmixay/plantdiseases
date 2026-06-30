@@ -95,6 +95,68 @@ def test_identify_species_default_organ_is_auto(monkeypatch):
     assert sent["data"] == {"organs": "auto"}
 
 
+def _mock_openrouter_post(monkeypatch, *, finish_reason, content="answer", captured=None):
+    """Stub requests.post with one OpenRouter-shaped chat completion."""
+    import requests
+
+    class _Resp:
+        status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {
+                "choices": [{"message": {"content": content}, "finish_reason": finish_reason}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 400},
+            }
+
+    def _fake_post(url, headers=None, json=None, timeout=None):
+        if captured is not None:
+            captured["payload"] = json
+        return _Resp()
+
+    monkeypatch.setattr(requests, "post", _fake_post)
+
+
+def test_call_openrouter_disables_reasoning_by_default(monkeypatch):
+    """gpt-oss-120b bills hidden reasoning against max_tokens; we disable it so
+    the whole budget goes to the answer instead of truncating it."""
+    import ai_services as ai
+
+    captured = {}
+    _mock_openrouter_post(monkeypatch, finish_reason="stop", captured=captured)
+    text, _tin, _tout = ai._call_openrouter("sys", [{"role": "user", "content": "hi"}])
+    assert text == "answer"
+    assert captured["payload"]["reasoning"] == {"enabled": False}
+
+
+def test_call_openrouter_reasoning_effort_override(monkeypatch):
+    import ai_services as ai
+
+    monkeypatch.setattr(ai, "OPENROUTER_REASONING_EFFORT", "low")
+    captured = {}
+    _mock_openrouter_post(monkeypatch, finish_reason="stop", captured=captured)
+    ai._call_openrouter("sys", [{"role": "user", "content": "hi"}])
+    assert captured["payload"]["reasoning"] == {"effort": "low"}
+
+
+def test_call_openrouter_require_complete_rejects_truncation(monkeypatch):
+    """finish_reason=length means the answer was cut off. With require_complete
+    that's a hard failure (so it's never cached/parsed); without it, the partial
+    is still returned for interactive chat."""
+    import ai_services as ai
+
+    _mock_openrouter_post(monkeypatch, finish_reason="length", content="...place the")
+    text, _tin, _tout = ai._call_openrouter("sys", [{"role": "user", "content": "hi"}])
+    assert text == "...place the"  # default: partial tolerated
+
+    with pytest.raises(RuntimeError, match="truncated"):
+        ai._call_openrouter(
+            "sys", [{"role": "user", "content": "hi"}], require_complete=True,
+        )
+
+
 def test_lru_ttl_expires_entry():
     import time
 
@@ -187,7 +249,7 @@ def test_care_plan_polish_is_cached(tmp_path, monkeypatch):
 
     calls = {"n": 0}
 
-    def fake_call(system, blocks, max_tokens=None):
+    def fake_call(system, blocks, max_tokens=None, require_complete=False):
         calls["n"] += 1
         return ("- Water every 5 days\n- Bright indirect light", 5, 10)
 

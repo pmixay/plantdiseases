@@ -68,6 +68,16 @@ OPENROUTER_API_KEY = get_str("OPENROUTER_API_KEY", "").strip()
 OPENROUTER_MODEL = get_str("OPENROUTER_MODEL", "openai/gpt-oss-120b").strip()
 OPENROUTER_BASE_URL = get_str("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
 OPENROUTER_TOTAL_TIMEOUT = get_float("OPENROUTER_TOTAL_TIMEOUT", 20.0)
+# The default model (openai/gpt-oss-120b) is a REASONING model: its hidden
+# reasoning tokens are billed against max_tokens, so a small budget gets eaten
+# by the reasoning trace and the actual answer is truncated mid-word
+# (finish_reason="length"). Every prompt here wants direct, short, structured
+# output, so reasoning is pure overhead — disable it by default (blank/unset)
+# and the whole budget goes to the answer. Set OPENROUTER_REASONING_EFFORT to
+# one of OpenRouter's documented levels (max/xhigh/high/medium/low/minimal/none)
+# to re-enable bounded reasoning, e.g. if OPENROUTER_MODEL is pointed at a model
+# that genuinely benefits from it.
+OPENROUTER_REASONING_EFFORT = get_str("OPENROUTER_REASONING_EFFORT", "").strip().lower()
 
 # Hard caps so a runaway client can't blow the budget. Tune via config
 # in production.
@@ -413,11 +423,15 @@ _chat_totals = {"requests": 0, "rejected": 0, "tokens_in": 0, "tokens_out": 0}
 _OPENROUTER_TRANSIENT_STATUSES = frozenset({408, 425, 429, 500, 502, 503, 504})
 _OPENROUTER_MAX_RETRIES = 3
 _OPENROUTER_BASE_DELAY = 1.0  # seconds
+# OpenRouter's documented reasoning.effort levels (passed through verbatim).
+_OPENROUTER_REASONING_EFFORTS = frozenset(
+    {"max", "xhigh", "high", "medium", "low", "minimal", "none"}
+)
 
 
 def _call_openrouter(
     system_text: str, history: list[dict],
-    *, max_tokens: int | None = None,
+    *, max_tokens: int | None = None, require_complete: bool = False,
 ) -> tuple[str, int, int]:
     """Run an OpenRouter chat completion with bounded retry.
 
@@ -428,6 +442,11 @@ def _call_openrouter(
     Honours the ``Retry-After`` header on 429 if it parses as seconds.
     4xx other than 408/425/429 (auth, bad request) fail immediately —
     retrying those just wastes the user's turn budget.
+
+    ``require_complete`` raises when the model stops on ``finish_reason=
+    "length"`` (the answer was cut off mid-token). Callers that cache or parse
+    structured output pass this so a truncated reply is rejected, not cached or
+    parsed-as-empty.
     """
     import requests  # noqa: WPS433
 
@@ -441,6 +460,15 @@ def _call_openrouter(
         "max_tokens": max_tokens or CHAT_MAX_TOKENS,
         "messages": messages,
     }
+    # Stop the reasoning trace from eating the answer's token budget (see
+    # OPENROUTER_REASONING_EFFORT). A recognised effort is passed through;
+    # anything else (incl. the default blank) disables reasoning so the whole
+    # budget goes to the answer. (reasoning.exclude is NOT used — it hides the
+    # trace but the model still reasons + bills, so it wouldn't free the budget.)
+    if OPENROUTER_REASONING_EFFORT in _OPENROUTER_REASONING_EFFORTS:
+        payload["reasoning"] = {"effort": OPENROUTER_REASONING_EFFORT}
+    else:
+        payload["reasoning"] = {"enabled": False}
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
@@ -483,11 +511,22 @@ def _call_openrouter(
         data = r.json()
         choices = data.get("choices") or []
         text = ""
+        finish_reason = ""
         if choices:
             text = ((choices[0].get("message") or {}).get("content") or "").strip()
+            finish_reason = choices[0].get("finish_reason") or ""
         usage = data.get("usage") or {}
         tin = int(usage.get("prompt_tokens") or 0)
         tout = int(usage.get("completion_tokens") or 0)
+        if require_complete and finish_reason == "length":
+            # Hit max_tokens mid-answer. Returning the partial would cache/serve a
+            # reply cut off mid-word (truncated JSON parses as empty; a truncated
+            # care summary slips past the dosage guard), so treat it as a failure
+            # and let the caller fall back to its deterministic content.
+            raise RuntimeError(
+                f"OpenRouter response truncated (finish_reason=length, "
+                f"completion_tokens={tout}); raise max_tokens or lower reasoning"
+            )
         return text, tin, tout
 
     # Loop only exits on transient failure with retries exhausted.
@@ -713,7 +752,11 @@ def chat_metrics_snapshot() -> dict:
 
 SPECIES_DISEASES_CACHE_SIZE = get_int("SPECIES_DISEASES_CACHE_SIZE", 256)
 SPECIES_DISEASES_CACHE_TTL_SECONDS = get_int("SPECIES_DISEASES_CACHE_TTL_SECONDS", 7 * 24 * 3600)
-SPECIES_DISEASES_MAX_TOKENS = get_int("SPECIES_DISEASES_MAX_TOKENS", 400)
+# Headroom for the answer even if a reasoning model still spends some budget
+# reasoning (max_tokens is a cap, not a target — short answers stop early and
+# only bill what they generate, so a higher cap costs nothing but avoids the
+# truncation that returned an empty list and re-paid the call on every open).
+SPECIES_DISEASES_MAX_TOKENS = get_int("SPECIES_DISEASES_MAX_TOKENS", 1024)
 _SPECIES_DISEASES_CACHE = _LRU(SPECIES_DISEASES_CACHE_SIZE, SPECIES_DISEASES_CACHE_TTL_SECONDS)
 # Persistent layer behind the LRU: the species→diseases LLM answer is stable,
 # so once paid for it's reused across restarts and fresh installs instead of
@@ -830,6 +873,7 @@ def species_common_diseases(
             _SPECIES_DISEASES_SYSTEM,
             [{"role": "user", "content": user}],
             max_tokens=SPECIES_DISEASES_MAX_TOKENS,
+            require_complete=True,
         )
     except Exception as e:  # noqa: BLE001 — never propagate to the client
         logger.warning("species_common_diseases failed: %s", e)
@@ -1558,8 +1602,15 @@ def _enforce_canonical_dosages(text: str, plan: dict) -> bool:
 # request re-paid for an identical prose summary.
 CARE_PLAN_CACHE_SIZE = get_int("CARE_PLAN_CACHE_SIZE", 256)
 CARE_PLAN_CACHE_TTL_SECONDS = get_int("CARE_PLAN_CACHE_TTL_SECONDS", 7 * 24 * 3600)
+# Headroom so the polished summary isn't cut off mid-sentence by a reasoning
+# model spending budget before it writes (see SPECIES_DISEASES_MAX_TOKENS).
+CARE_PLAN_POLISH_MAX_TOKENS = get_int("CARE_PLAN_POLISH_MAX_TOKENS", 1024)
 _CARE_PLAN_CACHE = _LRU(CARE_PLAN_CACHE_SIZE, CARE_PLAN_CACHE_TTL_SECONDS)
-_CARE_PLAN_DISK = _DiskCache("care_plan_polish", CARE_PLAN_CACHE_TTL_SECONDS)
+# ``_v2`` namespace abandons entries cached before the truncation fix: a
+# reasoning model truncated the polish past the dosage guard, so the old dir
+# held summaries cut off mid-sentence that would otherwise be served for the
+# full 7-day TTL. The old ``care_plan_polish`` dir is now orphaned (safe to rm).
+_CARE_PLAN_DISK = _DiskCache("care_plan_polish_v2", CARE_PLAN_CACHE_TTL_SECONDS)
 
 
 def _polish_plan_with_llm(plan: dict, locale: str) -> dict:
@@ -1600,7 +1651,10 @@ def _polish_plan_with_llm(plan: dict, locale: str) -> dict:
     )
     user_blocks = [{"role": "user", "content": json.dumps(plan, ensure_ascii=False)}]
     try:
-        polish, _, _ = _call_openrouter(system, user_blocks, max_tokens=400)
+        polish, _, _ = _call_openrouter(
+            system, user_blocks,
+            max_tokens=CARE_PLAN_POLISH_MAX_TOKENS, require_complete=True,
+        )
         if polish and _enforce_canonical_dosages(polish, plan):
             _CARE_PLAN_CACHE.put(cache_key, polish)
             _CARE_PLAN_DISK.put(cache_key, polish)
