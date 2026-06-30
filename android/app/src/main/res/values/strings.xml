@@ -563,7 +563,7 @@
     <string name="water_calc_tip_general">Water thoroughly until it drains, then let the top 2–3 cm dry before the next round.</string>
     <string name="water_calc_disclaimer">A starting point, not a rule — always check the top soil with your finger before watering.</string>
     <!-- Plant detail → Water Calculator shortcut -->
-    <string name="water_calc_entry_title">Calculate watering</string>
+    <string name="water_calc_entry_title">Water Calculator</string>
     <string name="water_calc_entry_subtitle">Estimate how much and how often to water this plant.</string>
 
     <!-- Accessibility: state announced on the selected model-family row -->
@@ -670,6 +670,8 @@
     <string name="watering_method_soak_and_drain">Water thoroughly until it drains, then empty the saucer</string>
     <string name="care_plan_detail_soil_mix">Soil mix</string>
     <string name="care_plan_detail_npk">Fertiliser NPK</string>
+    <string name="care_plan_detail_fertilise_howto">How to feed</string>
+    <string name="care_plan_fertilise_howto_value">A balanced liquid houseplant fertiliser diluted to half strength — e.g. an all-purpose 10-10-10 feed, only during active growth.</string>
     <string name="care_plan_detail_light_lux">Light (lux)</string>
     <string name="care_plan_detail_humidity">Humidity band</string>
     <string name="care_plan_detail_temperature">Temperature</string>
@@ -800,9 +802,8 @@
     <string name="home_scan_sub">Diagnose a disease from a photo</string>
     <string name="home_identify_title">Identify plant</string>
     <string name="home_identify_sub">What species is this?</string>
-    <string name="home_tools">Tools</string>
     <string name="home_tool_light">Light meter</string>
-    <string name="home_tool_water">Watering helper</string>
+    <string name="home_tool_water">Water Calculator</string>
     <string name="home_tool_symptom">Symptom check</string>
     <string name="home_tool_guide">Disease guide</string>
     <string name="home_trending">Trending in your country</string>
@@ -885,9 +886,9 @@
     <string name="tip_scanning_title">How to take a good scan photo</string>
     <string name="tip_scanning_body">Fill the frame with a single leaf, use daylight, and hold the phone steady — the scanner auto-fires when the frame is sharp. Avoid backlight and wet, glossy reflections; photograph the most affected leaf, including some healthy tissue for contrast.</string>
     <string name="tip_results_title">Understanding your results</string>
-    <string name="tip_results_body">The confidence score is calibrated: when the app isn\'t sure it shows several candidate conditions instead of guessing. Treat the result as guidance, check the alternatives card, and use a second photo or the symptom checker when the model says it\'s uncertain.</string>
+    <string name="tip_results_body">The confidence score is calibrated: when the app isn\'t sure it shows several candidate conditions instead of guessing. Treat the result as guidance, check the alternatives card, and use a second photo or the [symptom checker](tool:symptom) when the model says it\'s uncertain.</string>
     <string name="tip_watering_title">Watering basics</string>
-    <string name="tip_watering_body">Overwatering kills more houseplants than drought. Check the top 2–3 cm of soil with a finger — water only when it\'s dry, then water thoroughly until it drains. Use the Watering helper for a per-plant starting point and adjust by season.</string>
+    <string name="tip_watering_body">Overwatering kills more houseplants than drought. Check the top 2–3 cm of soil with a finger — water only when it\'s dry, then water thoroughly until it drains. Use the [Water Calculator](tool:water) for a per-plant starting point and adjust by season.</string>
     <string name="tip_community_title">Community &amp; your data</string>
     <string name="tip_community_body">Share scans to see what\'s common in your country and get second opinions from other growers. Photos are anonymized (metadata stripped) and you can delete everything you\'ve shared from Profile at any time.</string>
 </resources>

@@ -44,6 +44,7 @@ import com.plantdiseases.app.util.CareSchedule
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.ReminderManager
+import com.plantdiseases.app.util.localizedSpeciesName
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
@@ -350,8 +351,11 @@ class GardenFragment : Fragment() {
         // health pill + soonest reminder; both optional so the card
         // collapses gracefully on a freshly-added plant.
         row.plantName.text = plant.name
-        val speciesText = plant.species?.takeIf { it.isNotBlank() }
-            ?: plant.commonName?.takeIf { it.isNotBlank() }
+        val speciesText = localizedSpeciesName(
+            plant.scientificName,
+            plant.species ?: plant.commonName,
+            LocaleHelper.isRussian(ctx),
+        )
         if (speciesText != null) {
             row.plantSpecies.text = speciesText
             row.plantSpecies.visibility = View.VISIBLE

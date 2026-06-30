@@ -11,6 +11,7 @@ import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.repository.CommunityUploader
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
+import com.plantdiseases.app.util.CommunityPrefs
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.OpinionPrefs
 import com.plantdiseases.app.util.RegionResolver
@@ -187,10 +188,9 @@ class CommunityController(
         val card = binding.cardSimilarScans
         val rv = binding.rvSimilarScans
         val empty = binding.tvSimilarEmpty
-        // Default state: hidden until the network call returns. Seeing similar
-        // scans (and leaving second opinions on them) does NOT require sharing
-        // your own scans — it's decoupled from the community opt-in, so we
-        // always fetch regardless of CommunityPrefs.uploadsEnabled().
+        // Default state: hidden until we know what to show. When community is
+        // OFF we render only the in-context opt-in (below) and fetch NO scans;
+        // when ON we fetch and show the read-only similar-scans strip.
         card.visibility = View.GONE
         rv.visibility = View.GONE
         empty.visibility = View.GONE
@@ -204,10 +204,9 @@ class CommunityController(
         val adapter = SimilarScansAdapter(
             displayName = { key -> displayName(key, isRu) },
             onClick = { item ->
-                // Read-only browse: viewing similar cases works with community
-                // off, but leaving a second opinion (participation) does not
-                // happen from this strip — that stays behind the opt-in on the
-                // "near you" screen.
+                // Read-only browse only — the strip itself is gated behind the
+                // community opt-in (handled below), and leaving a second opinion
+                // never happens from here.
                 recordView(item.scanId, pseudoId)
                 CommunityOpinionSheet.showReadOnly(
                     activity.supportFragmentManager,
@@ -218,6 +217,24 @@ class CommunityController(
         )
         rv.adapter = adapter
         rv.layoutManager = LinearLayoutManager(activity, LinearLayoutManager.HORIZONTAL, false)
+
+        // Community OFF: show the card with ONLY the in-context opt-in — no
+        // scans at all (not even the read-only strip) until the user enables.
+        // Tapping opts in, then loads the feed.
+        if (!CommunityPrefs.uploadsEnabled(activity)) {
+            card.visibility = View.VISIBLE
+            rv.visibility = View.GONE
+            empty.visibility = View.GONE
+            binding.tvSimilarSubtitle.text = activity.getString(R.string.community_enable_blurb)
+            binding.btnEnableSimilar.visibility = View.VISIBLE
+            binding.btnEnableSimilar.setOnClickListener {
+                CommunityPrefs.enable(activity)
+                ensureNotificationPermission()
+                binding.btnEnableSimilar.visibility = View.GONE
+                fetchAndRender(adapter, diseaseKey, scan.speciesScientific, isRu)
+            }
+            return
+        }
 
         fetchAndRender(adapter, diseaseKey, scan.speciesScientific, isRu)
     }

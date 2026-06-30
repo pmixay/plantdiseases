@@ -150,12 +150,21 @@
             android:paddingHorizontal="@dimen/content_gutter">
 
             <LinearLayout
-                android:id="@+id/tile_tools"
+                android:id="@+id/tile_light"
                 style="@style/HomeToolTile">
 
-                <ImageView style="@style/HomeToolTileIcon" android:src="@drawable/ic_tools" />
+                <ImageView style="@style/HomeToolTileIcon" android:src="@drawable/ic_light" />
 
-                <TextView style="@style/HomeToolTileLabel" android:text="@string/home_tools" />
+                <TextView style="@style/HomeToolTileLabel" android:text="@string/home_tool_light" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/tile_water"
+                style="@style/HomeToolTile">
+
+                <ImageView style="@style/HomeToolTileIcon" android:src="@drawable/ic_watering" />
+
+                <TextView style="@style/HomeToolTileLabel" android:text="@string/home_tool_water" />
             </LinearLayout>
 
             <LinearLayout

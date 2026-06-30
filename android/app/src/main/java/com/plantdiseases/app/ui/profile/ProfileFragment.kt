@@ -34,6 +34,7 @@ import com.plantdiseases.app.data.model.CommunityOpinion
 import com.plantdiseases.app.data.model.ScanHistoryItem
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.FragmentProfileBinding
+import com.plantdiseases.app.ui.common.ContentLinks
 import com.plantdiseases.app.ui.result.CommunityOpinionSheet
 import com.plantdiseases.app.ui.widget.BarChartView
 import com.plantdiseases.app.util.AutosavePrefs
@@ -485,7 +486,7 @@ class ProfileFragment : Fragment() {
             setPadding(16.dp(), 14.dp(), 16.dp(), 14.dp())
         }
         val bodyView = TextView(ctx).apply {
-            text = getString(bodyRes)
+            ContentLinks.apply(this, getString(bodyRes))
             textSize = 14f
             setLineSpacing(3.dp().toFloat(), 1f)
             setTextColor(color(R.color.on_surface_secondary))

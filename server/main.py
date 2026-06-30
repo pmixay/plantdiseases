@@ -3780,7 +3780,9 @@ async def guide_manifest():
 # Large source images (guide PNGs, full-res Wikimedia plant photos) are
 # downscaled + re-encoded to WebP once, lazily, into a sibling cache dir and
 # served instead: far fewer bytes for a visually identical phone-sized image.
-# The variant is keyed by the source file's mtime so a replaced source
+# The variant is keyed by the source file's SIZE (not mtime: a cache hit
+# touches the original's mtime for the LRU, which would otherwise force a
+# re-transcode on every request); a replaced source of a different size
 # regenerates it. WebP is decoded transparently by Glide on any app vintage
 # (it sniffs magic bytes, not the URL/extension), so this is backward
 # compatible with already-shipped clients.
@@ -3798,14 +3800,19 @@ def _webp_variant(src: Path, max_side: int, quality: int) -> Path | None:
     """
     try:
         out_dir = src.parent / _WEBP_DIR_NAME
-        out = out_dir / f"{src.stem}.webp"
-        src_mtime = src.stat().st_mtime
-        if out.is_file() and out.stat().st_mtime >= src_mtime:
+        # Key the variant on the source SIZE, not its mtime. plant_photos
+        # touches a cached original's mtime on every hit (its LRU signal), so an
+        # mtime-based freshness check would re-transcode on EVERY request and
+        # churn the served file's ETag. Size is stable across access-touch; a
+        # genuinely replaced source (different bytes ⇒ different size) still gets
+        # a fresh variant under a new name.
+        out = out_dir / f"{src.stem}.{src.stat().st_size}.webp"
+        if out.is_file():
             return out
         # One transcode at a time — two concurrent first requests for the
         # same key must not interleave writes into the same target file.
         with _webp_lock:
-            if out.is_file() and out.stat().st_mtime >= src_mtime:
+            if out.is_file():
                 return out
             out_dir.mkdir(parents=True, exist_ok=True)
             img = Image.open(src)

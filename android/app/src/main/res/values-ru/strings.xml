@@ -563,7 +563,7 @@
     <string name="water_calc_tip_general">Поливайте обильно, пока не потечёт из дренажа, затем дайте просохнуть верхним 2–3 см.</string>
     <string name="water_calc_disclaimer">Это отправная точка, а не правило — перед поливом всегда проверяйте верхний слой земли пальцем.</string>
     <!-- Plant detail → Water Calculator shortcut -->
-    <string name="water_calc_entry_title">Рассчитать полив</string>
+    <string name="water_calc_entry_title">Калькулятор полива</string>
     <string name="water_calc_entry_subtitle">Оцените, сколько и как часто поливать это растение.</string>
 
     <!-- Accessibility: state announced on the selected model-family row -->
@@ -669,6 +669,8 @@
     <string name="watering_method_soak_and_drain">Полейте обильно до стекания, затем опорожните поддон</string>
     <string name="care_plan_detail_soil_mix">Грунт</string>
     <string name="care_plan_detail_npk">NPK удобрения</string>
+    <string name="care_plan_detail_fertilise_howto">Чем подкармливать</string>
+    <string name="care_plan_fertilise_howto_value">Сбалансированное жидкое удобрение для комнатных растений, разведённое вдвое — например, универсальное 10-10-10, только в период активного роста.</string>
     <string name="care_plan_detail_light_lux">Освещение (люкс)</string>
     <string name="care_plan_detail_humidity">Влажность</string>
     <string name="care_plan_detail_temperature">Температура</string>
@@ -792,9 +794,8 @@
     <string name="home_scan_sub">Диагноз болезни по фото</string>
     <string name="home_identify_title">Определить растение</string>
     <string name="home_identify_sub">Что это за вид?</string>
-    <string name="home_tools">Инструменты</string>
     <string name="home_tool_light">Люксметр</string>
-    <string name="home_tool_water">Помощник полива</string>
+    <string name="home_tool_water">Калькулятор полива</string>
     <string name="home_tool_symptom">Проверка симптомов</string>
     <string name="home_tool_guide">Справочник болезней</string>
     <string name="home_trending">В вашей стране</string>
@@ -881,9 +882,9 @@
     <string name="tip_scanning_title">Как сделать хорошее фото для скана</string>
     <string name="tip_scanning_body">Заполните кадр одним листом, снимайте при дневном свете и держите телефон неподвижно — сканер сработает сам, когда кадр станет резким. Избегайте контрового света и мокрых бликов; снимайте самый поражённый лист, захватив немного здоровой ткани для контраста.</string>
     <string name="tip_results_title">Как читать результаты</string>
-    <string name="tip_results_body">Уверенность модели откалибрована: когда приложение сомневается, оно показывает несколько кандидатов вместо угадывания. Воспринимайте результат как подсказку, смотрите карточку альтернатив, а при неуверенности модели сделайте второе фото или пройдите проверку симптомов.</string>
+    <string name="tip_results_body">Уверенность модели откалибрована: когда приложение сомневается, оно показывает несколько кандидатов вместо угадывания. Воспринимайте результат как подсказку, смотрите карточку альтернатив, а при неуверенности модели сделайте второе фото или пройдите [проверку симптомов](tool:symptom).</string>
     <string name="tip_watering_title">Основы полива</string>
-    <string name="tip_watering_body">Перелив губит больше комнатных растений, чем засуха. Проверяйте пальцем верхние 2–3 см почвы — поливайте только когда они сухие, затем обильно, пока вода не стечёт. Помощник полива даст стартовую норму для каждого растения; корректируйте по сезону.</string>
+    <string name="tip_watering_body">Перелив губит больше комнатных растений, чем засуха. Проверяйте пальцем верхние 2–3 см почвы — поливайте только когда они сухие, затем обильно, пока вода не стечёт. [Калькулятор полива](tool:water) даст стартовую норму для каждого растения; корректируйте по сезону.</string>
     <string name="tip_community_title">Сообщество и ваши данные</string>
     <string name="tip_community_body">Делитесь сканами, чтобы видеть, что часто встречается в вашей стране, и получать вторые мнения от других цветоводов. Фото анонимизируются (метаданные удаляются), а всё опубликованное можно удалить в Профиле в любой момент.</string>
 </resources>

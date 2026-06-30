@@ -64,21 +64,31 @@ class for five versions. `val_realworld` disease macro-F1 **0.862** (int8),
 healthy recall 0.901, every disease class ≥ 0.81 recall. Aggregate is flat vs v4
 only because two classes now cap it (see v6). Full numbers: `MODEL_CARD.md`.
 
-## v6 — next version (a precision run, not a volume run)
+## v6 — shipped (model 2.6.8, 2026-06-29)
 
-> **First increment shipped as model 2.6.8 (2026-06-29).** The early-v6 boundary
-> negatives went in (+652 `healthy`, +359 `not_a_plant` over v5). Outcome is
-> **mixed, not solved**: `nutrient_deficiency` precision **0.679 → 0.747** (right
-> direction, still < 0.80) but recall slipped to **0.782**; `leaf_scorch` precision
-> **~flat 0.752** (recall 0.788); on the harder boundary `val_realworld` (n=2183)
-> healthy→disease false-fire is **8.4%**. The scorch/nutrient/healthy boundary is
-> still the binding weakness, so v6 **continues** — keep collecting negatives *and*
-> hold a weak-class recall floor (recall regressed when negatives went in).
+> The v6 boundary negatives went in (+652 `healthy`, +359 `not_a_plant` over v5).
+> Outcome is **mixed, not solved**: `nutrient_deficiency` precision **0.679 → 0.747**
+> (right direction, still < 0.80) but recall slipped to **0.782**; `leaf_scorch`
+> precision **~flat 0.752** (recall 0.788); on the harder boundary `val_realworld`
+> (n=2183) healthy→disease false-fire is **8.4%**. The scorch/nutrient/healthy
+> boundary is still the binding weakness, so collection **continues into v7**.
+
+## v7 — next version (model 2.6.9, in training)
+
+> **The next training run — not yet trained**, so 2.6.8 stays the shipped model
+> until 2.6.9's gate passes. 2.6.9 = dataset **v7** + the post-2.6.8 notebook fixes,
+> the headline being the **aqua-collapse fix** (the §5 export selector now ships the
+> near-lossless **float16** TFLite, ~2.9 MB, instead of the dynamic-range INT8 build
+> that collapsed MobileNetV3 to ≈0.01 macro-F1; §6 adds a degeneracy guard). On data,
+> v7 carries the still-open v6 boundary work forward against the live **2.6.8** model:
+> keep collecting confusion-pair negatives *and* hold a weak-class recall floor
+> (recall regressed when negatives went in), and re-test the LA-prior trim for
+> nutrient/scorch.
 
 The binding constraint is the **over-prediction (low precision)** of the two
 physiological classes; adding more positives makes it worse.
 
-| class | v5 state | v6 target | lever |
+| class | v5 state | v7 target | lever |
 |---|---|---|---|
 | `nutrient_deficiency` | R 0.878 / **P 0.679** | **P ≥ 0.80**, R ≥ 0.85 | nutrient-lookalike healthy negatives (+ LA-prior trim) |
 | `leaf_scorch_underwatering` | R 0.814 / **P 0.745** | **P ≥ 0.82**, R ≥ 0.80 | scorch-lookalike healthy negatives; **no new positives** |
@@ -86,7 +96,7 @@ physiological classes; adding more positives makes it worse.
 | `powdery_mildew` | strong train, **thin eval (n=69)** | tighten CI | more real powdery houseplant scans for the benchmark |
 | `gray_mold_botrytis` | **solved** (0.83/0.83) | maintain | passive production only; never re-add a crop proxy |
 
-**What v6 adds:**
+**What v7 adds:**
 
 1. **Confusion-pair boundary negatives — the core lever (~150–200 imgs).**
    scorch-lookalike healthy (dry brown tips/edges → `healthy/`), nutrient-
@@ -106,14 +116,14 @@ not below ~0.80**, via a **paired bootstrap vs 2.6.8** on `val_realworld`
 n≈82/97 → ±0.08). The precision/recall seesaw across nutrient ↔ scorch ↔ healthy
 is intrinsic; tune negatives in small increments and read BOTH P and R with CIs.
 
-## Diagnosis reliability & safety (the v6 priority)
+## Diagnosis reliability & safety (the v7 priority)
 
 The user-facing harm is a **confident wrong diagnosis** — telling a *healthy* plant it is
 diseased (needless treatment / chemicals / anxiety) or diagnosing a non-plant / blurry
 shot. So reliability here means **precision + honest uncertainty + refusing junk inputs**,
 not chasing headline macro-F1. v2.6.0 fired a disease label on **31% of hard
 boundary-healthy images**; v2.6.7 cut that to ~7% (2.6.8: healthy→disease **8.4%** on a
-harder boundary `val_realworld`) — driving it lower is the still-open v6 win.
+harder boundary `val_realworld`) — driving it lower is the still-open v7 win.
 
 - **Asymmetry to honor:** a false disease alarm on a healthy plant is worse UX than a
   missed mild disease. Prefer precision and "I'm not sure" over recall.
@@ -122,7 +132,7 @@ harder boundary `val_realworld`) — driving it lower is the still-open v6 win.
   reroute (never manufacture disease on a healthy plant, never reassure on a sick one),
   the viral-variegation caveat, and low / very-low-confidence demotion over
   temperature-calibrated probabilities.
-- **Judge v6 by these signals** (no benchmark needed): false-disease-fire rate on
+- **Judge v7 by these signals** (no benchmark needed): false-disease-fire rate on
   healthy + boundary inputs ↓ (the headline); healthy precision/recall stays high;
   nutrient/leaf_scorch precision ↑ with recall ≥ ~0.80; conformal coverage ≥ target +
   temperature re-fit on the shipped path; OOD/blur still reject non-leaf/unfocused shots;
@@ -154,7 +164,7 @@ collection time, so the stable test carve (`make_test_split`) was **removed**. W
 that a clean cross-version A/B is unavailable and judge a new version by signals that
 don't need it:
 - **Per-class precision AND recall with CIs**, within-run (`model_card.json` ships them):
-  v6 wins when nutrient/leaf_scorch *precision* rises with recall not falling below ~0.80
+  v7 wins when nutrient/leaf_scorch *precision* rises with recall not falling below ~0.80
   — read the CIs, not the macro-F1 mean.
 - **Runtime safety behaviour** (see "Diagnosis reliability & safety"): false-disease-fire
   rate on healthy/boundary inputs, OOD/blur rejection, conformal coverage. These are the
@@ -186,7 +196,7 @@ The supplement is the main lever for the weak classes — the per-class train
 supply is small (v5: gray_mold 339, nutrient 636, scorch 921; eval slices are
 thinner still: powdery 69, nutrient 82). Concrete extensions, in priority order:
 
-1. **Boundary negatives first (v6 core).** Biggest precision win per image; cheap
+1. **Boundary negatives first (v7 core).** Biggest precision win per image; cheap
    to scrape (healthy plants with cosmetic browning/yellowing are common).
 2. **Thicken thin EVAL classes** (`powdery_mildew`, `nutrient_deficiency`,
    `gray_mold_botrytis`) with real **houseplant** scans so the held-out CIs

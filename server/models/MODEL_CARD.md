@@ -66,7 +66,24 @@ The production artefact is an ONNX graph and the runtime is
 **architecture-neutral** — it serves whatever backbone+head the shipped
 bundle declares (`classes.json -> architecture`):
 
-- **v2.6.8 (shipped, `gamma`; trained on the early-v6 precision/safety supplement):**
+- **v2.6.9 (in training — NOT YET TRAINED; `gamma`):** the next run; `MODEL_VERSION` is
+  bumped to 2.6.9 in the notebook (§1) but **no weights exist yet**, so **v2.6.8 stays the
+  shipped bundle** and its numbers below stand until the 2.6.9 gate passes. What changes from
+  v2.6.8 is **data + notebook fixes, not yet a trained model**:
+  - **Aqua-collapse fix (headline).** The §5 export selector now scores the near-lossless
+    **float16** TFLite (~2.9 MB) highest and explicitly *avoids* the dynamic-range INT8 build
+    that collapsed MobileNetV3-Small to near-constant output (v2.6.8's shipped aqua scored
+    `val_realworld` disease macro-F1 ≈ **0.01**); §6 adds a degeneracy guard that fails a
+    near-constant shipped aqua. So 2.6.9's aqua becomes on-device-deployable — the v2.6.8 aqua
+    caveat below is fixed in code and clears once 2.6.9 trains.
+  - **Dataset v7.** Pulls the next eval-supplement version (`maxayyt5/houseplant-disease-eval-
+    supplement`, auto-latest via `kagglehub`): more confusion-pair boundary negatives + a
+    weak-class recall floor, targeting the still-binding nutrient/scorch precision gap (see
+    `docs/DATASET_LABELING_PLAN.md`).
+  - **LA-prior trim re-test** for `nutrient_deficiency` / `leaf_scorch_underwatering`, scored
+    by **paired bootstrap vs the live 2.6.8** on `val_realworld` — a notebook lever to lift
+    precision more cheaply than data. No headline numbers until the run completes.
+- **v2.6.8 (shipped — current `gamma`; trained on the v6 precision/safety supplement):**
   same recipe as v2.6.7, on an **expanded** dataset — +1.7k train rows over v2.6.7
   (12.1k → 13.8k), the growth concentrated in the v6 *boundary-negative* signature:
   **+652 `healthy`** and **+359 `not_a_plant`** (hard-healthy / scorch- and

@@ -688,7 +688,7 @@ PREVENTION:
             descriptionEn = "How to water houseplants correctly",
             descriptionRu = "Как правильно поливать комнатные растения",
             contentEn = """
-Proper watering is the single most important factor in houseplant health. Most problems come from overwatering.
+Proper watering is the single most important factor in houseplant health. Most problems come from overwatering. Not sure how much to give? The [Water Calculator](tool:water) estimates a per-plant starting point.
 
 GOLDEN RULES:
 1. Check before watering — stick your finger 2-3 cm into soil
@@ -714,9 +714,13 @@ TIPS:
 • Group plants by water needs
 • Consider self-watering pots for consistent moisture
 • Rainwater or filtered water is ideal
+
+SEE ALSO:
+• [Light Requirements](guide:light_guide)
+• [Humidity Control](guide:humidity_guide)
             """.trimIndent(),
             contentRu = """
-Правильный полив — самый важный фактор здоровья комнатных растений. Большинство проблем связано с переувлажнением.
+Правильный полив — самый важный фактор здоровья комнатных растений. Большинство проблем связано с переувлажнением. Не уверены, сколько лить? [Калькулятор полива](tool:water) подскажет стартовую норму для растения.
 
 ЗОЛОТЫЕ ПРАВИЛА:
 1. Проверяйте перед поливом — воткните палец на 2-3 см в почву
@@ -742,6 +746,10 @@ TIPS:
 • Группируйте растения по потребности в воде
 • Рассмотрите горшки с автополивом
 • Дождевая или фильтрованная вода — идеальный вариант
+
+СМ. ТАКЖЕ:
+• [Требования к освещению](guide:light_guide)
+• [Контроль влажности](guide:humidity_guide)
             """.trimIndent(),
             iconRes = R.drawable.ic_watering,
             category = GuideCategory.WATERING
@@ -1542,14 +1550,14 @@ PREVENTION:
      * Guide IDs that have a server-hosted example photo. These photos moved out
      * of the APK (server/static/guide/<key>.png, served by /api/guide/photo/)
      * to shrink the app; the client downloads + disk-caches them so they stay
-     * available offline after first view. Pure care topics and "healthy" ship
-     * none. Keep this set in sync with server/static/guide/.
+     * available offline after first view. Pure care topics ship none. Keep this
+     * set in sync with server/static/guide/.
      */
     private val EXAMPLE_PHOTO_KEYS = setOf(
         "powdery_mildew", "leaf_spot", "blight", "root_rot", "leaf_mold",
         "viral_disease", "rust", "botrytis", "spider_mites", "aphids",
         "mealybugs", "scale_insects", "leaf_scorch_underwatering",
-        "nutrient_deficiency", "edema", "sunburn_or_scorch",
+        "nutrient_deficiency", "edema", "sunburn_or_scorch", "pests", "healthy",
     )
 
     /** The example-photo key for a guide article, or null where none applies.

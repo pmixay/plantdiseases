@@ -792,6 +792,17 @@ class CarePlanCardView @JvmOverloads constructor(
         plan.fertiliserNpk?.takeIf { it.isNotBlank() }?.let {
             add(SetupRow(R.string.care_plan_detail_npk, R.drawable.ic_treatment, it))
         }
+        // A short, concrete example of what to actually apply — the NPK ratio
+        // alone doesn't tell a beginner what to buy or how strong to mix it.
+        if (plan.fertiliseWeeks > 0) {
+            add(
+                SetupRow(
+                    R.string.care_plan_detail_fertilise_howto,
+                    R.drawable.ic_treatment,
+                    context.getString(R.string.care_plan_fertilise_howto_value),
+                ),
+            )
+        }
         plan.wateringMethod?.takeIf { it.isNotBlank() }?.let {
             add(
                 SetupRow(

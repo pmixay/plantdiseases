@@ -107,6 +107,33 @@ def test_endpoint_downscales_to_webp(client, tmp_path, monkeypatch):
     assert len(r.content) < src.stat().st_size  # smaller than the PNG original
 
 
+def test_webp_variant_not_regenerated_on_mtime_touch(client, tmp_path):
+    """The variant is keyed by source SIZE, not mtime, so plant_photos' LRU
+    access-touch (which bumps the original's mtime on every cache hit) must NOT
+    trigger a re-transcode. That was the regression: rebuilt every request,
+    churning the ETag and doing a full PIL decode/resize/encode each time."""
+    import os
+    import time
+
+    from PIL import Image
+
+    import main as server_main
+    src = tmp_path / "p.png"
+    Image.new("RGB", (1200, 800), (10, 120, 30)).save(src, format="PNG")
+
+    v1 = server_main._webp_variant(src, 1000, 80)
+    assert v1 is not None and v1.is_file()
+    first_mtime = v1.stat().st_mtime
+
+    # Simulate an LRU access-touch on the original (mtime jumps forward).
+    future = time.time() + 100
+    os.utime(src, (future, future))
+
+    v2 = server_main._webp_variant(src, 1000, 80)
+    assert v2 == v1  # same variant reused, not a new file
+    assert v2.stat().st_mtime == first_mtime  # NOT regenerated → stable ETag
+
+
 def test_endpoint_rejects_disallowed_host(client):
     r = client.get("/api/plant-photo", params={"u": "https://evil.com/x.png"})
     assert r.status_code == 400
