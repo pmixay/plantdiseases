@@ -146,6 +146,55 @@ def test_popular_for_known_and_unknown():
     assert popular_for("United States") == GLOBAL_DEFAULT  # full name misses ISO map
 
 
+# ── /api/community/trending: back-compat shim for pre-#112 installs ──────────
+# The endpoint was merged into /api/popular; the old app still calls it and was
+# getting 404s. The shim reshapes the canonical popular snapshot into the old
+# TrendingResponse, so old installs keep working.
+
+
+def test_trending_back_compat_returns_old_shape(client, monkeypatch):
+    import main as server_main
+
+    monkeypatch.setattr(
+        server_main, "community_popular_snapshot",
+        lambda country=None, *, lat=None, lon=None, radius_km=25.0, limit=10: {
+            "total": 5,
+            "top_species": [{"species": "Ficus elastica", "count": 3, "percent": 60}],
+            "top_diseases": [{"disease": "leaf_spot", "count": 2, "percent": 40}],
+        },
+    )
+    r = client.get("/api/community/trending", params={"country": "RU"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["scope"] == "country"
+    assert body["country"] == "RU"
+    assert body["window_days"] == 7  # echoed back so the old card label stays put
+    assert body["top_species"][0] == {"species": "Ficus elastica", "count": 3, "percent": 60}
+    assert body["top_diseases"][0] == {"disease": "leaf_spot", "count": 2, "percent": 40}
+
+
+def test_trending_empty_or_unknown_country_widens_to_worldwide(client, monkeypatch):
+    # No scans anywhere + an unresolvable country must degrade to worldwide, never 422.
+    import main as server_main
+
+    monkeypatch.setattr(
+        server_main, "community_popular_snapshot",
+        lambda country=None, *, lat=None, lon=None, radius_km=25.0, limit=10: {
+            "total": 0, "top_species": [], "top_diseases": [],
+        },
+    )
+    r = client.get(
+        "/api/community/trending",
+        params={"country": "ZZnotacountry", "region": "whatever"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["scope"] == "global"
+    assert body["country"] is None
+    assert body["top_species"] == []
+    assert body["top_diseases"] == []
+
+
 @pytest.mark.parametrize("code,en,ru", [
     ("IN", "India", "Индия"),
     ("BR", "Brazil", "Бразилия"),

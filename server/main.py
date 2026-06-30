@@ -3608,6 +3608,47 @@ async def community_by_species(
     return JSONResponse(content={"items": rows})
 
 
+@api_router.get("/community/trending")
+async def community_trending_endpoint(
+    country: str | None = None,
+    region: str | None = None,
+    days: int = 7,
+    limit: int = 6,
+):
+    """Back-compat shim for pre-#112 installs whose Home screen still calls the
+    old "trending nearby" endpoint (it was merged into /api/popular). Reshapes
+    the canonical popular snapshot (country → worldwide ladder) into the old
+    TrendingResponse. Never 422s — an unknown/blank country just widens to
+    worldwide. ``region`` is accepted but ignored (the post-#112 geo model is
+    coords-based; the old subdivision string no longer maps to a filter).
+    ponytail: serves all-time popularity, not a ``days``-windowed count — the
+    merge made /api/popular the single source; ``days`` is echoed back only so
+    the old card's label stays put."""
+    code = to_iso_alpha2(country) or ""
+    lim = max(1, min(int(limit), 20))
+    loop = asyncio.get_running_loop()
+    snap = await loop.run_in_executor(
+        None, lambda: community_popular_snapshot(country=code or None, limit=lim))
+    served_country = code
+    if not (snap.get("top_species") or snap.get("top_diseases")):
+        # Country had no scans → widen to worldwide (the old endpoint's fallback).
+        snap = await loop.run_in_executor(
+            None, lambda: community_popular_snapshot(limit=lim))
+        served_country = ""
+    display = _country_display(served_country or None)
+    return JSONResponse(content={
+        "scope": display["scope"],
+        "country": display["country"],
+        "country_name_en": display["country_name_en"],
+        "country_name_ru": display["country_name_ru"],
+        "region": None,
+        "window_days": max(1, int(days)),
+        "total": snap.get("total", 0),
+        "top_species": snap.get("top_species", []),
+        "top_diseases": snap.get("top_diseases", []),
+    })
+
+
 @api_router.get("/species-info")
 async def species_info_endpoint(name: str, locale: str = "en"):
     """Localized Wikipedia summary + lead image for a scientific name."""

@@ -214,6 +214,18 @@ def _image_hash(image_bytes: bytes) -> str:
     return hashlib.sha256(image_bytes).hexdigest()
 
 
+def _redact_key(msg: str) -> str:
+    """Strip the PlantNet api-key from a log/exception string. ``requests``
+    embeds the full request URL — including the ``?api-key=<secret>`` query
+    param — in HTTPError/Timeout/ConnectionError messages, so logging one
+    verbatim leaks the key into journald on every non-2xx (e.g. the routine
+    404s on non-plant images)."""
+    msg = re.sub(r"(api-key=)[^&\s]+", r"\1***", msg)
+    if PLANTNET_API_KEY:
+        msg = msg.replace(PLANTNET_API_KEY, "***")
+    return msg
+
+
 def identify_species(
     image_bytes: bytes, *, organ: str = "auto", lang: str = "en",
 ) -> dict:
@@ -270,7 +282,7 @@ def identify_species(
         r.raise_for_status()
         payload = r.json()
     except Exception as e:  # noqa: BLE001 — never propagate to client
-        logger.warning("PlantNet identify failed: %s", e)
+        logger.warning("PlantNet identify failed: %s", _redact_key(str(e)))
         return {"available": False, "results": [], "source": "error"}
 
     results: list[dict] = []

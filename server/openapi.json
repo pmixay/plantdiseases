@@ -1144,6 +1144,87 @@
         }
       }
     },
+    "/api/community/trending": {
+      "get": {
+        "summary": "Community Trending Endpoint",
+        "description": "Back-compat shim for pre-#112 installs whose Home screen still calls the\nold \"trending nearby\" endpoint (it was merged into /api/popular). Reshapes\nthe canonical popular snapshot (country → worldwide ladder) into the old\nTrendingResponse. Never 422s — an unknown/blank country just widens to\nworldwide. ``region`` is accepted but ignored (the post-#112 geo model is\ncoords-based; the old subdivision string no longer maps to a filter).\nponytail: serves all-time popularity, not a ``days``-windowed count — the\nmerge made /api/popular the single source; ``days`` is echoed back only so\nthe old card's label stays put.",
+        "operationId": "community_trending_endpoint_api_community_trending_get",
+        "parameters": [
+          {
+            "name": "country",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Country"
+            }
+          },
+          {
+            "name": "region",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Region"
+            }
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 7,
+              "title": "Days"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 6,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/community/by-species": {
       "get": {
         "summary": "Community By Species",

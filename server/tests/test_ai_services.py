@@ -33,6 +33,40 @@ def test_identify_species_no_key_returns_graceful_state():
     assert out["source"] == "no_api_key"
 
 
+def test_redact_key_scrubs_api_key_param():
+    """The api-key query param requests embeds in error URLs must be redacted."""
+    import ai_services as ai
+
+    msg = "404 Client Error for url: https://my-api.plantnet.org/v2/identify/all?api-key=SECRET123&lang=en"
+    out = ai._redact_key(msg)
+    assert "SECRET123" not in out
+    assert "api-key=***" in out
+
+
+def test_identify_species_error_does_not_leak_key(monkeypatch, caplog):
+    """A non-2xx (the routine 404 on non-plant images) must not log the key."""
+    import logging
+
+    import requests
+
+    import ai_services as ai
+
+    monkeypatch.setattr(ai, "PLANTNET_API_KEY", "SECRET123")
+
+    def _boom(url, params=None, files=None, data=None, timeout=None):
+        # Mirror what requests raises: the full URL (with the api-key param) in the message.
+        raise requests.exceptions.HTTPError(
+            "404 Client Error for url: "
+            "https://my-api.plantnet.org/v2/identify/all?api-key=SECRET123&lang=en"
+        )
+
+    monkeypatch.setattr(requests, "post", _boom)
+    with caplog.at_level(logging.WARNING):
+        out = ai.identify_species(b"\xff\xd8\xfffake-jpeg")
+    assert out["source"] == "error"
+    assert "SECRET123" not in caplog.text
+
+
 def test_identify_species_default_organ_is_auto(monkeypatch):
     """PlantNet identifies flower/fruit/leaf/whole-plant itself when organs=auto
     — forcing 'leaf' on a non-leaf photo is a known wrong-species cause."""
