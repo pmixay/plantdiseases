@@ -34,7 +34,9 @@ import datetime as _dt
 import hashlib
 import json
 import logging
+import os
 import re
+import tempfile
 import threading
 import time
 from collections import OrderedDict
@@ -162,10 +164,23 @@ class _DiskCache:
         try:
             self.dir.mkdir(parents=True, exist_ok=True)
             path = self._path(key)
-            tmp = path.with_suffix(".tmp")
-            with open(tmp, "w", encoding="utf-8") as fh:
-                json.dump({"saved_at": time.time(), "payload": payload}, fh, ensure_ascii=False)
-            tmp.replace(path)  # atomic publish so a reader never sees a half-write
+            # Unique temp file per writer. A shared "<key>.tmp" let two concurrent
+            # writers for the SAME key (a cold-cache stampede on one species)
+            # interleave their JSON into one file — the published .json is then
+            # corrupt, so every future read misses and re-pays the ~10-20 s LLM
+            # call until a non-concurrent write happens to fix it. mkstemp gives
+            # each writer its own file; os.replace publishes atomically.
+            fd, tmp = tempfile.mkstemp(dir=self.dir, suffix=".tmp")
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                    json.dump({"saved_at": time.time(), "payload": payload}, fh, ensure_ascii=False)
+                os.replace(tmp, path)  # atomic publish so a reader never sees a half-write
+            except OSError:
+                try:
+                    os.unlink(tmp)  # don't leak the temp file on a failed write
+                except OSError:
+                    pass
+                raise
         except OSError as exc:
             logger.debug("disk cache write failed for %s: %s", self.dir.name, exc)
 

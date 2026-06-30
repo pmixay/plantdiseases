@@ -181,6 +181,17 @@ Environment=CORS_ORIGINS=https://plantdiseases.example.com
 Environment=TRUSTED_PROXIES=127.0.0.1
 Environment=RATE_LIMIT_RPS=2.0
 Environment=FORWARDED_ALLOW_IPS=127.0.0.1
+# Mutable state must live OUTSIDE the code dir: under ProtectSystem=strict the
+# whole tree is read-only, so the defaults (which land in the server dir) can't
+# be written. StateDirectory auto-creates /var/lib/plantdiseases (RW for the
+# service user); point the SQLite stores AND the persistent LLM cache there.
+# Miss this and AI_CACHE_DIR is silently unwritable, so the species "common
+# problems" / care-plan cache never persists and every open re-pays the ~20 s
+# OpenRouter call.
+Environment=AI_CACHE_DIR=/var/lib/plantdiseases/ai_cache
+Environment=FEEDBACK_DB_PATH=/var/lib/plantdiseases/feedback.db
+Environment=COMMUNITY_DB_PATH=/var/lib/plantdiseases/community.db
+Environment=COMMUNITY_THUMB_DIR=/var/lib/plantdiseases/community_thumbs
 ExecStart=/opt/plantdiseases/.venv/bin/uvicorn main:app \
           --host 127.0.0.1 --port 8000 \
           --forwarded-allow-ips 127.0.0.1 --proxy-headers
@@ -191,6 +202,7 @@ NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=yes
+StateDirectory=plantdiseases
 ReadWritePaths=/opt/plantdiseases/server/logs
 
 [Install]

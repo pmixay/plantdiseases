@@ -144,6 +144,36 @@ def test_disk_cache_survives_inmemory_wipe(monkeypatch):
     assert calls["n"] == 1  # disk hit — the LLM was NOT called a second time
 
 
+def test_disk_cache_concurrent_writes_dont_corrupt(tmp_path):
+    """Concurrent puts to the SAME key must never publish a corrupt file.
+
+    A shared "<key>.tmp" let two writers (a cold-cache stampede on one species)
+    interleave their JSON into one file; the published .json was then unreadable
+    and every future read missed and re-paid the ~20 s LLM call.
+    """
+    import threading
+
+    cache = ai_services._DiskCache("concurrent", ttl_seconds=None)
+    cache.dir = tmp_path / "concurrent"
+    payloads = [{"available": True, "n": i, "blob": "z" * 500} for i in range(20)]
+    barrier = threading.Barrier(len(payloads))
+
+    def writer(p):
+        barrier.wait()  # release all writers at once to maximise overlap
+        cache.put("same-key", p)
+
+    threads = [threading.Thread(target=writer, args=(p,)) for p in payloads]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    got = cache.get("same-key")
+    assert got is not None             # a complete, valid file was published
+    assert got in payloads             # exactly one writer's payload, not a mash-up
+    assert list(cache.dir.glob("*.tmp")) == []  # no leaked temp files
+
+
 def test_api_error_is_graceful(monkeypatch):
     monkeypatch.setattr(ai_services, "OPENROUTER_API_KEY", "test-key")
 
