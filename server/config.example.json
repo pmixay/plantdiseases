@@ -28,6 +28,7 @@
     "openrouter_model": "openai/gpt-oss-120b",
     "openrouter_base_url": "https://openrouter.ai/api/v1",
     "openrouter_total_timeout": 20.0,
+    "openrouter_reasoning_effort": "minimal",
     "chat_max_tokens": 512,
     "chat_session_turn_cap": 20,
     "chat_session_token_cap": 8000,

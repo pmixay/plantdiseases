@@ -30,6 +30,12 @@ services:
       - FEEDBACK_DB_PATH=${FEEDBACK_DB_PATH:-/app/data/feedback.db}
       - COMMUNITY_DB_PATH=${COMMUNITY_DB_PATH:-/app/data/community.db}
       - COMMUNITY_THUMB_DIR=${COMMUNITY_THUMB_DIR:-/app/data/community_thumbs}
+      # Persistent LLM result cache (species "common problems" + care plans).
+      # Without this it defaults to /app/ai_cache on the container layer, which
+      # a redeploy wipes — so every species goes cold again and the next open
+      # re-pays the ~20 s OpenRouter call. Pin it onto /app/data so it survives
+      # redeploys and is shared across replicas, like the DBs above.
+      - AI_CACHE_DIR=${AI_CACHE_DIR:-/app/data/ai_cache}
       # Retention windows (days). Daily prune task wipes rows older
       # than these — adjust per your privacy policy.
       - FEEDBACK_RETENTION_DAYS=${FEEDBACK_RETENTION_DAYS:-180}
