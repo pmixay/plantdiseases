@@ -119,16 +119,29 @@ def _mock_openrouter_post(monkeypatch, *, finish_reason, content="answer", captu
     monkeypatch.setattr(requests, "post", _fake_post)
 
 
-def test_call_openrouter_omits_reasoning_by_default(monkeypatch):
-    """By default we send NO reasoning field: some providers reject
-    {"enabled": false} ("Reasoning is mandatory ... cannot be disabled" -> 400),
-    so we rely on a generous max_tokens for headroom, not on disabling it."""
+def test_call_openrouter_uses_minimal_reasoning_by_default(monkeypatch):
+    """Default to a low ("minimal") reasoning effort so the variable-length trace
+    stays short and can't starve the answer. We do NOT disable reasoning — some
+    providers reject {"enabled": false} ("Reasoning is mandatory ... cannot be
+    disabled" -> 400)."""
     import ai_services as ai
 
     captured = {}
     _mock_openrouter_post(monkeypatch, finish_reason="stop", captured=captured)
     text, _tin, _tout = ai._call_openrouter("sys", [{"role": "user", "content": "hi"}])
     assert text == "answer"
+    assert captured["payload"]["reasoning"] == {"effort": "minimal"}
+
+
+def test_call_openrouter_omit_sends_no_reasoning_field(monkeypatch):
+    """The "omit" escape hatch sends no reasoning field at all — for a
+    provider/model that rejects the field entirely."""
+    import ai_services as ai
+
+    monkeypatch.setattr(ai, "OPENROUTER_REASONING_EFFORT", "omit")
+    captured = {}
+    _mock_openrouter_post(monkeypatch, finish_reason="stop", captured=captured)
+    ai._call_openrouter("sys", [{"role": "user", "content": "hi"}])
     assert "reasoning" not in captured["payload"]
 
 

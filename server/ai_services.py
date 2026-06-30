@@ -69,17 +69,21 @@ OPENROUTER_MODEL = get_str("OPENROUTER_MODEL", "openai/gpt-oss-120b").strip()
 OPENROUTER_BASE_URL = get_str("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
 OPENROUTER_TOTAL_TIMEOUT = get_float("OPENROUTER_TOTAL_TIMEOUT", 20.0)
 # The default model (openai/gpt-oss-120b) is a REASONING model: its hidden
-# reasoning tokens are billed against max_tokens, so a SMALL budget gets eaten
-# by the reasoning trace and the actual answer is truncated mid-word
-# (finish_reason="length"). The fix is a generous max_tokens (see
-# SPECIES_DISEASES_MAX_TOKENS) so the trace AND the answer both fit — NOT
-# disabling reasoning: {"reasoning": {"enabled": false}} is rejected outright by
-# some providers (Novita's gpt-oss endpoint 400s with "Reasoning is mandatory
-# for this endpoint and cannot be disabled"). So by default we send no reasoning
-# field at all (model default). Set OPENROUTER_REASONING_EFFORT to a documented
-# level (max/xhigh/high/medium/low/minimal/none) only to forward an explicit
-# budget — leaving it blank is the safe, provider-agnostic default.
-OPENROUTER_REASONING_EFFORT = get_str("OPENROUTER_REASONING_EFFORT", "").strip().lower()
+# reasoning tokens are billed against max_tokens. The trace length VARIES per
+# call, so with a small budget it sometimes eats the whole thing and the answer
+# is truncated mid-word (finish_reason="length"). Two levers keep the answer's
+# room, and we use both:
+#   * a generous max_tokens (see SPECIES_DISEASES_MAX_TOKENS) — headroom; and
+#   * a LOW reasoning effort so the trace stays short and predictable rather
+#     than variable — this is what turns "usually fits" into "reliably fits".
+# Default effort is "minimal" (confirmed to return complete content on gpt-oss).
+# We do NOT disable reasoning: {"reasoning": {"enabled": false}} — and effort
+# "none" — is rejected outright by some providers (Novita's gpt-oss endpoint
+# 400s with "Reasoning is mandatory for this endpoint and cannot be disabled").
+# Set OPENROUTER_REASONING_EFFORT to any documented level
+# (max/xhigh/high/medium/low/minimal/none), or to "omit" to send no reasoning
+# field at all (let the model use its own default).
+OPENROUTER_REASONING_EFFORT = get_str("OPENROUTER_REASONING_EFFORT", "minimal").strip().lower()
 
 # Hard caps so a runaway client can't blow the budget. Tune via config
 # in production.
@@ -462,12 +466,13 @@ def _call_openrouter(
         "max_tokens": max_tokens or CHAT_MAX_TOKENS,
         "messages": messages,
     }
-    # Keep the reasoning trace from starving the answer via headroom (a generous
-    # max_tokens), NOT by disabling reasoning — see OPENROUTER_REASONING_EFFORT.
-    # By default send NO reasoning field (some providers reject {"enabled":false}
-    # and even effort "none"); only forward an explicit, recognised effort level
-    # when one is configured. (reasoning.exclude is deliberately unused — it
-    # hides the trace but the model still reasons + bills, so it can't help.)
+    # Bound the reasoning trace so it can't starve the answer: by default send a
+    # low effort ("minimal") so the trace stays short, alongside the generous
+    # max_tokens headroom. A recognised effort level is forwarded; any other
+    # value (e.g. "omit") sends no reasoning field. We don't default to disabling
+    # reasoning — {"enabled": false} / effort "none" is rejected by some
+    # providers (see OPENROUTER_REASONING_EFFORT). reasoning.exclude is unused:
+    # it hides the trace but the model still reasons + bills, so it can't help.
     if OPENROUTER_REASONING_EFFORT in _OPENROUTER_REASONING_EFFORTS:
         payload["reasoning"] = {"effort": OPENROUTER_REASONING_EFFORT}
     headers = {
