@@ -111,7 +111,7 @@
 
     <!-- Data-use consent (blocking; Play prominent disclosure) -->
     <string name="consent_title">Your data &amp; our models</string>
-    <string name="consent_body">Photos you scan and the feedback you give are used to train and improve our diagnosis models. Data is anonymized before storage — no account, name, precise location or device identifiers are attached, and photo metadata (EXIF, including GPS) is removed. You can delete your contributions at any time from Profile.</string>
+    <string name="consent_body">Photos you scan and the feedback you give are used to train and improve our diagnosis models. Data is anonymized before storage — no account, name, precise location or device identifiers are attached, and photo metadata (EXIF, including GPS) is removed. If something goes wrong, the app may also send an anonymous error report (no photos or location) to help us fix bugs. You can delete your contributions at any time from Profile.</string>
     <string name="consent_agree">Agree</string>
     <string name="consent_privacy_link">Privacy policy</string>
     <string name="consent_privacy_url" translatable="false">https://pdis.arbuz.lol/privacy.html</string>
