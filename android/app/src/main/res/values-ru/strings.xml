@@ -228,6 +228,7 @@
     <string name="nearby_scans_title">Сканы сообщества</string>
     <string name="nearby_scans_cd">Сканы сообщества</string>
     <string name="nearby_scans_loading">Ищем сканы сообщества…</string>
+    <string name="nearby_location_needed">Включите геолокацию, чтобы видеть сканы рядом с вами.</string>
     <string name="nearby_scans_second_opinion">Второе мнение</string>
     <!-- Community scope toggle -->
     <string name="community_filter_nearby">Рядом</string>

@@ -3106,6 +3106,28 @@ async def community_scan_upload(
         logger.info("Community scan validation failed: %s", exc)
         raise HTTPException(status_code=422, detail="Invalid scan upload") from exc
 
+    # Bind the shared scan to a scan_id we actually issued at /api/analyze —
+    # the same integrity gate /api/feedback uses. Without it any client could
+    # post a fabricated diagnosis (arbitrary species/disease/confidence) into
+    # the public feed under a made-up or copied scan_id. On-device Aqua scans
+    # have no server-issued id and are kept private client-side, so a
+    # legitimate upload always carries an issued id. Checked BEFORE the quota
+    # read and the (up to 10 MB) image body so a forged id is rejected without
+    # us ingesting its payload.
+    issued = await asyncio.get_running_loop().run_in_executor(
+        None,
+        lambda: is_scan_id_issued(payload.scan_id, ttl_days=ISSUED_SCAN_ID_TTL_DAYS),
+    )
+    if not issued:
+        logger.warning(
+            "Rejected community scan on unissued scan_id=%s",
+            payload.scan_id[:16],
+        )
+        raise HTTPException(
+            status_code=422,
+            detail="Unknown scan_id — re-scan before sharing to the community.",
+        )
+
     geo = _client_location(payload.country, payload.region, lat, lon)
 
     # Enforce the per-IP daily quota BEFORE reading the (up to 10 MB)
@@ -3445,6 +3467,14 @@ async def community_scan_nearby(
     country_norm = geo["country"]
     nearby = (scope or "nearby").strip().lower() != "country"
     has_coords = geo["lat"] is not None
+    # With neither coords nor a country the query has no geo anchor, so the
+    # feed comes back empty for a reason the client can't otherwise tell apart
+    # from "no scans near you" (the usual cause: community opted in but the
+    # coarse-location permission was never granted / no fix yet). Surface it as
+    # an explicit flag so the client can prompt to enable location instead of
+    # rendering a misleading empty state. Storage stays privacy-preserving —
+    # there is deliberately no server-side IP geolocation.
+    location_required = not (bool(country_norm) or has_coords)
     rows = community_nearby_scans(
         country=country_norm,
         lat=geo["lat"] if nearby else None,
@@ -3482,6 +3512,7 @@ async def community_scan_nearby(
     # Tell the client which filter was actually served + the nearby label.
     meta["scope"] = "nearby" if (nearby and has_coords) else meta["scope"]
     meta["region"] = geo["city"] if (nearby and has_coords) else None
+    meta["location_required"] = location_required
     summary.update(meta)
     return JSONResponse(content={"items": rows, "summary": summary, **meta})
 

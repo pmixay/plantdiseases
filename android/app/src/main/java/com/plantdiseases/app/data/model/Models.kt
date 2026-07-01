@@ -298,6 +298,11 @@ data class CommunityScansResponse(
     // True on the map endpoint when the bbox held more scans than the cap, so
     // the UI can prompt "zoom in to see all". Null/false on the feed.
     @SerializedName("truncated") @SerialName("truncated") val truncated: Boolean = false,
+    // True when the request carried neither coords nor a country, so the feed
+    // could not be geo-scoped. Lets the UI prompt "turn on location" instead of
+    // showing a misleading "no scans near you" empty state.
+    @SerializedName("location_required") @SerialName("location_required")
+    val locationRequired: Boolean = false,
 )
 
 @Serializable

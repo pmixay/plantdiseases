@@ -232,6 +232,7 @@
     <string name="nearby_scans_title">Community scans</string>
     <string name="nearby_scans_cd">Community scans</string>
     <string name="nearby_scans_loading">Finding community scans…</string>
+    <string name="nearby_location_needed">Turn on location to see plant scans near you.</string>
     <string name="nearby_scans_second_opinion">Second opinion</string>
     <!-- Community scope toggle -->
     <string name="community_filter_nearby">Nearby</string>
