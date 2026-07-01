@@ -510,14 +510,21 @@ DISEASE_CLASSES = {
 }
 
 # ── Production scan recording ────────────────────────────────────────
-# Every non-not_a_plant (and non-blur — the blur gate emits a synthetic NAP)
-# analyze result is recorded ANONYMIZED for model improvement: re-encoded
+# Every non-blur analyze result is recorded ANONYMIZED for model improvement
+# (not_a_plant is gated separately by SCAN_RECORD_NOT_A_PLANT below): re-encoded
 # (EXIF/GPS dropped), downscaled, no user identifiers — the only linkage is
 # the response scan_id, and the user↔scan_id join lives solely in feedback.db
 # (which the GDPR delete cascade sweeps). Routed by route_scan(): confident →
 # auto_yes, suspicious → pending (kept for offline review). Disclosed via the
 # blocking first-launch consent screen (Android) + website/privacy.html.
 SCAN_RECORDING_ENABLED = get_bool("SCAN_RECORDING_ENABLED", True)
+# Also record real (classifier/OOD-rejected) not_a_plant scans for the
+# rejection-head retraining loop. Blur-gated synthetic NAP stays excluded (a
+# blurry plant is junk, not a negative). NAP photos are disproportionately
+# faces/objects, so this is a distinct opt-out from the plant-corpus recording
+# above — the same anonymization (EXIF/GPS stripped, downscaled) applies, but
+# pixels are retained, so flip this off if that privacy tradeoff isn't wanted.
+SCAN_RECORD_NOT_A_PLANT = get_bool("SCAN_RECORD_NOT_A_PLANT", True)
 SCAN_RETENTION_DAYS = get_int("SCAN_RETENTION_DAYS", 90)
 SCAN_MAX_IMAGES = get_int("SCAN_MAX_IMAGES", 20000)
 # Value caps: confident scans of the abundant easy class (healthy) are sampled
@@ -1440,6 +1447,7 @@ def _scan_keep_sampled(sha: str, rate: float) -> bool:
 def _record_scan_candidate(
     img: Image.Image, scan_id: str, class_name: str,
     confidence: float, pset_classes: list[str] | None,
+    is_blur: bool = False,
 ) -> None:
     """Record one anonymized production scan into the labeling store
     (post-response via BackgroundTasks — zero hot-path latency). Sync and
@@ -1450,9 +1458,12 @@ def _record_scan_candidate(
     common classes are sampled at ``SCAN_COMMON_KEEP_RATE``; a per-class
     daily cap bounds disk regardless."""
     try:
-        if not SCAN_RECORDING_ENABLED or class_name == "not_a_plant":
-            # The blur gate emits a synthetic not_a_plant (blurry_image
-            # warning), so this single check excludes NAP + blur-gated scans.
+        if not SCAN_RECORDING_ENABLED:
+            return
+        if class_name == "not_a_plant" and (not SCAN_RECORD_NOT_A_PLANT or is_blur):
+            # Keep real (classifier/OOD-rejected) NAP for the rejection-head
+            # retraining loop; drop blur-gated synthetic NAP (a blurry plant,
+            # not a true negative) and honour the NAP opt-out.
             return
         try:
             from .labeling_auto import route_scan
@@ -2142,10 +2153,13 @@ async def analyze_image(
     # nothing; cache hits return earlier and are never double-recorded.
     # ``img.copy()`` is defensive — the task must never share pixels with
     # anything the handler might still touch.
-    if SCAN_RECORDING_ENABLED and class_name != "not_a_plant":
+    if SCAN_RECORDING_ENABLED and (
+        class_name != "not_a_plant" or SCAN_RECORD_NOT_A_PLANT
+    ):
         background_tasks.add_task(
             _record_scan_candidate, img.copy(), scan_id, class_name,
             confidence, list((result.get("prediction_set") or {}).get("classes") or []),
+            "blurry_image" in warnings,
         )
     return JSONResponse(content=response_payload)
 

@@ -56,6 +56,16 @@ class NapPipeline(FakePipeline):
         return r
 
 
+class RealNapPipeline(FakePipeline):
+    """A classifier/OOD not_a_plant rejection — NO blur warning."""
+
+    def analyze(self, img):
+        r = super().analyze(img)
+        r["class_name"] = "not_a_plant"
+        r["warnings"] = []
+        return r
+
+
 @pytest.fixture
 def recdb(monkeypatch):
     """Fresh labeling DB + recording enabled with test-friendly caps."""
@@ -101,8 +111,24 @@ def test_confident_singleton_set_routes_auto_yes(client, recdb, monkeypatch):
     assert len(rows) == 1 and rows[0]["status"] == "auto_yes"
 
 
-def test_nap_and_blur_not_recorded(client, recdb, monkeypatch):
+def test_blur_gated_nap_not_recorded(client, recdb, monkeypatch):
+    # A blurry plant rejected as NAP is junk, not a true negative → dropped.
     monkeypatch.setattr(server_main, "pipeline", NapPipeline())
+    _analyze(client, _jpeg())
+    assert _rows() == []
+
+
+def test_real_nap_recorded_for_rejection_head(client, recdb, monkeypatch):
+    # A real (non-blur) not_a_plant is kept for the rejection-head retraining loop.
+    monkeypatch.setattr(server_main, "pipeline", RealNapPipeline())
+    _analyze(client, _jpeg())
+    rows = _rows()
+    assert len(rows) == 1 and rows[0]["class"] == "not_a_plant"
+
+
+def test_real_nap_dropped_when_opted_out(client, recdb, monkeypatch):
+    monkeypatch.setattr(server_main, "pipeline", RealNapPipeline())
+    monkeypatch.setattr(server_main, "SCAN_RECORD_NOT_A_PLANT", False)
     _analyze(client, _jpeg())
     assert _rows() == []
 
