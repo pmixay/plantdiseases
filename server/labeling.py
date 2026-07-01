@@ -253,16 +253,15 @@ def delete_candidates_for_scan_ids(scan_ids: list[str]) -> int:
     return deleted
 
 
-def count_user_scans_today(cls: str, source: str = "user_scan") -> int:
-    """Recorded scans of ``cls`` from one ``source`` since UTC midnight
-    (daily-cap check)."""
+def count_user_scans_today(cls: str) -> int:
+    """Recorded user scans of ``cls`` since UTC midnight (daily-cap check)."""
     init_db()
     midnight = int(time.time()) // 86400 * 86400
     with _connect() as conn:
         row = conn.execute(
             "SELECT COUNT(*) AS n FROM candidates "
-            "WHERE source=? AND class=? AND created_at >= ?",
-            (source, cls, midnight),
+            "WHERE source='user_scan' AND class=? AND created_at >= ?",
+            (cls, midnight),
         ).fetchone()
     return int(row["n"])
 

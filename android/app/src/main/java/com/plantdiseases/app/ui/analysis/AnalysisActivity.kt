@@ -270,9 +270,6 @@ class AnalysisActivity : AppCompatActivity() {
         val savedScan = scanRepository.getScanById(scanId)
         if (savedScan != null) {
             app.launchCommunityUpload(savedScan, response)
-            // On-device Aqua scans skip community (no server scan_id) but, with
-            // data consent, send telemetry for offline triage / model comparison.
-            app.launchAquaTelemetry(savedScan, response)
         }
 
         val intent = Intent(this@AnalysisActivity, ResultActivity::class.java).apply {

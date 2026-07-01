@@ -272,6 +272,11 @@ class ResultActivity : AppCompatActivity() {
         // blurry-or-NAP so a genuine blurry plant isn't told it isn't one.
         val isBlurryReject = isNotAPlant &&
             "blurry_image" in repository.parseWarnings(scan.warnings)
+        // On-device (Aqua) scan: local-first and deliberately limited. It has no
+        // server-issued scan_id, so it never joins the community feed, can't be
+        // added to the garden, and has no feedback channel. The offline warning
+        // card (DiagnosisContentController) marks it in the result body.
+        val isOfflineAqua = "offline_aqua" in repository.parseWarnings(scan.warnings)
         val diseaseName = when {
             isBlurryReject -> getString(R.string.blurry_or_not_a_plant_diagnosis_name)
             isNotAPlant -> getString(R.string.not_a_plant_diagnosis_name)
@@ -414,7 +419,8 @@ class ResultActivity : AppCompatActivity() {
             } else {
                 tvDescription.text = if (isRu) scan.descriptionRu else scan.description
                 btnShare.visibility = View.VISIBLE
-                btnAddToGarden.visibility = View.VISIBLE
+                // Offline Aqua scans can't be added to the garden (limited, local).
+                btnAddToGarden.visibility = if (isOfflineAqua) View.GONE else View.VISIBLE
                 diagnosisContent.bindPipelineWarnings(scan, repository)
                 diagnosisContent.bindAlternatives(scan, repository, isRu)
                 speciesCard.bind(scan)
@@ -430,7 +436,13 @@ class ResultActivity : AppCompatActivity() {
                 cardFeedback.visibility = View.GONE
             } else {
                 diagnosisContent.bindToxicity(scan, repository)
-                feedback.bind(scan)
+                // Feedback binds to a server-issued scan_id; an offline Aqua scan
+                // has none, so hide it rather than offer an action that can't post.
+                if (isOfflineAqua) {
+                    cardFeedback.visibility = View.GONE
+                } else {
+                    feedback.bind(scan)
+                }
             }
 
             tvDate.text = ImageUtils.formatTimestamp(scan.timestamp)

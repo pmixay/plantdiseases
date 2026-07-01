@@ -510,21 +510,14 @@ DISEASE_CLASSES = {
 }
 
 # ── Production scan recording ────────────────────────────────────────
-# Every non-blur analyze result is recorded ANONYMIZED for model improvement
-# (not_a_plant is gated separately by SCAN_RECORD_NOT_A_PLANT below): re-encoded
+# Every non-not_a_plant (and non-blur — the blur gate emits a synthetic NAP)
+# analyze result is recorded ANONYMIZED for model improvement: re-encoded
 # (EXIF/GPS dropped), downscaled, no user identifiers — the only linkage is
 # the response scan_id, and the user↔scan_id join lives solely in feedback.db
 # (which the GDPR delete cascade sweeps). Routed by route_scan(): confident →
 # auto_yes, suspicious → pending (kept for offline review). Disclosed via the
 # blocking first-launch consent screen (Android) + website/privacy.html.
 SCAN_RECORDING_ENABLED = get_bool("SCAN_RECORDING_ENABLED", True)
-# Also record real (classifier/OOD-rejected) not_a_plant scans for the
-# rejection-head retraining loop. Blur-gated synthetic NAP stays excluded (a
-# blurry plant is junk, not a negative). NAP photos are disproportionately
-# faces/objects, so this is a distinct opt-out from the plant-corpus recording
-# above — the same anonymization (EXIF/GPS stripped, downscaled) applies, but
-# pixels are retained, so flip this off if that privacy tradeoff isn't wanted.
-SCAN_RECORD_NOT_A_PLANT = get_bool("SCAN_RECORD_NOT_A_PLANT", True)
 SCAN_RETENTION_DAYS = get_int("SCAN_RETENTION_DAYS", 90)
 SCAN_MAX_IMAGES = get_int("SCAN_MAX_IMAGES", 20000)
 # Value caps: confident scans of the abundant easy class (healthy) are sampled
@@ -1445,9 +1438,8 @@ def _scan_keep_sampled(sha: str, rate: float) -> bool:
 
 
 def _record_scan_candidate(
-    img: Image.Image, scan_id: str | None, class_name: str,
+    img: Image.Image, scan_id: str, class_name: str,
     confidence: float, pset_classes: list[str] | None,
-    is_blur: bool = False, source: str = "user_scan",
 ) -> None:
     """Record one anonymized production scan into the labeling store
     (post-response via BackgroundTasks — zero hot-path latency). Sync and
@@ -1458,12 +1450,9 @@ def _record_scan_candidate(
     common classes are sampled at ``SCAN_COMMON_KEEP_RATE``; a per-class
     daily cap bounds disk regardless."""
     try:
-        if not SCAN_RECORDING_ENABLED:
-            return
-        if class_name == "not_a_plant" and (not SCAN_RECORD_NOT_A_PLANT or is_blur):
-            # Keep real (classifier/OOD-rejected) NAP for the rejection-head
-            # retraining loop; drop blur-gated synthetic NAP (a blurry plant,
-            # not a true negative) and honour the NAP opt-out.
+        if not SCAN_RECORDING_ENABLED or class_name == "not_a_plant":
+            # The blur gate emits a synthetic not_a_plant (blurry_image
+            # warning), so this single check excludes NAP + blur-gated scans.
             return
         try:
             from .labeling_auto import route_scan
@@ -1481,19 +1470,19 @@ def _record_scan_candidate(
             and not _scan_keep_sampled(sha, SCAN_COMMON_KEEP_RATE)
         ):
             return
-        if labeling.count_user_scans_today(class_name, source) >= SCAN_DAILY_CAP_PER_CLASS:
+        if labeling.count_user_scans_today(class_name) >= SCAN_DAILY_CAP_PER_CLASS:
             return
         fn = f"{sha}.jpg"
         labeling.LABELING_IMG_DIR.mkdir(parents=True, exist_ok=True)
         (labeling.LABELING_IMG_DIR / fn).write_bytes(body)
         labeling.insert_candidate(
-            cls=class_name, image_path=fn, source=source, source_url=None,
+            cls=class_name, image_path=fn, source="user_scan", source_url=None,
             subject_plant=None, sha=sha, phash=ph, status=status,
             model_pred=class_name, model_conf=float(confidence or 0.0),
-            model_set=list(pset_classes or []), scan_id=scan_id or None,
+            model_set=list(pset_classes or []), scan_id=scan_id,
         )
     except Exception as exc:  # noqa: BLE001 - never raise from a background task
-        logger.warning("Scan recording failed for %s: %s", (scan_id or "")[:16], exc)
+        logger.warning("Scan recording failed for %s: %s", scan_id[:16], exc)
 
 
 # ── Endpoints ────────────────────────────────────────────────────────
@@ -2153,55 +2142,12 @@ async def analyze_image(
     # nothing; cache hits return earlier and are never double-recorded.
     # ``img.copy()`` is defensive — the task must never share pixels with
     # anything the handler might still touch.
-    if SCAN_RECORDING_ENABLED and (
-        class_name != "not_a_plant" or SCAN_RECORD_NOT_A_PLANT
-    ):
+    if SCAN_RECORDING_ENABLED and class_name != "not_a_plant":
         background_tasks.add_task(
             _record_scan_candidate, img.copy(), scan_id, class_name,
             confidence, list((result.get("prediction_set") or {}).get("classes") or []),
-            "blurry_image" in warnings,
         )
     return JSONResponse(content=response_payload)
-
-
-@api_router.post("/telemetry/aqua")
-async def aqua_telemetry(
-    disease: str = Form(...),
-    confidence: float | None = Form(None),
-    image: UploadFile = File(...),
-):
-    """Record one on-device (Aqua) scan for offline triage + on-device-vs-server
-    comparison.
-
-    This is NOT an analyze call: no scan_id is issued, no diagnosis is returned,
-    and it never reaches the community feed. Gated by the same model-improvement
-    opt-in as server scan recording (``SCAN_RECORDING_ENABLED``; the app only
-    sends when the user granted data consent). The image is anonymized and
-    daily-capped exactly like a recorded server scan.
-    """
-    if not SCAN_RECORDING_ENABLED:
-        return JSONResponse(content={"ok": True, "recorded": False})
-    cls = (disease or "").strip()
-    if pipeline is None or cls not in pipeline.classifier.CLASS_NAMES:
-        raise HTTPException(status_code=422, detail="Unknown class")
-    if cls == "not_a_plant" and not SCAN_RECORD_NOT_A_PLANT:
-        return JSONResponse(content={"ok": True, "recorded": False})
-    if image.content_type and image.content_type not in _COMMUNITY_ALLOWED_TYPES:
-        raise HTTPException(status_code=400, detail="Image must be JPEG / PNG / WebP")
-    image_bytes = await _read_upload(image)
-    head = image_bytes[:16]
-    if not (
-        head.startswith(b"\xff\xd8\xff")
-        or head.startswith(b"\x89PNG\r\n\x1a\n")
-        or _is_webp(head, image_bytes)
-    ):
-        raise HTTPException(status_code=400, detail="Image must be JPEG / PNG / WebP")
-    img = _open_image(image_bytes)
-    conf = float(confidence) if confidence is not None else 0.0
-    await asyncio.get_running_loop().run_in_executor(
-        None, _record_scan_candidate, img, None, cls, conf, None, False, "aqua_telemetry",
-    )
-    return JSONResponse(content={"ok": True, "recorded": True})
 
 
 # ── Smart APIs ──────────────────────────────────────────────────────
