@@ -47,6 +47,12 @@ class AnalysisActivity : AppCompatActivity() {
     // garden" step. -1 ⇒ ordinary standalone scan.
     private var attachPlantId: Long = -1L
 
+    // "Improve online" upgrade of an offline scan: force a server family (skips
+    // the on-device Aqua path and its offline fallback) and, on success, delete
+    // the offline row it replaces. Null / -1 for an ordinary scan.
+    private var forcedFamily: ModelFamily? = null
+    private var replaceScanId: Long = -1L
+
     // Held so onDestroy can dismiss the blurry-photo dialog — a config-change
     // recreate while it is showing would otherwise leak the dialog window.
     private var blurDialog: androidx.appcompat.app.AlertDialog? = null
@@ -76,6 +82,10 @@ class AnalysisActivity : AppCompatActivity() {
             return
         }
         attachPlantId = intent.getLongExtra(EXTRA_PLANT_ID, -1L)
+        // "Improve online" upgrade: force a specific (server) family and replace
+        // the offline scan being upgraded once the online result lands.
+        forcedFamily = intent.getStringExtra(EXTRA_FORCE_FAMILY)?.let { ModelFamily.fromId(it) }
+        replaceScanId = intent.getLongExtra(EXTRA_REPLACE_SCAN_ID, -1L)
 
         setupUI()
         checkBlurAndAnalyze()
@@ -145,7 +155,7 @@ class AnalysisActivity : AppCompatActivity() {
             var uploadFile: File? = null
             try {
                 val locale = if (LocaleHelper.isRussian(this@AnalysisActivity)) "ru" else "en"
-                val family = ModelFamilyPrefs.selected(this@AnalysisActivity)
+                val family = forcedFamily ?: ModelFamilyPrefs.selected(this@AnalysisActivity)
 
                 // Aqua runs fully on-device when its TFLite model is installed —
                 // no network, minimal result. The picker only offers Aqua once
@@ -202,7 +212,14 @@ class AnalysisActivity : AppCompatActivity() {
                             // (Had Aqua been the selected family we'd have run
                             // it above; reaching here means a server family was
                             // picked while offline, e.g. the default gamma.)
-                            val offline = if (AquaClassifier.isAvailable(this@AnalysisActivity)) {
+                            // Don't silently fall back to Aqua when the user
+                            // explicitly forced a server family (the "improve
+                            // online" upgrade) — that would just reproduce the
+                            // offline result they're trying to replace.
+                            val offline = if (
+                                forcedFamily == null &&
+                                AquaClassifier.isAvailable(this@AnalysisActivity)
+                            ) {
                                 runAquaOnDevice(imagePath)
                             } else {
                                 null
@@ -259,6 +276,16 @@ class AnalysisActivity : AppCompatActivity() {
         // that plant's Photos + Timeline without a manual "Add to garden".
         if (attachPlantId >= 0L) {
             plantRepository.assignScanToPlant(scanId, attachPlantId)
+        }
+
+        // "Improve online" upgrade: carry over the replaced offline scan's plant
+        // link (if any), then delete it so the upgraded online scan takes its
+        // place instead of leaving a duplicate in history.
+        if (replaceScanId >= 0L && replaceScanId != scanId) {
+            scanRepository.getScanById(replaceScanId)?.plantId?.let { pid ->
+                plantRepository.assignScanToPlant(scanId, pid)
+            }
+            scanRepository.deleteScan(replaceScanId)
         }
 
         getSharedPreferences("plantdiseases_prefs", MODE_PRIVATE)
@@ -327,6 +354,15 @@ class AnalysisActivity : AppCompatActivity() {
         /** Optional plant id; when present the saved scan is auto-attached to
          *  that plant (see PlantDetailActivity's "New scan" action). */
         const val EXTRA_PLANT_ID = "extra_plant_id"
+
+        /** Force a specific model family (wire id), overriding the user's pick.
+         *  Used by the offline-scan "improve online" upgrade to force a server
+         *  family; also disables the offline-Aqua fallback for that run. */
+        const val EXTRA_FORCE_FAMILY = "extra_force_family"
+
+        /** Row id of an offline scan to delete once this (online) result saves —
+         *  the "improve online" upgrade replaces the offline scan in place. */
+        const val EXTRA_REPLACE_SCAN_ID = "extra_replace_scan_id"
         private const val TAG = "AnalysisActivity"
     }
 }

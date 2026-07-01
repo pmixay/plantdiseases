@@ -3,6 +3,9 @@ package com.plantdiseases.app.ui.result
 import android.animation.ValueAnimator
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.widget.Toast
 import android.os.Bundle
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
@@ -30,6 +33,7 @@ import com.plantdiseases.app.ui.analysis.AnalysisActivity
 import com.plantdiseases.app.ui.guide.GuideDetailSheet
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
+import com.plantdiseases.app.util.ModelFamily
 import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
@@ -467,6 +471,13 @@ class ResultActivity : AppCompatActivity() {
             btnAddToGarden.setOnClickListener { gardenAttach.showAddToGardenDialog(scan) }
             btnShare.setOnClickListener { share.share(scan, repository, isRu) }
 
+            // Offline (Aqua) scans can be upgraded: re-run the same photo through
+            // the full online model. Shown in the offline warning card only.
+            btnImproveOnline.visibility = if (isOfflineAqua) View.VISIBLE else View.GONE
+            if (isOfflineAqua) {
+                btnImproveOnline.setOnClickListener { improveOnline(scan) }
+            }
+
             // Low-confidence card carries its own retry button (the action
             // belongs next to the warning, not in the global bottom bar).
             if (!isNotAPlant && scan.confidence < 0.5f && !isHealthyVerdict) {
@@ -505,6 +516,32 @@ class ResultActivity : AppCompatActivity() {
             // Toolbar overflow menu owns the delete action.
             pendingScanForToolbar = scan
         }
+    }
+
+    /** Re-run an offline scan's photo through the full online model. Requires a
+     *  validated connection; the online result replaces the offline scan in
+     *  place (AnalysisActivity's force-family + replace-scan flow). */
+    private fun improveOnline(scan: ScanEntity) {
+        if (!hasValidatedInternet()) {
+            Toast.makeText(this, R.string.improve_online_no_network, Toast.LENGTH_SHORT).show()
+            return
+        }
+        startActivity(
+            Intent(this, AnalysisActivity::class.java).apply {
+                putExtra(AnalysisActivity.EXTRA_IMAGE_PATH, scan.imagePath)
+                putExtra(AnalysisActivity.EXTRA_FORCE_FAMILY, ModelFamily.GAMMA.id)
+                putExtra(AnalysisActivity.EXTRA_REPLACE_SCAN_ID, scan.id)
+            },
+        )
+        finish()
+    }
+
+    private fun hasValidatedInternet(): Boolean {
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            ?: return false
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
+        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
 
     private fun animateCardsIn() {

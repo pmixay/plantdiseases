@@ -329,6 +329,8 @@
     <string name="warning_disease_suspected">The plant looks mostly healthy, but the model also picked up signs of %1$s. Keep an eye on it and re-scan if it spreads.</string>
     <string name="warning_offline_scan_title">Offline scan</string>
     <string name="warning_offline_scan">Computed on your phone, offline — no server. Re-scan online for a more thorough diagnosis.</string>
+    <string name="improve_online">Improve with online analysis</string>
+    <string name="improve_online_no_network">Connect to the internet to improve this scan.</string>
 
     <!-- Empty states -->
     <string name="first_scan_cta">Take First Scan</string>

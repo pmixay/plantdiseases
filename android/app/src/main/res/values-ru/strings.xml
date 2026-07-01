@@ -323,6 +323,8 @@
     <string name="warning_disease_suspected">Растение выглядит в основном здоровым, но модель также заметила признаки: %1$s. Понаблюдайте и переснимите, если симптомы усилятся.</string>
     <string name="warning_offline_scan_title">Офлайн-скан</string>
     <string name="warning_offline_scan">Рассчитано на телефоне, офлайн — без сервера. Пересканируйте онлайн для более точного диагноза.</string>
+    <string name="improve_online">Улучшить онлайн-анализом</string>
+    <string name="improve_online_no_network">Подключитесь к интернету, чтобы улучшить этот скан.</string>
 
     <!-- Empty states -->
     <string name="first_scan_cta">Сделать первый скан</string>
