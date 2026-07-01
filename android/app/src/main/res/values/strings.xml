@@ -269,7 +269,7 @@
     <string name="community_toggle_subtitle">Country + diagnosis + 512px thumbnail. Off keeps everything on-device.</string>
     <string name="community_features_title">Enable community features</string>
     <string name="community_features_subtitle">Share scans anonymously, get second opinions, and see scans from growers near you. Off turns the community off entirely and keeps everything on-device.</string>
-    <string name="community_profile_subtitle">Anonymous sharing is enabled after data consent. Your approximate region comes from your device (coarse location) — never from your IP address on the server.</string>
+    <string name="community_profile_subtitle">Anonymous sharing is enabled after data consent.</string>
     <string name="community_scope_global">worldwide</string>
     <string name="opinion_notifications_title">Receive community opinions</string>
     <string name="opinion_notifications_subtitle">Notify me when someone responds to my second-opinion requests.</string>
