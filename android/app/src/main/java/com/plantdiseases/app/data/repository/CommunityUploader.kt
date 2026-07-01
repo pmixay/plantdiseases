@@ -171,6 +171,7 @@ class CommunityUploader(
         MissingScanId,
         Failed,
         HiddenDisease,
+
         // On-device (Aqua/offline) scan with no server-issued scan_id — kept
         // private, never shared to the community.
         NotServerBacked,
