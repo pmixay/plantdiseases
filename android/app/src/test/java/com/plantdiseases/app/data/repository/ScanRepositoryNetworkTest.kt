@@ -555,6 +555,28 @@ class ScanRepositoryNetworkTest {
         assertThat(body).doesNotContain("name=species")
     }
 
+    // --- POST /api/telemetry/aqua (on-device scan telemetry) ---
+
+    @Test
+    fun uploadAquaTelemetry_success_postsImageAndVerdict() {
+        server.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"ok":true,"recorded":true}"""),
+        )
+        val result = runBlocking {
+            repo.uploadAquaTelemetry(imageFile, disease = "leaf_spot", confidence = 0.7f)
+        }
+        assertThat(result.isSuccess).isTrue()
+
+        val req = server.takeRequest()
+        assertThat(req.path).isEqualTo("/api/telemetry/aqua")
+        val body = req.body.readUtf8()
+        assertThat(body).contains("name=disease")
+        assertThat(body).contains("name=confidence")
+        assertThat(body).contains("name=image")
+    }
+
     // --- Community read GETs (Ktor) ---
 
     @Test

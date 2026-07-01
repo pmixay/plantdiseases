@@ -133,6 +133,49 @@ def test_real_nap_dropped_when_opted_out(client, recdb, monkeypatch):
     assert _rows() == []
 
 
+def _telemetry(client, body, disease="healthy", confidence=None):
+    data = {"disease": disease}
+    if confidence is not None:
+        data["confidence"] = str(confidence)
+    return client.post(
+        "/api/telemetry/aqua",
+        data=data,
+        files={"image": ("aqua.jpg", body, "image/jpeg")},
+    )
+
+
+def test_aqua_telemetry_records_with_source_and_no_scan_id(client, recdb):
+    r = _telemetry(client, _jpeg(), disease="healthy")
+    assert r.status_code == 200 and r.json()["recorded"] is True
+    rows = _rows()
+    assert len(rows) == 1
+    assert rows[0]["source"] == "aqua_telemetry"
+    assert rows[0]["class"] == "healthy"
+    assert rows[0]["scan_id"] is None  # not an analyze call — no scan_id issued
+
+
+def test_aqua_telemetry_unknown_class_rejected(client, recdb):
+    assert _telemetry(client, _jpeg(), disease="not_a_real_class").status_code == 422
+
+
+def test_aqua_telemetry_disabled_records_nothing(client, recdb, monkeypatch):
+    monkeypatch.setattr(server_main, "SCAN_RECORDING_ENABLED", False)
+    r = _telemetry(client, _jpeg())
+    assert r.status_code == 200 and r.json()["recorded"] is False
+    assert _rows() == []
+
+
+def test_aqua_telemetry_nap_honours_opt_out(client, recdb, monkeypatch):
+    monkeypatch.setattr(server_main, "SCAN_RECORD_NOT_A_PLANT", False)
+    r = _telemetry(client, _jpeg(), disease="not_a_plant")
+    assert r.json()["recorded"] is False
+    assert _rows() == []
+    # With the opt-in on, a real NAP telemetry scan is kept.
+    monkeypatch.setattr(server_main, "SCAN_RECORD_NOT_A_PLANT", True)
+    assert _telemetry(client, _jpeg(), disease="not_a_plant").json()["recorded"] is True
+    assert len(_rows()) == 1
+
+
 def test_cache_hit_records_once(client, recdb):
     body = _jpeg()
     _analyze(client, body)

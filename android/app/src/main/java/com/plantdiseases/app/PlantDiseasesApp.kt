@@ -31,6 +31,8 @@ class PlantDiseasesApp : Application() {
     // [launchCommunityUpload]. `inject()` is lazy, so nothing resolves before
     // startKoin() runs below.
     private val communityUploader: CommunityUploader by inject()
+    private val scanRepository:
+        com.plantdiseases.app.data.repository.ScanRepository by inject()
 
     /**
      * Application-scoped CoroutineScope for fire-and-forget work that
@@ -53,6 +55,34 @@ class PlantDiseasesApp : Application() {
     ) {
         appScope.launch {
             runCatching { communityUploader.uploadIfEnabled(scan, analysis) }
+        }
+    }
+
+    /**
+     * Send an on-device (Aqua) scan to the server as telemetry for offline
+     * triage / model comparison. No-ops for server scans (they already went
+     * through /api/analyze) and unless the user granted data consent. Never
+     * uploads to the community feed and issues no scan_id — it's send-only.
+     */
+    fun launchAquaTelemetry(
+        scan: com.plantdiseases.app.data.local.ScanEntity,
+        analysis: com.plantdiseases.app.data.model.AnalysisResponse,
+    ) {
+        if (!analysis.scanId.isNullOrBlank()) return // server scan → already recorded
+        if (!com.plantdiseases.app.ui.onboarding.OnboardingActivity.isDataConsentGiven(this)) {
+            return
+        }
+        val disease = analysis.classKey?.takeIf { it.isNotBlank() } ?: scan.diseaseName
+        appScope.launch {
+            runCatching {
+                val prepared = com.plantdiseases.app.util.ImageUtils
+                    .prepareImageForUpload(this@PlantDiseasesApp, scan.imagePath)
+                try {
+                    scanRepository.uploadAquaTelemetry(prepared, disease, analysis.confidence)
+                } finally {
+                    prepared.delete()
+                }
+            }
         }
     }
 

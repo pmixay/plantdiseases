@@ -152,6 +152,43 @@
         }
       }
     },
+    "/api/telemetry/aqua": {
+      "post": {
+        "summary": "Aqua Telemetry",
+        "description": "Record one on-device (Aqua) scan for offline triage + on-device-vs-server\ncomparison.\n\nThis is NOT an analyze call: no scan_id is issued, no diagnosis is returned,\nand it never reaches the community feed. Gated by the same model-improvement\nopt-in as server scan recording (``SCAN_RECORDING_ENABLED``; the app only\nsends when the user granted data consent). The image is anonymized and\ndaily-capped exactly like a recorded server scan.",
+        "operationId": "aqua_telemetry_api_telemetry_aqua_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_aqua_telemetry_api_telemetry_aqua_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/identify": {
       "post": {
         "summary": "Identify Endpoint",
@@ -1266,7 +1303,7 @@
     "/api/species-diseases": {
       "get": {
         "summary": "Species Diseases Endpoint",
-        "description": "Common conditions a species is affected by indoors (AI, best-effort).\n\nGraceful ``{\"available\": False, \"diseases\": []}`` when no OpenRouter key\nis configured or on any failure — the client then renders its bundled\ndisease guide, so the species screen's \"common problems\" section is never\nempty. Results are cached server-side per (species, language).",
+        "description": "Common conditions a species is affected by indoors (AI, best-effort).\n\nGraceful ``{\"available\": False, \"diseases\": []}`` when no OpenRouter key\nis configured or on any failure — the client then renders its bundled\ndisease guide, so the species screen's \"common problems\" section is never\nempty. A real (``available``) result is cached server-side (in-memory +\non disk, surviving restarts) per (species, language) and carries a long\n``Cache-Control`` so the client/CDN reuses it too; a transient failure is\nsent uncached so the next open retries.",
         "operationId": "species_diseases_endpoint_api_species_diseases_get",
         "parameters": [
           {
@@ -1714,6 +1751,36 @@
           "image"
         ],
         "title": "Body_analyze_image_api_analyze_post"
+      },
+      "Body_aqua_telemetry_api_telemetry_aqua_post": {
+        "properties": {
+          "disease": {
+            "type": "string",
+            "title": "Disease"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "image": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "Image"
+          }
+        },
+        "type": "object",
+        "required": [
+          "disease",
+          "image"
+        ],
+        "title": "Body_aqua_telemetry_api_telemetry_aqua_post"
       },
       "Body_community_scan_upload_api_community_scan_post": {
         "properties": {

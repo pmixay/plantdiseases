@@ -141,6 +141,52 @@ class ScanRepository(
         }
 
     /**
+     * Send one on-device (Aqua) scan to the server as telemetry: the image +
+     * the on-device verdict, for offline triage and on-device-vs-server model
+     * comparison. NOT an analyze call — no scan_id is issued, no diagnosis is
+     * returned, and it never reaches the community feed. Best-effort: any
+     * failure is swallowed by the caller.
+     */
+    suspend fun uploadAquaTelemetry(
+        imageFile: File,
+        disease: String,
+        confidence: Float?,
+    ): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            try {
+                val bytes = imageFile.readBytes()
+                val response = apiClient.httpClient.post("api/telemetry/aqua") {
+                    setBody(
+                        MultiPartFormDataContent(
+                            formData {
+                                append("disease", disease)
+                                confidence?.let { append("confidence", it.toString()) }
+                                append(
+                                    "image",
+                                    bytes,
+                                    Headers.build {
+                                        append(HttpHeaders.ContentType, "image/jpeg")
+                                        append(
+                                            HttpHeaders.ContentDisposition,
+                                            "filename=\"${imageFile.name}\"",
+                                        )
+                                    },
+                                )
+                            },
+                        ),
+                    )
+                }
+                if (response.status.value in 200..299) {
+                    Result.success(Unit)
+                } else {
+                    Result.failure(Exception("Aqua telemetry failed: ${response.status.value}"))
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+    /**
      * Fetch per-family availability for the scan-screen model picker.
      * Best-effort: on any failure the caller keeps its last-known state
      * (frontier stays disabled, aqua/gamma stay available).
