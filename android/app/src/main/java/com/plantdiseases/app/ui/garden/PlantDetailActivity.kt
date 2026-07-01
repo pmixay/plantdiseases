@@ -203,6 +203,21 @@ class PlantDetailActivity : AppCompatActivity() {
                     com.plantdiseases.app.ui.analysis.AnalysisActivity.EXTRA_PLANT_ID,
                     plantId,
                 )
+                // Garden scans must be server-diagnosed (at least gamma): an
+                // offline Aqua scan can't be attached to a plant. Force the
+                // user's server family, upgrading Aqua → gamma.
+                val selected = com.plantdiseases.app.util.ModelFamilyPrefs.selected(
+                    this@PlantDetailActivity,
+                )
+                val forced = if (selected.onDevice) {
+                    com.plantdiseases.app.util.ModelFamily.GAMMA
+                } else {
+                    selected
+                }
+                putExtra(
+                    com.plantdiseases.app.ui.analysis.AnalysisActivity.EXTRA_FORCE_FAMILY,
+                    forced.id,
+                )
             },
         )
     }
