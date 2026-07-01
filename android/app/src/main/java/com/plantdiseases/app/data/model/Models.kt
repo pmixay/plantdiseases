@@ -422,6 +422,21 @@ data class CommunityRequestOpinionRequest(
     @SerializedName("user_pseudo_id") @SerialName("user_pseudo_id") val userPseudoId: String,
 )
 
+/** /api/telemetry/errors request body. One client-side problem report:
+ *  errors-only diagnostic context (no images, no location, no PII). */
+@Serializable
+data class ErrorReport(
+    @SerializedName("stage") @SerialName("stage") val stage: String,
+    @SerializedName("kind") @SerialName("kind") val kind: String,
+    @SerializedName("fatal") @SerialName("fatal") val fatal: Boolean = false,
+    @SerializedName("http_status") @SerialName("http_status") val httpStatus: Int? = null,
+    @SerializedName("family") @SerialName("family") val family: String? = null,
+    @SerializedName("app_version") @SerialName("app_version") val appVersion: String? = null,
+    @SerializedName("android_api") @SerialName("android_api") val androidApi: Int? = null,
+    @SerializedName("message") @SerialName("message") val message: String? = null,
+    @SerializedName("breadcrumbs") @SerialName("breadcrumbs") val breadcrumbs: List<String>? = null,
+)
+
 /** /api/community/request-opinion response. `flagged` is false when no
  *  owned community row exists yet (upload pending / sharing opted out). */
 @Serializable

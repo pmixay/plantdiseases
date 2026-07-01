@@ -31,6 +31,8 @@ class PlantDiseasesApp : Application() {
     // [launchCommunityUpload]. `inject()` is lazy, so nothing resolves before
     // startKoin() runs below.
     private val communityUploader: CommunityUploader by inject()
+    private val scanRepository:
+        com.plantdiseases.app.data.repository.ScanRepository by inject()
 
     /**
      * Application-scoped CoroutineScope for fire-and-forget work that
@@ -53,6 +55,74 @@ class PlantDiseasesApp : Application() {
     ) {
         appScope.launch {
             runCatching { communityUploader.uploadIfEnabled(scan, analysis) }
+        }
+    }
+
+    /**
+     * Wire up error/problem telemetry: register the (consent-gated, best-effort)
+     * sender, flush any crash persisted from a previous run, then install the
+     * uncaught-exception handler. Errors-only — nothing is sent on the happy
+     * path. Reuses the same data consent as the rest of model improvement.
+     */
+    private fun setupTelemetry() {
+        com.plantdiseases.app.util.TelemetryReporter.init(
+            sender = { report ->
+                appScope.launch { runCatching { scanRepository.reportError(report) } }
+            },
+            consent = {
+                com.plantdiseases.app.ui.onboarding.OnboardingActivity.isDataConsentGiven(this)
+            },
+        )
+        flushPendingCrash()
+        installCrashHandler()
+    }
+
+    /** Persist a fatal crash (with its breadcrumb trail) so the NEXT launch can
+     *  report it — the process is dying, so a network call here is unreliable. */
+    private fun installCrashHandler() {
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+            runCatching {
+                getSharedPreferences(TELEMETRY_PREFS, MODE_PRIVATE).edit()
+                    .putString(KEY_CRASH_KIND, error.javaClass.simpleName)
+                    .putString(KEY_CRASH_MESSAGE, error.stackTraceToString().take(2000))
+                    .putString(
+                        KEY_CRASH_CRUMBS,
+                        com.plantdiseases.app.util.TelemetryReporter.breadcrumbs()
+                            .joinToString("\n"),
+                    )
+                    .commit() // sync — the process is about to exit
+            }
+            previous?.uncaughtException(thread, error)
+        }
+    }
+
+    private fun flushPendingCrash() {
+        val prefs = getSharedPreferences(TELEMETRY_PREFS, MODE_PRIVATE)
+        val kind = prefs.getString(KEY_CRASH_KIND, null) ?: return
+        val message = prefs.getString(KEY_CRASH_MESSAGE, null)
+        val crumbs = prefs.getString(KEY_CRASH_CRUMBS, null)
+            ?.split('\n')?.filter { it.isNotBlank() }
+        prefs.edit()
+            .remove(KEY_CRASH_KIND).remove(KEY_CRASH_MESSAGE).remove(KEY_CRASH_CRUMBS)
+            .apply()
+        if (!com.plantdiseases.app.ui.onboarding.OnboardingActivity.isDataConsentGiven(this)) {
+            return
+        }
+        appScope.launch {
+            runCatching {
+                scanRepository.reportError(
+                    com.plantdiseases.app.data.model.ErrorReport(
+                        stage = "crash",
+                        kind = kind,
+                        fatal = true,
+                        appVersion = com.plantdiseases.app.BuildConfig.VERSION_NAME,
+                        androidApi = android.os.Build.VERSION.SDK_INT,
+                        message = message,
+                        breadcrumbs = crumbs,
+                    ),
+                )
+            }
         }
     }
 
@@ -92,6 +162,7 @@ class PlantDiseasesApp : Application() {
         // species info) — "fetched once, never fetched again".
         com.plantdiseases.app.util.ResponseCache.init(this)
         registerCropImageInsetFix()
+        setupTelemetry()
         // NB: do NOT touch WorkManager here. The default androidx.startup
         // WorkManagerInitializer initialises it before onCreate, but calling
         // WorkManager.getInstance()/initialize() from Application.onCreate
@@ -217,5 +288,11 @@ class PlantDiseasesApp : Application() {
     companion object {
         const val CHANNEL_PLANT_REMINDERS = "plant_reminders"
         const val CHANNEL_COMMUNITY = "community"
+
+        // Where a fatal crash is stashed for reporting on the next launch.
+        private const val TELEMETRY_PREFS = "plantdiseases_telemetry"
+        private const val KEY_CRASH_KIND = "crash_kind"
+        private const val KEY_CRASH_MESSAGE = "crash_message"
+        private const val KEY_CRASH_CRUMBS = "crash_crumbs"
     }
 }

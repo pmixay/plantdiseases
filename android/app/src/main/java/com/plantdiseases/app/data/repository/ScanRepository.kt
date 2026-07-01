@@ -141,6 +141,22 @@ class ScanRepository(
         }
 
     /**
+     * Post one client error/problem report to /api/telemetry/errors. Strictly
+     * best-effort and silent: any failure (including no network) is swallowed —
+     * telemetry must never surface to the user or throw into a catch handler.
+     */
+    suspend fun reportError(report: com.plantdiseases.app.data.model.ErrorReport) {
+        withContext(Dispatchers.IO) {
+            runCatching {
+                apiClient.httpClient.post("api/telemetry/errors") {
+                    contentType(ContentType.Application.Json)
+                    setBody(report)
+                }
+            }
+        }
+    }
+
+    /**
      * Fetch per-family availability for the scan-screen model picker.
      * Best-effort: on any failure the caller keeps its last-known state
      * (frontier stays disabled, aqua/gamma stay available).

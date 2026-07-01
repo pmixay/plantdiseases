@@ -28,6 +28,7 @@ import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.ModelFamily
 import com.plantdiseases.app.util.ModelFamilyPrefs
+import com.plantdiseases.app.util.TelemetryReporter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -156,6 +157,7 @@ class AnalysisActivity : AppCompatActivity() {
             try {
                 val locale = if (LocaleHelper.isRussian(this@AnalysisActivity)) "ru" else "en"
                 val family = forcedFamily ?: ModelFamilyPrefs.selected(this@AnalysisActivity)
+                TelemetryReporter.crumb("analyze_start:${family.id}")
 
                 // Aqua runs fully on-device when its TFLite model is installed —
                 // no network, minimal result. The picker only offers Aqua once
@@ -179,14 +181,17 @@ class AnalysisActivity : AppCompatActivity() {
                     }
                 } catch (e: ImageUtils.ImageDecodeException) {
                     Log.w(TAG, "Image decode failed", e)
+                    TelemetryReporter.report("image_prepare", "decode_fail", message = e.message)
                     showError(getString(R.string.image_decode_error_title), getString(R.string.image_decode_error_detail))
                     return@launch
                 } catch (e: OutOfMemoryError) {
                     Log.e(TAG, "Out of memory preparing upload", e)
+                    TelemetryReporter.report("image_prepare", "oom")
                     showError(getString(R.string.image_too_large_title), getString(R.string.image_too_large_detail))
                     return@launch
                 } catch (e: Exception) {
                     Log.e(TAG, "Unexpected failure preparing upload", e)
+                    TelemetryReporter.report("image_prepare", "error", message = e.message)
                     showError(getString(R.string.analysis_error), e.localizedMessage ?: getString(R.string.unknown_error))
                     return@launch
                 }
@@ -201,11 +206,13 @@ class AnalysisActivity : AppCompatActivity() {
                     proceedWithResult(imagePath, response)
                 }.onFailure { error ->
                     when (error) {
-                        is com.plantdiseases.app.data.repository.ScanRepository.ServerTimeoutException ->
+                        is com.plantdiseases.app.data.repository.ScanRepository.ServerTimeoutException -> {
+                            TelemetryReporter.report("analyze", "timeout", family = family.id)
                             showError(
                                 getString(R.string.server_not_responding),
                                 getString(R.string.server_not_responding_detail),
                             )
+                        }
                         is com.plantdiseases.app.data.repository.ScanRepository.NoNetworkException -> {
                             // Offline — but if the on-device Aqua model is
                             // installed, answer with it instead of failing.
@@ -227,26 +234,36 @@ class AnalysisActivity : AppCompatActivity() {
                             if (offline != null) {
                                 proceedWithResult(imagePath, offline)
                             } else {
+                                // A real failure only when we couldn't recover
+                                // offline (forced-server upgrade, or no Aqua model).
+                                TelemetryReporter.report("analyze", "no_network", family = family.id)
                                 showError(
                                     getString(R.string.no_network),
                                     getString(R.string.no_network_detail),
                                 )
                             }
                         }
-                        is com.plantdiseases.app.data.repository.ScanRepository.RateLimitException ->
+                        is com.plantdiseases.app.data.repository.ScanRepository.RateLimitException -> {
+                            TelemetryReporter.report("analyze", "rate_limited", family = family.id)
                             showError(getString(R.string.server_busy), getString(R.string.server_busy_detail))
-                        is com.plantdiseases.app.data.repository.ScanRepository.ServerStartingException ->
+                        }
+                        is com.plantdiseases.app.data.repository.ScanRepository.ServerStartingException -> {
+                            TelemetryReporter.report("analyze", "server_starting", family = family.id)
                             showError(
                                 getString(R.string.server_starting),
                                 getString(R.string.server_starting_detail),
                             )
-                        is com.plantdiseases.app.data.repository.ScanRepository.UnsupportedImageException ->
+                        }
+                        is com.plantdiseases.app.data.repository.ScanRepository.UnsupportedImageException -> {
+                            TelemetryReporter.report("analyze", "unsupported_image", family = family.id)
                             showError(
                                 getString(R.string.unsupported_image_title),
                                 getString(R.string.unsupported_image_detail),
                             )
+                        }
                         else -> {
                             Log.w(TAG, "Analysis failed", error)
+                            TelemetryReporter.report("analyze", "error", family = family.id, message = error.message ?: error.javaClass.simpleName)
                             showError(
                                 getString(R.string.analysis_error),
                                 error.localizedMessage ?: getString(R.string.unknown_error)
@@ -274,7 +291,10 @@ class AnalysisActivity : AppCompatActivity() {
         // Auto-attach to the originating plant when launched from
         // PlantDetailActivity's "New scan" affordance, so the scan appears in
         // that plant's Photos + Timeline without a manual "Add to garden".
-        if (attachPlantId >= 0L) {
+        // Only server-diagnosed scans qualify — an offline Aqua scan (no
+        // server-issued scan_id) is never added to the garden, even from the
+        // in-garden scanner (which forces at least gamma anyway).
+        if (attachPlantId >= 0L && !response.scanId.isNullOrBlank()) {
             plantRepository.assignScanToPlant(scanId, attachPlantId)
         }
 
@@ -326,9 +346,11 @@ class AnalysisActivity : AppCompatActivity() {
                 // clause a decode/inference OOM escapes and crashes the app
                 // instead of falling back to the (OOM-guarded) server path.
                 Log.w(TAG, "Aqua on-device OOM; falling back to server", e)
+                TelemetryReporter.report("aqua_inference", "oom", family = "aqua")
                 null
             } catch (e: Exception) {
                 Log.w(TAG, "Aqua on-device inference failed", e)
+                TelemetryReporter.report("aqua_inference", "error", family = "aqua", message = e.message)
                 null
             } finally {
                 classifier.close()
