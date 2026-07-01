@@ -131,6 +131,10 @@ def _stub_pipeline_for_lifespan(tmp_path_factory):
     labeling.LABELING_DB_PATH = lab_dir / "labeling.db"
     labeling.LABELING_IMG_DIR = lab_dir / "images"
     labeling._initialised = False
+
+    import telemetry
+    telemetry.TELEMETRY_DB_PATH = tmp_path_factory.mktemp("telemetry") / "telemetry.db"
+    telemetry._initialised = False
     yield
 
 
