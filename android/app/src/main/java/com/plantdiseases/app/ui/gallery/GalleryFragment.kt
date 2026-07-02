@@ -236,7 +236,10 @@ class GalleryFragment : Fragment() {
 
         viewLifecycleOwner.lifecycleScope.launch {
             binding.swipeRefresh.isRefreshing = !isFirstLoad
-            allScans = scanRepository.getAllScans()
+            // NAP / blur rejects never belong in the gallery. New builds don't
+            // persist them at all; this filter also hides any legacy rows the
+            // one-time startup purge hasn't swept yet.
+            allScans = scanRepository.getAllScans().filter { !it.isNotAPlant }
 
             if (isFirstLoad) {
                 binding.shimmerLayout.stopShimmer()

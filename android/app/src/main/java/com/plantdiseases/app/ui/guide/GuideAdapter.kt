@@ -91,6 +91,7 @@ class GuideAdapter(
         // the shared amber sank into the dark chip background.
         GuideCategory.LIGHTING -> R.drawable.bg_category_lighting to R.color.guide_icon_lighting
         GuideCategory.CARE_TIPS -> R.drawable.bg_category_care to R.color.healthy_green
+        GuideCategory.HELP -> R.drawable.bg_category_care to R.color.primary
     }
 
     companion object {

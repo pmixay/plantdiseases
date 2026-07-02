@@ -283,8 +283,9 @@
 
         </com.facebook.shimmer.ShimmerFrameLayout>
 
-        <!-- Stats: a single glass card with a stat row + summary lines -->
-        <!-- Stats: health-rate ring + animated count tiles -->
+        <!-- Stats: ONE glass card — health-rate ring + animated count tiles,
+             most-common disease, the 7-day activity chart and top issues.
+             (Previously split across two cards; unified per design pass.) -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/stats_layout"
             style="@style/App.GlassCard"
@@ -296,6 +297,14 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="@dimen/space_md"
+                    android:text="@string/stats_section"
+                    android:textAppearance="@style/TextAppearance.App.Title"
+                    android:accessibilityHeading="true" />
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -407,93 +416,51 @@
                         android:textAlignment="viewEnd"
                         android:fontFamily="sans-serif-medium" />
                 </LinearLayout>
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginVertical="@dimen/space_md"
+                    android:background="@color/divider" />
+
+                <!-- 7-day bar chart -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/stats_last_7_days"
+                    android:textColor="@color/on_surface"
+                    android:textSize="@dimen/text_body"
+                    android:textStyle="bold" />
+
+                <com.plantdiseases.app.ui.widget.BarChartView
+                    android:id="@+id/bar_week"
+                    android:layout_width="match_parent"
+                    android:layout_height="120dp"
+                    android:layout_marginTop="@dimen/space_sm" />
+
+                <!-- Top issues -->
+                <TextView
+                    android:id="@+id/tv_top_issues_title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_lg"
+                    android:text="@string/stats_top_issues"
+                    android:textColor="@color/on_surface"
+                    android:textSize="@dimen/text_body"
+                    android:textStyle="bold"
+                    android:visibility="gone" />
+
+                <LinearLayout
+                    android:id="@+id/list_top_issues"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_sm"
+                    android:orientation="vertical" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Stats detail + guides, consolidated here (the standalone
-             "Statistics & tips" screen was removed). Tips always show; only the
-             charts card hides in the empty state. -->
-        <LinearLayout
-            android:id="@+id/stats_detail_layout"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical">
-
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/stats_charts_card"
-                style="@style/App.GlassCard"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_md"
-                android:visibility="gone">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/stats_section"
-                        android:textColor="@color/on_surface"
-                        android:textSize="@dimen/text_title_sm"
-                        android:textStyle="bold" />
-
-                    <!-- 7-day bar chart -->
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_md"
-                        android:text="@string/stats_last_7_days"
-                        android:textColor="@color/on_surface"
-                        android:textSize="@dimen/text_body"
-                        android:textStyle="bold" />
-
-                    <com.plantdiseases.app.ui.widget.BarChartView
-                        android:id="@+id/bar_week"
-                        android:layout_width="match_parent"
-                        android:layout_height="120dp"
-                        android:layout_marginTop="@dimen/space_sm" />
-
-                    <!-- Top issues -->
-                    <TextView
-                        android:id="@+id/tv_top_issues_title"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_lg"
-                        android:text="@string/stats_top_issues"
-                        android:textColor="@color/on_surface"
-                        android:textSize="@dimen/text_body"
-                        android:textStyle="bold"
-                        android:visibility="gone" />
-
-                    <LinearLayout
-                        android:id="@+id/list_top_issues"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_sm"
-                        android:orientation="vertical" />
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <!-- Guides & tips -->
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_xl"
-                android:text="@string/tips_section"
-                android:textColor="@color/on_surface"
-                android:textSize="@dimen/text_title_sm"
-                android:textStyle="bold" />
-
-            <LinearLayout
-                android:id="@+id/list_tips"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_sm"
-                android:orientation="vertical" />
-        </LinearLayout>
+        <!-- The "Guides & tips" cards that used to follow here moved into the
+             Guide handbook (Home → Guide → App help). -->
 
         <!-- Empty state -->
         <LinearLayout

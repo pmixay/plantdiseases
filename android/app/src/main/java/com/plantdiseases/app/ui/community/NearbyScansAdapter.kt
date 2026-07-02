@@ -18,17 +18,18 @@ import com.plantdiseases.app.util.ThumbLoader
 
 /**
  * Vertical, social-feed adapter for the "Scans near you" screen. Each
- * post renders the scan photo full-width with a diagnosis header and a
- * "Second opinion" action. Both the photo and the action open the
- * community opinion sheet (vote graph + opinions + your own vote) for
- * that scan.
+ * post renders the scan photo full-width with the author's nickname, the
+ * place, a distance·time line and a "Second opinion" action. The model's
+ * diagnosis is intentionally NOT on the card — it would anchor voters
+ * before they look at the photo; it appears inside the opinion sheet.
+ * Both the photo and the action open the community opinion sheet
+ * (vote graph + opinions + your own vote) for that scan.
  *
  * Thumbnails load via Glide from /api/community/thumb/<filename>; posts
  * without a thumb_path fall back to a tinted leaf icon so the card stays
  * usable when the server didn't persist a thumbnail.
  */
 class NearbyScansAdapter(
-    private val displayName: (String) -> String,
     private val onSecondOpinion: (CommunityScanItem) -> Unit,
 ) : RecyclerView.Adapter<NearbyScansAdapter.VH>() {
 
@@ -63,12 +64,12 @@ class NearbyScansAdapter(
         private val avatar: TextView = itemView.findViewById(R.id.tv_nearby_avatar)
 
         fun bind(item: CommunityScanItem) {
-            // Identity line = the author's plant-vibe nickname (the diagnosis
-            // moves into the meta). Old rows with no nickname fall back to the
-            // disease label so the line is never empty.
+            // Identity line = the author's plant-vibe nickname. Old rows with
+            // no nickname fall back to a generic localized handle — never the
+            // diagnosis, which stays off the card.
             val nick = item.nickname?.takeIf { it.isNotBlank() }
-            label.text = nick ?: displayName(item.disease)
-            meta.text = buildMeta(item, includeDisease = nick != null)
+            label.text = nick ?: itemView.context.getString(R.string.community_anonymous_author)
+            meta.text = buildMeta(item)
             // Distance + time live on their own line so a long place name can't
             // ellipsize them away (the whole point of the "near you" feed).
             val whenText = buildWhen(item)
@@ -105,19 +106,15 @@ class NearbyScansAdapter(
             ThumbLoader.load(shimmer, photo, url)
         }
 
-        /** "Powdery mildew · Warsaw, Poland" — the disease is included only when
-         *  the identity line shows the nickname (else it'd repeat). Distance +
-         *  time move to [buildWhen] so a long place name can't push them off the
-         *  end of this single (ellipsized) line. Missing pieces drop out. */
-        private fun buildMeta(item: CommunityScanItem, includeDisease: Boolean): String {
+        /** "Warsaw, Poland" — just the place. Distance + time live in
+         *  [buildWhen] so a long place name can't push them off the end of
+         *  this single (ellipsized) line. Missing pieces drop out. */
+        private fun buildMeta(item: CommunityScanItem): String {
             val locality = item.city.ifBlank { item.region }
-            return listOf(
-                if (includeDisease) displayName(item.disease) else "",
-                formatRegion(locality, countryLabel(item)),
-            ).filter { it.isNotEmpty() }.joinToString(" · ")
+            return formatRegion(locality, countryLabel(item))
         }
 
-        /** "≈ 3 km near you · 2h" — the distance (nearby scope only) + the
+        /** "≈ 3 km · 2 hr. ago" — the distance (nearby scope only) + the
          *  relative time, on their own always-visible line. */
         private fun buildWhen(item: CommunityScanItem): String =
             listOf(
@@ -125,9 +122,11 @@ class NearbyScansAdapter(
                 formatTimeAgo(item.createdAt),
             ).filter { it.isNotEmpty() }.joinToString(" · ")
 
-        /** "≈ N km near you" — coords are rounded to ~1 km server-side, so we
-         *  floor the display at 1 km rather than show a misleading "0 km".
-         *  Empty when the feed had no requester anchor (country/worldwide). */
+        /** "≈ N km" — the whole screen is "near you", so the suffix is
+         *  redundant and only stole space from the recency stamp. Coords are
+         *  rounded to ~1 km server-side, so we floor the display at 1 km
+         *  rather than show a misleading "0 km". Empty when the feed had no
+         *  requester anchor (country/worldwide). */
         private fun formatDistance(distanceKm: Float?): String {
             if (distanceKm == null) return ""
             val km = Math.round(distanceKm).coerceAtLeast(1)

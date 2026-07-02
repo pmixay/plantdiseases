@@ -86,33 +86,30 @@ class ResultActivity : AppCompatActivity() {
     }
 
     // In-context community opt-in from the result screen (the "enable community"
-    // button under the similar-scans card). Mirrors NearbyScansActivity: request
-    // coarse location (+ notifications on 13+) and only flip community ON when
-    // location is granted — so a denial leaves the "enable community" button in
-    // place instead of silently enabling with no location. The pending callback
-    // carries the grant result back to whichever surface asked.
+    // button under the similar-scans card and the second-opinion gate). Mirrors
+    // NearbyScansActivity: request coarse location ONLY and flip community ON
+    // when it's granted — so a denial leaves the "enable community" button in
+    // place instead of silently enabling with no location. Notifications are
+    // NOT part of joining; they're requested when the user asks for a second
+    // opinion (see ensureNotificationPermission). The pending callback carries
+    // the grant result back to whichever surface asked.
     private var pendingCommunityOptIn: ((Boolean) -> Unit)? = null
 
     private val communityOptInLauncher = registerForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions(),
-    ) { result ->
-        val locationGranted =
-            result[android.Manifest.permission.ACCESS_COARSE_LOCATION] == true ||
-                androidx.core.content.ContextCompat.checkSelfPermission(
-                    this,
-                    android.Manifest.permission.ACCESS_COARSE_LOCATION,
-                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        val locationGranted = granted ||
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                this,
+                android.Manifest.permission.ACCESS_COARSE_LOCATION,
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
         pendingCommunityOptIn?.invoke(locationGranted)
         pendingCommunityOptIn = null
     }
 
     private fun requestCommunityOptIn(onResult: (Boolean) -> Unit) {
         pendingCommunityOptIn = onResult
-        val perms = mutableListOf(android.Manifest.permission.ACCESS_COARSE_LOCATION)
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            perms += android.Manifest.permission.POST_NOTIFICATIONS
-        }
-        communityOptInLauncher.launch(perms.toTypedArray())
+        communityOptInLauncher.launch(android.Manifest.permission.ACCESS_COARSE_LOCATION)
     }
 
     private fun ensureNotificationPermission() {

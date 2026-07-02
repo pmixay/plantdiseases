@@ -57,10 +57,13 @@ class NearbyScansActivity : AppCompatActivity() {
     // Server-side scope filter: "nearby" (~30 km radius) or "country".
     private var scope = "nearby"
 
-    // In-context opt-in: tapping Enable requests coarse location (+ notifications
-    // on 13+), flips community on, and reloads the feed.
+    // In-context opt-in: tapping Enable requests coarse location only, flips
+    // community on, and reloads the feed. Notifications are deliberately NOT
+    // part of joining — the POST_NOTIFICATIONS prompt fires later, at the one
+    // place it's needed: when the user requests a second opinion on their
+    // own scan (see CommunityController.beginRequest).
     private val communityPermissionLauncher = registerForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions(),
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
     ) { _ ->
         com.plantdiseases.app.util.CommunityPrefs.enable(this)
         com.plantdiseases.app.push.PushManager.registerIfEnabled(this)
@@ -68,11 +71,7 @@ class NearbyScansActivity : AppCompatActivity() {
     }
 
     private fun requestCommunityOptIn() {
-        val perms = mutableListOf(android.Manifest.permission.ACCESS_COARSE_LOCATION)
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            perms += android.Manifest.permission.POST_NOTIFICATIONS
-        }
-        communityPermissionLauncher.launch(perms.toTypedArray())
+        communityPermissionLauncher.launch(android.Manifest.permission.ACCESS_COARSE_LOCATION)
     }
 
     override fun attachBaseContext(newBase: Context) {
@@ -107,7 +106,6 @@ class NearbyScansActivity : AppCompatActivity() {
         binding.btnEnableCommunity.setOnClickListener { requestCommunityOptIn() }
 
         adapter = NearbyScansAdapter(
-            displayName = { key -> DiseaseLabels.displayName(key, isRu) ?: key },
             onSecondOpinion = { item ->
                 // Opening someone else's scan counts as a view (deduped per
                 // viewer server-side).

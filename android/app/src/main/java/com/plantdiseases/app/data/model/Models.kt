@@ -445,6 +445,14 @@ data class CommunityRequestOpinionResponse(
     @SerializedName("flagged") @SerialName("flagged") val flagged: Boolean = false,
 )
 
+/** /api/community/request-opinion/cancel response. `cleared` is false when
+ *  there was no open request to withdraw (already cancelled / expired). */
+@Serializable
+data class CommunityCancelOpinionResponse(
+    @SerializedName("ok") @SerialName("ok") val ok: Boolean = false,
+    @SerializedName("cleared") @SerialName("cleared") val cleared: Boolean = false,
+)
+
 /** One community 'second opinion' on a shared scan. `scanId` is only
  *  populated by the /my-opinions endpoint (which scan the opinion was on). */
 @Serializable
@@ -465,6 +473,10 @@ data class CommunityOpinionsResponse(
     @SerializedName("consensus") @SerialName("consensus") val consensus: List<CommunityTopDisease> = emptyList(),
     // Distinct-viewer count on this scan (per-user deduped server-side).
     @SerializedName("views") @SerialName("views") val views: Int = 0,
+    // Whether the owner has a LIVE second-opinion request on this scan
+    // (requests auto-expire server-side after 72 h). Lets the owner's app
+    // restore its "waiting" state across restarts.
+    @SerializedName("wants_opinion") @SerialName("wants_opinion") val wantsOpinion: Boolean = false,
     @SerializedName("ok") @SerialName("ok") val ok: Boolean = false,
     @SerializedName("count") @SerialName("count") val count: Int = 0,
 )
@@ -522,7 +534,11 @@ enum class GuideCategory {
     CARE_TIPS,
     WATERING,
     LIGHTING,
-    PESTS
+    PESTS,
+
+    // "Using the app" articles (reading results, community, data) — the
+    // handbook content that used to live as tip cards on the Profile tab.
+    HELP
 }
 
 /** Popular species/diseases row entries (shared by /api/popular). */

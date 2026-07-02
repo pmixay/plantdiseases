@@ -12,7 +12,6 @@ import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -29,12 +28,10 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.GuideDataProvider
-import com.google.android.material.card.MaterialCardView
 import com.plantdiseases.app.data.model.CommunityOpinion
 import com.plantdiseases.app.data.model.ScanHistoryItem
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.FragmentProfileBinding
-import com.plantdiseases.app.ui.common.ContentLinks
 import com.plantdiseases.app.ui.result.CommunityOpinionSheet
 import com.plantdiseases.app.ui.widget.BarChartView
 import com.plantdiseases.app.util.AutosavePrefs
@@ -109,9 +106,8 @@ class ProfileFragment : Fragment() {
                 ?.selectedItemId = R.id.cameraFragment
         }
 
-        // Tips library lives inline now (the standalone Stats & tips screen
-        // was removed). Static content — build once.
-        buildTips()
+        // The tips library moved into the Guide handbook (Home → Guide →
+        // App help) — Profile is settings + personal stats only now.
 
         binding.langEn.setOnClickListener { setLanguage("en") }
         binding.langRu.setOnClickListener { setLanguage("ru") }
@@ -458,74 +454,6 @@ class ProfileFragment : Fragment() {
         return column
     }
 
-    /** The trimmed tips library (4 cards) — static, built once. */
-    private fun buildTips() {
-        val sections = listOf(
-            R.string.tip_scanning_title to R.string.tip_scanning_body,
-            R.string.tip_results_title to R.string.tip_results_body,
-            R.string.tip_watering_title to R.string.tip_watering_body,
-            R.string.tip_community_title to R.string.tip_community_body,
-        )
-        binding.listTips.removeAllViews()
-        sections.forEach { (title, body) -> binding.listTips.addView(tipCard(title, body)) }
-    }
-
-    private fun tipCard(titleRes: Int, bodyRes: Int): View {
-        val ctx = requireContext()
-        val card = MaterialCardView(ctx).apply {
-            radius = 16.dp().toFloat()
-            cardElevation = 1.dp().toFloat()
-            setCardBackgroundColor(color(R.color.surface))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { bottomMargin = 10.dp() }
-        }
-        val column = LinearLayout(ctx).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(16.dp(), 14.dp(), 16.dp(), 14.dp())
-        }
-        val bodyView = TextView(ctx).apply {
-            ContentLinks.apply(this, getString(bodyRes))
-            textSize = 14f
-            setLineSpacing(3.dp().toFloat(), 1f)
-            setTextColor(color(R.color.on_surface_secondary))
-            setPadding(0, 8.dp(), 0, 0)
-            visibility = View.GONE
-        }
-        val chevron = ImageView(ctx).apply {
-            setImageResource(R.drawable.ic_chevron_down)
-            imageTintList = android.content.res.ColorStateList.valueOf(
-                color(R.color.on_surface_secondary),
-            )
-        }
-        val headerRow = LinearLayout(ctx).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            addView(
-                TextView(ctx).apply {
-                    text = getString(titleRes)
-                    textSize = 15f
-                    setTypeface(typeface, Typeface.BOLD)
-                    setTextColor(color(R.color.on_surface))
-                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                },
-            )
-            addView(chevron)
-        }
-        column.addView(headerRow)
-        column.addView(bodyView)
-        card.addView(column)
-        card.setOnClickListener {
-            val open = bodyView.visibility == View.VISIBLE
-            bodyView.visibility = if (open) View.GONE else View.VISIBLE
-            chevron.setImageResource(
-                if (open) R.drawable.ic_chevron_down else R.drawable.ic_chevron_up,
-            )
-        }
-        return card
-    }
-
     private fun pill(fill: Int): GradientDrawable = GradientDrawable().apply {
         shape = GradientDrawable.RECTANGLE
         cornerRadius = 999f
@@ -656,23 +584,16 @@ class ProfileFragment : Fragment() {
                 isFirstLoad = false
             }
 
-            // `totalScans` from ScanStats counts plant scans only (healthy +
-            // real disease). NAP rows are tracked separately and do not
-            // contribute to health rate or "most common disease" — but
-            // they DO count toward the empty-state check, otherwise users
-            // who only have NAP scans see an "empty" profile.
-            val totalRecorded = stats.totalScans + stats.notAPlantCount
-            if (totalRecorded == 0) {
-                // No scans yet: hide the summary + charts, but the tips library
-                // (also in stats_detail_layout) stays visible for onboarding.
+            // `totalScans` counts plant scans only (healthy + real disease).
+            // NAP / blur rejects are no longer persisted at all, so they can't
+            // pad any number here.
+            if (stats.totalScans == 0) {
                 binding.statsLayout.visibility = View.GONE
-                binding.statsChartsCard.visibility = View.GONE
                 binding.emptyState.visibility = View.VISIBLE
                 return@launch
             }
 
             binding.statsLayout.visibility = View.VISIBLE
-            binding.statsChartsCard.visibility = View.VISIBLE
             binding.emptyState.visibility = View.GONE
 
             // 7-day activity bar chart + top recurring issues.
@@ -684,10 +605,9 @@ class ProfileFragment : Fragment() {
             )
             renderTopIssues(real)
 
-            // The "Total Scans" card surfaces the full recorded count so
-            // it matches the gallery row count; NAP filtering only affects
-            // health-rate and most-common-disease semantics.
-            animateCount(binding.tvTotalScans, totalRecorded)
+            // The "Total Scans" tile matches the gallery row count (plant
+            // scans only — rejects are never saved).
+            animateCount(binding.tvTotalScans, stats.totalScans)
             animateCount(binding.tvHealthyCount, stats.healthyCount)
             animateCount(binding.tvDiseasedCount, stats.diseasedCount)
 

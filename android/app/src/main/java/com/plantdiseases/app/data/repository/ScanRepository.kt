@@ -458,6 +458,44 @@ class ScanRepository(
         }
 
     /**
+     * Withdraw an open second-opinion request on the user's OWN scan —
+     * the community stops seeing the ask and no further opinion
+     * notifications arrive for it. Opinions already left stay visible.
+     * Returns `true` when an open request was actually cleared (requests
+     * also lapse server-side on their own after 72 h).
+     */
+    suspend fun cancelSecondOpinion(
+        scanId: String,
+        userPseudoId: String,
+    ): Result<Boolean> =
+        withContext(Dispatchers.IO) {
+            try {
+                val response = apiClient.httpClient.post("api/community/request-opinion/cancel") {
+                    contentType(ContentType.Application.Json)
+                    setBody(
+                        com.plantdiseases.app.data.model.CommunityRequestOpinionRequest(
+                            scanId = scanId,
+                            userPseudoId = userPseudoId,
+                        ),
+                    )
+                }
+                when (response.status.value) {
+                    in 200..299 -> Result.success(
+                        response.body<com.plantdiseases.app.data.model.CommunityCancelOpinionResponse>()
+                            .cleared,
+                    )
+                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
+                }
+            } catch (e: SocketTimeoutException) {
+                Result.failure(ServerTimeoutException())
+            } catch (e: UnknownHostException) {
+                Result.failure(NoNetworkException())
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+    /**
      * Send a single AI Plant Doctor turn. The server returns 200 OK
      * even when no API key is configured or the per-session budget is
      * exhausted; in that case the response carries `available=false`
@@ -973,6 +1011,20 @@ class ScanRepository(
     /** Clear all scan history */
     suspend fun clearAll() = withContext(Dispatchers.IO) {
         scanDao.deleteAll()
+    }
+
+    /**
+     * One-time sweep of legacy `not_a_plant` rows. New NAP / blur-gate
+     * verdicts are no longer persisted at all (AnalysisActivity shows a
+     * transient "retake" state instead), but rows saved by older builds
+     * would keep haunting the gallery and profile stats. NAP is a derived
+     * property (no dedicated column), so this filters in Kotlin — the
+     * table is small. Returns the number of rows removed.
+     */
+    suspend fun purgeNotAPlantScans(): Int = withContext(Dispatchers.IO) {
+        val stale = scanDao.getAllScans().filter { isNotAPlantScan(it) }
+        for (s in stale) scanDao.deleteById(s.id)
+        stale.size
     }
 
     data class ScanStats(

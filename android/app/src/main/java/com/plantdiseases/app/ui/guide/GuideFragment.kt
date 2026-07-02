@@ -23,7 +23,8 @@ import kotlinx.coroutines.launch
 
 /**
  * Plant-care guide tab: category tabs (diseases / pests / watering / lighting /
- * care) over a searchable list. Search is debounced (300 ms, min 2 chars) and
+ * care / app help) over a searchable list. Search is debounced (300 ms, min 2
+ * chars) and
  * matches across every category in the current language; recent queries are
  * persisted and offered as chips when the field is focused. Tapping an item
  * opens [GuideDetailSheet].
@@ -79,7 +80,8 @@ class GuideFragment : Fragment() {
             GuideCategory.PESTS to R.string.cat_pests,
             GuideCategory.WATERING to R.string.cat_watering,
             GuideCategory.LIGHTING to R.string.cat_lighting,
-            GuideCategory.CARE_TIPS to R.string.cat_care
+            GuideCategory.CARE_TIPS to R.string.cat_care,
+            GuideCategory.HELP to R.string.cat_help
         )
 
         tabs.forEach { (category, titleRes) ->
