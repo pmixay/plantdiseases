@@ -32,6 +32,7 @@ import com.plantdiseases.app.data.model.SpeciesDiseaseItem
 import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivitySpeciesDetailBinding
+import com.plantdiseases.app.ui.common.CarePlanCardView
 import com.plantdiseases.app.ui.guide.GuideDetailActivity
 import com.plantdiseases.app.util.DiseaseCatalog
 import com.plantdiseases.app.util.LocaleHelper
@@ -145,38 +146,36 @@ class SpeciesDetailActivity : AppCompatActivity() {
     }
 
     /** Care-at-a-glance, on its own coroutine so it isn't gated behind the
-     *  Wikipedia fetch. Shows the card with a loading line immediately, then
-     *  fills it (or hides the card if there's nothing useful to show). */
+     *  Wikipedia fetch. Renders the SAME rich [CarePlanCardView] the scan
+     *  result and garden detail use (gradient header + watering/light/humidity
+     *  pills + expandable details) instead of a flat text line. Reminders are
+     *  hidden here — this is a healthy-baseline plan, not a diagnosis. */
     private fun loadCare() {
-        binding.cardCare.visibility = View.VISIBLE
-        binding.tvCareBody.text = getString(R.string.identify_loading)
+        val careCard = CarePlanCardView(this).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            )
+        }
+        binding.careSlot.removeAllViews()
+        binding.careSlot.addView(careCard)
+        val speciesDisplay = commonName ?: scientificName
+        careCard.showLoading(speciesDisplay)
         lifecycleScope.launch {
             val plan = scanRepository.fetchCarePlan(
                 CarePlanRequest(disease = "healthy", species = scientificName, locale = locale),
             ).getOrNull()
-            val lines = if (plan != null) {
-                val watering = when {
-                    plan.wateringDaysIsAsNeeded -> getString(R.string.identify_water_as_needed)
-                    plan.wateringDaysInt != null ->
-                        getString(R.string.identify_water_days, plan.wateringDaysInt)
-                    else -> null
-                }
-                listOfNotNull(
-                    getString(R.string.identify_light_tier, prettyTier(plan.lightTier)),
-                    watering,
-                    plan.humidityTarget.takeIf { it.isNotBlank() }
-                        ?.let { getString(R.string.identify_humidity, it) },
+            if (plan != null) {
+                careCard.bind(
+                    plan = plan,
+                    speciesDisplay = speciesDisplay,
+                    showApplyToReminders = false,
                 )
             } else {
-                emptyList()
+                careCard.showError(onRetry = { loadCare() })
             }
-            if (lines.isNotEmpty()) {
-                binding.tvCareBody.text = lines.joinToString("\n")
-            } else {
-                binding.cardCare.visibility = View.GONE
-            }
-            // Pet toxicity now renders as its own card (below), not a dim line
-            // tacked onto the care text.
+            // Pet toxicity renders as its own card (below), not part of the
+            // care card. Hidden when the plan couldn't load / pin toxicity.
             bindToxicity(plan)
         }
     }
@@ -383,13 +382,6 @@ class SpeciesDetailActivity : AppCompatActivity() {
             row.isClickable = false
         }
         binding.listDiseases.addView(row)
-    }
-
-    private fun prettyTier(tier: String): String = when (tier) {
-        "low" -> getString(R.string.identify_light_low)
-        "medium" -> getString(R.string.identify_light_medium)
-        "direct" -> getString(R.string.identify_light_direct)
-        else -> getString(R.string.identify_light_bright_indirect)
     }
 
     private fun addToGarden() {

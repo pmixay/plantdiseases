@@ -341,8 +341,6 @@
     <string name="edit_plant">Редактировать</string>
     <string name="plant_name">Название растения</string>
     <string name="plant_species">Вид</string>
-    <string name="plant_room">Комната (необязательно)</string>
-    <string name="plant_room_unassigned">Без комнаты</string>
     <string name="plant_name_required">Укажите название</string>
     <string name="plant_species_unknown">Вид не указан</string>
     <string name="plant_dialog_add_subtitle">Создайте аккуратный профиль для сканов, заметок, фото и полива.</string>

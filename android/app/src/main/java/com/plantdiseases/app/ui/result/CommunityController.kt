@@ -35,6 +35,10 @@ class CommunityController(
     private val activity: AppCompatActivity,
     private val binding: ActivityResultBinding,
     private val ensureNotificationPermission: () -> Unit,
+    // Requests coarse location (+ notifications) and reports back whether
+    // location was granted. Owned by the activity because permission launchers
+    // must be registered before the activity starts. See ResultActivity.
+    private val requestCommunityOptIn: (onResult: (Boolean) -> Unit) -> Unit,
 ) : KoinComponent {
     private val repository: ScanRepository by inject()
     private val communityUploader: CommunityUploader by inject()
@@ -228,10 +232,17 @@ class CommunityController(
             binding.tvSimilarSubtitle.text = activity.getString(R.string.community_enable_blurb)
             binding.btnEnableSimilar.visibility = View.VISIBLE
             binding.btnEnableSimilar.setOnClickListener {
-                CommunityPrefs.enable(activity)
-                ensureNotificationPermission()
-                binding.btnEnableSimilar.visibility = View.GONE
-                fetchAndRender(adapter, diseaseKey, scan.speciesScientific, isRu)
+                // Same opt-in as the main community screen: request coarse
+                // location (+ notifications) first. Only flip community ON and
+                // load the feed once location is granted; on denial, leave the
+                // "enable community" button in place so the user can retry.
+                requestCommunityOptIn { locationGranted ->
+                    if (!locationGranted) return@requestCommunityOptIn
+                    CommunityPrefs.enable(activity)
+                    com.plantdiseases.app.push.PushManager.registerIfEnabled(activity)
+                    binding.btnEnableSimilar.visibility = View.GONE
+                    fetchAndRender(adapter, diseaseKey, scan.speciesScientific, isRu)
+                }
             }
             return
         }

@@ -19,7 +19,9 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Bundle
+import android.os.SystemClock
 import android.util.Log
+import android.util.Size
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
@@ -28,6 +30,8 @@ import android.view.ViewGroup
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.*
+import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
@@ -68,6 +72,14 @@ class CameraFragment : Fragment() {
     private lateinit var scaleGestureDetector: ScaleGestureDetector
 
     private var captureInFlight = false
+
+    /** Monotonic timestamp of the last accepted shutter tap. A fast double-tap
+     *  used to fire two captures / two croppers (and two first-run tips sheets)
+     *  because the downstream `captureInFlight` guard isn't armed until the
+     *  async capture starts and isn't armed at all on the tips-sheet path. This
+     *  debounces the click itself, before any branch. */
+    private var lastCaptureTapAt = 0L
+    private val captureDebounceMs = 800L
 
     /** When true, the camera runs as the species-identification front-end
      *  (hosted by SpeciesIdentifyActivity): no model picker / scan-tips /
@@ -438,26 +450,47 @@ class CameraFragment : Fragment() {
             // would NPE through the _binding!! getter. Bail out cleanly,
             // mirroring the guards already used in the other callbacks here.
             if (_binding == null || !isAdded) return@addListener
-            cameraProvider = cameraProviderFuture.get()
-
-            val preview = Preview.Builder()
-                .build()
-                .also {
-                    it.setSurfaceProvider(binding.cameraPreview.surfaceProvider)
-                }
-
-            val rotation = (
-                view?.display
-                    ?: ContextCompat.getDisplayOrDefault(requireContext())
-                ).rotation
-            imageCapture = ImageCapture.Builder()
-                .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
-                .setTargetRotation(rotation)
-                .build()
-
-            val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-
+            // Everything from here — including cameraProviderFuture.get() and
+            // the bind — is wrapped: on some devices (notably a chunk of the
+            // Samsung fleet) provider init or bindToLifecycle throws, and an
+            // uncaught throw here crashed the Scan tab ("error on camera").
+            // Fail into the graceful error card instead.
             try {
+                cameraProvider = cameraProviderFuture.get()
+
+                val preview = Preview.Builder()
+                    .build()
+                    .also {
+                        it.setSurfaceProvider(binding.cameraPreview.surfaceProvider)
+                    }
+
+                val rotation = (
+                    view?.display
+                        ?: ContextCompat.getDisplayOrDefault(requireContext())
+                    ).rotation
+                // Cap the capture to ~3 MP (2048×1536). The whole pipeline
+                // downscales to 2048 px on the long edge anyway
+                // (ImageUtils.downscaleForCropInPlace), so an uncapped full-res
+                // shot on a 50–108 MP Samsung sensor just burned seconds on
+                // encode + file write + re-decode for zero quality gain — the
+                // "lagging camera" symptom. Closest-lower-then-higher keeps it
+                // to a real supported size.
+                val resolutionSelector = ResolutionSelector.Builder()
+                    .setResolutionStrategy(
+                        ResolutionStrategy(
+                            Size(2048, 1536),
+                            ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER,
+                        ),
+                    )
+                    .build()
+                imageCapture = ImageCapture.Builder()
+                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                    .setResolutionSelector(resolutionSelector)
+                    .setTargetRotation(rotation)
+                    .build()
+
+                val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+
                 cameraProvider?.unbindAll()
                 camera = cameraProvider?.bindToLifecycle(
                     viewLifecycleOwner,
@@ -472,6 +505,8 @@ class CameraFragment : Fragment() {
                 binding.btnFlash.visibility =
                     if (camera?.cameraInfo?.hasFlashUnit() == true) View.VISIBLE else View.INVISIBLE
             } catch (e: Exception) {
+                Log.e(TAG, "Camera init/bind failed", e)
+                if (_binding == null || !isAdded) return@addListener
                 Toast.makeText(requireContext(), getString(R.string.camera_error), Toast.LENGTH_SHORT).show()
             }
         }, ContextCompat.getMainExecutor(requireContext()))
@@ -480,6 +515,11 @@ class CameraFragment : Fragment() {
     /** Explicit shutter click. Shows the pre-scan tips sheet the
      *  first time, otherwise falls straight through to capture. */
     private fun onCaptureClicked() {
+        // Swallow a rapid second tap before it can branch into a duplicate
+        // capture / cropper / tips sheet.
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastCaptureTapAt < captureDebounceMs) return
+        lastCaptureTapAt = now
         // The first-run scan-tips sheet is disease-scan guidance; identify
         // mode goes straight to capture.
         if (identifyMode) {
@@ -521,12 +561,13 @@ class CameraFragment : Fragment() {
             ContextCompat.getMainExecutor(requireContext()),
             object : ImageCapture.OnImageSavedCallback {
                 override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                    // Always re-arm the shutter state, then bail if the view
-                    // is gone — touching `binding` or requireContext() after
-                    // onDestroyView would crash.
-                    captureInFlight = false
+                    // Do NOT re-arm the shutter here. Capture continues into an
+                    // async downscale and then launchCrop(); re-enabling the
+                    // button in this gap let a fast second tap fire a whole
+                    // second capture + a second cropper. The shutter stays
+                    // locked (captureInFlight = true, button disabled) until the
+                    // crop returns — cropLauncher re-arms it on every outcome.
                     if (_binding == null || !isAdded) return
-                    binding.btnCapture.isEnabled = true
                     // Server-side blur gate now lives on /api/analyze
                     // (variance-of-Laplacian floor). We no longer
                     // double-gate on green-content here — false

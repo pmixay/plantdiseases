@@ -71,7 +71,7 @@ class ResultActivity : AppCompatActivity() {
     private val gardenAttach by lazy { GardenAttachController(this, binding) }
     private val share by lazy { ShareController(this) }
     private val community by lazy {
-        CommunityController(this, binding, ::ensureNotificationPermission)
+        CommunityController(this, binding, ::ensureNotificationPermission, ::requestCommunityOptIn)
     }
 
     // Notifications-only prompt, fired when the user asks for a second opinion
@@ -83,6 +83,36 @@ class ResultActivity : AppCompatActivity() {
         if (granted) {
             startOpinionDelivery()
         }
+    }
+
+    // In-context community opt-in from the result screen (the "enable community"
+    // button under the similar-scans card). Mirrors NearbyScansActivity: request
+    // coarse location (+ notifications on 13+) and only flip community ON when
+    // location is granted — so a denial leaves the "enable community" button in
+    // place instead of silently enabling with no location. The pending callback
+    // carries the grant result back to whichever surface asked.
+    private var pendingCommunityOptIn: ((Boolean) -> Unit)? = null
+
+    private val communityOptInLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions(),
+    ) { result ->
+        val locationGranted =
+            result[android.Manifest.permission.ACCESS_COARSE_LOCATION] == true ||
+                androidx.core.content.ContextCompat.checkSelfPermission(
+                    this,
+                    android.Manifest.permission.ACCESS_COARSE_LOCATION,
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        pendingCommunityOptIn?.invoke(locationGranted)
+        pendingCommunityOptIn = null
+    }
+
+    private fun requestCommunityOptIn(onResult: (Boolean) -> Unit) {
+        pendingCommunityOptIn = onResult
+        val perms = mutableListOf(android.Manifest.permission.ACCESS_COARSE_LOCATION)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            perms += android.Manifest.permission.POST_NOTIFICATIONS
+        }
+        communityOptInLauncher.launch(perms.toTypedArray())
     }
 
     private fun ensureNotificationPermission() {
