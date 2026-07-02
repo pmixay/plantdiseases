@@ -106,12 +106,12 @@ class CameraFragment : Fragment() {
      *  would just duplicate it. */
     private var pendingFromCamera = false
 
-    private val PREFS_NAME = "plantdiseases_prefs"
-    private val KEY_GRID_OVERLAY = "grid_overlay_enabled"
-    private val KEY_TIPS_SEEN = "scan_tips_seen"
-
     companion object {
         const val TAG = "CameraFragment"
+
+        private const val PREFS_NAME = "plantdiseases_prefs"
+        private const val KEY_GRID_OVERLAY = "grid_overlay_enabled"
+        private const val KEY_TIPS_SEEN = "scan_tips_seen"
 
         /** Set in the fragment arguments to run the camera as a species
          *  identification front-end (see [identifyMode]). */

@@ -39,10 +39,6 @@ class GuideFragment : Fragment() {
 
     private var searchJob: Job? = null
 
-    private val PREFS_NAME = "plantdiseases_prefs"
-    private val KEY_RECENT_SEARCHES = "recent_searches"
-    private val MAX_RECENT_SEARCHES = 5
-
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -221,5 +217,11 @@ class GuideFragment : Fragment() {
         super.onDestroyView()
         searchJob?.cancel()
         _binding = null
+    }
+
+    companion object {
+        private const val PREFS_NAME = "plantdiseases_prefs"
+        private const val KEY_RECENT_SEARCHES = "recent_searches"
+        private const val MAX_RECENT_SEARCHES = 5
     }
 }
