@@ -149,6 +149,18 @@ _PUBLIC_TOKEN_PREFIX = "cs"
 IDENTITY_ROTATION_DAYS = 30
 _IDENTITY_ROTATION_S = IDENTITY_ROTATION_DAYS * 86_400
 
+# An open "wants a second opinion" request auto-expires after this long: the
+# feed badge drops and the owner stops being notified about new opinions, but
+# opinions already collected stay visible. Re-requesting restarts the window.
+OPINION_REQUEST_TTL_HOURS = 72
+_OPINION_REQUEST_TTL_S = OPINION_REQUEST_TTL_HOURS * 3600
+
+# Expired requests are swept lazily from the hot read paths, throttled so the
+# sweep doesn't run on every feed request.
+_EXPIRY_SWEEP_INTERVAL_S = 300
+_expiry_sweep_lock = threading.Lock()
+_last_expiry_sweep = 0.0
+
 
 def _identity_epoch() -> int:
     return int(time.time() // _IDENTITY_ROTATION_S)
@@ -462,10 +474,11 @@ def record_scan(
         thumb_path = _save_thumbnail(scan_id, image_bytes) if image_bytes else None
         # Honour a second-opinion request that arrived BEFORE this upload
         # landed (the durable request store decouples the two orderings).
+        # Expired requests don't count — the ask has lapsed by then.
         pending = conn.execute(
             "SELECT 1 FROM community_opinion_requests "
-            "WHERE scan_id = ? AND user_pseudo_id = ? LIMIT 1",
-            (scan_id, user_pseudo_id),
+            "WHERE scan_id = ? AND user_pseudo_id = ? AND created_at >= ? LIMIT 1",
+            (scan_id, user_pseudo_id, now - _OPINION_REQUEST_TTL_S),
         ).fetchone()
         wants_opinion = 1 if pending else 0
         cur = conn.execute(
@@ -512,6 +525,9 @@ def set_wants_opinion(scan_id: str, user_pseudo_id: str) -> bool:
     This removes the upload/flag race that used to make the request a
     silent no-op.
 
+    Re-requesting refreshes ``created_at``, restarting the
+    ``OPINION_REQUEST_TTL_HOURS`` auto-expiry window.
+
     Returns ``True`` once the intent is recorded (i.e. for any non-blank
     id pair). The caller can therefore trust the "waiting" state.
     """
@@ -524,7 +540,9 @@ def set_wants_opinion(scan_id: str, user_pseudo_id: str) -> bool:
         conn.execute(
             "INSERT INTO community_opinion_requests "
             "(scan_id, user_pseudo_id, created_at) VALUES (?, ?, ?) "
-            "ON CONFLICT(scan_id) DO UPDATE SET user_pseudo_id = excluded.user_pseudo_id",
+            "ON CONFLICT(scan_id) DO UPDATE SET "
+            "  user_pseudo_id = excluded.user_pseudo_id, "
+            "  created_at = excluded.created_at",
             (scan_id, user_pseudo_id, now),
         )
         # Materialise onto the scan row if the upload has already landed.
@@ -534,6 +552,69 @@ def set_wants_opinion(scan_id: str, user_pseudo_id: str) -> bool:
             (scan_id, user_pseudo_id),
         )
         return True
+
+
+def clear_wants_opinion(scan_id: str, user_pseudo_id: str) -> bool:
+    """Withdraw the owner's open second-opinion request on their own scan.
+
+    Owner-scoped like :func:`set_wants_opinion`: both the durable request
+    row and the materialised scan-row flag are only touched when
+    ``user_pseudo_id`` matches. Opinions already left stay visible — this
+    only stops the "wants opinion" badge and further notifications.
+
+    Returns ``True`` when an open request was actually removed.
+    """
+    init_db()
+    sid = (scan_id or "").strip()
+    pid = (user_pseudo_id or "").strip()
+    if not sid or not pid:
+        return False
+    with _write_lock, _connect() as conn:
+        cleared = conn.execute(
+            "DELETE FROM community_opinion_requests "
+            "WHERE scan_id = ? AND user_pseudo_id = ?",
+            (sid, pid),
+        ).rowcount
+        conn.execute(
+            "UPDATE community_scans SET wants_opinion = 0 "
+            "WHERE scan_id = ? AND user_pseudo_id = ?",
+            (sid, pid),
+        )
+    return bool(cleared)
+
+
+def expire_stale_opinion_requests(now: int | None = None) -> int:
+    """Drop opinion requests older than ``OPINION_REQUEST_TTL_HOURS`` and
+    clear the materialised ``wants_opinion`` flag on scans left without a
+    live request. Returns the number of requests dropped."""
+    init_db()
+    ts = int(now if now is not None else time.time())
+    cutoff = ts - _OPINION_REQUEST_TTL_S
+    with _write_lock, _connect() as conn:
+        dropped = conn.execute(
+            "DELETE FROM community_opinion_requests WHERE created_at < ?",
+            (cutoff,),
+        ).rowcount
+        if dropped:
+            conn.execute(
+                "UPDATE community_scans SET wants_opinion = 0 "
+                "WHERE wants_opinion = 1 AND scan_id NOT IN "
+                "(SELECT scan_id FROM community_opinion_requests)",
+            )
+    return int(dropped or 0)
+
+
+def _sweep_expired_requests() -> None:
+    """Throttled lazy sweep — called from the hot read paths so expiry works
+    without a dedicated scheduler; the periodic pruner still backstops it."""
+    global _last_expiry_sweep
+    now = time.time()
+    with _expiry_sweep_lock:
+        if now - _last_expiry_sweep < _EXPIRY_SWEEP_INTERVAL_S:
+            return
+        _last_expiry_sweep = now
+    with contextlib.suppress(Exception):
+        expire_stale_opinion_requests(int(now))
 
 
 def record_opinion(
@@ -580,8 +661,12 @@ def opinions_for(scan_id: str, *, limit: int = 50) -> dict:
 
         {"opinions":  [{"suggested_disease", "note", "created_at"}, ...],
          "consensus": [{"disease", "count"}, ...]}   # most-voted first
+
+    Also carries ``wants_opinion`` (is there a live, non-expired request?)
+    so the owner's app can restore its "waiting" state across restarts.
     """
     init_db()
+    _sweep_expired_requests()
     limit = max(1, min(int(limit), 100))
     with _connect() as conn:
         rows = conn.execute(
@@ -606,6 +691,7 @@ def opinions_for(scan_id: str, *, limit: int = 50) -> dict:
         "opinions": opinions,
         "consensus": consensus,
         "views": view_count_for(scan_id),
+        "wants_opinion": wants_opinion(scan_id),
     }
 
 
@@ -629,10 +715,12 @@ def opinion_counts_for_user(user_pseudo_id: str, *, limit: int = 200) -> dict:
          "total_opinions": N}
     """
     init_db()
+    _sweep_expired_requests()
     uid = (user_pseudo_id or "").strip()
     if not uid:
         return {"scans": [], "total_opinions": 0, "total_views": 0}
     limit = max(1, min(int(limit), 500))
+    request_cutoff = int(time.time()) - _OPINION_REQUEST_TTL_S
     with _connect() as conn:
         rows = conn.execute(
             "SELECT s.scan_id, s.disease, COUNT(o.id) AS n, MAX(o.created_at) AS latest, "
@@ -645,10 +733,11 @@ def opinion_counts_for_user(user_pseudo_id: str, *, limit: int = 200) -> dict:
             "  ON o.scan_id = s.scan_id AND o.author_pseudo_id != s.user_pseudo_id "
             "WHERE s.user_pseudo_id = ? "
             "  AND EXISTS (SELECT 1 FROM community_opinion_requests r "
-            "              WHERE r.scan_id = s.scan_id) "
+            "              WHERE r.scan_id = s.scan_id "
+            "                AND r.created_at >= ?) "
             "GROUP BY s.scan_id, s.disease "
             "ORDER BY latest DESC LIMIT ?",
-            (uid, limit),
+            (uid, request_cutoff, limit),
         ).fetchall()
     scans = [
         {"scan_id": str(r[0]), "disease": str(r[1]),
@@ -709,22 +798,27 @@ def owner_of(scan_id: str) -> str | None:
 
 
 def wants_opinion(scan_id: str) -> bool:
-    """True iff the scan's owner explicitly asked the community to weigh in.
+    """True iff the scan's owner explicitly asked the community to weigh in
+    and the request hasn't expired (``OPINION_REQUEST_TTL_HOURS``).
 
     Notifications about new opinions are only sent for scans whose owner
     raised their hand via :func:`set_wants_opinion` — merely sharing a scan
     to the corpus is not a request to be pinged. The durable
     ``community_opinion_requests`` store is the source of truth (it survives
     the upload/flag race), so we check it rather than the materialised
-    ``wants_opinion`` column."""
+    ``wants_opinion`` column. The TTL is enforced in the query itself so a
+    stale row that the lazy sweep hasn't reaped yet still reads as expired."""
     sid = (scan_id or "").strip()
     if not sid:
         return False
     init_db()
+    _sweep_expired_requests()
+    cutoff = int(time.time()) - _OPINION_REQUEST_TTL_S
     with _connect() as conn:
         row = conn.execute(
-            "SELECT 1 FROM community_opinion_requests WHERE scan_id = ? LIMIT 1",
-            (sid,),
+            "SELECT 1 FROM community_opinion_requests "
+            "WHERE scan_id = ? AND created_at >= ? LIMIT 1",
+            (sid, cutoff),
         ).fetchone()
     return row is not None
 
@@ -883,6 +977,9 @@ def nearby_scans(
     in its scope so the Nearby/Country toggle actually changes what's shown.
     """
     init_db()
+    # Keep the feed's "wants opinion" badge honest: reap expired requests
+    # (and their materialised scan-row flags) before reading.
+    _sweep_expired_requests()
     if country:
         country = to_iso_alpha2(country)
     limit = max(1, min(int(limit), 100))
@@ -1428,8 +1525,11 @@ def get_user_data(user_pseudo_id: str) -> list[dict]:
 __all__ = [
     "COMMUNITY_DB_PATH",
     "COMMUNITY_THUMB_DIR",
+    "OPINION_REQUEST_TTL_HOURS",
+    "clear_wants_opinion",
     "daily_write_count_for_ip_hash",
     "delete_for_user",
+    "expire_stale_opinion_requests",
     "get_user_data",
     "density_grid",
     "init_db",

@@ -31,6 +31,7 @@ def isolated_community(tmp_path, monkeypatch):
     server_main.community_stats_snapshot = comm.stats_snapshot
     server_main.community_delete_for_user = comm.delete_for_user
     server_main.community_set_wants_opinion = comm.set_wants_opinion
+    server_main.community_clear_wants_opinion = comm.clear_wants_opinion
     server_main.community_wants_opinion = comm.wants_opinion
     server_main.community_owner_of = comm.owner_of
     server_main.init_community_db = comm.init_db
@@ -475,6 +476,57 @@ def test_community_request_opinion_missing_row_records_intent(client, isolated_c
     assert len(items) == 1 \
         and items[0]["scan_id"] == comm.public_scan_token("racedupload")
     assert items[0]["wants_opinion"] is True
+
+
+def test_community_request_opinion_cancel(client, isolated_community):
+    """The owner can withdraw an open request; the feed badge drops and the
+    endpoint is owner-scoped + idempotent."""
+    client.post(
+        "/api/community/scan",
+        data=_form(
+            scan_id="cancelme1",
+            user_pseudo_id="pseudo-owner-x",
+            region="Oslo", country="NO",
+            disease="leaf_spot",
+        ),
+    )
+    client.post(
+        "/api/community/request-opinion",
+        json={"scan_id": "cancelme1", "user_pseudo_id": "pseudo-owner-x"},
+    )
+
+    def feed_wants_opinion() -> bool:
+        items = client.get(
+            "/api/community/nearby",
+            params={"region": "Oslo", "country": "NO",
+                    "user_pseudo_id": "pseudo-viewer-z"},
+        ).json()["items"]
+        return items[0]["wants_opinion"]
+
+    assert feed_wants_opinion() is True
+
+    # A non-owner can't withdraw someone else's request.
+    r_wrong = client.post(
+        "/api/community/request-opinion/cancel",
+        json={"scan_id": "cancelme1", "user_pseudo_id": "pseudo-not-owner"},
+    )
+    assert r_wrong.status_code == 200, r_wrong.text
+    assert r_wrong.json() == {"ok": True, "cleared": False}
+    assert feed_wants_opinion() is True
+
+    # The owner cancels → badge drops; a repeat cancel is a clean no-op.
+    r_owner = client.post(
+        "/api/community/request-opinion/cancel",
+        json={"scan_id": "cancelme1", "user_pseudo_id": "pseudo-owner-x"},
+    )
+    assert r_owner.status_code == 200, r_owner.text
+    assert r_owner.json() == {"ok": True, "cleared": True}
+    assert feed_wants_opinion() is False
+    r_again = client.post(
+        "/api/community/request-opinion/cancel",
+        json={"scan_id": "cancelme1", "user_pseudo_id": "pseudo-owner-x"},
+    )
+    assert r_again.json() == {"ok": True, "cleared": False}
 
 
 def test_community_nearby_handles_empty_region(client, isolated_community):

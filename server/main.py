@@ -76,6 +76,9 @@ try:
         COMMUNITY_THUMB_DIR,
     )
     from .community import (
+        clear_wants_opinion as community_clear_wants_opinion,
+    )
+    from .community import (
         daily_opinion_count_for_ip_hash as community_daily_opinion_writes,
     )
     from .community import (
@@ -246,6 +249,9 @@ except ImportError:
     )
     from community import (
         COMMUNITY_THUMB_DIR,
+    )
+    from community import (
+        clear_wants_opinion as community_clear_wants_opinion,
     )
     from community import (
         daily_opinion_count_for_ip_hash as community_daily_opinion_writes,
@@ -3426,6 +3432,36 @@ async def community_request_opinion(
             status_code=500, detail="Failed to request opinion",
         ) from exc
     return JSONResponse(content={"ok": True, "flagged": bool(flagged)})
+
+
+@api_router.post("/community/request-opinion/cancel")
+async def community_request_opinion_cancel(payload: CommunityRequestOpinionRequest):
+    """Withdraw an open second-opinion request on the caller's own scan.
+
+    The inverse of ``/community/request-opinion``: drops the durable
+    request row + the feed badge, so the community stops seeing the ask
+    and the owner stops being notified about new opinions. Opinions
+    already left stay visible. Owner-scoped and idempotent — cancelling
+    a request that doesn't exist (or isn't yours) returns
+    ``cleared: false`` with 200.
+
+    (Requests also lapse on their own after
+    ``OPINION_REQUEST_TTL_HOURS`` — see ``community.py``.)
+    """
+    sid = payload.scan_id.strip()
+    pid = payload.user_pseudo_id.strip()
+    loop = asyncio.get_running_loop()
+    try:
+        cleared = await loop.run_in_executor(
+            None,
+            lambda: community_clear_wants_opinion(sid, pid),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Community cancel-request-opinion failed: %s", exc)
+        raise HTTPException(
+            status_code=500, detail="Failed to cancel opinion request",
+        ) from exc
+    return JSONResponse(content={"ok": True, "cleared": bool(cleared)})
 
 
 @api_router.get("/community/opinions/{scan_id}")

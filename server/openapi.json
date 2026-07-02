@@ -581,6 +581,43 @@
         }
       }
     },
+    "/api/community/request-opinion/cancel": {
+      "post": {
+        "summary": "Community Request Opinion Cancel",
+        "description": "Withdraw an open second-opinion request on the caller's own scan.\n\nThe inverse of ``/community/request-opinion``: drops the durable\nrequest row + the feed badge, so the community stops seeing the ask\nand the owner stops being notified about new opinions. Opinions\nalready left stay visible. Owner-scoped and idempotent — cancelling\na request that doesn't exist (or isn't yours) returns\n``cleared: false`` with 200.\n\n(Requests also lapse on their own after\n``OPINION_REQUEST_TTL_HOURS`` — see ``community.py``.)",
+        "operationId": "community_request_opinion_cancel_api_community_request_opinion_cancel_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommunityRequestOpinionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/community/opinions/{scan_id}": {
       "get": {
         "summary": "Community Opinions List",

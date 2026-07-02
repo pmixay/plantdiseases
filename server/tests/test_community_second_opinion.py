@@ -99,3 +99,80 @@ def test_delete_for_user_clears_pending_requests(comm):
     comm.record_scan(scan_id="s9", user_pseudo_id="gone", country="GB",
                      region="London", disease="leaf_spot")
     assert _wants(comm, "s9") is False
+
+
+def test_clear_wants_opinion_withdraws_request(comm):
+    comm.record_scan(scan_id="c1", user_pseudo_id="owner", country="GB",
+                     region="London", disease="leaf_spot")
+    comm.set_wants_opinion("c1", "owner")
+    assert _wants(comm, "c1") is True
+    assert comm.clear_wants_opinion("c1", "owner") is True
+    assert _wants(comm, "c1") is False
+    assert comm.wants_opinion("c1") is False
+    # Idempotent: a second cancel finds nothing to clear.
+    assert comm.clear_wants_opinion("c1", "owner") is False
+    # Re-requesting works after a cancel.
+    comm.set_wants_opinion("c1", "owner")
+    assert _wants(comm, "c1") is True
+
+
+def test_clear_wants_opinion_is_owner_scoped(comm):
+    comm.record_scan(scan_id="c2", user_pseudo_id="owner", country="GB",
+                     region="London", disease="leaf_spot")
+    comm.set_wants_opinion("c2", "owner")
+    # Someone else can't withdraw the owner's request.
+    assert comm.clear_wants_opinion("c2", "attacker") is False
+    assert _wants(comm, "c2") is True
+
+
+def test_opinion_request_expires_after_ttl(comm, monkeypatch):
+    comm.record_scan(scan_id="e1", user_pseudo_id="owner", country="GB",
+                     region="London", disease="leaf_spot")
+    comm.set_wants_opinion("e1", "owner")
+    assert comm.wants_opinion("e1") is True
+
+    # Jump past the 72 h TTL. The sweep is throttled by wall-clock, so
+    # bypass it and call the expiry directly, like the pruner would.
+    import time as _time
+    future = int(_time.time()) + comm.OPINION_REQUEST_TTL_HOURS * 3600 + 60
+    assert comm.expire_stale_opinion_requests(now=future) == 1
+
+    assert comm.wants_opinion("e1") is False
+    assert _wants(comm, "e1") is False  # feed badge cleared too
+    # opinions_for reports the lapsed state so the app leaves "waiting".
+    assert comm.opinions_for("e1")["wants_opinion"] is False
+    # Re-requesting restarts the window.
+    comm.set_wants_opinion("e1", "owner")
+    assert comm.wants_opinion("e1") is True
+
+
+def test_expired_request_does_not_flag_late_upload(comm):
+    # Request lands, then expires BEFORE the upload arrives — the stale ask
+    # must not materialise onto the late row.
+    comm.set_wants_opinion("e2", "owner")
+    with comm._connect() as conn:  # age the request past the TTL
+        conn.execute(
+            "UPDATE community_opinion_requests SET created_at = created_at - ? "
+            "WHERE scan_id = 'e2'",
+            (comm.OPINION_REQUEST_TTL_HOURS * 3600 + 60,),
+        )
+    comm.record_scan(scan_id="e2", user_pseudo_id="owner", country="GB",
+                     region="London", disease="leaf_spot")
+    assert _wants(comm, "e2") is False
+
+
+def test_opinion_counts_for_user_ignores_expired_requests(comm):
+    comm.record_scan(scan_id="e3", user_pseudo_id="owner", country="GB",
+                     region="London", disease="leaf_spot")
+    comm.set_wants_opinion("e3", "owner")
+    comm.record_opinion(scan_id="e3", author_pseudo_id="viewer",
+                        suggested_disease="healthy")
+    assert comm.opinion_counts_for_user("owner")["total_opinions"] == 1
+    with comm._connect() as conn:  # age the request past the TTL
+        conn.execute(
+            "UPDATE community_opinion_requests SET created_at = created_at - ? "
+            "WHERE scan_id = 'e3'",
+            (comm.OPINION_REQUEST_TTL_HOURS * 3600 + 60,),
+        )
+    # The lapsed ask no longer drives the notification poll.
+    assert comm.opinion_counts_for_user("owner")["scans"] == []
