@@ -298,6 +298,11 @@ data class CommunityScansResponse(
     // True on the map endpoint when the bbox held more scans than the cap, so
     // the UI can prompt "zoom in to see all". Null/false on the feed.
     @SerializedName("truncated") @SerialName("truncated") val truncated: Boolean = false,
+    // True when the request carried neither coords nor a country, so the feed
+    // could not be geo-scoped. Lets the UI prompt "turn on location" instead of
+    // showing a misleading "no scans near you" empty state.
+    @SerializedName("location_required") @SerialName("location_required")
+    val locationRequired: Boolean = false,
 )
 
 @Serializable
@@ -415,6 +420,21 @@ data class CommunityOpinionRequest(
 data class CommunityRequestOpinionRequest(
     @SerializedName("scan_id") @SerialName("scan_id") val scanId: String,
     @SerializedName("user_pseudo_id") @SerialName("user_pseudo_id") val userPseudoId: String,
+)
+
+/** /api/telemetry/errors request body. One client-side problem report:
+ *  errors-only diagnostic context (no images, no location, no PII). */
+@Serializable
+data class ErrorReport(
+    @SerializedName("stage") @SerialName("stage") val stage: String,
+    @SerializedName("kind") @SerialName("kind") val kind: String,
+    @SerializedName("fatal") @SerialName("fatal") val fatal: Boolean = false,
+    @SerializedName("http_status") @SerialName("http_status") val httpStatus: Int? = null,
+    @SerializedName("family") @SerialName("family") val family: String? = null,
+    @SerializedName("app_version") @SerialName("app_version") val appVersion: String? = null,
+    @SerializedName("android_api") @SerialName("android_api") val androidApi: Int? = null,
+    @SerializedName("message") @SerialName("message") val message: String? = null,
+    @SerializedName("breadcrumbs") @SerialName("breadcrumbs") val breadcrumbs: List<String>? = null,
 )
 
 /** /api/community/request-opinion response. `flagged` is false when no

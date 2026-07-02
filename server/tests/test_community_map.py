@@ -28,6 +28,9 @@ def mapenv(tmp_path, monkeypatch):
     server_main.community_opinion_counts = comm.opinion_counts
     server_main.init_community_db = comm.init_db
     server_main.COMMUNITY_THUMB_DIR = comm.COMMUNITY_THUMB_DIR
+    # /api/community/scan now requires a server-issued scan_id; these tests
+    # post synthetic ids, so treat them all as issued.
+    monkeypatch.setattr(server_main, "is_scan_id_issued", lambda *a, **k: True)
     return comm
 
 

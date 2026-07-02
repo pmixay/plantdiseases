@@ -111,7 +111,7 @@
 
     <!-- Data-use consent (blocking; Play prominent disclosure) -->
     <string name="consent_title">Your data &amp; our models</string>
-    <string name="consent_body">Photos you scan and the feedback you give are used to train and improve our diagnosis models. Data is anonymized before storage — no account, name, precise location or device identifiers are attached, and photo metadata (EXIF, including GPS) is removed. You can delete your contributions at any time from Profile.</string>
+    <string name="consent_body">Photos you scan and the feedback you give are used to train and improve our diagnosis models. Data is anonymized before storage — no account, name, precise location or device identifiers are attached, and photo metadata (EXIF, including GPS) is removed. If something goes wrong, the app may also send an anonymous error report (no photos or location) to help us fix bugs. You can delete your contributions at any time from Profile.</string>
     <string name="consent_agree">Agree</string>
     <string name="consent_privacy_link">Privacy policy</string>
     <string name="consent_privacy_url" translatable="false">https://pdis.arbuz.lol/privacy.html</string>
@@ -232,6 +232,7 @@
     <string name="nearby_scans_title">Community scans</string>
     <string name="nearby_scans_cd">Community scans</string>
     <string name="nearby_scans_loading">Finding community scans…</string>
+    <string name="nearby_location_needed">Turn on location to see plant scans near you.</string>
     <string name="nearby_scans_second_opinion">Second opinion</string>
     <!-- Community scope toggle -->
     <string name="community_filter_nearby">Nearby</string>
@@ -268,7 +269,7 @@
     <string name="community_toggle_subtitle">Country + diagnosis + 512px thumbnail. Off keeps everything on-device.</string>
     <string name="community_features_title">Enable community features</string>
     <string name="community_features_subtitle">Share scans anonymously, get second opinions, and see scans from growers near you. Off turns the community off entirely and keeps everything on-device.</string>
-    <string name="community_profile_subtitle">Anonymous sharing is enabled after data consent. Country comes from the server, not your device location.</string>
+    <string name="community_profile_subtitle">Anonymous sharing is enabled after data consent.</string>
     <string name="community_scope_global">worldwide</string>
     <string name="opinion_notifications_title">Receive community opinions</string>
     <string name="opinion_notifications_subtitle">Notify me when someone responds to my second-opinion requests.</string>
@@ -328,6 +329,8 @@
     <string name="warning_disease_suspected">The plant looks mostly healthy, but the model also picked up signs of %1$s. Keep an eye on it and re-scan if it spreads.</string>
     <string name="warning_offline_scan_title">Offline scan</string>
     <string name="warning_offline_scan">Computed on your phone, offline — no server. Re-scan online for a more thorough diagnosis.</string>
+    <string name="improve_online">Improve with online analysis</string>
+    <string name="improve_online_no_network">Connect to the internet to improve this scan.</string>
 
     <!-- Empty states -->
     <string name="first_scan_cta">Take First Scan</string>
@@ -344,8 +347,6 @@
     <string name="edit_plant">Edit plant</string>
     <string name="plant_name">Plant name</string>
     <string name="plant_species">Species</string>
-    <string name="plant_room">Room (optional)</string>
-    <string name="plant_room_unassigned">Unassigned</string>
     <string name="plant_name_required">Name is required</string>
     <string name="plant_species_unknown">Species not set</string>
     <string name="plant_dialog_add_subtitle">Create a clean care profile for scans, notes, photos and watering.</string>

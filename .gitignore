@@ -46,6 +46,9 @@ server/community.db
 server/community.db-wal
 server/community.db-shm
 server/community_thumbs/
+server/telemetry.db
+server/telemetry.db-wal
+server/telemetry.db-shm
 server/plant_photo_cache/
 server/ai_cache/
 

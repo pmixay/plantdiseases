@@ -163,15 +163,14 @@ class GardenFragment : Fragment() {
     private fun currentQuery(): String =
         binding.gardenSearch.text?.toString()?.trim().orEmpty()
 
-    /** Case-insensitive match across name, species, common name and room. */
+    /** Case-insensitive match across name, species and common/scientific name. */
     private fun matchesQuery(summary: PlantRepository.PlantSummary, query: String): Boolean {
         if (query.isEmpty()) return true
         val p = summary.plant
         return p.name.contains(query, ignoreCase = true) ||
             p.species?.contains(query, ignoreCase = true) == true ||
             p.commonName?.contains(query, ignoreCase = true) == true ||
-            p.scientificName?.contains(query, ignoreCase = true) == true ||
-            p.room?.contains(query, ignoreCase = true) == true
+            p.scientificName?.contains(query, ignoreCase = true) == true
     }
 
     /** Re-render the whole tab from [allSummaries]: screen chrome (empty
@@ -258,47 +257,24 @@ class GardenFragment : Fragment() {
 
         // "Needs attention" first: plants whose soonest enabled reminder is
         // genuinely overdue surface in their own section at the top so they
-        // aren't buried inside a room bucket halfway down the list.
+        // aren't buried halfway down the list. Everything else follows in
+        // creation order (the query default) below.
         val nowMs = System.currentTimeMillis()
         val (due, rest) = plants.partition { summary ->
             summary.nextAction?.let { CareSchedule.isOverdue(it.dueAt, nowMs) } == true
         }
         if (due.isNotEmpty()) {
-            emit(buildRoomHeader(getString(R.string.garden_section_attention)))
+            emit(buildSectionHeader(getString(R.string.garden_section_attention)))
             due.sortedBy { it.nextAction?.dueAt ?: Long.MAX_VALUE }
                 .forEach { emit(buildPlantCard(it)) }
         }
 
-        // Group the remainder by room. Named rooms render alphabetically;
-        // unassigned plants land at the bottom in their own bucket so the
-        // user has a visible nudge to assign rooms without anything being
-        // hidden. When NO plant has a room (the common first-launch case)
-        // and nothing is due, the grouping headers don't render at all.
-        val byRoom = rest.groupBy {
-            it.plant.room?.trim()?.takeIf { r -> r.isNotEmpty() }
-        }
-        val named = byRoom.entries
-            .filter { it.key != null }
-            .sortedBy { it.key!!.lowercase() }
-        val unassigned = byRoom[null].orEmpty()
-        val anyNamed = named.isNotEmpty()
-        named.forEach { (room, bucket) ->
-            emit(buildRoomHeader(room!!))
-            bucket.forEach { emit(buildPlantCard(it)) }
-        }
-        if (unassigned.isNotEmpty()) {
-            // The header also renders when an attention section exists, so
-            // the unassigned bucket doesn't visually merge into it.
-            if (anyNamed || due.isNotEmpty()) {
-                emit(buildRoomHeader(getString(R.string.plant_room_unassigned)))
-            }
-            unassigned.forEach { emit(buildPlantCard(it)) }
-        }
+        rest.forEach { emit(buildPlantCard(it)) }
     }
 
-    /** Sticky-header-style label for a room group: small uppercase
-     *  text that reads as a separator without dominating the stack. */
-    private fun buildRoomHeader(label: String): View = TextView(requireContext()).apply {
+    /** Sticky-header-style section label: small uppercase text that reads as
+     *  a separator without dominating the stack. */
+    private fun buildSectionHeader(label: String): View = TextView(requireContext()).apply {
         text = label.uppercase()
         textSize = 11f
         letterSpacing = 0.08f
@@ -638,10 +614,8 @@ class GardenFragment : Fragment() {
         }
         val name = inputField(getString(R.string.plant_name), existing?.name, InputType.TYPE_CLASS_TEXT)
         val species = inputField(getString(R.string.plant_species), existing?.species, InputType.TYPE_CLASS_TEXT)
-        val room = inputField(getString(R.string.plant_room), existing?.room, InputType.TYPE_CLASS_TEXT)
         fields.addView(name.first)
         fields.addView(species.first)
-        fields.addView(room.first)
         container.addView(header)
         container.addView(fields)
 
@@ -664,7 +638,6 @@ class GardenFragment : Fragment() {
                     plantName,
                     species.second.text?.toString(),
                     existing,
-                    room = room.second.text?.toString(),
                 )
                 awaitKeyboardClosed()
                 if (_binding != null) {

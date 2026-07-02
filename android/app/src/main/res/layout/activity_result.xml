@@ -367,6 +367,21 @@
                             android:textColor="@color/warning_amber"
                             android:lineSpacingExtra="2dp" />
 
+                        <!-- Shown only for offline (Aqua) scans: re-run the same
+                             photo through the full online model to upgrade it. -->
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_improve_online"
+                            style="@style/Widget.Material3.Button.TextButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="-8dp"
+                            android:layout_marginTop="@dimen/space_xs"
+                            android:visibility="gone"
+                            android:text="@string/improve_online"
+                            android:textColor="@color/warning_amber"
+                            app:icon="@drawable/ic_scan"
+                            app:iconTint="@color/warning_amber" />
+
                     </LinearLayout>
 
                 </LinearLayout>

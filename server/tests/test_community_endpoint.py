@@ -35,6 +35,10 @@ def isolated_community(tmp_path, monkeypatch):
     server_main.community_owner_of = comm.owner_of
     server_main.init_community_db = comm.init_db
     server_main.COMMUNITY_THUMB_DIR = comm.COMMUNITY_THUMB_DIR
+    # Community upload now requires a server-issued scan_id (same gate as
+    # /api/feedback). These tests use synthetic ids, so treat every id as
+    # issued; the rejection path is covered explicitly below.
+    monkeypatch.setattr(server_main, "is_scan_id_issued", lambda *a, **k: True)
     yield db_path, thumb_dir
 
 
@@ -114,6 +118,35 @@ def test_community_scan_upload_no_location_stores_empty_country(client, isolated
         ).fetchone()
     assert row[0] == ""
     assert row[1] is None
+
+
+def test_community_scan_upload_rejects_unissued_scan_id(
+    client, isolated_community, monkeypatch,
+):
+    # Integrity gate: a scan_id the server never issued at /api/analyze is
+    # refused (422) so a client can't post a fabricated diagnosis into the
+    # public feed under a made-up or copied id — same gate as /api/feedback.
+    db_path, _ = isolated_community
+    import main as server_main
+    monkeypatch.setattr(server_main, "is_scan_id_issued", lambda *a, **k: False)
+    r = client.post(
+        "/api/community/scan",
+        data=_form(
+            scan_id="forgedid1234",
+            user_pseudo_id="pseudoforged1",
+            country="NL", region="Amsterdam",
+            disease="gray_mold_botrytis",
+            confidence=0.99,
+        ),
+    )
+    assert r.status_code == 422, r.text
+    # Nothing was written to the corpus — the id is refused before any DB
+    # write, so a follow-up nearby query surfaces no such scan.
+    feed = client.get(
+        "/api/community/nearby",
+        params={"country": "NL", "scope": "country", "user_pseudo_id": "pseudo-check"},
+    )
+    assert all(item["disease"] != "gray_mold_botrytis" for item in feed.json()["items"])
 
 
 def test_community_scan_upload_with_thumbnail(client, isolated_community):
@@ -452,6 +485,30 @@ def test_community_nearby_handles_empty_region(client, isolated_community):
     assert r.status_code == 200
     assert r.json()["items"] == []
     assert r.json()["summary"]["total"] == 0
+
+
+def test_community_nearby_no_location_flags_location_required(client, isolated_community):
+    # Neither coords nor country → the feed can't be geo-scoped. The response
+    # must say so explicitly so the client prompts "turn on location" instead
+    # of a misleading "no scans near you".
+    r = client.get(
+        "/api/community/nearby",
+        params={"user_pseudo_id": "pseudo-no-geo"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["items"] == []
+    assert body["location_required"] is True
+
+
+def test_community_nearby_with_location_not_flagged(client, isolated_community):
+    # A country-scoped request has a geo anchor, so location_required is False.
+    r = client.get(
+        "/api/community/nearby",
+        params={"country": "US", "scope": "country", "user_pseudo_id": "pseudo-geo"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["location_required"] is False
 
 
 def test_community_nearby_country_param(client, isolated_community):

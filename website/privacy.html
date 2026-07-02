@@ -40,7 +40,7 @@
 
 <main class="legal">
   <h1 data-ru="Политика конфиденциальности" data-en="Privacy Policy">Политика конфиденциальности</h1>
-  <p class="updated" data-ru="Обновлено: июнь 2026" data-en="Last updated: June 2026">Обновлено: июнь 2026</p>
+  <p class="updated" data-ru="Обновлено: июль 2026" data-en="Last updated: July 2026">Обновлено: июль 2026</p>
 
   <h2 data-ru="Какие данные мы собираем" data-en="What we collect">Какие данные мы собираем</h2>
   <ul>
@@ -50,6 +50,8 @@
         data-en="<b>Diagnosis feedback.</b> Correct/incorrect votes, the disease class you propose and an optional note; for negative feedback, the photo it refers to."><b>Отзывы о диагнозе.</b> Оценки «верно / неверно», предложенный вами класс болезни и текстовая заметка; при отрицательном отзыве — фото, к которому он относится.</li>
     <li data-ru="<b>Сообщество (по желанию).</b> Если вы делитесь сканом с сообществом — снимок, диагноз и приблизительный регион (страна/город), который вы указали."
         data-en="<b>Community (opt-in).</b> If you share a scan with the community — the photo, diagnosis and the approximate region (country/city) you provided."><b>Сообщество (по желанию).</b> Если вы делитесь сканом с сообществом — снимок, диагноз и приблизительный регион (страна/город), который вы указали.</li>
+    <li data-ru="<b>Отчёты об ошибках.</b> Когда что-то идёт не так (не удался или превысил время анализ, ошибка декодирования снимка, сбой приложения), приложение может отправить анонимный отчёт о проблеме: что именно не сработало, какая модель использовалась, версия приложения и Android, а также короткая цепочка последних действий в приложении. Отчёт не содержит фотографий, местоположения и персональных данных."
+        data-en="<b>Error reports.</b> When something goes wrong (a failed or timed-out analysis, an image-decode error, an app crash), the app may send an anonymous problem report: what failed, which model was used, the app and Android version, and a short trail of recent in-app actions. It contains no photos, no location and no personal data."><b>Отчёты об ошибках.</b> Когда что-то идёт не так (не удался или превысил время анализ, ошибка декодирования снимка, сбой приложения), приложение может отправить анонимный отчёт о проблеме: что именно не сработало, какая модель использовалась, версия приложения и Android, а также короткая цепочка последних действий в приложении. Отчёт не содержит фотографий, местоположения и персональных данных.</li>
   </ul>
 
   <h2 data-ru="Как данные анонимизируются" data-en="How data is anonymized">Как данные анонимизируются</h2>
@@ -58,11 +60,15 @@
         data-en="All photo metadata (EXIF, including GPS coordinates) is stripped before storage: the image is re-encoded and downscaled.">Все метаданные фотографий (EXIF, включая GPS-координаты) удаляются перед сохранением: изображение перекодируется и уменьшается.</li>
     <li data-ru="К сохранённым снимкам не привязываются имя, аккаунт, точное местоположение, IP-адрес или идентификаторы устройства. Аккаунт в приложении не требуется."
         data-en="No name, account, precise location, IP address or device identifiers are attached to stored photos. The app requires no account.">К сохранённым снимкам не привязываются имя, аккаунт, точное местоположение, IP-адрес или идентификаторы устройства. Аккаунт в приложении не требуется.</li>
+    <li data-ru="<b>Сканы на устройстве остаются приватными.</b> При работе офлайн-модели (Aqua) снимок анализируется полностью на вашем телефоне — он не загружается на сервер, не сохраняется у нас и не попадает в ленту сообщества."
+        data-en="<b>On-device scans stay private.</b> When the offline (Aqua) model is used, the photo is analyzed entirely on your phone — it is not uploaded to the server, not stored by us, and never enters the community feed."><b>Сканы на устройстве остаются приватными.</b> При работе офлайн-модели (Aqua) снимок анализируется полностью на вашем телефоне — он не загружается на сервер, не сохраняется у нас и не попадает в ленту сообщества.</li>
+    <li data-ru="Приблизительный регион для ленты сообщества берётся только из указанного вами устройством местоположения (страна/город, округлённые координаты) — мы не определяем местоположение по IP-адресу."
+        data-en="The approximate region for the community feed comes only from the location your device provides (country/city, rounded coordinates) — we never derive location from your IP address.">Приблизительный регион для ленты сообщества берётся только из указанного вами устройством местоположения (страна/город, округлённые координаты) — мы не определяем местоположение по IP-адресу.</li>
   </ul>
 
   <h2 data-ru="Зачем мы используем данные" data-en="Why we use the data">Зачем мы используем данные</h2>
-  <p data-ru="Анонимизированные снимки и отзывы используются исключительно для обучения, проверки и улучшения моделей распознавания болезней растений, а также для работы функций приложения (лента сообщества, второе мнение)."
-     data-en="Anonymized photos and feedback are used solely to train, evaluate and improve our plant-disease recognition models, and to power app features (the community feed, second opinions).">Анонимизированные снимки и отзывы используются исключительно для обучения, проверки и улучшения моделей распознавания болезней растений, а также для работы функций приложения (лента сообщества, второе мнение).</p>
+  <p data-ru="Анонимизированные снимки и отзывы используются исключительно для обучения, проверки и улучшения моделей распознавания болезней растений, а также для работы функций приложения (лента сообщества, второе мнение). Анонимные отчёты об ошибках используются только для поиска и устранения сбоев и повышения стабильности приложения."
+     data-en="Anonymized photos and feedback are used solely to train, evaluate and improve our plant-disease recognition models, and to power app features (the community feed, second opinions). Anonymous error reports are used only to find and fix bugs and improve app reliability.">Анонимизированные снимки и отзывы используются исключительно для обучения, проверки и улучшения моделей распознавания болезней растений, а также для работы функций приложения (лента сообщества, второе мнение). Анонимные отчёты об ошибках используются только для поиска и устранения сбоев и повышения стабильности приложения.</p>
 
   <h2 data-ru="Сколько данные хранятся" data-en="Retention">Сколько данные хранятся</h2>
   <p data-ru="Непроверенные записанные сканы автоматически удаляются через 90 дней; общий объём хранимых снимков ограничен. Подтверждённые данные могут публиковаться в составе открытого обучающего датасета — только в анонимизированном виде."

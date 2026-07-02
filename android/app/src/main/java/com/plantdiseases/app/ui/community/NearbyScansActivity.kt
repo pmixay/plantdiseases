@@ -218,10 +218,14 @@ class NearbyScansActivity : AppCompatActivity() {
                 // unique scan_id matches one in this device's local history.
                 val mine = scanRepository.localClientScanIds()
                 val others = response.items.filter { it.scanId !in mine }
-                if (others.isEmpty()) {
-                    showState(getString(R.string.similar_scans_empty))
-                } else {
-                    showFeed(others)
+                when {
+                    others.isNotEmpty() -> showFeed(others)
+                    // The server couldn't geo-scope the feed (no coords + no
+                    // country) — usually community is on but coarse-location was
+                    // never granted / has no fix yet. Prompt to enable location
+                    // rather than claim there's nothing nearby.
+                    response.locationRequired -> showLocationNeeded()
+                    else -> showState(getString(R.string.similar_scans_empty))
                 }
             }.onFailure {
                 showState(getString(R.string.community_opinion_error))
@@ -240,6 +244,21 @@ class NearbyScansActivity : AppCompatActivity() {
         binding.cgScope.visibility = View.GONE
         filterMenuItem?.isVisible = false
         disableMenuItem?.isVisible = false
+        binding.rvNearby.visibility = View.GONE
+    }
+
+    /** Empty-state shown when the feed can't be geo-scoped because we have no
+     *  location. Offers the same Enable button so a tap (re)requests the coarse
+     *  location permission and reloads. */
+    private fun showLocationNeeded() {
+        binding.swipeRefresh.isRefreshing = false
+        binding.stateLayout.visibility = View.VISIBLE
+        binding.progress.visibility = View.GONE
+        binding.ivStateIcon.visibility = View.VISIBLE
+        binding.tvState.text = getString(R.string.nearby_location_needed)
+        binding.btnEnableCommunity.visibility = View.VISIBLE
+        binding.cgScope.visibility = View.VISIBLE
+        filterMenuItem?.isVisible = false
         binding.rvNearby.visibility = View.GONE
     }
 

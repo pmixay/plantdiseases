@@ -22,10 +22,6 @@ data class PlantEntity(
     @ColumnInfo(name = "scientific_name") val scientificName: String? = null,
     /** Localised common name (e.g. "Rubber Plant"). */
     @ColumnInfo(name = "common_name") val commonName: String? = null,
-    /** Free-text room / location (e.g. "Living room", "Bathroom").
-     *  Garden list groups by this when populated; null plants land
-     *  in an "Unassigned" group at the bottom. */
-    @ColumnInfo(name = "room") val room: String? = null,
     /** Most recent peak lux reading from the Light Meter, captured
      *  on a session launched WITH this plant's context. Null until
      *  the user runs the meter from plant detail. */
@@ -448,7 +444,7 @@ interface PlantJournalDao {
     // testing: ``fallbackToDestructiveMigration`` is configured below
     // and any schema change wipes local data on next launch. Real
     // migrations come later, alongside cloud sync.
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -509,13 +505,54 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Drop the free-text `room` plant-location column. SQLite has no
+         *  portable DROP COLUMN, so rebuild `plants` without it and copy every
+         *  other column over — existing gardens are preserved (no data wipe). */
+        val MIGRATION_4_5 = object : androidx.room.migration.Migration(4, 5) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `plants_new` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `species` TEXT,
+                        `cover_photo_uri` TEXT,
+                        `created_at` INTEGER NOT NULL,
+                        `scientific_name` TEXT,
+                        `common_name` TEXT,
+                        `measured_lux` INTEGER,
+                        `measured_lux_at` INTEGER
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    INSERT INTO `plants_new` (
+                        `id`, `name`, `species`, `cover_photo_uri`, `created_at`,
+                        `scientific_name`, `common_name`, `measured_lux`, `measured_lux_at`
+                    )
+                    SELECT
+                        `id`, `name`, `species`, `cover_photo_uri`, `created_at`,
+                        `scientific_name`, `common_name`, `measured_lux`, `measured_lux_at`
+                    FROM `plants`
+                    """.trimIndent()
+                )
+                db.execSQL("DROP TABLE `plants`")
+                db.execSQL("ALTER TABLE `plants_new` RENAME TO `plants`")
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_plants_created_at` " +
+                        "ON `plants` (`created_at`)"
+                )
+            }
+        }
+
         fun getInstance(context: android.content.Context): AppDatabase = INSTANCE ?: synchronized(this) {
             val instance = Room.databaseBuilder(
                 context.applicationContext,
                 AppDatabase::class.java,
                 "plantdiseases_db"
             )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 // Room 2.7 deprecated the no-arg overload; `dropAllTables =
                 // true` preserves the previous behaviour (wipe everything
                 // when no migration path exists).

@@ -112,7 +112,7 @@
 
     <!-- Согласие на использование данных (блокирующее) -->
     <string name="consent_title">Ваши данные и наши модели</string>
-    <string name="consent_body">Снимки, которые вы сканируете, и ваши отзывы используются для обучения и улучшения наших моделей диагностики. Данные анонимизируются перед сохранением — без имени, аккаунта, точной геолокации и идентификаторов устройства; метаданные фото (EXIF, включая GPS) удаляются. Удалить свои данные можно в любой момент в Профиле.</string>
+    <string name="consent_body">Снимки, которые вы сканируете, и ваши отзывы используются для обучения и улучшения наших моделей диагностики. Данные анонимизируются перед сохранением — без имени, аккаунта, точной геолокации и идентификаторов устройства; метаданные фото (EXIF, включая GPS) удаляются. Если что-то пойдёт не так, приложение может отправить анонимный отчёт об ошибке (без фото и геолокации), чтобы помочь исправить сбои. Удалить свои данные можно в любой момент в Профиле.</string>
     <string name="consent_agree">Принять</string>
     <string name="consent_privacy_link">Политика конфиденциальности</string>
 
@@ -228,6 +228,7 @@
     <string name="nearby_scans_title">Сканы сообщества</string>
     <string name="nearby_scans_cd">Сканы сообщества</string>
     <string name="nearby_scans_loading">Ищем сканы сообщества…</string>
+    <string name="nearby_location_needed">Включите геолокацию, чтобы видеть сканы рядом с вами.</string>
     <string name="nearby_scans_second_opinion">Второе мнение</string>
     <!-- Community scope toggle -->
     <string name="community_filter_nearby">Рядом</string>
@@ -262,7 +263,7 @@
     <string name="community_toggle_subtitle">Страна + диагноз + миниатюра 512px. Можно выключить — всё останется на устройстве.</string>
     <string name="community_features_title">Включить функции сообщества</string>
     <string name="community_features_subtitle">Анонимно делитесь сканами, получайте вторые мнения и смотрите сканы садоводов рядом. Выключение полностью отключает сообщество — всё останется на устройстве.</string>
-    <string name="community_profile_subtitle">Анонимный обмен включен после согласия на данные. Страну определяет сервер, а не геолокация устройства.</string>
+    <string name="community_profile_subtitle">Анонимный обмен включен после согласия на данные.</string>
     <string name="community_scope_global">по всему миру</string>
     <string name="opinion_notifications_title">Получать мнения сообщества</string>
     <string name="opinion_notifications_subtitle">Уведомлять, когда кто-то отвечает на мои запросы второго мнения.</string>
@@ -322,6 +323,8 @@
     <string name="warning_disease_suspected">Растение выглядит в основном здоровым, но модель также заметила признаки: %1$s. Понаблюдайте и переснимите, если симптомы усилятся.</string>
     <string name="warning_offline_scan_title">Офлайн-скан</string>
     <string name="warning_offline_scan">Рассчитано на телефоне, офлайн — без сервера. Пересканируйте онлайн для более точного диагноза.</string>
+    <string name="improve_online">Улучшить онлайн-анализом</string>
+    <string name="improve_online_no_network">Подключитесь к интернету, чтобы улучшить этот скан.</string>
 
     <!-- Empty states -->
     <string name="first_scan_cta">Сделать первый скан</string>
@@ -338,8 +341,6 @@
     <string name="edit_plant">Редактировать</string>
     <string name="plant_name">Название растения</string>
     <string name="plant_species">Вид</string>
-    <string name="plant_room">Комната (необязательно)</string>
-    <string name="plant_room_unassigned">Без комнаты</string>
     <string name="plant_name_required">Укажите название</string>
     <string name="plant_species_unknown">Вид не указан</string>
     <string name="plant_dialog_add_subtitle">Создайте аккуратный профиль для сканов, заметок, фото и полива.</string>

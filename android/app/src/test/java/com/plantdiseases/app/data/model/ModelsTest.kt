@@ -149,5 +149,17 @@ class ModelsTest {
         assertThat(r.summary!!.scope).isEqualTo("country")
         assertThat(r.summary!!.countryNameEn).isEqualTo("United States")
         assertThat(r.summary!!.total).isEqualTo(3)
+        // Absent flag defaults to false (no location prompt).
+        assertThat(r.locationRequired).isFalse()
+    }
+
+    @Test
+    fun communityScansResponse_locationRequiredFlag_parses() {
+        val r = gson.fromJson(
+            """{"scope":"global","items":[],"location_required":true}""",
+            CommunityScansResponse::class.java,
+        )
+        assertThat(r.locationRequired).isTrue()
+        assertThat(r.items).isEmpty()
     }
 }

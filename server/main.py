@@ -222,6 +222,18 @@ try:
     )
     from .species_info import fetch_species_info
     from .symptoms import diagnose as symptom_diagnose
+    from .telemetry import (
+        daily_writes as telemetry_daily_writes,
+    )
+    from .telemetry import (
+        init_db as init_telemetry_db,
+    )
+    from .telemetry import (
+        prune_older_than as telemetry_prune_older_than,
+    )
+    from .telemetry import (
+        record_error as telemetry_record_error,
+    )
 except ImportError:
     import labeling
     from ai_services import (
@@ -382,6 +394,18 @@ except ImportError:
     )
     from species_info import fetch_species_info
     from symptoms import diagnose as symptom_diagnose
+    from telemetry import (
+        daily_writes as telemetry_daily_writes,
+    )
+    from telemetry import (
+        init_db as init_telemetry_db,
+    )
+    from telemetry import (
+        prune_older_than as telemetry_prune_older_than,
+    )
+    from telemetry import (
+        record_error as telemetry_record_error,
+    )
 
 
 _SERVER_VERSION = "1.0"
@@ -750,6 +774,11 @@ def _extract_api_key(request: Request) -> str | None:
 FEEDBACK_DAILY_QUOTA = get_int("FEEDBACK_DAILY_QUOTA", 200)
 COMMUNITY_DAILY_QUOTA = get_int("COMMUNITY_DAILY_QUOTA", 50)
 COMMUNITY_OPINION_DAILY_QUOTA = get_int("COMMUNITY_OPINION_DAILY_QUOTA", 60)
+# Client error/problem telemetry ingestion. Errors-only, opt-out here; the
+# cap + retention live in telemetry.py.
+TELEMETRY_ENABLED = get_bool("TELEMETRY_ENABLED", True)
+TELEMETRY_DAILY_CAP_PER_IP = get_int("TELEMETRY_DAILY_CAP_PER_IP", 200)
+TELEMETRY_RETENTION_DAYS = get_int("TELEMETRY_RETENTION_DAYS", 30)
 # Retention windows (days). Daily background task in the FastAPI
 # lifespan drops rows past this age.
 FEEDBACK_RETENTION_DAYS = get_int("FEEDBACK_RETENTION_DAYS", 180)
@@ -1174,6 +1203,7 @@ async def lifespan(app: FastAPI):
     _inference_executor = _get_inference_executor()
     init_feedback_db()
     init_community_db()
+    init_telemetry_db()
     labeling.init_labeling_db()
     # Model artefacts must already be present under MODELS_DIR (provisioned
     # out of band). The pipeline constructor is fail-fast and aborts boot
@@ -1255,9 +1285,13 @@ async def _prune_loop() -> None:
             removed_cm = await asyncio.get_running_loop().run_in_executor(
                 None, community_prune_older_than, COMMUNITY_RETENTION_DAYS,
             )
-            if removed_fb or removed_cm:
+            removed_tm = await asyncio.get_running_loop().run_in_executor(
+                None, telemetry_prune_older_than, TELEMETRY_RETENTION_DAYS,
+            )
+            if removed_fb or removed_cm or removed_tm:
                 logger.info(
-                    "Prune pass: feedback=%d community=%d", removed_fb, removed_cm,
+                    "Prune pass: feedback=%d community=%d telemetry=%d",
+                    removed_fb, removed_cm, removed_tm,
                 )
         except asyncio.CancelledError:
             raise
@@ -3106,6 +3140,28 @@ async def community_scan_upload(
         logger.info("Community scan validation failed: %s", exc)
         raise HTTPException(status_code=422, detail="Invalid scan upload") from exc
 
+    # Bind the shared scan to a scan_id we actually issued at /api/analyze —
+    # the same integrity gate /api/feedback uses. Without it any client could
+    # post a fabricated diagnosis (arbitrary species/disease/confidence) into
+    # the public feed under a made-up or copied scan_id. On-device Aqua scans
+    # have no server-issued id and are kept private client-side, so a
+    # legitimate upload always carries an issued id. Checked BEFORE the quota
+    # read and the (up to 10 MB) image body so a forged id is rejected without
+    # us ingesting its payload.
+    issued = await asyncio.get_running_loop().run_in_executor(
+        None,
+        lambda: is_scan_id_issued(payload.scan_id, ttl_days=ISSUED_SCAN_ID_TTL_DAYS),
+    )
+    if not issued:
+        logger.warning(
+            "Rejected community scan on unissued scan_id=%s",
+            payload.scan_id[:16],
+        )
+        raise HTTPException(
+            status_code=422,
+            detail="Unknown scan_id — re-scan before sharing to the community.",
+        )
+
     geo = _client_location(payload.country, payload.region, lat, lon)
 
     # Enforce the per-IP daily quota BEFORE reading the (up to 10 MB)
@@ -3185,6 +3241,54 @@ async def community_scan_upload(
     # surfaces on the next request rather than only after the TTL lapses.
     _invalidate_popular_cache()
     return JSONResponse(content={"ok": True, "id": row_id})
+
+
+class TelemetryErrorRequest(BaseModel):
+    """One client-side problem report. Errors-only diagnostic context — no
+    images, no precise location, no PII. ``breadcrumbs`` is a short trail of
+    recent app actions leading up to the error."""
+
+    stage: str = Field(..., min_length=1, max_length=64)
+    kind: str = Field(..., min_length=1, max_length=64)
+    fatal: bool = False
+    http_status: int | None = Field(default=None, ge=0, le=599)
+    family: str | None = Field(default=None, max_length=32)
+    app_version: str | None = Field(default=None, max_length=32)
+    android_api: int | None = Field(default=None, ge=0, le=100)
+    message: str | None = Field(default=None, max_length=2000)
+    breadcrumbs: list[str] | None = Field(default=None, max_length=40)
+
+
+@api_router.post("/telemetry/errors")
+async def telemetry_errors(payload: TelemetryErrorRequest, request: Request):
+    """Record one client error/problem for triage. Errors-only: the app sends
+    nothing on the happy path and bundles diagnostic context (stage, kind,
+    model family, HTTP status, app version, Android API, breadcrumbs) only when
+    something goes wrong. Fire-and-forget from the client; degrades silently."""
+    if not TELEMETRY_ENABLED:
+        return JSONResponse(content={"ok": True, "recorded": False})
+    client_ip = _client_ip(request)
+    ip_hash = hash_client_ip(client_ip)
+    loop = asyncio.get_running_loop()
+    today = await loop.run_in_executor(None, lambda: telemetry_daily_writes(ip_hash))
+    if today >= TELEMETRY_DAILY_CAP_PER_IP:
+        raise HTTPException(status_code=429, detail="Daily telemetry quota reached.")
+    rid = await loop.run_in_executor(
+        None,
+        lambda: telemetry_record_error(
+            stage=payload.stage,
+            kind=payload.kind,
+            fatal=payload.fatal,
+            http_status=payload.http_status,
+            family=payload.family,
+            app_version=payload.app_version,
+            android_api=payload.android_api,
+            message=payload.message,
+            breadcrumbs=payload.breadcrumbs,
+            client_ip_hash=ip_hash,
+        ),
+    )
+    return JSONResponse(content={"ok": True, "recorded": rid is not None})
 
 
 class CommunityOpinionRequest(BaseModel):
@@ -3445,6 +3549,14 @@ async def community_scan_nearby(
     country_norm = geo["country"]
     nearby = (scope or "nearby").strip().lower() != "country"
     has_coords = geo["lat"] is not None
+    # With neither coords nor a country the query has no geo anchor, so the
+    # feed comes back empty for a reason the client can't otherwise tell apart
+    # from "no scans near you" (the usual cause: community opted in but the
+    # coarse-location permission was never granted / no fix yet). Surface it as
+    # an explicit flag so the client can prompt to enable location instead of
+    # rendering a misleading empty state. Storage stays privacy-preserving —
+    # there is deliberately no server-side IP geolocation.
+    location_required = not (bool(country_norm) or has_coords)
     rows = community_nearby_scans(
         country=country_norm,
         lat=geo["lat"] if nearby else None,
@@ -3482,6 +3594,7 @@ async def community_scan_nearby(
     # Tell the client which filter was actually served + the nearby label.
     meta["scope"] = "nearby" if (nearby and has_coords) else meta["scope"]
     meta["region"] = geo["city"] if (nearby and has_coords) else None
+    meta["location_required"] = location_required
     summary.update(meta)
     return JSONResponse(content={"items": rows, "summary": summary, **meta})
 

@@ -27,7 +27,9 @@ import java.io.FileOutputStream
  *      upload stays under the server's COMMUNITY_MAX_THUMB_BYTES
  *      ceiling.
  *   3. POST the row + thumb via [ScanRepository.uploadCommunityScan].
- *      The server fills the country bucket from proxy/IP data.
+ *      Location is client-supplied (coarse country/city + rounded coords);
+ *      there is no server-side IP geolocation. Only scans with a
+ *      server-issued scan_id are shared — on-device Aqua scans stay private.
  *
  * Every step is best-effort: failures are logged and swallowed so the
  * user's diagnosis screen renders even when the corpus is down.
@@ -42,6 +44,14 @@ class CommunityUploader(
     ): UploadOutcome = withContext(Dispatchers.IO) {
         if (!CommunityPrefs.uploadsEnabled(context)) {
             return@withContext UploadOutcome.OptedOut
+        }
+        // On-device (Aqua) scans never hit /api/analyze, so they carry no
+        // server-issued scan_id. Those stay private by default — we don't
+        // share them to the community, and the server would reject them
+        // anyway (it only accepts scan_ids it issued). A blank scan_id is the
+        // definitive "on-device / offline" signal.
+        if (analysis.scanId.isNullOrBlank()) {
+            return@withContext UploadOutcome.NotServerBacked
         }
         val disease = canonicalDiseaseKey(analysis) ?: scan.diseaseName
         // Skip diagnoses that shouldn't be surfaced in the community
@@ -111,6 +121,13 @@ class CommunityUploader(
         if (!force && !CommunityPrefs.uploadsEnabled(context)) {
             return@withContext UploadOutcome.OptedOut
         }
+        // On-device (Aqua) scans are private by default — an offline scan has
+        // no server-issued scan_id, so sharing it would only send the image
+        // for a guaranteed server-side rejection. The persisted ``offline_aqua``
+        // warning is the entity-side marker for those.
+        if ("offline_aqua" in scanRepository.parseWarnings(scan.warnings)) {
+            return@withContext UploadOutcome.NotServerBacked
+        }
         val disease = scan.displayedClassKey?.takeIf { it.isNotBlank() }
             ?: scan.diseaseName
         if (disease in HIDDEN_COMMUNITY_DISEASES) {
@@ -154,6 +171,10 @@ class CommunityUploader(
         MissingScanId,
         Failed,
         HiddenDisease,
+
+        // On-device (Aqua/offline) scan with no server-issued scan_id — kept
+        // private, never shared to the community.
+        NotServerBacked,
     }
 
     /**

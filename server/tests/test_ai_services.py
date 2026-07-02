@@ -95,6 +95,57 @@ def test_identify_species_default_organ_is_auto(monkeypatch):
     assert sent["data"] == {"organs": "auto"}
 
 
+def test_identify_species_retries_once_on_timeout(monkeypatch):
+    """A transient timeout on the first attempt is retried once and succeeds."""
+    import requests
+
+    import ai_services as ai
+
+    monkeypatch.setattr(ai, "PLANTNET_API_KEY", "test-key")
+    monkeypatch.setattr(ai, "PLANTNET_ATTEMPTS", 2)
+    calls = {"n": 0}
+
+    class _Resp:
+        status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"results": [], "remainingIdentificationRequests": 9}
+
+    def _flaky_post(url, params=None, files=None, data=None, timeout=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise requests.exceptions.Timeout("read timed out")
+        return _Resp()
+
+    monkeypatch.setattr(requests, "post", _flaky_post)
+    out = ai.identify_species(b"\xff\xd8\xfffake-jpeg")
+    assert calls["n"] == 2
+    assert out["available"] is True
+
+
+def test_identify_species_gives_up_after_bounded_retries(monkeypatch):
+    """Both attempts timing out degrades gracefully (no unbounded retry)."""
+    import requests
+
+    import ai_services as ai
+
+    monkeypatch.setattr(ai, "PLANTNET_API_KEY", "test-key")
+    monkeypatch.setattr(ai, "PLANTNET_ATTEMPTS", 2)
+    calls = {"n": 0}
+
+    def _always_timeout(url, params=None, files=None, data=None, timeout=None):
+        calls["n"] += 1
+        raise requests.exceptions.Timeout("read timed out")
+
+    monkeypatch.setattr(requests, "post", _always_timeout)
+    out = ai.identify_species(b"\xff\xd8\xfffake-jpeg")
+    assert calls["n"] == 2  # exactly PLANTNET_ATTEMPTS, not more
+    assert out["source"] == "error"
+
+
 def _mock_openrouter_post(monkeypatch, *, finish_reason, content="answer", captured=None):
     """Stub requests.post with one OpenRouter-shaped chat completion."""
     import requests

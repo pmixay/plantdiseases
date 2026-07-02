@@ -57,7 +57,12 @@ PLANTNET_PROJECT = get_str("PLANTNET_PROJECT", "all")
 # Free tier is 500 / day. We expose 5/min as a soft client cap on top
 # of the existing per-IP rate limiter to keep one deploy from burning
 # the daily budget on a single bad actor.
-PLANTNET_TIMEOUT = get_float("PLANTNET_TIMEOUT", 8.0)
+PLANTNET_TIMEOUT = get_float("PLANTNET_TIMEOUT", 10.0)
+# One bounded retry: a single 8s attempt was the most frequent recurring
+# failure, so we retry once on a transient network fault (connect/read
+# timeout or connection error). Auth (401) and rate-limit (429) are terminal
+# and never retried; any other error still degrades gracefully.
+PLANTNET_ATTEMPTS = get_int("PLANTNET_ATTEMPTS", 2)
 PLANTNET_CACHE_SIZE = get_int("PLANTNET_CACHE_SIZE", 256)
 # Stable content (a species ID for a fixed image) — 7-day TTL so a PlantNet
 # model update / reclassification eventually refreshes instead of forever.
@@ -301,17 +306,35 @@ def identify_species(
         # leaf/whole-plant) — far more accurate than forcing "leaf" on a photo
         # that is really a bloom or whole plant (PlantNet docs' own guidance).
         data = {"organs": organ}
-        r = requests.post(
-            url, params=params, files=files, data=data, timeout=PLANTNET_TIMEOUT
-        )
-        if r.status_code == 401:
-            logger.error("PlantNet auth failed — check PLANTNET_API_KEY")
-            return {"available": False, "results": [], "source": "auth_failed"}
-        if r.status_code == 429:
-            logger.warning("PlantNet rate-limited; surfacing graceful degraded result")
-            return {"available": False, "results": [], "source": "rate_limited"}
-        r.raise_for_status()
-        payload = r.json()
+        # Retry only on a transient network fault (connect/read timeout or
+        # connection error). Auth (401) / rate-limit (429) short-circuit
+        # inside the loop and never retry; any other error breaks out to the
+        # graceful degraded result below.
+        attempts = max(1, PLANTNET_ATTEMPTS)
+        payload = None
+        for attempt in range(attempts):
+            try:
+                r = requests.post(
+                    url, params=params, files=files, data=data,
+                    timeout=PLANTNET_TIMEOUT,
+                )
+            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+                if attempt + 1 < attempts:
+                    logger.info(
+                        "PlantNet attempt %d/%d failed (%s); retrying",
+                        attempt + 1, attempts, type(e).__name__,
+                    )
+                    continue
+                raise
+            if r.status_code == 401:
+                logger.error("PlantNet auth failed — check PLANTNET_API_KEY")
+                return {"available": False, "results": [], "source": "auth_failed"}
+            if r.status_code == 429:
+                logger.warning("PlantNet rate-limited; surfacing graceful degraded result")
+                return {"available": False, "results": [], "source": "rate_limited"}
+            r.raise_for_status()
+            payload = r.json()
+            break
     except Exception as e:  # noqa: BLE001 — never propagate to client
         logger.warning("PlantNet identify failed: %s", _redact_key(str(e)))
         return {"available": False, "results": [], "source": "error"}

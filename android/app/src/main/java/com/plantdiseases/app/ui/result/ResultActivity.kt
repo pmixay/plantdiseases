@@ -3,6 +3,9 @@ package com.plantdiseases.app.ui.result
 import android.animation.ValueAnimator
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.widget.Toast
 import android.os.Bundle
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
@@ -30,6 +33,7 @@ import com.plantdiseases.app.ui.analysis.AnalysisActivity
 import com.plantdiseases.app.ui.guide.GuideDetailSheet
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
+import com.plantdiseases.app.util.ModelFamily
 import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
@@ -67,7 +71,7 @@ class ResultActivity : AppCompatActivity() {
     private val gardenAttach by lazy { GardenAttachController(this, binding) }
     private val share by lazy { ShareController(this) }
     private val community by lazy {
-        CommunityController(this, binding, ::ensureNotificationPermission)
+        CommunityController(this, binding, ::ensureNotificationPermission, ::requestCommunityOptIn)
     }
 
     // Notifications-only prompt, fired when the user asks for a second opinion
@@ -79,6 +83,36 @@ class ResultActivity : AppCompatActivity() {
         if (granted) {
             startOpinionDelivery()
         }
+    }
+
+    // In-context community opt-in from the result screen (the "enable community"
+    // button under the similar-scans card). Mirrors NearbyScansActivity: request
+    // coarse location (+ notifications on 13+) and only flip community ON when
+    // location is granted — so a denial leaves the "enable community" button in
+    // place instead of silently enabling with no location. The pending callback
+    // carries the grant result back to whichever surface asked.
+    private var pendingCommunityOptIn: ((Boolean) -> Unit)? = null
+
+    private val communityOptInLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions(),
+    ) { result ->
+        val locationGranted =
+            result[android.Manifest.permission.ACCESS_COARSE_LOCATION] == true ||
+                androidx.core.content.ContextCompat.checkSelfPermission(
+                    this,
+                    android.Manifest.permission.ACCESS_COARSE_LOCATION,
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        pendingCommunityOptIn?.invoke(locationGranted)
+        pendingCommunityOptIn = null
+    }
+
+    private fun requestCommunityOptIn(onResult: (Boolean) -> Unit) {
+        pendingCommunityOptIn = onResult
+        val perms = mutableListOf(android.Manifest.permission.ACCESS_COARSE_LOCATION)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            perms += android.Manifest.permission.POST_NOTIFICATIONS
+        }
+        communityOptInLauncher.launch(perms.toTypedArray())
     }
 
     private fun ensureNotificationPermission() {
@@ -272,6 +306,11 @@ class ResultActivity : AppCompatActivity() {
         // blurry-or-NAP so a genuine blurry plant isn't told it isn't one.
         val isBlurryReject = isNotAPlant &&
             "blurry_image" in repository.parseWarnings(scan.warnings)
+        // On-device (Aqua) scan: local-first and deliberately limited. It has no
+        // server-issued scan_id, so it never joins the community feed, can't be
+        // added to the garden, and has no feedback channel. The offline warning
+        // card (DiagnosisContentController) marks it in the result body.
+        val isOfflineAqua = "offline_aqua" in repository.parseWarnings(scan.warnings)
         val diseaseName = when {
             isBlurryReject -> getString(R.string.blurry_or_not_a_plant_diagnosis_name)
             isNotAPlant -> getString(R.string.not_a_plant_diagnosis_name)
@@ -414,7 +453,8 @@ class ResultActivity : AppCompatActivity() {
             } else {
                 tvDescription.text = if (isRu) scan.descriptionRu else scan.description
                 btnShare.visibility = View.VISIBLE
-                btnAddToGarden.visibility = View.VISIBLE
+                // Offline Aqua scans can't be added to the garden (limited, local).
+                btnAddToGarden.visibility = if (isOfflineAqua) View.GONE else View.VISIBLE
                 diagnosisContent.bindPipelineWarnings(scan, repository)
                 diagnosisContent.bindAlternatives(scan, repository, isRu)
                 speciesCard.bind(scan)
@@ -430,7 +470,13 @@ class ResultActivity : AppCompatActivity() {
                 cardFeedback.visibility = View.GONE
             } else {
                 diagnosisContent.bindToxicity(scan, repository)
-                feedback.bind(scan)
+                // Feedback binds to a server-issued scan_id; an offline Aqua scan
+                // has none, so hide it rather than offer an action that can't post.
+                if (isOfflineAqua) {
+                    cardFeedback.visibility = View.GONE
+                } else {
+                    feedback.bind(scan)
+                }
             }
 
             tvDate.text = ImageUtils.formatTimestamp(scan.timestamp)
@@ -454,6 +500,13 @@ class ResultActivity : AppCompatActivity() {
             }
             btnAddToGarden.setOnClickListener { gardenAttach.showAddToGardenDialog(scan) }
             btnShare.setOnClickListener { share.share(scan, repository, isRu) }
+
+            // Offline (Aqua) scans can be upgraded: re-run the same photo through
+            // the full online model. Shown in the offline warning card only.
+            btnImproveOnline.visibility = if (isOfflineAqua) View.VISIBLE else View.GONE
+            if (isOfflineAqua) {
+                btnImproveOnline.setOnClickListener { improveOnline(scan) }
+            }
 
             // Low-confidence card carries its own retry button (the action
             // belongs next to the warning, not in the global bottom bar).
@@ -493,6 +546,32 @@ class ResultActivity : AppCompatActivity() {
             // Toolbar overflow menu owns the delete action.
             pendingScanForToolbar = scan
         }
+    }
+
+    /** Re-run an offline scan's photo through the full online model. Requires a
+     *  validated connection; the online result replaces the offline scan in
+     *  place (AnalysisActivity's force-family + replace-scan flow). */
+    private fun improveOnline(scan: ScanEntity) {
+        if (!hasValidatedInternet()) {
+            Toast.makeText(this, R.string.improve_online_no_network, Toast.LENGTH_SHORT).show()
+            return
+        }
+        startActivity(
+            Intent(this, AnalysisActivity::class.java).apply {
+                putExtra(AnalysisActivity.EXTRA_IMAGE_PATH, scan.imagePath)
+                putExtra(AnalysisActivity.EXTRA_FORCE_FAMILY, ModelFamily.GAMMA.id)
+                putExtra(AnalysisActivity.EXTRA_REPLACE_SCAN_ID, scan.id)
+            },
+        )
+        finish()
+    }
+
+    private fun hasValidatedInternet(): Boolean {
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            ?: return false
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
+        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
 
     private fun animateCardsIn() {
