@@ -57,30 +57,122 @@ collapsed (tap to expand), in the **scan result** screen.
       user-generated Veo clip (vertical 9:16 macro monstera, scan-light sweep,
       #16A34A accent, seamless ~8 s loop, no text).
 
-### Offline polish
+### Offline polish (kept intentionally minimal)
+
+Offline is **best-effort, not a second app**. The core that must work offline
+already does: the on-device Aqua scan, the bundled guide text + (now
+prefetched) disease photos, and the Room-backed garden/gallery/history.
+Online-only features — community, popular carousels, symptom checker, AI doctor
+— simply show a graceful "needs connection" state; we deliberately do **not**
+replicate them offline (no offline carousel, no offline symptom triage).
 
 Already landed this session: guide/disease example photos are **prefetched**
 into Glide's disk cache on a connected launch (they're server-hosted, not
 bundled, so they used to show a placeholder offline unless viewed online
-first). Remaining gaps:
+first). The one remaining gap worth closing:
 
 - [ ] **App-wide connectivity signal** — the offline banner lives only on the
       Scan screen (`CameraFragment`); every other screen discovers offline
       state reactively and silently renders blank/empty. A shared observer
-      would drive a consistent "offline — showing cached content" affordance on
-      Home / Guide / Result / Species.
-- [ ] **Symptom-checker offline fallback** — it's server-only today (a toast on
-      failure). A bundled rules path mirroring `OfflineScanContent` would let
-      no-photo triage work offline like the Aqua scan path does.
-- [ ] **Popular-carousel photos offline** — text degrades to bundled catalogs,
-      but `api/plant-photo` images blank offline; fold the popular species set
-      into the same prefetch, or bundle thumbnails for the curated set.
+      would drive one consistent "offline — showing cached content" affordance
+      instead of blank placeholders. This is the ceiling for offline work —
+      surface the state, don't rebuild features offline.
 
 ### Release
 
 - [ ] **Localize the AI-doctor chat subtitle** — the plant/species name under
       the header still shows the English common name in RU locale.
 - [ ] Bump `versionName` 1.7 → 1.8 (+ `versionCode`) and cut the RuStore build.
+
+---
+
+## Garden refactor (next major app work — its own release, post-1.8)
+
+> Today the Garden is a **flat list of saved plants** — a gallery of what you
+> own. The refactor turns it into a **care-management hub**: the screen a user
+> opens daily to keep plants alive, where every scan feeds an ongoing care
+> story instead of being a one-off verdict. This is the app's biggest remaining
+> product lever after the knowledge cards, and large enough to be its own
+> release. All of it builds on data the app already persists (Room: `plants`,
+> `scans`, `journals`, `reminders`, `chat`) — mostly new UI + aggregation, with
+> little new storage. Keep XML Views + Koin; no Compose.
+
+### 1. "Today" care queue — the daily hub
+
+The landing surface of the Garden becomes a prioritized **"what needs doing
+today"** list across all plants, not an alphabetical grid:
+
+- Aggregates due **waterings**, **fertilising**, and **open treatment steps**
+  (from active scan-driven checklists, below) into one dated queue, most urgent
+  first. Each row has a one-tap **Done** that advances the schedule and logs to
+  the plant's journal.
+- Promotes the existing `PlantReminderWorker` data from background
+  notifications to a first-class in-app list — the reminders already exist;
+  this makes them actionable in one place.
+- Empty state is a genuine reward ("all caught up 🌿"), not a blank screen — the
+  emotional core of a daily-return habit **without** a gamified streak
+  (per the earlier calm-over-Duolingo decision).
+
+### 2. Scan-driven care checklists
+
+Close the loop between **diagnosis and action**:
+
+- When a scan diagnoses a disease, materialize its care-plan treatment steps
+  ("isolate the plant", "remove leaves with >25% spotting", "apply a
+  copper-based spray weekly ×3") as a **trackable checklist** attached to that
+  plant, with per-step completion + follow-up dates that feed the Today queue.
+- The care plan already produces these steps (`generate_care_plan` →
+  `treatment`); this persists and tracks them over the recovery window instead
+  of showing them once on the result screen.
+- Completion history becomes the signal for the health header (below) and,
+  later, a real input to the retraining feedback loop ("did the treatment
+  work?").
+
+### 3. Plant health header
+
+Each plant's detail **leads with a status**, not a photo grid:
+
+- A single **healthy / recovering / declining** header derived from the plant's
+  scan-history trend (confidence + verdict over time) and care adherence, so a
+  user sees state at a glance instead of mentally diffing individual scans.
+- Drives the Garden card accent (a subtly red-tinted card for a declining
+  plant) so the list itself communicates where attention is needed.
+
+### 4. Rooms / locations
+
+Group plants by **room** (living room, balcony, office, …):
+
+- Organizational for large collections, but also **care-relevant**: light and
+  humidity differ by room, so a room can seed a new plant's default care plan
+  and the Light-meter baseline, and a future "your balcony is entering winter"
+  seasonal nudge has a scope to attach to.
+- Lightweight: one nullable `room` column on `plants` + a grouping header in the
+  list; no new screens required for v1.
+
+### 5. Progression / photo-compare strip
+
+Make **recovery visible**:
+
+- A horizontal timeline of a plant's scan photos with a **before/after
+  compare** (slider or side-by-side), so disease progression or recovery reads
+  at a glance across weeks.
+- Pure visualization — scans are already Room rows pointing at local image
+  files (`filesDir/plant_images`), so this works fully offline and adds no
+  storage.
+
+### 6. Architecture
+
+- Rebuild the Garden list + detail (already split into modular controllers) for
+  the richer cards; reuse the existing Room schema and repositories. The only
+  new persistence is the per-plant `room` and the checklist step state
+  (a small table or a JSON column on the scan). Ship behind the same
+  single-module XML-Views + Koin structure.
+
+**Sequencing when this release starts:** (1) Today queue + care checklists
+together (they're the payoff and share the schedule/journal plumbing), then
+(2) health header (needs the checklist adherence signal), then (3) rooms +
+photo-compare as independent polish. Rooms and the compare strip could slip to
+a follow-up without blocking the core hub.
 
 ---
 
@@ -142,8 +234,6 @@ the guard is confirmed silent.
 - [ ] **More UI languages** (server content already bilingual).
 - [ ] **Expert-human consultation** (community-powered) — ties into 2.7 safety
       escalation and builds on the shipped second-opinion loop.
-- [ ] **Garden refactor** — Today care queue, scan-driven care checklists,
-      health header, rooms, photo-compare strip (large; own release).
 
 ## Decisions
 
