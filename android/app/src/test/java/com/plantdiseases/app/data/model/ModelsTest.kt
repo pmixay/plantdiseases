@@ -2,6 +2,7 @@ package com.plantdiseases.app.data.model
 
 import com.google.common.truth.Truth.assertThat
 import com.google.gson.Gson
+import kotlinx.serialization.json.Json
 import org.junit.Test
 
 /**
@@ -161,5 +162,46 @@ class ModelsTest {
         )
         assertThat(r.locationRequired).isTrue()
         assertThat(r.items).isEmpty()
+    }
+
+    // The PRODUCTION decode path is kotlinx.serialization (Ktor
+    // ContentNegotiation), not Gson — and unlike Gson it enforces Kotlin
+    // nullability. These tests mirror the app's exact Json config so they
+    // catch the "explicit null on a strict field" crash the Gson tests can't.
+    private val ktxJson = Json {
+        ignoreUnknownKeys = true
+        coerceInputValues = true
+    }
+
+    @Test
+    fun communityScansResponse_nullCountry_decodesWithoutThrowing() {
+        // Regression: a place with no ISO country (worldwide scope, or e.g.
+        // Abkhazia) makes the server send `"country": null`. Strict kotlinx
+        // decoding used to throw on that, surfacing as "Couldn't reach the
+        // community". It must now decode cleanly with a null country.
+        val json = """
+            {"scope":"worldwide","country":null,"country_name_en":"Worldwide",
+             "items":[],
+             "summary":{"scope":"worldwide","country":null,
+                        "country_name_en":"Worldwide","total":0}}
+        """.trimIndent()
+        val r = ktxJson.decodeFromString(CommunityScansResponse.serializer(), json)
+        assertThat(r.scope).isEqualTo("worldwide")
+        assertThat(r.summary!!.country).isNull()
+        assertThat(r.summary!!.countryNameEn).isEqualTo("Worldwide")
+    }
+
+    @Test
+    fun communityScansResponse_explicitNullOnDefaultedField_coercesToDefault() {
+        // coerceInputValues: an explicit null on a field that has a default
+        // (here the summary's non-null `total`) falls back to the default
+        // instead of throwing — defence-in-depth against an evolving server.
+        val json = """
+            {"scope":"worldwide","items":[],
+             "summary":{"country":null,"total":null,"scope":null}}
+        """.trimIndent()
+        val r = ktxJson.decodeFromString(CommunityScansResponse.serializer(), json)
+        assertThat(r.summary!!.total).isEqualTo(0)
+        assertThat(r.summary!!.scope).isNull()
     }
 }

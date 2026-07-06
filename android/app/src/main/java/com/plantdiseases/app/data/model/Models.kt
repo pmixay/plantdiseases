@@ -374,7 +374,11 @@ data class CommunityHeatCell(
 
 @Serializable
 data class CommunityRegionSummary(
-    @SerializedName("country") @SerialName("country") val country: String = "",
+    // Nullable: the server sends an explicit `null` here whenever the request
+    // can't be resolved to an ISO country (worldwide scope, or a place with no
+    // country code — e.g. Abkhazia). A non-null type made strict kotlinx
+    // decoding throw on that null and surfaced as "Couldn't reach the community".
+    @SerializedName("country") @SerialName("country") val country: String? = null,
     @SerializedName("country_name_en") @SerialName("country_name_en") val countryNameEn: String? = null,
     @SerializedName("country_name_ru") @SerialName("country_name_ru") val countryNameRu: String? = null,
     @SerializedName("scope") @SerialName("scope") val scope: String? = null,
