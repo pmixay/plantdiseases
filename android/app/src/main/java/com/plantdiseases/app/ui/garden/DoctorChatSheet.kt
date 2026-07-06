@@ -15,12 +15,12 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 import androidx.fragment.app.FragmentManager
 import androidx.core.os.bundleOf
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.widget.NestedScrollView
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
@@ -100,7 +100,7 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
             ?: ""
 
     private lateinit var messagesLayout: LinearLayout
-    private lateinit var scrollView: ScrollView
+    private lateinit var scrollView: NestedScrollView
     private lateinit var suggestionsContainer: LinearLayout
     private lateinit var inputField: TextInputEditText
     private var thinkingView: View? = null
@@ -533,7 +533,7 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
     }
 
     private fun scrollToBottom() {
-        scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
+        scrollView.post { scrollView.fullScroll(View.FOCUS_DOWN) }
     }
 
     private fun formatTime(timestamp: Long): String =
