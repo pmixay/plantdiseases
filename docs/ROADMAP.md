@@ -59,9 +59,6 @@ collapsed (tap to expand), in the **scan result** screen.
 
 ### Release
 
-- [ ] **Data-export decision** — `/api/user/export` and the privacy-page
-      "data export" claim were removed. Either keep them removed, or build a
-      real export flow before wide release and restore the promise.
 - [ ] **Localize the AI-doctor chat subtitle** — the plant/species name under
       the header still shows the English common name in RU locale.
 - [ ] Bump `versionName` 1.7 → 1.8 (+ `versionCode`) and cut the RuStore build.
