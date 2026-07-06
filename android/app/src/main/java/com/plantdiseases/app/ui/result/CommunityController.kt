@@ -71,7 +71,7 @@ class CommunityController(
      * The sheet reports request-state changes (stop) back via the Fragment
      * Result API so this control re-renders immediately.
      */
-    fun setupSecondOpinion(scan: ScanEntity, repository: ScanRepository, isRu: Boolean) {
+    fun setupSecondOpinion(scan: ScanEntity, isRu: Boolean) {
         activity.supportFragmentManager.setFragmentResultListener(
             CommunityOpinionSheet.REQUEST_STATE_CHANGED,
             activity,

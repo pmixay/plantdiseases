@@ -546,7 +546,7 @@ class ResultActivity : AppCompatActivity() {
             // scans (no server scan_id to share).
             if (!isNotAPlant && !isOfflineAqua) {
                 btnSecondOpinion.visibility = View.VISIBLE
-                community.setupSecondOpinion(scan, repository, isRu)
+                community.setupSecondOpinion(scan, isRu)
             } else {
                 btnSecondOpinion.visibility = View.GONE
             }
