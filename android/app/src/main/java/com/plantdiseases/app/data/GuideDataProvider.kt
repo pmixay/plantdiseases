@@ -872,7 +872,7 @@ TIPS:
 • Тюлевые шторы рассеивают жёсткий прямой свет
             """.trimIndent(),
             iconRes = R.drawable.ic_light,
-            category = GuideCategory.LIGHTING
+            category = GuideCategory.CARE_TIPS
         ),
 
         // Care tips
@@ -1518,6 +1518,59 @@ PREVENTION:
             """.trimIndent(),
             iconRes = R.drawable.ic_pest,
             category = GuideCategory.PESTS
+        ),
+
+        // ── App help — how to read what the scanner tells you. Moved here
+        // from the Profile tips cards so all reference content lives in one
+        // handbook. ─────────────────────────────────────────────────────
+        GuideItem(
+            id = "understanding_results",
+            titleEn = "Understanding your results",
+            titleRu = "Как читать результаты",
+            descriptionEn = "Confidence, alternatives, and what \"I'm not sure\" means",
+            descriptionRu = "Уверенность, альтернативы и что значит «не уверен»",
+            contentEn = """
+The scanner is built to be honest about uncertainty: it would rather admit it isn't sure than guess. Here's how to read what it shows you.
+
+THE CONFIDENCE SCORE:
+• The percentage is calibrated — 80% means "right about 8 times out of 10", not marketing
+• High confidence on a sharp, close-up leaf photo is usually trustworthy
+• Low confidence is a signal to gather more evidence, not a verdict
+
+WHEN THE APP ISN'T SURE:
+• Instead of guessing, it shows several candidate conditions — treat them all as plausible
+• "Not a plant / blurry photo" means the photo couldn't be read: retake it closer, steadier and in better light; nothing is saved to your history
+• A healthy-looking verdict with low confidence still deserves a second look a few days later
+
+WHAT TO DO NEXT:
+1. Check the alternatives card and compare with the example photos
+2. Retake the photo — one sharp leaf filling the frame changes a lot
+3. Run the [symptom checker](tool:symptom) to triage by what you see
+4. Ask the community for a second opinion right from the result screen
+5. If a result was wrong, use the feedback button — corrections retrain the model
+            """.trimIndent(),
+            contentRu = """
+Сканер честен в своей неуверенности: он скорее признает сомнение, чем станет угадывать. Вот как читать то, что он показывает.
+
+ОЦЕНКА УВЕРЕННОСТИ:
+• Процент откалиброван — 80% значит «прав примерно в 8 случаях из 10», а не маркетинг
+• Высокая уверенность на чётком крупном фото листа обычно надёжна
+• Низкая уверенность — повод собрать больше данных, а не приговор
+
+КОГДА ПРИЛОЖЕНИЕ СОМНЕВАЕТСЯ:
+• Вместо угадывания оно показывает несколько кандидатов — считайте каждый возможным
+• «Не растение / размытое фото» значит, что снимок не удалось прочитать: переснимите ближе, ровнее и при лучшем свете; в историю такое не сохраняется
+• Вердикту «здоровое» с низкой уверенностью стоит устроить повторную проверку через пару дней
+
+ЧТО ДЕЛАТЬ ДАЛЬШЕ:
+1. Посмотрите карточку альтернатив и сравните с примерами фото
+2. Переснимите фото — один чёткий лист на весь кадр многое меняет
+3. Пройдите [проверку симптомов](tool:symptom), чтобы уточнить по признакам
+4. Запросите второе мнение сообщества прямо с экрана результата
+5. Если результат был неверным — нажмите кнопку обратной связи: исправления дообучают модель
+            """.trimIndent(),
+            iconRes = R.drawable.ic_scan,
+            category = GuideCategory.HELP
         )
     )
 
@@ -1577,4 +1630,9 @@ PREVENTION:
     /** Absolute URL of the server-hosted example photo for a classifier class. */
     fun exampleImageUrlForDisease(classKey: String): String? =
         exampleImageKeyForDisease(classKey)?.let { "${ServerConfig.baseUrl}api/guide/photo/$it" }
+
+    /** Every server-hosted guide-photo URL — used to prefetch them into Glide's
+     *  disk cache while online so the guide/result photos render offline. */
+    fun allExamplePhotoUrls(): List<String> =
+        EXAMPLE_PHOTO_KEYS.map { "${ServerConfig.baseUrl}api/guide/photo/$it" }
 }

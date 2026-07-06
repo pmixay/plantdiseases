@@ -283,6 +283,25 @@ class AnalysisActivity : AppCompatActivity() {
         imagePath: String,
         response: com.plantdiseases.app.data.model.AnalysisResponse,
     ) {
+        // Autosave the kept (cropped) photo to the user's device gallery only
+        // now that we KNOW it's a plant — opt-in, camera captures only (moved
+        // here from the camera screen precisely so NAP / blur rejects never
+        // land in the user's photo library). Reject verdicts still open the
+        // full result screen (so the user can flag "this is a plant"), but
+        // they're hidden from the in-app gallery and stats, and swept from
+        // the DB after a couple of days.
+        if (response.classKey != NOT_A_PLANT_CLASS &&
+            intent.getBooleanExtra(EXTRA_FROM_CAMERA, false) &&
+            com.plantdiseases.app.util.AutosavePrefs.enabled(this)
+        ) {
+            val appContext = applicationContext
+            val album = getString(R.string.autosave_album)
+            val toSave = File(imagePath)
+            lifecycleScope.launch(Dispatchers.IO) {
+                ImageUtils.saveImageToGallery(appContext, toSave, album)
+            }
+        }
+
         // The Application is still needed here for launchCommunityUpload (an
         // app-lifecycle helper, not an injectable singleton).
         val app = application as PlantDiseasesApp
@@ -372,6 +391,16 @@ class AnalysisActivity : AppCompatActivity() {
 
     companion object {
         const val EXTRA_IMAGE_PATH = "extra_image_path"
+
+        /** True when the photo came from the camera shutter (not a gallery
+         *  import) — gates the opt-in device-gallery autosave, which runs
+         *  only after a real plant verdict. */
+        const val EXTRA_FROM_CAMERA = "extra_from_camera"
+
+        /** Pipeline rejection class — gates the device-gallery autosave
+         *  (rejects still open the result screen but must not land in the
+         *  user's photo library). */
+        private const val NOT_A_PLANT_CLASS = "not_a_plant"
 
         /** Optional plant id; when present the saved scan is auto-attached to
          *  that plant (see PlantDetailActivity's "New scan" action). */

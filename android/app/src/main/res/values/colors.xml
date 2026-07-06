@@ -99,7 +99,6 @@
     <!-- Guide-list lighting (sun) icon. Same amber as lighting_yellow
          in light mode; values-night brightens it because amber-400 on
          the dark amber chip background read as near-invisible. -->
-    <color name="guide_icon_lighting">#F59E0B</color>
 
     <!-- ─── Misc ────────────────────────────────────────────────── -->
     <color name="scan_frame_color">#80FFFFFF</color>

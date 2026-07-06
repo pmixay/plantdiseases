@@ -202,7 +202,7 @@ All routes are mounted under `/api`. A curated highlights table follows;
 
 | Method | Path | Description |
 |---|---|---|
-| `GET`  | `/api/guide/manifest` · `/api/guide/photo/{key}` | Disease/pest example photos (served by the server, cached by the app) |
+| `GET`  | `/api/guide/photo/{key}` | Disease/pest example photos (served by the server, cached by the app) |
 | `GET`  | `/api/aqua/manifest` · `/api/aqua/model` | On-device Aqua TFLite model manifest + bytes (the app downloads/updates it) |
 | `GET`  | `/api/species-info`        | Localized Wikipedia summary + lead image for a scientific name |
 | `GET`  | `/api/species-diseases`    | Common indoor conditions a species is affected by (AI, best-effort) |
@@ -218,7 +218,7 @@ All routes are mounted under `/api`. A curated highlights table follows;
 | `GET`  | `/api/community/map` · `/api/community/heatmap` | Map markers (rounded coords) and k-anonymized density grid |
 | `GET`  | `/api/community/by-species` | Recent shared scans of a given species |
 | `POST` | `/api/community/opinion` · `/api/community/request-opinion` | Cast / request a second opinion on a shared scan |
-| `GET`  | `/api/community/opinions/{scan_id}` · `/api/community/my-opinions/{user_pseudo_id}` | Opinions for a scan / for the caller's scans |
+| `GET`  | `/api/community/opinions/{scan_id}` | Opinions + consensus + request status for a shared scan |
 | `POST` | `/api/community/view` · `/api/community/scan-counts` | Record a view / batch-fetch opinion+view counts |
 | `GET`  | `/api/community/thumb/{filename}` | Community scan thumbnail |
 | `POST` | `/api/push/register`       | Register an FCM token for opinion notifications (no-op without FCM creds) |
@@ -227,7 +227,6 @@ All routes are mounted under `/api`. A curated highlights table follows;
 
 | Method | Path | Description |
 |---|---|---|
-| `GET`    | `/api/user/export/{user_pseudo_id}`     | Export everything the corpus holds for a pseudo-id |
 | `DELETE` | `/api/community/user/{user_pseudo_id}`  | Delete the caller's shared community contributions |
 
 Response shapes and validation rules are documented inline in

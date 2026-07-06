@@ -86,33 +86,30 @@ class ResultActivity : AppCompatActivity() {
     }
 
     // In-context community opt-in from the result screen (the "enable community"
-    // button under the similar-scans card). Mirrors NearbyScansActivity: request
-    // coarse location (+ notifications on 13+) and only flip community ON when
-    // location is granted — so a denial leaves the "enable community" button in
-    // place instead of silently enabling with no location. The pending callback
-    // carries the grant result back to whichever surface asked.
+    // button under the similar-scans card and the second-opinion gate). Mirrors
+    // NearbyScansActivity: request coarse location ONLY and flip community ON
+    // when it's granted — so a denial leaves the "enable community" button in
+    // place instead of silently enabling with no location. Notifications are
+    // NOT part of joining; they're requested when the user asks for a second
+    // opinion (see ensureNotificationPermission). The pending callback carries
+    // the grant result back to whichever surface asked.
     private var pendingCommunityOptIn: ((Boolean) -> Unit)? = null
 
     private val communityOptInLauncher = registerForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions(),
-    ) { result ->
-        val locationGranted =
-            result[android.Manifest.permission.ACCESS_COARSE_LOCATION] == true ||
-                androidx.core.content.ContextCompat.checkSelfPermission(
-                    this,
-                    android.Manifest.permission.ACCESS_COARSE_LOCATION,
-                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        val locationGranted = granted ||
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                this,
+                android.Manifest.permission.ACCESS_COARSE_LOCATION,
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
         pendingCommunityOptIn?.invoke(locationGranted)
         pendingCommunityOptIn = null
     }
 
     private fun requestCommunityOptIn(onResult: (Boolean) -> Unit) {
         pendingCommunityOptIn = onResult
-        val perms = mutableListOf(android.Manifest.permission.ACCESS_COARSE_LOCATION)
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            perms += android.Manifest.permission.POST_NOTIFICATIONS
-        }
-        communityOptInLauncher.launch(perms.toTypedArray())
+        communityOptInLauncher.launch(android.Manifest.permission.ACCESS_COARSE_LOCATION)
     }
 
     private fun ensureNotificationPermission() {
@@ -375,8 +372,6 @@ class ResultActivity : AppCompatActivity() {
             GuideDataProvider.exampleImageUrlForDisease(repository.verdictClassKey(scan) ?: "")
                 ?.let { diagnosisContent.loadDiseasePhotos(it) }
 
-            community.bindOwnScanOpinions(scan, isRu)
-
             val confidencePercent = (scan.confidence * 100).toInt()
             // For NAP we don't expose a confidence bar — "100% confident this
             // isn't a plant" reads as the model being certain about a diagnosis.
@@ -463,15 +458,22 @@ class ResultActivity : AppCompatActivity() {
                 carePlan.bind(scan, repository, isRu)
             }
 
-            // Toxicity + feedback render for every plant verdict (incl. healthy)
-            // but stay hidden on NAP.
+            // Toxicity renders for every plant verdict but stays hidden on NAP.
+            // Feedback binds to a server-issued scan_id; an offline Aqua scan
+            // has none, so it's hidden rather than offering an action that
+            // can't post. NAP gets a dedicated single-action variant: a
+            // wrongly-rejected plant photo is high-value retraining signal,
+            // so the card offers "This is a plant" (+ optional note) instead
+            // of the yes/no pair.
             if (isNotAPlant) {
                 cardToxicity.visibility = View.GONE
-                cardFeedback.visibility = View.GONE
+                if (isOfflineAqua) {
+                    cardFeedback.visibility = View.GONE
+                } else {
+                    feedback.bindNotAPlant(scan)
+                }
             } else {
                 diagnosisContent.bindToxicity(scan, repository)
-                // Feedback binds to a server-issued scan_id; an offline Aqua scan
-                // has none, so hide it rather than offer an action that can't post.
                 if (isOfflineAqua) {
                     cardFeedback.visibility = View.GONE
                 } else {
@@ -537,9 +539,17 @@ class ResultActivity : AppCompatActivity() {
                 finish()
             }
 
-            // When unsure, let the user raise a hand for a community second
-            // opinion on their OWN scan — or, once replies arrive, view them.
-            community.setupSecondOpinion(scan, repository, isRu)
+            // Community second opinion on the user's OWN scan — offered on
+            // every server-diagnosed plant verdict (not just low-confidence
+            // ones; the owner may doubt any result). Hidden for NAP (the
+            // feed hides NAP scans, so nobody could answer) and for offline
+            // scans (no server scan_id to share).
+            if (!isNotAPlant && !isOfflineAqua) {
+                btnSecondOpinion.visibility = View.VISIBLE
+                community.setupSecondOpinion(scan, isRu)
+            } else {
+                btnSecondOpinion.visibility = View.GONE
+            }
 
             animateCardsIn()
 

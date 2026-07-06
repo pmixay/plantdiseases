@@ -29,7 +29,7 @@
             app:titleTextAppearance="@style/TextAppearance.App.Toolbar"
             app:titleTextColor="@color/toolbar_title" />
 
-        <!-- Scope toggle: "Nearby" (the user's subdivision) vs "Country". -->
+        <!-- Scope toggle: "Nearby" (~30 km) vs "Country" vs "Worldwide". -->
         <com.google.android.material.chip.ChipGroup
             android:id="@+id/cg_scope"
             android:layout_width="wrap_content"
@@ -55,6 +55,13 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="@string/community_filter_country" />
+
+            <com.google.android.material.chip.Chip
+                android:id="@+id/chip_scope_worldwide"
+                style="@style/Widget.Material3.Chip.Filter"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/community_filter_worldwide" />
 
         </com.google.android.material.chip.ChipGroup>
 

@@ -377,23 +377,6 @@ class ScanRepository(
         }
 
     /** List the second opinions this install has authored. */
-    suspend fun getMyCommunityOpinions(pseudoId: String): Result<CommunityOpinionsResponse> =
-        withContext(Dispatchers.IO) {
-            try {
-                val response = apiClient.httpClient.get("api/community/my-opinions/$pseudoId")
-                when (response.status.value) {
-                    in 200..299 -> Result.success(response.body<CommunityOpinionsResponse>())
-                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
-                }
-            } catch (e: SocketTimeoutException) {
-                Result.failure(ServerTimeoutException())
-            } catch (e: UnknownHostException) {
-                Result.failure(NoNetworkException())
-            } catch (e: Exception) {
-                Result.failure(e)
-            }
-        }
-
     /** Submit one community "second opinion". Returns the refreshed list. */
     suspend fun submitCommunityOpinion(
         request: CommunityOpinionRequest,
@@ -445,6 +428,44 @@ class ScanRepository(
                     in 200..299 -> Result.success(
                         response.body<com.plantdiseases.app.data.model.CommunityRequestOpinionResponse>()
                             .flagged,
+                    )
+                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
+                }
+            } catch (e: SocketTimeoutException) {
+                Result.failure(ServerTimeoutException())
+            } catch (e: UnknownHostException) {
+                Result.failure(NoNetworkException())
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+    /**
+     * Withdraw an open second-opinion request on the user's OWN scan —
+     * the community stops seeing the ask and no further opinion
+     * notifications arrive for it. Opinions already left stay visible.
+     * Returns `true` when an open request was actually cleared (requests
+     * also lapse server-side on their own after 72 h).
+     */
+    suspend fun cancelSecondOpinion(
+        scanId: String,
+        userPseudoId: String,
+    ): Result<Boolean> =
+        withContext(Dispatchers.IO) {
+            try {
+                val response = apiClient.httpClient.post("api/community/request-opinion/cancel") {
+                    contentType(ContentType.Application.Json)
+                    setBody(
+                        com.plantdiseases.app.data.model.CommunityRequestOpinionRequest(
+                            scanId = scanId,
+                            userPseudoId = userPseudoId,
+                        ),
+                    )
+                }
+                when (response.status.value) {
+                    in 200..299 -> Result.success(
+                        response.body<com.plantdiseases.app.data.model.CommunityCancelOpinionResponse>()
+                            .cleared,
                     )
                     else -> Result.failure(Exception("Server error: ${response.status.value}"))
                 }
@@ -973,6 +994,24 @@ class ScanRepository(
     /** Clear all scan history */
     suspend fun clearAll() = withContext(Dispatchers.IO) {
         scanDao.deleteAll()
+    }
+
+    /**
+     * Sweep stale `not_a_plant` / blur-reject rows. The row backs the
+     * verdict's result screen (incl. the "this is a plant" feedback path),
+     * but NAP scans are hidden from the gallery and stats, so after
+     * [olderThanMs] the row is unreachable dead weight. NAP is a derived
+     * property (no dedicated column), so this filters in Kotlin — the
+     * table is small. Returns the number of rows removed.
+     */
+    suspend fun purgeNotAPlantScans(
+        olderThanMs: Long = 48L * 60 * 60 * 1000,
+    ): Int = withContext(Dispatchers.IO) {
+        val cutoff = System.currentTimeMillis() - olderThanMs
+        val stale = scanDao.getAllScans()
+            .filter { it.timestamp < cutoff && isNotAPlantScan(it) }
+        for (s in stale) scanDao.deleteById(s.id)
+        stale.size
     }
 
     data class ScanStats(

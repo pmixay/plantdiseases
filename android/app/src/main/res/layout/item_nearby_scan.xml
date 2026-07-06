@@ -2,8 +2,10 @@
 <!--
     One post in the "Scans near you" feed. Photo on top with the author avatar
     (top-start) and a views/comments count pill (top-end) overlaid on it, so
-    the footer text gets the full card width: diagnosis/nickname, then the
+    the footer text gets the full card width: the author's nickname, then the
     place, then a dedicated distance·time line that always stays visible.
+    The diagnosis is deliberately NOT shown on the card — voters should look
+    at the photo first; the model's verdict appears inside the opinion sheet.
 -->
 <com.google.android.material.card.MaterialCardView
     xmlns:android="http://schemas.android.com/apk/res/android"
@@ -125,7 +127,7 @@
                 android:fontFamily="sans-serif-medium"
                 android:maxLines="1"
                 android:ellipsize="end"
-                tools:text="Powdery Mildew" />
+                tools:text="Leafy Sage 7" />
 
             <TextView
                 android:id="@+id/tv_nearby_meta"
@@ -135,7 +137,7 @@
                 android:textColor="?attr/colorOnSurfaceVariant"
                 android:maxLines="1"
                 android:ellipsize="end"
-                tools:text="Powdery mildew · Berlin, Germany" />
+                tools:text="Berlin, Germany" />
 
             <!-- Distance + time on their own line so they're never truncated
                  by a long place name (the feed sorts by recency). -->
@@ -148,7 +150,7 @@
                 android:textColor="?attr/colorOnSurfaceVariant"
                 android:maxLines="1"
                 android:ellipsize="end"
-                tools:text="≈ 3 km near you · 2h" />
+                tools:text="≈ 3 km · 2 hr. ago" />
 
             <!-- Scanner is waiting on the community for a second opinion. -->
             <TextView

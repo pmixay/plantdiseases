@@ -54,13 +54,17 @@ class NearbyScansActivity : AppCompatActivity() {
     private var filterMenuItem: MenuItem? = null
     private var disableMenuItem: MenuItem? = null
 
-    // Server-side scope filter: "nearby" (~30 km radius) or "country".
+    // Server-side scope filter: "nearby" (~30 km radius), "country", or
+    // "worldwide" (no geo filter — needs no location).
     private var scope = "nearby"
 
-    // In-context opt-in: tapping Enable requests coarse location (+ notifications
-    // on 13+), flips community on, and reloads the feed.
+    // In-context opt-in: tapping Enable requests coarse location only, flips
+    // community on, and reloads the feed. Notifications are deliberately NOT
+    // part of joining — the POST_NOTIFICATIONS prompt fires later, at the one
+    // place it's needed: when the user requests a second opinion on their
+    // own scan (see CommunityController.beginRequest).
     private val communityPermissionLauncher = registerForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions(),
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
     ) { _ ->
         com.plantdiseases.app.util.CommunityPrefs.enable(this)
         com.plantdiseases.app.push.PushManager.registerIfEnabled(this)
@@ -68,11 +72,7 @@ class NearbyScansActivity : AppCompatActivity() {
     }
 
     private fun requestCommunityOptIn() {
-        val perms = mutableListOf(android.Manifest.permission.ACCESS_COARSE_LOCATION)
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            perms += android.Manifest.permission.POST_NOTIFICATIONS
-        }
-        communityPermissionLauncher.launch(perms.toTypedArray())
+        communityPermissionLauncher.launch(android.Manifest.permission.ACCESS_COARSE_LOCATION)
     }
 
     override fun attachBaseContext(newBase: Context) {
@@ -96,9 +96,13 @@ class NearbyScansActivity : AppCompatActivity() {
         binding.toolbar.setNavigationOnClickListener { finish() }
         setupFilterMenu()
 
-        // Nearby (~30 km) vs Country scope — reload the feed on change.
+        // Nearby (~30 km) / Country / Worldwide scope — reload on change.
         binding.cgScope.setOnCheckedStateChangeListener { _, checked ->
-            val next = if (checked.firstOrNull() == R.id.chip_scope_country) "country" else "nearby"
+            val next = when (checked.firstOrNull()) {
+                R.id.chip_scope_country -> "country"
+                R.id.chip_scope_worldwide -> "worldwide"
+                else -> "nearby"
+            }
             if (next != scope) {
                 scope = next
                 load(isRefresh = false)
@@ -107,7 +111,6 @@ class NearbyScansActivity : AppCompatActivity() {
         binding.btnEnableCommunity.setOnClickListener { requestCommunityOptIn() }
 
         adapter = NearbyScansAdapter(
-            displayName = { key -> DiseaseLabels.displayName(key, isRu) ?: key },
             onSecondOpinion = { item ->
                 // Opening someone else's scan counts as a view (deduped per
                 // viewer server-side).
@@ -194,10 +197,16 @@ class NearbyScansActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val pseudoId = TelemetryIds.userPseudoId(this@NearbyScansActivity)
             // Refresh location on every (re)load so "nearby" reflects where the
-            // user actually is right now.
-            val region = runCatching {
-                RegionResolver.resolveRegion(this@NearbyScansActivity)
-            }.getOrNull()
+            // user actually is right now. Worldwide needs no anchor, so we skip
+            // the location read entirely — the feed then works even when
+            // coarse-location was never granted.
+            val region = if (scope == "worldwide") {
+                null
+            } else {
+                runCatching {
+                    RegionResolver.resolveRegion(this@NearbyScansActivity)
+                }.getOrNull()
+            }
             val result = scanRepository.communityNearby(
                 country = region?.country,
                 region = region?.locality,

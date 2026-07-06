@@ -42,10 +42,11 @@ class MainActivity : AppCompatActivity() {
         // swap the launch splash theme out for the real app theme — that
         // is what installSplashScreen() normally does via
         // postSplashScreenTheme.
-        if (savedInstanceState == null) {
+        val splashScreen = if (savedInstanceState == null) {
             installSplashScreen()
         } else {
             setTheme(R.style.Theme_PlantDiseases)
+            null
         }
         super.onCreate(savedInstanceState)
 
@@ -55,6 +56,13 @@ class MainActivity : AppCompatActivity() {
             finish()
             return
         }
+
+        // Animated app enter (cold start only): the splash logo zooms toward
+        // the viewer and dissolves while the app content rises in beneath it
+        // and the bottom bar slides up. Attached only after the onboarding
+        // early-return so the listener can never touch an uninitialised
+        // binding.
+        splashScreen?.setOnExitAnimationListener { provider -> animateSplashExit(provider) }
 
         maybeWarmStartupCaches()
         maybeShowConsentDialog()
@@ -113,6 +121,10 @@ class MainActivity : AppCompatActivity() {
             }
             com.plantdiseases.app.push.PushManager.registerIfEnabled(this)
         }
+        // Warm the guide/disease example photos into Glide's disk cache so they
+        // render offline (they're server-hosted, not bundled). Independent of
+        // notifications — always worth doing on a connected launch.
+        (application as PlantDiseasesApp).prefetchGuidePhotos()
         val navHostFragment = supportFragmentManager
             .findFragmentById(R.id.nav_host_fragment) as NavHostFragment
         val navController = navHostFragment.navController
@@ -248,10 +260,6 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun warmRegionCache() {
-        // No-op: kept only for binary/source compatibility inside this class.
-    }
-
     // Up arrow on non-top-level destinations (e.g. the disease guide opened
     // from Home) pops the nav back stack via the shared toolbar.
     override fun onSupportNavigateUp(): Boolean {
@@ -260,6 +268,53 @@ class MainActivity : AppCompatActivity() {
                 .findFragmentById(R.id.nav_host_fragment) as NavHostFragment
             ).navController
         return navController.navigateUp(appBarConfiguration) || super.onSupportNavigateUp()
+    }
+
+    /** Splash → app hand-off. Runs once per cold start, when the first frame
+     *  is ready behind the splash window: the logo scales up and fades (a
+     *  "zoom through" exit), the green splash veil dissolves, and the app
+     *  builds itself in a quick stagger — page content fades in while rising
+     *  a few dp, then the bottom bar slides up from below the screen edge. */
+    private fun animateSplashExit(
+        provider: androidx.core.splashscreen.SplashScreenViewProvider,
+    ) {
+        val density = resources.displayMetrics.density
+
+        provider.iconView.animate()
+            .scaleX(1.35f).scaleY(1.35f).alpha(0f)
+            .setDuration(280L)
+            .setInterpolator(android.view.animation.AccelerateInterpolator())
+            .start()
+        provider.view.animate()
+            .alpha(0f)
+            .setDuration(320L)
+            .setStartDelay(80L)
+            .withEndAction { provider.remove() }
+            .start()
+
+        val decelerate = android.view.animation.DecelerateInterpolator(2f)
+        binding.navHostFragment.alpha = 0f
+        binding.navHostFragment.translationY = 24f * density
+        binding.navHostFragment.animate()
+            .alpha(1f).translationY(0f)
+            .setDuration(360L).setStartDelay(120L)
+            .setInterpolator(decelerate)
+            .start()
+
+        binding.appBar.alpha = 0f
+        binding.appBar.animate()
+            .alpha(1f)
+            .setDuration(300L).setStartDelay(120L)
+            .start()
+
+        val navHeight = binding.bottomNavigation.height.toFloat()
+            .takeIf { it > 0f } ?: (80f * density)
+        binding.bottomNavigation.translationY = navHeight
+        binding.bottomNavigation.animate()
+            .translationY(0f)
+            .setDuration(360L).setStartDelay(160L)
+            .setInterpolator(decelerate)
+            .start()
     }
 
     // Bounce animation on Scan tab icon

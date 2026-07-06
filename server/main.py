@@ -76,6 +76,9 @@ try:
         COMMUNITY_THUMB_DIR,
     )
     from .community import (
+        clear_wants_opinion as community_clear_wants_opinion,
+    )
+    from .community import (
         daily_opinion_count_for_ip_hash as community_daily_opinion_writes,
     )
     from .community import (
@@ -86,9 +89,6 @@ try:
     )
     from .community import (
         density_grid as community_density_grid,
-    )
-    from .community import (
-        get_user_data as community_get_user_data,
     )
     from .community import (
         init_db as init_community_db,
@@ -107,9 +107,6 @@ try:
     )
     from .community import (
         opinion_open as community_opinion_open,
-    )
-    from .community import (
-        opinions_by_author as community_opinions_by_author,
     )
     from .community import (
         opinions_for as community_opinions_for,
@@ -183,9 +180,6 @@ try:
         save_feedback_image,
     )
     from .feedback import (
-        get_user_data as feedback_get_user_data,
-    )
-    from .feedback import (
         init_db as init_feedback_db,
     )
     from .feedback import (
@@ -248,6 +242,9 @@ except ImportError:
         COMMUNITY_THUMB_DIR,
     )
     from community import (
+        clear_wants_opinion as community_clear_wants_opinion,
+    )
+    from community import (
         daily_opinion_count_for_ip_hash as community_daily_opinion_writes,
     )
     from community import (
@@ -258,9 +255,6 @@ except ImportError:
     )
     from community import (
         density_grid as community_density_grid,
-    )
-    from community import (
-        get_user_data as community_get_user_data,
     )
     from community import (
         init_db as init_community_db,
@@ -279,9 +273,6 @@ except ImportError:
     )
     from community import (
         opinion_open as community_opinion_open,
-    )
-    from community import (
-        opinions_by_author as community_opinions_by_author,
     )
     from community import (
         opinions_for as community_opinions_for,
@@ -353,9 +344,6 @@ except ImportError:
         record_feedback,
         record_issued_scan_id,
         save_feedback_image,
-    )
-    from feedback import (
-        get_user_data as feedback_get_user_data,
     )
     from feedback import (
         init_db as init_feedback_db,
@@ -798,15 +786,29 @@ ISSUED_SCAN_ID_TTL_DAYS = get_int("ISSUED_SCAN_ID_TTL_DAYS", 30)
 # rate-limited (1 RPS) workload. Operators expecting real concurrency on a
 # many-core host can raise this and lower ONNX_INTRA_OP_THREADS to match.
 #
-# ONLY ``pipeline.analyze`` runs on this executor. Everything else that
-# needs a thread (SQLite reads/writes, PlantNet / OpenRouter / Wikipedia
-# HTTP, FCM pushes) runs on the event loop's default thread pool —
-# putting it here would queue millisecond DB ops and external HTTP
-# behind a 30-second inference (head-of-line blocking), stalling every
-# non-scan endpoint whenever a scan is in flight.
+# ONLY ``pipeline.analyze`` runs on this executor. Slow external HTTP
+# (PlantNet / OpenRouter / Wikipedia) runs on the network executor below;
+# everything else that needs a thread (SQLite reads/writes, image decode /
+# hashing, FCM pushes) runs on the event loop's default thread pool —
+# putting it here would queue millisecond DB ops behind a 30-second
+# inference (head-of-line blocking), stalling every non-scan endpoint
+# whenever a scan is in flight.
 INFER_WORKERS = get_int("INFER_WORKERS", 1)
 _inference_executor: ThreadPoolExecutor | None = None
 _executor_lock = threading.Lock()
+
+# Dedicated pool for calls that WAIT on an external service (OpenRouter,
+# PlantNet, Wikipedia — each can legitimately hold a thread for 10–20 s).
+# The event loop's default executor is sized from CPU count
+# (min(32, cores + 4) = 5 threads on a 1-vCPU host) and is shared by every
+# ``run_in_executor(None, …)`` in the app, so a handful of concurrent
+# care-plan / species-diseases requests used to occupy ALL of it and queue
+# millisecond DB writes behind 20-second LLM waits — a 20 s-capped upstream
+# call was observed as 90–110 s of client latency, all of it queueing.
+# These threads sleep on network I/O, not CPU, so the pool is sized for
+# concurrency, not cores.
+NET_WORKERS = get_int("NET_WORKERS", 16)
+_net_executor: ThreadPoolExecutor | None = None
 
 
 def _get_inference_executor() -> ThreadPoolExecutor:
@@ -823,6 +825,18 @@ def _get_inference_executor() -> ThreadPoolExecutor:
         if _inference_executor is None or getattr(_inference_executor, "_shutdown", False):
             _inference_executor = ThreadPoolExecutor(max_workers=INFER_WORKERS)
         return _inference_executor
+
+
+def _get_net_executor() -> ThreadPoolExecutor:
+    """Lazily (re)create the external-network executor (same lifecycle
+    contract as ``_get_inference_executor``)."""
+    global _net_executor
+    with _executor_lock:
+        if _net_executor is None or getattr(_net_executor, "_shutdown", False):
+            _net_executor = ThreadPoolExecutor(
+                max_workers=NET_WORKERS, thread_name_prefix="net",
+            )
+        return _net_executor
 
 # ── Thread-safe server metrics ──────────────────────────────────────
 SERVER_START_TIME: float = 0.0
@@ -1198,9 +1212,10 @@ async def lifespan(app: FastAPI):
     server because clients can't tell the difference until users
     notice bad diagnoses.
     """
-    global pipeline, pipeline_frontier, SERVER_START_TIME, _inference_executor
+    global pipeline, pipeline_frontier, SERVER_START_TIME, _inference_executor, _net_executor
     SERVER_START_TIME = time.time()
     _inference_executor = _get_inference_executor()
+    _net_executor = _get_net_executor()
     init_feedback_db()
     init_community_db()
     init_telemetry_db()
@@ -1270,6 +1285,11 @@ async def lifespan(app: FastAPI):
                 # work that hasn't started yet.
                 _inference_executor.shutdown(wait=True, cancel_futures=True)
                 _inference_executor = None
+            if _net_executor is not None:
+                # In-flight external calls drain within their own budgets
+                # (OPENROUTER_TOTAL_TIMEOUT / PLANTNET_TIMEOUT).
+                _net_executor.shutdown(wait=True, cancel_futures=True)
+                _net_executor = None
 
 
 async def _prune_loop() -> None:
@@ -1758,7 +1778,7 @@ async def _species_identify_best_effort(
     try:
         raw = await asyncio.wait_for(
             loop.run_in_executor(
-                None,
+                _get_net_executor(),
                 # identify_species keyword args (organ, lang) are
                 # keyword-only — run_in_executor only takes positional
                 # args, so we wrap in a lambda. Passing positionally
@@ -1957,13 +1977,14 @@ async def analyze_image(
     # Fire the PlantNet species identify in parallel with the disease
     # pipeline. PlantNet is best-effort: if the call fails / times out
     # / the API key isn't configured, we still return a complete
-    # diagnosis — the species field just lands as ``None``. The 6s cap
-    # is much tighter than INFERENCE_TIMEOUT (30s) because PlantNet is
-    # an external HTTP hop and a slow upstream shouldn't hold the
-    # whole analyze response hostage. ``plantnet_lang`` was resolved
-    # above for the cache key.
+    # diagnosis — the species field just lands as ``None``. The 10s cap
+    # matches PLANTNET_TIMEOUT (one full HTTP attempt) while staying much
+    # tighter than INFERENCE_TIMEOUT (30s) — PlantNet is an external HTTP
+    # hop and a slow upstream shouldn't hold the whole analyze response
+    # hostage; the earlier 6s cap cut off attempts the upstream would
+    # have completed. ``plantnet_lang`` was resolved above for the cache key.
     species_task = asyncio.create_task(
-        _species_identify_best_effort(contents, timeout=6.0, lang=plantnet_lang)
+        _species_identify_best_effort(contents, timeout=10.0, lang=plantnet_lang)
     )
     try:
         result = await asyncio.wait_for(
@@ -2480,6 +2501,11 @@ _FEEDBACK_OUT_OF_HEAD_CLASSES: frozenset[str] = frozenset({
     "edema",
     "sunburn_or_scorch",
     "other",
+    # "The reject was wrong — there IS a plant here." Sent by the app's
+    # single-action feedback on a not_a_plant / blur verdict; these rows
+    # (plus their uploaded images) are exactly what the rejection head
+    # needs for retraining.
+    "is_a_plant",
 })
 
 _FEEDBACK_ALLOWED_CORRECTIONS: frozenset[str] = (
@@ -2714,7 +2740,7 @@ async def identify_endpoint(
     plantnet_lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
     loop = asyncio.get_running_loop()
     result = await loop.run_in_executor(
-        None,
+        _get_net_executor(),
         lambda: identify_species(contents, organ=organ, lang=plantnet_lang),
     )
     # Deep-copy result before merging so a cache-hit return from
@@ -2741,7 +2767,7 @@ async def chat_endpoint(payload: ChatRequest, request: Request):
     if diagnosis is not None and len(json.dumps(diagnosis, default=str)) > 8 * 1024:
         raise HTTPException(status_code=400, detail="diagnosis context too large")
     result = await asyncio.get_running_loop().run_in_executor(
-        None,
+        _get_net_executor(),
         lambda: chat_reply(
             session_id=payload.session_id,
             user_message=payload.message,
@@ -2780,7 +2806,7 @@ async def care_plan_endpoint(payload: CarePlanRequest):
         # endpoint forgiving while still producing a useful plan.
         disease = "unknown"
     plan = await asyncio.get_running_loop().run_in_executor(
-        None,
+        _get_net_executor(),
         lambda: generate_care_plan(
             disease=disease,
             species=payload.species,
@@ -3372,7 +3398,8 @@ async def community_opinion_submit(payload: CommunityOpinionRequest, request: Re
         except Exception as exc:  # noqa: BLE001
             logger.debug("Opinion push failed: %s", exc)
 
-    await loop.run_in_executor(None, _push_owner)
+    # FCM is external HTTP — keep it off the default (DB-op) pool too.
+    await loop.run_in_executor(_get_net_executor(), _push_owner)
 
     result = await loop.run_in_executor(
         None, lambda: community_opinions_for(sid),
@@ -3426,6 +3453,36 @@ async def community_request_opinion(
             status_code=500, detail="Failed to request opinion",
         ) from exc
     return JSONResponse(content={"ok": True, "flagged": bool(flagged)})
+
+
+@api_router.post("/community/request-opinion/cancel")
+async def community_request_opinion_cancel(payload: CommunityRequestOpinionRequest):
+    """Withdraw an open second-opinion request on the caller's own scan.
+
+    The inverse of ``/community/request-opinion``: drops the durable
+    request row + the feed badge, so the community stops seeing the ask
+    and the owner stops being notified about new opinions. Opinions
+    already left stay visible. Owner-scoped and idempotent — cancelling
+    a request that doesn't exist (or isn't yours) returns
+    ``cleared: false`` with 200.
+
+    (Requests also lapse on their own after
+    ``OPINION_REQUEST_TTL_HOURS`` — see ``community.py``.)
+    """
+    sid = payload.scan_id.strip()
+    pid = payload.user_pseudo_id.strip()
+    loop = asyncio.get_running_loop()
+    try:
+        cleared = await loop.run_in_executor(
+            None,
+            lambda: community_clear_wants_opinion(sid, pid),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Community cancel-request-opinion failed: %s", exc)
+        raise HTTPException(
+            status_code=500, detail="Failed to cancel opinion request",
+        ) from exc
+    return JSONResponse(content={"ok": True, "cleared": bool(cleared)})
 
 
 @api_router.get("/community/opinions/{scan_id}")
@@ -3541,22 +3598,28 @@ async def community_scan_nearby(
     Location is supplied by the opted-in client (coarse ``lat``/``lon`` +
     reverse-geocoded ``country``/``region`` city). ``scope`` is the app's
     filter toggle: ``nearby`` (default) restricts the feed to a ~30 km radius
-    of the coords; ``country`` widens to the whole country. ``species`` +
-    ``disease`` narrow the result-screen "similar scans" carousel, which
-    widens nearby→country to stay filled.
+    of the coords; ``country`` widens to the whole country; ``worldwide`` drops
+    the geo filter entirely (every country, newest first — needs no location).
+    ``species`` + ``disease`` narrow the result-screen "similar scans"
+    carousel, which widens nearby→country to stay filled.
     """
     geo = _client_location(country, region, lat, lon)
     country_norm = geo["country"]
-    nearby = (scope or "nearby").strip().lower() != "country"
+    scope_norm = (scope or "nearby").strip().lower()
+    if scope_norm not in ("nearby", "country", "worldwide"):
+        scope_norm = "nearby"
+    nearby = scope_norm == "nearby"
+    worldwide = scope_norm == "worldwide"
     has_coords = geo["lat"] is not None
-    # With neither coords nor a country the query has no geo anchor, so the
-    # feed comes back empty for a reason the client can't otherwise tell apart
-    # from "no scans near you" (the usual cause: community opted in but the
-    # coarse-location permission was never granted / no fix yet). Surface it as
-    # an explicit flag so the client can prompt to enable location instead of
-    # rendering a misleading empty state. Storage stays privacy-preserving —
-    # there is deliberately no server-side IP geolocation.
-    location_required = not (bool(country_norm) or has_coords)
+    # With neither coords nor a country a *geo-scoped* query has no anchor, so
+    # the feed comes back empty for a reason the client can't otherwise tell
+    # apart from "no scans near you" (the usual cause: community opted in but
+    # the coarse-location permission was never granted / no fix yet). Surface
+    # it as an explicit flag so the client can prompt to enable location
+    # instead of rendering a misleading empty state. Worldwide needs no anchor,
+    # so it never sets the flag. Storage stays privacy-preserving — there is
+    # deliberately no server-side IP geolocation.
+    location_required = not worldwide and not (bool(country_norm) or has_coords)
     rows = community_nearby_scans(
         country=country_norm,
         lat=geo["lat"] if nearby else None,
@@ -3565,7 +3628,7 @@ async def community_scan_nearby(
         species=(species or None),
         limit=max(1, min(int(limit), 50)),
         exclude_user_pseudo_id=user_pseudo_id,
-        scope=("nearby" if nearby else "country"),
+        scope=scope_norm,
     )
     # Country-level overview for the chip row (the coords feed itself is
     # radius-scoped; the summary stays country-wide for a stable "what's
@@ -3592,10 +3655,23 @@ async def community_scan_nearby(
         _localize_item_country(r)
     meta = _country_display(country_norm)
     # Tell the client which filter was actually served + the nearby label.
-    meta["scope"] = "nearby" if (nearby and has_coords) else meta["scope"]
-    meta["region"] = geo["city"] if (nearby and has_coords) else None
+    if worldwide:
+        meta["scope"] = "worldwide"
+        meta["region"] = None
+    else:
+        meta["scope"] = "nearby" if (nearby and has_coords) else meta["scope"]
+        meta["region"] = geo["city"] if (nearby and has_coords) else None
     meta["location_required"] = location_required
     summary.update(meta)
+    # Older installed app versions type CommunityRegionSummary.country as a
+    # non-nullable String and decode with strict kotlinx.serialization (no
+    # coerceInputValues) — an explicit `null` here (worldwide scope, or a
+    # coarse location in a territory with no ISO code) throws a decode error
+    # client-side, surfacing as "couldn't reach the community". Newer app
+    # builds tolerate the null directly; this coercion is just backward
+    # compatibility for what's already installed. Only the nested copy is
+    # coerced — the top-level `country` field stays nullable.
+    summary["country"] = summary.get("country") or ""
     return JSONResponse(content={"items": rows, "summary": summary, **meta})
 
 
@@ -3680,18 +3756,6 @@ async def community_heatmap(
     return JSONResponse(content=data)
 
 
-@api_router.get("/community/my-opinions/{user_pseudo_id}")
-async def community_my_opinions(user_pseudo_id: str):
-    """List the second opinions one install has authored (newest first)."""
-    pid = (user_pseudo_id or "").strip()
-    if not pid or len(pid) > 128:
-        raise HTTPException(status_code=422, detail="Invalid id")
-    rows = await asyncio.get_running_loop().run_in_executor(
-        None, lambda: community_opinions_by_author(pid),
-    )
-    return JSONResponse(content={"opinions": rows})
-
-
 @api_router.get("/community/by-species")
 async def community_by_species(
     species: str | None = None,
@@ -3728,19 +3792,36 @@ async def species_info_endpoint(name: str, locale: str = "en"):
     if not n or len(n) > 128:
         raise HTTPException(status_code=422, detail="Invalid species name")
     lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
-    info = await asyncio.get_running_loop().run_in_executor(
-        None, lambda: fetch_species_info(n, lang),
+    loop = asyncio.get_running_loop()
+    info = await loop.run_in_executor(
+        _get_net_executor(), lambda: fetch_species_info(n, lang),
     )
     if info is None:
         # Don't let an intermediary cache a transient Wikipedia miss.
         return JSONResponse(content={"available": False}, headers={"Cache-Control": "no-store"})
+    # Pin the PHOTOS to the English article for every locale so the same
+    # species shows the same images regardless of UI language — the localized
+    # (e.g. RU) Wikipedia article often carries a different or smaller media
+    # set, which made the species card's gallery differ by locale. Text (title,
+    # extract) stays localized; only the images come from EN. Fall back to the
+    # localized images when the English article has none, so a card never loses
+    # its photo. (fetch_species_info is cached, so the extra EN call is cheap.)
+    image_url = info.get("image_url")
+    images = info.get("images") or []
+    if lang != "en":
+        en_info = await loop.run_in_executor(
+            _get_net_executor(), lambda: fetch_species_info(n, "en"),
+        )
+        if en_info and (en_info.get("images") or en_info.get("image_url")):
+            image_url = en_info.get("image_url")
+            images = en_info.get("images") or ([image_url] if image_url else [])
     # Route the Wikipedia photos through the server's cache so the app loads
     # them from our domain (reliable where Wikimedia is blocked). Unproxyable
     # entries drop to None/out so the card just omits them.
     proxied = {
         **info,
-        "image_url": plant_photo_proxy(info.get("image_url")),
-        "images": [p for p in (plant_photo_proxy(i) for i in info.get("images") or []) if p],
+        "image_url": plant_photo_proxy(image_url),
+        "images": [p for p in (plant_photo_proxy(i) for i in images) if p],
     }
     # Species facts are stable; carry a long Cache-Control so a CDN / HTTP cache
     # reuses it too (symmetric with /species-diseases). The app has its own
@@ -3769,7 +3850,7 @@ async def species_diseases_endpoint(name: str, common: str = "", locale: str = "
     lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
     common_name = (common or "").strip()[:128] or None
     data = await asyncio.get_running_loop().run_in_executor(
-        None, lambda: species_common_diseases(n, common_name=common_name, lang=lang),
+        _get_net_executor(), lambda: species_common_diseases(n, common_name=common_name, lang=lang),
     )
     headers = (
         {"Cache-Control": "public, max-age=604800"}
@@ -3850,13 +3931,17 @@ async def plant_photo(request: Request, u: str | None = None,
     elif name:
         nm = name.strip()[:128]
         lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
-        info = await loop.run_in_executor(None, lambda: fetch_species_info(nm, lang))
+        info = await loop.run_in_executor(
+            _get_net_executor(), lambda: fetch_species_info(nm, lang),
+        )
         url = ((info or {}).get("image_url") or "").strip()
         if not url:
             raise HTTPException(status_code=404, detail="Photo unavailable")
     else:
         raise HTTPException(status_code=400, detail="Missing photo source")
-    path = await loop.run_in_executor(None, lambda: plant_photo_get_or_fetch(url))
+    path = await loop.run_in_executor(
+        _get_net_executor(), lambda: plant_photo_get_or_fetch(url),
+    )
     if path is None:
         raise HTTPException(status_code=404, detail="Photo unavailable")
     # Wikimedia lead images come at full resolution (often multi-MB) — the home
@@ -3876,18 +3961,6 @@ async def plant_photo(request: Request, u: str | None = None,
         media_type=media,
         cache_control="public, max-age=604800",
     )
-
-
-@api_router.get("/guide/manifest")
-async def guide_manifest():
-    """Keys that have an example photo, so the client can hide the photo strip
-    for topics that ship none — preserving the old bundled-drawable behaviour
-    (null ⇒ no strip) without probing each key with a 404."""
-    keys = (
-        sorted(p.stem for p in GUIDE_STATIC_DIR.glob("*.png"))
-        if GUIDE_STATIC_DIR.is_dir() else []
-    )
-    return {"count": len(keys), "keys": keys}
 
 
 # Large source images (guide PNGs, full-res Wikimedia plant photos) are
@@ -4080,26 +4153,6 @@ async def community_scan_delete_user(user_pseudo_id: str):
     })
 
 
-@api_router.get("/user/export/{user_pseudo_id}")
-async def export_user_data(user_pseudo_id: str):
-    """GDPR Data Portability: Export all data associated with the user_pseudo_id."""
-    if not user_pseudo_id or any(ch not in _SCAN_ID_ALLOWED for ch in user_pseudo_id):
-        raise HTTPException(status_code=422, detail="Invalid user id")
-    community_data = await asyncio.get_running_loop().run_in_executor(
-        None,
-        lambda: community_get_user_data(user_pseudo_id),
-    )
-    feedback_data = await asyncio.get_running_loop().run_in_executor(
-        None,
-        lambda: feedback_get_user_data(user_pseudo_id),
-    )
-    return JSONResponse(content={
-        "user_pseudo_id": user_pseudo_id,
-        "community_scans": community_data,
-        "feedback_submissions": feedback_data,
-    })
-
-
 # --- /api/popular: personalized, short-cached popular-houseplants bundle ----
 # key "{country|'global'}:{locale}" -> (expiry_epoch, payload). The list is a
 # live community-scan aggregate, so the bundle is cached only briefly (and
@@ -4153,7 +4206,7 @@ async def _warm_placeholder_images() -> None:
             info = None
             with contextlib.suppress(Exception):
                 info = await loop.run_in_executor(
-                    None, lambda s=p.scientific, n=lang: fetch_species_info(s, n),
+                    _get_net_executor(), lambda s=p.scientific, n=lang: fetch_species_info(s, n),
                 )
             # Pre-cache the lead photo bytes too, so the very first carousel
             # request serves images instantly from our disk cache.
@@ -4161,11 +4214,13 @@ async def _warm_placeholder_images() -> None:
             if url and url not in warmed_photos:
                 warmed_photos.add(url)
                 with contextlib.suppress(Exception):
-                    await loop.run_in_executor(None, lambda u=url: plant_photo_get_or_fetch(u))
+                    await loop.run_in_executor(
+                        _get_net_executor(), lambda u=url: plant_photo_get_or_fetch(u),
+                    )
     for locale in ("en", "ru"):
         with contextlib.suppress(Exception):
             bundle = await loop.run_in_executor(
-                None, lambda n=locale: _build_popular_bundle(None, None, None, None, n),
+                _get_net_executor(), lambda n=locale: _build_popular_bundle(None, None, None, None, n),
             )
             key = f"||{locale}"
             with _popular_lock:
@@ -4208,6 +4263,17 @@ def _build_popular_bundle(
         if _has(s):
             snap, source = s, "worldwide"
 
+    # A local (nearby) snapshot we can't attach a real place to — no
+    # resolvable country AND no city — would be labeled "Worldwide" by
+    # ``_country_display(None)`` below and rendered as "Popular in Worldwide"
+    # over what is actually a single local scan. Show the true worldwide
+    # aggregate instead so the label matches the data. (Worldwide always has
+    # ≥ the local rows, so this never empties a populated feed.)
+    if source == "nearby" and not country and not region_label:
+        s = community_popular_snapshot(limit=_POPULAR_MAX_CARDS)
+        if _has(s):
+            snap, source, region_label = s, "worldwide", None
+
     # No community data in any scope → curated placeholder. Titled for the
     # known country when we have one, else worldwide. The first real scan in
     # range flips this to live data on the next (short-lived) cache miss.
@@ -4219,7 +4285,12 @@ def _build_popular_bundle(
                 "scientific": p.scientific,
                 "common_en": p.common_en,
                 "common_ru": p.common_ru,
-                "image_url": plant_photo_name_proxy(p.scientific, lang),
+                # Always resolve the ENGLISH Wikipedia lead image regardless of
+                # UI locale: the localized (e.g. RU) article often has a
+                # different or missing lead photo, which made two distinct
+                # species look identical in one locale but not another. Titles
+                # stay localized; only the picture is pinned to EN.
+                "image_url": plant_photo_name_proxy(p.scientific, "en"),
                 "count": 0,
                 "percent": 0,
             }
@@ -4237,6 +4308,7 @@ def _build_popular_bundle(
 
     display = _country_display(country) if source != "worldwide" else _country_display(None)
     items = []
+    used_titles: set[str] = set()
     for row in (snap.get("top_species") or [])[:_POPULAR_MAX_CARDS]:
         scientific = row["species"]
         # Only the localized title needs resolving here (cached); the photo is
@@ -4244,11 +4316,20 @@ def _build_popular_bundle(
         # only just trended (a fresh scan) still gets an image.
         info = fetch_species_info(scientific, lang)
         title = (info or {}).get("title") or scientific
+        # A localized title can collapse two distinct species to one name (e.g.
+        # RU Wikipedia titles both "Spathiphyllum" and "Spathiphyllum
+        # floribundum" as "Спатифиллюм"), which shows two identical-looking
+        # cards. On a collision fall back to the scientific name so each card
+        # stays distinguishable.
+        if title in used_titles:
+            title = scientific
+        used_titles.add(title)
         items.append({
             "scientific": scientific,
             "common_en": title,
             "common_ru": title,
-            "image_url": plant_photo_name_proxy(scientific, lang),
+            # English lead image for every locale — see the placeholder branch.
+            "image_url": plant_photo_name_proxy(scientific, "en"),
             "count": row.get("count", 0),
             "percent": row.get("percent", 0),
         })
@@ -4292,7 +4373,8 @@ async def popular_endpoint(request: Request, country: str | None = None,
     if bundle is None:
         # Cold: build synchronously (first ever request for this scope).
         bundle = await asyncio.get_running_loop().run_in_executor(
-            None, lambda: _build_popular_bundle(country_norm, city_n, lat_n, lon_n, locale),
+            _get_net_executor(),
+            lambda: _build_popular_bundle(country_norm, city_n, lat_n, lon_n, locale),
         )
         with _popular_lock:
             _popular_cache[key] = (now + _popular_ttl(bundle), bundle)
@@ -4326,7 +4408,7 @@ def _refresh_popular_bg(
     async def _run() -> None:
         try:
             bundle = await asyncio.get_running_loop().run_in_executor(
-                None, lambda: _build_popular_bundle(country, city, lat, lon, locale),
+                _get_net_executor(), lambda: _build_popular_bundle(country, city, lat, lon, locale),
             )
             with _popular_lock:
                 _popular_cache[key] = (time.time() + _popular_ttl(bundle), bundle)

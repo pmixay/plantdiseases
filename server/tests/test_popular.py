@@ -136,6 +136,64 @@ def test_popular_nearby_scope_when_coords(client, monkeypatch):
     assert body["items"][0]["percent"] == 100
 
 
+def test_popular_nearby_without_place_falls_back_to_worldwide(client, monkeypatch):
+    """A nearby snapshot we can't attach a real place to (coords but no
+    resolvable country and no city) must NOT be labeled "Worldwide" over a
+    single local scan — it flips to the true worldwide aggregate so the label
+    matches the data."""
+    import main as server_main
+
+    monkeypatch.setattr(
+        server_main, "community_popular_snapshot",
+        # Same data whether called for the nearby (lat set) or worldwide
+        # (lat None) scope, so the fallback recompute finds real rows.
+        lambda country=None, *, lat=None, lon=None, radius_km=25.0, limit=10: {
+            "total": 1,
+            "top_species": [{"species": "Colutea arborescens", "count": 1, "percent": 100}],
+            "top_diseases": [],
+        },
+    )
+    # Coords only — no country, no region/city (the Abkhazia-style case).
+    body = client.get("/api/popular?lat=43.0&lon=41.0&locale=en").json()
+    assert body["source"] == "worldwide"
+    assert body["scope"] == "global"
+    assert body["country"] is None
+    assert body["region"] is None
+    assert body["items"][0]["scientific"] == "Colutea arborescens"
+
+
+def test_popular_images_are_english_and_titles_disambiguate(client, monkeypatch):
+    """Lead images resolve through the EN proxy regardless of UI locale, and a
+    localized title shared by two species falls back to the scientific name so
+    the cards stay distinct (the RU 'two identical Spathiphyllum' bug)."""
+    import main as server_main
+
+    monkeypatch.setattr(
+        server_main, "community_popular_snapshot",
+        lambda country=None, *, lat=None, lon=None, radius_km=25.0, limit=10: {
+            "total": 2,
+            "top_species": [
+                {"species": "Spathiphyllum", "count": 5, "percent": 60},
+                {"species": "Spathiphyllum floribundum", "count": 3, "percent": 40},
+            ],
+            "top_diseases": [],
+        },
+    )
+    # Both species collapse to the same localized title in RU.
+    monkeypatch.setattr(
+        server_main, "fetch_species_info",
+        lambda name, lang="en": {"title": "Спатифиллюм",
+                                 "image_url": f"https://upload.wikimedia.org/{name}.jpg"},
+    )
+    body = client.get("/api/popular?country=US&locale=ru").json()
+    items = body["items"]
+    # Image proxy pinned to English even though locale=ru.
+    assert all("locale=en" in it["image_url"] for it in items)
+    # First keeps the localized title; the colliding second falls back to sci.
+    assert items[0]["common_ru"] == "Спатифиллюм"
+    assert items[1]["common_ru"] == "Spathiphyllum floribundum"
+
+
 def test_popular_for_known_and_unknown():
     from popular_plants import BY_REGION, GLOBAL_DEFAULT, popular_for
 

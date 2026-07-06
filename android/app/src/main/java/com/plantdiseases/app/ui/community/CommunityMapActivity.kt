@@ -394,7 +394,6 @@ class CommunityMapActivity : AppCompatActivity() {
             clipToPadding = false
         }
         val adapter = NearbyScansAdapter(
-            displayName = { key -> DiseaseLabels.displayName(key, isRu) ?: key },
             onSecondOpinion = { item ->
                 dialog.dismiss()
                 openScan(item)

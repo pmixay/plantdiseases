@@ -163,6 +163,7 @@ class PlantDiseasesApp : Application() {
         com.plantdiseases.app.util.ResponseCache.init(this)
         registerCropImageInsetFix()
         setupTelemetry()
+        purgeStaleRejectedScans()
         // NB: do NOT touch WorkManager here. The default androidx.startup
         // WorkManagerInitializer initialises it before onCreate, but calling
         // WorkManager.getInstance()/initialize() from Application.onCreate
@@ -170,6 +171,20 @@ class PlantDiseasesApp : Application() {
         // provider doesn't run under Robolectric). Scheduling is kicked off
         // from MainActivity instead — the same on-demand pattern ReminderManager
         // uses.
+    }
+
+    /**
+     * Sweep stale `not_a_plant` / blur-reject rows on every launch. NAP
+     * verdicts DO get a full result screen (so the user can flag "this is
+     * a plant"), and the persisted row backs that screen — but NAP scans
+     * are hidden from the gallery and stats, so once the moment passes the
+     * row is unreachable dead weight. Rows older than 48 h are deleted;
+     * the table is small, so the sweep is cheap.
+     */
+    private fun purgeStaleRejectedScans() {
+        appScope.launch {
+            runCatching { scanRepository.purgeNotAPlantScans() }
+        }
     }
 
     /**
@@ -255,6 +270,28 @@ class PlantDiseasesApp : Application() {
         androidx.work.WorkManager.getInstance(this).enqueueUniquePeriodicWork(
             "opinion_check",
             androidx.work.ExistingPeriodicWorkPolicy.UPDATE,
+            request,
+        )
+    }
+
+    /** Warm Glide's disk cache with the guide/disease example photos so they
+     *  render offline after first launch online. One-time + CONNECTED
+     *  constraint; KEEP so a launch during an in-flight prefetch doesn't stack
+     *  duplicates. Called from MainActivity (not Application.onCreate — same
+     *  WorkManager-timing note as the opinion poll). */
+    fun prefetchGuidePhotos() {
+        val request = androidx.work.OneTimeWorkRequestBuilder<
+            com.plantdiseases.app.worker.GuidePhotoPrefetchWorker
+            >()
+            .setConstraints(
+                androidx.work.Constraints.Builder()
+                    .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)
+                    .build(),
+            )
+            .build()
+        androidx.work.WorkManager.getInstance(this).enqueueUniqueWork(
+            "guide_photo_prefetch",
+            androidx.work.ExistingWorkPolicy.KEEP,
             request,
         )
     }

@@ -83,8 +83,10 @@
 
     </LinearLayout>
 
-    <!-- Messages — weighted so the input row stays pinned. -->
-    <ScrollView
+    <!-- Messages — weighted so the input row stays pinned. NestedScrollView
+         (not plain ScrollView) so BottomSheetBehavior finds a nested-scrolling
+         child and lets the list scroll instead of dragging the sheet shut. -->
+    <androidx.core.widget.NestedScrollView
         android:id="@+id/chat_scroll"
         android:layout_width="match_parent"
         android:layout_height="0dp"
@@ -100,7 +102,7 @@
             android:paddingHorizontal="@dimen/space_xl"
             android:paddingVertical="@dimen/space_md" />
 
-    </ScrollView>
+    </androidx.core.widget.NestedScrollView>
 
     <!-- Suggestion chips. -->
     <LinearLayout

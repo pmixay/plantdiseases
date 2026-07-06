@@ -48,7 +48,6 @@ import com.plantdiseases.app.R
 import com.plantdiseases.app.databinding.FragmentCameraBinding
 import com.plantdiseases.app.ui.analysis.AnalysisActivity
 import com.plantdiseases.app.util.Haptics
-import com.plantdiseases.app.util.AutosavePrefs
 import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.ModelFamilyPrefs
 import kotlinx.coroutines.Dispatchers
@@ -107,12 +106,12 @@ class CameraFragment : Fragment() {
      *  would just duplicate it. */
     private var pendingFromCamera = false
 
-    private val PREFS_NAME = "plantdiseases_prefs"
-    private val KEY_GRID_OVERLAY = "grid_overlay_enabled"
-    private val KEY_TIPS_SEEN = "scan_tips_seen"
-
     companion object {
         const val TAG = "CameraFragment"
+
+        private const val PREFS_NAME = "plantdiseases_prefs"
+        private const val KEY_GRID_OVERLAY = "grid_overlay_enabled"
+        private const val KEY_TIPS_SEEN = "scan_tips_seen"
 
         /** Set in the fragment arguments to run the camera as a species
          *  identification front-end (see [identifyMode]). */
@@ -174,18 +173,10 @@ class CameraFragment : Fragment() {
                 // Activity) to run species identification on it.
                 deliverIdentifyCapture(cropped.absolutePath)
             } else {
-                // Autosave the kept (cropped) photo to the device gallery when the
-                // user opted in AND this scan came from the camera, not a gallery
-                // import. Fire-and-forget off the main thread so a slow MediaStore
-                // write never stalls the hop into analysis.
-                if (pendingFromCamera && AutosavePrefs.enabled(requireContext())) {
-                    val toSave = cropped
-                    val appContext = requireContext().applicationContext
-                    val album = getString(R.string.autosave_album)
-                    viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
-                        ImageUtils.saveImageToGallery(appContext, toSave, album)
-                    }
-                }
+                // Device-gallery autosave no longer happens here: it moved to
+                // AnalysisActivity, AFTER the verdict, so not-a-plant / blurry
+                // rejects never land in the user's photo library. We only pass
+                // the camera-vs-import origin along (autosave stays camera-only).
                 navigateToAnalysis(cropped.absolutePath)
             }
             // The crop succeeded; the raw original is no longer needed.
@@ -728,6 +719,10 @@ class CameraFragment : Fragment() {
         captureInFlight = true
         val intent = Intent(requireContext(), AnalysisActivity::class.java).apply {
             putExtra(AnalysisActivity.EXTRA_IMAGE_PATH, imagePath)
+            // Camera-origin flag: gates the post-verdict device-gallery
+            // autosave in AnalysisActivity (gallery imports are never
+            // autosaved — the user already has that photo).
+            putExtra(AnalysisActivity.EXTRA_FROM_CAMERA, pendingFromCamera)
         }
         startActivity(intent)
     }

@@ -143,7 +143,17 @@ class PlantApiClient(
             engine { preconfigured = client }
             expectSuccess = false
             install(ContentNegotiation) {
-                json(Json { ignoreUnknownKeys = true })
+                json(
+                    Json {
+                        ignoreUnknownKeys = true
+                        // Defence-in-depth: an explicit JSON `null` on a field
+                        // that has a default (the server sends these for
+                        // unresolved country/region/scope values) coerces to
+                        // that default instead of throwing a decode error the
+                        // UI can only show as a generic "couldn't reach" state.
+                        coerceInputValues = true
+                    },
+                )
             }
             defaultRequest { url(baseUrl) }
         }

@@ -25,6 +25,7 @@ import com.plantdiseases.app.data.model.CommunityOpinion
 import com.plantdiseases.app.data.model.CommunityOpinionRequest
 import com.plantdiseases.app.data.model.CommunityTopDisease
 import com.plantdiseases.app.data.repository.ScanRepository
+import com.plantdiseases.app.util.Avatars
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.Nicknames
 import com.plantdiseases.app.util.ServerConfig
@@ -53,8 +54,12 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
     // callers, in which case Agree falls back to opening the picker.
     private var diseaseKey: String = ""
 
+    private var ownerStatusRow: View? = null
+    private var ownerStatusText: TextView? = null
+    private var stopRequestBtn: MaterialButton? = null
     private var votesHeader: TextView? = null
     private var graphContainer: LinearLayout? = null
+    private var listHeader: TextView? = null
     private var listContainer: LinearLayout? = null
     private var emptyView: TextView? = null
     private var metaView: TextView? = null
@@ -82,8 +87,12 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
             return
         }
 
+        ownerStatusRow = view.findViewById(R.id.ll_opinion_owner_status)
+        ownerStatusText = view.findViewById(R.id.tv_opinion_owner_status)
+        stopRequestBtn = view.findViewById(R.id.btn_opinion_stop_request)
         votesHeader = view.findViewById(R.id.tv_opinion_votes_header)
         graphContainer = view.findViewById(R.id.ll_opinion_graph)
+        listHeader = view.findViewById(R.id.tv_opinion_list_header)
         listContainer = view.findViewById(R.id.ll_opinion_list)
         emptyView = view.findViewById(R.id.tv_opinion_empty)
         metaView = view.findViewById(R.id.tv_opinion_meta)
@@ -228,8 +237,12 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
 
     override fun onDestroyView() {
         super.onDestroyView()
+        ownerStatusRow = null
+        ownerStatusText = null
+        stopRequestBtn = null
         votesHeader = null
         graphContainer = null
+        listHeader = null
         listContainer = null
         emptyView = null
         metaView = null
@@ -242,8 +255,59 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
     private fun loadOpinions() {
         viewLifecycleOwner.lifecycleScope.launch {
             scanRepository.getCommunityOpinions(scanId)
-                .onSuccess { render(it.consensus, it.opinions) }
+                .onSuccess {
+                    render(it.consensus, it.opinions)
+                    renderOwnerStatus(it.wantsOpinion, it.opinionRequestedAt)
+                }
                 .onFailure { render(emptyList(), emptyList()) }
+        }
+    }
+
+    /**
+     * Owner-only request controls: "Request open · N h left" + Stop. The
+     * stop action is reachable at any point of the request's life —
+     * including after replies arrived — and ends further notifications
+     * (the collected replies stay visible). Changes are reported back to
+     * the result screen via the Fragment Result API.
+     */
+    private fun renderOwnerStatus(wantsOpinion: Boolean, requestedAtSec: Long?) {
+        val row = ownerStatusRow ?: return
+        val isOwner = arguments?.getBoolean(ARG_OWNER, false) ?: false
+        if (!isOwner || !wantsOpinion) {
+            row.visibility = View.GONE
+            return
+        }
+        row.visibility = View.VISIBLE
+        val hours = requestedAtSec
+            ?.let { (it + 72L * 3600L) * 1000L - System.currentTimeMillis() }
+            ?.takeIf { it > 0L }
+            ?.let { ((it + 3_599_999L) / 3_600_000L).toInt().coerceIn(1, 72) }
+        ownerStatusText?.text = if (hours != null) {
+            getString(R.string.second_opinion_sheet_status, hours)
+        } else {
+            getString(R.string.result_second_opinion_waiting)
+        }
+        stopRequestBtn?.setOnClickListener {
+            stopRequestBtn?.isEnabled = false
+            val ctx = requireContext()
+            viewLifecycleOwner.lifecycleScope.launch {
+                scanRepository
+                    .cancelSecondOpinion(scanId, TelemetryIds.userPseudoId(ctx))
+                    .onSuccess {
+                        Toast.makeText(ctx, R.string.second_opinion_stopped, Toast.LENGTH_SHORT)
+                            .show()
+                        ownerStatusRow?.visibility = View.GONE
+                        parentFragmentManager.setFragmentResult(
+                            REQUEST_STATE_CHANGED,
+                            Bundle.EMPTY,
+                        )
+                    }
+                    .onFailure {
+                        stopRequestBtn?.isEnabled = true
+                        Toast.makeText(ctx, R.string.community_opinion_error, Toast.LENGTH_SHORT)
+                            .show()
+                    }
+            }
         }
     }
 
@@ -314,9 +378,12 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
 
         list.removeAllViews()
         if (opinions.isEmpty()) {
+            listHeader?.visibility = View.GONE
             empty.visibility = View.VISIBLE
         } else {
             empty.visibility = View.GONE
+            listHeader?.text = getString(R.string.community_opinion_list_header, opinions.size)
+            listHeader?.visibility = View.VISIBLE
             opinions.forEach { list.addView(opinionRow(it)) }
         }
     }
@@ -419,20 +486,116 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         return row
     }
 
-    private fun opinionRow(op: CommunityOpinion): TextView {
+    /** One forum-style comment row: monogram avatar, nickname + relative
+     *  time header, the suggested class (an opinion is always at least a
+     *  vote), and the free-text note underneath when the author wrote one. */
+    private fun opinionRow(op: CommunityOpinion): View {
         val ctx = requireContext()
-        val label = labelFor(op.suggestedDisease)
-        // Attribute the reply to the author's plant-vibe nickname when present.
-        val who = op.nickname?.takeIf { it.isNotBlank() }
-        val head = if (who != null) "$who · $label" else label
-        val text = if (op.note.isBlank()) "•  $head" else "•  $head — ${op.note}"
-        return TextView(ctx).apply {
-            this.text = text
-            textSize = 14f
-            setTextColor(ContextCompat.getColor(ctx, R.color.on_surface))
-            val v = (6 * resources.displayMetrics.density).toInt()
-            setPadding(0, v, 0, v)
+        fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+        val nick = op.nickname?.takeIf { it.isNotBlank() }
+        val who = nick ?: getString(R.string.community_anonymous_author)
+
+        val row = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(8), 0, dp(8))
         }
+
+        // Deterministic anonymous avatar, same recipe as the feed cards.
+        row.addView(
+            TextView(ctx).apply {
+                layoutParams = LinearLayout.LayoutParams(dp(32), dp(32)).apply {
+                    marginEnd = dp(10)
+                }
+                gravity = android.view.Gravity.CENTER
+                background = ContextCompat.getDrawable(ctx, R.drawable.bg_circle_surface_variant)
+                backgroundTintList =
+                    android.content.res.ColorStateList.valueOf(Avatars.colorFor(who))
+                setTextColor(android.graphics.Color.WHITE)
+                textSize = 11f
+                typeface = android.graphics.Typeface.create(
+                    "sans-serif-medium",
+                    android.graphics.Typeface.NORMAL,
+                )
+                text = Avatars.monogramForNick(who)
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            },
+        )
+
+        val col = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+
+        // "Nickname · 2 hr. ago" header line.
+        val head = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
+        head.addView(
+            TextView(ctx).apply {
+                text = who
+                textSize = 13f
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setTextColor(ContextCompat.getColor(ctx, R.color.on_surface))
+                typeface = android.graphics.Typeface.create(
+                    "sans-serif-medium",
+                    android.graphics.Typeface.NORMAL,
+                )
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            },
+        )
+        if (op.createdAt > 0L) {
+            head.addView(
+                TextView(ctx).apply {
+                    text = android.text.format.DateUtils.getRelativeTimeSpanString(
+                        op.createdAt * 1000L,
+                        System.currentTimeMillis(),
+                        android.text.format.DateUtils.MINUTE_IN_MILLIS,
+                        android.text.format.DateUtils.FORMAT_ABBREV_RELATIVE,
+                    )
+                    textSize = 12f
+                    setTextColor(ContextCompat.getColor(ctx, R.color.on_surface_secondary))
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ).apply { marginStart = dp(8) }
+                },
+            )
+        }
+        col.addView(head)
+
+        // The vote itself — every opinion carries at least a suggested class.
+        col.addView(
+            TextView(ctx).apply {
+                text = labelFor(op.suggestedDisease)
+                textSize = 14f
+                setTextColor(ContextCompat.getColor(ctx, R.color.primary))
+                typeface = android.graphics.Typeface.create(
+                    "sans-serif-medium",
+                    android.graphics.Typeface.NORMAL,
+                )
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply { topMargin = dp(2) }
+            },
+        )
+
+        // Optional free-text comment.
+        if (op.note.isNotBlank()) {
+            col.addView(
+                TextView(ctx).apply {
+                    text = op.note
+                    textSize = 14f
+                    setTextColor(ContextCompat.getColor(ctx, R.color.on_surface))
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ).apply { topMargin = dp(2) }
+                },
+            )
+        }
+
+        row.addView(col)
+        return row
     }
 
     private fun labelFor(key: String): String =
@@ -449,6 +612,17 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         private const val ARG_SPECIES_SCORE = "arg_species_score"
         private const val ARG_THUMB = "arg_thumb"
         private const val ARG_VIEW_ONLY = "arg_view_only"
+
+        // True ONLY for the scan owner's view (showForOwner) — gates the
+        // request-status row + "Stop request" action. Distinct from
+        // ARG_VIEW_ONLY, which read-only viewers of OTHER people's scans
+        // also set.
+        private const val ARG_OWNER = "arg_owner"
+
+        /** Fragment-result key fired when the owner changes the request's
+         *  state from inside the sheet (stop) — the result screen listens
+         *  and re-renders its second-opinion control. */
+        const val REQUEST_STATE_CHANGED = "second_opinion_state_changed"
 
         /** Diagnosable classes a responder can pick. Keys must be present in
          *  the server's DISEASES_DATABASE or the POST is rejected (422).
@@ -524,13 +698,15 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         }
 
         /** Read-only variant for the scan's OWNER to view the second
-         *  opinions they requested — no class picker / note / send. */
+         *  opinions they requested — no class picker / note / send, but
+         *  with the request-status row + Stop action. */
         fun showForOwner(fm: FragmentManager, scanId: String, currentDisplayName: String?) {
             CommunityOpinionSheet().apply {
                 arguments = bundleOf(
                     ARG_SCAN_ID to scanId,
                     ARG_CURRENT_NAME to currentDisplayName,
                     ARG_VIEW_ONLY to true,
+                    ARG_OWNER to true,
                 )
             }.show(fm, TAG)
         }

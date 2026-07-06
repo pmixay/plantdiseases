@@ -15,12 +15,12 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 import androidx.fragment.app.FragmentManager
 import androidx.core.os.bundleOf
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.widget.NestedScrollView
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
@@ -100,7 +100,7 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
             ?: ""
 
     private lateinit var messagesLayout: LinearLayout
-    private lateinit var scrollView: ScrollView
+    private lateinit var scrollView: NestedScrollView
     private lateinit var suggestionsContainer: LinearLayout
     private lateinit var inputField: TextInputEditText
     private var thinkingView: View? = null
@@ -455,7 +455,10 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
         // One pass over **bold** and the AI doctor's doc-citation tokens
         // [[doc:<class_key>]]. A token renders as the matching guide article's
         // title, tappable to open the offline guide; unknown keys are dropped.
-        val pattern = Regex("""\*\*(.+?)\*\*|\[\[doc:([a-z0-9_]+)]]""")
+        // The model is asked for double brackets but a reasoning model often
+        // drifts to the single-bracket [doc:key] form, so accept either — an
+        // unmatched token would otherwise leak into the bubble as literal text.
+        val pattern = Regex("""\*\*(.+?)\*\*|\[\[?doc:([a-z0-9_]+)]]?""")
         if (!pattern.containsMatchIn(text)) return text
 
         val isRu = LocaleHelper.isRussian(requireContext())
@@ -530,7 +533,7 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
     }
 
     private fun scrollToBottom() {
-        scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
+        scrollView.post { scrollView.fullScroll(View.FOCUS_DOWN) }
     }
 
     private fun formatTime(timestamp: Long): String =

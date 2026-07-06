@@ -374,7 +374,11 @@ data class CommunityHeatCell(
 
 @Serializable
 data class CommunityRegionSummary(
-    @SerializedName("country") @SerialName("country") val country: String = "",
+    // Nullable: the server sends an explicit `null` here whenever the request
+    // can't be resolved to an ISO country (worldwide scope, or a place with no
+    // country code — e.g. Abkhazia). A non-null type made strict kotlinx
+    // decoding throw on that null and surfaced as "Couldn't reach the community".
+    @SerializedName("country") @SerialName("country") val country: String? = null,
     @SerializedName("country_name_en") @SerialName("country_name_en") val countryNameEn: String? = null,
     @SerializedName("country_name_ru") @SerialName("country_name_ru") val countryNameRu: String? = null,
     @SerializedName("scope") @SerialName("scope") val scope: String? = null,
@@ -445,8 +449,15 @@ data class CommunityRequestOpinionResponse(
     @SerializedName("flagged") @SerialName("flagged") val flagged: Boolean = false,
 )
 
-/** One community 'second opinion' on a shared scan. `scanId` is only
- *  populated by the /my-opinions endpoint (which scan the opinion was on). */
+/** /api/community/request-opinion/cancel response. `cleared` is false when
+ *  there was no open request to withdraw (already cancelled / expired). */
+@Serializable
+data class CommunityCancelOpinionResponse(
+    @SerializedName("ok") @SerialName("ok") val ok: Boolean = false,
+    @SerializedName("cleared") @SerialName("cleared") val cleared: Boolean = false,
+)
+
+/** One community 'second opinion' on a shared scan. */
 @Serializable
 data class CommunityOpinion(
     @SerializedName("suggested_disease") @SerialName("suggested_disease") val suggestedDisease: String = "",
@@ -465,6 +476,13 @@ data class CommunityOpinionsResponse(
     @SerializedName("consensus") @SerialName("consensus") val consensus: List<CommunityTopDisease> = emptyList(),
     // Distinct-viewer count on this scan (per-user deduped server-side).
     @SerializedName("views") @SerialName("views") val views: Int = 0,
+    // Whether the owner has a LIVE second-opinion request on this scan
+    // (requests auto-expire server-side after 72 h). Lets the owner's app
+    // restore its "waiting" state across restarts.
+    @SerializedName("wants_opinion") @SerialName("wants_opinion") val wantsOpinion: Boolean = false,
+    // Epoch seconds of that live request (null when none) — drives the
+    // "N h left" countdown toward the 72 h expiry.
+    @SerializedName("opinion_requested_at") @SerialName("opinion_requested_at") val opinionRequestedAt: Long? = null,
     @SerializedName("ok") @SerialName("ok") val ok: Boolean = false,
     @SerializedName("count") @SerialName("count") val count: Int = 0,
 )
@@ -519,10 +537,16 @@ data class GuideItem(
 
 enum class GuideCategory {
     COMMON_DISEASES,
+
+    // Also hosts lighting content (the standalone Lighting tab was merged
+    // in — five tabs read better than six and lighting IS care).
     CARE_TIPS,
     WATERING,
-    LIGHTING,
-    PESTS
+    PESTS,
+
+    // "Using the app" articles (reading results, community, data) — the
+    // handbook content that used to live as tip cards on the Profile tab.
+    HELP
 }
 
 /** Popular species/diseases row entries (shared by /api/popular). */

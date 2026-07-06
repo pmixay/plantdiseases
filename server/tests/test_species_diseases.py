@@ -95,9 +95,13 @@ def test_structured_success_and_cache(monkeypatch):
     monkeypatch.setattr(ai_services, "OPENROUTER_API_KEY", "test-key")
     calls = {"n": 0}
 
-    def fake_call(system_text, history, *, max_tokens=None, require_complete=False):
+    def fake_call(system_text, history, *, max_tokens=None, require_complete=False,
+                  reasoning_effort=None):
         calls["n"] += 1
         assert "JSON" in system_text
+        # Structured recall must pin the shortest reasoning trace per call —
+        # a raised global effort would otherwise truncate the JSON answer.
+        assert reasoning_effort == "minimal"
         return (json.dumps({"diseases": [
             {"name": "Spider mites", "doc_key": "pests", "note": "Fine webbing; rinse + neem."},
             {"name": "Edema", "doc_key": "edema", "note": "Blisters; water less."},
@@ -124,7 +128,8 @@ def test_disk_cache_survives_inmemory_wipe(monkeypatch):
     monkeypatch.setattr(ai_services, "OPENROUTER_API_KEY", "test-key")
     calls = {"n": 0}
 
-    def fake_call(system_text, history, *, max_tokens=None, require_complete=False):
+    def fake_call(system_text, history, *, max_tokens=None, require_complete=False,
+                  reasoning_effort=None):
         calls["n"] += 1
         return (json.dumps({"diseases": [
             {"name": "Root rot", "note": "Soggy soil; let it dry."},

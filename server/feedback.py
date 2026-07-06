@@ -627,16 +627,3 @@ def delete_for_user(user_pseudo_id: str) -> int:
     return int(deleted or 0)
 
 
-def get_user_data(user_pseudo_id: str) -> list[dict]:
-    """Retrieve all feedback submissions for a user. Part of GDPR data portability."""
-    init_db()
-    if not user_pseudo_id:
-        return []
-    with _connect() as conn:
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            "SELECT * FROM feedback WHERE user_pseudo_id = ? ORDER BY created_at DESC",
-            (user_pseudo_id,),
-        ).fetchall()
-        return [dict(r) for r in rows]
-

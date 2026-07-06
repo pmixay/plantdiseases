@@ -23,7 +23,8 @@ import kotlinx.coroutines.launch
 
 /**
  * Plant-care guide tab: category tabs (diseases / pests / watering / lighting /
- * care) over a searchable list. Search is debounced (300 ms, min 2 chars) and
+ * care / app help) over a searchable list. Search is debounced (300 ms, min 2
+ * chars) and
  * matches across every category in the current language; recent queries are
  * persisted and offered as chips when the field is focused. Tapping an item
  * opens [GuideDetailSheet].
@@ -37,10 +38,6 @@ class GuideFragment : Fragment() {
     private var searchQuery: String = ""
 
     private var searchJob: Job? = null
-
-    private val PREFS_NAME = "plantdiseases_prefs"
-    private val KEY_RECENT_SEARCHES = "recent_searches"
-    private val MAX_RECENT_SEARCHES = 5
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -78,8 +75,8 @@ class GuideFragment : Fragment() {
             GuideCategory.COMMON_DISEASES to R.string.cat_diseases,
             GuideCategory.PESTS to R.string.cat_pests,
             GuideCategory.WATERING to R.string.cat_watering,
-            GuideCategory.LIGHTING to R.string.cat_lighting,
-            GuideCategory.CARE_TIPS to R.string.cat_care
+            GuideCategory.CARE_TIPS to R.string.cat_care,
+            GuideCategory.HELP to R.string.cat_help
         )
 
         tabs.forEach { (category, titleRes) ->
@@ -219,5 +216,11 @@ class GuideFragment : Fragment() {
         super.onDestroyView()
         searchJob?.cancel()
         _binding = null
+    }
+
+    companion object {
+        private const val PREFS_NAME = "plantdiseases_prefs"
+        private const val KEY_RECENT_SEARCHES = "recent_searches"
+        private const val MAX_RECENT_SEARCHES = 5
     }
 }
