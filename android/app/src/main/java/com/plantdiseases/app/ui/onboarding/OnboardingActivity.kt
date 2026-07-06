@@ -9,6 +9,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.animation.AccelerateDecelerateInterpolator
+import android.widget.ImageView
 import android.widget.LinearLayout
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -22,7 +23,9 @@ import com.plantdiseases.app.util.LocaleHelper
 
 /**
  * First-run onboarding: a Lottie-animated [ViewPager2] (scan → diagnose →
- * care → data consent) with an animated page indicator. The final page is a
+ * care → data consent) with an animated page indicator whose circles carry
+ * each page's icon (lens / diagnosis / care / privacy shield), the current
+ * one filled and gently scaled up. The final page is a
  * BLOCKING consent disclosure (photos + feedback are used, anonymized, to
  * train our models — Play "prominent disclosure"): Skip is hidden there and
  * jumps to it from earlier pages instead of finishing, so consent can never
@@ -33,9 +36,9 @@ import com.plantdiseases.app.util.LocaleHelper
 class OnboardingActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityOnboardingBinding
-    private val indicators = mutableListOf<View>()
+    private val indicators = mutableListOf<ImageView>()
     private var currentSelected = -1
-    private var widthAnimator: ValueAnimator? = null
+    private var indicatorAnimator: ValueAnimator? = null
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
@@ -49,22 +52,26 @@ class OnboardingActivity : AppCompatActivity() {
         val pages = listOf(
             OnboardingPage(
                 R.raw.onboarding_scan,
+                R.drawable.ic_scan,
                 getString(R.string.onboarding_scan_title),
                 getString(R.string.onboarding_scan_body),
             ),
             OnboardingPage(
                 R.raw.onboarding_diagnose,
+                R.drawable.ic_healthy,
                 getString(R.string.onboarding_diagnose_title),
                 getString(R.string.onboarding_diagnose_body),
             ),
             OnboardingPage(
                 R.raw.onboarding_care,
+                R.drawable.ic_care,
                 getString(R.string.onboarding_care_title),
                 getString(R.string.onboarding_care_body),
             ),
             // Blocking consent page — always last; Agree is the only way out.
             OnboardingPage(
                 R.raw.onboarding_diagnose,
+                R.drawable.ic_shield_check,
                 getString(R.string.consent_title),
                 getString(R.string.consent_body),
                 linkText = getString(R.string.consent_privacy_link),
@@ -74,7 +81,7 @@ class OnboardingActivity : AppCompatActivity() {
         val consentIndex = pages.size - 1
 
         binding.viewPager.adapter = OnboardingAdapter(pages)
-        setupIndicators(pages.size)
+        setupIndicators(pages)
         updateIndicators(0)
 
         binding.viewPager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
@@ -107,16 +114,29 @@ class OnboardingActivity : AppCompatActivity() {
         }
     }
 
-    private fun setupIndicators(count: Int) {
+    /** One icon-circle per page: the page's glyph inside a tinted dot, so the
+     *  indicator itself previews the tour (lens → diagnosis → care → shield)
+     *  instead of being an anonymous row of colored dots. */
+    private fun setupIndicators(pages: List<OnboardingPage>) {
         binding.indicatorLayout.removeAllViews()
         indicators.clear()
-        for (i in 0 until count) {
-            val dot = View(this).apply {
-                layoutParams = LinearLayout.LayoutParams(10.dp, 10.dp).apply {
-                    marginStart = if (i == 0) 0 else 8.dp
+        val pad = 6.dp
+        pages.forEachIndexed { i, page ->
+            val dot = ImageView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(28.dp, 28.dp).apply {
+                    marginStart = if (i == 0) 0 else 10.dp
                     gravity = Gravity.CENTER_VERTICAL
                 }
                 background = ContextCompat.getDrawable(this@OnboardingActivity, R.drawable.bg_indicator_dot)
+                setImageResource(page.iconRes)
+                imageTintList = ContextCompat.getColorStateList(
+                    this@OnboardingActivity,
+                    R.color.indicator_icon_tint,
+                )
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                setPadding(pad, pad, pad, pad)
+                // Decorative: the pager itself announces page changes.
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             }
             indicators.add(dot)
             binding.indicatorLayout.addView(dot)
@@ -131,44 +151,36 @@ class OnboardingActivity : AppCompatActivity() {
         indicators.forEachIndexed { index, view ->
             view.isSelected = index == selected
             if (index != selected && index != previous) {
-                val lp = view.layoutParams as LinearLayout.LayoutParams
-                lp.width = 10.dp
-                lp.height = 10.dp
-                view.layoutParams = lp
+                view.scaleX = 1f
+                view.scaleY = 1f
             }
         }
 
-        widthAnimator?.cancel()
+        indicatorAnimator?.cancel()
         val expanding = indicators.getOrNull(selected) ?: return
         val shrinking = indicators.getOrNull(previous)
 
-        widthAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+        indicatorAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = 220
             interpolator = AccelerateDecelerateInterpolator()
             addUpdateListener { anim ->
                 val t = anim.animatedValue as Float
-                applyWidth(expanding, lerp(10.dp, 24.dp, t), lerp(10.dp, 12.dp, t))
+                val grow = 1f + SELECTED_INDICATOR_SCALE * t
+                expanding.scaleX = grow
+                expanding.scaleY = grow
                 if (shrinking != null) {
-                    applyWidth(shrinking, lerp(24.dp, 10.dp, t), lerp(12.dp, 10.dp, t))
+                    val shrink = 1f + SELECTED_INDICATOR_SCALE * (1f - t)
+                    shrinking.scaleX = shrink
+                    shrinking.scaleY = shrink
                 }
             }
             start()
         }
     }
 
-    private fun applyWidth(view: View, width: Int, height: Int) {
-        val lp = view.layoutParams as LinearLayout.LayoutParams
-        lp.width = width
-        lp.height = height
-        view.layoutParams = lp
-    }
-
-    private fun lerp(from: Int, to: Int, t: Float): Int =
-        (from + (to - from) * t).toInt()
-
     override fun onDestroy() {
-        widthAnimator?.cancel()
-        widthAnimator = null
+        indicatorAnimator?.cancel()
+        indicatorAnimator = null
         super.onDestroy()
     }
 
@@ -193,6 +205,9 @@ class OnboardingActivity : AppCompatActivity() {
         const val KEY_ONBOARDING_DONE = "onboarding_done"
         const val KEY_DATA_CONSENT = "data_consent_given"
 
+        /** Extra scale applied to the selected indicator circle (1.0 → 1.2). */
+        private const val SELECTED_INDICATOR_SCALE = 0.2f
+
         fun isOnboardingDone(context: Context): Boolean = context.getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
             .getBoolean(KEY_ONBOARDING_DONE, false)
 
@@ -209,10 +224,12 @@ class OnboardingActivity : AppCompatActivity() {
 }
 
 /** One onboarding slide: a Lottie animation plus its title and body copy.
+ *  [iconRes] is the glyph shown inside this page's indicator circle.
  *  [linkText]/[linkUrl] render a tappable link (the consent page's privacy
  *  policy) when set. */
 data class OnboardingPage(
     val lottieRes: Int,
+    val iconRes: Int,
     val title: String,
     val description: String,
     val linkText: String? = null,

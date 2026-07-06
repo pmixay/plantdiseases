@@ -1977,13 +1977,14 @@ async def analyze_image(
     # Fire the PlantNet species identify in parallel with the disease
     # pipeline. PlantNet is best-effort: if the call fails / times out
     # / the API key isn't configured, we still return a complete
-    # diagnosis — the species field just lands as ``None``. The 6s cap
-    # is much tighter than INFERENCE_TIMEOUT (30s) because PlantNet is
-    # an external HTTP hop and a slow upstream shouldn't hold the
-    # whole analyze response hostage. ``plantnet_lang`` was resolved
-    # above for the cache key.
+    # diagnosis — the species field just lands as ``None``. The 10s cap
+    # matches PLANTNET_TIMEOUT (one full HTTP attempt) while staying much
+    # tighter than INFERENCE_TIMEOUT (30s) — PlantNet is an external HTTP
+    # hop and a slow upstream shouldn't hold the whole analyze response
+    # hostage; the earlier 6s cap cut off attempts the upstream would
+    # have completed. ``plantnet_lang`` was resolved above for the cache key.
     species_task = asyncio.create_task(
-        _species_identify_best_effort(contents, timeout=6.0, lang=plantnet_lang)
+        _species_identify_best_effort(contents, timeout=10.0, lang=plantnet_lang)
     )
     try:
         result = await asyncio.wait_for(
