@@ -3792,19 +3792,36 @@ async def species_info_endpoint(name: str, locale: str = "en"):
     if not n or len(n) > 128:
         raise HTTPException(status_code=422, detail="Invalid species name")
     lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
-    info = await asyncio.get_running_loop().run_in_executor(
+    loop = asyncio.get_running_loop()
+    info = await loop.run_in_executor(
         _get_net_executor(), lambda: fetch_species_info(n, lang),
     )
     if info is None:
         # Don't let an intermediary cache a transient Wikipedia miss.
         return JSONResponse(content={"available": False}, headers={"Cache-Control": "no-store"})
+    # Pin the PHOTOS to the English article for every locale so the same
+    # species shows the same images regardless of UI language — the localized
+    # (e.g. RU) Wikipedia article often carries a different or smaller media
+    # set, which made the species card's gallery differ by locale. Text (title,
+    # extract) stays localized; only the images come from EN. Fall back to the
+    # localized images when the English article has none, so a card never loses
+    # its photo. (fetch_species_info is cached, so the extra EN call is cheap.)
+    image_url = info.get("image_url")
+    images = info.get("images") or []
+    if lang != "en":
+        en_info = await loop.run_in_executor(
+            _get_net_executor(), lambda: fetch_species_info(n, "en"),
+        )
+        if en_info and (en_info.get("images") or en_info.get("image_url")):
+            image_url = en_info.get("image_url")
+            images = en_info.get("images") or ([image_url] if image_url else [])
     # Route the Wikipedia photos through the server's cache so the app loads
     # them from our domain (reliable where Wikimedia is blocked). Unproxyable
     # entries drop to None/out so the card just omits them.
     proxied = {
         **info,
-        "image_url": plant_photo_proxy(info.get("image_url")),
-        "images": [p for p in (plant_photo_proxy(i) for i in info.get("images") or []) if p],
+        "image_url": plant_photo_proxy(image_url),
+        "images": [p for p in (plant_photo_proxy(i) for i in images) if p],
     }
     # Species facts are stable; carry a long Cache-Control so a CDN / HTTP cache
     # reuses it too (symmetric with /species-diseases). The app has its own

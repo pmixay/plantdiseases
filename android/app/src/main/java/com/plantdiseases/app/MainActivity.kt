@@ -121,6 +121,10 @@ class MainActivity : AppCompatActivity() {
             }
             com.plantdiseases.app.push.PushManager.registerIfEnabled(this)
         }
+        // Warm the guide/disease example photos into Glide's disk cache so they
+        // render offline (they're server-hosted, not bundled). Independent of
+        // notifications — always worth doing on a connected launch.
+        (application as PlantDiseasesApp).prefetchGuidePhotos()
         val navHostFragment = supportFragmentManager
             .findFragmentById(R.id.nav_host_fragment) as NavHostFragment
         val navController = navHostFragment.navController

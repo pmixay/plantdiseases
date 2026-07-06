@@ -274,6 +274,28 @@ class PlantDiseasesApp : Application() {
         )
     }
 
+    /** Warm Glide's disk cache with the guide/disease example photos so they
+     *  render offline after first launch online. One-time + CONNECTED
+     *  constraint; KEEP so a launch during an in-flight prefetch doesn't stack
+     *  duplicates. Called from MainActivity (not Application.onCreate — same
+     *  WorkManager-timing note as the opinion poll). */
+    fun prefetchGuidePhotos() {
+        val request = androidx.work.OneTimeWorkRequestBuilder<
+            com.plantdiseases.app.worker.GuidePhotoPrefetchWorker
+            >()
+            .setConstraints(
+                androidx.work.Constraints.Builder()
+                    .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)
+                    .build(),
+            )
+            .build()
+        androidx.work.WorkManager.getInstance(this).enqueueUniqueWork(
+            "guide_photo_prefetch",
+            androidx.work.ExistingWorkPolicy.KEEP,
+            request,
+        )
+    }
+
     /** Fire an immediate, one-off opinion check — called when the app comes to
      *  the foreground (and right after the user asks for a second opinion) so a
      *  reply that landed while the app was closed surfaces promptly instead of

@@ -177,6 +177,40 @@ def test_ru_direct_hit_skips_langlinks(monkeypatch):
     assert info["lang"] == "ru"
 
 
+def test_species_info_endpoint_pins_images_to_english(client, monkeypatch):
+    """The species card's photos are pinned to the English article for every
+    locale — text (title, extract) stays localized, but the same species shows
+    the same images regardless of UI language."""
+    import main as server_main
+
+    def fake(name, lang="en"):
+        if lang == "en":
+            return {
+                "title": "Ficus elastica", "extract": "EN text",
+                "image_url": "https://upload.wikimedia.org/en_lead.jpg",
+                "images": ["https://upload.wikimedia.org/en_lead.jpg",
+                           "https://upload.wikimedia.org/en_2.jpg"],
+                "lang": "en",
+            }
+        return {
+            "title": "Фикус каучуконосный", "extract": "RU text",
+            "image_url": "https://upload.wikimedia.org/ru_lead.jpg",
+            "images": ["https://upload.wikimedia.org/ru_lead.jpg"],
+            "lang": "ru",
+        }
+
+    monkeypatch.setattr(server_main, "fetch_species_info", fake)
+    body = client.get("/api/species-info?name=Ficus%20elastica&locale=ru").json()
+    assert body["available"] is True
+    # Localized text is preserved…
+    assert body["title"] == "Фикус каучуконосный"
+    assert body["extract"] == "RU text"
+    # …but every image comes from the English article, not the RU one.
+    assert "en_lead" in body["image_url"]
+    assert all("ru_" not in img for img in body["images"])
+    assert any("en_2" in img for img in body["images"])
+
+
 def test_media_images_excludes_non_plant_media(monkeypatch):
     def fake_get(url, params=None, headers=None, timeout=None):
         assert "/page/media-list/" in url

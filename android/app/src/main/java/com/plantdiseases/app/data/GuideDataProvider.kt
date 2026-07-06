@@ -1630,4 +1630,9 @@ WHAT TO DO NEXT:
     /** Absolute URL of the server-hosted example photo for a classifier class. */
     fun exampleImageUrlForDisease(classKey: String): String? =
         exampleImageKeyForDisease(classKey)?.let { "${ServerConfig.baseUrl}api/guide/photo/$it" }
+
+    /** Every server-hosted guide-photo URL — used to prefetch them into Glide's
+     *  disk cache while online so the guide/result photos render offline. */
+    fun allExamplePhotoUrls(): List<String> =
+        EXAMPLE_PHOTO_KEYS.map { "${ServerConfig.baseUrl}api/guide/photo/$it" }
 }

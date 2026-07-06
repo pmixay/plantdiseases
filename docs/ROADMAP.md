@@ -57,6 +57,25 @@ collapsed (tap to expand), in the **scan result** screen.
       user-generated Veo clip (vertical 9:16 macro monstera, scan-light sweep,
       #16A34A accent, seamless ~8 s loop, no text).
 
+### Offline polish
+
+Already landed this session: guide/disease example photos are **prefetched**
+into Glide's disk cache on a connected launch (they're server-hosted, not
+bundled, so they used to show a placeholder offline unless viewed online
+first). Remaining gaps:
+
+- [ ] **App-wide connectivity signal** — the offline banner lives only on the
+      Scan screen (`CameraFragment`); every other screen discovers offline
+      state reactively and silently renders blank/empty. A shared observer
+      would drive a consistent "offline — showing cached content" affordance on
+      Home / Guide / Result / Species.
+- [ ] **Symptom-checker offline fallback** — it's server-only today (a toast on
+      failure). A bundled rules path mirroring `OfflineScanContent` would let
+      no-photo triage work offline like the Aqua scan path does.
+- [ ] **Popular-carousel photos offline** — text degrades to bundled catalogs,
+      but `api/plant-photo` images blank offline; fold the popular species set
+      into the same prefetch, or bundle thumbnails for the curated set.
+
 ### Release
 
 - [ ] **Localize the AI-doctor chat subtitle** — the plant/species name under

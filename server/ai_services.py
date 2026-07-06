@@ -636,7 +636,22 @@ def _sanitize_diagnosis_context(ctx: dict) -> dict:
         if isinstance(w, str) and _DIAG_TOKEN_RE.match(w):
             warnings.append(w)
 
-    return {"class": cls, "confidence": conf, "severity": severity, "warnings": warnings}
+    # Species is a plant NAME (spaces, capitals, Cyrillic) so the strict
+    # lowercase-token filter can't apply — but it's still client-supplied, so
+    # drop newlines/control chars (an injected value can't break out of its
+    # JSON line into a fake system instruction), collapse whitespace, and cap
+    # length. It stays a labeled data value the model reads as context.
+    species = None
+    raw_species = ctx.get("species")
+    if isinstance(raw_species, str):
+        cleaned = " ".join(raw_species.split())
+        cleaned = "".join(ch for ch in cleaned if ch.isprintable())[:80].strip()
+        species = cleaned or None
+
+    return {
+        "class": cls, "species": species, "confidence": conf,
+        "severity": severity, "warnings": warnings,
+    }
 
 
 def _build_system_text(locale: str, diagnosis_context: dict | None) -> str:
