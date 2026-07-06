@@ -4246,6 +4246,17 @@ def _build_popular_bundle(
         if _has(s):
             snap, source = s, "worldwide"
 
+    # A local (nearby) snapshot we can't attach a real place to — no
+    # resolvable country AND no city — would be labeled "Worldwide" by
+    # ``_country_display(None)`` below and rendered as "Popular in Worldwide"
+    # over what is actually a single local scan. Show the true worldwide
+    # aggregate instead so the label matches the data. (Worldwide always has
+    # ≥ the local rows, so this never empties a populated feed.)
+    if source == "nearby" and not country and not region_label:
+        s = community_popular_snapshot(limit=_POPULAR_MAX_CARDS)
+        if _has(s):
+            snap, source, region_label = s, "worldwide", None
+
     # No community data in any scope → curated placeholder. Titled for the
     # known country when we have one, else worldwide. The first real scan in
     # range flips this to live data on the next (short-lived) cache miss.
@@ -4257,7 +4268,12 @@ def _build_popular_bundle(
                 "scientific": p.scientific,
                 "common_en": p.common_en,
                 "common_ru": p.common_ru,
-                "image_url": plant_photo_name_proxy(p.scientific, lang),
+                # Always resolve the ENGLISH Wikipedia lead image regardless of
+                # UI locale: the localized (e.g. RU) article often has a
+                # different or missing lead photo, which made two distinct
+                # species look identical in one locale but not another. Titles
+                # stay localized; only the picture is pinned to EN.
+                "image_url": plant_photo_name_proxy(p.scientific, "en"),
                 "count": 0,
                 "percent": 0,
             }
@@ -4275,6 +4291,7 @@ def _build_popular_bundle(
 
     display = _country_display(country) if source != "worldwide" else _country_display(None)
     items = []
+    used_titles: set[str] = set()
     for row in (snap.get("top_species") or [])[:_POPULAR_MAX_CARDS]:
         scientific = row["species"]
         # Only the localized title needs resolving here (cached); the photo is
@@ -4282,11 +4299,20 @@ def _build_popular_bundle(
         # only just trended (a fresh scan) still gets an image.
         info = fetch_species_info(scientific, lang)
         title = (info or {}).get("title") or scientific
+        # A localized title can collapse two distinct species to one name (e.g.
+        # RU Wikipedia titles both "Spathiphyllum" and "Spathiphyllum
+        # floribundum" as "Спатифиллюм"), which shows two identical-looking
+        # cards. On a collision fall back to the scientific name so each card
+        # stays distinguishable.
+        if title in used_titles:
+            title = scientific
+        used_titles.add(title)
         items.append({
             "scientific": scientific,
             "common_en": title,
             "common_ru": title,
-            "image_url": plant_photo_name_proxy(scientific, lang),
+            # English lead image for every locale — see the placeholder branch.
+            "image_url": plant_photo_name_proxy(scientific, "en"),
             "count": row.get("count", 0),
             "percent": row.get("percent", 0),
         })

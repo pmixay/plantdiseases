@@ -455,7 +455,10 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
         // One pass over **bold** and the AI doctor's doc-citation tokens
         // [[doc:<class_key>]]. A token renders as the matching guide article's
         // title, tappable to open the offline guide; unknown keys are dropped.
-        val pattern = Regex("""\*\*(.+?)\*\*|\[\[doc:([a-z0-9_]+)]]""")
+        // The model is asked for double brackets but a reasoning model often
+        // drifts to the single-bracket [doc:key] form, so accept either — an
+        // unmatched token would otherwise leak into the bubble as literal text.
+        val pattern = Regex("""\*\*(.+?)\*\*|\[\[?doc:([a-z0-9_]+)]]?""")
         if (!pattern.containsMatchIn(text)) return text
 
         val isRu = LocaleHelper.isRussian(requireContext())
