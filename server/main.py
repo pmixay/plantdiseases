@@ -3663,6 +3663,15 @@ async def community_scan_nearby(
         meta["region"] = geo["city"] if (nearby and has_coords) else None
     meta["location_required"] = location_required
     summary.update(meta)
+    # Older installed app versions type CommunityRegionSummary.country as a
+    # non-nullable String and decode with strict kotlinx.serialization (no
+    # coerceInputValues) — an explicit `null` here (worldwide scope, or a
+    # coarse location in a territory with no ISO code) throws a decode error
+    # client-side, surfacing as "couldn't reach the community". Newer app
+    # builds tolerate the null directly; this coercion is just backward
+    # compatibility for what's already installed. Only the nested copy is
+    # coerced — the top-level `country` field stays nullable.
+    summary["country"] = summary.get("country") or ""
     return JSONResponse(content={"items": rows, "summary": summary, **meta})
 
 

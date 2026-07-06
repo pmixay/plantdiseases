@@ -427,6 +427,9 @@ def test_community_nearby_worldwide_ignores_location(client, isolated_community)
     assert body["scope"] == "worldwide"
     assert body["location_required"] is False
     assert len(body["items"]) == 4  # all four countries surfaced
+    # Backward compat: the nested summary.country must never serialize as null
+    # (older installed builds decode it as a non-null String and crash on null).
+    assert body["summary"]["country"] == ""
 
     # Country scope with no anchor still flags location_required (contrast).
     r_country = client.get(
