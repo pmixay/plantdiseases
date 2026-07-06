@@ -91,9 +91,6 @@ try:
         density_grid as community_density_grid,
     )
     from .community import (
-        get_user_data as community_get_user_data,
-    )
-    from .community import (
         init_db as init_community_db,
     )
     from .community import (
@@ -110,9 +107,6 @@ try:
     )
     from .community import (
         opinion_open as community_opinion_open,
-    )
-    from .community import (
-        opinions_by_author as community_opinions_by_author,
     )
     from .community import (
         opinions_for as community_opinions_for,
@@ -184,9 +178,6 @@ try:
         record_feedback,
         record_issued_scan_id,
         save_feedback_image,
-    )
-    from .feedback import (
-        get_user_data as feedback_get_user_data,
     )
     from .feedback import (
         init_db as init_feedback_db,
@@ -266,9 +257,6 @@ except ImportError:
         density_grid as community_density_grid,
     )
     from community import (
-        get_user_data as community_get_user_data,
-    )
-    from community import (
         init_db as init_community_db,
     )
     from community import (
@@ -285,9 +273,6 @@ except ImportError:
     )
     from community import (
         opinion_open as community_opinion_open,
-    )
-    from community import (
-        opinions_by_author as community_opinions_by_author,
     )
     from community import (
         opinions_for as community_opinions_for,
@@ -359,9 +344,6 @@ except ImportError:
         record_feedback,
         record_issued_scan_id,
         save_feedback_image,
-    )
-    from feedback import (
-        get_user_data as feedback_get_user_data,
     )
     from feedback import (
         init_db as init_feedback_db,
@@ -2486,6 +2468,11 @@ _FEEDBACK_OUT_OF_HEAD_CLASSES: frozenset[str] = frozenset({
     "edema",
     "sunburn_or_scorch",
     "other",
+    # "The reject was wrong — there IS a plant here." Sent by the app's
+    # single-action feedback on a not_a_plant / blur verdict; these rows
+    # (plus their uploaded images) are exactly what the rejection head
+    # needs for retraining.
+    "is_a_plant",
 })
 
 _FEEDBACK_ALLOWED_CORRECTIONS: frozenset[str] = (
@@ -3716,18 +3703,6 @@ async def community_heatmap(
     return JSONResponse(content=data)
 
 
-@api_router.get("/community/my-opinions/{user_pseudo_id}")
-async def community_my_opinions(user_pseudo_id: str):
-    """List the second opinions one install has authored (newest first)."""
-    pid = (user_pseudo_id or "").strip()
-    if not pid or len(pid) > 128:
-        raise HTTPException(status_code=422, detail="Invalid id")
-    rows = await asyncio.get_running_loop().run_in_executor(
-        None, lambda: community_opinions_by_author(pid),
-    )
-    return JSONResponse(content={"opinions": rows})
-
-
 @api_router.get("/community/by-species")
 async def community_by_species(
     species: str | None = None,
@@ -3912,18 +3887,6 @@ async def plant_photo(request: Request, u: str | None = None,
         media_type=media,
         cache_control="public, max-age=604800",
     )
-
-
-@api_router.get("/guide/manifest")
-async def guide_manifest():
-    """Keys that have an example photo, so the client can hide the photo strip
-    for topics that ship none — preserving the old bundled-drawable behaviour
-    (null ⇒ no strip) without probing each key with a 404."""
-    keys = (
-        sorted(p.stem for p in GUIDE_STATIC_DIR.glob("*.png"))
-        if GUIDE_STATIC_DIR.is_dir() else []
-    )
-    return {"count": len(keys), "keys": keys}
 
 
 # Large source images (guide PNGs, full-res Wikimedia plant photos) are
@@ -4113,26 +4076,6 @@ async def community_scan_delete_user(user_pseudo_id: str):
         "deleted_community": deleted_community,
         "deleted_feedback": deleted_feedback,
         "deleted_labeling_candidates": deleted_labeling,
-    })
-
-
-@api_router.get("/user/export/{user_pseudo_id}")
-async def export_user_data(user_pseudo_id: str):
-    """GDPR Data Portability: Export all data associated with the user_pseudo_id."""
-    if not user_pseudo_id or any(ch not in _SCAN_ID_ALLOWED for ch in user_pseudo_id):
-        raise HTTPException(status_code=422, detail="Invalid user id")
-    community_data = await asyncio.get_running_loop().run_in_executor(
-        None,
-        lambda: community_get_user_data(user_pseudo_id),
-    )
-    feedback_data = await asyncio.get_running_loop().run_in_executor(
-        None,
-        lambda: feedback_get_user_data(user_pseudo_id),
-    )
-    return JSONResponse(content={
-        "user_pseudo_id": user_pseudo_id,
-        "community_scans": community_data,
-        "feedback_submissions": feedback_data,
     })
 
 

@@ -283,20 +283,15 @@ class AnalysisActivity : AppCompatActivity() {
         imagePath: String,
         response: com.plantdiseases.app.data.model.AnalysisResponse,
     ) {
-        // NAP / blur-gate rejections are transient: they're never persisted
-        // to scan history (they'd clutter the gallery and skew the profile
-        // stats) and never autosaved to the device gallery. Show an inline
-        // "retake" state here instead of the full result screen.
-        if (response.classKey == NOT_A_PLANT_CLASS) {
-            showRejected(blurry = "blurry_image" in response.warnings.orEmpty())
-            return
-        }
-
         // Autosave the kept (cropped) photo to the user's device gallery only
         // now that we KNOW it's a plant — opt-in, camera captures only (moved
-        // here from the camera screen precisely so rejects never land in the
-        // user's photo library).
-        if (intent.getBooleanExtra(EXTRA_FROM_CAMERA, false) &&
+        // here from the camera screen precisely so NAP / blur rejects never
+        // land in the user's photo library). Reject verdicts still open the
+        // full result screen (so the user can flag "this is a plant"), but
+        // they're hidden from the in-app gallery and stats, and swept from
+        // the DB after a couple of days.
+        if (response.classKey != NOT_A_PLANT_CLASS &&
+            intent.getBooleanExtra(EXTRA_FROM_CAMERA, false) &&
             com.plantdiseases.app.util.AutosavePrefs.enabled(this)
         ) {
             val appContext = applicationContext
@@ -388,31 +383,6 @@ class AnalysisActivity : AppCompatActivity() {
         binding.tvErrorDetail.text = detail
     }
 
-    /** Terminal "no plant here" state for NAP / blur-gate verdicts. Reuses the
-     *  error surface, but the action is "take another photo" (finish back to
-     *  the camera) — re-running analysis on the same rejected photo is
-     *  pointless. Nothing is persisted for these verdicts. */
-    private fun showRejected(blurry: Boolean) {
-        binding.loadingLayout.visibility = View.GONE
-        binding.errorLayout.visibility = View.VISIBLE
-        binding.tvError.text = getString(
-            if (blurry) {
-                R.string.blurry_or_not_a_plant_diagnosis_name
-            } else {
-                R.string.not_a_plant_diagnosis_name
-            },
-        )
-        binding.tvErrorDetail.text = getString(
-            if (blurry) {
-                R.string.blurry_or_not_a_plant_result_body
-            } else {
-                R.string.not_a_plant_result_body
-            },
-        )
-        binding.btnRetry.setText(R.string.rejected_take_another_photo)
-        binding.btnRetry.setOnClickListener { finish() }
-    }
-
     override fun onDestroy() {
         blurDialog?.dismiss()
         blurDialog = null
@@ -427,7 +397,9 @@ class AnalysisActivity : AppCompatActivity() {
          *  only after a real plant verdict. */
         const val EXTRA_FROM_CAMERA = "extra_from_camera"
 
-        /** Pipeline rejection class — never persisted client-side. */
+        /** Pipeline rejection class — gates the device-gallery autosave
+         *  (rejects still open the result screen but must not land in the
+         *  user's photo library). */
         private const val NOT_A_PLANT_CLASS = "not_a_plant"
 
         /** Optional plant id; when present the saved scan is auto-attached to

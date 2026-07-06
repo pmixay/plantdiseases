@@ -61,7 +61,6 @@
     <string name="status_blurry_or_not_a_plant">Не удалось распознать</string>
     <string name="blurry_or_not_a_plant_diagnosis_name">Размытое фото или не растение</string>
     <string name="blurry_or_not_a_plant_result_body">Снимок слишком размыт, чтобы поставить диагноз, — либо в кадре нет растения. Если вы фотографировали растение, подойдите ближе, держите камеру неподвижно, дождитесь автофокуса и сделайте чёткий снимок одного листа при хорошем освещении.</string>
-    <string name="rejected_take_another_photo">Сделать другое фото</string>
     <string name="description_label">Описание</string>
     <string name="result_learn_more">Открыть полное руководство</string>
     <string name="treatment_label">Лечение</string>
@@ -78,7 +77,6 @@
     <string name="cat_diseases">Болезни</string>
     <string name="cat_pests">Вредители</string>
     <string name="cat_watering">Полив</string>
-    <string name="cat_lighting">Свет</string>
     <string name="cat_care">Уход</string>
     <string name="cat_help">Помощь</string>
 
@@ -209,8 +207,6 @@
     <string name="community_distance_near">≈ %1$d км</string>
     <string name="community_anonymous_author">Цветовод</string>
     <string name="community_opinion_photo_desc">Снимок растения сообщества</string>
-    <string name="result_view_opinions">Мнений сообщества: %1$d</string>
-    <string name="result_view_activity">Мнений: %1$d · просмотров: %2$d</string>
     <string name="gallery_community_badge">💬 %1$d</string>
     <string name="gallery_new_opinions_badge">+%1$d</string>
     <string name="community_my_opinions_title">Мои мнения</string>
@@ -224,9 +220,9 @@
     <string name="result_second_opinion_failed">Не удалось запросить второе мнение. Попробуйте ещё раз.</string>
     <string name="second_opinion_needs_community_title">Включить сообщество?</string>
     <string name="second_opinion_needs_community_body">Второе мнение дают участники сообщества. Включение анонимно поделится этим сканом, использует примерное местоположение и позволит другим высказаться. Покинуть сообщество можно в любой момент.</string>
-    <string name="second_opinion_waiting_title">Ожидание второго мнения</string>
-    <string name="second_opinion_waiting_body">Ваш запрос виден сообществу 72 часа, затем он истекает сам. Когда кто-то выскажется, придёт уведомление.</string>
-    <string name="second_opinion_check_replies">Посмотреть ответы</string>
+    <string name="second_opinion_waiting_hours">Ждём мнения · осталось %1$d ч</string>
+    <string name="second_opinion_open_replies">Мнения: %1$d · осталось %2$d ч</string>
+    <string name="second_opinion_sheet_status">Запрос активен · осталось %1$d ч. О новых ответах придёт уведомление.</string>
     <string name="second_opinion_stop">Отменить запрос</string>
     <string name="second_opinion_stopped">Запрос отменён — уведомлений по этому скану больше не будет.</string>
     <string name="community_opinion_replies_title">Второе мнение сообщества</string>
@@ -751,6 +747,10 @@
     <string name="feedback_sending">Отправляем ваш отзыв…</string>
     <string name="feedback_rate_limited">Слишком часто — попробуйте через секунду.</string>
     <string name="feedback_failed">Не удалось отправить отзыв. Попробуйте позже.</string>
+    <string name="feedback_nap_subtitle">Мы ошиблись? Если на этом фото действительно растение — сообщите нам: именно это учит модель.</string>
+    <string name="feedback_is_a_plant">Это растение</string>
+    <string name="feedback_is_a_plant_body">Мы используем это фото, чтобы улучшить сканер. Можно добавить заметку — какое это растение или что в кадре.</string>
+    <string name="feedback_is_a_plant_note_hint">Заметка (необязательно)</string>
 
     <!-- Pet-toxicity surface -->
     <string name="toxicity_toxic_title">Токсично для питомцев</string>

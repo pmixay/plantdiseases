@@ -75,7 +75,6 @@ class GuideFragment : Fragment() {
             GuideCategory.COMMON_DISEASES to R.string.cat_diseases,
             GuideCategory.PESTS to R.string.cat_pests,
             GuideCategory.WATERING to R.string.cat_watering,
-            GuideCategory.LIGHTING to R.string.cat_lighting,
             GuideCategory.CARE_TIPS to R.string.cat_care,
             GuideCategory.HELP to R.string.cat_help
         )

@@ -41,7 +41,8 @@ def test_record_and_list_opinions_with_consensus(comm):
 
 def test_opinions_for_unknown_scan_is_empty(comm):
     assert comm.opinions_for("does-not-exist") == {
-        "opinions": [], "consensus": [], "views": 0, "wants_opinion": False,
+        "opinions": [], "consensus": [], "views": 0,
+        "wants_opinion": False, "opinion_requested_at": None,
     }
 
 

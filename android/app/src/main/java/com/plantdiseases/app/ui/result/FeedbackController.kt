@@ -93,6 +93,64 @@ class FeedbackController(
         }
     }
 
+    /**
+     * NAP / blur-reject variant: a single "This is a plant" action (+ an
+     * optional note) instead of the yes/no pair. A wrongly-rejected plant
+     * photo is exactly the training signal the rejection head needs, and
+     * negative feedback also uploads the image bytes (see [submit]).
+     */
+    fun bindNotAPlant(scan: ScanEntity) {
+        val card = binding.cardFeedback
+        card.visibility = View.VISIBLE
+
+        if (isAlreadySubmitted(scan.id)) {
+            binding.feedbackChoiceRow.visibility = View.GONE
+            binding.tvFeedbackStatus.visibility = View.VISIBLE
+            binding.tvFeedbackStatus.setText(R.string.feedback_sent)
+            return
+        }
+
+        binding.tvFeedbackSubtitle.setText(R.string.feedback_nap_subtitle)
+        binding.tvFeedbackStatus.visibility = View.GONE
+        binding.feedbackChoiceRow.visibility = View.VISIBLE
+        binding.btnFeedbackNo.visibility = View.GONE
+        binding.btnFeedbackYes.isEnabled = true
+        binding.btnFeedbackYes.setText(R.string.feedback_is_a_plant)
+        binding.btnFeedbackYes.setOnClickListener {
+            Haptics.tick(activity)
+            showIsPlantDialog(scan)
+        }
+    }
+
+    /** Optional-note dialog behind "This is a plant". Sends the dedicated
+     *  out-of-head correction label so retraining can prioritise these. */
+    private fun showIsPlantDialog(scan: ScanEntity) {
+        val ctx = activity
+        val input = com.google.android.material.textfield.TextInputEditText(ctx).apply {
+            hint = ctx.getString(R.string.feedback_is_a_plant_note_hint)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or
+                android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            filters = arrayOf(android.text.InputFilter.LengthFilter(500))
+            minLines = 2
+        }
+        val pad = (20 * ctx.resources.displayMetrics.density).toInt()
+        val container = android.widget.FrameLayout(ctx).apply {
+            setPadding(pad, pad / 2, pad, 0)
+            addView(input)
+        }
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(ctx)
+            .setTitle(R.string.feedback_is_a_plant)
+            .setMessage(R.string.feedback_is_a_plant_body)
+            .setView(container)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.feedback_send) { _, _ ->
+                val note = input.text?.toString()?.trim().orEmpty().ifBlank { null }
+                submit(scan, correct = false, correctedClass = IS_A_PLANT_CLASS, note = note)
+            }
+            .show()
+    }
+
     private fun showCorrectionSheet(scan: ScanEntity) {
         val isRu = LocaleHelper.isRussian(activity)
         val predictedKey = repository.topClassKey(scan)
@@ -242,6 +300,10 @@ class FeedbackController(
     private companion object {
         private const val FEEDBACK_PREFS = "plantdiseases_feedback_prefs"
         private const val FEEDBACK_KEY_PREFIX = "scan_"
+
+        // Out-of-head correction label for "the reject was wrong — there IS a
+        // plant here". Accepted by the server's feedback allowlist.
+        private const val IS_A_PLANT_CLASS = "is_a_plant"
 
         // Pinned to the classifier release in server/models/classes.json. When
         // the server exposes model_version in /api/analyze we'll trust that

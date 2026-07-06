@@ -663,11 +663,14 @@ def opinions_for(scan_id: str, *, limit: int = 50) -> dict:
          "consensus": [{"disease", "count"}, ...]}   # most-voted first
 
     Also carries ``wants_opinion`` (is there a live, non-expired request?)
-    so the owner's app can restore its "waiting" state across restarts.
+    plus ``opinion_requested_at`` (epoch seconds of that request, else
+    null) so the owner's app can restore its "waiting" state across
+    restarts and render a time-left countdown toward the 72 h expiry.
     """
     init_db()
     _sweep_expired_requests()
     limit = max(1, min(int(limit), 100))
+    request_cutoff = int(time.time()) - _OPINION_REQUEST_TTL_S
     with _connect() as conn:
         rows = conn.execute(
             "SELECT suggested_disease, note, created_at, nickname "
@@ -681,6 +684,11 @@ def opinions_for(scan_id: str, *, limit: int = 50) -> dict:
             "GROUP BY suggested_disease ORDER BY n DESC",
             (scan_id,),
         ).fetchall()
+        request_row = conn.execute(
+            "SELECT created_at FROM community_opinion_requests "
+            "WHERE scan_id = ? AND created_at >= ? LIMIT 1",
+            (scan_id, request_cutoff),
+        ).fetchone()
     opinions = [
         {"suggested_disease": str(r[0]), "note": r[1] or "",
          "created_at": int(r[2]), "nickname": (r[3] if len(r) > 3 else None) or None}
@@ -691,7 +699,8 @@ def opinions_for(scan_id: str, *, limit: int = 50) -> dict:
         "opinions": opinions,
         "consensus": consensus,
         "views": view_count_for(scan_id),
-        "wants_opinion": wants_opinion(scan_id),
+        "wants_opinion": request_row is not None,
+        "opinion_requested_at": int(request_row[0]) if request_row else None,
     }
 
 
@@ -890,30 +899,6 @@ def scan_counts(scan_ids: list[str]) -> dict[str, dict]:
         sid: {"opinions": op.get(sid, 0), "views": vw.get(sid, 0)}
         for sid in (set(op) | set(vw))
     }
-
-
-def opinions_by_author(author_pseudo_id: str, *, limit: int = 100) -> list[dict]:
-    """Opinions one install authored, newest first, each with its scan_id."""
-    init_db()
-    if not author_pseudo_id:
-        return []
-    limit = max(1, min(int(limit), 200))
-    with _connect() as conn:
-        rows = conn.execute(
-            "SELECT scan_id, suggested_disease, note, created_at "
-            "FROM community_opinions WHERE author_pseudo_id = ? "
-            "ORDER BY created_at DESC LIMIT ?",
-            (author_pseudo_id, limit),
-        ).fetchall()
-    return [
-        {
-            "scan_id": str(r[0]),
-            "suggested_disease": str(r[1]),
-            "note": r[2] or "",
-            "created_at": int(r[3]),
-        }
-        for r in rows
-    ]
 
 
 def scans_by_species(
@@ -1508,20 +1493,6 @@ def stats_snapshot() -> dict:
     }
 
 
-def get_user_data(user_pseudo_id: str) -> list[dict]:
-    """Retrieve all community scans for a user. Part of GDPR data portability."""
-    init_db()
-    if not user_pseudo_id:
-        return []
-    with _connect() as conn:
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            "SELECT * FROM community_scans WHERE user_pseudo_id = ? ORDER BY created_at DESC",
-            (user_pseudo_id,),
-        ).fetchall()
-        return [dict(r) for r in rows]
-
-
 __all__ = [
     "COMMUNITY_DB_PATH",
     "COMMUNITY_THUMB_DIR",
@@ -1530,7 +1501,6 @@ __all__ = [
     "daily_write_count_for_ip_hash",
     "delete_for_user",
     "expire_stale_opinion_requests",
-    "get_user_data",
     "density_grid",
     "init_db",
     "map_scans",
@@ -1538,7 +1508,6 @@ __all__ = [
     "opinion_counts",
     "opinion_counts_for_user",
     "opinion_open",
-    "opinions_by_author",
     "opinions_for",
     "owner_of",
     "popular_snapshot",

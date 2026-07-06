@@ -1180,44 +1180,6 @@
         }
       }
     },
-    "/api/community/my-opinions/{user_pseudo_id}": {
-      "get": {
-        "summary": "Community My Opinions",
-        "description": "List the second opinions one install has authored (newest first).",
-        "operationId": "community_my_opinions_api_community_my_opinions__user_pseudo_id__get",
-        "parameters": [
-          {
-            "name": "user_pseudo_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "User Pseudo Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/community/by-species": {
       "get": {
         "summary": "Community By Species",
@@ -1504,23 +1466,6 @@
         }
       }
     },
-    "/api/guide/manifest": {
-      "get": {
-        "summary": "Guide Manifest",
-        "description": "Keys that have an example photo, so the client can hide the photo strip\nfor topics that ship none — preserving the old bundled-drawable behaviour\n(null ⇒ no strip) without probing each key with a 404.",
-        "operationId": "guide_manifest_api_guide_manifest_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/guide/photo/{key}": {
       "get": {
         "summary": "Guide Photo",
@@ -1598,44 +1543,6 @@
         "summary": "Community Scan Delete User",
         "description": "Erase all rows + thumbnails attributed to one install. Used by\nthe Android \"delete my contributions\" affordance.",
         "operationId": "community_scan_delete_user_api_community_user__user_pseudo_id__delete",
-        "parameters": [
-          {
-            "name": "user_pseudo_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "User Pseudo Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/user/export/{user_pseudo_id}": {
-      "get": {
-        "summary": "Export User Data",
-        "description": "GDPR Data Portability: Export all data associated with the user_pseudo_id.",
-        "operationId": "export_user_data_api_user_export__user_pseudo_id__get",
         "parameters": [
           {
             "name": "user_pseudo_id",

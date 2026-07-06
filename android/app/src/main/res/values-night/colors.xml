@@ -76,7 +76,6 @@
     <color name="lighting_yellow">#FBBF24</color>
     <!-- Brighter sun icon for the Guide list in dark mode (amber-300):
          the light-mode amber sank into the dark chip background. -->
-    <color name="guide_icon_lighting">#FCD34D</color>
 
     <!-- ─── Misc ────────────────────────────────────────────────── -->
     <color name="scan_frame_color">#80FFFFFF</color>

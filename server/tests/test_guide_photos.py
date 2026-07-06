@@ -2,26 +2,34 @@
 
 The disease/pest example photos moved out of the Android APK into server
 static hosting (server/static/guide/<key>.png) to shrink the app; the client
-downloads + disk-caches them. These cover the manifest + serve routes and the
+builds photo URLs from keys it already knows (GuideDataProvider) and
+disk-caches the downloads. These cover the serve route and the
 path-traversal guard.
 """
 
 from __future__ import annotations
 
+import main as server_main
 
-def test_guide_manifest_lists_keys(client):
-    r = client.get("/api/guide/manifest")
-    assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["count"] == len(body["keys"])
+
+def _bundled_keys() -> list[str]:
+    """Keys that ship a photo, straight from the static dir (the old
+    /api/guide/manifest endpoint was removed — no client ever called it;
+    the app derives keys from its bundled guide content instead)."""
+    d = server_main.GUIDE_STATIC_DIR
+    return sorted(p.stem for p in d.glob("*.png")) if d.is_dir() else []
+
+
+def test_bundled_photo_set_is_present():
+    keys = _bundled_keys()
     # The bundled set ships these (among others); assert a representative few
     # rather than the exact list so adding a photo doesn't break the test.
-    assert {"powdery_mildew", "leaf_spot", "viral_disease"} <= set(body["keys"])
-    assert body["count"] >= 10
+    assert {"powdery_mildew", "leaf_spot", "viral_disease"} <= set(keys)
+    assert len(keys) >= 10
 
 
 def test_guide_photo_served_for_known_key(client):
-    keys = client.get("/api/guide/manifest").json()["keys"]
+    keys = _bundled_keys()
     r = client.get(f"/api/guide/photo/{keys[0]}")
     assert r.status_code == 200, r.text
     # Photos are served as the downscaled WebP variant (PNG only when
@@ -30,7 +38,6 @@ def test_guide_photo_served_for_known_key(client):
     assert ctype in ("image/webp", "image/png")
     if ctype == "image/webp":
         assert r.content[:4] == b"RIFF" and r.content[8:12] == b"WEBP"
-        import main as server_main
         original = (server_main.GUIDE_STATIC_DIR / f"{keys[0]}.png").stat().st_size
         assert len(r.content) < original
     else:
@@ -40,7 +47,7 @@ def test_guide_photo_served_for_known_key(client):
 
 
 def test_guide_photo_supports_304_revalidation(client):
-    keys = client.get("/api/guide/manifest").json()["keys"]
+    keys = _bundled_keys()
     r1 = client.get(f"/api/guide/photo/{keys[0]}")
     etag = r1.headers.get("etag")
     assert etag, "guide photo response must carry an ETag"

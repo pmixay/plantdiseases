@@ -236,9 +236,10 @@ class GalleryFragment : Fragment() {
 
         viewLifecycleOwner.lifecycleScope.launch {
             binding.swipeRefresh.isRefreshing = !isFirstLoad
-            // NAP / blur rejects never belong in the gallery. New builds don't
-            // persist them at all; this filter also hides any legacy rows the
-            // one-time startup purge hasn't swept yet.
+            // NAP / blur rejects never belong in the gallery. Their rows exist
+            // briefly (they back the reject's result screen + "this is a
+            // plant" feedback) and are swept after 48 h; this filter keeps
+            // them out of the grid in the meantime.
             allScans = scanRepository.getAllScans().filter { !it.isNotAPlant }
 
             if (isFirstLoad) {

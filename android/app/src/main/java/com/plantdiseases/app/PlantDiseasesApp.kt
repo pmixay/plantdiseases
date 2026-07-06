@@ -163,7 +163,7 @@ class PlantDiseasesApp : Application() {
         com.plantdiseases.app.util.ResponseCache.init(this)
         registerCropImageInsetFix()
         setupTelemetry()
-        purgeRejectedScansOnce()
+        purgeStaleRejectedScans()
         // NB: do NOT touch WorkManager here. The default androidx.startup
         // WorkManagerInitializer initialises it before onCreate, but calling
         // WorkManager.getInstance()/initialize() from Application.onCreate
@@ -174,20 +174,16 @@ class PlantDiseasesApp : Application() {
     }
 
     /**
-     * One-time cleanup of legacy `not_a_plant` / blur-reject rows. New
-     * builds never persist those verdicts (AnalysisActivity shows a
-     * transient retake state), but rows written by older versions would
-     * keep surfacing in the gallery and skewing profile stats. Guarded by
-     * a pref so the sweep runs once per install, off the main thread.
+     * Sweep stale `not_a_plant` / blur-reject rows on every launch. NAP
+     * verdicts DO get a full result screen (so the user can flag "this is
+     * a plant"), and the persisted row backs that screen — but NAP scans
+     * are hidden from the gallery and stats, so once the moment passes the
+     * row is unreachable dead weight. Rows older than 48 h are deleted;
+     * the table is small, so the sweep is cheap.
      */
-    private fun purgeRejectedScansOnce() {
-        val prefs = getSharedPreferences("plantdiseases_prefs", MODE_PRIVATE)
-        if (prefs.getBoolean(KEY_NAP_PURGED, false)) return
+    private fun purgeStaleRejectedScans() {
         appScope.launch {
             runCatching { scanRepository.purgeNotAPlantScans() }
-                .onSuccess {
-                    prefs.edit().putBoolean(KEY_NAP_PURGED, true).apply()
-                }
         }
     }
 
@@ -313,9 +309,5 @@ class PlantDiseasesApp : Application() {
         private const val KEY_CRASH_KIND = "crash_kind"
         private const val KEY_CRASH_MESSAGE = "crash_message"
         private const val KEY_CRASH_CRUMBS = "crash_crumbs"
-
-        // One-time legacy sweep of persisted not_a_plant rows (see
-        // purgeRejectedScansOnce).
-        private const val KEY_NAP_PURGED = "nap_rows_purged_v1"
     }
 }

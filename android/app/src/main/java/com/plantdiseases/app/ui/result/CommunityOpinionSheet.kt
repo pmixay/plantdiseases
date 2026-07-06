@@ -54,6 +54,9 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
     // callers, in which case Agree falls back to opening the picker.
     private var diseaseKey: String = ""
 
+    private var ownerStatusRow: View? = null
+    private var ownerStatusText: TextView? = null
+    private var stopRequestBtn: MaterialButton? = null
     private var votesHeader: TextView? = null
     private var graphContainer: LinearLayout? = null
     private var listHeader: TextView? = null
@@ -84,6 +87,9 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
             return
         }
 
+        ownerStatusRow = view.findViewById(R.id.ll_opinion_owner_status)
+        ownerStatusText = view.findViewById(R.id.tv_opinion_owner_status)
+        stopRequestBtn = view.findViewById(R.id.btn_opinion_stop_request)
         votesHeader = view.findViewById(R.id.tv_opinion_votes_header)
         graphContainer = view.findViewById(R.id.ll_opinion_graph)
         listHeader = view.findViewById(R.id.tv_opinion_list_header)
@@ -231,6 +237,9 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
 
     override fun onDestroyView() {
         super.onDestroyView()
+        ownerStatusRow = null
+        ownerStatusText = null
+        stopRequestBtn = null
         votesHeader = null
         graphContainer = null
         listHeader = null
@@ -246,8 +255,59 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
     private fun loadOpinions() {
         viewLifecycleOwner.lifecycleScope.launch {
             scanRepository.getCommunityOpinions(scanId)
-                .onSuccess { render(it.consensus, it.opinions) }
+                .onSuccess {
+                    render(it.consensus, it.opinions)
+                    renderOwnerStatus(it.wantsOpinion, it.opinionRequestedAt)
+                }
                 .onFailure { render(emptyList(), emptyList()) }
+        }
+    }
+
+    /**
+     * Owner-only request controls: "Request open · N h left" + Stop. The
+     * stop action is reachable at any point of the request's life —
+     * including after replies arrived — and ends further notifications
+     * (the collected replies stay visible). Changes are reported back to
+     * the result screen via the Fragment Result API.
+     */
+    private fun renderOwnerStatus(wantsOpinion: Boolean, requestedAtSec: Long?) {
+        val row = ownerStatusRow ?: return
+        val isOwner = arguments?.getBoolean(ARG_OWNER, false) ?: false
+        if (!isOwner || !wantsOpinion) {
+            row.visibility = View.GONE
+            return
+        }
+        row.visibility = View.VISIBLE
+        val hours = requestedAtSec
+            ?.let { (it + 72L * 3600L) * 1000L - System.currentTimeMillis() }
+            ?.takeIf { it > 0L }
+            ?.let { ((it + 3_599_999L) / 3_600_000L).toInt().coerceIn(1, 72) }
+        ownerStatusText?.text = if (hours != null) {
+            getString(R.string.second_opinion_sheet_status, hours)
+        } else {
+            getString(R.string.result_second_opinion_waiting)
+        }
+        stopRequestBtn?.setOnClickListener {
+            stopRequestBtn?.isEnabled = false
+            val ctx = requireContext()
+            viewLifecycleOwner.lifecycleScope.launch {
+                scanRepository
+                    .cancelSecondOpinion(scanId, TelemetryIds.userPseudoId(ctx))
+                    .onSuccess {
+                        Toast.makeText(ctx, R.string.second_opinion_stopped, Toast.LENGTH_SHORT)
+                            .show()
+                        ownerStatusRow?.visibility = View.GONE
+                        parentFragmentManager.setFragmentResult(
+                            REQUEST_STATE_CHANGED,
+                            Bundle.EMPTY,
+                        )
+                    }
+                    .onFailure {
+                        stopRequestBtn?.isEnabled = true
+                        Toast.makeText(ctx, R.string.community_opinion_error, Toast.LENGTH_SHORT)
+                            .show()
+                    }
+            }
         }
     }
 
@@ -553,6 +613,17 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         private const val ARG_THUMB = "arg_thumb"
         private const val ARG_VIEW_ONLY = "arg_view_only"
 
+        // True ONLY for the scan owner's view (showForOwner) — gates the
+        // request-status row + "Stop request" action. Distinct from
+        // ARG_VIEW_ONLY, which read-only viewers of OTHER people's scans
+        // also set.
+        private const val ARG_OWNER = "arg_owner"
+
+        /** Fragment-result key fired when the owner changes the request's
+         *  state from inside the sheet (stop) — the result screen listens
+         *  and re-renders its second-opinion control. */
+        const val REQUEST_STATE_CHANGED = "second_opinion_state_changed"
+
         /** Diagnosable classes a responder can pick. Keys must be present in
          *  the server's DISEASES_DATABASE or the POST is rejected (422).
          *  ``not_a_plant`` is included so a responder can flag that the
@@ -627,13 +698,15 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         }
 
         /** Read-only variant for the scan's OWNER to view the second
-         *  opinions they requested — no class picker / note / send. */
+         *  opinions they requested — no class picker / note / send, but
+         *  with the request-status row + Stop action. */
         fun showForOwner(fm: FragmentManager, scanId: String, currentDisplayName: String?) {
             CommunityOpinionSheet().apply {
                 arguments = bundleOf(
                     ARG_SCAN_ID to scanId,
                     ARG_CURRENT_NAME to currentDisplayName,
                     ARG_VIEW_ONLY to true,
+                    ARG_OWNER to true,
                 )
             }.show(fm, TAG)
         }

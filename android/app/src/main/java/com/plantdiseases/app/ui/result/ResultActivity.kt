@@ -372,8 +372,6 @@ class ResultActivity : AppCompatActivity() {
             GuideDataProvider.exampleImageUrlForDisease(repository.verdictClassKey(scan) ?: "")
                 ?.let { diagnosisContent.loadDiseasePhotos(it) }
 
-            community.bindOwnScanOpinions(scan, isRu)
-
             val confidencePercent = (scan.confidence * 100).toInt()
             // For NAP we don't expose a confidence bar — "100% confident this
             // isn't a plant" reads as the model being certain about a diagnosis.
@@ -460,15 +458,22 @@ class ResultActivity : AppCompatActivity() {
                 carePlan.bind(scan, repository, isRu)
             }
 
-            // Toxicity + feedback render for every plant verdict (incl. healthy)
-            // but stay hidden on NAP.
+            // Toxicity renders for every plant verdict but stays hidden on NAP.
+            // Feedback binds to a server-issued scan_id; an offline Aqua scan
+            // has none, so it's hidden rather than offering an action that
+            // can't post. NAP gets a dedicated single-action variant: a
+            // wrongly-rejected plant photo is high-value retraining signal,
+            // so the card offers "This is a plant" (+ optional note) instead
+            // of the yes/no pair.
             if (isNotAPlant) {
                 cardToxicity.visibility = View.GONE
-                cardFeedback.visibility = View.GONE
+                if (isOfflineAqua) {
+                    cardFeedback.visibility = View.GONE
+                } else {
+                    feedback.bindNotAPlant(scan)
+                }
             } else {
                 diagnosisContent.bindToxicity(scan, repository)
-                // Feedback binds to a server-issued scan_id; an offline Aqua scan
-                // has none, so hide it rather than offer an action that can't post.
                 if (isOfflineAqua) {
                     cardFeedback.visibility = View.GONE
                 } else {
@@ -534,9 +539,17 @@ class ResultActivity : AppCompatActivity() {
                 finish()
             }
 
-            // When unsure, let the user raise a hand for a community second
-            // opinion on their OWN scan — or, once replies arrive, view them.
-            community.setupSecondOpinion(scan, repository, isRu)
+            // Community second opinion on the user's OWN scan — offered on
+            // every server-diagnosed plant verdict (not just low-confidence
+            // ones; the owner may doubt any result). Hidden for NAP (the
+            // feed hides NAP scans, so nobody could answer) and for offline
+            // scans (no server scan_id to share).
+            if (!isNotAPlant && !isOfflineAqua) {
+                btnSecondOpinion.visibility = View.VISIBLE
+                community.setupSecondOpinion(scan, repository, isRu)
+            } else {
+                btnSecondOpinion.visibility = View.GONE
+            }
 
             animateCardsIn()
 

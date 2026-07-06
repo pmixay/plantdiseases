@@ -60,7 +60,6 @@
     <string name="status_blurry_or_not_a_plant">Couldn\'t analyze</string>
     <string name="blurry_or_not_a_plant_diagnosis_name">Blurry photo or not a plant</string>
     <string name="blurry_or_not_a_plant_result_body">The photo is too blurry to read — or there\'s no plant in frame. If you photographed a plant, move a little closer, hold steady, wait for autofocus, and retake a sharp, well-lit shot of a single leaf.</string>
-    <string name="rejected_take_another_photo">Take another photo</string>
     <string name="description_label">Description</string>
     <string name="result_learn_more">Read the full guide</string>
     <string name="treatment_label">Treatment</string>
@@ -77,7 +76,6 @@
     <string name="cat_diseases">Diseases</string>
     <string name="cat_pests">Pests</string>
     <string name="cat_watering">Watering</string>
-    <string name="cat_lighting">Lighting</string>
     <string name="cat_care">Care Tips</string>
     <string name="cat_help">App help</string>
 
@@ -212,8 +210,6 @@
     <string name="community_distance_near">≈ %1$d km</string>
     <string name="community_anonymous_author">Plant grower</string>
     <string name="community_opinion_photo_desc">Shared plant scan</string>
-    <string name="result_view_opinions">%1$d community opinions</string>
-    <string name="result_view_activity">%1$d opinions · %2$d views</string>
     <string name="gallery_community_badge">💬 %1$d</string>
     <string name="gallery_new_opinions_badge">+%1$d</string>
     <string name="community_my_opinions_title">My second opinions</string>
@@ -227,9 +223,9 @@
     <string name="result_second_opinion_failed">Couldn\'t request a second opinion. Try again.</string>
     <string name="second_opinion_needs_community_title">Enable community?</string>
     <string name="second_opinion_needs_community_body">Second opinions come from growers in the community. Enabling shares this scan anonymously, uses your approximate location, and lets others weigh in. You can leave the community anytime.</string>
-    <string name="second_opinion_waiting_title">Waiting for second opinions</string>
-    <string name="second_opinion_waiting_body">Your request is visible to the community for 72 hours, then it expires on its own. You\'ll get a notification when someone weighs in.</string>
-    <string name="second_opinion_check_replies">View replies</string>
+    <string name="second_opinion_waiting_hours">Waiting for opinions · %1$d h left</string>
+    <string name="second_opinion_open_replies">Opinions (%1$d) · %2$d h left</string>
+    <string name="second_opinion_sheet_status">Request open · %1$d h left. You\'ll be notified about new replies.</string>
     <string name="second_opinion_stop">Stop request</string>
     <string name="second_opinion_stopped">Request stopped — no more notifications for this scan.</string>
     <string name="community_opinion_replies_title">Community second opinions</string>
@@ -728,6 +724,10 @@
     <string name="feedback_sending">Sending your feedback…</string>
     <string name="feedback_rate_limited">Slow down — try again in a moment.</string>
     <string name="feedback_failed">Could not send feedback. Try again later.</string>
+    <string name="feedback_nap_subtitle">Did we get it wrong? If there\'s a real plant in this photo, tell us — that\'s exactly what teaches the model.</string>
+    <string name="feedback_is_a_plant">This is a plant</string>
+    <string name="feedback_is_a_plant_body">We\'ll use this photo to improve the scanner. You can add a note — what plant it is or what\'s in the frame.</string>
+    <string name="feedback_is_a_plant_note_hint">Note (optional)</string>
 
     <!-- Feedback correction bottom-sheet. Class chips map 1:1 to the
          server's known class keys; reason chips map to the

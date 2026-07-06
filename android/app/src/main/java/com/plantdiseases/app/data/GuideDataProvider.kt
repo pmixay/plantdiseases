@@ -872,7 +872,7 @@ TIPS:
 • Тюлевые шторы рассеивают жёсткий прямой свет
             """.trimIndent(),
             iconRes = R.drawable.ic_light,
-            category = GuideCategory.LIGHTING
+            category = GuideCategory.CARE_TIPS
         ),
 
         // Care tips

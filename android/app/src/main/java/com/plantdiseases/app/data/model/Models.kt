@@ -453,8 +453,7 @@ data class CommunityCancelOpinionResponse(
     @SerializedName("cleared") @SerialName("cleared") val cleared: Boolean = false,
 )
 
-/** One community 'second opinion' on a shared scan. `scanId` is only
- *  populated by the /my-opinions endpoint (which scan the opinion was on). */
+/** One community 'second opinion' on a shared scan. */
 @Serializable
 data class CommunityOpinion(
     @SerializedName("suggested_disease") @SerialName("suggested_disease") val suggestedDisease: String = "",
@@ -477,6 +476,9 @@ data class CommunityOpinionsResponse(
     // (requests auto-expire server-side after 72 h). Lets the owner's app
     // restore its "waiting" state across restarts.
     @SerializedName("wants_opinion") @SerialName("wants_opinion") val wantsOpinion: Boolean = false,
+    // Epoch seconds of that live request (null when none) — drives the
+    // "N h left" countdown toward the 72 h expiry.
+    @SerializedName("opinion_requested_at") @SerialName("opinion_requested_at") val opinionRequestedAt: Long? = null,
     @SerializedName("ok") @SerialName("ok") val ok: Boolean = false,
     @SerializedName("count") @SerialName("count") val count: Int = 0,
 )
@@ -531,9 +533,11 @@ data class GuideItem(
 
 enum class GuideCategory {
     COMMON_DISEASES,
+
+    // Also hosts lighting content (the standalone Lighting tab was merged
+    // in — five tabs read better than six and lighting IS care).
     CARE_TIPS,
     WATERING,
-    LIGHTING,
     PESTS,
 
     // "Using the app" articles (reading results, community, data) — the

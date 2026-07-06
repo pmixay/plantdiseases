@@ -997,7 +997,11 @@ class CarePlanCardView @JvmOverloads constructor(
             orientation = LinearLayout.VERTICAL
             setBackgroundResource(R.drawable.bg_care_plan_pill)
             setPadding(14.dp(), 12.dp(), 14.dp(), 12.dp())
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            // MATCH_PARENT height: the horizontal row measures to its tallest
+            // child, then stretches the sibling to the same height — so a
+            // two-line value (e.g. watering "only when soil dries out") no
+            // longer leaves its row-mate pill visibly shorter.
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
                 .apply {
                     if (isFirstInRow) marginEnd = 5.dp() else marginStart = 5.dp()
                 }

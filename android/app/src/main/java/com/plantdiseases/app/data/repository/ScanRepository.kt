@@ -377,23 +377,6 @@ class ScanRepository(
         }
 
     /** List the second opinions this install has authored. */
-    suspend fun getMyCommunityOpinions(pseudoId: String): Result<CommunityOpinionsResponse> =
-        withContext(Dispatchers.IO) {
-            try {
-                val response = apiClient.httpClient.get("api/community/my-opinions/$pseudoId")
-                when (response.status.value) {
-                    in 200..299 -> Result.success(response.body<CommunityOpinionsResponse>())
-                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
-                }
-            } catch (e: SocketTimeoutException) {
-                Result.failure(ServerTimeoutException())
-            } catch (e: UnknownHostException) {
-                Result.failure(NoNetworkException())
-            } catch (e: Exception) {
-                Result.failure(e)
-            }
-        }
-
     /** Submit one community "second opinion". Returns the refreshed list. */
     suspend fun submitCommunityOpinion(
         request: CommunityOpinionRequest,
@@ -1014,15 +997,19 @@ class ScanRepository(
     }
 
     /**
-     * One-time sweep of legacy `not_a_plant` rows. New NAP / blur-gate
-     * verdicts are no longer persisted at all (AnalysisActivity shows a
-     * transient "retake" state instead), but rows saved by older builds
-     * would keep haunting the gallery and profile stats. NAP is a derived
+     * Sweep stale `not_a_plant` / blur-reject rows. The row backs the
+     * verdict's result screen (incl. the "this is a plant" feedback path),
+     * but NAP scans are hidden from the gallery and stats, so after
+     * [olderThanMs] the row is unreachable dead weight. NAP is a derived
      * property (no dedicated column), so this filters in Kotlin — the
      * table is small. Returns the number of rows removed.
      */
-    suspend fun purgeNotAPlantScans(): Int = withContext(Dispatchers.IO) {
-        val stale = scanDao.getAllScans().filter { isNotAPlantScan(it) }
+    suspend fun purgeNotAPlantScans(
+        olderThanMs: Long = 48L * 60 * 60 * 1000,
+    ): Int = withContext(Dispatchers.IO) {
+        val cutoff = System.currentTimeMillis() - olderThanMs
+        val stale = scanDao.getAllScans()
+            .filter { it.timestamp < cutoff && isNotAPlantScan(it) }
         for (s in stale) scanDao.deleteById(s.id)
         stale.size
     }

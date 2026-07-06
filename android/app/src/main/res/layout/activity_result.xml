@@ -441,20 +441,6 @@
                         app:icon="@drawable/ic_scan"
                         app:iconTint="@color/warning_amber" />
 
-                    <!-- When the model is unsure, offer to crowd-source a
-                         verdict from the community (conformal uncertainty +
-                         the community corpus working together). -->
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_second_opinion"
-                        style="@style/Widget.Material3.Button.TextButton"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_gravity="end"
-                        android:text="@string/result_get_second_opinion"
-                        android:textColor="@color/warning_amber"
-                        app:icon="@drawable/ic_garden"
-                        app:iconTint="@color/warning_amber" />
-
                 </LinearLayout>
 
             </com.google.android.material.card.MaterialCardView>
@@ -527,16 +513,23 @@
                         app:icon="@drawable/ic_chevron_right"
                         app:iconGravity="textEnd" />
 
-                    <!-- Community opinions others left on THIS (the user's own)
-                         scan; shown only when there are any. -->
+                    <!-- The ONE second-opinion control: ask, live-request
+                         status ("Opinions (2) · 41 h left", pulsing), or view
+                         replies. Available on EVERY server-diagnosed plant
+                         verdict — the owner may doubt any result, not just
+                         the ones the model itself flags as low-confidence.
+                         Hidden for NAP and offline scans (nothing shareable /
+                         no scan_id). Tap always opens the owner replies sheet,
+                         which carries the "Stop request" action. -->
                     <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_view_opinions"
+                        android:id="@+id/btn_second_opinion"
                         style="@style/Widget.Material3.Button.TextButton"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="-8dp"
                         android:visibility="gone"
-                        app:icon="@drawable/ic_garden"
+                        android:text="@string/result_get_second_opinion"
+                        app:icon="@drawable/ic_community"
                         app:iconGravity="textStart" />
 
                 </LinearLayout>

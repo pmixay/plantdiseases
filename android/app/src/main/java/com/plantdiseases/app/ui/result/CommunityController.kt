@@ -55,84 +55,68 @@ class CommunityController(
     }
 
     /**
-     * Community opinions others left on the user's OWN scan. Loaded lazily; the
-     * button appears only if there is activity (opinions and/or views), and
-     * jumps straight to the opinions sheet when arriving from a notification.
-     */
-    fun bindOwnScanOpinions(scan: ScanEntity, isRu: Boolean) {
-        binding.btnViewOpinions.visibility = View.GONE
-        val ownScanId = scan.clientScanId
-        if (ownScanId.isBlank()) return
-        activity.lifecycleScope.launch {
-            repository.getCommunityOpinions(ownScanId).onSuccess { resp ->
-                val n = resp.opinions.size
-                val v = resp.views
-                // Opening the scan's result counts as viewing its activity:
-                // advance the viewed baseline so the Gallery clears its
-                // "+N new opinions" badge for this scan.
-                OpinionPrefs.markViewedOpinions(activity, ownScanId, n)
-                // Show activity on the user's OWN shared scan whenever there is
-                // any opinions and/or views. The view count is deduped per
-                // viewer server-side.
-                if (n > 0 || v > 0) {
-                    binding.btnViewOpinions.text = if (v > 0) {
-                        activity.getString(R.string.result_view_activity, n, v)
-                    } else {
-                        activity.getString(R.string.result_view_opinions, n)
-                    }
-                    binding.btnViewOpinions.visibility = View.VISIBLE
-                    val opinionName = displayName(repository.topClassKey(scan) ?: "", isRu)
-                    binding.btnViewOpinions.setOnClickListener {
-                        // Owner viewing their OWN scan: read-only.
-                        CommunityOpinionSheet.showForOwner(
-                            activity.supportFragmentManager,
-                            ownScanId,
-                            opinionName,
-                        )
-                    }
-                    // Arrived from a notification / a Gallery row with new
-                    // opinions → jump straight to them.
-                    if (n > 0 && activity.intent.getBooleanExtra(ResultActivity.EXTRA_OPEN_OPINIONS, false)) {
-                        activity.intent.removeExtra(ResultActivity.EXTRA_OPEN_OPINIONS)
-                        binding.scrollView.post {
-                            binding.btnViewOpinions.requestRectangleOnScreen(
-                                Rect(
-                                    0,
-                                    0,
-                                    binding.btnViewOpinions.width,
-                                    binding.btnViewOpinions.height,
-                                ),
-                                false,
-                            )
-                            CommunityOpinionSheet.showForOwner(
-                                activity.supportFragmentManager,
-                                ownScanId,
-                                opinionName,
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /**
-     * Wire the "second opinion" control. Three modes: **Ask** (the scanner
-     * shares this scan and durably flags it for a second opinion — asking is
-     * a community feature, so with community OFF the tap first offers the
-     * opt-in), **Waiting** (an open request; tappable to view replies or to
-     * stop the request — requests also auto-expire server-side after 72 h)
-     * and **View** (once replies exist, switch to the read-only opinions
-     * sheet). We probe the server on load so a returning user lands in the
-     * right state: replies → View, live request → Waiting, else Ask.
+     * Wire the ONE second-opinion control (the separate "view opinions"
+     * button was folded into it — two buttons that both opened the replies
+     * sheet were redundant). Three states, probed from the server on load:
+     *
+     * - **Ask**: no live request → "Get a second opinion" (community-gated).
+     * - **Open request**: dynamic label with the reply count and the hours
+     *   left until the 72 h auto-expiry, gently pulsing while it waits.
+     *   Tapping opens the owner replies sheet, which also carries the
+     *   "Stop request" action — reachable at ANY point of the request's
+     *   life, including after replies have arrived.
+     * - **Replies, request closed** (expired/stopped): "View second
+     *   opinions (N)".
+     *
+     * The sheet reports request-state changes (stop) back via the Fragment
+     * Result API so this control re-renders immediately.
      */
     fun setupSecondOpinion(scan: ScanEntity, repository: ScanRepository, isRu: Boolean) {
+        activity.supportFragmentManager.setFragmentResultListener(
+            CommunityOpinionSheet.REQUEST_STATE_CHANGED,
+            activity,
+        ) { _, _ -> refreshSecondOpinion(scan, isRu) }
         showAsk(scan, isRu)
+        refreshSecondOpinion(scan, isRu, handleDeepLink = true)
+    }
+
+    private fun refreshSecondOpinion(
+        scan: ScanEntity,
+        isRu: Boolean,
+        handleDeepLink: Boolean = false,
+    ) {
         activity.lifecycleScope.launch {
             repository.getCommunityOpinions(scan.clientScanId).onSuccess { resp ->
+                val n = resp.opinions.size
+                // Opening the scan's result counts as viewing its replies:
+                // advance the viewed baseline so the Gallery clears its
+                // "+N new opinions" badge for this scan.
+                OpinionPrefs.markViewedOpinions(activity, scan.clientScanId, n)
                 when {
-                    resp.opinions.isNotEmpty() -> showViewReplies(scan, isRu, resp.opinions.size)
-                    resp.wantsOpinion -> showWaiting(scan, isRu)
+                    resp.wantsOpinion ->
+                        showOpenRequest(scan, isRu, n, resp.opinionRequestedAt)
+                    n > 0 -> showViewReplies(scan, isRu, n)
+                    else -> showAsk(scan, isRu)
+                }
+                // Arrived from a notification / a Gallery row with new
+                // opinions → jump straight to them.
+                if (handleDeepLink &&
+                    n > 0 &&
+                    activity.intent.getBooleanExtra(ResultActivity.EXTRA_OPEN_OPINIONS, false)
+                ) {
+                    activity.intent.removeExtra(ResultActivity.EXTRA_OPEN_OPINIONS)
+                    binding.scrollView.post {
+                        binding.btnSecondOpinion.requestRectangleOnScreen(
+                            Rect(
+                                0,
+                                0,
+                                binding.btnSecondOpinion.width,
+                                binding.btnSecondOpinion.height,
+                            ),
+                            false,
+                        )
+                        openReplies(scan, isRu)
+                    }
                 }
             }
         }
@@ -149,64 +133,58 @@ class CommunityController(
         )
     }
 
+    /** Hours until the 72 h expiry, floored at 1 so it never reads "0 h
+     *  left" while still live; null when the timestamp is unknown. */
+    private fun hoursLeft(requestedAtSec: Long?): Int? {
+        if (requestedAtSec == null || requestedAtSec <= 0L) return null
+        val expiresMs = (requestedAtSec + 72L * 3600L) * 1000L
+        val left = expiresMs - System.currentTimeMillis()
+        if (left <= 0L) return null
+        return ((left + 3_599_999L) / 3_600_000L).toInt().coerceIn(1, 72)
+    }
+
+    /** Live request: dynamic status label + a gentle pulse so the control
+     *  reads as "in progress", not a dead button. Tap opens the replies
+     *  sheet (which carries the Stop action). */
+    private fun showOpenRequest(
+        scan: ScanEntity,
+        isRu: Boolean,
+        replyCount: Int,
+        requestedAtSec: Long?,
+    ) {
+        val btn = binding.btnSecondOpinion
+        btn.isEnabled = true
+        val hours = hoursLeft(requestedAtSec)
+        btn.text = when {
+            replyCount > 0 && hours != null ->
+                activity.getString(R.string.second_opinion_open_replies, replyCount, hours)
+            replyCount > 0 ->
+                activity.getString(R.string.result_second_opinion_view, replyCount)
+            hours != null ->
+                activity.getString(R.string.second_opinion_waiting_hours, hours)
+            else -> activity.getString(R.string.result_second_opinion_waiting)
+        }
+        // Soft breathing pulse — a view animation, so it dies with the view.
+        val pulse = android.view.animation.AlphaAnimation(1f, 0.55f).apply {
+            duration = 900L
+            repeatMode = android.view.animation.Animation.REVERSE
+            repeatCount = android.view.animation.Animation.INFINITE
+        }
+        btn.startAnimation(pulse)
+        btn.setOnClickListener { openReplies(scan, isRu) }
+    }
+
     private fun showViewReplies(scan: ScanEntity, isRu: Boolean, count: Int) {
         val btn = binding.btnSecondOpinion
+        btn.clearAnimation()
         btn.isEnabled = true
         btn.text = activity.getString(R.string.result_second_opinion_view, count)
         btn.setOnClickListener { openReplies(scan, isRu) }
     }
 
-    private fun showWaiting(scan: ScanEntity, isRu: Boolean) {
-        // The request is durably recorded server-side, so "waiting" always
-        // means the community can see the ask. Tapping explains the 72 h
-        // auto-expiry and offers to view replies or stop the request.
-        val btn = binding.btnSecondOpinion
-        btn.isEnabled = true
-        btn.setText(R.string.result_second_opinion_waiting)
-        btn.setOnClickListener {
-            com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
-                .setTitle(R.string.second_opinion_waiting_title)
-                .setMessage(R.string.second_opinion_waiting_body)
-                .setPositiveButton(R.string.close, null)
-                .setNeutralButton(R.string.second_opinion_check_replies) { _, _ ->
-                    openReplies(scan, isRu)
-                }
-                .setNegativeButton(R.string.second_opinion_stop) { _, _ ->
-                    cancelRequest(scan, isRu)
-                }
-                .show()
-        }
-    }
-
-    /** Withdraw the open request: badge drops from the feed and opinion
-     *  notifications for this scan stop. Falls back to Waiting on failure. */
-    private fun cancelRequest(scan: ScanEntity, isRu: Boolean) {
-        val btn = binding.btnSecondOpinion
-        btn.isEnabled = false
-        val pseudoId = TelemetryIds.userPseudoId(activity)
-        activity.lifecycleScope.launch {
-            repository.cancelSecondOpinion(scan.clientScanId, pseudoId)
-                .onSuccess {
-                    showAsk(scan, isRu)
-                    Toast.makeText(
-                        activity,
-                        R.string.second_opinion_stopped,
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                }
-                .onFailure {
-                    showWaiting(scan, isRu)
-                    Toast.makeText(
-                        activity,
-                        R.string.community_opinion_error,
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                }
-        }
-    }
-
     private fun showAsk(scan: ScanEntity, isRu: Boolean) {
         val btn = binding.btnSecondOpinion
+        btn.clearAnimation()
         btn.isEnabled = true
         btn.setText(R.string.result_get_second_opinion)
         btn.setOnClickListener {
@@ -254,7 +232,13 @@ class CommunityController(
             communityUploader.uploadFromEntity(scan, force = true)
             repository.requestSecondOpinion(scan.clientScanId, pseudoId)
                 .onSuccess {
-                    showWaiting(scan, isRu)
+                    // Fresh request: 0 replies, full 72 h window.
+                    showOpenRequest(
+                        scan,
+                        isRu,
+                        replyCount = 0,
+                        requestedAtSec = System.currentTimeMillis() / 1000L,
+                    )
                     // Seed the notify baseline at 0 so the very next
                     // reply counts as new, and flip the global init flag.
                     OpinionPrefs.markInitialized(activity)

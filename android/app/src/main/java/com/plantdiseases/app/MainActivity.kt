@@ -256,10 +256,6 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun warmRegionCache() {
-        // No-op: kept only for binary/source compatibility inside this class.
-    }
-
     // Up arrow on non-top-level destinations (e.g. the disease guide opened
     // from Home) pops the nav back stack via the shared toolbar.
     override fun onSupportNavigateUp(): Boolean {
