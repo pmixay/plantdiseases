@@ -21,6 +21,7 @@
     "inference_timeout": 30.0,
     "rate_limit_rps": 1.0,
     "infer_workers": 1,
+    "net_workers": 16,
     "onnx_intra_op_threads": 0
   },
   "ai": {

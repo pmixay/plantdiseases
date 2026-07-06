@@ -786,15 +786,29 @@ ISSUED_SCAN_ID_TTL_DAYS = get_int("ISSUED_SCAN_ID_TTL_DAYS", 30)
 # rate-limited (1 RPS) workload. Operators expecting real concurrency on a
 # many-core host can raise this and lower ONNX_INTRA_OP_THREADS to match.
 #
-# ONLY ``pipeline.analyze`` runs on this executor. Everything else that
-# needs a thread (SQLite reads/writes, PlantNet / OpenRouter / Wikipedia
-# HTTP, FCM pushes) runs on the event loop's default thread pool —
-# putting it here would queue millisecond DB ops and external HTTP
-# behind a 30-second inference (head-of-line blocking), stalling every
-# non-scan endpoint whenever a scan is in flight.
+# ONLY ``pipeline.analyze`` runs on this executor. Slow external HTTP
+# (PlantNet / OpenRouter / Wikipedia) runs on the network executor below;
+# everything else that needs a thread (SQLite reads/writes, image decode /
+# hashing, FCM pushes) runs on the event loop's default thread pool —
+# putting it here would queue millisecond DB ops behind a 30-second
+# inference (head-of-line blocking), stalling every non-scan endpoint
+# whenever a scan is in flight.
 INFER_WORKERS = get_int("INFER_WORKERS", 1)
 _inference_executor: ThreadPoolExecutor | None = None
 _executor_lock = threading.Lock()
+
+# Dedicated pool for calls that WAIT on an external service (OpenRouter,
+# PlantNet, Wikipedia — each can legitimately hold a thread for 10–20 s).
+# The event loop's default executor is sized from CPU count
+# (min(32, cores + 4) = 5 threads on a 1-vCPU host) and is shared by every
+# ``run_in_executor(None, …)`` in the app, so a handful of concurrent
+# care-plan / species-diseases requests used to occupy ALL of it and queue
+# millisecond DB writes behind 20-second LLM waits — a 20 s-capped upstream
+# call was observed as 90–110 s of client latency, all of it queueing.
+# These threads sleep on network I/O, not CPU, so the pool is sized for
+# concurrency, not cores.
+NET_WORKERS = get_int("NET_WORKERS", 16)
+_net_executor: ThreadPoolExecutor | None = None
 
 
 def _get_inference_executor() -> ThreadPoolExecutor:
@@ -811,6 +825,18 @@ def _get_inference_executor() -> ThreadPoolExecutor:
         if _inference_executor is None or getattr(_inference_executor, "_shutdown", False):
             _inference_executor = ThreadPoolExecutor(max_workers=INFER_WORKERS)
         return _inference_executor
+
+
+def _get_net_executor() -> ThreadPoolExecutor:
+    """Lazily (re)create the external-network executor (same lifecycle
+    contract as ``_get_inference_executor``)."""
+    global _net_executor
+    with _executor_lock:
+        if _net_executor is None or getattr(_net_executor, "_shutdown", False):
+            _net_executor = ThreadPoolExecutor(
+                max_workers=NET_WORKERS, thread_name_prefix="net",
+            )
+        return _net_executor
 
 # ── Thread-safe server metrics ──────────────────────────────────────
 SERVER_START_TIME: float = 0.0
@@ -1186,9 +1212,10 @@ async def lifespan(app: FastAPI):
     server because clients can't tell the difference until users
     notice bad diagnoses.
     """
-    global pipeline, pipeline_frontier, SERVER_START_TIME, _inference_executor
+    global pipeline, pipeline_frontier, SERVER_START_TIME, _inference_executor, _net_executor
     SERVER_START_TIME = time.time()
     _inference_executor = _get_inference_executor()
+    _net_executor = _get_net_executor()
     init_feedback_db()
     init_community_db()
     init_telemetry_db()
@@ -1258,6 +1285,11 @@ async def lifespan(app: FastAPI):
                 # work that hasn't started yet.
                 _inference_executor.shutdown(wait=True, cancel_futures=True)
                 _inference_executor = None
+            if _net_executor is not None:
+                # In-flight external calls drain within their own budgets
+                # (OPENROUTER_TOTAL_TIMEOUT / PLANTNET_TIMEOUT).
+                _net_executor.shutdown(wait=True, cancel_futures=True)
+                _net_executor = None
 
 
 async def _prune_loop() -> None:
@@ -1746,7 +1778,7 @@ async def _species_identify_best_effort(
     try:
         raw = await asyncio.wait_for(
             loop.run_in_executor(
-                None,
+                _get_net_executor(),
                 # identify_species keyword args (organ, lang) are
                 # keyword-only — run_in_executor only takes positional
                 # args, so we wrap in a lambda. Passing positionally
@@ -2707,7 +2739,7 @@ async def identify_endpoint(
     plantnet_lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
     loop = asyncio.get_running_loop()
     result = await loop.run_in_executor(
-        None,
+        _get_net_executor(),
         lambda: identify_species(contents, organ=organ, lang=plantnet_lang),
     )
     # Deep-copy result before merging so a cache-hit return from
@@ -2734,7 +2766,7 @@ async def chat_endpoint(payload: ChatRequest, request: Request):
     if diagnosis is not None and len(json.dumps(diagnosis, default=str)) > 8 * 1024:
         raise HTTPException(status_code=400, detail="diagnosis context too large")
     result = await asyncio.get_running_loop().run_in_executor(
-        None,
+        _get_net_executor(),
         lambda: chat_reply(
             session_id=payload.session_id,
             user_message=payload.message,
@@ -2773,7 +2805,7 @@ async def care_plan_endpoint(payload: CarePlanRequest):
         # endpoint forgiving while still producing a useful plan.
         disease = "unknown"
     plan = await asyncio.get_running_loop().run_in_executor(
-        None,
+        _get_net_executor(),
         lambda: generate_care_plan(
             disease=disease,
             species=payload.species,
@@ -3365,7 +3397,8 @@ async def community_opinion_submit(payload: CommunityOpinionRequest, request: Re
         except Exception as exc:  # noqa: BLE001
             logger.debug("Opinion push failed: %s", exc)
 
-    await loop.run_in_executor(None, _push_owner)
+    # FCM is external HTTP — keep it off the default (DB-op) pool too.
+    await loop.run_in_executor(_get_net_executor(), _push_owner)
 
     result = await loop.run_in_executor(
         None, lambda: community_opinions_for(sid),
@@ -3740,7 +3773,7 @@ async def species_info_endpoint(name: str, locale: str = "en"):
         raise HTTPException(status_code=422, detail="Invalid species name")
     lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
     info = await asyncio.get_running_loop().run_in_executor(
-        None, lambda: fetch_species_info(n, lang),
+        _get_net_executor(), lambda: fetch_species_info(n, lang),
     )
     if info is None:
         # Don't let an intermediary cache a transient Wikipedia miss.
@@ -3780,7 +3813,7 @@ async def species_diseases_endpoint(name: str, common: str = "", locale: str = "
     lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
     common_name = (common or "").strip()[:128] or None
     data = await asyncio.get_running_loop().run_in_executor(
-        None, lambda: species_common_diseases(n, common_name=common_name, lang=lang),
+        _get_net_executor(), lambda: species_common_diseases(n, common_name=common_name, lang=lang),
     )
     headers = (
         {"Cache-Control": "public, max-age=604800"}
@@ -3861,13 +3894,17 @@ async def plant_photo(request: Request, u: str | None = None,
     elif name:
         nm = name.strip()[:128]
         lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
-        info = await loop.run_in_executor(None, lambda: fetch_species_info(nm, lang))
+        info = await loop.run_in_executor(
+            _get_net_executor(), lambda: fetch_species_info(nm, lang),
+        )
         url = ((info or {}).get("image_url") or "").strip()
         if not url:
             raise HTTPException(status_code=404, detail="Photo unavailable")
     else:
         raise HTTPException(status_code=400, detail="Missing photo source")
-    path = await loop.run_in_executor(None, lambda: plant_photo_get_or_fetch(url))
+    path = await loop.run_in_executor(
+        _get_net_executor(), lambda: plant_photo_get_or_fetch(url),
+    )
     if path is None:
         raise HTTPException(status_code=404, detail="Photo unavailable")
     # Wikimedia lead images come at full resolution (often multi-MB) — the home
@@ -4132,7 +4169,7 @@ async def _warm_placeholder_images() -> None:
             info = None
             with contextlib.suppress(Exception):
                 info = await loop.run_in_executor(
-                    None, lambda s=p.scientific, n=lang: fetch_species_info(s, n),
+                    _get_net_executor(), lambda s=p.scientific, n=lang: fetch_species_info(s, n),
                 )
             # Pre-cache the lead photo bytes too, so the very first carousel
             # request serves images instantly from our disk cache.
@@ -4140,11 +4177,13 @@ async def _warm_placeholder_images() -> None:
             if url and url not in warmed_photos:
                 warmed_photos.add(url)
                 with contextlib.suppress(Exception):
-                    await loop.run_in_executor(None, lambda u=url: plant_photo_get_or_fetch(u))
+                    await loop.run_in_executor(
+                        _get_net_executor(), lambda u=url: plant_photo_get_or_fetch(u),
+                    )
     for locale in ("en", "ru"):
         with contextlib.suppress(Exception):
             bundle = await loop.run_in_executor(
-                None, lambda n=locale: _build_popular_bundle(None, None, None, None, n),
+                _get_net_executor(), lambda n=locale: _build_popular_bundle(None, None, None, None, n),
             )
             key = f"||{locale}"
             with _popular_lock:
@@ -4271,7 +4310,8 @@ async def popular_endpoint(request: Request, country: str | None = None,
     if bundle is None:
         # Cold: build synchronously (first ever request for this scope).
         bundle = await asyncio.get_running_loop().run_in_executor(
-            None, lambda: _build_popular_bundle(country_norm, city_n, lat_n, lon_n, locale),
+            _get_net_executor(),
+            lambda: _build_popular_bundle(country_norm, city_n, lat_n, lon_n, locale),
         )
         with _popular_lock:
             _popular_cache[key] = (now + _popular_ttl(bundle), bundle)
@@ -4305,7 +4345,7 @@ def _refresh_popular_bg(
     async def _run() -> None:
         try:
             bundle = await asyncio.get_running_loop().run_in_executor(
-                None, lambda: _build_popular_bundle(country, city, lat, lon, locale),
+                _get_net_executor(), lambda: _build_popular_bundle(country, city, lat, lon, locale),
             )
             with _popular_lock:
                 _popular_cache[key] = (time.time() + _popular_ttl(bundle), bundle)

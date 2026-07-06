@@ -461,6 +461,7 @@ _OPENROUTER_REASONING_EFFORTS = frozenset(
 def _call_openrouter(
     system_text: str, history: list[dict],
     *, max_tokens: int | None = None, require_complete: bool = False,
+    reasoning_effort: str | None = None,
 ) -> tuple[str, int, int]:
     """Run an OpenRouter chat completion with bounded retry.
 
@@ -476,6 +477,12 @@ def _call_openrouter(
     "length"`` (the answer was cut off mid-token). Callers that cache or parse
     structured output pass this so a truncated reply is rejected, not cached or
     parsed-as-empty.
+
+    ``reasoning_effort`` overrides the global ``OPENROUTER_REASONING_EFFORT``
+    for this call only. Structured-output callers (species diseases, care-plan
+    polish) pin "minimal" so an operator raising the global effort for the
+    conversational doctor can't reinflate their reasoning traces back into
+    ``finish_reason="length"`` truncation.
     """
     import requests  # noqa: WPS433
 
@@ -496,8 +503,9 @@ def _call_openrouter(
     # reasoning — {"enabled": false} / effort "none" is rejected by some
     # providers (see OPENROUTER_REASONING_EFFORT). reasoning.exclude is unused:
     # it hides the trace but the model still reasons + bills, so it can't help.
-    if OPENROUTER_REASONING_EFFORT in _OPENROUTER_REASONING_EFFORTS:
-        payload["reasoning"] = {"effort": OPENROUTER_REASONING_EFFORT}
+    effort = (reasoning_effort or OPENROUTER_REASONING_EFFORT).strip().lower()
+    if effort in _OPENROUTER_REASONING_EFFORTS:
+        payload["reasoning"] = {"effort": effort}
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
@@ -785,7 +793,9 @@ SPECIES_DISEASES_CACHE_TTL_SECONDS = get_int("SPECIES_DISEASES_CACHE_TTL_SECONDS
 # reasoning (max_tokens is a cap, not a target — short answers stop early and
 # only bill what they generate, so a higher cap costs nothing but avoids the
 # truncation that returned an empty list and re-paid the call on every open).
-SPECIES_DISEASES_MAX_TOKENS = get_int("SPECIES_DISEASES_MAX_TOKENS", 1024)
+# 1024 was still hit in production when the model's hidden trace ran long
+# (the trace bills against max_tokens), so the default carries 2× headroom.
+SPECIES_DISEASES_MAX_TOKENS = get_int("SPECIES_DISEASES_MAX_TOKENS", 2048)
 _SPECIES_DISEASES_CACHE = _LRU(SPECIES_DISEASES_CACHE_SIZE, SPECIES_DISEASES_CACHE_TTL_SECONDS)
 # Persistent layer behind the LRU: the species→diseases LLM answer is stable,
 # so once paid for it's reused across restarts and fresh installs instead of
@@ -903,6 +913,9 @@ def species_common_diseases(
             [{"role": "user", "content": user}],
             max_tokens=SPECIES_DISEASES_MAX_TOKENS,
             require_complete=True,
+            # Pin the shortest trace: this call needs structured recall, not
+            # reasoning, and a long trace is what pushes it into truncation.
+            reasoning_effort="minimal",
         )
     except Exception as e:  # noqa: BLE001 — never propagate to the client
         logger.warning("species_common_diseases failed: %s", e)
@@ -1672,10 +1685,34 @@ def _polish_plan_with_llm(plan: dict, locale: str) -> dict:
         "Write the summary in Russian." if locale.lower().startswith("ru")
         else "Write the summary in English."
     )
+    # Echo the canonical schedule numbers straight into the instructions.
+    # Asking the model to merely "keep intervals as given" (buried in the
+    # JSON blob) made it paraphrase-and-drift — "water every 10 days" when
+    # the plan said 5 — and every such drift is rejected by
+    # ``_enforce_canonical_dosages``, silently losing the polish. Restated
+    # as explicit fill-in values the numbers survive the rewrite.
+    canonical_bits: list[str] = []
+    watering_days = plan.get("watering_days")
+    if isinstance(watering_days, int) and watering_days > 0:
+        canonical_bits.append(f"water every {watering_days} days")
+    fertilise_weeks = plan.get("fertilise_weeks")
+    # 0 means "do not fertilise" (e.g. viral / edema plans) — echoing
+    # "every 0 weeks" would only invite the model to invent a cadence.
+    if isinstance(fertilise_weeks, int) and fertilise_weeks > 0:
+        canonical_bits.append(f"fertilise every {fertilise_weeks} weeks")
+    npk = str(plan.get("fertiliser_npk") or "").strip()
+    if npk:
+        canonical_bits.append(f"fertiliser NPK {npk}")
+    canonical_hint = (
+        "The canonical schedule is: " + "; ".join(canonical_bits) + ". "
+        "Copy these numbers verbatim — never recompute, round or replace "
+        "them. " if canonical_bits else ""
+    )
     system = (
         "You polish a houseplant care plan into 5-7 short Markdown bullet "
         "points covering watering, light, humidity, feeding and disease "
-        "actions. Keep dosages and intervals exactly as given. "
+        "actions. " + canonical_hint
+        + "Keep all other dosages and intervals exactly as given. "
         + locale_hint
     )
     user_blocks = [{"role": "user", "content": json.dumps(plan, ensure_ascii=False)}]
@@ -1683,6 +1720,9 @@ def _polish_plan_with_llm(plan: dict, locale: str) -> dict:
         polish, _, _ = _call_openrouter(
             system, user_blocks,
             max_tokens=CARE_PLAN_POLISH_MAX_TOKENS, require_complete=True,
+            # Structured rewrite, not reasoning — pin the shortest trace so a
+            # raised global effort can't truncate the polish (see species call).
+            reasoning_effort="minimal",
         )
         if polish and _enforce_canonical_dosages(polish, plan):
             _CARE_PLAN_CACHE.put(cache_key, polish)
