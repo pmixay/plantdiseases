@@ -414,7 +414,6 @@ class ProfileFragment : Fragment() {
     override fun onResume() {
         super.onResume()
         loadStats()
-        loadMyOpinions()
     }
 
     override fun onDestroyView() {
