@@ -244,6 +244,7 @@
     <!-- Community scope toggle -->
     <string name="community_filter_nearby">Nearby</string>
     <string name="community_filter_country">Country</string>
+    <string name="community_filter_worldwide">Worldwide</string>
     <!-- Community scans map -->
     <string name="community_map_title">Community map</string>
     <string name="nearby_action_map">Map</string>

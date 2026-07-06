@@ -956,10 +956,13 @@ def nearby_scans(
 
     ``scope="nearby"`` (default) selects scans within ``radius_km`` of
     ``lat``/``lon`` (the requester's coarse location); ``scope="country"``
-    selects the whole ``country``. A *disease-scoped* call (the result-screen
+    selects the whole ``country``; ``scope="worldwide"`` drops the geo
+    predicate entirely (the whole corpus, most recent first — the requester's
+    location is irrelevant). A *disease-scoped* call (the result-screen
     "similar scans" carousel) widens nearby→country to stay filled but never
     crosses to a different disease; the disease-agnostic feed stays strictly
-    in its scope so the Nearby/Country toggle actually changes what's shown.
+    in its scope so the Nearby/Country/Worldwide toggle actually changes what's
+    shown.
     """
     init_db()
     # Keep the feed's "wants opinion" badge honest: reap expired requests
@@ -969,7 +972,10 @@ def nearby_scans(
         country = to_iso_alpha2(country)
     limit = max(1, min(int(limit), 100))
     has_coords = lat is not None and lon is not None
-    nearby = scope != "country"
+    scope = (scope or "nearby").strip().lower()
+    if scope not in ("nearby", "country", "worldwide"):
+        scope = "nearby"
+    nearby = scope == "nearby"
 
     with _connect() as conn:
         common = ""
@@ -985,14 +991,20 @@ def nearby_scans(
         # nearby→country; the plain feed stays in a single scope.
         widen = disease is not None
         geo_scopes: list[tuple[str, list, bool]] = []
-        if nearby and has_coords:
-            min_lat, max_lat, min_lon, max_lon = _bbox(lat, lon, radius_km)
-            geo_scopes.append((
-                " AND lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?",
-                [min_lat, max_lat, min_lon, max_lon], True,
-            ))
-        if country and (scope == "country" or widen or not has_coords):
-            geo_scopes.append((" AND country = ?", [country], False))
+        if scope == "worldwide":
+            # No geo predicate at all — every country, newest first. The
+            # requester's coords/country are intentionally ignored so the
+            # feed works even without a location fix.
+            geo_scopes.append(("", [], False))
+        else:
+            if nearby and has_coords:
+                min_lat, max_lat, min_lon, max_lon = _bbox(lat, lon, radius_km)
+                geo_scopes.append((
+                    " AND lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?",
+                    [min_lat, max_lat, min_lon, max_lon], True,
+                ))
+            if country and (scope == "country" or widen or not has_coords):
+                geo_scopes.append((" AND country = ?", [country], False))
 
         species_lower = (species or "").strip().lower()
         seen: set[str] = set()

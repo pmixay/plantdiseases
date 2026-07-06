@@ -3598,22 +3598,28 @@ async def community_scan_nearby(
     Location is supplied by the opted-in client (coarse ``lat``/``lon`` +
     reverse-geocoded ``country``/``region`` city). ``scope`` is the app's
     filter toggle: ``nearby`` (default) restricts the feed to a ~30 km radius
-    of the coords; ``country`` widens to the whole country. ``species`` +
-    ``disease`` narrow the result-screen "similar scans" carousel, which
-    widens nearby→country to stay filled.
+    of the coords; ``country`` widens to the whole country; ``worldwide`` drops
+    the geo filter entirely (every country, newest first — needs no location).
+    ``species`` + ``disease`` narrow the result-screen "similar scans"
+    carousel, which widens nearby→country to stay filled.
     """
     geo = _client_location(country, region, lat, lon)
     country_norm = geo["country"]
-    nearby = (scope or "nearby").strip().lower() != "country"
+    scope_norm = (scope or "nearby").strip().lower()
+    if scope_norm not in ("nearby", "country", "worldwide"):
+        scope_norm = "nearby"
+    nearby = scope_norm == "nearby"
+    worldwide = scope_norm == "worldwide"
     has_coords = geo["lat"] is not None
-    # With neither coords nor a country the query has no geo anchor, so the
-    # feed comes back empty for a reason the client can't otherwise tell apart
-    # from "no scans near you" (the usual cause: community opted in but the
-    # coarse-location permission was never granted / no fix yet). Surface it as
-    # an explicit flag so the client can prompt to enable location instead of
-    # rendering a misleading empty state. Storage stays privacy-preserving —
-    # there is deliberately no server-side IP geolocation.
-    location_required = not (bool(country_norm) or has_coords)
+    # With neither coords nor a country a *geo-scoped* query has no anchor, so
+    # the feed comes back empty for a reason the client can't otherwise tell
+    # apart from "no scans near you" (the usual cause: community opted in but
+    # the coarse-location permission was never granted / no fix yet). Surface
+    # it as an explicit flag so the client can prompt to enable location
+    # instead of rendering a misleading empty state. Worldwide needs no anchor,
+    # so it never sets the flag. Storage stays privacy-preserving — there is
+    # deliberately no server-side IP geolocation.
+    location_required = not worldwide and not (bool(country_norm) or has_coords)
     rows = community_nearby_scans(
         country=country_norm,
         lat=geo["lat"] if nearby else None,
@@ -3622,7 +3628,7 @@ async def community_scan_nearby(
         species=(species or None),
         limit=max(1, min(int(limit), 50)),
         exclude_user_pseudo_id=user_pseudo_id,
-        scope=("nearby" if nearby else "country"),
+        scope=scope_norm,
     )
     # Country-level overview for the chip row (the coords feed itself is
     # radius-scoped; the summary stays country-wide for a stable "what's
@@ -3649,8 +3655,12 @@ async def community_scan_nearby(
         _localize_item_country(r)
     meta = _country_display(country_norm)
     # Tell the client which filter was actually served + the nearby label.
-    meta["scope"] = "nearby" if (nearby and has_coords) else meta["scope"]
-    meta["region"] = geo["city"] if (nearby and has_coords) else None
+    if worldwide:
+        meta["scope"] = "worldwide"
+        meta["region"] = None
+    else:
+        meta["scope"] = "nearby" if (nearby and has_coords) else meta["scope"]
+        meta["region"] = geo["city"] if (nearby and has_coords) else None
     meta["location_required"] = location_required
     summary.update(meta)
     return JSONResponse(content={"items": rows, "summary": summary, **meta})

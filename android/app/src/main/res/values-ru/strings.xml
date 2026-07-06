@@ -240,6 +240,7 @@
     <!-- Community scope toggle -->
     <string name="community_filter_nearby">Рядом</string>
     <string name="community_filter_country">Страна</string>
+    <string name="community_filter_worldwide">Весь мир</string>
     <!-- Community scans map -->
     <string name="community_map_title">Карта сообщества</string>
     <string name="nearby_action_map">Карта</string>

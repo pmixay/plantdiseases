@@ -402,6 +402,40 @@ def test_community_nearby_disease_filter_is_strict(client, isolated_community):
     assert [item["disease"] for item in items] == ["powdery_mildew"]
 
 
+def test_community_nearby_worldwide_ignores_location(client, isolated_community):
+    """``scope=worldwide`` returns scans from every country, newest first,
+    regardless of the requester's country/coords — and needs no location, so
+    ``location_required`` is never set even when the caller sends nothing."""
+    for i, country in enumerate(["PL", "US", "JP", "BR"]):
+        client.post(
+            "/api/community/scan",
+            data=_form(
+                scan_id=f"world{i:05d}",
+                user_pseudo_id="pseudo-world-up",
+                region="Somewhere", country=country,
+                disease="leaf_spot",
+            ),
+        )
+    # No country, no coords, no region — a geo-scoped feed would be empty and
+    # flag location_required; worldwide fills regardless.
+    r = client.get(
+        "/api/community/nearby",
+        params={"scope": "worldwide", "user_pseudo_id": "pseudo-viewer-w", "limit": 10},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["scope"] == "worldwide"
+    assert body["location_required"] is False
+    assert len(body["items"]) == 4  # all four countries surfaced
+
+    # Country scope with no anchor still flags location_required (contrast).
+    r_country = client.get(
+        "/api/community/nearby",
+        params={"scope": "country", "user_pseudo_id": "pseudo-viewer-w"},
+    )
+    assert r_country.json()["location_required"] is True
+
+
 def test_community_request_opinion_flags_owner_scan(client, isolated_community):
     """The scanner can flag THEIR OWN scan as wanting a second opinion;
     the flag then surfaces on the nearby feed (``wants_opinion: true``)
