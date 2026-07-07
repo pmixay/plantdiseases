@@ -33,7 +33,7 @@ except ImportError:  # flat layout (Docker / uvicorn from server/)
 logger = logging.getLogger("plantdiseases.plant_photos")
 
 _TIMEOUT_S = 6.0
-_MAX_BYTES = 6 * 1024 * 1024  # 6 MB — generous for a Wikipedia lead image
+_MAX_BYTES = 16 * 1024 * 1024  # 16 MB — Wikimedia Commons originals routinely run 6-11 MB
 _CACHE_MAX_FILES = 600  # LRU cap; oldest-by-mtime evicted on write
 _USER_AGENT = (
     "PlantDiseases/1.1 (https://github.com/pmixay/plantdiseases; houseplant care app)"
