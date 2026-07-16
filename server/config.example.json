@@ -55,7 +55,7 @@
     "_scan_trust_note": "route_scan auto-accepts confident scans (singleton conformal set / high calibrated confidence) as auto_yes; the uncertain tail is tagged pending (always kept). There is NO human review queue — the store is exported offline via tools/export_data.py.",
     "labeling_trust_conformal": true,
     "labeling_conf_high": 0.85,
-    "_scan_recording_note": "Anonymized production-scan recording for the model-improvement loop: re-encoded (EXIF/GPS dropped), max side 1024px, no user identifiers — disclosed via the app's blocking consent screen + website/privacy.html. Model-uncertain (pending) scans and every disease class are always kept; confident healthy scans are sampled at scan_common_keep_rate; per-class daily cap + global image cap bound disk.",
+    "_scan_recording_note": "Anonymized production-scan recording for the model-improvement loop: re-encoded (EXIF/GPS dropped), max side 1024px, no user identifiers — disclosed via the app's blocking consent screen + privacy.html. Model-uncertain (pending) scans and every disease class are always kept; confident healthy scans are sampled at scan_common_keep_rate; per-class daily cap + global image cap bound disk.",
     "scan_recording_enabled": true,
     "scan_retention_days": 90,
     "scan_max_images": 20000,

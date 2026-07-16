@@ -14,13 +14,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository layout
 
-Three independent deliverables, each with its own toolchain:
+Two independent deliverables, each with its own toolchain:
 
 | Dir | Stack | What it is |
 |---|---|---|
 | `server/` | Python 3.11, FastAPI, ONNX Runtime | ML inference API + the two-stage pipeline. The brains. |
 | `android/` | Kotlin, Gradle, Material 3 | The phone client (CameraX, Room, Ktor + kotlinx.serialization, Koin DI). |
-| `website/` | Static HTML/CSS/JS | Marketing/benchmark showcase, no build step (`python3 -m http.server`). |
+
+The bilingual privacy policy is a single standalone page, `privacy.html` (repo
+root) — the canonical data-disclosure surface referenced by the app's consent
+screen.
 
 Key docs: `README.md` (overview + API table), `DEPLOYMENT.md` (production config
 + Android release signing/FCM), `docs/ROADMAP.md` (current model status + next

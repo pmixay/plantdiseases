@@ -528,7 +528,7 @@ DISEASE_CLASSES = {
 # the response scan_id, and the user↔scan_id join lives solely in feedback.db
 # (which the GDPR delete cascade sweeps). Routed by route_scan(): confident →
 # auto_yes, suspicious → pending (kept for offline review). Disclosed via the
-# blocking first-launch consent screen (Android) + website/privacy.html.
+# blocking first-launch consent screen (Android) + privacy.html.
 SCAN_RECORDING_ENABLED = get_bool("SCAN_RECORDING_ENABLED", True)
 SCAN_RETENTION_DAYS = get_int("SCAN_RETENTION_DAYS", 90)
 SCAN_MAX_IMAGES = get_int("SCAN_MAX_IMAGES", 20000)
