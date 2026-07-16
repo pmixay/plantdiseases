@@ -46,7 +46,7 @@ sets.
 ## Model families (Aqua / Gamma / Frontier)
 
 The bundle declares its capacity tier in `classes.json -> model_family`,
-surfaced by `/api/version`. Three tiers share one training/eval/export
+surfaced by `/api/capabilities`. Three tiers share one training/eval/export
 recipe (`train_notebook.ipynb`, selected by `MODEL_FAMILY` in §1):
 
 | Family | Backbone | Input | Role |

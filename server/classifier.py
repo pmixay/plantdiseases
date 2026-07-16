@@ -11,7 +11,7 @@ The production artefact is an ONNX graph and the runtime is
 **ONNX-only and architecture-neutral** — it serves whatever backbone+head
 graph is shipped (the current frozen-DINOv2 ViT-S/14 + LoRA + MLP head)
 with no code change. ``classes.json`` declares the ``architecture``
-(reported by ``/api/version``), ``img_size`` and any ``inference.tta``
+(reported by ``/api/capabilities``), ``img_size`` and any ``inference.tta``
 mode. Loading order:
 
 1. ``classifier_int8.onnx`` (quantized, smallest + fastest)
@@ -85,7 +85,7 @@ DEFAULT_CLASS_NAMES = [
 NORM_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 NORM_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
-# Backbone family of the trained checkpoint, reported by /api/version.
+# Backbone family of the trained checkpoint, reported by /api/capabilities.
 # Production loads an architecture-neutral ONNX graph, so this is metadata
 # only. ``classes.json -> architecture`` overrides it.
 DEFAULT_ARCHITECTURE = "dinov2_vits14+mlp_head"

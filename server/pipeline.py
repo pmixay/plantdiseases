@@ -6,9 +6,8 @@ Stage 1 (Detector)   — YOLOv8n single-class. Locates ``plant_leaf``
                        indoor leaf crops, not PlantDoc).
 Stage 2 (Classifier) — frozen DINOv2 ViT-S/14 backbone + LoRA on the
                        later blocks + a trained MLP head at 224 px
-                       (architecture-neutral ONNX runtime; the legacy
-                       MobileNetV3-Large KD student still loads via the
-                       .pth dev fallback). Classifies cropped leaf
+                       (architecture-neutral, ONNX-only runtime — there is
+                       no PyTorch/.pth fallback). Classifies cropped leaf
                        regions into one of the trainable classes
                        including ``not_a_plant``.
                        The runtime reads ``models/classes.json`` at

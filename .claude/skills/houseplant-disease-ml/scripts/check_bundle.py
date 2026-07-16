@@ -101,7 +101,7 @@ def check(models_dir: Path) -> Report:
         if "not_a_plant" not in names:
             r.add(WARN, "no 'not_a_plant' class — the rejection head is expected in v2.x")
     if not (classes.get("architecture")):
-        r.add(WARN, "classes.json missing 'architecture' (reported by /api/version)")
+        r.add(WARN, "classes.json missing 'architecture' (reported by /api/capabilities)")
     img = (classes.get("training") or {}).get("img_size") or classes.get("img_size")
     if not img:
         r.add(WARN, "classes.json missing training.img_size")
