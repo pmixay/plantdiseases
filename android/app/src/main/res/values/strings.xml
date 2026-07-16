@@ -32,8 +32,9 @@
     <string name="camera_error">Failed to start camera</string>
     <string name="capture_error">Failed to capture photo</string>
     <string name="image_load_error">Failed to load image</string>
-    <string name="crop_title">Crop photo</string>
     <string name="crop_action_done">Done</string>
+    <string name="crop_action_rotate">Rotate</string>
+    <string name="crop_action_cancel">Cancel</string>
     <string name="crop_error">Failed to crop image</string>
 
     <!-- Analysis -->

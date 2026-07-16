@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Floating control panel for the custom crop screen — a light "green
+    liquid glass" pill. A soft frosted-white base (glass_white_soft) with
+    a faint green wash (glass_green_tint_soft) on top and a bright edge
+    stroke (glass_stroke_strong), fully rounded. Both fills auto-swap to
+    their night values via values-night/colors.xml, so the panel reads as
+    frosted glass in either theme. Paired with elevation in the layout for
+    a drop shadow that separates it from the photo/background band.
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/glass_white_soft" />
+            <corners android:radius="@dimen/radius_round" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/glass_green_tint_soft" />
+            <corners android:radius="@dimen/radius_round" />
+            <stroke
+                android:width="@dimen/glass_stroke_width"
+                android:color="@color/glass_stroke_strong" />
+        </shape>
+    </item>
+</layer-list>

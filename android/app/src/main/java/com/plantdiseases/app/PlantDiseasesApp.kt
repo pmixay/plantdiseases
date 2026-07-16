@@ -1,13 +1,9 @@
 package com.plantdiseases.app
 
-import android.app.Activity
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
-import android.os.Bundle
-import android.view.ViewGroup
-import com.canhub.cropper.CropImageActivity
 import com.plantdiseases.app.data.repository.CommunityUploader
 import com.plantdiseases.app.di.appModule
 import com.plantdiseases.app.util.LocaleHelper
@@ -161,7 +157,6 @@ class PlantDiseasesApp : Application() {
         // Persistent disk cache for repeatable server responses (care plans,
         // species info) — "fetched once, never fetched again".
         com.plantdiseases.app.util.ResponseCache.init(this)
-        registerCropImageInsetFix()
         setupTelemetry()
         purgeStaleRejectedScans()
         // NB: do NOT touch WorkManager here. The default androidx.startup
@@ -185,44 +180,6 @@ class PlantDiseasesApp : Application() {
         appScope.launch {
             runCatching { scanRepository.purgeNotAPlantScans() }
         }
-    }
-
-    /**
-     * Give the cropper (com.canhub.cropper.CropImageActivity) a uniform inset
-     * so the crop canvas never butts against the toolbar or the system nav bar.
-     *
-     * Why here and not in a layout/theme: the library launches CropImageActivity
-     * via a hard-coded contract (no subclass hook), and its CropImageView ignores
-     * its OWN padding when scaling the image (onLayout feeds applyImageMatrix the
-     * full width/height). Padding the activity's android.R.id.content frame
-     * instead shrinks the CropImageView itself, so the image is letterboxed
-     * inside the inset and the bottom no longer touches the nav. This also makes
-     * a tall portrait gallery image (which used to fill the full height) and a
-     * 4:3 camera photo (already letterboxed) look consistent — both float in the
-     * same padded frame.
-     */
-    private fun registerCropImageInsetFix() {
-        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
-            override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {
-                if (activity !is CropImageActivity) return
-                val content = activity.findViewById<ViewGroup>(android.R.id.content) ?: return
-                val d = activity.resources.displayMetrics.density
-                content.clipToPadding = true
-                content.setPadding(
-                    (16 * d).toInt(), // left
-                    (12 * d).toInt(), // top (small gap under the toolbar)
-                    (16 * d).toInt(), // right
-                    (24 * d).toInt(), // bottom (clears the system nav bar)
-                )
-            }
-
-            override fun onActivityStarted(activity: Activity) {}
-            override fun onActivityResumed(activity: Activity) {}
-            override fun onActivityPaused(activity: Activity) {}
-            override fun onActivityStopped(activity: Activity) {}
-            override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
-            override fun onActivityDestroyed(activity: Activity) {}
-        })
     }
 
     private fun createNotificationChannels() {
