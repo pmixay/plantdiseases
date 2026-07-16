@@ -404,7 +404,7 @@ def _resolve_app_version() -> str:
 
     This is decoupled from the MODEL version (``models/classes.json ->
     model_version``, e.g. 2.6.8), which is surfaced separately by
-    ``/api/version``. Prefer the package ``__version__``; when the server runs
+    ``/api/capabilities``. Prefer the package ``__version__``; when the server runs
     as a flat module (``main:app`` in the Docker image) that import fails, so
     fall back to the same hardcoded server version (kept in sync with
     ``__init__.py``) — never the model version, which would make the server
@@ -528,7 +528,7 @@ DISEASE_CLASSES = {
 # the response scan_id, and the user↔scan_id join lives solely in feedback.db
 # (which the GDPR delete cascade sweeps). Routed by route_scan(): confident →
 # auto_yes, suspicious → pending (kept for offline review). Disclosed via the
-# blocking first-launch consent screen (Android) + website/privacy.html.
+# blocking first-launch consent screen (Android) + privacy.html.
 SCAN_RECORDING_ENABLED = get_bool("SCAN_RECORDING_ENABLED", True)
 SCAN_RETENTION_DAYS = get_int("SCAN_RETENTION_DAYS", 90)
 SCAN_MAX_IMAGES = get_int("SCAN_MAX_IMAGES", 20000)

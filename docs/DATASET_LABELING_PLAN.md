@@ -277,4 +277,4 @@ eval). Near-dup sweep on fold-in (pHash ≤ 6, strongest provenance wins:
   from judged production items.
 - **Labels stay a proxy** — agent-judged, not human ground-truth (by design).
 - **Consent/regulatory** — recording is consent-gated + anonymized;
-  `website/privacy.html` + the in-app consent screen are the canonical disclosure.
+  `privacy.html` + the in-app consent screen are the canonical disclosure.

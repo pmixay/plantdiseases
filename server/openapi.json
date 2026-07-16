@@ -3,7 +3,7 @@
   "info": {
     "title": "PlantDiseases API",
     "description": "AI-powered plant disease detection — two-stage pipeline",
-    "version": "2.2"
+    "version": "1.0"
   },
   "paths": {
     "/api/health": {

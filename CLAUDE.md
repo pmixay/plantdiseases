@@ -5,22 +5,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > **Freshness caveat.** This is a fast-moving project and parts of this file
 > (and of the in-repo docs) may be out of date. Treat the code as the source of
 > truth. Known drift to watch for: the project is referred to as both
-> **PlantDiseases** (app/repo) and **PlantVision** (the ML pipeline/brand);
-> `server/main.py`'s module docstring still describes the old Stage-2 model
-> (MobileNetV3/EfficientNet) — the current classifier is a **frozen DINOv2
-> ViT-S/14 + LoRA + MLP head** (see `README.md`, `docs/ROADMAP.md`,
-> `server/models/MODEL_CARD.md`). Version numbers in `docs/ROADMAP.md` move
+> **PlantDiseases** (app/repo) and **PlantVision** (the ML pipeline/brand).
+> The Stage-2 classifier is a **frozen DINOv2 ViT-S/14 + LoRA + MLP head**
+> (the `aqua` on-device tier is a distilled MobileNetV3-Small — not the
+> server model; see `README.md`, `docs/ROADMAP.md`, `server/models/MODEL_CARD.md`).
+> Version numbers in `docs/ROADMAP.md` and `server/models/MODEL_CARD.md` move
 > with each training run.
 
 ## Repository layout
 
-Three independent deliverables, each with its own toolchain:
+Two independent deliverables, each with its own toolchain:
 
 | Dir | Stack | What it is |
 |---|---|---|
 | `server/` | Python 3.11, FastAPI, ONNX Runtime | ML inference API + the two-stage pipeline. The brains. |
 | `android/` | Kotlin, Gradle, Material 3 | The phone client (CameraX, Room, Ktor + kotlinx.serialization, Koin DI). |
-| `website/` | Static HTML/CSS/JS | Marketing/benchmark showcase, no build step (`python3 -m http.server`). |
+
+The bilingual privacy policy is a single standalone page, `privacy.html` (repo
+root) — the canonical data-disclosure surface referenced by the app's consent
+screen.
 
 Key docs: `README.md` (overview + API table), `DEPLOYMENT.md` (production config
 + Android release signing/FCM), `docs/ROADMAP.md` (current model status + next
@@ -105,8 +108,8 @@ on the DINOv2 CLS vector (`ood.py`) with a MaxLogit-floor fallback. Calibration 
 temperature scaling + RAPS conformal prediction sets (`conformal.py`) for honest
 "I'm not sure" output.
 
-**Model families** (declared per-bundle in `classes.json -> model_family`, surfaced by
-`/api/version`, availability by `/api/capabilities`): `aqua` (MobileNetV3-Small,
+**Model families** (declared per-bundle in `classes.json -> model_family`, surfaced —
+with per-family availability — by `/api/capabilities`): `aqua` (MobileNetV3-Small,
 distilled → TFLite INT8, runs **on-device/offline** in the app), `gamma` (production
 DINOv2 ViT-S/14, the default), `frontier` (DINOv2 ViT-B/14, **off by default** —
 needs a GPU host; returns a graceful `available:false` when disabled).

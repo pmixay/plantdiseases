@@ -305,9 +305,9 @@ class FeedbackController(
         // plant here". Accepted by the server's feedback allowlist.
         private const val IS_A_PLANT_CLASS = "is_a_plant"
 
-        // Pinned to the classifier release in server/models/classes.json. When
-        // the server exposes model_version in /api/analyze we'll trust that
-        // value per-scan instead.
-        private const val SERVER_MODEL_VERSION = "2.5.0"
+        // Pinned to the classifier release in server/models/classes.json (the
+        // server also surfaces the live value via /api/capabilities). When
+        // /api/analyze exposes model_version per-scan we'll trust that instead.
+        private const val SERVER_MODEL_VERSION = "2.6.8"
     }
 }
