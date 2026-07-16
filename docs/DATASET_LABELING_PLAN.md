@@ -73,17 +73,39 @@ only because two classes now cap it (see v6). Full numbers: `MODEL_CARD.md`.
 > (n=2183) healthy→disease false-fire is **8.4%**. The scorch/nutrient/healthy
 > boundary is still the binding weakness, so collection **continues into v7**.
 
-## v7 — next version (model 2.6.9, in training)
+## v7 — trained (model 2.6.9, 2026-07-03) + evaluated
 
-> **The next training run — not yet trained**, so 2.6.8 stays the shipped model
-> until 2.6.9's gate passes. 2.6.9 = dataset **v7** + the post-2.6.8 notebook fixes,
-> the headline being the **aqua-collapse fix** (the §5 export selector now ships the
-> near-lossless **float16** TFLite, ~2.9 MB, instead of the dynamic-range INT8 build
-> that collapsed MobileNetV3 to ≈0.01 macro-F1; §6 adds a degeneracy guard). On data,
-> v7 carries the still-open v6 boundary work forward against the live **2.6.8** model:
-> keep collecting confusion-pair negatives *and* hold a weak-class recall floor
-> (recall regressed when negatives went in), and re-test the LA-prior trim for
-> nutrient/scorch.
+2.6.9 = dataset **v7** + the post-2.6.8 notebook fixes. The headline fix is the
+**aqua-collapse fix**: the §5 export selector now ships the faithful **float32**
+TFLite (~6.1 MB). The dynamic-range INT8 build collapsed MobileNetV3 to ≈0.01
+macro-F1 (v2.6.8), and the float16 build won't *prepare* on the export box / app
+LiteRT interpreter (`CONV_2D`, v2.6.9), so float32 is the only build that both
+runs and matches the torch student (aqua realworld macro-F1 **0.76**,
+teacher→student drift 0.07). §6 adds a degeneracy guard.
+
+**Leakage-aware A/B — 2.6.5 vs 2.6.9 on the v4 & v7 supplement eval slices**
+(boundary/train-only rows excluded, paired bootstrap, `tools/eval_bootstrap.py`
+methodology, 2026-07-16). Each model wins on its *own* dataset era (2.6.5 **+0.039**
+on v4; 2.6.9 **+0.036** on v7 — both CIs exclude 0), the classic
+train/eval-contamination crossover: **71% of v7 images are byte-identical to v4**
+and each model trained on ~⅓ of its native slice. The **leakage-robust** reads —
+consistent across *both* sets — are what matter:
+
+- **powdery_mildew — the one clean win:** 2.6.9 recall **0.93** vs 2.6.5 **0.59**
+  (2.6.5 predates the class). Real new capability.
+- **healthy — 2.6.9 is more conservative:** recall **0.97–0.98** (vs 0.96–0.97) at
+  lower precision (**0.76–0.79** vs 0.86–0.91); healthy→disease false-fire ≤ 2.6.5
+  (0.022 vs 0.033 on v4). The intended safety direction.
+- **nutrient / leaf_scorch — NOT improved.** 2.6.9 recall *dropped* (scorch **0.77**
+  vs 0.91; nutrient **0.89** vs 0.94) at ~equal precision on this slice; scorch fell
+  below the 0.80 floor. The v7 boundary work bought healthy-side conservatism, **not**
+  the targeted nutrient/scorch precision gain. (Precision on the hard confusables that
+  actually bind these classes isn't visible here — the supplement carries no
+  leaf_spot/pests/viral — so read this as "no weak-class win", not "precision solved".)
+
+**Net: 2.6.9 is a safety + powdery *capability* ship, not a weak-class *accuracy*
+ship.** Deploy it over 2.6.8 — it adds powdery, is at least as safe, and carries the
+aqua fix — but the nutrient/scorch precision goal stays open → **v8 / 2.6.10**.
 
 The binding constraint is the **over-prediction (low precision)** of the two
 physiological classes; adding more positives makes it worse.
@@ -115,6 +137,62 @@ not below ~0.80**, via a **paired bootstrap vs 2.6.8** on `val_realworld`
 (`tools/eval_bootstrap.py`) — NOT aggregate F1 (noise-flat at this margin;
 n≈82/97 → ±0.08). The precision/recall seesaw across nutrient ↔ scorch ↔ healthy
 is intrinsic; tune negatives in small increments and read BOTH P and R with CIs.
+
+## v8 — next version (model 2.6.10)
+
+The 2.6.5↔2.6.9 A/B + a full audit of the v7 supplement (2026-07-16) show two
+problems that block a *real* weak-class win and a *trustworthy* gate. v8 fixes the
+data; **2.6.10 retrains on it** (`MODEL_VERSION` bumped to 2.6.10 in §1).
+
+**Why v7 cannot prove a weak-class gain (fix these first):**
+
+1. **Non-independent eval.** 71% of v7 is byte-identical to v4; **scorch/nutrient
+   positives are 100% recycled**, gray_mold 91%. A version-over-version disease-F1 read
+   on those classes is circular — the same images, both partly trained on.
+2. **Unfloored positive noise.** The ≥0.80 confidence floor was applied to the boundary
+   negatives + powdery, **not** to the physiological positives — ~30% of
+   gray_mold/scorch/nutrient positives are still <0.80 (min 0.55) and eval-eligible.
+3. **Agricultural-domain leak.** ≥8% of disease positives are crop imagery
+   (nutrient **15%**: tomato/rice/citrus/potato…), plus uncounted outdoor via generic
+   queries — reviving the exact proxy the strawberry-Botrytis removal (2.6.7) fought.
+
+**v8 collection plan (priority order):**
+
+1. **Purge agricultural/outdoor from disease positives** (highest value). Crop-term
+   blocklist in the collector + a "is the subject a potted/indoor houseplant?" vision
+   re-judge over every disease positive; populate the empty `subject_domain` /
+   `subject_plant` columns so the gate is auditable. This is a *net trim*, and
+   nutrient/scorch are precision-bound (trim-don't-grow), so it is on-plan.
+2. **Refresh weak-class eval content** (the independence fix). ~50–100 **new** in-domain
+   houseplant positives each for nutrient + scorch, ~40 new gray_mold, from new
+   creators/genera under the per-creator cap (Stack Exchange / Reddit diagnostic photos;
+   folded offline-judged production scans, weak-class first). Restores eval independence
+   *and* targets the recall that fell in 2.6.9.
+3. **Extend the ≥0.80 floor to the physiological positives** — route sub-0.80 disease
+   positives **train-only** (don't delete: protects aqua's data-hungry volume floor) so
+   the *eval* slice stops carrying agent-flagged-ambiguous cases (e.g. natural orchid
+   yellowing labelled nutrient).
+4. **Thicken thin eval classes** with clean houseplant scans: +50–100 powdery past its
+   14-query / 54%-one-engine monoculture; broaden gray_mold via *new* multilingual
+   houseplant sources (query diversity is fine — the problem is recycling). Do **not**
+   grow nutrient/scorch positive count.
+5. **Boundary negatives: hold ~700, do not grow** (v6→v7 was only +112 — diminishing
+   returns); add only genuinely novel confusion cases; keep `hn_kind=boundary`
+   train-only. Hold ~300 generic-healthy in *eval* (the eval-eligible healthy pool
+   shrank 362→305 as all growth went train-only).
+6. **Variegated-healthy boundary negatives** (Calathea/Maranta/Croton/Aglaonema/Begonia
+   rex → `healthy/boundary`) to attack the documented viral over-trigger; add a small
+   clean-houseplant `leaf_spot` eval slice (leaf_spot/pests/viral have **no**
+   leakage-free held-out today).
+7. **Hygiene:** reject drawn-annotation / watermark / AI-looking images in the vision
+   judge; add a **cross-version pHash tag** (`carried_from_vN` vs `new`) so weak-class
+   CIs can be read on new content only; fix the v7 folder `README.md` (still titled
+   "v6", counts are v7).
+
+**2.6.10 verify (paired, not aggregate):** paired bootstrap **2.6.9 vs 2.6.10 on the
+*new* (non-recycled) v8 eval rows** — nutrient/scorch **precision up with recall back
+≥ 0.80**, healthy false-fire not up, powdery held. Keep aqua KD val-macro-F1 as a
+release watch-item (the data-hungry student; see "Protect the on-device student").
 
 ## Diagnosis reliability & safety (the v7 priority)
 

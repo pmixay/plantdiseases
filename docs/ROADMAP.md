@@ -178,20 +178,33 @@ a follow-up without blocking the core hub.
 
 ## Model track
 
-### 2.6.9 — next train (dataset v7, not yet trained)
+### 2.6.9 — trained (dataset v7, 2026-07-03) + evaluated → shippable
 
-`MODEL_VERSION` is bumped to 2.6.9 in the notebook (§1); **2.6.8 stays the
-shipped bundle until 2.6.9 trains and clears the gate.** The aqua-collapse fix
-already landed in the notebook (§5 ships the near-lossless **float16** TFLite,
-~2.9 MB, not the dynamic-range INT8 that collapsed MobileNetV3 to ≈0.01
-macro-F1; §6 degeneracy guard) — it deploys on-device once 2.6.9 trains and
-the guard is confirmed silent.
+Trained and gate-passed. The aqua-collapse fix landed as **float32** TFLite
+(~6.1 MB) — float16 won't *prepare* on the LiteRT interpreter (`CONV_2D`), and
+dynamic-range INT8 collapsed MobileNetV3 to ≈0.01 macro-F1; float32 is the only
+build that runs *and* matches the torch student (aqua realworld 0.76). A
+leakage-aware A/B (2.6.5↔2.6.9, 2026-07-16, `tools/eval_bootstrap.py`) shows
+2.6.9 is a **safety + powdery-capability** ship, not a weak-class-accuracy one:
+powdery recall 0.59→0.93, healthy false-fire ≤ prior, but nutrient/scorch recall
+*fell* (scorch 0.91→0.77) — the v7 goal (nutrient/scorch precision with recall
+≥0.80) is **still open**. Full numbers + method in `DATASET_LABELING_PLAN.md`.
 
-- [ ] **Train 2.6.9 on dataset v7** — keep collecting confusion-pair negatives
-      **and** weak-class positives (recall floor); re-test the LA-prior trim
-      for nutrient/scorch (paired vs 2.6.8). Plan + per-class targets in
-      `DATASET_LABELING_PLAN.md` (scorch/nutrient boundary still binding —
-      data/precision-bound, not backbone-bound; §3 frozen probe ~0.91).
+- [x] **Train 2.6.9 on dataset v7** — done; deploy over 2.6.8 (adds powdery, at
+      least as safe, carries the aqua fix).
+
+### 2.6.10 — next train (dataset v8)
+
+`MODEL_VERSION` is bumped to 2.6.10 in the notebook (§1); **2.6.9 stays shippable
+until 2.6.10 trains and clears the gate.** v8 is a data-cleaning pass (the v7
+eval is 71% recycled from v4, ~30% of physiological positives are sub-0.80 noise,
+and ~8% of disease positives are agricultural-domain leak) — the only way to move
+nutrient/scorch and get a trustworthy benchmark.
+
+- [ ] **Build dataset v8 then train 2.6.10** — purge agricultural/outdoor
+      positives, refresh recycled weak-class eval content, floor the physiological
+      positives to train-only, thicken powdery. Full plan + verify (paired
+      bootstrap on *new* v8 rows) in `DATASET_LABELING_PLAN.md`.
 
 ### Unveiling 2.7 — the leap
 
