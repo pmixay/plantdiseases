@@ -33,8 +33,9 @@
     <string name="camera_error">Не удалось запустить камеру</string>
     <string name="capture_error">Не удалось сделать фото</string>
     <string name="image_load_error">Не удалось загрузить изображение</string>
-    <string name="crop_title">Обрезать фото</string>
     <string name="crop_action_done">Готово</string>
+    <string name="crop_action_rotate">Повернуть</string>
+    <string name="crop_action_cancel">Отмена</string>
     <string name="crop_error">Не удалось обрезать изображение</string>
 
     <!-- Analysis -->

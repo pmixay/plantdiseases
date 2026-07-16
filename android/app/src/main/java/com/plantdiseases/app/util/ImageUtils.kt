@@ -307,11 +307,16 @@ object ImageUtils {
     }
 
     private fun rotateIfNeeded(imagePath: String, bitmap: Bitmap): Bitmap {
-        val exif = ExifInterface(imagePath)
-        val orientation = exif.getAttributeInt(
+        val orientation = ExifInterface(imagePath).getAttributeInt(
             ExifInterface.TAG_ORIENTATION,
             ExifInterface.ORIENTATION_NORMAL
         )
+        return applyExifOrientation(orientation, bitmap)
+    }
+
+    /** Apply an EXIF [orientation] to [bitmap], returning a new upright bitmap
+     *  (or the original when no transform is needed). */
+    private fun applyExifOrientation(orientation: Int, bitmap: Bitmap): Bitmap {
         val matrix = Matrix()
         when (orientation) {
             ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.setScale(-1f, 1f)
@@ -333,6 +338,41 @@ object ImageUtils {
             else -> return bitmap
         }
         return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+    }
+
+    /**
+     * Decode [uri] to a software (ARGB_8888) bitmap with its EXIF orientation
+     * baked in — ready to display and crop. Used by the custom cropper.
+     *
+     * Decodes via [BitmapFactory] rather than an image loader on purpose: a
+     * HARDWARE-config bitmap can't be read back or used as a `createBitmap`
+     * crop source, and doing the EXIF rotation here keeps orientation
+     * deterministic (applied exactly once). Must run off the UI thread — a
+     * large or cloud-backed source can block while the bytes stream in.
+     * Returns null on any decode failure.
+     */
+    fun decodeUpright(context: Context, uri: Uri): Bitmap? {
+        return try {
+            val opts = BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.ARGB_8888 }
+            val decoded = context.contentResolver.openInputStream(uri)?.use { input ->
+                BitmapFactory.decodeStream(input, null, opts)
+            } ?: return null
+            val orientation = context.contentResolver.openInputStream(uri)?.use { input ->
+                ExifInterface(input).getAttributeInt(
+                    ExifInterface.TAG_ORIENTATION,
+                    ExifInterface.ORIENTATION_NORMAL
+                )
+            } ?: ExifInterface.ORIENTATION_NORMAL
+            val upright = applyExifOrientation(orientation, decoded)
+            if (upright !== decoded) decoded.recycle()
+            upright
+        } catch (e: IOException) {
+            Log.w(TAG, "decodeUpright failed for $uri", e)
+            null
+        } catch (e: OutOfMemoryError) {
+            Log.w(TAG, "decodeUpright OOM for $uri", e)
+            null
+        }
     }
 
     fun formatTimestamp(timestamp: Long): String {

@@ -1,10 +1,3 @@
-// The vanniktech android-image-cropper deprecated its own CropImageContract /
-// CropImageContractOptions API (4.x) without shipping a replacement — the
-// guidance is to keep using it or copy the contract verbatim. We keep using it,
-// so the deprecation is suppressed file-wide. Remove this when migrating off
-// the cropper; it is the only deprecated dependency in this file.
-@file:Suppress("DEPRECATION")
-
 package com.plantdiseases.app.ui.camera
 
 import android.Manifest
@@ -12,8 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
-import android.graphics.Bitmap
-import android.graphics.Color
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -38,15 +29,12 @@ import androidx.core.content.FileProvider
 import androidx.core.os.bundleOf
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
-import com.canhub.cropper.CropImageContract
-import com.canhub.cropper.CropImageContractOptions
-import com.canhub.cropper.CropImageOptions
-import com.canhub.cropper.CropImageView
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.R
 import com.plantdiseases.app.databinding.FragmentCameraBinding
 import com.plantdiseases.app.ui.analysis.AnalysisActivity
+import com.plantdiseases.app.ui.crop.CropContract
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.ModelFamilyPrefs
@@ -147,12 +135,12 @@ class CameraFragment : Fragment() {
         uri?.let { handleGalleryImage(it) }
     }
 
-    /** Crop editor (vanniktech android-image-cropper). Both the camera
+    /** Crop editor (our own [CropContract] / CropActivity). Both the camera
      *  shutter and the gallery picker funnel their image through here
      *  before it reaches analysis. The cropper writes the result to the
      *  unique [pendingCropFile] we hand it; that exact path goes on to
      *  AnalysisActivity for both the preview and the upload. */
-    private val cropLauncher = registerForActivityResult(CropImageContract()) { result ->
+    private val cropLauncher = registerForActivityResult(CropContract()) { result ->
         if (_binding == null) return@registerForActivityResult
         // Returning from the crop activity re-arms the shutter regardless
         // of outcome; navigateToAnalysis re-locks it on success.
@@ -643,47 +631,18 @@ class CameraFragment : Fragment() {
             "CROP_${System.currentTimeMillis()}.jpg",
         )
         pendingCropFile = outFile
-        // Hand the cropper a content:// destination via our FileProvider, NOT
-        // a raw file:// Uri. On targetSdk 24+ the cropper can't write a
-        // file:// output (FileUriExposed / blocked stream), which surfaced as
-        // "Failed to crop image" on every scan. The provider maps
-        // filesDir/plant_images (see res/xml/file_paths.xml), so the bytes
-        // still land in outFile and we read outFile.absolutePath on success.
+        // Hand the cropper a content:// destination via our FileProvider. The
+        // provider maps filesDir/plant_images (see res/xml/file_paths.xml), so
+        // CropActivity streams the JPEG through contentResolver.openOutputStream
+        // into outFile, and we read outFile.absolutePath on success.
         val outputUri = FileProvider.getUriForFile(
             requireContext(),
             "${requireContext().packageName}.fileprovider",
             outFile,
         )
-        cropLauncher.launch(
-            CropImageContractOptions(
-                uri = sourceUri,
-                cropImageOptions = CropImageOptions(
-                    guidelines = CropImageView.Guidelines.ON,
-                    fixAspectRatio = false,
-                    customOutputUri = outputUri,
-                    outputCompressFormat = Bitmap.CompressFormat.JPEG,
-                    outputCompressQuality = 90,
-                    // We supply the image ourselves, so hide the library's
-                    // built-in source pickers.
-                    imageSourceIncludeGallery = false,
-                    imageSourceIncludeCamera = false,
-                    activityTitle = getString(R.string.crop_title),
-                    cropMenuCropButtonTitle = getString(R.string.crop_action_done),
-                    // The action bar sits on the app's green gradient
-                    // (see Theme.PlantDiseases.Crop), so force the title,
-                    // back arrow and on-bar icons white for contrast.
-                    // NOTE: do NOT set activityMenuTextColor — it whitens
-                    // the flip submenu items too, which render in a white
-                    // popup (white-on-white). DarkActionBar already makes
-                    // the on-bar "Done" text white. Canvas backdrop follows
-                    // the current day/night background.
-                    activityBackgroundColor = ContextCompat.getColor(requireContext(), R.color.background),
-                    toolbarTitleColor = Color.WHITE,
-                    toolbarBackButtonColor = Color.WHITE,
-                    activityMenuIconColor = Color.WHITE,
-                ),
-            )
-        )
+        // Free-form crop, JPEG q90, rule-of-thirds guides — all intrinsic to
+        // the custom crop UI now, so the launch only carries source + output.
+        cropLauncher.launch(CropContract.Input(source = sourceUri, output = outputUri))
     }
 
     /** Delete the staged crop the user abandoned (cancelled or errored) so
