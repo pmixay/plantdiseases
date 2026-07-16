@@ -178,20 +178,21 @@ a follow-up without blocking the core hub.
 
 ## Model track
 
-### 2.6.9 — trained (dataset v7, 2026-07-03) + evaluated → shippable
+### 2.6.9 — trained (dataset v7, 2026-07-03) + evaluated → NOT shipped
 
-Trained and gate-passed. The aqua-collapse fix landed as **float32** TFLite
-(~6.1 MB) — float16 won't *prepare* on the LiteRT interpreter (`CONV_2D`), and
-dynamic-range INT8 collapsed MobileNetV3 to ≈0.01 macro-F1; float32 is the only
-build that runs *and* matches the torch student (aqua realworld 0.76). A
-leakage-aware A/B (2.6.5↔2.6.9, 2026-07-16, `tools/eval_bootstrap.py`) shows
-2.6.9 is a **safety + powdery-capability** ship, not a weak-class-accuracy one:
-powdery recall 0.59→0.93, healthy false-fire ≤ prior, but nutrient/scorch recall
-*fell* (scorch 0.91→0.77) — the v7 goal (nutrient/scorch precision with recall
-≥0.80) is **still open**. Full numbers + method in `DATASET_LABELING_PLAN.md`.
+Trained and gate-passed, **but a paired A/B against the shipped 2.6.8 says keep
+2.6.8.** The aqua-collapse fix landed as **float32** TFLite (~6.1 MB) — float16
+won't *prepare* on LiteRT (`CONV_2D`), dynamic-range INT8 collapsed MobileNetV3
+to ≈0.01; float32 is the only build that runs *and* matches the torch student
+(aqua realworld 0.76). But on the v4 & v7 supplement eval slices
+(`tools/eval_bootstrap.py`, 2026-07-16) **2.6.8 beats 2.6.9 on both** (supported
+disease macro-F1 **+0.046** on v4, **+0.021** on v7 — CIs exclude 0, and 2.6.8
+wins even on 2.6.9's *own* v7 era) at lower false-fire; 2.6.8→2.6.9 regressed
+leaf_scorch (recall 0.89→0.77) + nutrient, gaining only powdery recall. The v7
+iteration net-hurt gamma. Numbers in `DATASET_LABELING_PLAN.md`.
 
-- [x] **Train 2.6.9 on dataset v7** — done; deploy over 2.6.8 (adds powdery, at
-      least as safe, carries the aqua fix).
+- [x] **Train + evaluate 2.6.9 on dataset v7** — done; **do not deploy** (regressed
+      vs 2.6.8). The aqua float32 fix carries forward to 2.6.10.
 
 ### 2.6.10 — next train (dataset v8)
 

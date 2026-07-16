@@ -53,23 +53,31 @@ until verified production volume exists.
 - **v7 / 2.6.9** (07-03): +boundary negatives + first powdery; the notebook
   aqua-collapse fix — §5 now ships the faithful **float32** TFLite (~6.1 MB): INT8
   collapsed MobileNetV3 to ≈0.01, float16 won't prepare on LiteRT (`CONV_2D`); aqua
-  realworld 0.76. **Shippable over 2.6.8.**
+  realworld 0.76. **A paired A/B says the v7 changes net-hurt gamma — keep 2.6.8 (below).**
 
-**Leakage-aware A/B — 2.6.5↔2.6.9 on the v4 & v7 eval slices** (2026-07-16, boundary
-excluded, paired bootstrap, `tools/eval_bootstrap.py`). Each model wins on its own era
-(2.6.5 +0.039 on v4; 2.6.9 +0.036 on v7 — CIs exclude 0): a train/eval-contamination
-crossover (71% of v7 is byte-identical to v4). Leakage-robust reads (consistent across
-*both* sets):
+**Leakage-aware A/B — 2.6.5, 2.6.8 (shipped), 2.6.9 (candidate)** on the v4 & v7 eval
+slices (2026-07-16, boundary excluded, paired bootstrap, `tools/eval_bootstrap.py`).
+Supported disease macro-F1 (the 4 disease classes present — the supplement has no
+leaf_spot/pests/viral) + healthy false-fire:
 
-- **powdery — clean win:** 2.6.9 recall 0.93 vs 2.6.5 0.59 (new class).
-- **healthy — 2.6.9 more conservative:** recall 0.97–0.98 (↑) at lower precision
-  0.76–0.79; healthy→disease false-fire ≤ 2.6.5.
-- **nutrient/scorch — not improved:** recall *fell* (scorch 0.91→0.77, below floor;
-  nutrient 0.94→0.89) at ~equal precision. The v7 boundary work bought healthy-side
-  conservatism, not the targeted precision gain.
+| model | v4 | v7 | false-fire v4 / v7 |
+|---|---|---|---|
+| 2.6.5 | 0.940 | 0.872 | 0.033 / 0.033 |
+| **2.6.8 (shipped)** | **0.947** | **0.929** | **0.006 / 0.010** |
+| 2.6.9 (candidate) | 0.901 | 0.908 | 0.022 / 0.030 |
 
-Net: **2.6.9 = safety + powdery *capability*, not a weak-class *accuracy* ship.** The
-nutrient/scorch precision goal stays open → v8.
+**Paired 2.6.8 vs 2.6.9 → 2.6.8 wins both:** v4 **+0.046** [+0.029,+0.063], v7 **+0.021**
+[+0.003,+0.038] (CIs exclude 0). It wins even on v7 — 2.6.9's *own* training era, where
+2.6.9 carries more train leakage — so it is not a leakage artifact. Per-class (v7),
+2.6.8→2.6.9 **regressed**: leaf_scorch recall 0.89→0.77 (below the 0.80 floor), nutrient
+0.92→0.89 (prec 0.98→0.93), healthy precision 0.87→0.76, false-fire ↑; it gained only
+powdery recall (0.84→0.93). The v7 dataset iteration **net-hurt gamma**.
+
+**Deploy call: keep 2.6.8; do NOT ship 2.6.9.** Fix the data (v8) → train 2.6.10.
+(Caveats: this eval can't see leaf_spot↔viral precision, where the boundary work was
+also aimed, but the classes that regressed are the ones v7 targeted; the older
+2.6.5↔2.6.9 gap is contamination — each model wins on its own era, 71% of v7 is
+byte-identical to v4.)
 
 ## v8 — next version (model 2.6.10)
 
