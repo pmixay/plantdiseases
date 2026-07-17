@@ -110,13 +110,18 @@ a fraction of boundary rows train-only.
    gray_mold 91%); version-over-version reads on those classes are circular.
 2. **Unfloored positive noise** — the ≥0.80 floor hit the negatives + powdery, not the
    physiological positives (~30% still <0.80, min 0.55, eval-eligible).
-3. **Agricultural-domain leak** — ≥8% of disease positives are crop imagery
-   (nutrient 15%: tomato/rice/citrus), reviving the proxy the 2.6.7 removal fought.
+3. **Agricultural-domain leak (bigger than first estimated).** Crop/outdoor imagery is
+   **~8–22% of disease positives** (strict query-only → broad query+notes match),
+   concentrated in **gray_mold ~39%** (grape/strawberry Botrytis — the exact proxy the
+   2.6.7 removal fought) and **nutrient ~31%** (tomato/rice/citrus/potato); leaf_scorch
+   ~10%, powdery ~0%.
 
 **v8 plan (priority):**
 1. **Purge agricultural/outdoor from disease positives** — crop-term blocklist + an
    "is it a potted/indoor houseplant?" re-judge; populate `subject_domain`/`subject_plant`.
-   A net trim (on-plan for the precision-bound classes).
+   **gray_mold (~39%) and nutrient (~31%) are the most contaminated — start there**
+   (gray_mold's grape/strawberry Botrytis is the retired proxy). A net trim (on-plan for
+   the precision-bound classes); pair with item 2 so gray_mold/nutrient don't lose supply.
 2. **Refresh recycled weak-class eval** — ~50–100 *new* houseplant positives each for
    nutrient + scorch, ~40 gray_mold, from new creators/genera (Stack Exchange/Reddit;
    folded production scans). Restores independence + targets the fallen recall.
