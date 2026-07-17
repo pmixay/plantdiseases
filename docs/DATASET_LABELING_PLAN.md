@@ -81,10 +81,31 @@ byte-identical to v4.)
 
 ## v8 — next version (model 2.6.10)
 
-Two problems block a real weak-class win and a trustworthy gate; v8 fixes the data,
-**2.6.10 retrains** (`MODEL_VERSION` bumped to 2.6.10 in §1).
+2.6.9 regressed vs 2.6.8 (paired A/B above). The **primary cause was a notebook config
+flood** (now fixed, §4); v7's dataset composition amplified it, and the eval slice is
+untrustworthy. **2.6.10 retrains** on the notebook fix + a cleaned dataset v8
+(`MODEL_VERSION` bumped to 2.6.10 in §1).
 
-**Why v7 can't prove a weak-class gain:**
+**Root cause of the 2.6.9 regression (found 2026-07-16; notebook fix applied).** Between
+2.6.8 and 2.6.9, commit `12623c4` began routing **all** `hn_kind=boundary` hard-negatives
+(scorch/nutrient-lookalike healthy) to **train-only** as a new `supplement_boundary`
+source at sampler weight **0.9** (and dropped the per-class cap). In 2.6.8 those negs sat
+in the eval-eligible `supplement`, so ~½ went to *val*; in 2.6.9 all **697** are pinned to
+TRAIN and drawn at ~5.8% of every batch — on par with the real physiological-positive
+source (5.5%) — while scorch/nutrient TRAIN supply stayed frozen (healthy TRAIN +384 →
+25.3% of the set). The head over-learned "browning/chlorosis = healthy": leaf_scorch
+recall 0.89→0.77, nutrient down, healthy precision 0.87→0.76, and it plateaus earlier
+(head best epoch 19→5). It is the precision/recall seesaw over-rotated; §1 constants, loss,
+early-stop, and checkpoint logic were byte-identical, so they are **not** the cause.
+
+**Fix applied (§4):** `SOURCE_WEIGHTS['supplement_boundary']` **0.9 → 0.35** — boundary
+hard-negatives now *nudge* precision without swamping the physiological classes, while
+staying train-only (eval stays clean). **Validate on the 2.6.10 run** (paired bootstrap
+vs 2.6.8; tune in 0.3–0.5, require scorch/nutrient recall back ≥ 0.80 *and* false-fire not
+up). Alternative levers if it under/over-shoots: re-cap the boundary source, or route only
+a fraction of boundary rows train-only.
+
+**Why v7 can't prove a weak-class gain (the dataset amplifiers):**
 1. **Non-independent eval** — 71% recycled from v4 (scorch/nutrient positives 100%,
    gray_mold 91%); version-over-version reads on those classes are circular.
 2. **Unfloored positive noise** — the ≥0.80 floor hit the negatives + powdery, not the
