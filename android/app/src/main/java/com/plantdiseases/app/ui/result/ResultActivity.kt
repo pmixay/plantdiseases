@@ -3,8 +3,6 @@ package com.plantdiseases.app.ui.result
 import android.animation.ValueAnimator
 import android.content.Context
 import android.content.Intent
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import android.widget.Toast
 import android.os.Bundle
 import android.view.MotionEvent
@@ -31,6 +29,7 @@ import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.ui.analysis.AnalysisActivity
 import com.plantdiseases.app.ui.guide.GuideDetailSheet
+import com.plantdiseases.app.util.ConnectivityMonitor
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.ModelFamily
@@ -562,7 +561,7 @@ class ResultActivity : AppCompatActivity() {
      *  validated connection; the online result replaces the offline scan in
      *  place (AnalysisActivity's force-family + replace-scan flow). */
     private fun improveOnline(scan: ScanEntity) {
-        if (!hasValidatedInternet()) {
+        if (!ConnectivityMonitor.isOnlineNow(this)) {
             Toast.makeText(this, R.string.improve_online_no_network, Toast.LENGTH_SHORT).show()
             return
         }
@@ -574,14 +573,6 @@ class ResultActivity : AppCompatActivity() {
             },
         )
         finish()
-    }
-
-    private fun hasValidatedInternet(): Boolean {
-        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-            ?: return false
-        val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
-        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
 
     private fun animateCardsIn() {

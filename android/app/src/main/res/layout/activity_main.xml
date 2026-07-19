@@ -33,6 +33,22 @@
 
     </com.google.android.material.appbar.AppBarLayout>
 
+    <!-- App-wide offline affordance — self-driven from ConnectivityMonitor.
+         Suppressed on the Scan tab, which shows its own on-preview overlay
+         (see MainActivity.applyTabChrome). -->
+    <com.plantdiseases.app.ui.common.OfflineBannerView
+        android:id="@+id/offline_banner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/disease_red"
+        android:gravity="center"
+        android:paddingVertical="@dimen/space_sm"
+        android:text="@string/offline_banner_cached"
+        android:textColor="@android:color/white"
+        android:textSize="@dimen/text_body_sm"
+        android:fontFamily="sans-serif-medium"
+        android:visibility="gone" />
+
     <androidx.fragment.app.FragmentContainerView
         android:id="@+id/nav_host_fragment"
         android:name="androidx.navigation.fragment.NavHostFragment"

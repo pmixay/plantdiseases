@@ -153,6 +153,7 @@
     <string name="no_network">Нет интернета</string>
     <string name="no_network_detail">Проверьте подключение к сети и повторите попытку.</string>
     <string name="offline_banner">Нет подключения к интернету</string>
+    <string name="offline_banner_cached">Нет сети — показан сохранённый контент</string>
 
     <!-- Server status / diagnostics -->
     <string name="server_online">Онлайн</string>

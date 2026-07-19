@@ -5,9 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
-import android.net.ConnectivityManager
-import android.net.Network
-import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
@@ -56,7 +53,6 @@ class CameraFragment : Fragment() {
     private var imageCapture: ImageCapture? = null
     private var cameraProvider: ProcessCameraProvider? = null
     private var camera: Camera? = null
-    private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private lateinit var scaleGestureDetector: ScaleGestureDetector
 
     private var captureInFlight = false
@@ -222,7 +218,7 @@ class CameraFragment : Fragment() {
         setupUI()
         setupPinchToZoom()
         // NB: the camera is deliberately *not* opened here — see onResume.
-        registerNetworkCallback()
+        // The offline banner drives itself from ConnectivityMonitor.
         restoreGridOverlay()
     }
 
@@ -788,46 +784,6 @@ class CameraFragment : Fragment() {
         releaseCamera()
     }
 
-    private fun registerNetworkCallback() {
-        val cm = requireContext().getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-
-        // Seed from the current default network.
-        updateOfflineBanner(hasUsableInternet(cm.getNetworkCapabilities(cm.activeNetwork)))
-
-        // Track the DEFAULT network and react to capability changes — not just
-        // onAvailable/onLost. The banner used to get stuck because reconnecting
-        // (or the system re-validating internet on a network that was already
-        // "available") fires onCapabilitiesChanged, not onAvailable, so the
-        // GONE transition was never delivered until the app was restarted.
-        val callback = object : ConnectivityManager.NetworkCallback() {
-            override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
-                view?.post { updateOfflineBanner(hasUsableInternet(caps)) }
-            }
-
-            override fun onLost(network: Network) {
-                view?.post { updateOfflineBanner(false) }
-            }
-
-            override fun onUnavailable() {
-                view?.post { updateOfflineBanner(false) }
-            }
-        }
-        networkCallback = callback
-        cm.registerDefaultNetworkCallback(callback)
-    }
-
-    /** True only when the network can actually reach the internet (present AND
-     *  validated by the system), so the banner reflects real reachability
-     *  rather than just "a network object exists". */
-    private fun hasUsableInternet(caps: NetworkCapabilities?): Boolean =
-        caps != null &&
-            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-
-    private fun updateOfflineBanner(online: Boolean) {
-        _binding?.offlineBanner?.visibility = if (online) View.GONE else View.VISIBLE
-    }
-
     override fun onDestroyView() {
         super.onDestroyView()
         // Belt and braces — onPause has already released it on every path that
@@ -838,11 +794,6 @@ class CameraFragment : Fragment() {
         // runnable null-checks _binding, but cancelling it avoids a
         // dangling Choreographer callback on the destroyed view.
         binding.tvZoom.removeCallbacks(hideZoomRunnable)
-        networkCallback?.let {
-            val cm = requireContext().getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-            cm.unregisterNetworkCallback(it)
-        }
-        networkCallback = null
         _binding = null
     }
 }

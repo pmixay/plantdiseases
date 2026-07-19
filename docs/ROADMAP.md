@@ -71,17 +71,19 @@ into Glide's disk cache on a connected launch (they're server-hosted, not
 bundled, so they used to show a placeholder offline unless viewed online
 first). The one remaining gap worth closing:
 
-- [ ] **App-wide connectivity signal** — the offline banner lives only on the
-      Scan screen (`CameraFragment`); every other screen discovers offline
-      state reactively and silently renders blank/empty. A shared observer
-      would drive one consistent "offline — showing cached content" affordance
-      instead of blank placeholders. This is the ceiling for offline work —
-      surface the state, don't rebuild features offline.
+- [x] **App-wide connectivity signal** — landed: `ConnectivityMonitor`
+      (one process-wide default-network callback, exposed as a `StateFlow`)
+      plus a self-driving `OfflineBannerView`. The main shell shows one
+      "offline — showing saved content" banner across all tabs (suppressed on
+      Scan, which keeps its on-preview overlay, now driven by the same
+      signal). This was the ceiling for offline work — the state is surfaced,
+      features are not rebuilt offline.
 
 ### Release
 
-- [ ] **Localize the AI-doctor chat subtitle** — the plant/species name under
-      the header still shows the English common name in RU locale.
+- [x] **Localize the AI-doctor chat subtitle** — landed: the header name now
+      goes through the shared `localizedSpeciesName` rule (RU users get the
+      Latin binomial instead of an English-only common name).
 - [ ] Bump `versionName` 1.7 → 1.8 (+ `versionCode`) and cut the RuStore build.
 
 ---

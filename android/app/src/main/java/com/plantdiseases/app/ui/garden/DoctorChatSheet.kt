@@ -38,6 +38,7 @@ import com.plantdiseases.app.databinding.SheetDoctorChatBinding
 import com.plantdiseases.app.ui.guide.GuideDetailSheet
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.localizedSpeciesName
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
 import java.text.SimpleDateFormat
@@ -89,15 +90,17 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
     /** True while a reply is in flight — send is locked until it lands. */
     private var isSending = false
 
-    /** Header label — the plant's name, or the scan's species/disease. */
+    /** Header label — the plant's name, or the scan's species/disease. The
+     *  species goes through [localizedSpeciesName] (the shared card rule) so a
+     *  RU user sees the Latin binomial, never an English-only common name. */
     private val displayName: String
-        get() = plant?.name
-            ?: scan?.let { s ->
-                s.speciesCommon?.takeIf { it.isNotBlank() }
-                    ?: s.speciesScientific?.takeIf { it.isNotBlank() }
-                    ?: s.diseaseName
-            }
-            ?: ""
+        get() {
+            plant?.let { return it.name }
+            val s = scan ?: return ""
+            val isRu = context?.let { LocaleHelper.isRussian(it) } ?: false
+            return localizedSpeciesName(s.speciesScientific, s.speciesCommon, isRu)
+                ?: s.diseaseName
+        }
 
     private lateinit var messagesLayout: LinearLayout
     private lateinit var scrollView: NestedScrollView

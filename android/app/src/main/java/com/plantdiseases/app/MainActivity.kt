@@ -175,6 +175,11 @@ class MainActivity : AppCompatActivity() {
             // re-applies it in onViewCreated, which covers the pop back to here.
             if (destination.id != R.id.shellFragment) {
                 binding.appBar.visibility = View.VISIBLE
+                // Pushed destinations (the guide) always get the shared
+                // offline affordance; a Scan-tab suppression must not leak
+                // onto them. The pop back to a tab goes through
+                // applyTabChrome, which restores the per-tab gate.
+                binding.offlineBanner.suppressed = false
             }
         }
 
@@ -367,6 +372,10 @@ class MainActivity : AppCompatActivity() {
             R.id.gardenFragment, R.id.profileFragment -> View.GONE
             else -> View.VISIBLE
         }
+        // The Scan tab keeps its own on-preview offline overlay (it means
+        // "server scan unavailable, Aqua still works" there) — showing the
+        // shell banner too would stack two banners on one screen.
+        binding.offlineBanner.suppressed = tabId == R.id.cameraFragment
         supportActionBar?.title = getString(
             when (tabId) {
                 R.id.cameraFragment -> R.string.tab_scan
