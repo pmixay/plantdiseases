@@ -126,6 +126,19 @@
 
             </com.google.android.material.textfield.TextInputLayout>
 
+            <!-- "Today" care queue — the daily hub. GardenFragment inflates a
+                 section header + item_care_task rows (or the "all caught up"
+                 reward row) into this container; hidden while the garden is
+                 empty. Sits above the plant list so due work leads the tab. -->
+            <LinearLayout
+                android:id="@+id/garden_today_container"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_lg"
+                android:orientation="vertical"
+                android:visibility="gone"
+                tools:visibility="visible" />
+
             <!-- Plant list — item_plant_card rows are inflated here. -->
             <LinearLayout
                 android:id="@+id/garden_plants_container"

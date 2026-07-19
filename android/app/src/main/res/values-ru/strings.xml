@@ -384,6 +384,17 @@
     <string name="garden_search_hint">Поиск растений…</string>
     <string name="garden_search_empty">По запросу «%1$s» ничего не найдено</string>
     <string name="garden_section_attention">Требуют внимания</string>
+    <!-- Сад: очередь ухода «Сегодня» -->
+    <string name="garden_today_title">Сегодня</string>
+    <string name="garden_today_caught_up">Всё сделано 🌿</string>
+    <string name="care_due_today">сегодня</string>
+    <plurals name="care_overdue_days">
+        <item quantity="one">просрочено на %1$d день</item>
+        <item quantity="few">просрочено на %1$d дня</item>
+        <item quantity="many">просрочено на %1$d дней</item>
+        <item quantity="other">просрочено на %1$d дня</item>
+    </plurals>
+    <string name="care_task_done_cd">Отметить выполненным</string>
     <!-- Подтверждение переноса напоминания после отметки «полито/удобрено» -->
     <plurals name="care_reminder_rescheduled">
         <item quantity="one">Записано — следующее напоминание через %1$d день</item>

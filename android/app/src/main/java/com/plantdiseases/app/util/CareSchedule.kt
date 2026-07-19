@@ -28,6 +28,18 @@ object CareSchedule {
      *  24 h, negative when overdue. */
     fun daysUntil(dueAt: Long, nowMs: Long): Int = ((dueAt - nowMs) / DAY_MS).toInt()
 
+    /** Epoch ms of the next local midnight — the exclusive upper bound of
+     *  "today". The Today care queue includes everything due before this,
+     *  so a task falling due this evening already shows this morning. */
+    fun endOfTodayMs(now: Calendar = Calendar.getInstance()): Long =
+        (now.clone() as Calendar).apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+            add(Calendar.DAY_OF_MONTH, 1)
+        }.timeInMillis
+
     /**
      * Milliseconds until the next wall-clock occurrence of [hour]:[minute].
      * If that time has already passed today, schedules for tomorrow.

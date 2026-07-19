@@ -61,6 +61,27 @@ class CareScheduleTest {
         assertThat(CareSchedule.daysUntil(now - 2 * CareSchedule.DAY_MS, now)).isEqualTo(-2)
     }
 
+    // ── endOfTodayMs ─────────────────────────────────────────────────
+
+    @Test
+    fun endOfTodayIsNextLocalMidnight() {
+        val now = calendarAt(15, 42)
+        val midnight = Calendar.getInstance().apply {
+            set(2026, Calendar.JUNE, 11, 0, 0, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        assertThat(CareSchedule.endOfTodayMs(now)).isEqualTo(midnight.timeInMillis)
+    }
+
+    @Test
+    fun endOfTodayIsAlwaysInTheFuture() {
+        // Even one millisecond before midnight the bound is the NEXT
+        // midnight, so "due before end of today" can never be empty-by-
+        // construction at the end of the evening.
+        val now = calendarAt(23, 59).apply { set(Calendar.SECOND, 59) }
+        assertThat(CareSchedule.endOfTodayMs(now)).isGreaterThan(now.timeInMillis)
+    }
+
     // ── initialDelayMs ───────────────────────────────────────────────
 
     @Test

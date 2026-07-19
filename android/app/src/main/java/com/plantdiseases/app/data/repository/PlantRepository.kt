@@ -62,6 +62,43 @@ class PlantRepository(
         }.minByOrNull { it.dueAt }
     }
 
+    /**
+     * The Garden "Today" queue: every care action due before [dueBefore]
+     * (typically [CareSchedule.endOfTodayMs]) across the whole garden, most
+     * urgent first. One row per (plant, enabled reminder) whose type maps to
+     * a loggable journal action — the same anchor rule as [getPlants]'s
+     * next-action chip, so the queue and the per-card chips always agree.
+     * Non-loggable types ("check", "custom", …) have no journal anchor that
+     * a Done tap could advance, so they stay notification-only.
+     */
+    suspend fun getDueCareTasks(dueBefore: Long): List<CareTask> = withContext(Dispatchers.IO) {
+        plantDao.getAllPlants().flatMap { plant ->
+            val journal = journalDao.getEntriesForPlant(plant.id)
+            reminderDao.getForPlant(plant.id)
+                .filter { it.enabled }
+                .mapNotNull { reminder ->
+                    val journalType = reminderTypeToJournalType(reminder.type)
+                        ?: return@mapNotNull null
+                    val anchor = journal.firstOrNull { it.type == journalType.value }?.timestamp
+                        ?: plant.createdAt
+                    val dueAt = CareSchedule.nextDueAt(anchor, reminder.intervalDays)
+                    if (dueAt < dueBefore) CareTask(plant, reminder, dueAt) else null
+                }
+        }.sortedBy { it.dueAt }
+    }
+
+    /**
+     * Log the journal entry behind a queue row's Done tap. The entry becomes
+     * the new schedule anchor, which is what advances the task's next dueAt.
+     * Returns false (and writes nothing) for a reminder type with no journal
+     * mapping — such types never enter the queue in the first place.
+     */
+    suspend fun logCareAction(plantId: Long, reminderType: String): Boolean {
+        val journalType = reminderTypeToJournalType(reminderType) ?: return false
+        addTypedEntry(plantId, journalType, text = null)
+        return true
+    }
+
     private fun reminderTypeToJournalType(reminderType: String): JournalType? =
         when (reminderType) {
             "watering" -> JournalType.WATERING
@@ -377,6 +414,15 @@ class PlantRepository(
      *  ``dueAt`` is an absolute epoch-ms; the UI renders relative. */
     data class NextAction(
         val type: String, // "watering" / "fertilize" / …
+        val dueAt: Long,
+    )
+
+    /** One row of the Garden "Today" queue: a care action that has fallen
+     *  due on a plant. Carries the full reminder so the Done handler can
+     *  re-anchor its WorkManager schedule without a second lookup. */
+    data class CareTask(
+        val plant: PlantEntity,
+        val reminder: PlantReminderEntity,
         val dueAt: Long,
     )
 

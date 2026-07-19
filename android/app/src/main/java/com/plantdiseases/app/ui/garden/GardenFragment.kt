@@ -39,11 +39,13 @@ import com.plantdiseases.app.data.local.PlantEntity
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.databinding.FragmentGardenBinding
+import com.plantdiseases.app.databinding.ItemCareTaskBinding
 import com.plantdiseases.app.databinding.ItemPlantCardBinding
 import com.plantdiseases.app.util.CareSchedule
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.ReminderManager
+import com.plantdiseases.app.util.ReminderPresets
 import com.plantdiseases.app.util.localizedSpeciesName
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -64,6 +66,11 @@ class GardenFragment : Fragment() {
     /** Full, unfiltered garden as last loaded from Room. The search box
      *  filters a render off this list without re-querying. */
     private var allSummaries: List<PlantRepository.PlantSummary> = emptyList()
+
+    /** The "Today" care queue: everything due before local midnight across
+     *  the whole garden, most urgent first. Deliberately NOT search-filtered
+     *  — due work stays visible while the user is looking for a plant. */
+    private var dueTasks: List<PlantRepository.CareTask> = emptyList()
 
     /** Plant count above which the search box appears. */
     private val searchVisibleThreshold = 6
@@ -149,12 +156,14 @@ class GardenFragment : Fragment() {
         _binding = null
     }
 
-    private fun loadPlants() {
+    private fun loadPlants(animate: Boolean = true) {
         lifecycleScope.launch {
             val plants = plantRepository.getPlants()
+            val tasks = plantRepository.getDueCareTasks(CareSchedule.endOfTodayMs())
             if (_binding != null) {
                 allSummaries = plants
-                renderGarden(animate = true)
+                dueTasks = tasks
+                renderGarden(animate)
             }
         }
     }
@@ -211,7 +220,106 @@ class GardenFragment : Fragment() {
                 View.GONE
             }
 
+        renderTodayQueue()
         renderPlantList(all.filter { matchesQuery(it, query) }, query, animate)
+    }
+
+    /** The "Today" section above the plant list: due care actions as one-tap
+     *  rows, or the "all caught up 🌿" reward line when nothing is due — a
+     *  calm daily-return anchor, deliberately without any streak counter.
+     *  Hidden entirely while the garden has no plants (the empty-state
+     *  illustration owns that screen). */
+    private fun renderTodayQueue() {
+        val container = binding.gardenTodayContainer
+        container.removeAllViews()
+        if (allSummaries.isEmpty()) {
+            container.visibility = View.GONE
+            return
+        }
+        container.visibility = View.VISIBLE
+        container.addView(buildSectionHeader(getString(R.string.garden_today_title)))
+        if (dueTasks.isEmpty()) {
+            container.addView(
+                TextView(requireContext()).apply {
+                    text = getString(R.string.garden_today_caught_up)
+                    textSize = 14f
+                    setTextColor(requireContext().getColor(R.color.on_surface_secondary))
+                    setPadding(4.dp(), 2.dp(), 4.dp(), 6.dp())
+                }
+            )
+            return
+        }
+        dueTasks.forEach { container.addView(buildCareTaskRow(it)) }
+    }
+
+    private fun buildCareTaskRow(task: PlantRepository.CareTask): View {
+        val ctx = requireContext()
+        val row = ItemCareTaskBinding.inflate(layoutInflater, binding.gardenTodayContainer, false)
+        row.careTaskIcon.setImageResource(
+            ReminderPresets.iconRes(task.reminder.icon, task.reminder.type)
+        )
+        row.careTaskTitle.text =
+            ReminderPresets.displayLabel(task.reminder.label, task.reminder.type) { getString(it) }
+        row.careTaskPlant.text = task.plant.name
+        // daysUntil truncates toward zero, so anything less than a full day
+        // past due still reads "today" — the row itself is the nudge.
+        val overdueDays = -CareSchedule.daysUntil(task.dueAt, System.currentTimeMillis())
+        if (overdueDays >= 1) {
+            row.careTaskDue.text =
+                resources.getQuantityString(R.plurals.care_overdue_days, overdueDays, overdueDays)
+            row.careTaskDue.setTextColor(ctx.getColor(R.color.disease_red))
+        } else {
+            row.careTaskDue.text = getString(R.string.care_due_today)
+            row.careTaskDue.setTextColor(ctx.getColor(R.color.neutral_blue))
+        }
+        row.careTaskCard.setOnClickListener {
+            Haptics.tick(ctx)
+            startActivity(
+                Intent(ctx, PlantDetailActivity::class.java)
+                    .putExtra(PlantDetailActivity.EXTRA_PLANT_ID, task.plant.id)
+            )
+        }
+        row.careTaskDone.setOnClickListener {
+            // Locked immediately: the row survives until the reload lands,
+            // and a double-tap must not log the action twice.
+            it.isEnabled = false
+            Haptics.medium(ctx)
+            completeCareTask(task)
+        }
+        return row.root
+    }
+
+    /** One-tap Done: journal-log the care action (which advances the queue's
+     *  schedule anchor) and push the reminder's notification cadence out a
+     *  full interval — the same semantics as the plant detail's "mark
+     *  watered now" quick-log. */
+    private fun completeCareTask(task: PlantRepository.CareTask) {
+        lifecycleScope.launch {
+            if (!plantRepository.logCareAction(task.plant.id, task.reminder.type)) return@launch
+            val ctx = context ?: return@launch
+            ReminderManager.rescheduleAfterCare(
+                context = ctx.applicationContext,
+                plantId = task.plant.id,
+                plantName = task.plant.name,
+                type = task.reminder.type,
+                intervalDays = task.reminder.intervalDays,
+                hour = task.reminder.hour,
+                minute = task.reminder.minute,
+                reminderId = task.reminder.id,
+            )
+            Toast.makeText(
+                ctx,
+                ctx.resources.getQuantityString(
+                    R.plurals.care_reminder_rescheduled,
+                    task.reminder.intervalDays,
+                    task.reminder.intervalDays,
+                ),
+                Toast.LENGTH_SHORT,
+            ).show()
+            // No stagger animation on the reload — the queue shrinking by
+            // one row is the feedback, a full list re-entrance is noise.
+            loadPlants(animate = false)
+        }
     }
 
     private fun renderPlantList(
@@ -642,6 +750,7 @@ class GardenFragment : Fragment() {
                 awaitKeyboardClosed()
                 if (_binding != null) {
                     allSummaries = plantRepository.getPlants()
+                    dueTasks = plantRepository.getDueCareTasks(CareSchedule.endOfTodayMs())
                     renderGarden(animate = true)
                     stabilizeFloatingAddButton()
                 }

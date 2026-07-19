@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    One row of the Garden "Today" care queue: a care action (watering,
+    fertilising, …) that has fallen due on a plant. Icon + action label +
+    plant name, a due chip ("today" / "N days overdue") and a one-tap
+    Done button. Populated by GardenFragment.buildCareTaskRow; tapping
+    the card opens the plant's detail, tapping Done logs the action and
+    re-anchors the reminder.
+-->
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/care_task_card"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginBottom="@dimen/space_sm"
+    android:clickable="true"
+    android:focusable="true"
+    app:cardBackgroundColor="@color/surface"
+    app:cardCornerRadius="@dimen/radius_lg"
+    app:cardElevation="2dp"
+    app:strokeWidth="0dp"
+    app:rippleColor="@color/primary_light">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="@dimen/space_lg"
+        android:paddingVertical="@dimen/space_md">
+
+        <FrameLayout
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="@drawable/bg_thumb_rounded">
+
+            <ImageView
+                android:id="@+id/care_task_icon"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:layout_gravity="center"
+                android:contentDescription="@null"
+                app:tint="@color/primary"
+                tools:src="@drawable/ic_watering" />
+
+        </FrameLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="@dimen/space_md"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/care_task_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:textColor="@color/on_surface"
+                android:textSize="@dimen/text_body"
+                android:fontFamily="sans-serif-medium"
+                tools:text="Watering" />
+
+            <TextView
+                android:id="@+id/care_task_plant"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:textColor="@color/on_surface_secondary"
+                android:textSize="@dimen/text_body_sm"
+                tools:text="Monstera" />
+
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/care_task_due"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="@dimen/space_sm"
+            android:maxLines="1"
+            android:textSize="12sp"
+            android:fontFamily="sans-serif-medium"
+            tools:text="2 days overdue"
+            tools:textColor="@color/disease_red" />
+
+        <ImageButton
+            android:id="@+id/care_task_done"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginStart="@dimen/space_sm"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_check"
+            android:contentDescription="@string/care_task_done_cd"
+            app:tint="@color/healthy_green" />
+
+    </LinearLayout>
+
+</com.google.android.material.card.MaterialCardView>

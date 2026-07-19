@@ -390,6 +390,15 @@
     <string name="garden_search_hint">Search plants…</string>
     <string name="garden_search_empty">No plants match “%1$s”</string>
     <string name="garden_section_attention">Needs attention</string>
+    <!-- Garden "Today" care queue -->
+    <string name="garden_today_title">Today</string>
+    <string name="garden_today_caught_up">All caught up 🌿</string>
+    <string name="care_due_today">today</string>
+    <plurals name="care_overdue_days">
+        <item quantity="one">%1$d day overdue</item>
+        <item quantity="other">%1$d days overdue</item>
+    </plurals>
+    <string name="care_task_done_cd">Mark done</string>
     <!-- "Mark watered/fertilised now" reminder reschedule confirmation -->
     <plurals name="care_reminder_rescheduled">
         <item quantity="one">Logged — next reminder in %1$d day</item>
