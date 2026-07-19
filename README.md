@@ -92,7 +92,7 @@ input size differ); `aqua` is a knowledge-distilled mobile student
 > enable it, otherwise the notebook skips it cleanly. Credentials can be
 > the **new-format API token** (a Colab secret or env var
 > `KAGGLE_API_TOKEN`, or `~/.kaggle/access_token`) or a legacy
-> `kaggle.json`; the §1 helper `kaggle_upload_credentials()` lets you
+> `kaggle.json`; the §1 helper `kaggle_install_api_config()` lets you
 > upload either file in Colab. The source is **train-only** and drops any
 > folder it can't confidently map, and the run prints every discovered
 > folder so you can refine the label map.
