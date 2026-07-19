@@ -67,37 +67,34 @@ collapsed (tap to expand), in the **scan result** screen.
 
 > Turn the Garden from a flat list of saved plants into a **care-management
 > hub** — the screen a user opens daily, where every scan feeds an ongoing
-> care story instead of being a one-off verdict. Builds almost entirely on
-> data already in Room (`plants`, `scans`, `journals`, `reminders`) — new UI
-> + aggregation, little new storage. The only new persistence is checklist
-> step state and (later) a per-plant `room`. Keep XML Views + Koin; no
-> Compose.
+> care story instead of being a one-off verdict. The foundations already
+> ship: the **"Today" care queue** (due actions across all plants atop the
+> Garden tab, one-tap Done, calm "all caught up 🌿" state) and the
+> **before/after photo compare** (`PhotoCompareActivity`, long-press in the
+> detail photo grid, plus the scan timeline). What's left builds on data
+> already in Room (`plants`, `scans`, `journals`, `reminders`); the only new
+> persistence is checklist step state and a re-added per-plant `room`. Keep
+> XML Views + Koin; no Compose.
 
-- [x] **1. "Today" care queue** — landed (v1): due/overdue care actions
-      (watering, fertilising, misting, repotting, pruning) across all plants
-      as one dated queue atop the Garden tab, most urgent first, with a
-      one-tap **Done** (journal log + reminder re-anchor) and an
-      "all caught up 🌿" empty state — calm, no gamified streak. Treatment
-      steps join this queue with the checklists below.
-- [ ] **2. Scan-driven care checklists** — materialize the care plan's
+- [ ] **1. Scan-driven care checklists** — materialize the care plan's
       treatment steps (`generate_care_plan` → `treatment`) as a per-plant
-      trackable checklist: per-step completion + follow-up dates that feed
-      the Today queue. Completion history later powers the health header
-      and a "did the treatment work?" retraining signal.
-- [ ] **3. Plant health header** — a healthy / recovering / declining status
+      trackable checklist: a small Room table (bilingual step text, done
+      flag, follow-up date, source scan), with per-step completion feeding
+      the Today queue as treatment rows. Completion history later powers
+      the health header and a "did the treatment work?" retraining signal.
+- [ ] **2. Plant health header** — a healthy / recovering / declining status
       per plant from scan-history trend + care adherence; leads the detail
       screen and tints the Garden card so the list shows where attention is
-      needed. Needs #2's adherence signal.
-- [ ] **4. Rooms / locations** — nullable `room` column + grouping headers;
-      care-relevant later (per-room light/humidity defaults, seasonal
-      nudges), organizational in v1.
-- [ ] **5. Progression / photo-compare strip** — horizontal timeline of a
-      plant's scan photos with a before/after compare; pure offline
-      visualization over existing Room rows.
+      needed. Needs #1's adherence signal.
+- [ ] **3. Rooms / locations** — nullable `room` column + grouping headers
+      in the Garden list; care-relevant later (per-room light/humidity
+      defaults, seasonal nudges). NB a free-text `room` column was
+      deliberately dropped in `MIGRATION_4_5` — re-adding it is a schema
+      v5→v6 migration, this time with the grouped UI that justifies it.
 
-**Sequencing:** #2 next (the payoff; shares the queue's schedule/journal
-plumbing), then #3 (needs #2), then #4 + #5 as independent polish that can
-slip without blocking the hub.
+**Sequencing:** #1 next (the payoff; plugs into the shipped queue's
+schedule/journal plumbing), then #2 (needs #1). #3 is independent polish
+that can slip without blocking the hub.
 
 ---
 
