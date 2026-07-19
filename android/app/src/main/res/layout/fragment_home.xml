@@ -220,15 +220,20 @@
                     android:textSize="@dimen/text_caption" />
             </LinearLayout>
 
-            <androidx.recyclerview.widget.RecyclerView
-                android:id="@+id/rv_species"
+            <com.plantdiseases.app.util.NestedScrollableHost
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_sm"
-                android:clipToPadding="false"
-                android:nestedScrollingEnabled="false"
-                android:orientation="horizontal"
-                android:paddingHorizontal="@dimen/content_gutter" />
+                android:layout_marginTop="@dimen/space_sm">
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/rv_species"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:clipToPadding="false"
+                    android:nestedScrollingEnabled="false"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="@dimen/content_gutter" />
+            </com.plantdiseases.app.util.NestedScrollableHost>
         </LinearLayout>
 
         <!-- Popular diseases -->
@@ -249,15 +254,20 @@
                 android:textSize="@dimen/text_title_sm"
                 android:textStyle="bold" />
 
-            <androidx.recyclerview.widget.RecyclerView
-                android:id="@+id/rv_popular"
+            <com.plantdiseases.app.util.NestedScrollableHost
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_sm"
-                android:clipToPadding="false"
-                android:nestedScrollingEnabled="false"
-                android:orientation="horizontal"
-                android:paddingHorizontal="@dimen/content_gutter" />
+                android:layout_marginTop="@dimen/space_sm">
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/rv_popular"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:clipToPadding="false"
+                    android:nestedScrollingEnabled="false"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="@dimen/content_gutter" />
+            </com.plantdiseases.app.util.NestedScrollableHost>
         </LinearLayout>
 
         <!-- Disease guide -->
@@ -293,15 +303,20 @@
                     android:fontFamily="sans-serif-medium" />
             </LinearLayout>
 
-            <androidx.recyclerview.widget.RecyclerView
-                android:id="@+id/rv_guide"
+            <com.plantdiseases.app.util.NestedScrollableHost
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_sm"
-                android:clipToPadding="false"
-                android:nestedScrollingEnabled="false"
-                android:orientation="horizontal"
-                android:paddingHorizontal="@dimen/content_gutter" />
+                android:layout_marginTop="@dimen/space_sm">
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/rv_guide"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:clipToPadding="false"
+                    android:nestedScrollingEnabled="false"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="@dimen/content_gutter" />
+            </com.plantdiseases.app.util.NestedScrollableHost>
         </LinearLayout>
 
     </LinearLayout>

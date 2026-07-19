@@ -10,20 +10,40 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.annotation.IdRes
 import androidx.core.view.updatePadding
+import androidx.navigation.NavController
 import androidx.navigation.fragment.NavHostFragment
 import androidx.navigation.ui.AppBarConfiguration
 import androidx.navigation.ui.navigateUp
 import androidx.navigation.ui.setupActionBarWithNavController
-import androidx.navigation.ui.setupWithNavController
 import com.plantdiseases.app.databinding.ActivityMainBinding
 import com.plantdiseases.app.ui.onboarding.OnboardingActivity
+import com.plantdiseases.app.ui.shell.ShellFragment
 import com.plantdiseases.app.util.LocaleHelper
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var appBarConfiguration: AppBarConfiguration
+    private lateinit var navController: NavController
+
+    /** The tab pager, once the nav host has created it. Set from
+     *  [ShellFragment.onAttach], so it stays valid while the guide is pushed
+     *  over the shell (that destroys the shell's view, not the fragment). */
+    var shell: ShellFragment? = null
+
+    /** A tab to land on as soon as the shell's pager exists — a tap that
+     *  arrived before it did (cold start via [EXTRA_OPEN_SCANNER]) or while the
+     *  guide was on top and the shell's view was torn down. */
+    @IdRes
+    var pendingTabId: Int? = null
+
+    fun consumePendingTabId(): Int? = pendingTabId.also { pendingTabId = null }
+
+    /** True while [checkTabSilently] is driving the bar, so the item-selected
+     *  listener can tell the pager's echo apart from a real tap. */
+    private var syncingBar = false
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
@@ -127,76 +147,34 @@ class MainActivity : AppCompatActivity() {
         (application as PlantDiseasesApp).prefetchGuidePhotos()
         val navHostFragment = supportFragmentManager
             .findFragmentById(R.id.nav_host_fragment) as NavHostFragment
-        val navController = navHostFragment.navController
+        navController = navHostFragment.navController
 
-        // setupWithNavController wires both the tab→destination navigation
-        // and the destination→tab selection sync. We keep it for the latter,
-        // then override the item-selected listener so tab switches get the
-        // slide-in/fade transition (R.anim.frag_*) the sibling MetalRestrict
-        // app uses. The destination-changed listener it installs is separate
-        // and survives this override, so the checked tab still stays in sync
-        // with programmatic navigations (e.g. the profile/gallery CTAs).
-        // The five bottom-nav tabs are the top-level destinations (no Up
-        // arrow). Anything reached *from* a tab — e.g. the disease guide,
-        // now opened from the Home tools grid rather than its own tab —
-        // is non-top-level, so setupActionBarWithNavController shows a back
+        // The tabs are no longer destinations — they're pages of the shell's
+        // pager — so the graph is down to two entries and the shell is the only
+        // top-level one (no Up arrow). Anything pushed over it, i.e. the disease
+        // guide from Home's tools grid, is non-top-level, so this shows a back
         // arrow on the shared toolbar and onSupportNavigateUp pops it.
-        appBarConfiguration = AppBarConfiguration(
-            setOf(
-                R.id.homeFragment,
-                R.id.cameraFragment,
-                R.id.gardenFragment,
-                R.id.galleryFragment,
-                R.id.profileFragment,
-            ),
-        )
+        appBarConfiguration = AppBarConfiguration(setOf(R.id.shellFragment))
         setupActionBarWithNavController(navController, appBarConfiguration)
 
-        binding.bottomNavigation.setupWithNavController(navController)
+        // setupWithNavController is gone with the tab destinations: it existed
+        // to turn a tap into a navigate() and to check the tab on arrival, and
+        // both of those are now the pager's job. The bar stays here (rather than
+        // moving into the shell) because it has to outlive the shell's view when
+        // the guide is pushed, and because the insets/badge/splash animation
+        // above are all activity-scoped.
         binding.bottomNavigation.setOnItemSelectedListener { item ->
-            val navOptions = androidx.navigation.NavOptions.Builder()
-                .setLaunchSingleTop(true)
-                .setRestoreState(true)
-                .setEnterAnim(R.anim.frag_enter)
-                .setExitAnim(R.anim.frag_exit)
-                .setPopEnterAnim(R.anim.frag_pop_enter)
-                .setPopExitAnim(R.anim.frag_pop_exit)
-                // Pop back to the start destination, saving state, so the
-                // back stack and per-tab scroll state behave exactly as they
-                // did under setupWithNavController.
-                .setPopUpTo(
-                    navController.graph.startDestinationId,
-                    inclusive = false,
-                    saveState = true,
-                )
-                .build()
-            try {
-                navController.navigate(item.itemId, null, navOptions)
-                true
-            } catch (e: IllegalArgumentException) {
-                false
-            }
+            if (syncingBar) true else selectTab(item.itemId)
         }
 
         navController.addOnDestinationChangedListener { _, destination, _ ->
-            // Garden + Profile render their own full-bleed green hero as the
-            // header, so the shared toolbar bar is hidden there — otherwise it
-            // stacks a second title above the hero with a white gap (the
-            // "cut off" look). Every other destination keeps the toolbar.
-            binding.appBar.visibility = when (destination.id) {
-                R.id.gardenFragment, R.id.profileFragment -> View.GONE
-                else -> View.VISIBLE
-            }
-            when (destination.id) {
-                R.id.cameraFragment -> supportActionBar?.title = getString(R.string.tab_scan)
-                R.id.galleryFragment -> {
-                    supportActionBar?.title = getString(R.string.tab_gallery)
-                    // Clear gallery badge when opening gallery tab
-                    clearGalleryBadge()
-                }
-                R.id.gardenFragment -> supportActionBar?.title = getString(R.string.tab_garden)
-                R.id.guideFragment -> supportActionBar?.title = getString(R.string.tab_guide)
-                R.id.profileFragment -> supportActionBar?.title = getString(R.string.tab_profile)
+            // Pushed destinations always keep the toolbar — that's where their
+            // back arrow lives — and their title comes from android:label via
+            // setupActionBarWithNavController. The shell's chrome is not set
+            // here: ShellFragment applies it per page as swipes settle, and
+            // re-applies it in onViewCreated, which covers the pop back to here.
+            if (destination.id != R.id.shellFragment) {
+                binding.appBar.visibility = View.VISIBLE
             }
         }
 
@@ -332,6 +310,73 @@ class MainActivity : AppCompatActivity() {
                 .setStartDelay(300)
                 .start()
         }
+    }
+
+    /**
+     * Handle a bottom-bar tap (or a programmatic `selectedItemId =`, which the
+     * Home/Gallery/Profile "scan" CTAs use) by paging to that tab.
+     *
+     * Returns false for an id that isn't a tab, which leaves the bar's selection
+     * where it was.
+     */
+    private fun selectTab(@IdRes tabId: Int): Boolean {
+        if (ShellFragment.pageOf(tabId) < 0) return false
+        val onShell = navController.currentDestination?.id == R.id.shellFragment
+        val pager = shell?.takeIf { it.view != null && onShell }
+        if (pager != null) {
+            pager.showTab(tabId, animate = true)
+        } else {
+            // Either the shell hasn't been created yet (cold start), or the
+            // guide is on top of it. Park the request; the shell picks it up
+            // when its view is (re)created.
+            pendingTabId = tabId
+            if (!onShell) navController.popBackStack(R.id.shellFragment, false)
+        }
+        return true
+    }
+
+    /**
+     * Check a tab in the bar because the *pager* moved there.
+     *
+     * setSelectedItemId dispatches through the item-selected listener
+     * synchronously, so it is gated: without the flag, reporting the landing
+     * page would bounce straight back into [selectTab] and page on top of a
+     * page change already in flight. (Poking `menu.findItem(id).isChecked`
+     * instead would dodge the listener but only unchecks the previous tab if
+     * the menu group is exclusive-checkable, and bottom_nav_menu.xml declares
+     * no group — that route can leave two tabs lit.)
+     */
+    fun checkTabSilently(@IdRes tabId: Int) {
+        if (binding.bottomNavigation.selectedItemId == tabId) return
+        syncingBar = true
+        try {
+            binding.bottomNavigation.selectedItemId = tabId
+        } finally {
+            syncingBar = false
+        }
+    }
+
+    /** Toolbar state for a settled tab page. Driven by the shell, not by the
+     *  NavController, since the tabs aren't destinations any more. */
+    fun applyTabChrome(@IdRes tabId: Int) {
+        // Garden + Profile render their own full-bleed green hero as the
+        // header, so the shared toolbar is hidden there — otherwise it stacks a
+        // second title above the hero with a white gap (the "cut off" look).
+        // Every other page keeps the toolbar.
+        binding.appBar.visibility = when (tabId) {
+            R.id.gardenFragment, R.id.profileFragment -> View.GONE
+            else -> View.VISIBLE
+        }
+        supportActionBar?.title = getString(
+            when (tabId) {
+                R.id.cameraFragment -> R.string.tab_scan
+                R.id.gardenFragment -> R.string.tab_garden
+                R.id.galleryFragment -> R.string.tab_gallery
+                R.id.profileFragment -> R.string.tab_profile
+                else -> R.string.tab_home
+            },
+        )
+        if (tabId == R.id.galleryFragment) clearGalleryBadge()
     }
 
     // Gallery badge for new results

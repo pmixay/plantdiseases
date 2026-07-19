@@ -1,39 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Only two destinations left. The five bottom-nav tabs are no longer
+     destinations at all: they became pages of the ViewPager2 inside
+     ShellFragment (see ui/shell/ShellFragment) so the user can swipe between
+     them, which means the NavController must not also be swapping them. What
+     stays here is the layer *above* the tabs — the disease guide, pushed on top
+     of the whole shell with its own transition, up arrow and back stack. -->
 <navigation xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/nav_graph"
-    app:startDestination="@id/homeFragment">
+    app:startDestination="@id/shellFragment">
 
+    <!-- Deliberately unlabelled: setupActionBarWithNavController would push a
+         label into the toolbar title on every arrival here, overwriting the
+         per-page title the shell sets as pages settle. -->
     <fragment
-        android:id="@+id/homeFragment"
-        android:name="com.plantdiseases.app.ui.home.HomeFragment"
-        android:label="@string/tab_home" />
+        android:id="@+id/shellFragment"
+        android:name="com.plantdiseases.app.ui.shell.ShellFragment" />
 
-    <fragment
-        android:id="@+id/cameraFragment"
-        android:name="com.plantdiseases.app.ui.camera.CameraFragment"
-        android:label="@string/tab_scan" />
-
-    <fragment
-        android:id="@+id/galleryFragment"
-        android:name="com.plantdiseases.app.ui.gallery.GalleryFragment"
-        android:label="@string/tab_gallery" />
-
-    <fragment
-        android:id="@+id/gardenFragment"
-        android:name="com.plantdiseases.app.ui.garden.GardenFragment"
-        android:label="@string/tab_garden" />
-
-    <!-- No longer a bottom tab: reached from the Home page's tools grid
-         (navigate(R.id.guideFragment)); the bar keeps its last selection. -->
+    <!-- Not a bottom tab and not a swipe page: reached from the Home page's
+         tools grid (navigate(R.id.guideFragment)); the bar keeps its last
+         selection while it's open. -->
     <fragment
         android:id="@+id/guideFragment"
         android:name="com.plantdiseases.app.ui.guide.GuideFragment"
         android:label="@string/tab_guide" />
-
-    <fragment
-        android:id="@+id/profileFragment"
-        android:name="com.plantdiseases.app.ui.profile.ProfileFragment"
-        android:label="@string/tab_profile" />
 
 </navigation>

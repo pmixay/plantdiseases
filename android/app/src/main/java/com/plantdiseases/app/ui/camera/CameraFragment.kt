@@ -28,6 +28,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.core.os.bundleOf
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.data.repository.ScanRepository
@@ -67,6 +68,13 @@ class CameraFragment : Fragment() {
      *  debounces the click itself, before any branch. */
     private var lastCaptureTapAt = 0L
     private val captureDebounceMs = 800L
+
+    /** Whether we've already put the CAMERA dialog in front of the user during
+     *  this fragment's life. The camera is opened from onResume, which runs
+     *  again every time the system dialog closes — asking unconditionally would
+     *  trap a user who denied it in a dialog loop. The permission_layout's own
+     *  Grant button is the retry path. */
+    private var permissionAsked = false
 
     /** When true, the camera runs as the species-identification front-end
      *  (hosted by SpeciesIdentifyActivity): no model picker / scan-tips /
@@ -118,15 +126,14 @@ class CameraFragment : Fragment() {
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (granted) {
-            startCamera()
-        } else {
-            // Guard like every other async callback in this file — `binding`
-            // is a !! getter that NPEs after onDestroyView.
-            if (_binding == null) return@registerForActivityResult
-            binding.permissionLayout.visibility = View.VISIBLE
-            binding.cameraPreview.visibility = View.GONE
-        }
+        // Guard like every other async callback in this file — `binding`
+        // is a !! getter that NPEs after onDestroyView.
+        if (_binding == null) return@registerForActivityResult
+        // Only the panels here: dismissing the system dialog resumes us, and
+        // onResume opens the preview. Starting it here as well would bind the
+        // use cases twice.
+        binding.permissionLayout.visibility = if (granted) View.GONE else View.VISIBLE
+        binding.cameraPreview.visibility = if (granted) View.VISIBLE else View.GONE
     }
 
     private val galleryLauncher = registerForActivityResult(
@@ -214,7 +221,7 @@ class CameraFragment : Fragment() {
 
         setupUI()
         setupPinchToZoom()
-        checkCameraPermission()
+        // NB: the camera is deliberately *not* opened here — see onResume.
         registerNetworkCallback()
         restoreGridOverlay()
     }
@@ -403,7 +410,18 @@ class CameraFragment : Fragment() {
         }, ContextCompat.getMainExecutor(requireContext()))
     }
 
-    private fun checkCameraPermission() {
+    /**
+     * Open the preview, asking for CAMERA first if we don't have it yet.
+     *
+     * Driven from onResume rather than onViewCreated because the Scan tab is now
+     * a page of the shell's ViewPager2: its view is built — and kept — while the
+     * tab sits offscreen so a swipe has a real preview to slide in, and only the
+     * page the user actually lands on is promoted to RESUMED. Opening the camera
+     * from onViewCreated would now do it while the user is still looking at
+     * Home, and asking for the permission there would fire the system dialog
+     * over Home. Both are gone once RESUMED is the trigger.
+     */
+    private fun openCameraOrAskPermission() {
         val granted = ContextCompat.checkSelfPermission(
             requireContext(),
             Manifest.permission.CAMERA,
@@ -412,10 +430,21 @@ class CameraFragment : Fragment() {
             startCamera()
             return
         }
-        // Ask only once the user has opened the Scan screen.
         binding.permissionLayout.visibility = View.VISIBLE
         binding.cameraPreview.visibility = View.GONE
-        permissionLauncher.launch(Manifest.permission.CAMERA)
+        // Ask only once the user has actually landed on the Scan page, and only
+        // once per fragment — see [permissionAsked].
+        if (!permissionAsked) {
+            permissionAsked = true
+            permissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    /** Unbind every use case and drop the provider. Idempotent. */
+    private fun releaseCamera() {
+        cameraProvider?.unbindAll()
+        cameraProvider = null
+        camera = null
     }
 
     private fun startCamera() {
@@ -429,6 +458,16 @@ class CameraFragment : Fragment() {
             // would NPE through the _binding!! getter. Bail out cleanly,
             // mirroring the guards already used in the other callbacks here.
             if (_binding == null || !isAdded) return@addListener
+            // Likewise if the user swiped off the Scan page while the provider
+            // was initialising: onPause's release has already run, and the bind
+            // below would re-open the sensor behind it with nothing left to
+            // close it. The view survives an offscreen page, so the guard above
+            // does not cover this.
+            if (!viewLifecycleOwner.lifecycle.currentState
+                    .isAtLeast(Lifecycle.State.RESUMED)
+            ) {
+                return@addListener
+            }
             // Everything from here — including cameraProviderFuture.get() and
             // the bind — is wrapped: on some devices (notably a chunk of the
             // Samsung fleet) provider init or bindToLifecycle throws, and an
@@ -722,17 +761,31 @@ class CameraFragment : Fragment() {
         // otherwise keep showing the previously-selected family. (No chip in
         // identify mode.)
         if (_binding != null && !identifyMode) refreshModelFamilyChip()
-        // If the Scan permission dialog just granted CAMERA, start the
-        // preview once the system dialog is dismissed and state is stable.
-        if (_binding != null &&
-            binding.permissionLayout.visibility == View.VISIBLE &&
-            ContextCompat.checkSelfPermission(
-                requireContext(),
-                Manifest.permission.CAMERA,
-            ) == PackageManager.PERMISSION_GRANTED
-        ) {
-            startCamera()
-        }
+        // RESUMED is now the one signal that means "the camera is on screen":
+        // the pager resumes only the page the user settled on, and an activity
+        // host (species identify) resumes for as long as it's foreground. So
+        // this is where the preview opens — on arrival at the Scan page, on
+        // return from the cropper/gallery, and once the permission dialog is
+        // dismissed and state is stable.
+        if (_binding != null) openCameraOrAskPermission()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // Release the sensor the moment this stops being the page on screen.
+        //
+        // This used to hang off onDestroyView, which worked only because the
+        // bottom nav destroyed the inactive tab on every switch. As a pager page
+        // the Scan tab is never destroyed and never even stops — offscreen pages
+        // sit at STARTED — so onDestroyView/ON_STOP can't be the release trigger
+        // any more, and the sensor (with the OS camera-active indicator) would
+        // stay held while the user browsed Home. Pairing the release with
+        // onResume's open restores the invariant: bound exactly while RESUMED.
+        //
+        // This costs nothing on a swipe: ViewPager2 only hands RESUMED to the
+        // new page once the scroll goes idle, so the preview stays live under
+        // the finger for the whole gesture rather than blanking mid-drag.
+        releaseCamera()
     }
 
     private fun registerNetworkCallback() {
@@ -777,14 +830,10 @@ class CameraFragment : Fragment() {
 
     override fun onDestroyView() {
         super.onDestroyView()
-        // Explicitly release the camera the moment the Scan tab's view is torn
-        // down (every tab switch, since the bottom nav destroys the inactive
-        // tab). Relying on the view-lifecycle auto-unbind alone left the sensor
-        // — and the OS camera-active indicator — held on the other tabs.
-        // startCamera() re-acquires it when the tab is reopened.
-        cameraProvider?.unbindAll()
-        cameraProvider = null
-        camera = null
+        // Belt and braces — onPause has already released it on every path that
+        // gets here. Kept so the "no provider outlives the view" guarantee
+        // doesn't depend on lifecycle ordering.
+        releaseCamera()
         // Drain any pending zoom-pill hide before the binding goes — the
         // runnable null-checks _binding, but cancelling it avoids a
         // dangling Choreographer callback on the destroyed view.
