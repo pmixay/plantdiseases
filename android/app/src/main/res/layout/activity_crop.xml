@@ -61,6 +61,8 @@
             android:insetRight="0dp"
             android:contentDescription="@string/crop_action_cancel"
             app:icon="@drawable/ic_close"
+            app:iconGravity="textStart"
+            app:iconPadding="0dp"
             app:iconSize="24dp"
             app:iconTint="@color/on_surface" />
 
@@ -76,6 +78,8 @@
             android:insetRight="0dp"
             android:contentDescription="@string/crop_action_rotate"
             app:icon="@drawable/ic_rotate"
+            app:iconGravity="textStart"
+            app:iconPadding="0dp"
             app:iconSize="24dp"
             app:iconTint="@color/on_surface" />
 
@@ -92,6 +96,8 @@
             android:contentDescription="@string/crop_action_done"
             app:backgroundTint="@color/primary"
             app:icon="@drawable/ic_check"
+            app:iconGravity="textStart"
+            app:iconPadding="0dp"
             app:iconSize="24dp"
             app:iconTint="@color/on_primary"
             tools:ignore="ContentDescription" />

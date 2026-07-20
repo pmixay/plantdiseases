@@ -82,6 +82,10 @@
     <color name="icon_bg">#14532D</color>
     <color name="divider">#1F2820</color>
     <color name="card_stroke">#1F2820</color>
+    <!-- See values/colors.xml. Low-alpha white so the fixed seam is actually
+         visible against the near-black page as tabs slide under it — the night
+         `divider` (#1F2820) sits too close to the background to register. -->
+    <color name="toolbar_divider">#24FFFFFF</color>
     <color name="soft_error_icon_bg">#2A2421</color>
     <color name="search_highlight">#665C3A</color>
     <color name="shimmer_base">#192118</color>

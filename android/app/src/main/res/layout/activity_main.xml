@@ -31,6 +31,18 @@
             app:titleTextAppearance="@style/TextAppearance.App.Toolbar"
             app:popupTheme="@style/ThemeOverlay.Material3.Light" />
 
+        <!-- Fixed seam under the bar. The tabs are ViewPager2 pages now, so
+             they slide horizontally beneath this bar; a still hairline against
+             the moving content is what tells the eye the bar itself is pinned
+             (a drop shadow can't — it's invisible on the near-black surface).
+             Inside the AppBarLayout so it vanishes with the bar on the
+             hero-header tabs (Garden/Profile). -->
+        <View
+            android:id="@+id/toolbar_divider"
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="@color/toolbar_divider" />
+
     </com.google.android.material.appbar.AppBarLayout>
 
     <androidx.fragment.app.FragmentContainerView

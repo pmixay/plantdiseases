@@ -65,6 +65,11 @@ class GardenFragment : Fragment() {
      *  filters a render off this list without re-querying. */
     private var allSummaries: List<PlantRepository.PlantSummary> = emptyList()
 
+    /** True until the first plant load renders. Gates the entry fade to the
+     *  genuine first paint and lets onResume skip the redundant reload that
+     *  fires right after onViewCreated's preload. */
+    private var isFirstLoad = true
+
     /** Plant count above which the search box appears. */
     private val searchVisibleThreshold = 6
 
@@ -118,13 +123,20 @@ class GardenFragment : Fragment() {
                 scrollY < oldScrollY - 4 && !fab.isExtended -> fab.extend()
             }
         }
-        // Plants load in onResume() (fires on first show + every return).
-        // Loading here too re-ran the fade-in, so the plants appeared twice.
+        // Preload here so this tab is already populated while it sits off-screen
+        // as the pager's neighbour and slides in showing plants, not a blank
+        // list. The old double fade-in is avoided by the isFirstLoad guard in
+        // onResume below, not by leaving the load out.
+        loadPlants()
     }
 
     override fun onResume() {
         super.onResume()
-        if (_binding != null) loadPlants()
+        // onViewCreated's preload runs the first (fading) render; this fires
+        // straight after it, while isFirstLoad is still true → skip, no double
+        // fade. On real returns it refreshes with animate=false so the visible
+        // list doesn't replay the entry animation.
+        if (_binding != null && !isFirstLoad) loadPlants(animate = false)
     }
 
     /** The shared toolbar is hidden on this tab (see MainActivity), so the
@@ -149,12 +161,15 @@ class GardenFragment : Fragment() {
         _binding = null
     }
 
-    private fun loadPlants() {
+    private fun loadPlants(animate: Boolean = true) {
         lifecycleScope.launch {
             val plants = plantRepository.getPlants()
             if (_binding != null) {
                 allSummaries = plants
-                renderGarden(animate = true)
+                // Fade on the first paint; a refresh passes animate=false so the
+                // already-visible list re-renders without replaying the fade.
+                renderGarden(animate = animate && isFirstLoad)
+                isFirstLoad = false
             }
         }
     }

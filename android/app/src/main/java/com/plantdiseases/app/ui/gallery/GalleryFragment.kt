@@ -94,9 +94,12 @@ class GalleryFragment : Fragment() {
         }
 
         setupFilterChips()
-        // Data loads in onResume() — which always fires right after this on
-        // first show, and again on every return. Loading here as well re-ran
-        // the grid's entry animation, so the photos appeared to load twice.
+        // Preload the grid here, not just in onResume, so this tab is already
+        // populated while it sits off-screen as the pager's neighbour — it
+        // slides in showing photos (or the shimmer), not a blank panel. The
+        // old "loads twice" hazard is gone: the entry stagger runs once here
+        // (invisibly, off-screen) and onResume is now a guarded silent refresh.
+        loadScans()
     }
 
     override fun onViewStateRestored(savedInstanceState: Bundle?) {
@@ -227,7 +230,7 @@ class GalleryFragment : Fragment() {
         if (animate) binding.rvGallery.scheduleLayoutAnimation()
     }
 
-    private fun loadScans() {
+    private fun loadScans(animate: Boolean = true) {
         if (isFirstLoad) {
             binding.shimmerLayout.visibility = View.VISIBLE
             binding.shimmerLayout.startShimmer()
@@ -242,6 +245,10 @@ class GalleryFragment : Fragment() {
             // them out of the grid in the meantime.
             allScans = scanRepository.getAllScans().filter { !it.isNotAPlant }
 
+            // The stagger belongs to the true first paint; a refresh (returning
+            // to the tab) passes animate=false so the grid doesn't replay it.
+            val runStagger = animate || isFirstLoad
+
             if (isFirstLoad) {
                 binding.shimmerLayout.stopShimmer()
                 binding.shimmerLayout.visibility = View.GONE
@@ -249,7 +256,7 @@ class GalleryFragment : Fragment() {
             }
 
             binding.swipeRefresh.isRefreshing = false
-            applyFilter()
+            applyFilter(animate = runStagger)
             loadCommunityBadges()
         }
     }
@@ -303,7 +310,11 @@ class GalleryFragment : Fragment() {
 
     override fun onResume() {
         super.onResume()
-        loadScans()
+        // onViewCreated already did the first load (this fires synchronously
+        // right after it, while isFirstLoad is still true → skip, no double
+        // load). On genuine returns it refreshes silently: animate=false so the
+        // already-shown grid doesn't blink through the entry stagger again.
+        if (!isFirstLoad) loadScans(animate = false)
     }
 
     override fun onDestroyView() {

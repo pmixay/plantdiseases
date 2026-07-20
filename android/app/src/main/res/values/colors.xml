@@ -105,6 +105,10 @@
     <color name="icon_bg">#DCFCE7</color>
     <color name="divider">#E5E7EB</color>
     <color name="card_stroke">#D1D5DB</color>
+    <!-- Hairline seam under the top bar (see activity_main). Tuned per theme so
+         it reads against its own background: a light-grey line on the white
+         surface, a low-alpha white line on the near-black one. -->
+    <color name="toolbar_divider">#14000000</color>
     <color name="soft_error_icon_bg">#FEE2E2</color>
     <color name="search_highlight">#FEF08A</color>
     <color name="shimmer_base">#E5E7EB</color>
