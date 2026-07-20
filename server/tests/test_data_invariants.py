@@ -611,7 +611,7 @@ def test_kaggle_credentials_support_new_token_format_and_upload():
         "(KAGGLE_API_TOKEN / access_token), not only legacy username+key"
     )
     # Upload helper exists and handles both formats.
-    assert "def kaggle_upload_credentials" in src, "creds upload helper missing"
+    assert "def kaggle_install_api_config" in src, "API config upload helper missing"
     assert "from google.colab import files" in src, (
         "upload helper must use the Colab file uploader"
     )
@@ -625,7 +625,7 @@ def test_kaggle_credentials_support_new_token_format_and_upload():
     # Colab secrets are not auto-exported as env vars, so a KAGGLE_API_TOKEN
     # secret must be pulled in explicitly via google.colab.userdata before the
     # credential check, or a set secret reads as "no credentials".
-    assert "def _kaggle_sync_colab_secrets" in src and "from google.colab import userdata" in src, (
+    assert "def _kaggle_load_colab_config" in src and "from google.colab import userdata" in src, (
         "must bridge a Colab KAGGLE_API_TOKEN secret into the environment "
         "(google.colab.userdata) — secrets are not auto-exported as env vars"
     )
