@@ -11,17 +11,12 @@ import android.text.SpannableString
 import android.text.Spanned
 import android.text.style.ReplacementSpan
 import android.view.LayoutInflater
-import android.view.Menu
-import android.view.MenuInflater
-import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 import androidx.core.content.ContextCompat
-import androidx.core.view.MenuProvider
 import androidx.fragment.app.Fragment
 import androidx.interpolator.view.animation.FastOutSlowInInterpolator
-import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -45,6 +40,7 @@ import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.RegionResolver
 import com.plantdiseases.app.util.SpeciesCatalog
+import com.plantdiseases.app.util.applyStatusBarTopInset
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
 import java.util.Calendar
@@ -98,9 +94,13 @@ class HomeFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        binding.homeScroll.applyStatusBarTopInset()
         binding.tvGreeting.text = greeting()
 
-        setupCommunityMenu()
+        binding.btnNearbyScans.setOnClickListener {
+            Haptics.tick(requireContext())
+            startActivity(Intent(requireContext(), NearbyScansActivity::class.java))
+        }
         binding.cardScan.setOnClickListener { openScanTab() }
         binding.cardIdentify.setOnClickListener {
             startActivity(Intent(requireContext(), com.plantdiseases.app.ui.identify.SpeciesIdentifyActivity::class.java))
@@ -204,29 +204,6 @@ class HomeFragment : Fragment() {
     /** Add the community scans action to the shared toolbar, scoped
      *  to this fragment's RESUMED state so the people icon only shows in the top
      *  bar while the Home tab is open. */
-    private fun setupCommunityMenu() {
-        requireActivity().addMenuProvider(
-            object : MenuProvider {
-                override fun onCreateMenu(menu: Menu, menuInflater: MenuInflater) {
-                    menuInflater.inflate(R.menu.community_menu, menu)
-                    // Tint to match the toolbar title (theme-aware); menu icons
-                    // otherwise fall back to a default control colour.
-                    menu.findItem(R.id.action_nearby_scans)?.icon
-                        ?.setTint(ContextCompat.getColor(requireContext(), R.color.toolbar_title))
-                }
-
-                override fun onMenuItemSelected(item: MenuItem): Boolean {
-                    if (item.itemId != R.id.action_nearby_scans) return false
-                    Haptics.tick(requireContext())
-                    startActivity(Intent(requireContext(), NearbyScansActivity::class.java))
-                    return true
-                }
-            },
-            viewLifecycleOwner,
-            Lifecycle.State.RESUMED,
-        )
-    }
-
     private fun greeting(): String {
         val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
         return getString(

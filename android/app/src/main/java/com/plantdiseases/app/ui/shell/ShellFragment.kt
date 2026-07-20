@@ -40,7 +40,7 @@ import com.plantdiseases.app.ui.profile.ProfileFragment
  * The bottom bar is deliberately *not* here — [MainActivity] owns it (insets,
  * badge, splash animation) and it has to outlive this fragment's view for the
  * guide push. MainActivity calls [showTab] on a tap; this fragment calls back
- * into [MainActivity.applyTabChrome] as pages settle.
+ * into [MainActivity.applyTabChrome] as soon as the pager commits to a page.
  */
 class ShellFragment : Fragment() {
 
@@ -149,21 +149,13 @@ class ShellFragment : Fragment() {
 
     private val pageChangeCallback = object : ViewPager2.OnPageChangeCallback() {
         override fun onPageSelected(position: Int) {
-            // Light the tab as soon as the pager commits to a target, so the bar
-            // leads the settle rather than lagging it.
+            // Light the tab and re-assert chrome as soon as the pager commits to
+            // a target, so the bar leads the settle rather than lagging it. The
+            // shared toolbar stays hidden on every page now (each page carries
+            // its own title), so there's no bar resize to wait out any more.
             syncBar()
+            host?.applyTabChrome(currentTabId)
             backToHomeCallback.isEnabled = position != pageOf(R.id.homeFragment)
-        }
-
-        override fun onPageScrollStateChanged(state: Int) {
-            // Toolbar chrome waits for the settle. The app bar is a sibling of
-            // the pager in a vertical LinearLayout, so showing/hiding it resizes
-            // the pager: doing that mid-drag would make every page jump under
-            // the finger. Applying it on idle costs a small pop at the end of a
-            // swipe onto Garden/Profile instead.
-            if (state == ViewPager2.SCROLL_STATE_IDLE) {
-                host?.applyTabChrome(currentTabId)
-            }
         }
     }
 

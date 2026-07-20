@@ -7,7 +7,9 @@
     Carousels are horizontal RecyclerViews filled by HomeFragment;
     the species/popular sections hide themselves when there's no data.
 -->
-<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.core.widget.NestedScrollView
+    android:id="@+id/home_scroll"
+    xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -22,11 +24,49 @@
         android:paddingTop="@dimen/space_lg"
         android:paddingBottom="@dimen/space_3xl">
 
+        <!-- Page title + nearby-scans action. Used to live in the shared
+             MainActivity toolbar, pinned above the pager; that title only
+             updated once a swipe settled, so it read as floating
+             disconnected from the page sliding underneath it mid-drag.
+             Living here instead, it's part of this page's own content and
+             slides with it like the greeting below. The nearby-scans bell
+             moves here too — it used to be a toolbar menu item scoped to
+             this fragment's lifecycle, which only worked while the shared
+             toolbar was visible on this tab. -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="@dimen/content_gutter">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/tab_home"
+                android:textColor="@color/on_surface"
+                android:textSize="@dimen/text_title"
+                android:fontFamily="sans-serif-black"
+                android:letterSpacing="-0.01" />
+
+            <ImageButton
+                android:id="@+id/btn_nearby_scans"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_community"
+                app:tint="@color/on_surface"
+                android:contentDescription="@string/nearby_scans_cd" />
+
+        </LinearLayout>
+
         <!-- Greeting -->
         <TextView
             android:id="@+id/tv_greeting"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_xs"
             android:paddingHorizontal="@dimen/content_gutter"
             android:fontFamily="sans-serif-medium"
             android:textColor="@color/on_surface"

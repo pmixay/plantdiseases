@@ -3,6 +3,10 @@ package com.plantdiseases.app.util
 import android.graphics.Rect
 import android.view.TouchDelegate
 import android.view.View
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.doOnAttach
+import androidx.core.view.updatePadding
 
 /**
  * Expand this view's *touchable* area to at least [minSizeDp] in each
@@ -30,4 +34,24 @@ fun View.expandTouchTarget(minSizeDp: Int = 48) {
         rect.inset(-extraW, -extraH)
         parentView.touchDelegate = TouchDelegate(rect, this)
     }
+}
+
+/**
+ * Pad this view's top by the status-bar inset, added to whatever top padding
+ * it already has. For a page whose own content has to clear the status bar
+ * without a toolbar above it reserving that space — every shell tab now
+ * renders its own page content edge-to-edge (see MainActivity.applyTabChrome).
+ *
+ * onViewCreated runs before the view is attached, so requesting insets right
+ * away no-ops and a tab switched to later never gets an inset pass; request
+ * once attached instead.
+ */
+fun View.applyStatusBarTopInset() {
+    val baseTop = paddingTop
+    ViewCompat.setOnApplyWindowInsetsListener(this) { v, insets ->
+        val top = insets.getInsets(WindowInsetsCompat.Type.systemBars()).top
+        v.updatePadding(top = baseTop + top)
+        insets
+    }
+    doOnAttach { ViewCompat.requestApplyInsets(it) }
 }
