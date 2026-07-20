@@ -57,24 +57,38 @@ class DetailHeaderController(
         scans: List<ScanEntity>,
         journal: List<PlantJournalEntity>,
     ): View {
-        // Round only the BOTTOM corners. The hero stacks a cover photo on
-        // top of the green info card; rounding the top corners cut awkward
-        // arcs out of the real photo (it never sat flush with the card edge).
-        // Full-bleed square top + rounded bottom reads as one clean hero
-        // panel.
+        // Cover photo strip — user-picked first, latest-scan image
+        // second, hide when neither exists so the text-only hero
+        // still feels intentional rather than missing-image.
+        val coverSrc: String? = plant.coverPhotoUri
+            ?: scans.maxByOrNull { it.timestamp }?.imagePath
+        // With a cover photo, round only the BOTTOM corners: the hero
+        // stacks the green info card under the photo, and rounding the
+        // top corners cut awkward arcs out of the real photo (it never
+        // sat flush with the card edge). Full-bleed square top + rounded
+        // bottom reads as one clean hero panel. With no photo, the card
+        // floats on its own with margin on every side, so it needs all
+        // four corners rounded — same as every other hero card (Care
+        // Plan) — or the square top reads as clipped/cut off.
         val heroRadius = activity.resources.getDimension(R.dimen.radius_lg)
         val card = MaterialCardView(activity).apply {
             cardElevation = 0f
-            shapeAppearanceModel = com.google.android.material.shape.ShapeAppearanceModel.builder()
-                .setBottomLeftCorner(
-                    com.google.android.material.shape.CornerFamily.ROUNDED,
-                    heroRadius,
-                )
-                .setBottomRightCorner(
-                    com.google.android.material.shape.CornerFamily.ROUNDED,
-                    heroRadius,
-                )
-                .build()
+            shapeAppearanceModel = if (coverSrc != null) {
+                com.google.android.material.shape.ShapeAppearanceModel.builder()
+                    .setBottomLeftCorner(
+                        com.google.android.material.shape.CornerFamily.ROUNDED,
+                        heroRadius,
+                    )
+                    .setBottomRightCorner(
+                        com.google.android.material.shape.CornerFamily.ROUNDED,
+                        heroRadius,
+                    )
+                    .build()
+            } else {
+                com.google.android.material.shape.ShapeAppearanceModel.builder()
+                    .setAllCorners(com.google.android.material.shape.CornerFamily.ROUNDED, heroRadius)
+                    .build()
+            }
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -83,14 +97,9 @@ class DetailHeaderController(
         val outer = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
         }
-        // Cover photo strip — user-picked first, latest-scan image
-        // second, hide when neither exists so the text-only hero
-        // still feels intentional rather than missing-image. The
-        // gradient overlay at the bottom is rendered by the existing
+        // The gradient overlay at the bottom is rendered by the
         // bg_garden_hero drawable underneath, so the text remains
         // legible regardless of cover-photo brightness.
-        val coverSrc: String? = plant.coverPhotoUri
-            ?: scans.maxByOrNull { it.timestamp }?.imagePath
         if (coverSrc != null) {
             val cover = ImageView(activity).apply {
                 layoutParams = LinearLayout.LayoutParams(
@@ -108,7 +117,7 @@ class DetailHeaderController(
         val body = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(20.dp(), 22.dp(), 20.dp(), 20.dp())
-            setBackgroundResource(R.drawable.bg_garden_hero)
+            setBackgroundResource(if (coverSrc != null) R.drawable.bg_garden_hero else R.drawable.bg_hero_card)
         }
         body.addView(
             TextView(activity).apply {

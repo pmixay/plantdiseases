@@ -27,7 +27,8 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:background="@drawable/bg_garden_hero"
+        android:layout_marginHorizontal="@dimen/space_lg"
+        android:background="@drawable/bg_hero_card"
         android:padding="@dimen/space_xl">
 
         <FrameLayout
