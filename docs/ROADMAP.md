@@ -192,20 +192,30 @@ leaf_scorch (recall 0.89→0.77) + nutrient, gaining only powdery recall. The v7
 iteration net-hurt gamma. Numbers in `DATASET_LABELING_PLAN.md`.
 
 - [x] **Train + evaluate 2.6.9 on dataset v7** — done; **do not deploy** (regressed
-      vs 2.6.8). The aqua float32 fix carries forward to 2.6.10.
+      vs 2.6.8). The aqua float32 fix carries forward.
 
-### 2.6.10 — next train (dataset v8)
+### 2.6.10 — trained (dataset v7 + boundary fix, 2026-07-20) → recovered
 
-`MODEL_VERSION` is bumped to 2.6.10 in the notebook (§1); **2.6.9 stays shippable
-until 2.6.10 trains and clears the gate.** v8 is a data-cleaning pass (the v7
-eval is 71% recycled from v4, ~30% of physiological positives are sub-0.80 noise,
-and ~8% of disease positives are agricultural-domain leak) — the only way to move
-nutrient/scorch and get a trustworthy benchmark.
+The RCA fix (§4, `SOURCE_WEIGHTS['supplement_boundary']` 0.9→0.35) landed and was
+validated on v7: boundary draw 5.8%→2.8%, **leaf_scorch recall 0.61→0.75**, disease
+macro-F1 **0.834→0.845**, ship gate passed, aqua healthy (float32). The 2.6.9 *recall*
+regression is undone and 2.6.10 ≈ 2.6.8 on gamma. Weak-class **precision** (nutrient
+P 0.67) is still open → v8.
 
-- [ ] **Build dataset v8 then train 2.6.10** — purge agricultural/outdoor
-      positives, refresh recycled weak-class eval content, floor the physiological
-      positives to train-only, thicken powdery. Full plan + verify (paired
-      bootstrap on *new* v8 rows) in `DATASET_LABELING_PLAN.md`.
+- [x] **Apply + validate the boundary fix (2.6.10 on v7)** — done, recovered.
+
+### 2.6.11 — next train (dataset v8)
+
+`MODEL_VERSION` bumped to 2.6.11 in the notebook (§1); the boundary fix carries forward.
+v8 is a data-cleaning pass (the v7 eval is 71% recycled from v4, ~30% of physiological
+positives are sub-0.80 noise, and gray_mold ~39% / nutrient ~31% of disease positives are
+agricultural-domain leak) — the path to the still-open nutrient/scorch **precision** and a
+trustworthy benchmark.
+
+- [ ] **Build dataset v8 then train 2.6.11** — purge the gray_mold/nutrient ag-leak,
+      refresh recycled weak-class positives, floor the sub-0.80 positives to train-only,
+      thicken powdery. Paired-bootstrap vs 2.6.8 and 2.6.10. Full plan in
+      `DATASET_LABELING_PLAN.md`.
 
 ### Unveiling 2.7 — the leap
 

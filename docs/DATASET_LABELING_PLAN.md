@@ -73,18 +73,25 @@ leaf_spot/pests/viral) + healthy false-fire:
 0.92→0.89 (prec 0.98→0.93), healthy precision 0.87→0.76, false-fire ↑; it gained only
 powdery recall (0.84→0.93). The v7 dataset iteration **net-hurt gamma**.
 
-**Deploy call: keep 2.6.8; do NOT ship 2.6.9.** Fix the data (v8) → train 2.6.10.
+**Deploy call: keep 2.6.8; do NOT ship 2.6.9.** Fix the data (v8) → train 2.6.11.
 (Caveats: this eval can't see leaf_spot↔viral precision, where the boundary work was
 also aimed, but the classes that regressed are the ones v7 targeted; the older
 2.6.5↔2.6.9 gap is contamination — each model wins on its own era, 71% of v7 is
 byte-identical to v4.)
 
-## v8 — next version (model 2.6.10)
+## 2.6.10 — the boundary fix on v7: recovered (07-20)
 
-2.6.9 regressed vs 2.6.8 (paired A/B above). The **primary cause was a notebook config
-flood** (now fixed, §4); v7's dataset composition amplified it, and the eval slice is
-untrustworthy. **2.6.10 retrains** on the notebook fix + a cleaned dataset v8
-(`MODEL_VERSION` bumped to 2.6.10 in §1).
+Re-ran v7 with the fix (`supplement_boundary` 0.9→0.35, §4) — boundary draw 5.8%→2.8%.
+**leaf_scorch recall 0.61→0.75**, disease macro-F1 **0.834→0.845**, **ship gate passed**,
+aqua healthy (float32). The 2.6.9 *recall* regression is undone and 2.6.10 ≈ 2.6.8 on gamma.
+Still open: weak-class **precision** (nutrient P **0.67**, leaf_scorch P 0.76) — the boundary
+fix recovers recall, not precision → that's the v8 job.
+
+## v8 — next version (model 2.6.11)
+
+The 2.6.10 fix recovered *recall* but not *precision*, and the eval is still untrustworthy
+(71% recycled, ag-leak, sub-0.80 noise). v8 fixes the data; **2.6.11 retrains** on it (the
+boundary fix already carried forward; `MODEL_VERSION` bumped to 2.6.11 in §1).
 
 **Root cause of the 2.6.9 regression (found 2026-07-16; notebook fix applied).** Between
 2.6.8 and 2.6.9, commit `12623c4` began routing **all** `hn_kind=boundary` hard-negatives
@@ -98,12 +105,12 @@ recall 0.89→0.77, nutrient down, healthy precision 0.87→0.76, and it plateau
 (head best epoch 19→5). It is the precision/recall seesaw over-rotated; §1 constants, loss,
 early-stop, and checkpoint logic were byte-identical, so they are **not** the cause.
 
-**Fix applied (§4):** `SOURCE_WEIGHTS['supplement_boundary']` **0.9 → 0.35** — boundary
-hard-negatives now *nudge* precision without swamping the physiological classes, while
-staying train-only (eval stays clean). **Validate on the 2.6.10 run** (paired bootstrap
-vs 2.6.8; tune in 0.3–0.5, require scorch/nutrient recall back ≥ 0.80 *and* false-fire not
-up). Alternative levers if it under/over-shoots: re-cap the boundary source, or route only
-a fraction of boundary rows train-only.
+**Fix applied + validated (§4):** `SOURCE_WEIGHTS['supplement_boundary']` **0.9 → 0.35** —
+boundary hard-negatives now *nudge* precision without swamping the physiological classes,
+train-only (eval stays clean). Validated on the **2.6.10 run** (07-20): boundary draw
+5.8%→2.8%, leaf_scorch recall 0.61→0.75, disease macro-F1 0.834→0.845, gate passed — the
+recall regression is undone. Kept for 2.6.11. Don't over-tune the weight on the contaminated
+v7 eval; let v8's clean benchmark guide any further move.
 
 **Why v7 can't prove a weak-class gain (the dataset amplifiers):**
 1. **Non-independent eval** — 71% recycled from v4 (scorch/nutrient positives 100%,
@@ -137,9 +144,9 @@ a fraction of boundary rows train-only.
 7. **Hygiene** — reject drawn-annotation/watermark/AI-looking images; add a cross-version
    pHash tag (`carried_from_vN`/`new`); fix the v7 folder README (still titled "v6").
 
-**2.6.10 verify (paired, not aggregate):** paired bootstrap 2.6.9 vs 2.6.10 on the
-*new* (non-recycled) v8 eval rows — nutrient/scorch precision up with recall back
-≥ 0.80, healthy false-fire not up, powdery held. Keep aqua KD val-macro-F1 a watch-item.
+**2.6.11 verify (paired, not aggregate):** paired bootstrap 2.6.11 vs 2.6.8 (and vs 2.6.10)
+on the *new* (non-recycled) v8 eval rows — nutrient/scorch **precision** up with recall
+staying ≥ 0.80, healthy false-fire not up, powdery held. Keep aqua KD val-macro-F1 a watch-item.
 
 ## Standing disciplines
 
