@@ -178,20 +178,44 @@ a follow-up without blocking the core hub.
 
 ## Model track
 
-### 2.6.9 — next train (dataset v7, not yet trained)
+### 2.6.9 — trained (dataset v7, 2026-07-03) + evaluated → NOT shipped
 
-`MODEL_VERSION` is bumped to 2.6.9 in the notebook (§1); **2.6.8 stays the
-shipped bundle until 2.6.9 trains and clears the gate.** The aqua-collapse fix
-already landed in the notebook (§5 ships the near-lossless **float16** TFLite,
-~2.9 MB, not the dynamic-range INT8 that collapsed MobileNetV3 to ≈0.01
-macro-F1; §6 degeneracy guard) — it deploys on-device once 2.6.9 trains and
-the guard is confirmed silent.
+Trained and gate-passed, **but a paired A/B against the shipped 2.6.8 says keep
+2.6.8.** The aqua-collapse fix landed as **float32** TFLite (~6.1 MB) — float16
+won't *prepare* on LiteRT (`CONV_2D`), dynamic-range INT8 collapsed MobileNetV3
+to ≈0.01; float32 is the only build that runs *and* matches the torch student
+(aqua realworld 0.76). But on the v4 & v7 supplement eval slices
+(`tools/eval_bootstrap.py`, 2026-07-16) **2.6.8 beats 2.6.9 on both** (supported
+disease macro-F1 **+0.046** on v4, **+0.021** on v7 — CIs exclude 0, and 2.6.8
+wins even on 2.6.9's *own* v7 era) at lower false-fire; 2.6.8→2.6.9 regressed
+leaf_scorch (recall 0.89→0.77) + nutrient, gaining only powdery recall. The v7
+iteration net-hurt gamma. Numbers in `DATASET_LABELING_PLAN.md`.
 
-- [ ] **Train 2.6.9 on dataset v7** — keep collecting confusion-pair negatives
-      **and** weak-class positives (recall floor); re-test the LA-prior trim
-      for nutrient/scorch (paired vs 2.6.8). Plan + per-class targets in
-      `DATASET_LABELING_PLAN.md` (scorch/nutrient boundary still binding —
-      data/precision-bound, not backbone-bound; §3 frozen probe ~0.91).
+- [x] **Train + evaluate 2.6.9 on dataset v7** — done; **do not deploy** (regressed
+      vs 2.6.8). The aqua float32 fix carries forward.
+
+### 2.6.10 — trained (dataset v7 + boundary fix, 2026-07-20) → recovered
+
+The RCA fix (§4, `SOURCE_WEIGHTS['supplement_boundary']` 0.9→0.35) landed and was
+validated on v7: boundary draw 5.8%→2.8%, **leaf_scorch recall 0.61→0.75**, disease
+macro-F1 **0.834→0.845**, ship gate passed, aqua healthy (float32). The 2.6.9 *recall*
+regression is undone and 2.6.10 ≈ 2.6.8 on gamma. Weak-class **precision** (nutrient
+P 0.67) is still open → v8.
+
+- [x] **Apply + validate the boundary fix (2.6.10 on v7)** — done, recovered.
+
+### 2.6.11 — next train (dataset v8)
+
+`MODEL_VERSION` bumped to 2.6.11 in the notebook (§1); the boundary fix carries forward.
+v8 is a data-cleaning pass (the v7 eval is 71% recycled from v4, ~30% of physiological
+positives are sub-0.80 noise, and gray_mold ~39% / nutrient ~31% of disease positives are
+agricultural-domain leak) — the path to the still-open nutrient/scorch **precision** and a
+trustworthy benchmark.
+
+- [ ] **Build dataset v8 then train 2.6.11** — purge the gray_mold/nutrient ag-leak,
+      refresh recycled weak-class positives, floor the sub-0.80 positives to train-only,
+      thicken powdery. Paired-bootstrap vs 2.6.8 and 2.6.10. Full plan in
+      `DATASET_LABELING_PLAN.md`.
 
 ### Unveiling 2.7 — the leap
 
