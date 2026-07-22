@@ -217,6 +217,26 @@ trustworthy benchmark.
       thicken powdery. Paired-bootstrap vs 2.6.8 and 2.6.10. Full plan in
       `DATASET_LABELING_PLAN.md`.
 
+### 2.6.12 — next train (general-plant pivot) — supersedes 2.6.11/v8
+
+**Domain broadening:** extend from houseplants-only to **houseplants + outdoor/garden
+ornamentals** (potted, garden, landscape); field/agricultural crops stay excluded. This
+supersedes the houseplant-only 2.6.11/v8 *direction* but **folds in its data-cleaning**
+(ag-leak purge → now field-crop leak, sub-0.80 noise floor, weak-class refresh). Motivated by
+the stalled houseplant-only collection (weak-class targets unmet); ornamentals unlock more
+weak-class supply. `MODEL_VERSION` is 2.6.12 (§1); runtime gate is **bundle-derived** (0 server
+gating-logic changes).
+
+- [ ] **Broaden the data** — up-weight `kaggle_ornamental` (done, §4); loosen the supplement's
+      **upstream** `field_crop`/`orchard_fruit` gate to admit ornamentals; collect
+      garden-ornamental scans (weak classes first).
+- [ ] **Retrain + refit** — new classifier + `classes.json`, rebuilt `ood_embedding.npz`
+      (ornamentals in, field crops out), detector on outdoor leaves, refit calibration.
+      Paired-bootstrap vs the last houseplant bundle (2.6.8/2.6.10).
+- [ ] **Broaden the eval seed** — add an ornamental source to `val_realworld` (cap augmented
+      share) so the gate measures the new domain. Details in `DATASET_LABELING_PLAN.md` →
+      "Domain (v2.6.12)".
+
 ### Unveiling 2.7 — the leap
 
 > From "a good leaf classifier" to a **holistic, trustworthy plant doctor** —

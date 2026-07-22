@@ -1665,13 +1665,13 @@ async def capabilities():
         model = {
             "classifier_name": "plantvision",
             "model_family": clf.model_family,
-            "detector_arch": "YOLOv8n (single-class plant_leaf, indoor-trained)",
+            "detector_arch": "YOLOv8n (single-class plant_leaf)",
             "classifier_arch": (
                 f"PlantVision {clf.architecture} @ "
                 f"{clf.img_size} px / {clf.backend} backend"
             ),
             "stages": 2,
-            "focus": "houseplants",
+            "focus": "houseplants + outdoor/garden ornamentals",
             "int8_shipped": int8_shipped,
             "int8_artifact": int8_artifact,
         }
