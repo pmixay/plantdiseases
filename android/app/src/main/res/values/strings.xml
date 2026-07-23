@@ -897,4 +897,8 @@
     <string name="stats_top_issues">Your most frequent issues</string>
     <string name="stats_empty">No scans yet — your stats will appear after the first scan.</string>
     <!-- The tip_* cards moved into the Guide handbook (App help tab). -->
+
+    <!-- RuStore in-app updates (util/InAppUpdateManager) -->
+    <string name="update_ready">App update downloaded</string>
+    <string name="update_ready_action">Install</string>
 </resources>

@@ -893,4 +893,8 @@
     <string name="stats_top_issues">Ваши частые проблемы</string>
     <string name="stats_empty">Пока нет сканов — статистика появится после первого сканирования.</string>
     <!-- Карточки tip_* переехали в справочник (вкладка «Помощь»). -->
+
+    <!-- Обновления из RuStore (util/InAppUpdateManager) -->
+    <string name="update_ready">Обновление приложения загружено</string>
+    <string name="update_ready_action">Установить</string>
 </resources>
