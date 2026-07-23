@@ -1,17 +1,3 @@
-# Retrofit
--keepattributes Signature
--keepattributes Exceptions
--keepclassmembernames,allowobfuscation interface * {
-    @retrofit2.http.* <methods>;
-}
--dontwarn retrofit2.**
--keep class retrofit2.** { *; }
-
-# Our Retrofit interface — R8 sometimes drops the annotations on
-# user interfaces even when the generic keepclassmembernames rule
-# above matches. Pin it explicitly.
--keep interface com.plantdiseases.app.data.remote.ApiService { *; }
-
 # OkHttp
 -dontwarn okhttp3.**
 -dontwarn okio.**
@@ -24,7 +10,7 @@
 # are already kept by the com.plantdiseases.app.data.model.** rule below.)
 -dontwarn org.slf4j.**
 
-# Gson — keep all model classes for serialization.
+# Gson (Room field / cache JSON) + kotlinx.serialization models.
 #
 # AGP 8 runs R8 in "full mode", which is more aggressive than the legacy
 # ProGuard-compat mode: it strips generic signatures, enum metadata and

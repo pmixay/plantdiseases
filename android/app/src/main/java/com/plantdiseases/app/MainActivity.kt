@@ -90,7 +90,6 @@ class MainActivity : AppCompatActivity() {
         // binding.
         splashScreen?.setOnExitAnimationListener { provider -> animateSplashExit(provider) }
 
-        maybeWarmStartupCaches()
         maybeShowConsentDialog()
 
         // Edge-to-edge display
@@ -215,18 +214,6 @@ class MainActivity : AppCompatActivity() {
         inAppUpdateManager?.release()
         inAppUpdateManager = null
         super.onDestroy()
-    }
-
-    /**
-     * Do not request runtime permissions on the default Home screen. Camera is
-     * requested by CameraFragment when the user opens Scan; location and
-     * notifications remain opt-in at their feature entry points.
-     */
-    private fun maybeWarmStartupCaches() {
-        // Only warm the region cache for users who already opted into
-        // community — a no-op without a prior COARSE_LOCATION grant, and never
-        // triggers a location read for someone who hasn't opted in.
-        // No-op: country is now resolved server-side from request metadata.
     }
 
     /** Upgrade path for installs that completed onboarding before the consent

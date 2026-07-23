@@ -336,8 +336,8 @@ dependencies {
     testImplementation("androidx.test.ext:junit-ktx:1.2.1")
     testImplementation("com.google.truth:truth:1.4.4")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
-    // MockWebServer stands in for the diagnosis server so Retrofit /
-    // OkHttp request building + the RetryInterceptor are exercised for real.
+    // MockWebServer stands in for the diagnosis server so Ktor/OkHttp
+    // request building + the RetryInterceptor are exercised for real.
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     testImplementation("androidx.arch.core:core-testing:2.2.0")
     testImplementation("androidx.room:room-testing:2.7.0")
