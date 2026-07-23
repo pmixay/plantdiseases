@@ -638,7 +638,6 @@
     <!-- Autosave snapped scan photos to the device gallery -->
     <string name="autosave_title">Autosave photos to album</string>
     <string name="autosave_subtitle">Save photos you snap to your device gallery.</string>
-    <string name="autosave_permission_needed">Storage permission is needed to save photos to your gallery.</string>
     <string name="autosave_album" translatable="false">PlantDiseases</string>
 
     <!-- Care Plan -->

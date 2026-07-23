@@ -638,7 +638,6 @@
     <!-- Autosave snapped scan photos to the device gallery -->
     <string name="autosave_title">Автосохранение фото в галерею</string>
     <string name="autosave_subtitle">Сохранять сделанные снимки в галерею устройства.</string>
-    <string name="autosave_permission_needed">Для сохранения фото в галерею нужно разрешение на доступ к памяти.</string>
 
     <!-- Care Plan -->
     <string name="care_plan_title">План ухода</string>

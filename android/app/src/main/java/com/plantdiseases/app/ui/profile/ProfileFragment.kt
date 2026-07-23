@@ -1,9 +1,6 @@
 package com.plantdiseases.app.ui.profile
 
-import android.Manifest
-import android.content.pm.PackageManager
 import android.graphics.Typeface
-import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
 import android.view.LayoutInflater
@@ -12,7 +9,6 @@ import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
@@ -45,25 +41,6 @@ class ProfileFragment : Fragment() {
     // ticking against a detached TextView (transient view retention + wasted
     // frames after the view is gone).
     private val countAnimators = mutableListOf<android.animation.ValueAnimator>()
-
-    // Legacy (API ≤ 28) storage-permission request backing the autosave
-    // toggle. On Android 10+ no permission is needed, so this never fires.
-    private val storagePermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (_binding == null) return@registerForActivityResult
-        if (granted) {
-            AutosavePrefs.setEnabled(requireContext(), true)
-        } else {
-            AutosavePrefs.setEnabled(requireContext(), false)
-            binding.switchAutosave.isChecked = false
-            Toast.makeText(
-                requireContext(),
-                R.string.autosave_permission_needed,
-                Toast.LENGTH_LONG,
-            ).show()
-        }
-    }
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -270,27 +247,13 @@ class ProfileFragment : Fragment() {
         requireActivity().recreate()
     }
 
-    /** Autosave-to-album toggle. On Android 9 and below, enabling it first
-     *  requests WRITE_EXTERNAL_STORAGE (scoped storage on 10+ needs none);
-     *  the preference is only committed once any required grant succeeds. */
+    /** Autosave-to-album toggle — scoped storage needs no permission, so the
+     *  preference commits directly. */
     private fun setupAutosaveToggle() {
         val sw = binding.switchAutosave
         sw.isChecked = AutosavePrefs.enabled(requireContext())
         sw.setOnCheckedChangeListener { _, isChecked ->
-            if (isChecked) {
-                val needsLegacyPermission = Build.VERSION.SDK_INT <= Build.VERSION_CODES.P &&
-                    ContextCompat.checkSelfPermission(
-                        requireContext(),
-                        Manifest.permission.WRITE_EXTERNAL_STORAGE,
-                    ) != PackageManager.PERMISSION_GRANTED
-                if (needsLegacyPermission) {
-                    storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                } else {
-                    AutosavePrefs.setEnabled(requireContext(), true)
-                }
-            } else {
-                AutosavePrefs.setEnabled(requireContext(), false)
-            }
+            AutosavePrefs.setEnabled(requireContext(), isChecked)
         }
     }
 

@@ -13,7 +13,7 @@ android {
 
     defaultConfig {
         applicationId = "com.plantdiseases.app"
-        minSdk = 26 // Android 8.0
+        minSdk = 29 // Android 10
         targetSdk = 35
         versionCode = 17
         versionName = "1.7"
@@ -155,10 +155,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     testOptions {
         unitTests {
             // Robolectric needs the merged Android resources + a real
@@ -167,6 +163,13 @@ android {
             isIncludeAndroidResources = true
             isReturnDefaultValues = true
         }
+    }
+}
+
+kotlin {
+    // Replaces the deprecated android.kotlinOptions block (Kotlin 2.x DSL).
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
     }
 }
 

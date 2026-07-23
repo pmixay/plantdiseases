@@ -3,7 +3,6 @@ package com.plantdiseases.app
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.os.Build
 import com.plantdiseases.app.data.repository.CommunityUploader
 import com.plantdiseases.app.di.appModule
 import com.plantdiseases.app.util.LocaleHelper
@@ -183,23 +182,21 @@ class PlantDiseasesApp : Application() {
     }
 
     private fun createNotificationChannels() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val nm = getSystemService(NotificationManager::class.java)
-            nm.createNotificationChannel(
-                NotificationChannel(
-                    CHANNEL_PLANT_REMINDERS,
-                    getString(R.string.channel_plant_reminders_name),
-                    NotificationManager.IMPORTANCE_HIGH,
-                ).apply { description = getString(R.string.channel_plant_reminders_desc) },
-            )
-            nm.createNotificationChannel(
-                NotificationChannel(
-                    CHANNEL_COMMUNITY,
-                    getString(R.string.channel_community_name),
-                    NotificationManager.IMPORTANCE_DEFAULT,
-                ).apply { description = getString(R.string.channel_community_desc) },
-            )
-        }
+        val nm = getSystemService(NotificationManager::class.java)
+        nm.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL_PLANT_REMINDERS,
+                getString(R.string.channel_plant_reminders_name),
+                NotificationManager.IMPORTANCE_HIGH,
+            ).apply { description = getString(R.string.channel_plant_reminders_desc) },
+        )
+        nm.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL_COMMUNITY,
+                getString(R.string.channel_community_name),
+                NotificationManager.IMPORTANCE_DEFAULT,
+            ).apply { description = getString(R.string.channel_community_desc) },
+        )
     }
 
     /** Poll for new second opinions on shared scans roughly hourly. Called

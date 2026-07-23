@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:tools="http://schemas.android.com/tools">
+<resources>
 
     <style name="Theme.PlantDiseases" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="colorPrimary">@color/primary</item>
@@ -65,7 +65,7 @@
         <!-- Section titles a step heavier (medium → bold) — pairs
              with the heavier headline above. -->
         <item name="android:fontFamily">sans-serif-medium</item>
-        <item name="android:textFontWeight" tools:targetApi="p">600</item>
+        <item name="android:textFontWeight">600</item>
         <item name="android:textColor">@color/on_surface</item>
     </style>
 
