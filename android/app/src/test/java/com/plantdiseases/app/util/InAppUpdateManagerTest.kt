@@ -29,17 +29,22 @@ class InAppUpdateManagerTest {
 
     private val day = TimeUnit.HOURS.toMillis(24)
 
+    /** A plausible wall-clock "now". The throttle compares against a stamp
+     *  that defaults to 0 (the epoch), so tests must use realistic epoch
+     *  millis — a tiny fake value like 123L would sit inside the 24h window
+     *  measured from 1970 and read as "just prompted". */
+    private val now = 1_753_000_000_000L
+
     // ── prompt throttle ──────────────────────────────────────────────
 
     @Test
     fun promptsOnFirstEverCheck() {
-        assertThat(newManager().shouldPromptNow(now = 123L)).isTrue()
+        assertThat(newManager().shouldPromptNow(now)).isTrue()
     }
 
     @Test
     fun promptThrottledWithinTwentyFourHours() {
         val manager = newManager()
-        val now = 1_000_000L
         manager.markPrompted(now)
         assertThat(manager.shouldPromptNow(now)).isFalse()
         assertThat(manager.shouldPromptNow(now + day - 1)).isFalse()
@@ -48,14 +53,12 @@ class InAppUpdateManagerTest {
     @Test
     fun promptsAgainAfterTwentyFourHours() {
         val manager = newManager()
-        val now = 1_000_000L
         manager.markPrompted(now)
         assertThat(manager.shouldPromptNow(now + day)).isTrue()
     }
 
     @Test
     fun throttleStampSurvivesAcrossInstances() {
-        val now = 1_000_000L
         newManager().markPrompted(now)
         // A fresh instance (new activity / next launch) reads the same prefs.
         assertThat(newManager().shouldPromptNow(now + 1)).isFalse()
@@ -64,10 +67,10 @@ class InAppUpdateManagerTest {
     @Test
     fun clockRollbackDoesNotSilencePrompts() {
         val manager = newManager()
-        manager.markPrompted(now = 10 * day)
+        manager.markPrompted(now)
         // Device clock rolled back behind the stored stamp: prompt rather than
         // stay silent until the clock catches back up.
-        assertThat(manager.shouldPromptNow(now = 8 * day)).isTrue()
+        assertThat(manager.shouldPromptNow(now - 2 * day)).isTrue()
     }
 
     // ── graceful degradation without RuStore ─────────────────────────
@@ -79,7 +82,7 @@ class InAppUpdateManagerTest {
         shadowOf(Looper.getMainLooper()).idle()
         // No crash, and no prompt was recorded — the check failed inside the
         // SDK before ever reaching the update-offer path.
-        assertThat(manager.shouldPromptNow(now = 123L)).isTrue()
+        assertThat(manager.shouldPromptNow(now)).isTrue()
         manager.release()
     }
 
