@@ -138,8 +138,8 @@ jobs:
             echo "No release keystore secret set; debug-signed fallback is expected."
           fi
 
-      - name: Upload ktlint + detekt reports
-        if: always()
+      - name: Upload ktlint + detekt reports on failure
+        if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: lint-report
@@ -149,8 +149,8 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-      - name: Upload unit test report
-        if: always()
+      - name: Upload unit test report on failure
+        if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: unit-test-report
