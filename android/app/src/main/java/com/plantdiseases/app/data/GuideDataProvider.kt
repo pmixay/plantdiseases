@@ -13,7 +13,7 @@ object GuideDataProvider {
     fun getGuideItems(): List<GuideItem> = items
 
     private fun buildItems(): List<GuideItem> = listOf(
-        // Common diseases — houseplant-focused guide articles
+        // Common diseases — plant-care guide articles
 
         GuideItem(
             id = "powdery_mildew",
@@ -22,7 +22,7 @@ object GuideDataProvider {
             descriptionEn = "White powdery spots on leaves and stems",
             descriptionRu = "Белые порошкообразные пятна на листьях и стеблях",
             contentEn = """
-Powdery mildew is one of the most common fungal diseases in houseplants. It appears as white or gray powdery patches on leaf surfaces.
+Powdery mildew is one of the most common fungal diseases in plants. It appears as white or gray powdery patches on leaf surfaces.
 
 SYMPTOMS:
 • White/gray powder-like coating on leaves
@@ -49,7 +49,7 @@ PREVENTION:
 • Keep leaves dry
             """.trimIndent(),
             contentRu = """
-Мучнистая роса — одно из самых распространённых грибковых заболеваний комнатных растений. Проявляется в виде белого или серого порошкообразного налёта на поверхности листьев.
+Мучнистая роса — одно из самых распространённых грибковых заболеваний растений. Проявляется в виде белого или серого порошкообразного налёта на поверхности листьев.
 
 СИМПТОМЫ:
 • Белый/серый порошкообразный налёт на листьях
@@ -86,7 +86,7 @@ PREVENTION:
             descriptionEn = "Dark round or irregular spots, often with a yellow halo",
             descriptionRu = "Тёмные округлые или неправильные пятна, часто с жёлтым ореолом",
             contentEn = """
-Leaf spot is a broad category covering bacterial and fungal infections that show up as dark, clearly bordered spots on the leaf. Common on ficus, dracaena, calathea, and many other houseplants whose leaves stay wet for too long.
+Leaf spot is a broad category covering bacterial and fungal infections that show up as dark, clearly bordered spots on the leaf. Common on ficus, dracaena, calathea, and many other plants whose leaves stay wet for too long.
 
 SYMPTOMS:
 • Dark brown / black spots with yellow halos
@@ -108,7 +108,7 @@ PREVENTION:
 • Sterilise pots and saucers before reuse
             """.trimIndent(),
             contentRu = """
-Пятнистость листьев — общее название для бактериальных и грибковых инфекций, проявляющихся в виде тёмных пятен с чёткими краями. Часто встречается на фикусах, драценах, калатеях и многих других комнатных растениях, когда листья слишком долго остаются влажными.
+Пятнистость листьев — общее название для бактериальных и грибковых инфекций, проявляющихся в виде тёмных пятен с чёткими краями. Часто встречается на фикусах, драценах, калатеях и многих других растениях, когда листья слишком долго остаются влажными.
 
 СИМПТОМЫ:
 • Тёмно-коричневые / чёрные пятна с жёлтым ореолом
@@ -140,7 +140,7 @@ PREVENTION:
             descriptionEn = "Rapidly spreading water-soaked lesions on leaves and stems",
             descriptionRu = "Быстро растущие водянистые поражения на листьях и стеблях",
             contentEn = """
-Blight is a fast-moving fungal disease that causes large, dark, water-soaked lesions on leaves and stems. On houseplants it is most often triggered by overwatering combined with cool temperatures.
+Blight is a fast-moving fungal disease that causes large, dark, water-soaked lesions on leaves and stems. It is most often triggered by overwatering combined with cool temperatures.
 
 SYMPTOMS:
 • Large dark, water-soaked patches on leaves
@@ -162,7 +162,7 @@ PREVENTION:
 • Inspect the collection weekly during cool, damp weather
             """.trimIndent(),
             contentRu = """
-Фитофтороз — быстро прогрессирующее грибковое заболевание: крупные тёмные водянистые поражения на листьях и стеблях. На комнатных растениях чаще всего возникает при переувлажнении в сочетании с прохладой.
+Фитофтороз — быстро прогрессирующее грибковое заболевание: крупные тёмные водянистые поражения на листьях и стеблях. Чаще всего возникает при переувлажнении в сочетании с прохладой.
 
 СИМПТОМЫ:
 • Крупные тёмные водянистые пятна на листьях
@@ -685,10 +685,10 @@ PREVENTION:
             id = "watering_basics",
             titleEn = "Watering Basics",
             titleRu = "Основы полива",
-            descriptionEn = "How to water houseplants correctly",
-            descriptionRu = "Как правильно поливать комнатные растения",
+            descriptionEn = "How to water your plants correctly",
+            descriptionRu = "Как правильно поливать растения",
             contentEn = """
-Proper watering is the single most important factor in houseplant health. Most problems come from overwatering. Not sure how much to give? The [Water Calculator](tool:water) estimates a per-plant starting point.
+Proper watering is the single most important factor in plant health. Most problems come from overwatering. Not sure how much to give? The [Water Calculator](tool:water) estimates a per-plant starting point.
 
 GOLDEN RULES:
 1. Check before watering — stick your finger 2-3 cm into soil
@@ -720,7 +720,7 @@ SEE ALSO:
 • [Humidity Control](guide:humidity_guide)
             """.trimIndent(),
             contentRu = """
-Правильный полив — самый важный фактор здоровья комнатных растений. Большинство проблем связано с переувлажнением. Не уверены, сколько лить? [Калькулятор полива](tool:water) подскажет стартовую норму для растения.
+Правильный полив — самый важный фактор здоровья растений. Большинство проблем связано с переувлажнением. Не уверены, сколько лить? [Калькулятор полива](tool:water) подскажет стартовую норму для растения.
 
 ЗОЛОТЫЕ ПРАВИЛА:
 1. Проверяйте перед поливом — воткните палец на 2-3 см в почву
@@ -759,10 +759,10 @@ SEE ALSO:
             id = "humidity_guide",
             titleEn = "Humidity Control",
             titleRu = "Контроль влажности",
-            descriptionEn = "Managing humidity for tropical houseplants",
+            descriptionEn = "Managing humidity for tropical indoor plants",
             descriptionRu = "Управление влажностью для тропических растений",
             contentEn = """
-Many popular houseplants are tropical and need higher humidity than typical indoor environments provide (30-40%). Target 50-70% for most tropicals.
+Many popular indoor plants are tropical and need higher humidity than typical indoor environments provide (30-40%). Target 50-70% for most tropicals.
 
 WAYS TO INCREASE HUMIDITY:
 1. Group plants together (they create a microclimate)
@@ -815,8 +815,8 @@ TIPS:
             id = "light_guide",
             titleEn = "Light Requirements",
             titleRu = "Требования к освещению",
-            descriptionEn = "Understanding light needs for houseplants",
-            descriptionRu = "Потребности комнатных растений в освещении",
+            descriptionEn = "Understanding your plants' light needs",
+            descriptionRu = "Потребности растений в освещении",
             contentEn = """
 Light is essential for photosynthesis. Understanding your plant's light needs prevents many common problems.
 
@@ -884,7 +884,7 @@ TIPS:
             descriptionEn = "When and how to repot your plants",
             descriptionRu = "Когда и как пересаживать растения",
             contentEn = """
-Repotting gives your plant fresh soil and room to grow. Most houseplants need repotting every 1-2 years.
+Repotting gives your plant fresh soil and room to grow. Most potted plants need repotting every 1-2 years.
 
 SIGNS IT'S TIME TO REPOT:
 • Roots growing out of drainage holes
@@ -910,7 +910,7 @@ TIPS:
 • Use appropriate soil mix for your plant type
             """.trimIndent(),
             contentRu = """
-Пересадка даёт растению свежую почву и место для роста. Большинство комнатных растений нужно пересаживать каждые 1-2 года.
+Пересадка даёт растению свежую почву и место для роста. Большинство растений в горшках нужно пересаживать каждые 1-2 года.
 
 ПРИЗНАКИ ТОГО, ЧТО ПОРА ПЕРЕСАЖИВАТЬ:
 • Корни растут из дренажных отверстий
@@ -943,8 +943,8 @@ TIPS:
             id = "fertilizing",
             titleEn = "Fertilizing Guide",
             titleRu = "Руководство по подкормке",
-            descriptionEn = "How and when to feed your houseplants",
-            descriptionRu = "Как и когда подкармливать комнатные растения",
+            descriptionEn = "How and when to feed your plants",
+            descriptionRu = "Как и когда подкармливать растения",
             contentEn = """
 Fertilizing provides essential nutrients that potting soil eventually depletes. Feed during the growing season (spring-summer).
 
@@ -1030,7 +1030,7 @@ SOIL COMPONENTS:
 • Sand — improves drainage for succulents
 
 COMMON MIXES:
-• Standard houseplant: 2 parts peat + 1 part perlite + 1 part compost
+• Standard mix: 2 parts peat + 1 part perlite + 1 part compost
 • Succulents/cacti: 1 part soil + 1 part sand + 1 part perlite
 • Orchids: bark chips + sphagnum moss + perlite
 • Aroids (Monstera, Philodendron): 1 part soil + 1 part perlite + 1 part bark
@@ -1045,7 +1045,7 @@ TIPS:
 • Replace soil every 1-2 years
 • Never use garden soil for indoor plants — it compacts
 • Sterilize homemade mixes to prevent pests
-• pH of 6.0-7.0 suits most houseplants
+• pH of 6.0-7.0 suits most plants
             """.trimIndent(),
             contentRu = """
 Правильная почвенная смесь обеспечивает дренаж, аэрацию и доступность питательных веществ.
@@ -1073,7 +1073,7 @@ TIPS:
 • Обновляйте почву каждые 1-2 года
 • Не используйте садовую землю — она уплотняется
 • Стерилизуйте самодельные смеси
-• pH 6.0-7.0 подходит для большинства комнатных
+• pH 6.0-7.0 подходит для большинства растений
             """.trimIndent(),
             iconRes = R.drawable.ic_care,
             category = GuideCategory.CARE_TIPS
@@ -1161,7 +1161,7 @@ WINTER (December-February):
             descriptionEn = "What a thriving plant looks like — and how to keep it that way",
             descriptionRu = "Как выглядит здоровое растение и как его таким сохранить",
             contentEn = """
-A healthy houseplant is your baseline — knowing what "good" looks like makes problems easy to catch early.
+A healthy plant is your baseline — knowing what "good" looks like makes problems easy to catch early.
 
 SIGNS OF A HEALTHY PLANT:
 • Firm, evenly coloured leaves with no spots or yellowing
@@ -1183,7 +1183,7 @@ EARLY WARNING SIGNS:
 Catching these early is far easier than treating a full-blown problem.
             """.trimIndent(),
             contentRu = """
-Здоровое комнатное растение — это точка отсчёта: зная, как выглядит «норма», легко заметить проблемы на ранней стадии.
+Здоровое растение — это точка отсчёта: зная, как выглядит «норма», легко заметить проблемы на ранней стадии.
 
 ПРИЗНАКИ ЗДОРОВОГО РАСТЕНИЯ:
 • Плотные, равномерно окрашенные листья без пятен и пожелтения
@@ -1458,10 +1458,10 @@ PREVENTION:
             id = "pests",
             titleEn = "Common Pests",
             titleRu = "Распространённые вредители",
-            descriptionEn = "Spotting and treating sap-sucking houseplant pests",
+            descriptionEn = "Spotting and treating sap-sucking pests",
             descriptionRu = "Как распознать и вывести сосущих вредителей",
             contentEn = """
-Most houseplant pests are tiny sap-suckers that weaken the plant and leave tell-tale signs. The combined "Pests" diagnosis covers the common indoor culprits.
+Most plant pests are tiny sap-suckers that weaken the plant and leave tell-tale signs. The combined "Pests" diagnosis covers the most common culprits.
 
 COMMON CULPRITS:
 • Mealybugs — white cottony fluff in leaf joints
@@ -1489,7 +1489,7 @@ PREVENTION:
 • Wipe leaves and keep humidity up (mites love dry air)
             """.trimIndent(),
             contentRu = """
-Большинство вредителей комнатных растений — крошечные сосущие насекомые, которые ослабляют растение и оставляют характерные следы. Общий диагноз «Вредители» охватывает распространённых домашних виновников.
+Большинство вредителей растений — крошечные сосущие насекомые, которые ослабляют растение и оставляют характерные следы. Общий диагноз «Вредители» охватывает самых распространённых виновников.
 
 ЧАСТЫЕ ВИНОВНИКИ:
 • Мучнистые червецы — белый ватный пушок в пазухах листьев

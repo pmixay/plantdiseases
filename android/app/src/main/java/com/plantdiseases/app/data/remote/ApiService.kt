@@ -201,7 +201,7 @@ class PlantApiClient(
         return if (response.status.isSuccess()) response.body() else null
     }
 
-    /** Personalized popular-houseplants bundle with images pre-resolved
+    /** Personalized popular-plants bundle with images pre-resolved
      *  (graceful: null on any failure, caller falls back to the bundled list). */
     suspend fun popular(
         country: String? = null,

@@ -4,7 +4,7 @@
 
 # 🌿 PlantDiseases
 
-**AI-powered houseplant disease detection — on-device camera, cloud inference, bilingual care plans.**
+**AI-powered plant disease detection for houseplants and garden ornamentals — on-device camera, cloud inference, bilingual care plans.**
 
 [![CI](https://github.com/pmixay/plantdiseases/actions/workflows/ci.yml/badge.svg)](https://github.com/pmixay/plantdiseases/actions/workflows/ci.yml)
 

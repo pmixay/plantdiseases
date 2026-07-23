@@ -1,6 +1,6 @@
 """
 PlantDiseases Server — FastAPI backend with the PlantVision two-stage
-houseplant disease pipeline.
+plant disease pipeline (houseplants + outdoor/garden ornamentals).
 
 Stage 1:  YOLOv8n              — locate plant leaves (single class)
 Stage 2:  DINOv2 ViT-S/14      — frozen backbone + LoRA + MLP head
@@ -4153,7 +4153,7 @@ async def community_scan_delete_user(user_pseudo_id: str):
     })
 
 
-# --- /api/popular: personalized, short-cached popular-houseplants bundle ----
+# --- /api/popular: personalized, short-cached popular-plants bundle ----
 # key "{country|'global'}:{locale}" -> (expiry_epoch, payload). The list is a
 # live community-scan aggregate, so the bundle is cached only briefly (and
 # served stale-while-revalidate) — new scans surface within the TTL instead of
@@ -4348,7 +4348,7 @@ def _build_popular_bundle(
 async def popular_endpoint(request: Request, country: str | None = None,
                            region: str | None = None, lat: float | None = None,
                            lon: float | None = None, locale: str = "en"):
-    """Personalized popular-houseplants bundle with lead images pre-resolved.
+    """Personalized popular-plants bundle with lead images pre-resolved.
 
     Location is supplied by the opted-in client (coarse ``lat``/``lon`` +
     reverse-geocoded ``country``/``region`` city); a request with none gets the

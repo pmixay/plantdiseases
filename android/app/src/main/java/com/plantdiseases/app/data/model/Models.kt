@@ -697,7 +697,7 @@ data class SpeciesInfoResponse(
 )
 
 /**
- * /api/popular response — the personalized popular-houseplants bundle for the
+ * /api/popular response — the personalized popular-plants bundle for the
  * Home carousel, with lead images already resolved server-side so the row
  * paints in one shot (no per-species Wikipedia round-trips on the client).
  */

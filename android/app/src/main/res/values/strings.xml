@@ -680,7 +680,7 @@
     <string name="care_plan_detail_soil_mix">Soil mix</string>
     <string name="care_plan_detail_npk">Fertiliser NPK</string>
     <string name="care_plan_detail_fertilise_howto">How to feed</string>
-    <string name="care_plan_fertilise_howto_value">A balanced liquid houseplant fertiliser diluted to half strength — e.g. an all-purpose 10-10-10 feed, only during active growth.</string>
+    <string name="care_plan_fertilise_howto_value">A balanced liquid plant fertiliser diluted to half strength — e.g. an all-purpose 10-10-10 feed, only during active growth.</string>
     <string name="care_plan_detail_light_lux">Light (lux)</string>
     <string name="care_plan_detail_humidity">Humidity band</string>
     <string name="care_plan_detail_temperature">Temperature</string>
@@ -827,7 +827,7 @@
     <string name="home_stats_title">Your stats &amp; tips</string>
     <string name="home_stats_summary">%1$d scans · %2$d healthy · %3$d plants in garden</string>
     <string name="home_popular_diseases">Popular diseases</string>
-    <string name="home_popular_species">Popular houseplants</string>
+    <string name="home_popular_species">Popular plants</string>
     <string name="home_popular_in_country">Popular in %1$s</string>
     <string name="home_popular_near">Popular near %1$s</string>
     <string name="home_popular_worldwide">Popular worldwide</string>
@@ -885,7 +885,7 @@
     <string name="species_common_problems">Common problems to watch for</string>
     <string name="species_problems_loading">Finding the problems most common for this plant…</string>
     <string name="species_problems_ai_note">Most likely for this species — tap one for the full care guide.</string>
-    <string name="species_problems_guide_note">Houseplant conditions this app can diagnose — tap one to learn more.</string>
+    <string name="species_problems_guide_note">Plant conditions this app can diagnose — tap one to learn more.</string>
 
     <!-- Stats & Tips -->
     <string name="stats_section">Your stats</string>
