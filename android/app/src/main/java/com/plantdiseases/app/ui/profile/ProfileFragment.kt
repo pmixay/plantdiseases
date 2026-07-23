@@ -14,10 +14,6 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.doOnAttach
-import androidx.core.view.updatePadding
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.bottomnavigation.BottomNavigationView
@@ -32,6 +28,7 @@ import com.plantdiseases.app.util.AutosavePrefs
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.TelemetryIds
 import com.plantdiseases.app.util.ThemeHelper
+import com.plantdiseases.app.util.applyStatusBarTopInset
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
 import java.util.Calendar
@@ -80,7 +77,7 @@ class ProfileFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        applyStatusBarTopInset(binding.root)
+        binding.root.applyStatusBarTopInset()
         binding.tvAppVersion.text = "v${BuildConfig.VERSION_NAME}"
 
         // "Clear all history" now lives on the Gallery tab's top-app-bar
@@ -421,22 +418,5 @@ class ProfileFragment : Fragment() {
         countAnimators.forEach { it.cancel() }
         countAnimators.clear()
         _binding = null
-    }
-
-    /** The shared toolbar is hidden on this tab (see MainActivity), so the
-     *  scroll content runs edge-to-edge under the status bar. Pad the scroll
-     *  view's top by the status-bar inset so the hero card drops below the
-     *  system clock (status bar over the dark background, card beneath it). */
-    private fun applyStatusBarTopInset(scroll: View) {
-        val baseTop = scroll.paddingTop
-        ViewCompat.setOnApplyWindowInsetsListener(scroll) { v, insets ->
-            val top = insets.getInsets(WindowInsetsCompat.Type.systemBars()).top
-            v.updatePadding(top = baseTop + top)
-            insets
-        }
-        // onViewCreated runs before the view is attached, so requesting insets
-        // now no-ops and a tab switched-to later never gets an inset pass — the
-        // hero then draws under the status bar. Request once attached instead.
-        scroll.doOnAttach { ViewCompat.requestApplyInsets(it) }
     }
 }

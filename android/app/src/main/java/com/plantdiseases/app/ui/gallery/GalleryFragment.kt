@@ -3,19 +3,13 @@ package com.plantdiseases.app.ui.gallery
 import android.content.Intent
 import android.os.Bundle
 import android.view.LayoutInflater
-import android.view.Menu
-import android.view.MenuInflater
-import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
 import android.view.animation.AlphaAnimation
 import android.view.animation.AnimationSet
 import android.view.animation.LayoutAnimationController
 import android.view.animation.ScaleAnimation
-import androidx.core.content.ContextCompat
-import androidx.core.view.MenuProvider
 import androidx.fragment.app.Fragment
-import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
 import com.google.android.material.bottomnavigation.BottomNavigationView
@@ -26,6 +20,7 @@ import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.FragmentGalleryBinding
 import com.plantdiseases.app.ui.result.ResultActivity
 import com.plantdiseases.app.util.Haptics
+import com.plantdiseases.app.util.applyStatusBarTopInset
 import android.widget.Toast
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
@@ -42,11 +37,6 @@ class GalleryFragment : Fragment() {
     private var currentFilter = Filter.ALL
     private var isFirstLoad = true
 
-    // Kept so the toolbar basket can hide itself when there's nothing to
-    // clear (mirrors the old profile button, which was GONE on an empty
-    // history). Re-resolved on every menu (re)creation.
-    private var clearHistoryItem: MenuItem? = null
-
     enum class Filter { ALL, HEALTHY, DISEASED }
 
     override fun onCreateView(
@@ -60,6 +50,7 @@ class GalleryFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        binding.galleryRoot.applyStatusBarTopInset()
 
         adapter = GalleryAdapter(
             onClick = { item ->
@@ -82,7 +73,10 @@ class GalleryFragment : Fragment() {
         binding.rvGallery.adapter = adapter
 
         setupStaggerAnimation()
-        setupToolbarMenu()
+        binding.btnClearHistory.setOnClickListener {
+            Haptics.tick(requireContext())
+            confirmClearHistory()
+        }
 
         binding.swipeRefresh.setOnRefreshListener { loadScans() }
 
@@ -115,36 +109,6 @@ class GalleryFragment : Fragment() {
             binding.chipDiseased.isChecked -> Filter.DISEASED
             else -> Filter.ALL
         }
-    }
-
-    /** Add the "clear all history" basket to the shared toolbar, scoped to
-     *  this fragment's RESUMED state so it only shows in the green top bar
-     *  while the Gallery tab is open. This replaces the footer button that
-     *  used to sit at the bottom of the Profile screen. */
-    private fun setupToolbarMenu() {
-        requireActivity().addMenuProvider(
-            object : MenuProvider {
-                override fun onCreateMenu(menu: Menu, menuInflater: MenuInflater) {
-                    menuInflater.inflate(R.menu.gallery_menu, menu)
-                    clearHistoryItem = menu.findItem(R.id.action_clear_history)
-                    // Tint to match the toolbar title (theme-aware white/light); menu
-                    // icons otherwise fall back to a default control colour.
-                    clearHistoryItem?.icon
-                        ?.setTint(ContextCompat.getColor(requireContext(), R.color.toolbar_title))
-                    // Nothing to clear on an empty gallery.
-                    clearHistoryItem?.isVisible = allScans.isNotEmpty()
-                }
-
-                override fun onMenuItemSelected(item: MenuItem): Boolean {
-                    if (item.itemId != R.id.action_clear_history) return false
-                    Haptics.tick(requireContext())
-                    confirmClearHistory()
-                    return true
-                }
-            },
-            viewLifecycleOwner,
-            Lifecycle.State.RESUMED,
-        )
     }
 
     private fun confirmClearHistory() {
@@ -213,7 +177,7 @@ class GalleryFragment : Fragment() {
         adapter.submitList(filtered)
 
         // The basket is only useful when there's history to wipe.
-        clearHistoryItem?.isVisible = allScans.isNotEmpty()
+        binding.btnClearHistory.visibility = if (allScans.isNotEmpty()) View.VISIBLE else View.GONE
 
         when {
             filtered.isEmpty() && allScans.isEmpty() ->

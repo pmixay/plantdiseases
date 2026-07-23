@@ -39,6 +39,7 @@ import com.plantdiseases.app.ui.crop.CropContract
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.ModelFamilyPrefs
+import com.plantdiseases.app.util.applyStatusBarTopInset
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -210,6 +211,12 @@ class CameraFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        // The shared toolbar is hidden on this tab (see MainActivity), so the
+        // preview now runs edge-to-edge under the status bar. Pad the root by
+        // the status-bar inset so the offline banner / model-family chip
+        // don't sit under the clock — the live preview loses that same
+        // sliver from the top, same as it always did under the toolbar.
+        binding.root.applyStatusBarTopInset()
 
         // Restore the in-flight crop/capture handoff so a process-death while
         // the cropper or camera is foregrounded doesn't orphan the result.

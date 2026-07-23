@@ -21,7 +21,7 @@
         android:padding="@dimen/space_lg"
         android:layout_marginHorizontal="@dimen/space_lg"
         android:layout_marginTop="@dimen/space_lg"
-        android:background="@drawable/bg_garden_hero">
+        android:background="@drawable/bg_hero_card">
 
         <FrameLayout
             android:layout_width="52dp"
