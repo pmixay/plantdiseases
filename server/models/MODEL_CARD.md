@@ -30,7 +30,7 @@
 
 Two stages (`server/pipeline.py`):
 
-1. **Stage 1 — YOLOv8n** single-class `plant_leaf` detector, indoor-trained,
+1. **Stage 1 — YOLOv8n** single-class `plant_leaf` detector (indoor + outdoor-ornamental as of 2.6.12),
    localises the leaf so Stage 2 sees a tight crop, not a whole room.
 2. **Stage 2 — classifier** on the crop at the `classes.json` `img_size`.
    The "is it diseased / which disease" decision is 100 % Stage 2.

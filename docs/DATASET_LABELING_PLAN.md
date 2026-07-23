@@ -36,13 +36,26 @@ until verified production volume exists.
   held-out training image inflates the gate.
 - **Image gates:** real photos, short side ≥ 384 px, pHash near-dup removal
   (Hamming ≤ 6), per-creator cap.
-- **Domain gate:** subject is a **houseplant/indoor plant** — no agricultural/field
-  imagery.
+- **Domain gate (v2.6.12):** subject is a **houseplant/indoor plant OR an outdoor / garden
+  ornamental** (potted, garden, landscape) — still **no commercial field / agricultural-crop
+  imagery**.
 - **Vision-agent judging:** kept/rejected vs exported reference exemplars; a
   boundary negative is kept only if the agent would *reject* it for the lookalike
   positive class (judged vs both confused-class exemplar sets).
 - **Hard negatives role-tagged** (`role=hard_negative`, `hn_kind`) under `healthy/`
   or `not_a_plant/`; `hn_kind=boundary` is routed **train-only** by the notebook.
+
+## Domain (v2.6.12) — houseplants → + outdoor/garden ornamentals
+
+The target domain broadens to **houseplants + outdoor / garden ORNAMENTALS** (potted, patio,
+garden, landscape); commercial **field / agricultural crops stay excluded**. The v8
+data-quality work below still applies — it now targets **field-crop** leakage (not "outdoor"),
+and outdoor ornamentals are welcome. In-code the pivot is just the notebook up-weighting the one
+ornamental source (`kaggle_ornamental` 0.8→1.0, §4). The real broadening is **upstream**: loosen
+the supplement's external `field_crop`/`orchard_fruit` gate to admit ornamentals + collect
+garden-ornamental scans. The runtime gate is **bundle-derived** (0 server code changes; a rebuilt
+OOD bank on the broader in-distribution is what accepts ornamentals and still rejects field crops
++ non-plants).
 
 ## Version status
 
@@ -124,8 +137,9 @@ v7 eval; let v8's clean benchmark guide any further move.
    ~10%, powdery ~0%.
 
 **v8 plan (priority):**
-1. **Purge agricultural/outdoor from disease positives** — crop-term blocklist + an
-   "is it a potted/indoor houseplant?" re-judge; populate `subject_domain`/`subject_plant`.
+1. **Purge field/agricultural crops from disease positives** — crop-term blocklist + an
+   "is it a houseplant or garden ornamental (not a field crop)?" re-judge; populate
+   `subject_domain`/`subject_plant`. (v2.6.12: outdoor ornamentals are now **kept**.)
    **gray_mold (~39%) and nutrient (~31%) are the most contaminated — start there**
    (gray_mold's grape/strawberry Botrytis is the retired proxy). A net trim (on-plan for
    the precision-bound classes); pair with item 2 so gray_mold/nutrient don't lose supply.

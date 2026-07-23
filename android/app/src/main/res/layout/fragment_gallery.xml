@@ -2,12 +2,53 @@
 <!-- Gallery screen — staggered grid of past scans, with shimmer
      placeholder during initial load and a Lottie empty state. -->
 <LinearLayout
+    android:id="@+id/gallery_root"
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="@color/background">
+
+    <!-- Page title + clear-history action. Used to live in the shared
+         MainActivity toolbar, pinned above the pager; that title only
+         updated once a swipe settled, so it read as floating disconnected
+         from the page sliding underneath it mid-drag. Living here instead,
+         it's part of this page's own content and slides with it. The
+         clear-history basket moves here too — it used to be a toolbar menu
+         item scoped to this fragment's lifecycle, which only worked while
+         the shared toolbar was visible on this tab. -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingHorizontal="@dimen/content_gutter"
+        android:paddingTop="@dimen/space_lg">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/tab_gallery"
+            android:textColor="@color/on_surface"
+            android:textSize="@dimen/text_title"
+            android:fontFamily="sans-serif-black"
+            android:letterSpacing="-0.01" />
+
+        <ImageButton
+            android:id="@+id/btn_clear_history"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_delete"
+            app:tint="@color/on_surface"
+            android:contentDescription="@string/clear_history"
+            android:visibility="gone"
+            tools:visibility="visible" />
+
+    </LinearLayout>
 
     <com.google.android.material.chip.ChipGroup
         android:id="@+id/chip_group_filter"

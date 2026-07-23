@@ -27,11 +27,11 @@ def test_capabilities_model_contract(client):
     assert body["version"]
     model = body["model"]
     assert model is not None
-    assert model["detector_arch"] == "YOLOv8n (single-class plant_leaf, indoor-trained)"
+    assert model["detector_arch"] == "YOLOv8n (single-class plant_leaf)"
     assert isinstance(model["classifier_arch"], str) and model["classifier_arch"]
     assert model["classifier_name"] == "plantvision"
     assert model["stages"] == 2
-    assert model["focus"] == "houseplants"
+    assert model["focus"] == "houseplants + outdoor/garden ornamentals"
     # Capacity tier (aqua/gamma/frontier) declared by the bundle; defaults
     # to "gamma" for bundles trained before the family field existed.
     assert model["model_family"] in {"aqua", "gamma", "frontier"}

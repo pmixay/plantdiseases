@@ -380,26 +380,20 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Toolbar state for a settled tab page. Driven by the shell, not by the
-     *  NavController, since the tabs aren't destinations any more. */
+    /** Toolbar state for the shell's pager. Driven by the shell, not by the
+     *  NavController, since the tabs aren't destinations any more.
+     *
+     *  The shared toolbar stays hidden on every tab: it used to carry each
+     *  page's name, but that title lived outside the pager and only updated
+     *  once a swipe settled, so mid-drag it read as a static label floating
+     *  disconnected from the page sliding underneath it. Every tab
+     *  now renders its own title as part of its own page (Garden/Profile
+     *  already did this with their hero card), so it slides with the swipe
+     *  like the rest of the page content. The bar itself only reappears for a
+     *  pushed destination (the guide), which needs it for the title + back
+     *  arrow — see the [NavController] destination listener in [onCreate]. */
     fun applyTabChrome(@IdRes tabId: Int) {
-        // Garden + Profile render their own full-bleed green hero as the
-        // header, so the shared toolbar is hidden there — otherwise it stacks a
-        // second title above the hero with a white gap (the "cut off" look).
-        // Every other page keeps the toolbar.
-        binding.appBar.visibility = when (tabId) {
-            R.id.gardenFragment, R.id.profileFragment -> View.GONE
-            else -> View.VISIBLE
-        }
-        supportActionBar?.title = getString(
-            when (tabId) {
-                R.id.cameraFragment -> R.string.tab_scan
-                R.id.gardenFragment -> R.string.tab_garden
-                R.id.galleryFragment -> R.string.tab_gallery
-                R.id.profileFragment -> R.string.tab_profile
-                else -> R.string.tab_home
-            },
-        )
+        binding.appBar.visibility = View.GONE
         if (tabId == R.id.galleryFragment) clearGalleryBadge()
     }
 
