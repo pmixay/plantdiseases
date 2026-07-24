@@ -194,7 +194,7 @@ iteration net-hurt gamma. Numbers in `DATASET_LABELING_PLAN.md`.
 - [x] **Train + evaluate 2.6.9 on dataset v7** — done; **do not deploy** (regressed
       vs 2.6.8). The aqua float32 fix carries forward.
 
-### 2.6.10 — trained (dataset v7 + boundary fix, 2026-07-20) → recovered
+### 2.6.10 — trained (dataset v7 + boundary fix, 2026-07-20) → recovered, but CONFOUNDED
 
 The RCA fix (§4, `SOURCE_WEIGHTS['supplement_boundary']` 0.9→0.35) landed and was
 validated on v7: boundary draw 5.8%→2.8%, **leaf_scorch recall 0.61→0.75**, disease
@@ -202,7 +202,30 @@ macro-F1 **0.834→0.845**, ship gate passed, aqua healthy (float32). The 2.6.9 
 regression is undone and 2.6.10 ≈ 2.6.8 on gamma. Weak-class **precision** (nutrient
 P 0.67) is still open → v8.
 
-- [x] **Apply + validate the boundary fix (2.6.10 on v7)** — done, recovered.
+> **⚠ Corrected 2026-07-24 — this run also silently lost a 2.26k-image source.**
+> `pappu54/indoor-plant-disease-dataset-23-classes` (= `kaggle_ornamental`) began
+> returning HTTP 403 mid-run; `_kaggle_download` is fail-soft, so it printed one
+> `skipping` line and trained on a corpus **2,264 TRAIN images smaller** than
+> 2.6.9's (`train_feats` 14,315 → 12,025). The source is **train-only**, so
+> `val_realworld` — the ship gate — could not see the loss and passed. It shows up
+> on `val_indomain`, which nobody read at the time:
+>
+> | val_indomain | 2.6.9 (07-03) | 2.6.10 (07-20) |
+> |---|---|---|
+> | disease macro-F1 | 0.865 | **0.809** |
+> | leaf_spot recall | 0.852 | **0.695** |
+> | viral_disease recall | 0.952 | **0.792** |
+> | head best epoch | 5 | **3** (of a 30-epoch budget) |
+>
+> Exactly the classes `kaggle_ornamental` supplied 600 images of each. **The
+> leaf_scorch recovery is still credible** (that source contributed only 67 scorch
+> images, so the boundary fix owns that delta), but the run is **not a clean
+> validation of anything else** and must not anchor a paired A/B: 2.6.10 and 2.6.9
+> were not trained on the same dataset. See `DATASET_LABELING_PLAN.md` → "Source
+> loss".
+
+- [x] **Apply + validate the boundary fix (2.6.10 on v7)** — done; leaf_scorch
+      recovery holds, the rest of the run is confounded (above).
 
 ### 2.6.11 — next train (dataset v8)
 
@@ -227,15 +250,57 @@ the stalled houseplant-only collection (weak-class targets unmet); ornamentals u
 weak-class supply. `MODEL_VERSION` is 2.6.12 (§1); runtime gate is **bundle-derived** (0 server
 gating-logic changes).
 
-- [ ] **Broaden the data** — up-weight `kaggle_ornamental` (done, §4); loosen the supplement's
-      **upstream** `field_crop`/`orchard_fruit` gate to admit ornamentals; collect
-      garden-ornamental scans (weak classes first).
+> **⚠ The pivot as written was a no-op.** Its only model-side change was up-weighting
+> `kaggle_ornamental` 0.8→1.0 (and its prior 0.6→0.8) — a source that had already
+> returned **zero images** on the previous run and is **permanently gone** (the owner
+> deleted it; `datasets/list?user=pappu54` is empty). Re-sourced in 2.6.13 below.
+
+- [ ] **Broaden the data** — ~~up-weight `kaggle_ornamental`~~ (done, §4, but the source
+      was dead — re-pointed in 2.6.13); loosen the supplement's **upstream**
+      `field_crop`/`orchard_fruit` gate to admit ornamentals; collect garden-ornamental
+      scans (weak classes first).
 - [ ] **Retrain + refit** — new classifier + `classes.json`, rebuilt `ood_embedding.npz`
       (ornamentals in, field crops out), detector on outdoor leaves, refit calibration.
-      Paired-bootstrap vs the last houseplant bundle (2.6.8/2.6.10).
+      Paired-bootstrap vs the last houseplant bundle (2.6.8/2.6.10 — noting 2.6.10's
+      corpus caveat above).
 - [ ] **Broaden the eval seed** — add an ornamental source to `val_realworld` (cap augmented
       share) so the gate measures the new domain. Details in `DATASET_LABELING_PLAN.md` →
-      "Domain (v2.6.12)".
+      "Domain (v2.6.12)". **This is now load-bearing, not polish:** the whole ornamental
+      leg is train-only today, which is precisely why its disappearance was invisible.
+
+### 2.6.13 — next train (regression fixes, 2026-07-24) — supersedes 2.6.12
+
+Fixes the three defects the 07-20 run exposed. **No new modelling ideas — this is the
+run that makes 2.6.12's pivot real and the next A/B trustworthy.**
+
+- [x] **Fail-fast on a truncated corpus** (§2) — `REQUIRED_SOURCE_FLOORS` generalises the
+      existing `REQUIRE_SUPPLEMENT` gate to every load-bearing source and raises before
+      training. The per-source inventory is persisted (`data_v2/source_inventory.json`)
+      and shipped in `model_card.json → source_inventory`, so a future paired A/B can
+      **prove** two runs shared a corpus instead of assuming it.
+- [x] **Re-source the ornamental leg** (§2) — `KAGGLE_ORNAMENTAL_SLUGS` now pools two
+      live, permissively-licensed sets (`itselif/ornamental-plant-diseases-master-dataset`
+      CC0, rose + aloe vera; `warcoder/rose-leaves-disease-detection` CC BY 4.0, FlowerNet
+      rose). Verified mapping at the shipped `per_class_cap=600`: **healthy 600,
+      leaf_spot 600, powdery_mildew 133** ≈ 1,333 of the 2,544 lost.
+      **Honest gap:** `viral_disease` **−600** and `powdery_mildew` **−467** are *not*
+      replaced — no live ornamental mosaic-virus set was found. Expect viral to stay
+      supply-starved until collection or a new source closes it; don't read a viral
+      regression vs 2.6.9 as a modelling failure.
+- [x] **Revive the MaxLogit OOD fallback** (§6 + `pipeline.py`/`classifier.py`) — score the
+      floor over the **plant logits only**. `not_a_plant` is a *trained* class, so the
+      all-class max is high on NAP photos by construction; separation was negative in
+      **all four** runs on record (−0.939 / −0.403 / −0.199 / −0.104) and the floor
+      auto-disabled every time, leaving the AND-gate on the embedding bank alone. Shipped
+      as `classes.json → ood.max_logit_scope`; bundles without the key keep
+      `all_classes`, so old artefacts are unaffected.
+- [x] **Unpin the conformal grid** (§6) — every run selected the grid's **last** alpha
+      *and* last lambda (0.20 / 0.50), i.e. the optimum was outside the search. Extended
+      to alpha ≤ 0.35, lambda ≤ 1.0; the `coverage ≥ 0.90` guard is unchanged, so sets can
+      only shrink where they're allowed to. Should cut mean set size below today's ~1.90/9.
+- [ ] **Train 2.6.13 and paired-bootstrap vs 2.6.8** — diff `source_inventory` first.
+      Expect `val_indomain` to recover toward 0.86 as the ornamental images return; treat
+      `viral_disease` as the known-starved class.
 
 ### Unveiling 2.7 — the leap
 

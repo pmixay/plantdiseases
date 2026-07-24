@@ -159,8 +159,18 @@ DISEASE_MIN_CONFIDENCE = 0.65
 #   * the YOLO detector confidence is below ``NAP_DETECTOR_CONF_FLOOR``
 #   * the classifier MaxLogit is below ``NAP_MAX_LOGIT_FLOOR``
 # The MaxLogit floor is overridable via classes.json.
+#
+# ``ood.max_logit_scope`` selects WHICH max the floor is compared against:
+#   * ``"all_classes"`` (default, legacy bundles) — max over every logit.
+#   * ``"plant_only"``  — max over the logits EXCLUDING ``not_a_plant``.
+# The all-class max is uninformative here because ``not_a_plant`` is a trained
+# class: a NAP photo produces a confident NAP logit, so its all-class max lands
+# above the plant median and the export auto-disables the floor. Bundles from
+# v2.6.13 onward declare ``plant_only``, which separates by construction.
 NAP_DETECTOR_CONF_FLOOR = 0.40
 NAP_MAX_LOGIT_FLOOR_DEFAULT = 4.0
+MAX_LOGIT_SCOPE_DEFAULT = "all_classes"
+_MAX_LOGIT_SCOPES = ("all_classes", "plant_only")
 
 # Classes that are not "diseases" — used to compute disease scores
 # and to know when to apply the healthy fallback.
@@ -284,6 +294,31 @@ def _resolve_max_logit_floor(meta: dict) -> float:
     return max(0.0, floor)
 
 
+def _resolve_max_logit_scope(meta: dict) -> str:
+    """Read ``ood.max_logit_scope`` from classes.json.
+
+    Defaults to ``"all_classes"`` so every bundle exported before the scope key
+    existed keeps its historical numerics exactly. An unrecognised value also
+    falls back to the default rather than failing the boot — the floor is a
+    *fallback* signal (the embedding bank is primary), so an unknown scope must
+    not take the server down.
+    """
+    if not isinstance(meta, dict):
+        return MAX_LOGIT_SCOPE_DEFAULT
+    ood = meta.get("ood")
+    if not isinstance(ood, dict):
+        return MAX_LOGIT_SCOPE_DEFAULT
+    scope = ood.get("max_logit_scope")
+    if scope in _MAX_LOGIT_SCOPES:
+        return str(scope)
+    if scope is not None:
+        logger.warning(
+            "Unknown ood.max_logit_scope %r — falling back to %r",
+            scope, MAX_LOGIT_SCOPE_DEFAULT,
+        )
+    return MAX_LOGIT_SCOPE_DEFAULT
+
+
 # ── Blur detection ───────────────────────────────────────────────────
 
 # 3x3 Laplacian kernel (4-neighbour discrete approximation of the
@@ -377,6 +412,13 @@ class PlantDiseasePipeline:
         self.temperature = _load_temperature(classifier_path)
         meta = getattr(self.classifier, "meta", None) or {}
         self.nap_max_logit_floor = _resolve_max_logit_floor(meta)
+        self.nap_max_logit_scope = _resolve_max_logit_scope(meta)
+        # Which per-crop key carries the score this bundle's floor was fit on.
+        self._max_logit_key = (
+            "plant_max_logit"
+            if self.nap_max_logit_scope == "plant_only"
+            else "max_logit"
+        )
         self.conformal: ConformalConfig | None = load_conformal_config(
             classifier_path.parent
         )
@@ -402,10 +444,11 @@ class PlantDiseasePipeline:
             )
         logger.info(
             "Pipeline ready  classifier=%s backend  T=%.3f  "
-            "MaxLogit floor=%s  conformal=%s",
+            "MaxLogit floor=%s (%s)  conformal=%s",
             self.classifier.backend,
             self.temperature,
             "off" if self.nap_max_logit_floor <= 0 else f"{self.nap_max_logit_floor:.2f}",
+            self.nap_max_logit_scope,
             "off" if self.conformal is None
             else f"{self.conformal.method}@{self.conformal.coverage_target:.0%}",
         )
@@ -686,7 +729,8 @@ class PlantDiseasePipeline:
             ood_score=classification.get("ood_score"),
             ood_threshold=ood_threshold,
             ml_floor=self.nap_max_logit_floor,
-            max_logit=float(classification.get("max_logit", 0.0)),
+            max_logit=self._scoped_max_logit(classification),
+            ml_scope=self.nap_max_logit_scope,
             require_classifier_signal=require_classifier_signal,
         )
         if triggered:
@@ -748,6 +792,7 @@ class PlantDiseasePipeline:
         member_probs: list[dict[str, float]] = []
         embeddings: list = []
         max_logit_seen = -float("inf")
+        plant_max_logit_seen = -float("inf")
 
         for box, cls_res in zip(ranked, crop_results, strict=True):
             calibrated = _apply_temperature(cls_res["all_probs"], self.temperature)
@@ -758,6 +803,9 @@ class PlantDiseasePipeline:
             ml = float(cls_res.get("max_logit", 0.0))
             if ml > max_logit_seen:
                 max_logit_seen = ml
+            pml = self._scoped_max_logit(cls_res, key="plant_max_logit")
+            if pml > plant_max_logit_seen:
+                plant_max_logit_seen = pml
 
         # The whole frame votes on the verdict but never becomes the
         # highlighted ``primary_box`` (it has no bbox); its OOD signal
@@ -770,6 +818,9 @@ class PlantDiseasePipeline:
             ml = float(whole_result.get("max_logit", 0.0))
             if ml > max_logit_seen:
                 max_logit_seen = ml
+            pml = self._scoped_max_logit(whole_result, key="plant_max_logit")
+            if pml > plant_max_logit_seen:
+                plant_max_logit_seen = pml
 
         n_boxes = max(len(member_probs), 1)
         mean_probs = _fold_votes(member_probs, self.classifier.CLASS_NAMES)
@@ -808,11 +859,30 @@ class PlantDiseasePipeline:
             "confidence": top1_conf,
             "all_probs": mean_probs,
             "max_logit": max_logit_seen if max_logit_seen != -float("inf") else 0.0,
+            "plant_max_logit": (
+                plant_max_logit_seen
+                if plant_max_logit_seen != -float("inf")
+                else 0.0
+            ),
             "ood_score": ood_score,
             "low_confidence": top1_conf < HEALTHY_MIN_CONFIDENCE,
             "_voted_over": n_boxes,
         }
         return primary_box, aggregated_cls
+
+    def _scoped_max_logit(self, classification: dict, key: str | None = None) -> float:
+        """MaxLogit under this bundle's declared scope.
+
+        ``key=None`` uses ``self._max_logit_key`` (the scope the floor was fit
+        on). A legacy classifier result that predates ``plant_max_logit``
+        silently falls back to the all-class ``max_logit``, so an old bundle +
+        new server behaves exactly as before.
+        """
+        k = key or self._max_logit_key
+        val = classification.get(k)
+        if val is None:
+            val = classification.get("max_logit", 0.0)
+        return float(val)
 
     def _embedding_ood_score(self, embeddings: list) -> float | None:
         """Min k-NN OOD distance over the member embeddings, or ``None``.
@@ -922,6 +992,9 @@ class PlantDiseasePipeline:
             "confidence": nap_conf,
             "all_probs": probs,
             "max_logit": float(classification.get("max_logit", 0.0)),
+            "plant_max_logit": self._scoped_max_logit(
+                classification, key="plant_max_logit"
+            ),
             "low_confidence": False,
             "_voted_over": classification.get("_voted_over", 1),
             "_ood_gated": True,
@@ -960,6 +1033,7 @@ def _decide_nap_route(
     ood_threshold: float | None,
     ml_floor: float,
     max_logit: float,
+    ml_scope: str = MAX_LOGIT_SCOPE_DEFAULT,
     require_classifier_signal: bool = False,
 ) -> tuple[bool, str]:
     """Pure NAP-gate decision (exposed for tests).
@@ -993,7 +1067,10 @@ def _decide_nap_route(
     elif ml_floor > 0:
         classifier_ood = max_logit < ml_floor
         has_signal = True
-        desc = f"max_logit={max_logit:.3f}<{ml_floor:.2f}={classifier_ood}"
+        desc = (
+            f"max_logit[{ml_scope}]={max_logit:.3f}<{ml_floor:.2f}"
+            f"={classifier_ood}"
+        )
     else:
         classifier_ood = False
         has_signal = False

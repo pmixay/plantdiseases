@@ -134,6 +134,19 @@ def check(models_dir: Path) -> Report:
     else:
         r.add(INFO, "no embedding OOD bank declared — OOD falls back to classes.json ood.max_logit_floor")
 
+    # MaxLogit fallback: scope + whether the floor actually survived calibration.
+    ood_root = classes.get("ood") or {}
+    scope = ood_root.get("max_logit_scope", "all_classes")
+    if scope not in ("all_classes", "plant_only"):
+        r.add(WARN, f"unknown ood.max_logit_scope={scope!r} — the server will fall back to 'all_classes'")
+    elif scope == "all_classes" and "max_logit_scope" in ood_root:
+        r.add(WARN, "ood.max_logit_scope='all_classes' — not_a_plant is a trained class, so the "
+                    "all-class max cannot separate NAP from plants and the floor will auto-disable. "
+                    "Re-export with 'plant_only' (train_notebook §6, MAXLOGIT_SCOPE).")
+    if "max_logit_floor" in ood_root and ood_root.get("max_logit_floor") is None and not ood:
+        r.add(FAIL, "MaxLogit floor is null AND no embedding bank is shipped — the NAP AND-gate has "
+                    "NO classifier-side signal and degrades to detector confidence alone")
+
     # ── Analysis artefacts (non-blocking) ────────────────────────
     for name, note in (("model_card.json", "provenance + benchmarks + CIs"),
                        ("training_metrics.json", "per-class recall + confusion matrices")):

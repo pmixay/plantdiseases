@@ -198,6 +198,18 @@ class DiseaseClassifier:
         self.CLASS_NAMES = _resolve_class_names(meta)
         self.NUM_CLASSES = len(self.CLASS_NAMES)
         self.img_size = _resolve_img_size(meta)
+        # Logit indices EXCLUDING ``not_a_plant``. The all-class MaxLogit is a
+        # dead OOD signal on this head: ``not_a_plant`` is a *trained* class, so
+        # a NAP photo scores a high NAP logit and its all-class max sits ABOVE
+        # the plant median — which is why every export since v2.3 auto-disabled
+        # the floor (``separation_p50`` < 0 in each run log). The max over the
+        # PLANT logits only is the quantity the gate actually wants ("does this
+        # look like any plant condition we know?") and separates by
+        # construction. Empty tuple ⇒ no NAP class ⇒ falls back to the all-class
+        # max, so a taxonomy without ``not_a_plant`` behaves exactly as before.
+        self._plant_logit_idx = tuple(
+            i for i, n in enumerate(self.CLASS_NAMES) if n != "not_a_plant"
+        )
 
         onnx_path = _resolve_onnx_path(model_path)
         if onnx_path is None:
@@ -425,6 +437,15 @@ class DiseaseClassifier:
                 for i in range(self.NUM_CLASSES)
             },
             "max_logit": max_logit,
+            # Plant-only MaxLogit (see ``_plant_logit_idx``). Always emitted so
+            # the pipeline can honour ``classes.json -> ood.max_logit_scope``
+            # without re-deriving it; equals ``max_logit`` when the taxonomy has
+            # no ``not_a_plant`` class.
+            "plant_max_logit": (
+                float(logits32[list(self._plant_logit_idx)].max())
+                if self._plant_logit_idx
+                else max_logit
+            ),
         }
         # The raw CLS embedding (when the graph exports it) rides along for
         # the pipeline's embedding-space OOD score. It is an internal

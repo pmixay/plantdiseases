@@ -35,6 +35,24 @@ def _notebook_source() -> str:
     )
 
 
+def _source_weights_block() -> str:
+    """Just the ``SOURCE_WEIGHTS = { … }`` literal from §4.
+
+    Sampler-weight assertions must read THIS block, not the whole notebook: a
+    bare ``'<source>': <number>`` grep matches any other dict keyed by source
+    name (§2's ``REQUIRED_SOURCE_FLOORS``, ``PRIOR_SOURCE_WEIGHTS``, a per-source
+    cap table…) and silently asserts against the wrong number — whichever
+    happens to appear first in cell order.
+    """
+    src = _notebook_source()
+    # Anchored at line start so a future ``PRIOR_SOURCE_WEIGHTS = {`` literal
+    # (today it's ``dict(SOURCE_WEIGHTS)``) can't be picked up by the substring.
+    m = re.search(r"^SOURCE_WEIGHTS = \{", src, re.MULTILINE)
+    assert m, "SOURCE_WEIGHTS dict literal not found in the notebook"
+    end = src.index("\n}", m.start())
+    return src[m.start():end + 2]
+
+
 # ── Static invariants on the notebook source ────────────────────────
 
 
@@ -399,7 +417,7 @@ def test_mpld_excludes_control_and_is_downweighted():
     (fully-fed = healthy) — importing control leaves would mislabel the
     nutrient_deficiency class exactly like a CoLeaf 'healthy' zip would."""
     src = _notebook_source()
-    m = re.search(r"'mpld'\s*:\s*([0-9.]+)", src)
+    m = re.search(r"'mpld'\s*:\s*([0-9.]+)", _source_weights_block())
     assert m and float(m.group(1)) < 1.0, (
         "'mpld' must be down-weighted (<1.0) in SOURCE_WEIGHTS (crop domain gap)"
     )
@@ -570,7 +588,7 @@ def test_kaggle_houseplant_downweighted_and_prior_decoupled():
     the LA prior at a SMALLER weight than its sampler weight so it teaches
     signal without inflating the deployment prior."""
     src = _notebook_source()
-    m = re.search(r"'kaggle_houseplant'\s*:\s*([0-9.]+)", src)
+    m = re.search(r"'kaggle_houseplant'\s*:\s*([0-9.]+)", _source_weights_block())
     assert m and float(m.group(1)) < 1.0, (
         "'kaggle_houseplant' must be down-weighted (<1.0) in SOURCE_WEIGHTS"
     )
@@ -719,7 +737,7 @@ def test_kaggle_nutrient_supplement_replaces_mendeley_coleaf():
         assert body and "kaggle_nutrient" not in body.group(0), (
             f"{split_fn} must NOT allow 'kaggle_nutrient' — it is a TRAIN-ONLY proxy"
         )
-    sw = re.search(r"'kaggle_nutrient'\s*:\s*([0-9.]+)", src)
+    sw = re.search(r"'kaggle_nutrient'\s*:\s*([0-9.]+)", _source_weights_block())
     assert sw and float(sw.group(1)) < 1.0, "'kaggle_nutrient' must be down-weighted (<1.0)"
     pr = re.search(r"PRIOR_SOURCE_WEIGHTS\['kaggle_nutrient'\]\s*=\s*([0-9.]+)", src)
     assert pr and float(pr.group(1)) < float(sw.group(1)), (
@@ -759,6 +777,68 @@ def test_ood_floor_is_calibrated_not_hardcoded():
     assert val in ("ML_FLOOR", "ML_FLOOR_PERSISTED"), (
         f"max_logit_floor is {val}, must reference the calibrated "
         f"ML_FLOOR / ML_FLOOR_PERSISTED variable, not a hardcoded number"
+    )
+
+
+def test_maxlogit_floor_is_scored_over_plant_logits_only():
+    """v2.6.13: the MaxLogit floor must exclude the ``not_a_plant`` logit.
+
+    ``not_a_plant`` is a TRAINED class, so on a NAP photo the all-class max IS
+    the confident NAP logit — its median sits above the plant median and the
+    export's ``separation < 0`` branch disables the floor. That happened on every
+    run on record (sep -0.939 / -0.403 / -0.199 / -0.104), leaving the NAP
+    AND-gate with only the embedding bank. The fix is structural, not more hard
+    negatives: score the max over the PLANT columns.
+    """
+    src = _notebook_source()
+    assert "MAXLOGIT_SCOPE" in src, "MaxLogit scope switch missing"
+    assert "_PLANT_LOGIT_COLS" in src, "plant-only logit column mask missing"
+    assert re.search(r"logits\[i\]\[_PLANT_LOGIT_COLS\]\.max\(\)", src), (
+        "_maxlogit_distribution must take the max over _PLANT_LOGIT_COLS, not "
+        "over every logit — the all-class max cannot separate NAP from plants"
+    )
+    # The scope must ship in classes.json so the server scores the same quantity.
+    assert re.search(r"'max_logit_scope'\s*:\s*MAXLOGIT_SCOPE", src), (
+        "classes.json -> ood.max_logit_scope must be persisted; without it the "
+        "server defaults to 'all_classes' and scores a different number than "
+        "the floor was calibrated on"
+    )
+
+
+def test_required_source_floors_gate_missing_upstream_corpora():
+    """v2.6.13: every load-bearing §2 source must have a non-zero floor.
+
+    On 2026-07-20 the ornamental Kaggle slug was deleted upstream, returned 403,
+    and ``_kaggle_download``'s fail-soft path dropped 2,264 TRAIN images with a
+    single 'skipping' line. Because that source is TRAIN-ONLY the val_realworld
+    ship gate could not see it and PASSED; val_indomain fell 0.865 -> 0.809. A
+    silent corpus change also voids every version-over-version A/B.
+    """
+    src = _notebook_source()
+    assert "REQUIRED_SOURCE_FLOORS" in src, "source-floor gate missing"
+    block = re.search(r"REQUIRED_SOURCE_FLOORS = \{(.*?)\n\}", src, re.DOTALL)
+    assert block, "REQUIRED_SOURCE_FLOORS dict literal not found"
+    floors = {
+        k: float(v)
+        for k, v in re.findall(r"'([a-z_]+)'\s*:\s*([0-9.]+)", block.group(1))
+    }
+    # The sources whose loss is invisible to the ship gate (train-only) or that
+    # carry a whole class are the ones this gate exists for.
+    for must_guard in ("kaggle_ornamental", "plantdoc", "plantvillage", "inat",
+                       "doctorp", "kaggle_houseplant", "inat_pest"):
+        assert floors.get(must_guard, 0) > 0, (
+            f"'{must_guard}' has no positive floor — a silent upstream loss "
+            f"would train a model that is not comparable to any other version"
+        )
+    # It must actually raise, not just warn, by default.
+    assert re.search(r"STRICT_SOURCE_FLOORS\s*=\s*True", src), (
+        "STRICT_SOURCE_FLOORS must default to True (fail-fast over fail-soft)"
+    )
+    assert "SOURCE INVENTORY BELOW FLOOR" in src, "gate must raise a RuntimeError"
+    # And the inventory must ship with the model card so an A/B can diff corpora.
+    assert re.search(r"'source_inventory'\s*:", src), (
+        "model_card must carry the per-source inventory — class counts alone "
+        "cannot show WHICH corpus a run trained on"
     )
 
 
