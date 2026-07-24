@@ -14,12 +14,6 @@
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
-    <!-- Only needed to autosave snapped scan photos into the gallery on
-         Android 9 and below (scoped storage on 10+ needs no permission for
-         MediaStore inserts). Requested in-context when the user enables the
-         "Autosave photos to album" toggle on a legacy device. -->
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-        android:maxSdkVersion="28" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
 

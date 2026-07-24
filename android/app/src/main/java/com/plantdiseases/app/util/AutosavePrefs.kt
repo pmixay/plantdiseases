@@ -6,9 +6,8 @@ import android.content.Context
  * Opt-in state for autosaving captured scan photos to the device gallery.
  *
  * Default is OFF: a fresh install keeps every scan inside the app's private
- * storage only. The user turns this on from the Profile screen; on Android
- * 9 and below that toggle also requests WRITE_EXTERNAL_STORAGE (scoped
- * storage on 10+ needs no permission for MediaStore inserts).
+ * storage only. The user turns this on from the Profile screen; no
+ * permission is involved (scoped-storage MediaStore inserts).
  *
  * Only photos snapped with the in-app camera are saved — images imported
  * from the gallery are already in the album, so re-saving them would just

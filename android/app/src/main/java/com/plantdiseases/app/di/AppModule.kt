@@ -9,17 +9,9 @@ import org.koin.android.ext.koin.androidContext
 import org.koin.dsl.module
 
 /**
- * Koin graph for the app-scoped singletons that used to live as `by lazy`
- * properties on [com.plantdiseases.app.PlantDiseasesApp]. Each `single`
- * mirrors one former `by lazy` 1:1 — same constructor, same wiring — so the
- * object graph is byte-for-byte equivalent; only the *owner* of the lifetime
- * moves from the Application to Koin.
- *
- * The Application keeps the same public `database` / `apiClient` /
- * `scanRepository` / `plantRepository` / `communityUploader` accessors, but
- * they now resolve through Koin via `by inject()` (the safety net), so the
- * ~54 existing `application as PlantDiseasesApp` call sites compile and behave
- * unchanged until they are migrated to direct injection in a later step.
+ * Koin graph for the app-scoped singletons: the Room database, the Ktor
+ * [PlantApiClient], the repositories over them, and the community uploader.
+ * UI, workers and the Application resolve these via `inject()`/`get()`.
  */
 val appModule = module {
     single { AppDatabase.getInstance(androidContext()) }

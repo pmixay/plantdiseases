@@ -638,7 +638,6 @@
     <!-- Autosave snapped scan photos to the device gallery -->
     <string name="autosave_title">Автосохранение фото в галерею</string>
     <string name="autosave_subtitle">Сохранять сделанные снимки в галерею устройства.</string>
-    <string name="autosave_permission_needed">Для сохранения фото в галерею нужно разрешение на доступ к памяти.</string>
 
     <!-- Care Plan -->
     <string name="care_plan_title">План ухода</string>
@@ -680,7 +679,7 @@
     <string name="care_plan_detail_soil_mix">Грунт</string>
     <string name="care_plan_detail_npk">NPK удобрения</string>
     <string name="care_plan_detail_fertilise_howto">Чем подкармливать</string>
-    <string name="care_plan_fertilise_howto_value">Сбалансированное жидкое удобрение для комнатных растений, разведённое вдвое — например, универсальное 10-10-10, только в период активного роста.</string>
+    <string name="care_plan_fertilise_howto_value">Сбалансированное жидкое удобрение для растений, разведённое вдвое — например, универсальное 10-10-10, только в период активного роста.</string>
     <string name="care_plan_detail_light_lux">Освещение (люкс)</string>
     <string name="care_plan_detail_humidity">Влажность</string>
     <string name="care_plan_detail_temperature">Температура</string>
@@ -882,7 +881,7 @@
     <string name="species_common_problems">Частые проблемы этого вида</string>
     <string name="species_problems_loading">Подбираем проблемы, характерные для этого растения…</string>
     <string name="species_problems_ai_note">Наиболее вероятны для этого вида — нажмите, чтобы открыть руководство.</string>
-    <string name="species_problems_guide_note">Болезни комнатных растений, которые умеет распознавать приложение, — нажмите, чтобы узнать больше.</string>
+    <string name="species_problems_guide_note">Болезни растений, которые умеет распознавать приложение, — нажмите, чтобы узнать больше.</string>
 
     <!-- Статистика и советы -->
     <string name="stats_section">Ваша статистика</string>
@@ -893,4 +892,8 @@
     <string name="stats_top_issues">Ваши частые проблемы</string>
     <string name="stats_empty">Пока нет сканов — статистика появится после первого сканирования.</string>
     <!-- Карточки tip_* переехали в справочник (вкладка «Помощь»). -->
+
+    <!-- Обновления из RuStore (util/InAppUpdateManager) -->
+    <string name="update_ready">Обновление приложения загружено</string>
+    <string name="update_ready_action">Установить</string>
 </resources>

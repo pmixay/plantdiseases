@@ -13,7 +13,7 @@ import com.plantdiseases.app.databinding.ItemCarouselSpeciesBinding
  * titles + subtitles immediately and the images fill in as they arrive.
  *
  * Feeds two ways: trending species near the user, and — when there is no
- * trending data — a bundled "popular houseplants" fallback. The [Item] carries
+ * trending data — a bundled "popular plants" fallback. The [Item] carries
  * the [scientific] name separately from the displayed [title] so the fallback
  * can show common names while still keying the photo/detail lookup off the
  * scientific name.

@@ -36,7 +36,7 @@ _TIMEOUT_S = 6.0
 _MAX_BYTES = 16 * 1024 * 1024  # 16 MB — Wikimedia Commons originals routinely run 6-11 MB
 _CACHE_MAX_FILES = 600  # LRU cap; oldest-by-mtime evicted on write
 _USER_AGENT = (
-    "PlantDiseases/1.1 (https://github.com/pmixay/plantdiseases; houseplant care app)"
+    "PlantDiseases/1.1 (https://github.com/pmixay/plantdiseases; plant care app)"
 )
 
 # Only these hosts are fetched. The endpoint is public, so without this an

@@ -13,10 +13,10 @@ android {
 
     defaultConfig {
         applicationId = "com.plantdiseases.app"
-        minSdk = 26 // Android 8.0
+        minSdk = 29 // Android 10
         targetSdk = 35
-        versionCode = 17
-        versionName = "1.7"
+        versionCode = 18
+        versionName = "1.8"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -155,10 +155,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     testOptions {
         unitTests {
             // Robolectric needs the merged Android resources + a real
@@ -167,6 +163,13 @@ android {
             isIncludeAndroidResources = true
             isReturnDefaultValues = true
         }
+    }
+}
+
+kotlin {
+    // Replaces the deprecated android.kotlinOptions block (Kotlin 2.x DSL).
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
     }
 }
 
@@ -256,6 +259,13 @@ dependencies {
     implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
     implementation("com.google.firebase:firebase-messaging")
 
+    // RuStore in-app updates — installs that came from RuStore get offered new
+    // builds in-place (flexible flow, util/InAppUpdateManager). Resolved from
+    // VK's artifactory (see settings.gradle.kts). On every other install
+    // (sideload, no RuStore app) the SDK fails into its failure listeners and
+    // the app carries on — the usual optional-integration degradation.
+    implementation("ru.rustore.sdk:appupdate:10.5.0")
+
     // Gson
     implementation("com.google.code.gson:gson:2.11.0")
 
@@ -326,8 +336,8 @@ dependencies {
     testImplementation("androidx.test.ext:junit-ktx:1.2.1")
     testImplementation("com.google.truth:truth:1.4.4")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
-    // MockWebServer stands in for the diagnosis server so Retrofit /
-    // OkHttp request building + the RetryInterceptor are exercised for real.
+    // MockWebServer stands in for the diagnosis server so Ktor/OkHttp
+    // request building + the RetryInterceptor are exercised for real.
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     testImplementation("androidx.arch.core:core-testing:2.2.0")
     testImplementation("androidx.room:room-testing:2.7.0")

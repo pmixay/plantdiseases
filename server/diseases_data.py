@@ -299,8 +299,8 @@ DISEASES_DATABASE = {
     "nutrient_deficiency": {
         "name_en": "Nutrient Deficiency",
         "name_ru": "Дефицит питательных элементов",
-        "description_en": "Umbrella class for the four most common indoor deficiencies — iron (Fe), nitrogen (N), magnesium (Mg) and potassium (K). Iron and magnesium show interveinal yellowing with green veins (Fe on the youngest leaves, Mg on older ones). Nitrogen yellows the whole oldest leaves first. Potassium burns the leaf edges of older leaves. Often triggered by hard alkaline tap water, depleted substrate, or root issues that block uptake.",
-        "description_ru": "Сборный класс для четырёх самых частых дефицитов в комнатных условиях — железо (Fe), азот (N), магний (Mg), калий (K). Железо и магний — межжилковый хлороз с зелёными жилками (Fe на самых молодых листьях, Mg на старых). Азот — равномерное пожелтение самых старых листьев. Калий — бурение по краю старых листьев. Часто провоцируется жёсткой щелочной водой, истощённым субстратом или проблемами с корнями, мешающими усвоению.",
+        "description_en": "Umbrella class for the four most common deficiencies in potted and garden plants — iron (Fe), nitrogen (N), magnesium (Mg) and potassium (K). Iron and magnesium show interveinal yellowing with green veins (Fe on the youngest leaves, Mg on older ones). Nitrogen yellows the whole oldest leaves first. Potassium burns the leaf edges of older leaves. Often triggered by hard alkaline tap water, depleted substrate, or root issues that block uptake.",
+        "description_ru": "Сборный класс для четырёх самых частых дефицитов у горшечных и садовых растений — железо (Fe), азот (N), магний (Mg), калий (K). Железо и магний — межжилковый хлороз с зелёными жилками (Fe на самых молодых листьях, Mg на старых). Азот — равномерное пожелтение самых старых листьев. Калий — бурение по краю старых листьев. Часто провоцируется жёсткой щелочной водой, истощённым субстратом или проблемами с корнями, мешающими усвоению.",
         "treatment_en": [
             "Check the substrate first — overwatering or root rot looks just like deficiency",
             "Switch to a balanced liquid fertiliser (NPK ~10-10-10) at half strength every 2–3 weeks during growth",
@@ -340,7 +340,7 @@ DISEASES_DATABASE = {
             "Dab visible clusters with a cotton swab dipped in 70 % isopropyl alcohol; scrape scale shells off with a soft toothbrush",
             "Spray the whole plant with insecticidal soap, neem or horticultural oil to smother survivors; repeat weekly for 3–4 weeks",
             "Prune and bin badly encrusted stems",
-            "For heavy or persistent infestations use a systemic houseplant insecticide per the label; check the root ball too — root mealybugs hide in the substrate"
+            "For heavy or persistent infestations use a systemic insecticide per the label; check the root ball too — root mealybugs hide in the substrate"
         ],
         "treatment_ru": [
             "Сразу изолируйте растение — оба вредителя переползают на соседние",
@@ -373,7 +373,7 @@ DISEASES_DATABASE = {
             "Isolate the plant immediately — mealybugs crawl to neighbours",
             "Dab each cluster with a cotton swab dipped in 70 % isopropyl alcohol",
             "Spray the whole plant with insecticidal soap or neem oil, repeat weekly for 3–4 weeks",
-            "For heavy infestations use a systemic houseplant insecticide per the label",
+            "For heavy infestations use a systemic insecticide per the label",
             "Check the root ball too — root mealybugs hide in the substrate"
         ],
         "treatment_ru": [

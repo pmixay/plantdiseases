@@ -1,4 +1,4 @@
-"""Curated region -> popular-houseplant lists.
+"""Curated region -> popular-plant lists.
 
 Plain data module, no I/O. The ``/api/popular`` endpoint resolves a lead
 image per plant (via ``species_info``) and caches the bundle; this file only

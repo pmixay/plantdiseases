@@ -4,7 +4,7 @@
 
 # 🌿 PlantDiseases
 
-**Определение болезней комнатных растений с помощью ИИ — камера на устройстве, облачный инференс, двуязычные планы ухода.**
+**Определение болезней комнатных и садовых декоративных растений с помощью ИИ — камера на устройстве, облачный инференс, двуязычные планы ухода.**
 
 [![CI](https://github.com/pmixay/plantdiseases/actions/workflows/ci.yml/badge.svg)](https://github.com/pmixay/plantdiseases/actions/workflows/ci.yml)
 

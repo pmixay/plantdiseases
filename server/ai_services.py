@@ -368,7 +368,7 @@ def identify_species(
 # default model (openai/gpt-oss-120b) doesn't need explicit cache_control
 # headers to amortise it.
 _DOCTOR_SYSTEM_PROMPT = """You are PlantDiseases' friendly AI Plant Doctor, helping
-people care for their houseplants. Your knowledge is grounded in the
+people care for their plants — indoor and garden alike. Your knowledge is grounded in the
 PlantVision v2.x disease taxonomy (9 trainable classes):
 
 - gray_mold_botrytis: fuzzy grey growth, fungal (Botrytis cinerea)
@@ -826,7 +826,7 @@ _GUIDE_DOC_KEYS = frozenset({
     "edema", "sunburn_or_scorch",
 })
 
-_SPECIES_DISEASES_SYSTEM = """You are a houseplant pathology assistant. Given a plant \
+_SPECIES_DISEASES_SYSTEM = """You are a plant pathology assistant. Given a plant \
 species, list the problems (diseases, sap-sucking pests, physiological disorders) that \
 species is MOST commonly affected by when grown indoors, most common first.
 
@@ -1107,7 +1107,7 @@ _DISEASE_PROTOCOL: dict[str, dict] = {
         ],
         "sanitation": [
             "Sterilise pruners with 70% isopropyl between cuts; do not reuse infected soil.",
-            "Wash hands between handling this plant and other houseplants.",
+            "Wash hands between handling this plant and your other plants.",
         ],
         "isolation": True,
         "red_flags": [
@@ -1724,7 +1724,7 @@ def _polish_plan_with_llm(plan: dict, locale: str) -> dict:
         "them. " if canonical_bits else ""
     )
     system = (
-        "You polish a houseplant care plan into 5-7 short Markdown bullet "
+        "You polish a plant care plan into 5-7 short Markdown bullet "
         "points covering watering, light, humidity, feeding and disease "
         "actions. " + canonical_hint
         + "Keep all other dosages and intervals exactly as given. "
@@ -1809,7 +1809,7 @@ def generate_care_plan(
     season: str | None = None,
     today: _dt.date | None = None,
 ) -> dict:
-    """Build a full houseplant care plan for the (disease, light) tuple.
+    """Build a full plant care plan for the (disease, light) tuple.
 
     Returns a richer, production-grade payload than the v1 endpoint:
 

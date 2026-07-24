@@ -36,13 +36,7 @@ data class ResolvedRegion(
     val locality: String?,
     val lat: Double?,
     val lon: Double?,
-) {
-    /** Compact display label preferring the locality when present. */
-    val displayLabel: String
-        get() = locality?.takeIf { it.isNotBlank() }
-            ?.let { if (country.isNotBlank()) "$it, $country" else it }
-            ?: country
-}
+)
 
 object RegionResolver {
 

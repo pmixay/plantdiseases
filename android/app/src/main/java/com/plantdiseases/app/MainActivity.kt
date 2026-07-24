@@ -20,6 +20,7 @@ import androidx.navigation.ui.setupActionBarWithNavController
 import com.plantdiseases.app.databinding.ActivityMainBinding
 import com.plantdiseases.app.ui.onboarding.OnboardingActivity
 import com.plantdiseases.app.ui.shell.ShellFragment
+import com.plantdiseases.app.util.InAppUpdateManager
 import com.plantdiseases.app.util.LocaleHelper
 
 class MainActivity : AppCompatActivity() {
@@ -44,6 +45,11 @@ class MainActivity : AppCompatActivity() {
     /** True while [checkTabSilently] is driving the bar, so the item-selected
      *  listener can tell the pager's echo apart from a real tap. */
     private var syncingBar = false
+
+    /** RuStore in-app updates (flexible flow). Non-null between onCreate and
+     *  onDestroy on the post-onboarding path; a no-op on installs that didn't
+     *  come from RuStore. */
+    private var inAppUpdateManager: InAppUpdateManager? = null
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
@@ -84,7 +90,6 @@ class MainActivity : AppCompatActivity() {
         // binding.
         splashScreen?.setOnExitAnimationListener { provider -> animateSplashExit(provider) }
 
-        maybeWarmStartupCaches()
         maybeShowConsentDialog()
 
         // Edge-to-edge display
@@ -191,18 +196,24 @@ class MainActivity : AppCompatActivity() {
         // A cold-started "New scan" (MainActivity wasn't already in memory)
         // routes through onCreate rather than onNewIntent.
         handleOpenTabIntent(intent)
+
+        // RuStore in-app updates: when this install came from RuStore and a
+        // newer build is published there, offer the store's flexible-update
+        // dialog (at most once a day) and an install snackbar once the new APK
+        // has downloaded. Anywhere else the check fails inside the SDK and the
+        // launch continues untouched. Anchored above the bottom bar so the
+        // snackbar doesn't cover the tabs.
+        inAppUpdateManager = InAppUpdateManager(
+            context = this,
+            hostView = binding.root,
+            snackbarAnchor = binding.bottomNavigation,
+        ).also { it.checkForUpdates() }
     }
 
-    /**
-     * Do not request runtime permissions on the default Home screen. Camera is
-     * requested by CameraFragment when the user opens Scan; location and
-     * notifications remain opt-in at their feature entry points.
-     */
-    private fun maybeWarmStartupCaches() {
-        // Only warm the region cache for users who already opted into
-        // community — a no-op without a prior COARSE_LOCATION grant, and never
-        // triggers a location read for someone who hasn't opted in.
-        // No-op: country is now resolved server-side from request metadata.
+    override fun onDestroy() {
+        inAppUpdateManager?.release()
+        inAppUpdateManager = null
+        super.onDestroy()
     }
 
     /** Upgrade path for installs that completed onboarding before the consent

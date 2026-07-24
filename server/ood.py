@@ -9,7 +9,7 @@ the Stage-1 detector confidence. On the frozen-DINOv2 classifier the
 between plant and NAP medians went non-positive, so the export auto-disables
 the MaxLogit floor (``ood.max_logit_floor: null``) and the AND-gate degrades
 to *detector-confidence only*. That throws away the classifier's own opinion
-about whether the crop even lies on the houseplant manifold.
+about whether the crop even lies on the in-domain plant manifold.
 
 This module restores a live classifier-side OOD signal that does **not**
 depend on the logits at all: a **deep k-NN distance** in the DINOv2 CLS

@@ -359,3 +359,24 @@ The `android` job exposes the secrets as env vars; the keystore is decoded only 
 ./gradlew ktlintCheck detekt testDebugUnitTest assembleRelease --build-cache --configuration-cache --stacktrace
 ```
 
+### 8.4 RuStore in-app updates
+
+The app bundles the [RuStore in-app updates SDK](https://www.rustore.ru/help/guides/sdk-in-app-updates)
+(`ru.rustore.sdk:appupdate`, resolved from VK's artifactory — see
+`android/settings.gradle.kts`). Nothing to configure at build or deploy time:
+
+- **Only installs that came from RuStore get updates.** On launch,
+  `util/InAppUpdateManager` asks the RuStore app whether a newer build is
+  published; if so it shows the store's *flexible* update dialog (at most once
+  per 24 h), downloads in the background, and offers an "Install" snackbar
+  when the APK is ready. Sideloads / other stores / devices without RuStore:
+  every call fails inside the SDK and the app behaves exactly as before.
+- **To ship an update**, publish the new APK (higher `versionCode`) in the
+  [RuStore Console](https://console.rustore.ru) — same artifact CI builds,
+  signed with the release keystore (the signature must match the version
+  already in the store).
+- **Testing the flow end-to-end** requires a device with RuStore where the app
+  was installed *from the store* and a published build with a higher
+  `versionCode` — it cannot be exercised from a sideloaded debug build (the
+  SDK reports `RuStoreNotInstalledException`/`ERROR_APP_NOT_OWNED` instead).
+

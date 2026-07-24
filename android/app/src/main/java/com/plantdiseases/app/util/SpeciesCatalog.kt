@@ -1,7 +1,7 @@
 package com.plantdiseases.app.util
 
 /**
- * Bundled list of popular houseplants, used as the always-available fallback
+ * Bundled list of popular plants, used as the always-available fallback
  * for the Home "species" carousel when the community-trending feed has no
  * nearby data (a fresh install, or a sparsely-scanned region). Mirrors how the
  * Disease guide carousel is backed by a bundled catalog so the row is never
@@ -19,7 +19,7 @@ object SpeciesCatalog {
         val commonRu: String,
     )
 
-    /** A spread of the most common, easily-recognised houseplants. Scientific
+    /** A spread of the most common, easily-recognised plants. Scientific
      *  names are chosen to resolve cleanly to a Wikipedia lead photo. */
     val popular: List<PopularSpecies> = listOf(
         PopularSpecies("Monstera deliciosa", "Swiss cheese plant", "Монстера"),

@@ -1,5 +1,5 @@
 """
-PlantVision two-stage houseplant disease detection pipeline.
+PlantVision two-stage plant disease detection pipeline.
 
 Stage 1 (Detector)   — YOLOv8n single-class. Locates ``plant_leaf``
                        bboxes (indoor-trained on user/Roboflow Universe
