@@ -83,6 +83,38 @@ chat sheet and the optional Markdown summary on care plans.
    complete, deterministic plan without a key; only the
    `summary_md` polish step is skipped.
 
+**Prompt caching (on by default).** Every chat turn re-sends the same
+~600-token system prompt plus the conversation so far. With
+`openrouter_prompt_caching` enabled the server asks OpenRouter to cache
+that prefix and pins each conversation to one provider (a hashed
+`session_id`, so no client identifier leaves the box), so repeat turns
+are billed at a fraction of input price — 0.1× on Anthropic/DeepSeek,
+0.25× on Google/Grok, 0.5× on Groq — instead of full price.
+
+It is opportunistic and safe to leave on: providers that cache
+automatically (OpenAI, Groq, DeepSeek, Grok, Z.AI, Gemini 2.5 — including
+the default `openai/gpt-oss-120b`) ignore the breakpoint, and a prompt
+under a provider's minimum cacheable prefix (1024 tokens for
+OpenAI/Anthropic) simply doesn't cache and costs what it costs today.
+Set `openrouter_prompt_caching: false` to opt out entirely.
+
+Verify it is working via `GET /api/metrics` → `ai_doctor`:
+
+```json
+"ai_doctor": {
+  "requests": 42, "tokens_in": 61000, "tokens_out": 4300,
+  "prompt_caching": true,
+  "cached_tokens_in": 38200, "cache_write_tokens_in": 9100,
+  "cache_hit_ratio": 0.6262
+}
+```
+
+`cached_tokens_in` is the share of `tokens_in` served from the provider's
+cache (a subset, not an addition). A `cache_hit_ratio` stuck at `0.0`
+over real multi-turn traffic means caching is not engaging — usually a
+model whose provider doesn't cache, or first turns whose prompt is still
+under the provider's minimum.
+
 ---
 
 ## 2. Docker Compose (recommended)
