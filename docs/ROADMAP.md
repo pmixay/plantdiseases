@@ -302,6 +302,22 @@ run that makes 2.6.12's pivot real and the next A/B trustworthy.**
       Expect `val_indomain` to recover toward 0.86 as the ornamental images return; treat
       `viral_disease` as the known-starved class.
 
+**What to check in the 2.6.13 run log** (each line proves one fix landed — if a line is
+missing or reads the old way, the fix did *not* take effect):
+
+| Look for | Expect | Means |
+|---|---|---|
+| `source floors OK: … all present and above floor` | present | The §2 gate ran. If it *raised* instead, a source is down — read the message, don't bypass it. |
+| `Kaggle ornamental per-class:` | `healthy 600, leaf_spot 600, powdery_mildew 133` | Replacement sources loaded. A missing class here is the known unreplaced gap, not a bug. |
+| `per-source image counts:` → `kaggle_ornamental` | ~1,333 | Compare against 2,264 (07-03) and 0 (07-20). |
+| `MaxLogit OOD floor calibrated [plant_only]` | `sep=` **positive**, floor a number | The OOD fallback is alive for the first time since v2.3. Still negative ⇒ tell me, that would be genuinely surprising. |
+| `conformal: selected alpha=… lambda_reg=…` | **not** the last grid value (0.35 / 1.0) | Search converged inside the grid. If it picks the rail again, widen again. |
+| `head early stop @ epN (best ep=M)` | `M` well above 3 | Best-epoch 3 was the corpus-loss symptom; recovery toward ~15–19 indicates the training set is whole again. |
+| `[final val_indomain] disease_macro_f1` | toward **0.86** (from 0.809) | The headline regression is undone. |
+
+Do **not** treat `viral_disease` recall as a regression signal in this run — its 600
+ornamental train images are gone and unreplaced (see `DATASET_LABELING_PLAN.md` item 9).
+
 ### Unveiling 2.7 — the leap
 
 > From "a good leaf classifier" to a **holistic, trustworthy plant doctor** —
