@@ -720,29 +720,32 @@ def test_deploy_bundle_includes_ood_npz_and_excludes_torch_checkpoints():
     )
 
 
-def test_kaggle_nutrient_supplement_replaces_mendeley_coleaf():
-    """The Mendeley CoLeaf source is intermittently IP-blocked from Colab, so a
-    Colab-reachable Kaggle nutrient source must supplement nutrient_deficiency.
-    Must (a) exist with a concrete slug, (b) write into nutrient_deficiency,
-    (c) be TRAIN-ONLY, (d) be down-weighted with the LA prior decoupled."""
+def test_nutrient_deficiency_supplied_without_field_crop_sources():
+    """nutrient_deficiency must keep live supply that is NOT field-crop imagery.
+
+    History: a Colab-reachable Kaggle rice N/P/K set once filled this class,
+    because the Mendeley CoLeaf source is intermittently IP-blocked from Colab.
+    The 2026-06-19 data-quality audit gated it off — field-crop imagery was
+    feeding the class with the worst precision, the very class the supplement
+    is being de-cropped to fix — and 2.6.13 removed the dead fetcher outright.
+
+    This replaces an earlier test that asserted the *fetcher existed*. That
+    check kept passing after the source was disabled, so it certified a
+    contributor of zero images. Assert the wiring and the exclusion instead.
+    """
     src = _notebook_source()
-    assert "def fetch_kaggle_nutrient_deficiency" in src, "Kaggle nutrient fetcher missing"
-    assert "KAGGLE_NUTRIENT_SLUG" in src and "nutrientdeficiencysymptomsinrice" in src, (
-        "must wire a concrete Colab-reachable Kaggle nutrient slug"
+    assert "def fetch_kaggle_nutrient_deficiency" not in src, (
+        "the rice/field-crop nutrient fetcher was dropped by the 2026-06-19 audit; "
+        "do not reintroduce it without revisiting nutrient_deficiency precision"
     )
-    assert "'nutrient_deficiency'" in src
-    for split_fn in ("make_val_realworld", "make_val_indomain",
-                     "make_temperature_cal", "make_conformal_cal"):
-        body = re.search(rf"def {split_fn}\(.*?\n(?:.*\n){{0,14}}", src)
-        assert body and "kaggle_nutrient" not in body.group(0), (
-            f"{split_fn} must NOT allow 'kaggle_nutrient' — it is a TRAIN-ONLY proxy"
+    assert "_try_fetch('kaggle_nutrient_deficiency'" not in src, (
+        "a field-crop nutrient source must not be wired into the fetch orchestration"
+    )
+    # ...but the class must still have live, non-crop supply actually wired.
+    for tag in ("mpld_phosphorus_deficiency", "inat_physiological"):
+        assert f"_try_fetch('{tag}'" in src, (
+            f"{tag} must stay wired — it is nutrient_deficiency's remaining supply"
         )
-    sw = re.search(r"'kaggle_nutrient'\s*:\s*([0-9.]+)", _source_weights_block())
-    assert sw and float(sw.group(1)) < 1.0, "'kaggle_nutrient' must be down-weighted (<1.0)"
-    pr = re.search(r"PRIOR_SOURCE_WEIGHTS\['kaggle_nutrient'\]\s*=\s*([0-9.]+)", src)
-    assert pr and float(pr.group(1)) < float(sw.group(1)), (
-        "PRIOR_SOURCE_WEIGHTS['kaggle_nutrient'] must be < its sampler weight"
-    )
 
 
 def test_coco_download_prefers_hf_mirror_first():
