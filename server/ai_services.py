@@ -1089,6 +1089,207 @@ def species_common_diseases(
     return response
 
 
+# ── Species profile (OpenRouter, structured) ────────────────────────
+#
+# Powers the species-detail screen's "flowering" + "native range" sections.
+# Same discipline as ``species_common_diseases`` above: one OpenRouter call
+# per (species, language), strict JSON parsing with a tolerant-but-strict
+# sanitiser, in-memory + disk cache, and a graceful ``available: False`` with
+# no API key or on any failure. Botanical facts (bloom season, native range)
+# don't drift the way "commonly affected by" advice might, so the cache TTL
+# here is longer than the diseases endpoint's 7 days.
+
+SPECIES_PROFILE_CACHE_SIZE = get_int("SPECIES_PROFILE_CACHE_SIZE", 256)
+SPECIES_PROFILE_CACHE_TTL_SECONDS = get_int("SPECIES_PROFILE_CACHE_TTL_SECONDS", 30 * 24 * 3600)
+# Same headroom rationale as SPECIES_DISEASES_MAX_TOKENS: the hidden reasoning
+# trace of a reasoning model bills against max_tokens, so a generous cap avoids
+# truncation even though the JSON answer itself is short.
+SPECIES_PROFILE_MAX_TOKENS = get_int("SPECIES_PROFILE_MAX_TOKENS", 2048)
+_SPECIES_PROFILE_CACHE = _LRU(SPECIES_PROFILE_CACHE_SIZE, SPECIES_PROFILE_CACHE_TTL_SECONDS)
+_SPECIES_PROFILE_DISK = _DiskCache("species_profile", SPECIES_PROFILE_CACHE_TTL_SECONDS)
+
+_NATIVE_RANGE_STATUSES = frozenset({"grows_more", "grows_less"})
+
+_SPECIES_PROFILE_SYSTEM = """You are a horticulture assistant. Given a plant species, describe \
+its flowering pattern and native range for a houseplant-care app.
+
+Return ONLY a JSON object, no prose, of exactly this shape:
+{"flowering": {"monthly_intensity": [0,0,1,2,2,1,0,0,0,0,0,0], "indoor_note": "<one short \
+sentence on how indoor blooming differs from growing it outdoors/in the wild>"}, \
+"flowering_conditions": "<one short sentence: the trigger(s) that make this species bloom, \
+e.g. day length, a dormancy/rest period, a cold snap, drought stress>", "native_range": \
+{"zones": [{"country": "<country or region name>", "status": "grows_more"|"grows_less"}], \
+"summary": "<one short sentence describing the native range>"}}
+
+Rules:
+- "monthly_intensity" has EXACTLY 12 integers, one per calendar month starting with January \
+(Northern Hemisphere growing season), each 0 (no bloom), 1 (some bloom) or 2 (peak bloom). A \
+species that rarely or never flowers as a houseplant should be mostly or all 0s.
+- "zones" lists 3 to 6 countries/regions where the species is native, naturalised or widely \
+cultivated outdoors, each tagged "grows_more" (thrives there — native range or common outdoor \
+cultivation) or "grows_less" (marginal — only in sheltered microclimates, or rare/greenhouse-only).
+- Write "indoor_note", "flowering_conditions" and "summary" in the requested language, each \
+under 30 words.
+- Base this on the species' known botany; do not invent unverifiable claims.
+- Output the JSON object only, nothing before or after it."""
+
+
+def _sanitize_monthly_intensity(raw: Any) -> list[int] | None:
+    """Validate the 12-month bloom-intensity array. ``None`` on any shape
+    mismatch so the caller can reject the whole profile rather than render
+    a bogus calendar."""
+    if not isinstance(raw, list) or len(raw) != 12:
+        return None
+    out: list[int] = []
+    for v in raw:
+        if isinstance(v, bool) or not isinstance(v, int):
+            return None
+        if v not in (0, 1, 2):
+            return None
+        out.append(v)
+    return out
+
+
+def _sanitize_native_zones(raw: Any) -> list[dict]:
+    """Drop malformed zone entries and cap the list — same tolerant style
+    as ``_parse_species_diseases``."""
+    if not isinstance(raw, list):
+        return []
+    out: list[dict] = []
+    for it in raw[:8]:
+        if not isinstance(it, dict):
+            continue
+        country = str(it.get("country") or "").strip()
+        if not country or len(country) > 80:
+            continue
+        status = it.get("status")
+        if status not in _NATIVE_RANGE_STATUSES:
+            continue
+        out.append({"country": country, "status": status})
+    return out
+
+
+def _clip_note(raw: Any, max_len: int = 240) -> str:
+    text = str(raw or "").strip()
+    return text[:max_len].rstrip() if len(text) > max_len else text
+
+
+def _parse_species_profile(text: str) -> dict | None:
+    """Extract + sanitise the species profile from the model's JSON reply.
+
+    Tolerant of code fences / leading prose (grabs the first ``{...}``
+    block), but unlike ``_parse_species_diseases`` this returns a single
+    object, not a list, so any structurally-required part missing (the
+    12-month array, at least one native zone, the summary sentences)
+    invalidates the whole profile — a half-populated card is worse than
+    none. Returns ``None`` on any problem.
+    """
+    raw = (text or "").strip()
+    if not raw:
+        return None
+    match = re.search(r"\{.*\}", raw, re.DOTALL)
+    if not match:
+        return None
+    try:
+        data = json.loads(match.group(0))
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+
+    flowering_raw = data.get("flowering")
+    flowering_raw = flowering_raw if isinstance(flowering_raw, dict) else {}
+    monthly_intensity = _sanitize_monthly_intensity(flowering_raw.get("monthly_intensity"))
+    if monthly_intensity is None:
+        return None
+    indoor_note = _clip_note(flowering_raw.get("indoor_note"))
+
+    flowering_conditions = _clip_note(data.get("flowering_conditions"))
+    if not flowering_conditions:
+        return None
+
+    native_raw = data.get("native_range")
+    native_raw = native_raw if isinstance(native_raw, dict) else {}
+    zones = _sanitize_native_zones(native_raw.get("zones"))
+    summary = _clip_note(native_raw.get("summary"))
+    if not zones or not summary:
+        return None
+
+    return {
+        "flowering": {"monthly_intensity": monthly_intensity, "indoor_note": indoor_note},
+        "flowering_conditions": flowering_conditions,
+        "native_range": {"zones": zones, "summary": summary},
+    }
+
+
+def species_profile(
+    scientific_name: str | None,
+    *,
+    common_name: str | None = None,
+    lang: str = "en",
+) -> dict:
+    """Flowering pattern + native range for a species (best-effort, AI).
+
+    Returns ``{"available": True, "species", "flowering", "flowering_conditions",
+    "native_range"}`` on success. Returns ``{"available": False}`` when no
+    OpenRouter key is set, the species name is blank, or on any failure — the
+    client then hides/omits the section, so the species screen degrades
+    gracefully instead of showing bogus data. Never raises.
+    """
+    name = (scientific_name or "").strip()
+    if not name:
+        return {"available": False, "source": "no_species"}
+    lang = "ru" if _is_russian(lang) else "en"
+    if not _chat_api_key_present():
+        return {"available": False, "source": "no_api_key"}
+
+    cache_key = f"{name.lower()}:{lang}"
+    cached = _SPECIES_PROFILE_CACHE.get(cache_key)
+    if cached is not None:
+        return {**copy.deepcopy(cached), "cached": True}
+    # Fall through to the persistent layer before paying for the LLM again —
+    # this is what survives a server restart / a fresh app install.
+    disk_hit = _SPECIES_PROFILE_DISK.get(cache_key)
+    if disk_hit is not None:
+        _SPECIES_PROFILE_CACHE.put(cache_key, disk_hit)
+        return {**copy.deepcopy(disk_hit), "cached": True}
+
+    lang_word = "Russian" if lang == "ru" else "English"
+    common = (common_name or "").strip()
+    subject = name + (f" (commonly known as {common})" if common else "")
+    user = (
+        f"Species: {subject}\n"
+        f"Write the notes and summary in {lang_word}.\n"
+        "Return the JSON object now."
+    )
+    try:
+        text, _tin, _tout = _call_openrouter(
+            _SPECIES_PROFILE_SYSTEM,
+            [{"role": "user", "content": user}],
+            max_tokens=SPECIES_PROFILE_MAX_TOKENS,
+            require_complete=True,
+            # Pin the shortest trace: structured recall, not reasoning — a long
+            # trace is what pushes it into truncation.
+            reasoning_effort="minimal",
+        )
+    except Exception as e:  # noqa: BLE001 — never propagate to the client
+        logger.warning("species_profile failed: %s", e)
+        return {"available": False, "source": "api_error"}
+
+    profile = _parse_species_profile(text)
+    if profile is None:
+        return {"available": False, "source": "empty"}
+    response = {
+        "available": True,
+        "species": name,
+        **profile,
+        "source": "openrouter",
+    }
+    _SPECIES_PROFILE_CACHE.put(cache_key, response)
+    _SPECIES_PROFILE_DISK.put(cache_key, response)
+    return response
+
+
 # ── Care plan ───────────────────────────────────────────────────────
 #
 # The care-plan generator is the only deterministic surface in this
