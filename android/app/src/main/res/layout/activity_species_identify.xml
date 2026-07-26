@@ -19,6 +19,18 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
+    <!-- Shared offline notice over the preview. This screen owns the notice for
+         the camera it hosts (CameraFragment skips its own banner in identify
+         mode), so exactly one strip shows. Elevation stays below the close
+         button's 12dp so the button keeps drawing on top, as before. -->
+    <com.plantdiseases.app.ui.common.OfflineNoticeView
+        android:id="@+id/offline_notice"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:elevation="10dp"
+        android:text="@string/offline_notice_needs_connection" />
+
     <!-- Close (back to Home). -->
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btn_close"

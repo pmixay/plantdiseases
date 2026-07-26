@@ -24,6 +24,15 @@
         android:paddingTop="@dimen/space_lg"
         android:paddingBottom="@dimen/space_3xl">
 
+        <!-- Shared offline notice — hidden until the connectivity observer
+             reports no reachable network (HomeFragment wires it up). The
+             carousels keep serving their cached / bundled bundles underneath. -->
+        <com.plantdiseases.app.ui.common.OfflineNoticeView
+            android:id="@+id/offline_notice"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="@dimen/space_sm" />
+
         <!-- Page title + nearby-scans action. Used to live in the shared
              MainActivity toolbar, pinned above the pager; that title only
              updated once a swipe settled, so it read as floating

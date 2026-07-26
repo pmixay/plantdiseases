@@ -26,6 +26,14 @@
             app:navigationIcon="@drawable/ic_back"
             app:navigationIconTint="@color/toolbar_title"
             app:titleTextColor="@color/toolbar_title" />
+
+        <!-- Shared offline notice, pinned under the toolbar. The blurb, photos
+             and care plan are cached per species; the common-problems list
+             falls back to the bundled guide. -->
+        <com.plantdiseases.app.ui.common.OfflineNoticeView
+            android:id="@+id/offline_notice"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
     </com.google.android.material.appbar.AppBarLayout>
 
     <androidx.core.widget.NestedScrollView
