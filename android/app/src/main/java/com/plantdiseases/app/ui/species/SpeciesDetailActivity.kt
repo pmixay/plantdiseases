@@ -34,6 +34,7 @@ import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivitySpeciesDetailBinding
 import com.plantdiseases.app.ui.common.CarePlanCardView
 import com.plantdiseases.app.ui.guide.GuideDetailActivity
+import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.DiseaseCatalog
 import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.launch
@@ -54,6 +55,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
     private lateinit var binding: ActivitySpeciesDetailBinding
     private val scanRepository: ScanRepository by inject()
     private val plantRepository: PlantRepository by inject()
+    private val connectivity: ConnectivityObserver by inject()
     private val isRu: Boolean get() = Locale.getDefault().language == "ru"
     private val locale: String get() = if (isRu) "ru" else "en"
 
@@ -82,6 +84,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
             insets
         }
         binding.speciesToolbar.setNavigationOnClickListener { finish() }
+        binding.offlineNotice.observe(this, connectivity)
 
         scientificName = intent.getStringExtra(EXTRA_SCIENTIFIC_NAME).orEmpty()
         commonName = intent.getStringExtra(EXTRA_COMMON_NAME)?.takeIf { it.isNotBlank() }

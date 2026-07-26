@@ -20,6 +20,7 @@ import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivitySpeciesIdentifyBinding
 import com.plantdiseases.app.ui.camera.CameraFragment
 import com.plantdiseases.app.ui.species.SpeciesDetailActivity
+import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
@@ -39,6 +40,7 @@ class SpeciesIdentifyActivity : AppCompatActivity() {
     private lateinit var binding: ActivitySpeciesIdentifyBinding
 
     private val scanRepository: ScanRepository by inject()
+    private val connectivity: ConnectivityObserver by inject()
 
     private val isRu: Boolean get() = Locale.getDefault().language == "ru"
     private val locale: String get() = if (isRu) "ru" else "en"
@@ -65,6 +67,8 @@ class SpeciesIdentifyActivity : AppCompatActivity() {
             v.updatePadding(bars.left, bars.top, bars.right, bars.bottom)
             insets
         }
+
+        binding.offlineNotice.observe(this, connectivity)
 
         binding.btnClose.setOnClickListener { finish() }
         binding.btnRetake.setOnClickListener { hideCandidates() }

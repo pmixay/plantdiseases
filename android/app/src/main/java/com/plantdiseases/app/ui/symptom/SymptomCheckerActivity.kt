@@ -22,6 +22,7 @@ import com.plantdiseases.app.data.model.SymptomDiagnoseRequest
 import com.plantdiseases.app.data.model.SymptomResult
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivitySymptomCheckerBinding
+import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.launch
@@ -42,6 +43,7 @@ class SymptomCheckerActivity : AppCompatActivity() {
     private lateinit var binding: ActivitySymptomCheckerBinding
 
     private val scanRepository: ScanRepository by inject()
+    private val connectivity: ConnectivityObserver by inject()
 
     // Selected option per question id. The submit button enables at >= 2.
     private val answers = linkedMapOf<String, String>()
@@ -140,6 +142,8 @@ class SymptomCheckerActivity : AppCompatActivity() {
             setNavigationIconTint(getColor(R.color.toolbar_title))
             setNavigationOnClickListener { finish() }
         }
+
+        binding.offlineNotice.observe(this, connectivity)
 
         buildQuestions()
         binding.symptomSubmit.setOnClickListener { submit() }

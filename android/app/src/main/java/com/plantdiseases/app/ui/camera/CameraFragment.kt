@@ -229,7 +229,10 @@ class CameraFragment : Fragment() {
         setupUI()
         setupPinchToZoom()
         // NB: the camera is deliberately *not* opened here — see onResume.
-        registerNetworkCallback()
+        // In identify mode the host (SpeciesIdentifyActivity) shows the shared
+        // OfflineNoticeView over this preview, so skip this fragment's own
+        // banner there rather than stacking two strips at the top.
+        if (!identifyMode) registerNetworkCallback()
         restoreGridOverlay()
     }
 

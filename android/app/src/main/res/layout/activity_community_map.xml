@@ -31,6 +31,15 @@
             app:titleTextAppearance="@style/TextAppearance.App.Toolbar"
             app:titleTextColor="@color/toolbar_title" />
 
+        <!-- Shared offline notice, pinned under the toolbar. Both the map tiles
+             and the scan/heat data are live, so this says so rather than
+             leaving a blank grey canvas unexplained. -->
+        <com.plantdiseases.app.ui.common.OfflineNoticeView
+            android:id="@+id/offline_notice"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/offline_notice_needs_connection" />
+
     </com.google.android.material.appbar.AppBarLayout>
 
     <FrameLayout

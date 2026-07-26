@@ -34,6 +34,7 @@ import com.plantdiseases.app.ui.guide.GuideDetailActivity
 import com.plantdiseases.app.ui.species.SpeciesDetailActivity
 import com.plantdiseases.app.ui.symptom.SymptomCheckerActivity
 import com.plantdiseases.app.util.CommunityPrefs
+import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.DiseaseCatalog
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.Haptics
@@ -58,6 +59,7 @@ class HomeFragment : Fragment() {
     private val binding get() = _binding!!
 
     private val apiClient: PlantApiClient by inject()
+    private val connectivity: ConnectivityObserver by inject()
 
     // Use the app's persisted UI language (LocaleHelper), NOT the device
     // locale: a Russian phone with the app switched to English must send
@@ -95,6 +97,7 @@ class HomeFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         binding.homeScroll.applyStatusBarTopInset()
+        binding.offlineNotice.observe(viewLifecycleOwner, connectivity)
         binding.tvGreeting.text = greeting()
 
         binding.btnNearbyScans.setOnClickListener {

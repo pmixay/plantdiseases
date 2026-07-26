@@ -153,6 +153,10 @@
     <string name="no_network">No Internet Connection</string>
     <string name="no_network_detail">Check your network connection and try again.</string>
     <string name="offline_banner">No internet connection</string>
+    <!-- Shared offline notice (ui/common/OfflineNoticeView). The first line is
+         the default; screens with nothing cached to fall back on use the second. -->
+    <string name="offline_notice_cached">Offline — showing cached content</string>
+    <string name="offline_notice_needs_connection">Offline — this needs a connection</string>
 
     <!-- Server status / diagnostics -->
     <string name="server_online">Online</string>
