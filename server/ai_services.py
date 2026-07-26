@@ -1263,7 +1263,7 @@ def species_profile(
         "Return the JSON object now."
     )
     try:
-        text, _tin, _tout = _call_openrouter(
+        text, _tin, _tout, _cache = _call_openrouter(
             _SPECIES_PROFILE_SYSTEM,
             [{"role": "user", "content": user}],
             max_tokens=SPECIES_PROFILE_MAX_TOKENS,

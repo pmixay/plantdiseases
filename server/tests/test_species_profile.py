@@ -177,7 +177,7 @@ def test_structured_success_and_cache(monkeypatch):
         # Structured recall must pin the shortest reasoning trace per call —
         # a raised global effort would otherwise truncate the JSON answer.
         assert reasoning_effort == "minimal"
-        return (_valid_profile_json(), 10, 20)
+        return (_valid_profile_json(), 10, 20, {})
 
     monkeypatch.setattr(ai_services, "_call_openrouter", fake_call)
 
@@ -202,7 +202,7 @@ def test_disk_cache_survives_inmemory_wipe(monkeypatch):
     def fake_call(system_text, history, *, max_tokens=None, require_complete=False,
                   reasoning_effort=None):
         calls["n"] += 1
-        return (_valid_profile_json(), 5, 5)
+        return (_valid_profile_json(), 5, 5, {})
 
     monkeypatch.setattr(ai_services, "_call_openrouter", fake_call)
 
@@ -232,7 +232,7 @@ def test_malformed_reply_is_graceful(monkeypatch):
     monkeypatch.setattr(ai_services, "OPENROUTER_API_KEY", "test-key")
     monkeypatch.setattr(
         ai_services, "_call_openrouter",
-        lambda *a, **k: ("not valid json", 5, 5),
+        lambda *a, **k: ("not valid json", 5, 5, {}),
     )
     out = ai_services.species_profile("Monstera deliciosa", lang="en")
     assert out["available"] is False and out["source"] == "empty"
