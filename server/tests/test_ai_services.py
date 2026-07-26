@@ -146,9 +146,13 @@ def test_identify_species_gives_up_after_bounded_retries(monkeypatch):
     assert out["source"] == "error"
 
 
-def _mock_openrouter_post(monkeypatch, *, finish_reason, content="answer", captured=None):
+def _mock_openrouter_post(
+    monkeypatch, *, finish_reason, content="answer", captured=None, usage=None,
+):
     """Stub requests.post with one OpenRouter-shaped chat completion."""
     import requests
+
+    usage = usage or {"prompt_tokens": 10, "completion_tokens": 400}
 
     class _Resp:
         status_code = 200
@@ -159,7 +163,7 @@ def _mock_openrouter_post(monkeypatch, *, finish_reason, content="answer", captu
         def json(self):
             return {
                 "choices": [{"message": {"content": content}, "finish_reason": finish_reason}],
-                "usage": {"prompt_tokens": 10, "completion_tokens": 400},
+                "usage": usage,
             }
 
     def _fake_post(url, headers=None, json=None, timeout=None):
@@ -179,7 +183,7 @@ def test_call_openrouter_uses_minimal_reasoning_by_default(monkeypatch):
 
     captured = {}
     _mock_openrouter_post(monkeypatch, finish_reason="stop", captured=captured)
-    text, _tin, _tout = ai._call_openrouter("sys", [{"role": "user", "content": "hi"}])
+    text, _tin, _tout, _c = ai._call_openrouter("sys", [{"role": "user", "content": "hi"}])
     assert text == "answer"
     assert captured["payload"]["reasoning"] == {"effort": "minimal"}
 
@@ -221,6 +225,138 @@ def test_call_openrouter_per_call_effort_beats_global(monkeypatch):
     assert captured["payload"]["reasoning"] == {"effort": "minimal"}
 
 
+def test_prompt_caching_sends_breakpoint_and_sticky_session(monkeypatch):
+    """Prompt caching rides on two request fields: a request-level
+    cache_control breakpoint (so OpenRouter places/advances it for us) and a
+    session_id, which pins the conversation to ONE provider. Without the
+    session_id a multi-provider model can land somewhere cold every turn and
+    the cache never hits, however stable the prefix is."""
+    import ai_services as ai
+
+    captured = {}
+    _mock_openrouter_post(monkeypatch, finish_reason="stop", captured=captured)
+    ai._call_openrouter(
+        "sys", [{"role": "user", "content": "hi"}],
+        session_id="sess-abc", cache_prefix=True,
+    )
+    payload = captured["payload"]
+    assert payload["cache_control"] == {"type": "ephemeral"}
+    # The routing key is derived, not the raw client id — it only has to be
+    # stable and unique, so there's no reason to hand it to a third party.
+    assert payload["session_id"] != "sess-abc"
+    assert payload["session_id"] == ai._cache_session_key("sess-abc")
+    assert len(payload["session_id"]) <= 256
+
+
+def test_cache_session_key_is_stable_and_unique():
+    """Sticky routing only works if the same conversation maps to the same key
+    every turn — and different conversations must not collide onto it."""
+    import ai_services as ai
+
+    assert ai._cache_session_key("s1") == ai._cache_session_key("s1")
+    assert ai._cache_session_key("s1") != ai._cache_session_key("s2")
+
+
+def test_prompt_caching_can_be_disabled(monkeypatch):
+    """OPENROUTER_PROMPT_CACHING=false must send neither field, so an operator
+    on a provider that chokes on them can opt out without a code change."""
+    import ai_services as ai
+
+    monkeypatch.setattr(ai, "OPENROUTER_PROMPT_CACHING", False)
+    captured = {}
+    _mock_openrouter_post(monkeypatch, finish_reason="stop", captured=captured)
+    ai._call_openrouter(
+        "sys", [{"role": "user", "content": "hi"}],
+        session_id="sess-abc", cache_prefix=True,
+    )
+    assert "cache_control" not in captured["payload"]
+    assert "session_id" not in captured["payload"]
+
+
+def test_call_openrouter_reports_cache_usage(monkeypatch):
+    """Cached/written prompt tokens come back so /api/metrics can show whether
+    caching actually engages. They are a SUBSET of prompt_tokens, never added
+    to it."""
+    import ai_services as ai
+
+    _mock_openrouter_post(
+        monkeypatch, finish_reason="stop",
+        usage={
+            "prompt_tokens": 1500, "completion_tokens": 40,
+            "prompt_tokens_details": {"cached_tokens": 1024, "cache_write_tokens": 476},
+        },
+    )
+    _text, tin, _tout, cache = ai._call_openrouter("sys", [{"role": "user", "content": "hi"}])
+    assert tin == 1500
+    assert cache == {"cached_tokens": 1024, "cache_write_tokens": 476}
+
+
+def test_call_openrouter_cache_usage_defaults_to_zero(monkeypatch):
+    """A provider that reports no cache detail must degrade to zeroes, not
+    blow up the call."""
+    import ai_services as ai
+
+    _mock_openrouter_post(
+        monkeypatch, finish_reason="stop",
+        usage={"prompt_tokens": 10, "completion_tokens": 5},
+    )
+    _text, _tin, _tout, cache = ai._call_openrouter("sys", [{"role": "user", "content": "hi"}])
+    assert cache == {"cached_tokens": 0, "cache_write_tokens": 0}
+
+
+def test_trim_for_context_prefix_is_stable_across_turns():
+    """The cache matches on an exact prefix. A one-message-at-a-time sliding
+    window would shift that prefix every turn once the session outgrows the
+    limit, so we drop whole blocks and hold the prefix steady in between."""
+    import ai_services as ai
+
+    sess = ai._ChatSession("s")
+    for i in range(40):
+        sess.messages.append({
+            "role": "user" if i % 2 == 0 else "assistant", "content": f"m{i}",
+        })
+
+    prefixes = []
+    for n in range(13, 19):                       # 13..18 messages
+        sess_view = ai._ChatSession("s")
+        sess_view.messages = sess.messages[:n]
+        window = sess_view.trim_for_context(keep_last=12)
+        assert len(window) <= 12                  # never exceeds the cap
+        assert window[0]["role"] == "user"        # still opens on a user turn
+        prefixes.append(window[0]["content"])
+    # Same first message across all six turns → the cached prefix survives.
+    assert len(set(prefixes)) == 1
+
+    # Short histories are passed through untouched.
+    short = ai._ChatSession("s")
+    short.messages = sess.messages[:8]
+    assert len(short.trim_for_context(keep_last=12)) == 8
+
+
+def test_chat_metrics_snapshot_reports_cache_hit_ratio():
+    """The hit ratio is how an operator tells caching is working at all — a
+    ratio pinned at 0.0 over real traffic means the model/provider isn't
+    caching, or the prefix is under its minimum."""
+    import ai_services as ai
+
+    ai._chat_totals.update({
+        "requests": 4, "rejected": 0, "tokens_in": 2000, "tokens_out": 100,
+        "cached_tokens_in": 1500, "cache_write_tokens_in": 500,
+    })
+    try:
+        snap = ai.chat_metrics_snapshot()
+        assert snap["cached_tokens_in"] == 1500
+        assert snap["cache_hit_ratio"] == 0.75
+    finally:
+        ai._chat_totals.update({
+            "requests": 0, "rejected": 0, "tokens_in": 0, "tokens_out": 0,
+            "cached_tokens_in": 0, "cache_write_tokens_in": 0,
+        })
+
+    # No traffic yet must not divide by zero.
+    assert ai.chat_metrics_snapshot()["cache_hit_ratio"] == 0.0
+
+
 def test_call_openrouter_require_complete_rejects_truncation(monkeypatch):
     """finish_reason=length means the answer was cut off. With require_complete
     that's a hard failure (so it's never cached/parsed); without it, the partial
@@ -228,7 +364,7 @@ def test_call_openrouter_require_complete_rejects_truncation(monkeypatch):
     import ai_services as ai
 
     _mock_openrouter_post(monkeypatch, finish_reason="length", content="...place the")
-    text, _tin, _tout = ai._call_openrouter("sys", [{"role": "user", "content": "hi"}])
+    text, _tin, _tout, _c = ai._call_openrouter("sys", [{"role": "user", "content": "hi"}])
     assert text == "...place the"  # default: partial tolerated
 
     with pytest.raises(RuntimeError, match="truncated"):
@@ -330,9 +466,10 @@ def test_care_plan_polish_is_cached(tmp_path, monkeypatch):
     calls = {"n": 0}
 
     def fake_call(system, blocks, max_tokens=None, require_complete=False,
-                  reasoning_effort=None):
+                  reasoning_effort=None, session_id=None, cache_prefix=False):
         calls["n"] += 1
-        return ("- Water every 5 days\n- Bright indirect light", 5, 10)
+        return ("- Water every 5 days\n- Bright indirect light", 5, 10,
+                {"cached_tokens": 0, "cache_write_tokens": 0})
 
     monkeypatch.setattr(ai, "_call_openrouter", fake_call)
 
@@ -361,10 +498,10 @@ def test_care_plan_polish_prompt_echoes_canonical_numbers(tmp_path, monkeypatch)
     captured = {}
 
     def fake_call(system, blocks, max_tokens=None, require_complete=False,
-                  reasoning_effort=None):
+                  reasoning_effort=None, session_id=None, cache_prefix=False):
         captured["system"] = system
         captured["reasoning_effort"] = reasoning_effort
-        return ("- polished", 5, 10)
+        return ("- polished", 5, 10, {"cached_tokens": 0, "cache_write_tokens": 0})
 
     monkeypatch.setattr(ai, "_call_openrouter", fake_call)
 
@@ -519,7 +656,7 @@ def test_openrouter_call_retries_transient_5xx(monkeypatch):
         })
 
     monkeypatch.setattr(requests, "post", _fake_post)
-    text, tin, tout = ai._call_openrouter("system", [{"role": "user", "content": "hi"}])
+    text, tin, tout, _c = ai._call_openrouter("system", [{"role": "user", "content": "hi"}])
     assert text == "ok"
     assert (tin, tout) == (5, 2)
     assert calls["n"] == 3

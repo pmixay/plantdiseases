@@ -44,9 +44,9 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from .config import get_float, get_int, get_str  # type: ignore[import-not-found]
+    from .config import get_bool, get_float, get_int, get_str  # type: ignore[import-not-found]
 except ImportError:
-    from config import get_float, get_int, get_str
+    from config import get_bool, get_float, get_int, get_str
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +89,30 @@ OPENROUTER_TOTAL_TIMEOUT = get_float("OPENROUTER_TOTAL_TIMEOUT", 20.0)
 # (max/xhigh/high/medium/low/minimal/none), or to "omit" to send no reasoning
 # field at all (let the model use its own default).
 OPENROUTER_REASONING_EFFORT = get_str("OPENROUTER_REASONING_EFFORT", "minimal").strip().lower()
+
+# Prompt caching (https://openrouter.ai/docs/features/prompt-caching).
+# The chat doctor re-sends the same ~600-token system prompt plus a growing
+# conversation history on every turn; billed at full input price that is the
+# single largest recurring cost in this module. Caching makes the provider
+# re-read that prefix from ITS cache instead (0.1x-0.5x input price depending
+# on the provider, free on some), so only the new user turn is paid in full.
+#
+# Two request fields do the work, both handled by OpenRouter itself and
+# ignored by providers that don't need them:
+#   * ``cache_control: {"type": "ephemeral"}`` at the request level — asks
+#     OpenRouter to place the breakpoint for us and advance it as the
+#     conversation grows. Required by Anthropic/Qwen; a no-op for the default
+#     openai/gpt-oss-120b and the other automatic-caching providers (OpenAI,
+#     Groq, DeepSeek, Grok, Z.AI, Gemini 2.5).
+#   * ``session_id`` — OpenRouter's sticky-routing key. Without it a model
+#     served by several providers can land on a DIFFERENT provider each turn,
+#     and a cold provider means a guaranteed cache miss no matter how stable
+#     the prefix is. With it, stickiness starts from the first successful
+#     request rather than only after a hit is observed.
+# Caching is opportunistic everywhere: providers enforce their own minimum
+# cacheable prefix (1024 tokens for OpenAI/Anthropic), so short prompts simply
+# don't cache and cost exactly what they cost today. Set to false to opt out.
+OPENROUTER_PROMPT_CACHING = get_bool("OPENROUTER_PROMPT_CACHING", True)
 
 # Hard caps so a runaway client can't blow the budget. Tune via config
 # in production.
@@ -364,9 +388,13 @@ def identify_species(
 # ── AI Plant Doctor (OpenRouter) ────────────────────────────────────
 
 
-# Minimal long-form context for the LLM. Stable prefix — the OpenRouter
-# default model (openai/gpt-oss-120b) doesn't need explicit cache_control
-# headers to amortise it.
+# Minimal long-form context for the LLM, and the stable head of every chat
+# request's prompt — keep it FIRST in `_build_system_text` and edit it as
+# rarely as possible. Prompt caching (see OPENROUTER_PROMPT_CACHING) matches on
+# an exact prefix, so anything volatile placed ahead of this text would cost a
+# full-price re-read of all ~600 tokens on every turn. On its own it sits under
+# the 1024-token minimum most providers require, so caching starts paying once
+# a couple of turns of history have accumulated behind it.
 _DOCTOR_SYSTEM_PROMPT = """You are PlantDiseases' friendly AI Plant Doctor, helping
 people care for their plants — indoor and garden alike. Your knowledge is grounded in the
 PlantVision v2.x disease taxonomy (9 trainable classes):
@@ -430,10 +458,26 @@ class _ChatSession:
         self.last_active = self.created_at
 
     def trim_for_context(self, keep_last: int = 12) -> list[dict]:
-        """Trim message history for the next request — only send the last N."""
-        if len(self.messages) <= keep_last:
+        """Trim message history for the next request — send at most the last N.
+
+        Trimming happens in BLOCKS, not one message at a time. A plain
+        ``messages[-keep_last:]`` window slides forward on every turn, so the
+        moment a session outgrows ``keep_last`` the request prefix changes
+        every single turn and the provider's prompt cache misses forever after
+        — exactly when the history is longest and caching would pay the most.
+        Dropping a block at a time instead holds the prefix byte-identical for
+        several consecutive turns, then re-pays the cache write once.
+
+        The block is even so the surviving window still opens on a "user"
+        message, and the result never exceeds ``keep_last``.
+        """
+        n = len(self.messages)
+        if n <= keep_last:
             return list(self.messages)
-        return self.messages[-keep_last:]
+        block = max(2, keep_last // 2)
+        block -= block % 2
+        drop = -(-(n - keep_last) // block) * block   # round up to a whole block
+        return self.messages[drop:]
 
     def append(self, role: str, content: str) -> None:
         """Append a message and enforce CHAT_SESSION_MAX_MESSAGES."""
@@ -446,7 +490,14 @@ class _ChatSession:
 _chat_sessions: dict[str, _ChatSession] = {}
 _chat_lock = threading.Lock()
 # Server-wide totals for the abuse log / Prometheus.
-_chat_totals = {"requests": 0, "rejected": 0, "tokens_in": 0, "tokens_out": 0}
+_chat_totals = {
+    "requests": 0, "rejected": 0, "tokens_in": 0, "tokens_out": 0,
+    # Prompt-cache accounting. Both are subsets of tokens_in: cached tokens
+    # were read from the provider's cache (billed at a fraction of input
+    # price), cache_write tokens were stored into it (billed at or slightly
+    # above input price, once, and amortised by later reads).
+    "cached_tokens_in": 0, "cache_write_tokens_in": 0,
+}
 
 
 _OPENROUTER_TRANSIENT_STATUSES = frozenset({408, 425, 429, 500, 502, 503, 504})
@@ -458,11 +509,32 @@ _OPENROUTER_REASONING_EFFORTS = frozenset(
 )
 
 
+def _int_or_zero(value: Any) -> int:
+    """Coerce a provider-reported token count to int, 0 on anything odd."""
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _cache_session_key(session_id: str) -> str:
+    """Derive OpenRouter's sticky-routing key from a client session id.
+
+    Hashed rather than forwarded verbatim: the routing key only has to be
+    *stable and unique per conversation*, and the raw id is client-supplied,
+    so there's no reason to hand a third party a value that correlates with
+    anything on our side. Truncated well under OpenRouter's 256-char limit.
+    """
+    digest = hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:32]
+    return f"pd-{digest}"
+
+
 def _call_openrouter(
     system_text: str, history: list[dict],
     *, max_tokens: int | None = None, require_complete: bool = False,
     reasoning_effort: str | None = None,
-) -> tuple[str, int, int]:
+    session_id: str | None = None, cache_prefix: bool = False,
+) -> tuple[str, int, int, dict]:
     """Run an OpenRouter chat completion with bounded retry.
 
     Retries up to ``_OPENROUTER_MAX_RETRIES`` times with exponential
@@ -483,6 +555,18 @@ def _call_openrouter(
     polish) pin "minimal" so an operator raising the global effort for the
     conversational doctor can't reinflate their reasoning traces back into
     ``finish_reason="length"`` truncation.
+
+    ``cache_prefix`` requests provider-side prompt caching of the stable
+    message prefix, and ``session_id`` pins the conversation to one provider so
+    that cache is actually warm on the next turn (see
+    ``OPENROUTER_PROMPT_CACHING``). Both are opportunistic — a provider that
+    doesn't cache, or a prefix under its minimum, just bills as normal.
+
+    Returns ``(text, prompt_tokens, completion_tokens, cache_stats)`` where
+    ``cache_stats`` is ``{"cached_tokens", "cache_write_tokens"}`` — the
+    prompt tokens served from (and written to) the provider's cache. Both are
+    subsets of ``prompt_tokens``, not extra tokens, so they are reported
+    alongside the totals rather than added to them.
     """
     import requests  # noqa: WPS433
 
@@ -506,6 +590,18 @@ def _call_openrouter(
     effort = (reasoning_effort or OPENROUTER_REASONING_EFFORT).strip().lower()
     if effort in _OPENROUTER_REASONING_EFFORTS:
         payload["reasoning"] = {"effort": effort}
+    if OPENROUTER_PROMPT_CACHING:
+        # Request-level breakpoint: OpenRouter places it after the last
+        # cacheable block and advances it as the history grows, so we don't
+        # have to expand `content` into typed blocks (which some providers
+        # handle less predictably than a plain string).
+        if cache_prefix:
+            payload["cache_control"] = {"type": "ephemeral"}
+        # Sticky routing. Worth sending even without `cache_prefix`: keeping a
+        # conversation on one provider is what makes any cache — explicit or
+        # automatic — survive to the next turn.
+        if session_id:
+            payload["session_id"] = _cache_session_key(session_id)
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
@@ -555,6 +651,15 @@ def _call_openrouter(
         usage = data.get("usage") or {}
         tin = int(usage.get("prompt_tokens") or 0)
         tout = int(usage.get("completion_tokens") or 0)
+        # Cache accounting is always present in OpenRouter responses — the old
+        # `usage: {include: true}` opt-in is deprecated. Absent/odd fields
+        # (a provider that reports no detail) degrade to zero rather than
+        # failing the call.
+        details = usage.get("prompt_tokens_details") or {}
+        cache_stats = {
+            "cached_tokens": _int_or_zero(details.get("cached_tokens")),
+            "cache_write_tokens": _int_or_zero(details.get("cache_write_tokens")),
+        }
         if require_complete and finish_reason == "length":
             # Hit max_tokens mid-answer. Returning the partial would cache/serve a
             # reply cut off mid-word (truncated JSON parses as empty; a truncated
@@ -564,7 +669,7 @@ def _call_openrouter(
                 f"OpenRouter response truncated (finish_reason=length, "
                 f"completion_tokens={tout}); raise max_tokens or lower reasoning"
             )
-        return text, tin, tout
+        return text, tin, tout, cache_stats
 
     # Loop only exits on transient failure with retries exhausted.
     if last_exc is not None:
@@ -731,7 +836,13 @@ def chat_reply(
     user_blocks = list(history) + [{"role": "user", "content": user_message}]
 
     try:
-        reply_text, tin, tout = _call_openrouter(system_text, user_blocks)
+        # The only surface where prompt caching pays: the system prompt plus a
+        # growing history is re-sent verbatim every turn. `session_id` keeps
+        # the conversation pinned to the provider that holds that cache.
+        reply_text, tin, tout, cache_stats = _call_openrouter(
+            system_text, user_blocks,
+            session_id=session_id, cache_prefix=True,
+        )
     except Exception as e:  # noqa: BLE001
         logger.warning("OpenRouter chat failed: %s", e)
         return {"available": False, "reply": "", "reason": "api_error"}
@@ -753,6 +864,11 @@ def chat_reply(
         _chat_totals["requests"] += 1
         _chat_totals["tokens_in"] += tin
         _chat_totals["tokens_out"] += tout
+        # Subsets of tokens_in, tracked separately so /api/metrics can show
+        # what share of input is actually being served from cache — the only
+        # way to tell whether prompt caching is working against a given model.
+        _chat_totals["cached_tokens_in"] += cache_stats["cached_tokens"]
+        _chat_totals["cache_write_tokens_in"] += cache_stats["cache_write_tokens"]
         # Snapshot session counters inside the lock — another concurrent
         # turn for the same session_id would otherwise mutate them
         # between the increment and the response build.
@@ -766,7 +882,13 @@ def chat_reply(
         "reply": reply_text,
         "model": OPENROUTER_MODEL,
         "provider": "openrouter",
-        "usage": {"input_tokens": tin, "output_tokens": tout},
+        # cached_input_tokens is a SUBSET of input_tokens (the part the
+        # provider served from its prompt cache), not an addition to it.
+        "usage": {
+            "input_tokens": tin,
+            "output_tokens": tout,
+            "cached_input_tokens": cache_stats["cached_tokens"],
+        },
         "session": {
             "session_id": session_id,
             "turns_used": turns_used,
@@ -778,14 +900,27 @@ def chat_reply(
 
 
 def chat_metrics_snapshot() -> dict:
-    """Read-only snapshot of cross-session chat counters for /api/metrics."""
+    """Read-only snapshot of cross-session chat counters for /api/metrics.
+
+    ``cached_tokens_in`` / ``cache_write_tokens_in`` are subsets of
+    ``tokens_in``; ``cache_hit_ratio`` is the share of input tokens served from
+    the provider's prompt cache. A ratio stuck at 0.0 with a non-trivial
+    request count means caching is NOT engaging — usually a model/provider that
+    doesn't cache, or a prompt prefix under the provider's minimum.
+    """
     with _chat_lock:
+        tokens_in = _chat_totals["tokens_in"]
+        cached_in = _chat_totals["cached_tokens_in"]
         return {
             "active_sessions": len(_chat_sessions),
             "requests": _chat_totals["requests"],
             "rejected": _chat_totals["rejected"],
-            "tokens_in": _chat_totals["tokens_in"],
+            "tokens_in": tokens_in,
             "tokens_out": _chat_totals["tokens_out"],
+            "prompt_caching": OPENROUTER_PROMPT_CACHING,
+            "cached_tokens_in": cached_in,
+            "cache_write_tokens_in": _chat_totals["cache_write_tokens_in"],
+            "cache_hit_ratio": round(cached_in / tokens_in, 4) if tokens_in else 0.0,
         }
 
 
@@ -923,7 +1058,11 @@ def species_common_diseases(
         "Return the JSON object now."
     )
     try:
-        text, _tin, _tout = _call_openrouter(
+        # No cache_prefix/session_id here: this is a one-shot ~200-token system
+        # prompt, far under any provider's minimum cacheable prefix, and the
+        # answer is already memoised in-memory + on disk per (species, lang) —
+        # so a repeat never reaches OpenRouter at all.
+        text, _tin, _tout, _cache = _call_openrouter(
             _SPECIES_DISEASES_SYSTEM,
             [{"role": "user", "content": user}],
             max_tokens=SPECIES_DISEASES_MAX_TOKENS,
@@ -1732,7 +1871,9 @@ def _polish_plan_with_llm(plan: dict, locale: str) -> dict:
     )
     user_blocks = [{"role": "user", "content": json.dumps(plan, ensure_ascii=False)}]
     try:
-        polish, _, _ = _call_openrouter(
+        # Also uncached upstream: short prompt, and identical plans are already
+        # served from _CARE_PLAN_CACHE / _CARE_PLAN_DISK before we get here.
+        polish, _, _, _ = _call_openrouter(
             system, user_blocks,
             max_tokens=CARE_PLAN_POLISH_MAX_TOKENS, require_complete=True,
             # Structured rewrite, not reasoning — pin the shortest trace so a
