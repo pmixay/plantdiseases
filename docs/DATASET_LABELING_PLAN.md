@@ -92,7 +92,67 @@ also aimed, but the classes that regressed are the ones v7 targeted; the older
 2.6.5↔2.6.9 gap is contamination — each model wins on its own era, 71% of v7 is
 byte-identical to v4.)
 
-## 2.6.10 — the boundary fix on v7: recovered (07-20)
+## Source loss — `kaggle_ornamental` died mid-run (found 2026-07-24)
+
+`pappu54/indoor-plant-disease-dataset-23-classes` — the **only** outdoor/garden
+ornamental source, and the one the v2.6.12 pivot up-weighted — was **deleted or
+unlisted by its owner**. The Kaggle API returns `403 {"code":403,"message":"Permission
+'datasets.get' was denied"}` on a token that reads every other slug we use, and
+`datasets/list?user=pappu54` returns `[]`. It is not coming back.
+
+It stopped loading on the **2026-07-20** run (2.6.10). `_kaggle_download` is fail-soft,
+so the loss was one `skipping` line in a 900-line log:
+
+| | 07-03 (2.6.9) | 07-20 (2.6.10) |
+|---|---|---|
+| `kaggle_ornamental` images | 2,264 | **0** |
+| train features | 14,315 | **12,025** |
+| val_indomain disease macro-F1 | 0.865 | **0.809** |
+| val_indomain leaf_spot recall | 0.852 | **0.695** |
+| val_indomain viral_disease recall | 0.952 | **0.792** |
+| head best epoch | 5 | **3** |
+
+The source supplied 600 images each of `leaf_spot` / `viral_disease` /
+`powdery_mildew` / `healthy` (+77 nutrient, +67 scorch) — exactly the classes that fell.
+
+**Why nothing caught it.** `kaggle_ornamental` is in **no** `make_*_split`
+`allowed_sources`, i.e. train-only, so `val_realworld` — the ship gate — contains none
+of it and **passed**. Two lessons, both now enforced in code:
+
+1. **A train-only source's disappearance is invisible to the ship gate.** §2 now has
+   `REQUIRED_SOURCE_FLOORS`, which raises before training when any load-bearing source
+   is missing or under floor (`STRICT_SOURCE_FLOORS=True`). This generalises the
+   `REQUIRE_SUPPLEMENT` gate, whose own comment had already described this exact
+   failure mode for the supplement.
+2. **Version-over-version A/B assumes a shared corpus, and nothing verified that.**
+   The per-source inventory is now persisted and shipped in
+   `model_card.json → source_inventory`. **Diff it before believing any paired
+   bootstrap** — two models trained on different corpora are not comparable, however
+   tight the CI.
+
+**Replacement (2.6.13).** `KAGGLE_ORNAMENTAL_SLUGS` pools two live sets, both
+folder-inventoried via the Kaggle API before wiring:
+
+| slug | licence | maps to (after DROP) |
+|---|---|---|
+| `itselif/ornamental-plant-diseases-master-dataset` | CC0 | healthy 389, leaf_spot 287, powdery_mildew 133 (rust dropped) |
+| `warcoder/rose-leaves-disease-detection` (FlowerNet) | CC BY 4.0 | healthy 404, leaf_spot 313 (downy mildew dropped) |
+
+At the shipped `per_class_cap=600` that is **healthy 600, leaf_spot 600,
+powdery_mildew 133 ≈ 1,333 of 2,544**. **Unreplaced: `viral_disease` −600 and
+`powdery_mildew` −467.** No live ornamental mosaic-virus set surfaced in the search;
+closing viral needs collection or a new source, so treat viral as supply-starved rather
+than reading a regression as a modelling problem.
+
+**Candidate, NOT wired in** — `shuvokumarbasak4004/flower-leaf-diseases-dataset-new-and-update`
+(MIT, ~6k+ files, `flower_data/<split>/<species>/<condition>`) carries `healthy` 2,200
+and **`scorch` 1,400** — attractive because `leaf_scorch_underwatering` is our weakest
+class (realworld R 0.75 / P 0.76; the §3 DINOv2 probe recalls only 0.44). It is
+deliberately left out: 1,400 unverified positives into the most precision-sensitive,
+boundary-sensitive class is the same bet that produced the 2.6.9 regression. **Judge a
+sample against the reference exemplars first**, then decide.
+
+## 2.6.10 — the boundary fix on v7: recovered (07-20) — see the caveat above
 
 Re-ran v7 with the fix (`supplement_boundary` 0.9→0.35, §4) — boundary draw 5.8%→2.8%.
 **leaf_scorch recall 0.61→0.75**, disease macro-F1 **0.834→0.845**, **ship gate passed**,
@@ -158,9 +218,51 @@ v7 eval; let v8's clean benchmark guide any further move.
 7. **Hygiene** — reject drawn-annotation/watermark/AI-looking images; add a cross-version
    pHash tag (`carried_from_vN`/`new`); fix the v7 folder README (still titled "v6").
 
+**Added 2026-07-24 after the `kaggle_ornamental` source loss (items 8–10).** The plan above
+was written when that source was still supplying 2,264 train images. Three of its
+assumptions no longer hold.
+
+8. **NEW — an ornamental slice that is EVAL-ELIGIBLE (highest-value new item).** Every
+   ornamental source we have — the dead `pappu54` and both 2.6.13 replacements — is
+   **train-only**. So the `val_realworld` ship gate contains **zero** garden ornamentals
+   and *cannot measure the v2.6.12 pivot at all*. That is also the precise reason a 2.26k
+   image loss passed the gate unnoticed. Collect garden-ornamental positives into the
+   **supplement** (`source=supplement`, which every `make_*_split` allows) so a held-out
+   fraction seeds the gate. Until this exists, no number in this repo says whether the
+   pivot worked.
+9. **NEW — `viral_disease` and `powdery_mildew` lost TRAIN supply, not eval supply.**
+   The dead source carried 600 viral + 600 powdery; the replacements restore powdery to
+   133 and viral to **0**. This is a different ask from items 2/4 (which target *eval*
+   independence): these two classes now need **train-side volume**. Expect
+   `val_indomain` viral recall to stay depressed (it fell 0.952 → 0.792 on the loss) —
+   **do not read that as a modelling regression in the 2.6.13 A/B.** Ornamental
+   mosaic-virus imagery is the specific gap; no live public set was found.
+10. **NEW — re-weight the effort between `gray_mold` and `nutrient`.** They are failing
+    for *different* reasons and the v8b round treats them as one job:
+    - `nutrient_deficiency` has a **real precision defect** — P **0.670**, 109 predicted
+      vs 87 actual (1.25× over-fire). This is the genuine model problem. Prioritise.
+    - `gray_mold_botrytis` **measures fine** (R 0.846 / P 0.856) — but its eval slice is
+      ~39% agricultural leak, so that number is partly *untrustworthy rather than good*.
+      Its job is item 1 (purge + re-judge for a believable benchmark), **not** volume.
+      Don't spend collection effort chasing a recall number that isn't broken.
+
+**Careful with `leaf_scorch` — more data may be the wrong lever.** The §3 DINOv2 linear
+probe recalls scorch at only 0.39–0.52 across all four runs on record, by far the lowest
+of any class. That says the **frozen features** barely separate it, not that positives are
+scarce. Scorch is a leaf-**margin** phenomenon and the eval transform is
+`Resize(224×1.05) → CenterCrop(224)`, which trims exactly the margin carrying the signal.
+Test resize-and-pad (or a larger `IMG`) *before* funding a large scorch collection round.
+Same reasoning is why `shuvokumarbasak4004/flower-leaf-diseases-dataset-new-and-update`
+(1,400 `scorch` images, MIT) is **not** wired in: judge a sample against the reference
+exemplars first — 1,400 unverified positives into our most boundary-sensitive class is
+the bet that produced the 2.6.9 regression.
+
 **2.6.11 verify (paired, not aggregate):** paired bootstrap 2.6.11 vs 2.6.8 (and vs 2.6.10)
 on the *new* (non-recycled) v8 eval rows — nutrient/scorch **precision** up with recall
 staying ≥ 0.80, healthy false-fire not up, powdery held. Keep aqua KD val-macro-F1 a watch-item.
+**Diff `model_card.json → source_inventory` between the two runs first** — a paired
+bootstrap across two different corpora is not a comparison, however tight the CI. That is
+the lesson of 2.6.10, and the inventory now exists precisely so this check is possible.
 
 ## Standing disciplines
 

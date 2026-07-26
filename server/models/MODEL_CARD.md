@@ -249,10 +249,19 @@ second output, and a memory bank of in-distribution plant embeddings +
 a threshold (calibrated at a target plant false-positive rate on a
 disjoint split) ship in the bundle (`ood_embedding.npz` +
 `classes.json → ood.embedding`). It is AND-gated with detector
-confidence. This replaces **MaxLogit** (Hendrycks 2019), which goes dead
-once the `not_a_plant` head is confident enough that plant/NAP MaxLogit
-separation is non-positive; the MaxLogit floor remains as the fallback
-when no embedding bank is shipped (`max_logit_floor`).
+confidence. This replaces **MaxLogit** (Hendrycks 2019) as the primary
+signal; the MaxLogit floor remains as the fallback when no embedding
+bank is shipped (`max_logit_floor`).
+
+**MaxLogit scope (2.6.13).** That fallback used to go dead on every
+export — plant/NAP separation was negative in all four runs on record —
+and the cause was structural, not data: `not_a_plant` is a **trained**
+class, so a NAP photo produces a confident NAP logit and the *all-class*
+max sits above the plant median by construction. From 2.6.13 the floor
+is scored over the **plant logits only** (excluding `not_a_plant`),
+declared as `classes.json → ood.max_logit_scope: "plant_only"`. Bundles
+without the key are read as `"all_classes"`, so older artefacts keep
+their exact historical numerics.
 
 ## Known limitations
 

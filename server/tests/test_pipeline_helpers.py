@@ -524,6 +524,86 @@ def test_max_logit_floor_resolver_handles_null_and_explicit_values():
     ) == 0.0
 
 
+def test_max_logit_scope_resolver_defaults_to_legacy_all_classes():
+    """Bundles exported before ``ood.max_logit_scope`` existed must keep their
+    historical all-class numerics; only an explicit ``plant_only`` switches the
+    gate onto the NAP-excluded max. An unknown value degrades to the default
+    rather than failing boot — the floor is only the *fallback* OOD signal."""
+    from pipeline import MAX_LOGIT_SCOPE_DEFAULT, _resolve_max_logit_scope
+
+    assert MAX_LOGIT_SCOPE_DEFAULT == "all_classes"
+    assert _resolve_max_logit_scope({}) == "all_classes"
+    assert _resolve_max_logit_scope({"ood": {}}) == "all_classes"
+    assert _resolve_max_logit_scope({"ood": {"max_logit_scope": "plant_only"}}) == (
+        "plant_only"
+    )
+    assert _resolve_max_logit_scope({"ood": {"max_logit_scope": "nonsense"}}) == (
+        "all_classes"
+    )
+
+
+def test_plant_only_max_logit_separates_nap_where_all_class_max_cannot():
+    """The reason the scope key exists.
+
+    ``not_a_plant`` is a TRAINED class, so on a NAP photo the all-class max is
+    the (high) NAP logit — which is why every export auto-disabled the floor
+    (``separation_p50`` < 0 in the run logs). Excluding the NAP logit makes the
+    score mean "does this look like any plant condition we know?", which
+    separates: a NAP photo scores LOW and a plant photo scores HIGH.
+    """
+    import numpy as np
+
+    from classifier import DiseaseClassifier
+
+    names = ["healthy", "leaf_spot", "not_a_plant"]
+    stub = object.__new__(DiseaseClassifier)
+    stub.CLASS_NAMES = names
+    stub.NUM_CLASSES = len(names)
+    stub._plant_logit_idx = tuple(i for i, n in enumerate(names) if n != "not_a_plant")
+
+    nap = stub._format_result_from_logits(np.array([0.4, 0.2, 8.0], dtype=np.float32))
+    plant = stub._format_result_from_logits(np.array([7.5, 0.9, 0.1], dtype=np.float32))
+
+    # All-class max is HIGHER for the NAP photo — the dead signal.
+    assert nap["max_logit"] > plant["max_logit"]
+    # Plant-only max flips the ordering, which is what the floor needs.
+    assert nap["plant_max_logit"] < plant["plant_max_logit"]
+
+    # A floor between the two now fires on NAP and stays quiet on the plant.
+    from pipeline import _decide_nap_route
+
+    floor = 4.0
+    for cls_res, expect in ((nap, True), (plant, False)):
+        triggered, _ = _decide_nap_route(
+            class_name="leaf_spot",
+            class_names=names,
+            det_conf=0.1,               # detector unsure — the AND-gate's other half
+            ood_score=None,
+            ood_threshold=None,
+            ml_floor=floor,
+            max_logit=cls_res["plant_max_logit"],
+            ml_scope="plant_only",
+        )
+        assert triggered is expect
+
+
+def test_taxonomy_without_nap_keeps_plant_max_logit_equal_to_max_logit():
+    """No ``not_a_plant`` class ⇒ nothing to exclude ⇒ identical scores, so a
+    non-NAP taxonomy behaves exactly as it did before the scope key."""
+    import numpy as np
+
+    from classifier import DiseaseClassifier
+
+    names = ["healthy", "leaf_spot"]
+    stub = object.__new__(DiseaseClassifier)
+    stub.CLASS_NAMES = names
+    stub.NUM_CLASSES = len(names)
+    stub._plant_logit_idx = tuple(i for i, n in enumerate(names) if n != "not_a_plant")
+
+    res = stub._format_result_from_logits(np.array([3.0, 5.0], dtype=np.float32))
+    assert res["plant_max_logit"] == res["max_logit"] == 5.0
+
+
 def test_classes_json_in_repo_drives_pipeline_config():
     """End-to-end check: the committed classes.json parses cleanly and
     declares a sensible plantvision taxonomy. The exact class set may
