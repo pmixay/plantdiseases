@@ -1,8 +1,10 @@
 # PlantVision — roadmap
 
 Open work only — a checkbox to-do list (the code is the record). Companions:
-`DATASET_LABELING_PLAN.md` (data loop), `../DEPLOYMENT.md` (deploy + Android
-signing/FCM), `server/models/MODEL_CARD.md` (per-run metrics).
+`PLAN.md` (execution plan — parallel waves, model assignments, ready-to-run
+prompts, human review gates), `DATASET_LABELING_PLAN.md` (data loop),
+`../DEPLOYMENT.md` (deploy + Android signing/FCM), `server/models/MODEL_CARD.md`
+(per-run metrics).
 
 Two independent tracks: the **app release** (`versionName`, currently **1.8**
 / `versionCode` 18 — the fields are already bumped in `app/build.gradle.kts`;
