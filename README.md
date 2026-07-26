@@ -201,6 +201,7 @@ All routes are mounted under `/api`. A curated highlights table follows;
 | `GET`  | `/api/aqua/manifest` · `/api/aqua/model` | On-device Aqua TFLite model manifest + bytes (the app downloads/updates it) |
 | `GET`  | `/api/species-info`        | Localized Wikipedia summary + lead image for a scientific name |
 | `GET`  | `/api/species-diseases`    | Common indoor conditions a species is affected by (AI, best-effort) |
+| `GET`  | `/api/species-profile`     | Flowering pattern + native range for a species (AI, best-effort) |
 | `GET`  | `/api/popular`             | Popular-plants bundle (region-aware, cached, stale-while-revalidate) |
 | `GET`  | `/api/plant-photo`         | SSRF-guarded Wikimedia/Wikipedia image proxy (`?u=` URL or `?name=` resolver) |
 
