@@ -6,10 +6,13 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.test.advanceUntilIdle
-import kotlinx.coroutines.test.runCurrent
-import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.runBlocking
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -66,6 +69,17 @@ class ConnectivityObserverTest {
             NetworkCapabilities.NET_CAPABILITY_VALIDATED,
         )
 
+    /**
+     * Collect [ConnectivityObserver.isOnline] into [into], synchronously on the
+     * test thread: with [Dispatchers.Unconfined] every emission — and the
+     * `awaitClose` cleanup on cancel — runs inline, so no test scheduler is
+     * needed (Robolectric delivers the network callbacks on this thread too).
+     */
+    private fun collectOnline(observer: ConnectivityObserver, into: MutableList<Boolean>): Job =
+        CoroutineScope(Dispatchers.Unconfined).launch(start = CoroutineStart.UNDISPATCHED) {
+            observer.isOnline.collect { into += it }
+        }
+
     // ── The validated-internet rule ─────────────────────────────────────
     @Test
     fun offline_whenThereAreNoCapabilities() {
@@ -99,44 +113,42 @@ class ConnectivityObserverTest {
 
     // ── The flow ────────────────────────────────────────────────────────
     @Test
-    fun isOnline_seedsCurrentStateThenTracksChanges() = runTest {
+    fun isOnline_seedsCurrentStateThenTracksChanges() {
         setActiveCapabilities(capabilities(NetworkCapabilities.NET_CAPABILITY_INTERNET))
         val observer = ConnectivityObserver(context)
 
         val seen = mutableListOf<Boolean>()
-        backgroundScope.launch { observer.isOnline.collect { seen += it } }
-        runCurrent()
+        val job = collectOnline(observer, seen)
+        try {
+            // Seeded from the current network, before any callback fires.
+            assertThat(seen).containsExactly(false)
 
-        // Seeded from the current network, before any callback fires.
-        assertThat(seen).containsExactly(false)
+            // Validation completing fires onCapabilitiesChanged, NOT onAvailable —
+            // the case that used to leave a banner stuck on screen.
+            fireCapabilitiesChanged(online)
+            assertThat(seen).containsExactly(false, true).inOrder()
 
-        // Validation completing fires onCapabilitiesChanged, NOT onAvailable —
-        // the case that used to leave a banner stuck on screen.
-        fireCapabilitiesChanged(online)
-        runCurrent()
-        assertThat(seen).containsExactly(false, true).inOrder()
+            // Re-delivering the same state is collapsed (distinctUntilChanged).
+            fireCapabilitiesChanged(online)
+            assertThat(seen).containsExactly(false, true).inOrder()
 
-        // Re-delivering the same state is collapsed (distinctUntilChanged).
-        fireCapabilitiesChanged(online)
-        runCurrent()
-        assertThat(seen).containsExactly(false, true).inOrder()
-
-        fireLost()
-        runCurrent()
-        assertThat(seen).containsExactly(false, true, false).inOrder()
+            fireLost()
+            assertThat(seen).containsExactly(false, true, false).inOrder()
+        } finally {
+            job.cancel()
+        }
     }
 
     @Test
-    fun isOnline_unregistersItsCallbackWhenCollectionStops() = runTest {
+    fun isOnline_unregistersItsCallbackWhenCollectionStops() {
         val observer = ConnectivityObserver(context)
         val before = shadowOf(connectivityManager).networkCallbacks.size
 
-        val job = launch { observer.isOnline.collect { /* drain */ } }
-        runCurrent()
+        val job = collectOnline(observer, mutableListOf())
         assertThat(shadowOf(connectivityManager).networkCallbacks).hasSize(before + 1)
 
-        job.cancel()
-        advanceUntilIdle()
+        // Joining waits for the whole flow hierarchy, awaitClose block included.
+        runBlocking { job.cancelAndJoin() }
         assertThat(shadowOf(connectivityManager).networkCallbacks).hasSize(before)
     }
 }
