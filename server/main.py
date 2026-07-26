@@ -71,6 +71,7 @@ try:
         generate_care_plan,
         identify_species,
         species_common_diseases,
+        species_profile,
     )
     from .community import (
         COMMUNITY_THUMB_DIR,
@@ -237,6 +238,7 @@ except ImportError:
         generate_care_plan,
         identify_species,
         species_common_diseases,
+        species_profile,
     )
     from community import (
         COMMUNITY_THUMB_DIR,
@@ -3851,6 +3853,34 @@ async def species_diseases_endpoint(name: str, common: str = "", locale: str = "
     common_name = (common or "").strip()[:128] or None
     data = await asyncio.get_running_loop().run_in_executor(
         _get_net_executor(), lambda: species_common_diseases(n, common_name=common_name, lang=lang),
+    )
+    headers = (
+        {"Cache-Control": "public, max-age=604800"}
+        if isinstance(data, dict) and data.get("available")
+        else {"Cache-Control": "no-store"}
+    )
+    return JSONResponse(content=data, headers=headers)
+
+
+@api_router.get("/species-profile")
+async def species_profile_endpoint(name: str, common: str = "", locale: str = "en"):
+    """Flowering pattern + native range for a species (AI, best-effort).
+
+    Graceful ``{"available": False}`` when no OpenRouter key is configured or
+    on any failure — the client then hides the section, so the species screen
+    degrades gracefully instead of showing bogus data. A real (``available``)
+    result is cached server-side (in-memory + on disk, surviving restarts) per
+    (species, language) and carries a long ``Cache-Control`` so the
+    client/CDN reuses it too; a transient failure is sent uncached so the
+    next open retries.
+    """
+    n = (name or "").strip()
+    if not n or len(n) > 128:
+        raise HTTPException(status_code=422, detail="Invalid species name")
+    lang = "ru" if str(locale or "en").lower().startswith("ru") else "en"
+    common_name = (common or "").strip()[:128] or None
+    data = await asyncio.get_running_loop().run_in_executor(
+        _get_net_executor(), lambda: species_profile(n, common_name=common_name, lang=lang),
     )
     headers = (
         {"Cache-Control": "public, max-age=604800"}

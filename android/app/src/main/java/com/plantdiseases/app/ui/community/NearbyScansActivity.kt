@@ -22,6 +22,7 @@ import com.plantdiseases.app.databinding.ActivityNearbyScansBinding
 import com.plantdiseases.app.databinding.SheetNearbyFilterBinding
 import com.plantdiseases.app.ui.result.CommunityOpinionSheet
 import com.plantdiseases.app.util.CommunityPrefs
+import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.RegionResolver
@@ -44,6 +45,7 @@ class NearbyScansActivity : AppCompatActivity() {
     private lateinit var binding: ActivityNearbyScansBinding
     private lateinit var adapter: NearbyScansAdapter
     private val scanRepository: ScanRepository by inject()
+    private val connectivity: ConnectivityObserver by inject()
     private val isRu by lazy { LocaleHelper.isRussian(this) }
 
     // Full feed as returned by the server; filtered + sorted client-side
@@ -94,6 +96,7 @@ class NearbyScansActivity : AppCompatActivity() {
         }
 
         binding.toolbar.setNavigationOnClickListener { finish() }
+        binding.offlineNotice.observe(this, connectivity)
         setupFilterMenu()
 
         // Nearby (~30 km) / Country / Worldwide scope — reload on change.

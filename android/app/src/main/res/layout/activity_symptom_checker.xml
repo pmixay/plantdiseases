@@ -29,6 +29,14 @@
             app:title="@string/symptom_checker_title"
             app:titleTextColor="@color/toolbar_title" />
 
+        <!-- Shared offline notice, pinned under the toolbar. The answers are
+             scored server-side, so there is nothing cached to show. -->
+        <com.plantdiseases.app.ui.common.OfflineNoticeView
+            android:id="@+id/offline_notice"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/offline_notice_needs_connection" />
+
     </com.google.android.material.appbar.AppBarLayout>
 
     <androidx.core.widget.NestedScrollView

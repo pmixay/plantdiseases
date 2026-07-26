@@ -37,6 +37,7 @@ import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityCommunityMapBinding
 import com.plantdiseases.app.ui.result.CommunityOpinionSheet
 import com.plantdiseases.app.util.CommunityPrefs
+import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.DiseaseCatalog
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.LocaleHelper
@@ -69,6 +70,7 @@ class CommunityMapActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityCommunityMapBinding
     private val scanRepository: ScanRepository by inject()
+    private val connectivity: ConnectivityObserver by inject()
     private val isRu: Boolean get() = LocaleHelper.isRussian(this)
     private var loadJob: Job? = null
 
@@ -94,6 +96,7 @@ class CommunityMapActivity : AppCompatActivity() {
         binding = ActivityCommunityMapBinding.inflate(layoutInflater)
         setContentView(binding.root)
         binding.toolbar.setNavigationOnClickListener { finish() }
+        binding.offlineNotice.observe(this, connectivity)
         binding.fabNearMe.setOnClickListener { onNearMe() }
         applyWindowInsets()
 

@@ -153,6 +153,9 @@
     <string name="no_network">Нет интернета</string>
     <string name="no_network_detail">Проверьте подключение к сети и повторите попытку.</string>
     <string name="offline_banner">Нет подключения к интернету</string>
+    <!-- Общее уведомление об офлайне (ui/common/OfflineNoticeView). -->
+    <string name="offline_notice_cached">Офлайн — показаны сохранённые данные</string>
+    <string name="offline_notice_needs_connection">Офлайн — нужно подключение к интернету</string>
 
     <!-- Server status / diagnostics -->
     <string name="server_online">Онлайн</string>

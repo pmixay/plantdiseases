@@ -65,6 +65,14 @@
 
         </com.google.android.material.chip.ChipGroup>
 
+        <!-- Shared offline notice, pinned under the scope chips. The feed is
+             live-only, so this says the connection is what's missing. -->
+        <com.plantdiseases.app.ui.common.OfflineNoticeView
+            android:id="@+id/offline_notice"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/offline_notice_needs_connection" />
+
     </com.google.android.material.appbar.AppBarLayout>
 
     <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
