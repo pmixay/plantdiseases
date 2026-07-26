@@ -38,6 +38,7 @@ import com.plantdiseases.app.databinding.SheetDoctorChatBinding
 import com.plantdiseases.app.ui.guide.GuideDetailSheet
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.localizedSpeciesName
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
 import java.text.SimpleDateFormat
@@ -89,7 +90,10 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
     /** True while a reply is in flight — send is locked until it lands. */
     private var isSending = false
 
-    /** Header label — the plant's name, or the scan's species/disease. */
+    /** Diagnosis-payload label (`plant_name`, sent to the chat endpoint for a
+     *  scan session) — kept distinct from the header subtitle
+     *  ([resolveSubtitle]) so localising the header never changes what the
+     *  server sees. */
     private val displayName: String
         get() = plant?.name
             ?: scan?.let { s ->
@@ -201,7 +205,7 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
 
     /** Bind session-dependent views. Safe once [plant] or [scan] is set. */
     private fun bindSession() {
-        binding.chatPlantName.text = displayName
+        binding.chatPlantName.text = resolveSubtitle(plant, scan, requireContext())
         loadMessages()
     }
 
@@ -572,6 +576,27 @@ class DoctorChatSheet : BottomSheetDialogFragment() {
                 )
                 .apply()
         }
+
+        /** Header subtitle — locale-aware plant/species identity, distinct
+         *  from [displayName]: the scan branch prefers a common name that is
+         *  actually written in the UI language, falling back to the
+         *  locale-neutral scientific name and then the raw disease name, so a
+         *  Russian user is never shown an English-only common name (mirrors
+         *  [localizedSpeciesName], used the same way for the plant-detail
+         *  hero and species card). */
+        internal fun resolveSubtitle(
+            plant: PlantEntity?,
+            scan: ScanEntity?,
+            context: android.content.Context,
+        ): String = plant?.name
+            ?: scan?.let { s ->
+                localizedSpeciesName(
+                    s.speciesScientific,
+                    s.speciesCommon,
+                    LocaleHelper.isRussian(context),
+                ) ?: s.diseaseName
+            }
+            ?: ""
 
         /** Plant session — persistent chat keyed by the garden plant. */
         fun show(fm: FragmentManager, plant: PlantEntity) {
