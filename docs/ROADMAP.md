@@ -4,9 +4,11 @@ Open work only — a checkbox to-do list (the code is the record). Companions:
 `DATASET_LABELING_PLAN.md` (data loop), `../DEPLOYMENT.md` (deploy + Android
 signing/FCM), `server/models/MODEL_CARD.md` (per-run metrics).
 
-Two independent tracks: the **app release** (`versionName`, currently 1.7 →
-next 1.8) and the **model** (bundle version, moves per training run). A 1.8
-app tag does not require a new model; a new model can ship under any app tag.
+Two independent tracks: the **app release** (`versionName`, currently **1.8**
+/ `versionCode` 18 — the fields are already bumped in `app/build.gradle.kts`;
+the tag itself is not cut) and the **model** (bundle version, moves per
+training run). A 1.8 app tag does not require a new model; a new model can
+ship under any app tag.
 
 ---
 
@@ -14,18 +16,41 @@ app tag does not require a new model; a new model can ship under any app tag.
 
 **Theme: plant-knowledge cards + first-run polish.** The community /
 second-opinion rework, the two-safety-gate NAP/feedback flow, the guide
-handbook + profile slimming, the animated launch, and the server reliability
-work (dedicated network executor, LLM truncation/dosage fixes, endpoint
-pruning) already landed on `claude/community-garden-refactor-m9zwyb`. What's
-left before the 1.8 tag:
+handbook + profile slimming, the animated launch, the server reliability work
+(dedicated network executor, LLM truncation/dosage fixes, endpoint pruning),
+the toolbar → page-content title move, and RuStore in-app updates (+ minSdk
+29) have all landed on `main`.
 
-### Species knowledge cards — build first
+### Build order
+
+Smallest-first: the two quick items below are hours of work each, and the
+offline signal is infrastructure the new card screens want anyway — cheaper
+now than retrofitted after.
+
+| # | Task | Size |
+|---|---|---|
+| 1 | AI-doctor chat subtitle — RU localization | XS |
+| 2 | App-wide connectivity signal | S |
+| 3 | `GET /api/species-profile` (server; gates 4 and 5) | M |
+| 4 | Flowering chart + flowering-conditions card | M |
+| 5 | Native-range mini map | L |
+| 6 | Interactive onboarding | M |
+| — | First-launch intro video — *externally blocked, slot in on arrival* | M |
+| — | Tag 1.8 + cut the RuStore build | — |
+
+### Species knowledge cards
 
 One new best-effort endpoint feeds all three cards. LLM-generated, strict
 JSON, `reasoning_effort=minimal`, in-memory + disk cache with a long TTL, and
 a graceful `available:false` fallback — the same discipline as
-`species_common_diseases`. Cards render in the **species detail card** and,
-collapsed (tap to expand), in the **scan result** screen.
+`species_common_diseases`. Cards render in the **species detail card**
+(`SpeciesDetailActivity`) and, collapsed (tap to expand), in the **scan
+result** screen.
+
+**Status: none of this exists yet** — no endpoint server-side, no
+`FloweringChartView`, no `WorldMapView`. The endpoint gates both views, so it
+goes first; the map is the largest single item in 1.8 (bundled outlines +
+hit-testing) and should go last.
 
 - [ ] `GET /api/species-profile?name=&locale=` — returns
       `flowering` (12-month intensity `0|1|2` + an indoor note),
@@ -49,7 +74,8 @@ collapsed (tap to expand), in the **scan result** screen.
       coach marks (scan-tab pulse on first home visit, a one-time "understand
       your result" hint on the first result). Drop the swipe tour; keep the
       blocking data-consent disclosure. Icon-circle page indicators already
-      landed as the interim step.
+      landed as the interim step. `OnboardingActivity` is still the
+      `ViewPager2` tour — this is a rework, not a tweak.
 - [ ] **First-launch intro video** — server-hosted (ffmpeg-compressed to
       ~3 MB, background download, `/api/aqua`-style manifest), played above the
       consent page with the existing Lottie as the offline fallback so
@@ -71,18 +97,25 @@ into Glide's disk cache on a connected launch (they're server-hosted, not
 bundled, so they used to show a placeholder offline unless viewed online
 first). The one remaining gap worth closing:
 
-- [ ] **App-wide connectivity signal** — the offline banner lives only on the
-      Scan screen (`CameraFragment`); every other screen discovers offline
-      state reactively and silently renders blank/empty. A shared observer
-      would drive one consistent "offline — showing cached content" affordance
-      instead of blank placeholders. This is the ceiling for offline work —
-      surface the state, don't rebuild features offline.
+- [ ] **App-wide connectivity signal** — connectivity is checked ad-hoc in
+      exactly two places (`CameraFragment`, `ResultActivity`); every other
+      screen discovers offline state reactively and silently renders
+      blank/empty. A shared observer would drive one consistent "offline —
+      showing cached content" affordance instead of blank placeholders. This is
+      the ceiling for offline work — surface the state, don't rebuild features
+      offline. **Do this before the knowledge cards**: those screens are
+      network-fed and will need the same affordance, so building it first
+      avoids a retrofit.
 
 ### Release
 
 - [ ] **Localize the AI-doctor chat subtitle** — the plant/species name under
-      the header still shows the English common name in RU locale.
-- [ ] Bump `versionName` 1.7 → 1.8 (+ `versionCode`) and cut the RuStore build.
+      the header still shows the English common name in RU locale
+      (`DoctorChatSheet` passes `scientificName ?: species` straight through).
+      Smallest item on the board; do it first.
+- [x] Bump `versionName` 1.7 → 1.8 (+ `versionCode` 18) — done in
+      `app/build.gradle.kts`.
+- [ ] Cut the 1.8 tag and the RuStore build.
 
 ---
 
@@ -149,16 +182,14 @@ Group plants by **room** (living room, balcony, office, …):
 - Lightweight: one nullable `room` column on `plants` + a grouping header in the
   list; no new screens required for v1.
 
-### 5. Progression / photo-compare strip
+### 5. Progression / photo-compare strip — ✅ already shipped
 
-Make **recovery visible**:
-
-- A horizontal timeline of a plant's scan photos with a **before/after
-  compare** (slider or side-by-side), so disease progression or recovery reads
-  at a glance across weeks.
-- Pure visualization — scans are already Room rows pointing at local image
-  files (`filesDir/plant_images`), so this works fully offline and adds no
-  storage.
+Landed ahead of the rest of the refactor: `DetailTimelineController` renders
+the horizontal scan-photo timeline and `PhotoCompareActivity` gives the
+before/after drag-divider compare. Pure visualization over the existing Room
+rows + local image files (`filesDir/plant_images`) — fully offline, no new
+storage. **Nothing left to do here**; treat it as a free win when scoping the
+release.
 
 ### 6. Architecture
 
@@ -168,11 +199,20 @@ Make **recovery visible**:
   (a small table or a JSON column on the scan). Ship behind the same
   single-module XML-Views + Koin structure.
 
-**Sequencing when this release starts:** (1) Today queue + care checklists
-together (they're the payoff and share the schedule/journal plumbing), then
-(2) health header (needs the checklist adherence signal), then (3) rooms +
-photo-compare as independent polish. Rooms and the compare strip could slip to
-a follow-up without blocking the core hub.
+**Sequencing when this release starts:**
+
+| # | Task | Why here | Size |
+|---|---|---|---|
+| 1 | Today queue **+** scan-driven care checklists | The payoff, and they share the schedule/journal plumbing — build together, not in sequence | XL |
+| 2 | Plant health header | Needs the checklist-adherence signal from #1 | M |
+| 3 | Rooms / locations | Independent polish; one nullable column + a grouping header | S |
+| — | Progression / photo-compare | Already shipped — see §5 | — |
+
+Rooms could slip to a follow-up without blocking the core hub.
+
+**Status check before starting:** none of §1–§4 exists yet — no `room` column
+on `plants`, no checklist-step storage, no health-status derivation, no
+aggregated queue. §5 is the only part already built.
 
 ---
 
