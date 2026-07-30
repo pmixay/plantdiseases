@@ -29,6 +29,20 @@ URL in the default browser. Use `--port 8788` to choose another port or
 
 ## First connection
 
+The panel ships with the verified production VPS profile:
+
+- host `5.83.140.51`, SSH user `root`;
+- repository `/home/plantdiseases/repo`;
+- runtime data `/home/plantdiseases/repo/server`;
+- remote Python `/usr/bin/python3`;
+- systemd unit `plantdiseases.service`;
+- health endpoint `http://127.0.0.1:8000/api/health`.
+
+The **Use verified VPS profile** button restores these non-secret settings.
+The connection still requires a freshly verified host fingerprint and a local
+private key or password. A key is strongly preferred for the privileged root
+account.
+
 Enter:
 
 - SSH host/IP, port and username;
@@ -99,7 +113,8 @@ Structured controls:
 1. verify the configured path is a Git worktree;
 2. fetch and prune `origin`;
 3. list only branches actually returned by `origin`;
-4. refuse a dirty or untracked worktree;
+4. preserve known untracked runtime databases, media, caches and backups while
+   refusing source changes or unknown untracked paths;
 5. switch without force, creating a tracking branch only when necessary;
 6. update with `git merge --ff-only` (never reset/clean/forced checkout);
 7. take online database backups before a deploy;
@@ -109,8 +124,10 @@ Structured controls:
 Docker deployments run `docker compose up -d --build --remove-orphans`, because
 a simple container restart would not load newly pulled code. systemd uses
 `sudo -n`, so configure narrow passwordless permission for only the required
-PlantDiseases service. For systemd deployments, the configured repository
-`.venv` is updated from `server/requirements.txt` before restart. Only one
+PlantDiseases service. For systemd deployments, `server/venv` (falling back to
+repository `.venv`) is updated from `server/requirements.txt` before restart.
+The panel also refuses a target branch that tracks any configured runtime-data
+path, preventing checkout from overwriting production files. Only one
 deploy/restart operation runs at a time.
 
 The **SSH console** intentionally runs arbitrary commands as the configured SSH
@@ -127,7 +144,7 @@ routine work.
 - explicit host-key fingerprint pinning;
 - no saved password and no remote helper installation;
 - shell quoting plus allow-listing against fetched branch names;
-- dirty-tree and fast-forward-only Git guards;
+- source-tree, runtime-collision and fast-forward-only Git guards;
 - online SQLite backups before destructive data/deployment operations.
 
 The panel is an operator tool, not a public web service. Do not reverse-proxy

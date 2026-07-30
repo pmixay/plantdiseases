@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Small, dependency-free database agent for the Plant Diseases admin panel.
 
-The desktop panel sends this file to a host with ``python3 -``.  It prepends a
+The desktop panel sends this file to the configured remote Python on stdin. It prepends a
 single ``REQUEST_JSON = '...'`` assignment, so this module deliberately has no
 ``__future__`` imports (a future import would no longer be at the beginning of
 the generated input).  Importing the module is side-effect free; script mode

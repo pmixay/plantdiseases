@@ -32,10 +32,29 @@ def test_connection_requires_authentication() -> None:
         ConnectionRequest.model_validate(connection_payload(password=None, key_path=None))
 
 
+def test_verified_production_defaults() -> None:
+    request = ConnectionRequest.model_validate({
+        "host": "5.83.140.51",
+        "username": "root",
+        "password": "secret",
+        "expected_fingerprint": "SHA256:abcdefghijklmnopqrstuvwxyz0123456789",
+    })
+    assert request.repo_path == "/home/plantdiseases/repo"
+    assert request.data_dir == "/home/plantdiseases/repo/server"
+    assert request.remote_python == "/usr/bin/python3"
+    assert request.deployment_method == "systemd"
+    assert request.service_name == "plantdiseases.service"
+
+
 @pytest.mark.parametrize("path", ["relative/path", "../server", "", "C:\\server"])
 def test_remote_paths_must_be_absolute_posix(path: str) -> None:
     with pytest.raises(ValidationError):
         ConnectionRequest.model_validate(connection_payload(repo_path=path))
+
+
+def test_remote_python_must_be_absolute_posix() -> None:
+    with pytest.raises(ValidationError):
+        ConnectionRequest.model_validate(connection_payload(remote_python="python3"))
 
 
 @pytest.mark.parametrize("compose", ["../docker-compose.yml", "/tmp/compose.yml", "a/../../b.yml"])

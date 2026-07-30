@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import posixpath
 import shlex
 import threading
 import time
@@ -126,6 +127,86 @@ def checked(result: dict[str, Any], label: str) -> dict[str, Any]:
         message = (result.get("stderr") or result.get("stdout") or "").strip()
         raise SshOperationError(f"{label} failed: {message[-3000:] or 'unknown error'}")
     return result
+
+
+_RUNTIME_DATABASES = (
+    "feedback.db",
+    "community.db",
+    "push.db",
+    "presence.db",
+    "telemetry.db",
+    "labeling.db",
+)
+_RUNTIME_DIRECTORIES = (
+    "feedback_images",
+    "community_thumbs",
+    "labeling_images",
+    "labeling_exports",
+    "plant_photo_cache",
+    "ai_cache",
+    "admin_backups",
+)
+
+
+def runtime_repo_paths(connection: StoredConnection) -> tuple[set[str], set[str]]:
+    """Return known runtime paths only when the data directory is in the worktree."""
+    repo = posixpath.normpath(connection.repo_path)
+    data = posixpath.normpath(connection.data_dir)
+    relative = posixpath.relpath(data, repo)
+    if relative == ".." or relative.startswith("../"):
+        return set(), set()
+    prefix = "" if relative == "." else relative.rstrip("/") + "/"
+    files: set[str] = set()
+    for database in _RUNTIME_DATABASES:
+        files.add(prefix + database)
+        files.update(prefix + database + suffix for suffix in ("-wal", "-shm", "-journal"))
+    directories = {prefix + name for name in _RUNTIME_DIRECTORIES}
+    return files, directories
+
+
+def classify_git_status(
+    lines: list[str],
+    connection: StoredConnection,
+) -> tuple[list[str], list[str]]:
+    """Separate safe untracked runtime artifacts from source-tree changes."""
+    runtime_files, runtime_directories = runtime_repo_paths(connection)
+    dirty: list[str] = []
+    runtime: list[str] = []
+    for line in lines:
+        # Quoted/escaped unusual names stay blocking rather than being misclassified.
+        path = line[3:].rstrip("/") if line.startswith("?? ") and not line[3:].startswith('"') else None
+        is_runtime = bool(
+            path
+            and (
+                path in runtime_files
+                or any(path == directory or path.startswith(directory + "/") for directory in runtime_directories)
+            )
+        )
+        (runtime if is_runtime else dirty).append(line)
+    return dirty, runtime
+
+
+def ensure_target_does_not_track_runtime(session: LocalSession, branch: str) -> None:
+    """Never let a checkout overwrite a database, upload, cache, or backup path."""
+    connection = connection_for(session)
+    runtime_files, runtime_directories = runtime_repo_paths(connection)
+    paths = sorted(runtime_files | runtime_directories)
+    if not paths:
+        return
+    repo = shlex.quote(connection.repo_path)
+    ref = shlex.quote("origin/" + branch)
+    pathspecs = " ".join(shlex.quote(path) for path in paths)
+    tracked = run_checked(
+        session.session_id,
+        f"git -C {repo} ls-tree -r --name-only {ref} -- {pathspecs}",
+        "Runtime-path collision check",
+        timeout=30,
+    )["stdout"].splitlines()
+    if tracked:
+        raise SshOperationError(
+            "The target branch tracks production runtime paths and could overwrite data: "
+            + ", ".join(tracked[:20]),
+        )
 
 
 def run_checked(session_id: str, command: str, label: str, *, timeout: int = 90) -> dict[str, Any]:
@@ -285,12 +366,13 @@ def git_snapshot(session: LocalSession, *, fetch: bool = False) -> dict[str, Any
         "Read current commit",
     )["stdout"].strip()
     commit_parts = commit_line.split("\t", 3)
-    dirty_lines = run_checked(
+    status_lines = run_checked(
         sid,
         f"git -C {repo} status --porcelain=v1 --untracked-files=normal",
         "Read working-tree status",
         timeout=30,
     )["stdout"].splitlines()
+    dirty_lines, runtime_lines = classify_git_status(status_lines, connection)
     remote_text = run_checked(
         sid,
         f"git -C {repo} for-each-ref --format='%(refname:strip=3)|%(objectname)|%(objectname:short)|%(subject)' refs/remotes/origin",
@@ -323,6 +405,7 @@ def git_snapshot(session: LocalSession, *, fetch: bool = False) -> dict[str, Any
         },
         "dirty": bool(dirty_lines),
         "dirty_files": dirty_lines[:100],
+        "preserved_runtime_files": [line[3:] for line in runtime_lines[:100]],
         "remote_branches": remotes,
         "local_branches": locals_,
         "fetched": fetch,
@@ -337,7 +420,7 @@ async def git_status(session: SessionDep, fetch: bool = Query(default=False)):
 def ensure_clean(snapshot: dict[str, Any]) -> None:
     if snapshot["dirty"]:
         raise SshOperationError(
-            "Remote repository has uncommitted or untracked files. Commit, stash, or remove them before switching/updating.",
+            "Remote repository has source changes or unknown untracked files. Commit, stash, or remove them before switching/updating. Known production databases, media and backups are preserved automatically.",
         )
 
 
@@ -353,6 +436,7 @@ def switch_branch(session: LocalSession, branch: str) -> dict[str, Any]:
     snapshot = git_snapshot(session, fetch=True)
     ensure_clean(snapshot)
     verify_remote_branch(snapshot, branch)
+    ensure_target_does_not_track_runtime(session, branch)
     branch_q = shlex.quote(branch)
     local_ref_q = shlex.quote("refs/heads/" + branch)
     exists = ssh.run(sid, f"git -C {repo} show-ref --verify --quiet {local_ref_q}", timeout=30)
@@ -383,6 +467,7 @@ def update_current_branch(session: LocalSession) -> dict[str, Any]:
     if branch == "(detached)":
         raise SshOperationError("Cannot update a detached HEAD; switch to a branch first")
     verify_remote_branch(snapshot, branch)
+    ensure_target_does_not_track_runtime(session, branch)
     run_checked(
         sid,
         f"git -C {repo} merge --ff-only {shlex.quote('origin/' + branch)}",
@@ -412,11 +497,15 @@ def restart_server(session: LocalSession) -> dict[str, Any]:
             timeout=600,
         )
     elif connection.deployment_method == "systemd":
-        venv_python = shlex.quote(f"{connection.repo_path}/.venv/bin/python")
+        server_venv_python = shlex.quote(f"{connection.repo_path}/server/venv/bin/python")
+        root_venv_python = shlex.quote(f"{connection.repo_path}/.venv/bin/python")
         requirements = shlex.quote(f"{connection.repo_path}/server/requirements.txt")
         run_checked(
             sid,
-            f"test -x {venv_python} && {venv_python} -m pip install --disable-pip-version-check -r {requirements}",
+            f"if test -x {server_venv_python}; then python={server_venv_python}; "
+            f"elif test -x {root_venv_python}; then python={root_venv_python}; "
+            "else echo 'PlantDiseases virtualenv Python was not found' >&2; exit 1; fi; "
+            f"\"$python\" -m pip install --disable-pip-version-check -r {requirements}",
             "systemd dependency update",
             timeout=600,
         )
@@ -449,7 +538,12 @@ def restart_server(session: LocalSession) -> dict[str, Any]:
         "print(last,file=sys.stderr);sys.exit(1)\n"
     )
     health_result = checked(
-        ssh.run(sid, "python3 -", timeout=100, stdin_data=health_script),
+        ssh.run(
+            sid,
+            f"{shlex.quote(connection.remote_python)} -",
+            timeout=100,
+            stdin_data=health_script,
+        ),
         "Health check",
     )
     try:

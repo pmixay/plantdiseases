@@ -154,7 +154,7 @@
               <button class="button secondary" id="switch-branch" type="button">Switch branch</button>
               <button class="button primary" id="deploy-branch" type="button">Update &amp; restart</button>
             </div>
-            <p class="safety-note"><svg viewBox="0 0 24 24"><path d="M12 1 3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4Zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8Z"/></svg>The panel refuses dirty worktrees and non-fast-forward updates. A database backup is created before deployment.</p>
+            <p class="safety-note"><svg viewBox="0 0 24 24"><path d="M12 1 3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4Zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8Z"/></svg>Known production data is preserved. Source changes, unknown files, data-path collisions and non-fast-forward updates are refused. A database backup is created before deployment.</p>
           </article>
 
           <article class="card deployment-card">
@@ -206,9 +206,9 @@ Connect in Connection settings, then enter a command below.
           <form class="card settings-card" id="connection-form">
             <div class="card-heading"><div><p class="eyebrow">Secure Shell</p><h2>Server connection</h2></div><span class="chip neutral" id="settings-status"><span class="status-dot"></span> Disconnected</span></div>
             <div class="form-grid two">
-              <label class="field span-one"><span>Host or IP</span><input name="host" required placeholder="203.0.113.10" autocomplete="off"></label>
+              <label class="field span-one"><span>Host or IP</span><input name="host" required value="5.83.140.51" autocomplete="off"></label>
               <label class="field narrow"><span>Port</span><input name="port" required type="number" min="1" max="65535" value="22"></label>
-              <label class="field"><span>SSH username</span><input name="username" required placeholder="plantd" autocomplete="username"></label>
+              <label class="field"><span>SSH username</span><input name="username" required value="root" autocomplete="username"><small>Verified production shell login. Prefer key authentication.</small></label>
               <label class="field"><span>Password</span><input name="password" type="password" placeholder="Not stored" autocomplete="current-password"><small>Leave blank when using a key.</small></label>
               <label class="field full-row"><span>Private key path <em>optional</em></span><input name="key_path" placeholder="/home/admin/.ssh/id_ed25519" autocomplete="off"><small>This path is on the computer running the admin panel.</small></label>
             </div>
@@ -222,14 +222,16 @@ Connect in Connection settings, then enter a command below.
           </form>
 
           <form class="card settings-card" id="deployment-form">
-            <div class="card-heading"><div><p class="eyebrow">Remote paths</p><h2>PlantDiseases deployment</h2></div></div>
-            <label class="field"><span>Repository root</span><input name="repo_path" required value="/opt/plantdiseases"><small>Directory containing the remote <code>.git</code> folder.</small></label>
-            <label class="field"><span>Persistent data directory</span><input name="data_dir" required value="/opt/plantdiseases/server/data"><small>Directory containing feedback.db, community.db, push.db and other stores. The bundled Docker Compose uses <code>server/data</code>.</small></label>
-            <label class="field"><span>Restart method</span><select name="deployment_method" id="deployment-method"><option value="docker_compose">Docker Compose</option><option value="systemd">systemd</option><option value="custom">Custom command</option></select></label>
-            <div data-method="docker_compose"><label class="field"><span>Compose file</span><input name="compose_file" value="server/docker-compose.yml"></label></div>
-            <div data-method="systemd" class="hidden"><label class="field"><span>Service name</span><input name="service_name" value="plantdiseases"></label></div>
+            <div class="card-heading"><div><p class="eyebrow">Remote paths</p><h2>PlantDiseases deployment</h2></div><button class="button secondary" id="load-production-profile" type="button">Use verified VPS profile</button></div>
+            <label class="field"><span>Repository root</span><input name="repo_path" required value="/home/plantdiseases/repo"><small>Verified production Git worktree.</small></label>
+            <label class="field"><span>Persistent data directory</span><input name="data_dir" required value="/home/plantdiseases/repo/server"><small>Verified location of feedback, community, push, telemetry and labeling stores.</small></label>
+            <label class="field"><span>Remote Python</span><input name="remote_python" required value="/usr/bin/python3"><small>Used for database operations and health checks over SSH.</small></label>
+            <label class="field"><span>Restart method</span><select name="deployment_method" id="deployment-method"><option value="docker_compose">Docker Compose</option><option value="systemd" selected>systemd</option><option value="custom">Custom command</option></select></label>
+            <div data-method="docker_compose" class="hidden"><label class="field"><span>Compose file</span><input name="compose_file" value="server/docker-compose.yml"></label></div>
+            <div data-method="systemd"><label class="field"><span>Service name</span><input name="service_name" value="plantdiseases.service"></label></div>
             <div data-method="custom" class="hidden"><label class="field"><span>Restart command</span><textarea name="custom_restart_command" rows="3" placeholder="./scripts/restart-production.sh"></textarea><small>Runs from the repository root as the SSH user.</small></label></div>
             <label class="field"><span>Health endpoint</span><input name="health_url" type="url" value="http://127.0.0.1:8000/api/health"></label>
+            <div class="notice compact info"><svg viewBox="0 0 24 24"><path d="M11 17h2v-6h-2v6Zm1-15a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16ZM11 9h2V7h-2v2Z"/></svg><div><strong>Production systemd preset</strong><span>Deployments preserve known databases, uploads, caches and admin backups inside <code>server/</code>. Any source change or unknown file still blocks automation.</span></div></div>
           </form>
         </div>
         <div class="notice info">

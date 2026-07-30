@@ -55,6 +55,7 @@ server/push.db-wal
 server/push.db-shm
 server/plant_photo_cache/
 server/ai_cache/
+server/admin_backups/
 
 # Hosted Aqua on-device model (provisioned out of band)
 server/static/aqua/aqua_classifier.tflite

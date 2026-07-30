@@ -28,11 +28,12 @@ class ConnectionRequest(ProbeRequest):
     username: str = Field(min_length=1, max_length=128)
     password: SecretStr | None = None
     key_path: str | None = Field(default=None, max_length=1024)
-    repo_path: str = Field(default="/opt/plantdiseases", min_length=1, max_length=1024)
-    data_dir: str = Field(default="/opt/plantdiseases/server/data", min_length=1, max_length=1024)
+    repo_path: str = Field(default="/home/plantdiseases/repo", min_length=1, max_length=1024)
+    data_dir: str = Field(default="/home/plantdiseases/repo/server", min_length=1, max_length=1024)
+    remote_python: str = Field(default="/usr/bin/python3", min_length=1, max_length=1024)
     expected_fingerprint: str = Field(min_length=10, max_length=256)
-    deployment_method: Literal["docker_compose", "systemd", "custom"] = "docker_compose"
-    service_name: str = Field(default="plantdiseases", max_length=128)
+    deployment_method: Literal["docker_compose", "systemd", "custom"] = "systemd"
+    service_name: str = Field(default="plantdiseases.service", max_length=128)
     compose_file: str = Field(default="server/docker-compose.yml", max_length=512)
     custom_restart_command: str | None = Field(default=None, max_length=2000)
     health_url: str = Field(default="http://127.0.0.1:8000/api/health", max_length=2048)
@@ -45,7 +46,7 @@ class ConnectionRequest(ProbeRequest):
             raise ValueError("invalid SSH username")
         return value
 
-    @field_validator("repo_path", "data_dir")
+    @field_validator("repo_path", "data_dir", "remote_python")
     @classmethod
     def absolute_remote_path(cls, value: str) -> str:
         value = value.strip()

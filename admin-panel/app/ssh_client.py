@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import shlex
 import socket
 import threading
 import time
@@ -54,6 +55,7 @@ class StoredConnection:
     key_path: str | None
     repo_path: str
     data_dir: str
+    remote_python: str
     fingerprint: str
     deployment_method: str
     service_name: str
@@ -71,6 +73,7 @@ class StoredConnection:
             key_path=request.key_path,
             repo_path=request.repo_path,
             data_dir=request.data_dir,
+            remote_python=request.remote_python,
             fingerprint=request.expected_fingerprint,
             deployment_method=request.deployment_method,
             service_name=request.service_name,
@@ -88,6 +91,7 @@ class StoredConnection:
             "key_path": self.key_path,
             "repo_path": self.repo_path,
             "data_dir": self.data_dir,
+            "remote_python": self.remote_python,
             "fingerprint": self.fingerprint,
             "deployment_method": self.deployment_method,
             "service_name": self.service_name,
@@ -184,7 +188,7 @@ class SshManager:
         prelude = "REQUEST_JSON = " + repr(json.dumps(request, separators=(",", ":"))) + "\n"
         result = self.run(
             session_id,
-            "python3 -",
+            f"{shlex.quote(self.get(session_id).remote_python)} -",
             timeout=timeout,
             stdin_data=prelude + source,
         )

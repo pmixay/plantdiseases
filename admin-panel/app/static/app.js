@@ -10,6 +10,20 @@ const state = {
   confirmAction: null,
 };
 
+const PROFILE_VERSION = 2;
+const productionProfile = Object.freeze({
+  host: "5.83.140.51",
+  port: 22,
+  username: "root",
+  repo_path: "/home/plantdiseases/repo",
+  data_dir: "/home/plantdiseases/repo/server",
+  remote_python: "/usr/bin/python3",
+  deployment_method: "systemd",
+  service_name: "plantdiseases.service",
+  compose_file: "server/docker-compose.yml",
+  health_url: "http://127.0.0.1:8000/api/health",
+});
+
 const viewMeta = {
   dashboard: ["Overview", "Dashboard"],
   users: ["Data administration", "Users"],
@@ -144,8 +158,9 @@ function buildConnectionPayload() {
     expected_fingerprint: formValue(connectionForm, "expected_fingerprint"),
     repo_path: formValue(deployForm, "repo_path"),
     data_dir: formValue(deployForm, "data_dir"),
+    remote_python: formValue(deployForm, "remote_python") || "/usr/bin/python3",
     deployment_method: formValue(deployForm, "deployment_method"),
-    service_name: formValue(deployForm, "service_name") || "plantdiseases",
+    service_name: formValue(deployForm, "service_name") || "plantdiseases.service",
     compose_file: formValue(deployForm, "compose_file") || "server/docker-compose.yml",
     custom_restart_command: nullable(formValue(deployForm, "custom_restart_command")),
     health_url: formValue(deployForm, "health_url"),
@@ -153,7 +168,7 @@ function buildConnectionPayload() {
 }
 
 function saveProfile(payload) {
-  const safe = { ...payload };
+  const safe = { ...payload, _profile_version: PROFILE_VERSION };
   delete safe.password;
   delete safe.custom_restart_command;
   localStorage.setItem("plantd-admin-profile", JSON.stringify(safe));
@@ -163,8 +178,18 @@ function restoreProfile() {
   let profile;
   try { profile = JSON.parse(localStorage.getItem("plantd-admin-profile") || "null"); } catch { return; }
   if (!profile) return;
+  if (profile._profile_version !== PROFILE_VERSION) {
+    if (profile.host === productionProfile.host && profile.expected_fingerprint) {
+      state.fingerprint = profile.expected_fingerprint;
+      showFingerprint(profile.expected_fingerprint, "Previously trusted fingerprint");
+    }
+    localStorage.removeItem("plantd-admin-profile");
+    updateMethodVisibility();
+    return;
+  }
   const forms = [$("#connection-form"), $("#deployment-form")];
   Object.entries(profile).forEach(([name, value]) => {
+    if (name.startsWith("_")) return;
     for (const form of forms) {
       const node = form.elements.namedItem(name);
       if (node && value !== null && name !== "password") node.value = value;
@@ -175,6 +200,21 @@ function restoreProfile() {
     showFingerprint(profile.expected_fingerprint, "Previously trusted fingerprint");
   }
   updateMethodVisibility();
+}
+
+function loadProductionProfile() {
+  const connectionForm = $("#connection-form");
+  const deployForm = $("#deployment-form");
+  const previousHost = formValue(connectionForm, "host");
+  Object.entries(productionProfile).forEach(([name, value]) => {
+    for (const form of [connectionForm, deployForm]) {
+      const node = form.elements.namedItem(name);
+      if (node) node.value = value;
+    }
+  });
+  if (previousHost !== productionProfile.host) clearFingerprint();
+  updateMethodVisibility();
+  toast("Verified VPS profile loaded", "Add your SSH key or password, check the fingerprint, and connect.");
 }
 
 function showFingerprint(fingerprint, title = "Verify this host key") {
@@ -467,7 +507,8 @@ function renderGit(snapshot) {
     : "Commit unavailable";
   const tree = $("#tree-status");
   tree.className = `chip ${snapshot.dirty ? "warning" : "success"}`;
-  tree.textContent = snapshot.dirty ? "Dirty tree" : "Clean tree";
+  const runtimeCount = snapshot.preserved_runtime_files?.length || 0;
+  tree.textContent = snapshot.dirty ? "Source changes" : runtimeCount ? "Source clean · data preserved" : "Clean tree";
   const select = $("#branch-select");
   const currentValue = select.value;
   select.innerHTML = (snapshot.remote_branches || []).map((branch) =>
@@ -477,7 +518,7 @@ function renderGit(snapshot) {
   else if ([...select.options].some((option) => option.value === snapshot.current_branch)) select.value = snapshot.current_branch;
   $("#repo-summary").innerHTML = `
     <div class="summary-row"><span>Remote</span><strong>${escapeHtml(state.connection?.host || "—")}</strong></div>
-    <div class="summary-row"><span>Working tree</span><strong>${snapshot.dirty ? `${snapshot.dirty_files?.length || 1} changed paths` : "Clean"}</strong></div>
+    <div class="summary-row"><span>Working tree</span><strong>${snapshot.dirty ? `${snapshot.dirty_files?.length || 1} blocking paths` : runtimeCount ? `${runtimeCount} runtime paths preserved` : "Clean"}</strong></div>
     <div class="summary-row"><span>Last commit</span><strong title="${escapeHtml(snapshot.commit?.subject)}">${escapeHtml(snapshot.commit?.short_sha || "—")} · ${escapeHtml(snapshot.commit?.subject || "")}</strong></div>`;
 }
 
@@ -540,7 +581,7 @@ async function switchSelectedBranch() {
   if (!branch) return toast("Select a branch", "Fetch origin and choose a branch first.", "error");
   confirmOperation(
     `Switch to ${branch}?`,
-    "The panel will fetch origin and refuse the operation if the remote worktree is dirty. It will not restart the server.",
+    "The panel will fetch origin, preserve verified runtime data paths, and refuse any source change, unknown file, or target-branch data collision. It will not restart the server.",
     async () => {
       loading(true, `Switching to ${branch}…`);
       try {
@@ -646,6 +687,7 @@ function initEvents() {
   $("#deployment-form").addEventListener("submit", (event) => event.preventDefault());
   $("#disconnect-host").addEventListener("click", disconnectHost);
   $("#deployment-method").addEventListener("change", updateMethodVisibility);
+  $("#load-production-profile").addEventListener("click", loadProductionProfile);
   ["host", "port"].forEach((name) => $("#connection-form").elements.namedItem(name).addEventListener("input", clearFingerprint));
 
   $("#dashboard-refresh").addEventListener("click", () => refreshDashboard());
