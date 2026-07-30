@@ -127,7 +127,9 @@ Structured controls:
 4. preserve known untracked runtime databases, media, caches and backups while
    refusing source changes or unknown untracked paths;
 5. switch without force, creating a tracking branch only when necessary;
-6. update with `git merge --ff-only` (never reset/clean/forced checkout);
+6. fast-forward when possible; if local history is ahead or diverged, save the
+   exact local commit under `refs/plantd-admin/backups/<branch>/...` before
+   aligning the deployment branch to `origin/<branch>` without `reset --hard`;
 7. take online database backups before a deploy;
 8. rebuild/restart through the selected adapter;
 9. wait up to 90 seconds for `/api/health`.
@@ -155,7 +157,8 @@ routine work.
 - explicit host-key fingerprint pinning;
 - no saved password and no remote helper installation;
 - shell quoting plus allow-listing against fetched branch names;
-- source-tree, runtime-collision and fast-forward-only Git guards;
+- source-tree and runtime-collision Git guards plus recoverable divergence
+  handling;
 - online SQLite backups before destructive data/deployment operations.
 
 The panel is an operator tool, not a public web service. Do not reverse-proxy

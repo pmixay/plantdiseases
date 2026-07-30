@@ -468,14 +468,81 @@ def update_current_branch(session: LocalSession) -> dict[str, Any]:
         raise SshOperationError("Cannot update a detached HEAD; switch to a branch first")
     verify_remote_branch(snapshot, branch)
     ensure_target_does_not_track_runtime(session, branch)
-    run_checked(
+    remote_ref = shlex.quote("origin/" + branch)
+
+    local_is_ancestor = ssh.run(
         sid,
-        f"git -C {repo} merge --ff-only {shlex.quote('origin/' + branch)}",
-        "Fast-forward update",
-        timeout=120,
+        f"git -C {repo} merge-base --is-ancestor HEAD {remote_ref}",
+        timeout=30,
     )
-    audit("branch_updated", session, branch=branch)
-    return git_snapshot(session)
+    if local_is_ancestor["exit_code"] not in {0, 1}:
+        checked(local_is_ancestor, "Compare local and origin history")
+
+    recovery_ref = None
+    relation = "fast_forward"
+    if local_is_ancestor["exit_code"] == 0:
+        run_checked(
+            sid,
+            f"git -C {repo} merge --ff-only {remote_ref}",
+            "Fast-forward update",
+            timeout=120,
+        )
+    else:
+        remote_is_ancestor = ssh.run(
+            sid,
+            f"git -C {repo} merge-base --is-ancestor {remote_ref} HEAD",
+            timeout=30,
+        )
+        if remote_is_ancestor["exit_code"] not in {0, 1}:
+            checked(remote_is_ancestor, "Compare origin and local history")
+        relation = "local_ahead" if remote_is_ancestor["exit_code"] == 0 else "diverged"
+
+        timestamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+        short_sha = snapshot["commit"]["short_sha"] or snapshot["commit"]["sha"][:12]
+        recovery_ref = f"refs/plantd-admin/backups/{branch}/{timestamp}-{short_sha}"
+        recovery_ref_q = shlex.quote(recovery_ref)
+        branch_q = shlex.quote(branch)
+
+        # Preserve the exact local commit before moving the deployment branch.
+        # The following detach means the checked-out branch can be moved without
+        # reset --hard; target runtime paths were collision-checked above.
+        run_checked(
+            sid,
+            f"git -C {repo} update-ref {recovery_ref_q} HEAD",
+            "Create local-history recovery ref",
+        )
+        run_checked(
+            sid,
+            f"git -C {repo} switch --detach {remote_ref}",
+            "Check out origin deployment commit",
+            timeout=120,
+        )
+        run_checked(
+            sid,
+            f"git -C {repo} branch --force {branch_q} {remote_ref}",
+            "Align local deployment branch",
+        )
+        run_checked(
+            sid,
+            f"git -C {repo} switch {branch_q}",
+            "Restore deployment branch checkout",
+            timeout=120,
+        )
+
+    audit(
+        "branch_updated",
+        session,
+        branch=branch,
+        relation=relation,
+        recovery_ref=recovery_ref,
+    )
+    result = git_snapshot(session)
+    result["synchronization"] = {
+        "mode": "fast_forward" if recovery_ref is None else "aligned_to_origin",
+        "previous_relation": relation,
+        "recovery_ref": recovery_ref,
+    }
+    return result
 
 
 @app.post("/api/git/update")

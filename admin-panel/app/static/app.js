@@ -601,7 +601,7 @@ async function deploySelectedBranch() {
   if (!branch) return toast("Select a branch", "Fetch origin and choose a branch first.", "error");
   confirmOperation(
     `Deploy ${branch}?`,
-    "This creates online SQLite backups, fast-forwards from origin, rebuilds/restarts the configured service, and waits for its health check.",
+    "This creates online SQLite backups, synchronizes the selected branch to origin, rebuilds/restarts the configured service, and waits for its health check. Diverged local history is preserved under a recovery ref.",
     async () => {
       loading(true, `Deploying ${branch}…`);
       try {
@@ -611,7 +611,11 @@ async function deploySelectedBranch() {
         });
         if (result.after) renderGit(result.after);
         $("#operation-output").textContent = JSON.stringify(result, null, 2);
-        toast("Deployment healthy", `${branch} is running at ${result.after?.commit?.short_sha || "the latest commit"}.`);
+        const recoveryRef = result.after?.synchronization?.recovery_ref;
+        const detail = recoveryRef
+          ? `${branch} is running at ${result.after?.commit?.short_sha || "the latest commit"}. Previous local history: ${recoveryRef}`
+          : `${branch} is running at ${result.after?.commit?.short_sha || "the latest commit"}.`;
+        toast("Deployment healthy", detail);
         await loadService();
       } catch (error) {
         $("#operation-output").textContent = `Deployment failed\n${error.message}`;
