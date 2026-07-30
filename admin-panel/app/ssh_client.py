@@ -17,6 +17,9 @@ from .models import ConnectionRequest
 
 
 MAX_OUTPUT_BYTES = 512 * 1024
+CONNECT_ATTEMPTS = 3
+CONNECT_RETRY_DELAY_SECONDS = 0.6
+KEEPALIVE_SECONDS = 30
 
 
 class SshOperationError(RuntimeError):
@@ -103,6 +106,8 @@ class StoredConnection:
 class SshManager:
     def __init__(self):
         self._connections: dict[str, StoredConnection] = {}
+        self._clients: dict[str, paramiko.SSHClient] = {}
+        self._session_locks: dict[str, threading.RLock] = {}
         self._lock = threading.RLock()
 
     @staticmethod
@@ -129,20 +134,25 @@ class SshManager:
 
     def connect(self, session_id: str, request: ConnectionRequest) -> dict[str, Any]:
         connection = StoredConnection.from_request(request)
-        client = self._new_client(connection)
-        try:
-            result = self._execute_on_client(client, "printf 'connected'", timeout=10)
-            if result["exit_code"] != 0:
-                raise SshOperationError("SSH authentication succeeded but the remote shell failed")
-        finally:
-            client.close()
-        with self._lock:
-            self._connections[session_id] = connection
+        with self._session_lock(session_id):
+            client = self._new_client(connection)
+            try:
+                result = self._execute_on_client(client, "printf 'connected'", timeout=10)
+                if result["exit_code"] != 0:
+                    raise SshOperationError("SSH authentication succeeded but the remote shell failed")
+            except Exception:
+                client.close()
+                raise
+            self._replace_client(session_id, connection, client)
         return connection.public_dict()
 
     def disconnect(self, session_id: str) -> None:
-        with self._lock:
-            self._connections.pop(session_id, None)
+        with self._session_lock(session_id):
+            with self._lock:
+                self._connections.pop(session_id, None)
+                client = self._clients.pop(session_id, None)
+            if client:
+                client.close()
 
     def get(self, session_id: str) -> StoredConnection:
         with self._lock:
@@ -164,17 +174,29 @@ class SshManager:
         timeout: int = 60,
         stdin_data: str | None = None,
     ) -> dict[str, Any]:
-        connection = self.get(session_id)
-        client = self._new_client(connection)
-        try:
-            return self._execute_on_client(
-                client,
-                command,
-                timeout=timeout,
-                stdin_data=stdin_data,
-            )
-        finally:
-            client.close()
+        # Browser dashboard calls may arrive together. A Paramiko client supports
+        # sequential channels reliably, so serialize them and retain one verified
+        # session instead of repeatedly handshaking with a weak/intermittent link.
+        with self._session_lock(session_id):
+            connection = self.get(session_id)
+            client = self._client_for_run(session_id, connection)
+            try:
+                return self._execute_on_client(
+                    client,
+                    command,
+                    timeout=timeout,
+                    stdin_data=stdin_data,
+                )
+            except (OSError, EOFError, paramiko.SSHException) as exc:
+                self._drop_client(session_id, client)
+                raise SshOperationError(
+                    "SSH command connection was lost. The command may have run; check server state before retrying. "
+                    f"Details: {exc}",
+                ) from exc
+            except SshOperationError:
+                if not self._client_is_active(client):
+                    self._drop_client(session_id, client)
+                raise
 
     def run_remote_agent(
         self,
@@ -204,27 +226,86 @@ class SshManager:
             raise SshOperationError(str(error.get("message") or "remote database operation failed"))
         return payload
 
+    def _session_lock(self, session_id: str) -> threading.RLock:
+        with self._lock:
+            return self._session_locks.setdefault(session_id, threading.RLock())
+
+    def _replace_client(
+        self,
+        session_id: str,
+        connection: StoredConnection,
+        client: paramiko.SSHClient,
+    ) -> None:
+        with self._lock:
+            previous = self._clients.get(session_id)
+            self._connections[session_id] = connection
+            self._clients[session_id] = client
+        if previous and previous is not client:
+            previous.close()
+
+    def _drop_client(self, session_id: str, client: paramiko.SSHClient) -> None:
+        with self._lock:
+            if self._clients.get(session_id) is client:
+                self._clients.pop(session_id, None)
+        client.close()
+
     @staticmethod
-    def _new_client(connection: StoredConnection) -> paramiko.SSHClient:
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(FingerprintPolicy(connection.fingerprint))
-        try:
-            client.connect(
-                hostname=connection.host,
-                port=connection.port,
-                username=connection.username,
-                password=connection.password,
-                key_filename=connection.key_path,
-                timeout=10,
-                banner_timeout=10,
-                auth_timeout=15,
-                look_for_keys=False,
-                allow_agent=False,
-            )
+    def _client_is_active(client: paramiko.SSHClient) -> bool:
+        transport = client.get_transport()
+        return bool(transport and transport.is_active())
+
+    def _client_for_run(self, session_id: str, connection: StoredConnection) -> paramiko.SSHClient:
+        with self._lock:
+            client = self._clients.get(session_id)
+        if client and self._client_is_active(client):
             return client
-        except (OSError, paramiko.SSHException) as exc:
-            client.close()
-            raise SshOperationError(f"SSH connection failed: {exc}") from exc
+        if client:
+            self._drop_client(session_id, client)
+        client = self._new_client(connection)
+        with self._lock:
+            self._clients[session_id] = client
+        return client
+
+    @staticmethod
+    def _can_retry_connection(exc: BaseException) -> bool:
+        if isinstance(exc, paramiko.AuthenticationException):
+            return False
+        return "host key mismatch" not in str(exc).lower()
+
+    @classmethod
+    def _new_client(cls, connection: StoredConnection) -> paramiko.SSHClient:
+        last_error: BaseException | None = None
+        attempts_used = 0
+        for attempt in range(1, CONNECT_ATTEMPTS + 1):
+            attempts_used = attempt
+            client = paramiko.SSHClient()
+            client.set_missing_host_key_policy(FingerprintPolicy(connection.fingerprint))
+            try:
+                client.connect(
+                    hostname=connection.host,
+                    port=connection.port,
+                    username=connection.username,
+                    password=connection.password,
+                    key_filename=connection.key_path,
+                    timeout=10,
+                    banner_timeout=10,
+                    auth_timeout=15,
+                    look_for_keys=False,
+                    allow_agent=False,
+                )
+                transport = client.get_transport()
+                if transport:
+                    transport.set_keepalive(KEEPALIVE_SECONDS)
+                return client
+            except (OSError, paramiko.SSHException) as exc:
+                client.close()
+                last_error = exc
+                if attempt == CONNECT_ATTEMPTS or not cls._can_retry_connection(exc):
+                    break
+                time.sleep(CONNECT_RETRY_DELAY_SECONDS * attempt)
+        raise SshOperationError(
+            f"SSH connection failed after {attempts_used} attempt(s): {last_error}",
+        ) from last_error
 
     @staticmethod
     def _execute_on_client(

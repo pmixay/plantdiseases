@@ -61,6 +61,17 @@ the browser, written to config, placed in localStorage, logged, or added to a
 remote command. Non-secret connection fields can be remembered by the browser.
 Stopping the launcher clears the SSH session and password.
 
+### Unreliable connections
+
+The panel keeps one verified SSH connection for each browser session and
+serializes dashboard requests, avoiding a burst of separate SSH handshakes.
+When opening that connection fails due to a transient network/transport error,
+it tries up to three times with a short backoff. Authentication and host-key
+failures are not retried. If a connection drops while a command is executing,
+the panel never repeats that command automatically: a delete, restart, branch
+switch or console command may already have run, so inspect state before trying
+again.
+
 ## What “users” means
 
 PlantDiseases has no accounts. Its server knows only random per-install UUIDs.

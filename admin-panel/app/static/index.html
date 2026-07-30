@@ -236,7 +236,7 @@ Connect in Connection settings, then enter a command below.
         </div>
         <div class="notice info">
           <svg viewBox="0 0 24 24"><path d="M12 1 3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4Zm-1 16-4-4 1.41-1.41L11 14.17l5.59-5.58L18 10l-7 7Z"/></svg>
-          <div><strong>Local by design</strong><span>The panel listens only on 127.0.0.1. Passwords stay in memory, are redacted from responses, and disappear when the panel stops. Non-secret profile fields are saved only in this browser.</span></div>
+          <div><strong>Local and connection-resilient</strong><span>The panel listens only on 127.0.0.1. It keeps one verified SSH session, serializes dashboard requests, and retries a failed connection handshake up to three times. Interrupted commands are never automatically replayed. Passwords stay in memory and disappear when the panel stops.</span></div>
         </div>
       </section>
     </main>
