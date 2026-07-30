@@ -20,10 +20,15 @@ MAX_OUTPUT_BYTES = 512 * 1024
 CONNECT_ATTEMPTS = 3
 CONNECT_RETRY_DELAY_SECONDS = 0.6
 KEEPALIVE_SECONDS = 30
+CHANNEL_OPEN_ATTEMPTS = 2
 
 
 class SshOperationError(RuntimeError):
     pass
+
+
+class SshChannelOpenError(SshOperationError):
+    """The SSH command was not sent because a session channel never opened."""
 
 
 def fingerprint_for_key(key: paramiko.PKey) -> str:
@@ -179,24 +184,34 @@ class SshManager:
         # session instead of repeatedly handshaking with a weak/intermittent link.
         with self._session_lock(session_id):
             connection = self.get(session_id)
-            client = self._client_for_run(session_id, connection)
-            try:
-                return self._execute_on_client(
-                    client,
-                    command,
-                    timeout=timeout,
-                    stdin_data=stdin_data,
-                )
-            except (OSError, EOFError, paramiko.SSHException) as exc:
-                self._drop_client(session_id, client)
-                raise SshOperationError(
-                    "SSH command connection was lost. The command may have run; check server state before retrying. "
-                    f"Details: {exc}",
-                ) from exc
-            except SshOperationError:
-                if not self._client_is_active(client):
+            for channel_attempt in range(1, CHANNEL_OPEN_ATTEMPTS + 1):
+                client = self._client_for_run(session_id, connection)
+                try:
+                    return self._execute_on_client(
+                        client,
+                        command,
+                        timeout=timeout,
+                        stdin_data=stdin_data,
+                    )
+                except SshChannelOpenError as exc:
                     self._drop_client(session_id, client)
-                raise
+                    if channel_attempt == CHANNEL_OPEN_ATTEMPTS:
+                        raise SshOperationError(
+                            "SSH channel could not be opened after reconnecting. No command was sent. "
+                            f"Details: {exc}",
+                        ) from exc
+                    continue
+                except (OSError, EOFError, paramiko.SSHException) as exc:
+                    self._drop_client(session_id, client)
+                    raise SshOperationError(
+                        "SSH command connection was lost. The command may have run; check server state before retrying. "
+                        f"Details: {exc}",
+                    ) from exc
+                except SshOperationError:
+                    if not self._client_is_active(client):
+                        self._drop_client(session_id, client)
+                    raise
+            raise SshOperationError("SSH channel retry exhausted")
 
     def run_remote_agent(
         self,
@@ -319,7 +334,10 @@ class SshManager:
         transport = client.get_transport()
         if transport is None or not transport.is_active():
             raise SshOperationError("SSH transport is not active")
-        channel = transport.open_session(timeout=10)
+        try:
+            channel = transport.open_session(timeout=10)
+        except (OSError, EOFError, paramiko.SSHException) as exc:
+            raise SshChannelOpenError(f"Timeout opening channel: {exc}") from exc
         channel.exec_command(command)
         if stdin_data is not None:
             channel.sendall(stdin_data.encode("utf-8"))

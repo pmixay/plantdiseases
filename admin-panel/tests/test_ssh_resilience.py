@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 import app.ssh_client as ssh_module
-from app.ssh_client import SshManager, SshOperationError, StoredConnection
+from app.ssh_client import SshChannelOpenError, SshManager, SshOperationError, StoredConnection
 
 
 def connection() -> StoredConnection:
@@ -113,6 +113,59 @@ def test_commands_reuse_one_active_client(monkeypatch) -> None:
     assert manager.run("session", "first")["stdout"] == "first"
     assert manager.run("session", "second")["stdout"] == "second"
 
+    assert len(created) == 1
+
+
+def test_channel_open_failure_reconnects_before_command_is_sent(monkeypatch) -> None:
+    manager = SshManager()
+    manager._connections["session"] = connection()
+    created = []
+    executions = 0
+
+    def new_client(_connection):  # noqa: ANN001
+        client = FakeClient()
+        created.append(client)
+        return client
+
+    def execute(client, command, timeout, stdin_data=None):  # noqa: ANN001
+        nonlocal executions
+        executions += 1
+        if executions == 1:
+            raise SshChannelOpenError("Timeout opening channel")
+        return {"exit_code": 0, "stdout": command}
+
+    monkeypatch.setattr(manager, "_new_client", new_client)
+    monkeypatch.setattr(manager, "_execute_on_client", execute)
+
+    assert manager.run("session", "safe-once")["stdout"] == "safe-once"
+    assert executions == 2
+    assert len(created) == 2
+    assert created[0].closed
+
+
+def test_failure_after_channel_open_is_not_replayed(monkeypatch) -> None:
+    manager = SshManager()
+    manager._connections["session"] = connection()
+    created = []
+    executions = 0
+
+    def new_client(_connection):  # noqa: ANN001
+        client = FakeClient()
+        created.append(client)
+        return client
+
+    def execute(client, command, timeout, stdin_data=None):  # noqa: ANN001
+        nonlocal executions
+        executions += 1
+        raise OSError("connection dropped after command send")
+
+    monkeypatch.setattr(manager, "_new_client", new_client)
+    monkeypatch.setattr(manager, "_execute_on_client", execute)
+
+    with pytest.raises(SshOperationError, match="may have run"):
+        manager.run("session", "dangerous-command")
+
+    assert executions == 1
     assert len(created) == 1
 
 
