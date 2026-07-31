@@ -328,18 +328,40 @@ class SpeciesDetailActivity : AppCompatActivity() {
     }
 
     /**
-     * Loads the optional botanical profile and wires only its native-range
-     * portion here. `available=false`, malformed statuses and transport errors
-     * all leave the card hidden so the established species screen renders
-     * normally without placeholder claims.
+     * One optional botanical-profile request feeds both the flowering cards
+     * and native-range map. `available=false`, malformed content and transport
+     * errors leave each optional section hidden while the established species
+     * screen continues rendering normally.
      */
     private fun loadSpeciesProfile() {
+        binding.cardFlowering.visibility = View.GONE
+        binding.cardFloweringConditions.visibility = View.GONE
         binding.cardNativeRange.visibility = View.GONE
         lifecycleScope.launch {
             val profile = scanRepository
                 .fetchSpeciesProfile(scientificName, commonName, locale)
                 .getOrNull()
-            val nativeRange = profile?.nativeRange
+            if (profile?.available != true) return@launch
+
+            val flowering = profile.flowering
+            if (
+                flowering != null &&
+                binding.floweringChart.setFlowering(flowering.monthlyIntensity)
+            ) {
+                val note = flowering.indoorNote.trim()
+                binding.tvFloweringIndoorNote.text = note
+                binding.tvFloweringIndoorNote.visibility =
+                    if (note.isBlank()) View.GONE else View.VISIBLE
+                binding.cardFlowering.visibility = View.VISIBLE
+
+                val conditions = profile.floweringConditions?.trim().orEmpty()
+                if (conditions.isNotBlank()) {
+                    binding.tvFloweringConditions.text = conditions
+                    binding.cardFloweringConditions.visibility = View.VISIBLE
+                }
+            }
+
+            val nativeRange = profile.nativeRange
             val zones = nativeRange?.zones.orEmpty().mapNotNull { zone ->
                 WorldMapView.ZoneStatus.fromWireName(zone.status)?.let { status ->
                     zone.country.takeIf(String::isNotBlank)?.let { country ->
@@ -347,7 +369,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
                     }
                 }
             }
-            if (profile?.available != true || nativeRange == null || zones.isEmpty()) {
+            if (nativeRange == null || zones.isEmpty()) {
                 return@launch
             }
             binding.tvNativeRangeSummary.text = nativeRange.summary
