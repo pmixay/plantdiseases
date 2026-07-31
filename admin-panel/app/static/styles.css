@@ -156,11 +156,11 @@ code, pre, .metric-code { font-family: "SFMono-Regular", Consolas, "Liberation M
   background: var(--card);
 }
 
-.connection-pill > div { min-width: 0; flex: 1; }
+.connection-copy { min-width: 0; flex: 1; }
 .connection-pill strong, .connection-pill span { display: block; }
-.connection-pill strong, .connection-pill div span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.connection-pill strong, .connection-detail { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .connection-pill strong { font-size: 12px; }
-.connection-pill div span { margin-top: 1px; color: var(--text-muted); font-size: 11px; }
+.connection-detail { margin-top: 1px; color: var(--text-muted); font-size: 11px; }
 .status-dot { display: inline-block; width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--text-faint); box-shadow: 0 0 0 3px rgb(120 130 123 / 13%); }
 .connected .status-dot, .chip.success .status-dot { background: var(--success); box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 18%, transparent); }
 

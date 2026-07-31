@@ -108,7 +108,7 @@ function renderConnection() {
   const pill = $("#connection-pill");
   pill.classList.toggle("connected", connected);
   $("strong", pill).textContent = connected ? state.connection.host : "Not connected";
-  $("div span", pill).textContent = connected
+  $(".connection-detail", pill).textContent = connected
     ? `${state.connection.username} · ${state.connection.deployment_method.replaceAll("_", " ")}`
     : "Configure SSH";
 

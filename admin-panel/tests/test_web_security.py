@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 import httpx
 
 import app.main as main_module
 from app.main import app, sessions, ssh
+
+
+STATIC_DIR = Path(__file__).resolve().parents[1] / "app" / "static"
 
 
 async def bootstrap(client: httpx.AsyncClient) -> str:
@@ -96,3 +100,11 @@ def test_api_responses_are_not_cached() -> None:
         assert response.headers["cache-control"] == "no-store"
 
     run_scenario(check)
+
+
+def test_connection_footer_targets_detail_instead_of_status_dot() -> None:
+    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    javascript = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
+    assert 'class="connection-detail"' in html
+    assert '$(".connection-detail", pill)' in javascript
+    assert '$("div span", pill)' not in javascript
