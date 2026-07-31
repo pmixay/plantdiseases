@@ -117,6 +117,13 @@
     <string name="consent_agree">Принять</string>
     <string name="consent_privacy_link">Политика конфиденциальности</string>
 
+    <!-- Контекстные подсказки -->
+    <string name="coach_scan_title">Начните со сканирования</string>
+    <string name="coach_scan_body">Нажмите «Скан», сфотографируйте лист и получите диагноз.</string>
+    <string name="coach_result_title">Как понять результат</string>
+    <string name="coach_result_body">Сначала посмотрите диагноз и уверенность модели, затем пролистайте к уходу и другим вариантам.</string>
+    <string name="coach_got_it">Понятно</string>
+
     <!-- Result -->
     <string name="new_scan">Новый скан</string>
     <string name="heatmap_label">Область обнаружения</string>

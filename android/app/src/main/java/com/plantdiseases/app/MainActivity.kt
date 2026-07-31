@@ -4,13 +4,12 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.view.View
-import android.view.animation.OvershootInterpolator
+import androidx.annotation.IdRes
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
-import androidx.annotation.IdRes
 import androidx.core.view.updatePadding
 import androidx.navigation.NavController
 import androidx.navigation.fragment.NavHostFragment
@@ -18,10 +17,13 @@ import androidx.navigation.ui.AppBarConfiguration
 import androidx.navigation.ui.navigateUp
 import androidx.navigation.ui.setupActionBarWithNavController
 import com.plantdiseases.app.databinding.ActivityMainBinding
+import com.plantdiseases.app.ui.common.CoachMarkOverlay
 import com.plantdiseases.app.ui.onboarding.OnboardingActivity
 import com.plantdiseases.app.ui.shell.ShellFragment
 import com.plantdiseases.app.util.InAppUpdateManager
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.OnboardingHintState
+import org.koin.android.ext.android.inject
 
 class MainActivity : AppCompatActivity() {
 
@@ -50,6 +52,10 @@ class MainActivity : AppCompatActivity() {
      *  onDestroy on the post-onboarding path; a no-op on installs that didn't
      *  come from RuStore. */
     private var inAppUpdateManager: InAppUpdateManager? = null
+
+    private val onboardingHints: OnboardingHintState by inject()
+    private var activeCoachMark: CoachMarkOverlay? = null
+    private var scanHintScheduled = false
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
@@ -183,16 +189,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Subtle bounce on Scan icon after onboarding
-        val prefs = getSharedPreferences("plantdiseases_prefs", MODE_PRIVATE)
-        val firstMainLaunch = !prefs.getBoolean("first_main_launched", false)
-        if (firstMainLaunch) {
-            prefs.edit().putBoolean("first_main_launched", true).apply()
-            binding.bottomNavigation.post {
-                bounceScanIcon()
-            }
-        }
-
         // A cold-started "New scan" (MainActivity wasn't already in memory)
         // routes through onCreate rather than onNewIntent.
         handleOpenTabIntent(intent)
@@ -211,6 +207,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        activeCoachMark?.dismiss(immediate = true)
+        activeCoachMark = null
         inAppUpdateManager?.release()
         inAppUpdateManager = null
         super.onDestroy()
@@ -228,6 +226,7 @@ class MainActivity : AppCompatActivity() {
             .setCancelable(false)
             .setPositiveButton(R.string.consent_agree) { _, _ ->
                 OnboardingActivity.setDataConsentGiven(this)
+                scheduleScanCoachMark()
             }
             .setNeutralButton(R.string.consent_privacy_link, null)
             .create()
@@ -306,20 +305,36 @@ class MainActivity : AppCompatActivity() {
             .start()
     }
 
-    // Bounce animation on Scan tab icon
-    private fun bounceScanIcon() {
-        val menuView = binding.bottomNavigation.getChildAt(0) as? android.view.ViewGroup ?: return
-        if (menuView.childCount > 1) {
-            val scanItem = menuView.getChildAt(1) // Second item = Scan (Home is first)
-            scanItem.scaleX = 0.8f
-            scanItem.scaleY = 0.8f
-            scanItem.animate()
-                .scaleX(1f)
-                .scaleY(1f)
-                .setDuration(500)
-                .setInterpolator(OvershootInterpolator(3f))
-                .setStartDelay(300)
-                .start()
+    /**
+     * Show feature discovery only after Home is genuinely visible. Posting
+     * closes the cold-start race with [EXTRA_OPEN_SCANNER]: that intent pages
+     * away during the same event loop, so it cannot accidentally consume the
+     * Home hint before the user has visited Home.
+     */
+    private fun scheduleScanCoachMark() {
+        if (scanHintScheduled || activeCoachMark != null) return
+        if (!OnboardingActivity.isDataConsentGiven(this)) return
+        scanHintScheduled = true
+        binding.bottomNavigation.post {
+            scanHintScheduled = false
+            if (isFinishing || isDestroyed) return@post
+            if (navController.currentDestination?.id != R.id.shellFragment) return@post
+            if (shell?.currentTabId != R.id.homeFragment) return@post
+
+            val scanItem = binding.bottomNavigation.findViewById<View>(R.id.cameraFragment)
+                ?: return@post
+            if (!scanItem.isAttachedToWindow || !onboardingHints.claimScanTabHint()) return@post
+
+            activeCoachMark = CoachMarkOverlay.show(
+                host = this,
+                anchor = scanItem,
+                title = getString(R.string.coach_scan_title),
+                body = getString(R.string.coach_scan_body),
+                dismissText = getString(R.string.coach_got_it),
+                placement = CoachMarkOverlay.Placement.ABOVE,
+                pulseAnchor = true,
+                onDismissed = { activeCoachMark = null },
+            )
         }
     }
 
@@ -382,6 +397,7 @@ class MainActivity : AppCompatActivity() {
     fun applyTabChrome(@IdRes tabId: Int) {
         binding.appBar.visibility = View.GONE
         if (tabId == R.id.galleryFragment) clearGalleryBadge()
+        if (tabId == R.id.homeFragment) scheduleScanCoachMark()
     }
 
     // Gallery badge for new results

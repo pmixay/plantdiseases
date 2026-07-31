@@ -117,6 +117,13 @@
     <string name="consent_privacy_link">Privacy policy</string>
     <string name="consent_privacy_url" translatable="false">https://pdis.arbuz.lol/privacy.html</string>
 
+    <!-- In-context onboarding -->
+    <string name="coach_scan_title">Start with a scan</string>
+    <string name="coach_scan_body">Tap Scan to photograph a leaf and get a diagnosis.</string>
+    <string name="coach_result_title">Understand your result</string>
+    <string name="coach_result_body">Start with the diagnosis and confidence here, then scroll for care steps and alternatives.</string>
+    <string name="coach_got_it">Got it</string>
+
     <!-- Result -->
     <string name="new_scan">New Scan</string>
     <string name="heatmap_label">Detection Area</string>

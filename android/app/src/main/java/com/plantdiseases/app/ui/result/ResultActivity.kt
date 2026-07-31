@@ -30,11 +30,13 @@ import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.ui.analysis.AnalysisActivity
+import com.plantdiseases.app.ui.common.CoachMarkOverlay
 import com.plantdiseases.app.ui.guide.GuideDetailSheet
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.ModelFamily
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.OnboardingHintState
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
 import java.io.File
@@ -53,10 +55,29 @@ class ResultActivity : AppCompatActivity() {
     private lateinit var binding: ActivityResultBinding
 
     private val scanRepository: ScanRepository by inject()
+    private val onboardingHints: OnboardingHintState by inject()
 
     private var scaleFactor = 1.0f
     private lateinit var scaleGestureDetector: ScaleGestureDetector
     private var skeletonAnimator: ValueAnimator? = null
+    private var activeCoachMark: CoachMarkOverlay? = null
+
+    private val resultHintRunnable = Runnable {
+        if (isFinishing || isDestroyed || !binding.cardStatus.isAttachedToWindow) return@Runnable
+        if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) return@Runnable
+        if (!onboardingHints.claimResultHint()) return@Runnable
+
+        activeCoachMark = CoachMarkOverlay.show(
+            host = this,
+            anchor = binding.cardStatus,
+            title = getString(R.string.coach_result_title),
+            body = getString(R.string.coach_result_body),
+            dismissText = getString(R.string.coach_got_it),
+            placement = CoachMarkOverlay.Placement.BELOW,
+            pulseAnchor = false,
+            onDismissed = { activeCoachMark = null },
+        )
+    }
 
     private var pendingScanForToolbar: ScanEntity? = null
 
@@ -267,6 +288,8 @@ class ResultActivity : AppCompatActivity() {
 
             displayResult(scan, scanRepository)
             Haptics.success(this@ResultActivity)
+            binding.cardStatus.removeCallbacks(resultHintRunnable)
+            binding.cardStatus.postDelayed(resultHintRunnable, RESULT_HINT_DELAY_MS)
         }
     }
 
@@ -612,6 +635,9 @@ class ResultActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        binding.cardStatus.removeCallbacks(resultHintRunnable)
+        activeCoachMark?.dismiss(immediate = true)
+        activeCoachMark = null
         skeletonAnimator?.cancel()
         skeletonAnimator = null
         super.onDestroy()
@@ -631,6 +657,7 @@ class ResultActivity : AppCompatActivity() {
         const val EXTRA_SCAN_ID = "extra_scan_id"
 
         private const val KEY_RESULT_TAB = "result_tab"
+        private const val RESULT_HINT_DELAY_MS = 500L
 
         /** When true, auto-open the community opinions for this scan once it
          *  loads — set from an opinion notification tap and from tapping a
