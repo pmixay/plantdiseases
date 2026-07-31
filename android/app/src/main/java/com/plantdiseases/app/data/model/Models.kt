@@ -752,6 +752,45 @@ data class SpeciesDiseaseItem(
     @SerializedName("note") @SerialName("note") val note: String? = null,
 )
 
+/**
+ * /api/species-profile response. The endpoint is optional and deliberately
+ * returns `available=false` when its AI provider is not configured or a
+ * lookup fails; callers hide profile-only sections in that state.
+ */
+@Serializable
+data class SpeciesProfileResponse(
+    @SerializedName("available") @SerialName("available") val available: Boolean = false,
+    @SerializedName("species") @SerialName("species") val species: String? = null,
+    @SerializedName("flowering") @SerialName("flowering") val flowering: SpeciesFlowering? = null,
+    @SerializedName("flowering_conditions")
+    @SerialName("flowering_conditions")
+    val floweringConditions: String? = null,
+    @SerializedName("native_range")
+    @SerialName("native_range")
+    val nativeRange: NativeRange? = null,
+    @SerializedName("source") @SerialName("source") val source: String? = null,
+)
+
+@Serializable
+data class SpeciesFlowering(
+    @SerializedName("monthly_intensity")
+    @SerialName("monthly_intensity")
+    val monthlyIntensity: List<Int> = emptyList(),
+    @SerializedName("indoor_note") @SerialName("indoor_note") val indoorNote: String = "",
+)
+
+@Serializable
+data class NativeRange(
+    @SerializedName("zones") @SerialName("zones") val zones: List<NativeRangeZone> = emptyList(),
+    @SerializedName("summary") @SerialName("summary") val summary: String = "",
+)
+
+@Serializable
+data class NativeRangeZone(
+    @SerializedName("country") @SerialName("country") val country: String = "",
+    @SerializedName("status") @SerialName("status") val status: String = "",
+)
+
 /** /api/care-plan request body. */
 @Serializable
 data class CarePlanRequest(

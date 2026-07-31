@@ -885,6 +885,15 @@
     <string name="species_problems_loading">Подбираем проблемы, характерные для этого растения…</string>
     <string name="species_problems_ai_note">Наиболее вероятны для этого вида — нажмите, чтобы открыть руководство.</string>
     <string name="species_problems_guide_note">Болезни растений, которые умеет распознавать приложение, — нажмите, чтобы узнать больше.</string>
+    <string name="native_range_title">Природный ареал</string>
+    <string name="native_range_grows_more">Хорошо растёт</string>
+    <string name="native_range_grows_less">Растёт ограниченно</string>
+    <string name="native_range_country_chip">%1$s · %2$s</string>
+    <string name="native_range_selected_country">%1$s · %2$s</string>
+    <string name="native_range_country_accessibility">%1$s: %2$s</string>
+    <string name="native_range_selected_country_accessibility">Выбрана страна %1$s: %2$s</string>
+    <string name="native_range_map_content_description">Карта природного ареала: %1$s. Доступный список приведён под картой.</string>
+    <string name="native_range_map_empty">Карта природного ареала недоступна</string>
 
     <!-- Статистика и советы -->
     <string name="stats_section">Ваша статистика</string>

@@ -2,6 +2,7 @@ package com.plantdiseases.app.ui.species
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Bundle
 import android.view.View
@@ -16,7 +17,6 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
-import android.graphics.drawable.Drawable
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.DataSource
 import com.bumptech.glide.load.engine.DiskCacheStrategy
@@ -34,6 +34,7 @@ import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivitySpeciesDetailBinding
 import com.plantdiseases.app.ui.common.CarePlanCardView
 import com.plantdiseases.app.ui.guide.GuideDetailActivity
+import com.plantdiseases.app.ui.widget.WorldMapView
 import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.DiseaseCatalog
 import com.plantdiseases.app.util.LocaleHelper
@@ -108,13 +109,14 @@ class SpeciesDetailActivity : AppCompatActivity() {
             )
         }
 
-        // Three independent loads run concurrently: the Wikipedia blurb/photo,
-        // the care plan, and the (slow, AI) common-problems list. Each renders
-        // as soon as it's ready, with its own loading state, so one slow call
-        // never blanks the whole screen.
+        // Independent loads run concurrently: the Wikipedia blurb/photo, care
+        // plan, common-problems list and optional botanical profile. Each
+        // renders as soon as it is ready, so one slow call never blanks the
+        // whole screen.
         loadDetail()
         loadCare()
         loadDiseases()
+        loadSpeciesProfile()
     }
 
     private fun loadDetail() {
@@ -322,6 +324,35 @@ class SpeciesDetailActivity : AppCompatActivity() {
             }
             binding.pbDiseases.visibility = View.GONE
             renderDiseases(aiItems)
+        }
+    }
+
+    /**
+     * Loads the optional botanical profile and wires only its native-range
+     * portion here. `available=false`, malformed statuses and transport errors
+     * all leave the card hidden so the established species screen renders
+     * normally without placeholder claims.
+     */
+    private fun loadSpeciesProfile() {
+        binding.cardNativeRange.visibility = View.GONE
+        lifecycleScope.launch {
+            val profile = scanRepository
+                .fetchSpeciesProfile(scientificName, commonName, locale)
+                .getOrNull()
+            val nativeRange = profile?.nativeRange
+            val zones = nativeRange?.zones.orEmpty().mapNotNull { zone ->
+                WorldMapView.ZoneStatus.fromWireName(zone.status)?.let { status ->
+                    zone.country.takeIf(String::isNotBlank)?.let { country ->
+                        WorldMapView.CountryZone(country, status)
+                    }
+                }
+            }
+            if (profile?.available != true || nativeRange == null || zones.isEmpty()) {
+                return@launch
+            }
+            binding.tvNativeRangeSummary.text = nativeRange.summary
+            binding.worldMap.setZones(zones)
+            binding.cardNativeRange.visibility = View.VISIBLE
         }
     }
 

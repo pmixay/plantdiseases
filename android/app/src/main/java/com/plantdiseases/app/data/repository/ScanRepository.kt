@@ -1344,6 +1344,45 @@ class ScanRepository(
             }
         }
 
+    private fun speciesProfileCacheKey(name: String, locale: String): String =
+        "species_profile:v1:${name.trim().lowercase()}|$locale"
+
+    /**
+     * Flowering and native-range profile (AI, best-effort). Real profiles are
+     * stable botanical metadata and use the species TTL; unavailable answers
+     * are retained only briefly so a restored provider is picked up later.
+     */
+    suspend fun fetchSpeciesProfile(
+        name: String,
+        common: String?,
+        locale: String,
+    ): Result<com.plantdiseases.app.data.model.SpeciesProfileResponse> =
+        withContext(Dispatchers.IO) {
+            val cacheKey = speciesProfileCacheKey(name, locale)
+            com.plantdiseases.app.util.ResponseCache
+                .get(cacheKey, com.plantdiseases.app.data.model.SpeciesProfileResponse::class.java)
+                ?.let { return@withContext Result.success(it) }
+            try {
+                val body = apiClient.speciesProfile(name, common, locale)
+                if (body != null) {
+                    com.plantdiseases.app.util.ResponseCache.put(
+                        cacheKey,
+                        body,
+                        if (body.available) {
+                            com.plantdiseases.app.util.ResponseCache.TTL_SPECIES_MS
+                        } else {
+                            com.plantdiseases.app.util.ResponseCache.TTL_SPECIES_MISS_MS
+                        },
+                    )
+                    Result.success(body)
+                } else {
+                    Result.failure(Exception("species-profile failed"))
+                }
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
     /** Community scans of one species (scientific name), across regions. */
     suspend fun communityScansBySpecies(
         species: String,

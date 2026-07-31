@@ -890,6 +890,15 @@
     <string name="species_problems_loading">Finding the problems most common for this plant…</string>
     <string name="species_problems_ai_note">Most likely for this species — tap one for the full care guide.</string>
     <string name="species_problems_guide_note">Plant conditions this app can diagnose — tap one to learn more.</string>
+    <string name="native_range_title">Native range</string>
+    <string name="native_range_grows_more">Thrives</string>
+    <string name="native_range_grows_less">Limited growth</string>
+    <string name="native_range_country_chip">%1$s · %2$s</string>
+    <string name="native_range_selected_country">%1$s · %2$s</string>
+    <string name="native_range_country_accessibility">%1$s: %2$s</string>
+    <string name="native_range_selected_country_accessibility">Selected country, %1$s: %2$s</string>
+    <string name="native_range_map_content_description">Native-range map: %1$s. Use the country chips below the map for an accessible list.</string>
+    <string name="native_range_map_empty">Native-range map unavailable</string>
 
     <!-- Stats & Tips -->
     <string name="stats_section">Your stats</string>

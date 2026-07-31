@@ -192,6 +192,50 @@
 
                 </com.google.android.material.card.MaterialCardView>
 
+                <!-- Optional /api/species-profile native-range section. The
+                     custom view owns its offline Canvas geometry, tap state
+                     and accessible country chips; this card only supplies the
+                     surrounding species-screen title and server summary. -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/card_native_range"
+                    style="@style/App.GlassCard"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_md"
+                    android:visibility="gone">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:fontFamily="sans-serif-medium"
+                            android:text="@string/native_range_title"
+                            android:textColor="@color/on_surface"
+                            android:textSize="@dimen/text_title_sm" />
+
+                        <TextView
+                            android:id="@+id/tv_native_range_summary"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/space_xs"
+                            android:lineSpacingExtra="2dp"
+                            android:textColor="@color/on_surface_secondary"
+                            android:textSize="@dimen/text_body_sm" />
+
+                        <com.plantdiseases.app.ui.widget.WorldMapView
+                            android:id="@+id/world_map"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/space_md" />
+
+                    </LinearLayout>
+
+                </com.google.android.material.card.MaterialCardView>
+
                 <!-- Common problems for this species (AI list with guide
                      links, or the bundled disease guide as fallback). Rows
                      built programmatically by SpeciesDetailActivity. -->
