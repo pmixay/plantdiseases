@@ -7,31 +7,35 @@
     Carousels are horizontal RecyclerViews filled by HomeFragment;
     the species/popular sections hide themselves when there's no data.
 -->
-<androidx.core.widget.NestedScrollView
-    android:id="@+id/home_scroll"
+<LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/background"
-    android:clipToPadding="false"
-    android:fillViewport="true">
+    android:orientation="vertical"
+    android:background="@color/background">
 
-    <LinearLayout
+    <!-- Fixed above the scroll content, so the state remains visible at every
+         scroll position without covering the page title. -->
+    <com.plantdiseases.app.ui.common.OfflineNoticeView
+        android:id="@+id/offline_notice"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:paddingTop="@dimen/space_lg"
-        android:paddingBottom="@dimen/space_3xl">
+        android:layout_height="wrap_content" />
 
-        <!-- Shared offline notice — hidden until the connectivity observer
-             reports no reachable network (HomeFragment wires it up). The
-             carousels keep serving their cached / bundled bundles underneath. -->
-        <com.plantdiseases.app.ui.common.OfflineNoticeView
-            android:id="@+id/offline_notice"
+    <androidx.core.widget.NestedScrollView
+        android:id="@+id/home_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:clipToPadding="false"
+        android:fillViewport="true">
+
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="@dimen/space_sm" />
+            android:orientation="vertical"
+            android:paddingTop="@dimen/space_lg"
+            android:paddingBottom="@dimen/space_3xl">
 
         <!-- Page title + nearby-scans action. Used to live in the shared
              MainActivity toolbar, pinned above the pager; that title only
@@ -368,5 +372,7 @@
             </com.plantdiseases.app.util.NestedScrollableHost>
         </LinearLayout>
 
-    </LinearLayout>
-</androidx.core.widget.NestedScrollView>
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+
+</LinearLayout>

@@ -96,7 +96,10 @@ class HomeFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        binding.homeScroll.applyStatusBarTopInset()
+        // The fixed notice and the scroll content share one status-bar inset;
+        // when the notice appears it takes its own row instead of overlaying
+        // the Home title.
+        binding.root.applyStatusBarTopInset()
         binding.offlineNotice.observe(viewLifecycleOwner, connectivity)
         binding.tvGreeting.text = greeting()
 

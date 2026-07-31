@@ -13,6 +13,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.plantdiseases.app.R
 import com.plantdiseases.app.util.ConnectivityObserver
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 
 /**
@@ -64,9 +65,17 @@ class OfflineNoticeView @JvmOverloads constructor(
      * network callback.
      */
     fun observe(owner: LifecycleOwner, connectivity: ConnectivityObserver) {
+        observe(owner, connectivity.isOnline)
+    }
+
+    /**
+     * Flow-based seam kept internal so the visibility contract can be tested
+     * independently of Android's ConnectivityManager.
+     */
+    internal fun observe(owner: LifecycleOwner, onlineStates: Flow<Boolean>) {
         owner.lifecycleScope.launch {
             owner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                connectivity.isOnline.collect { online ->
+                onlineStates.collect { online ->
                     visibility = if (online) View.GONE else View.VISIBLE
                 }
             }
