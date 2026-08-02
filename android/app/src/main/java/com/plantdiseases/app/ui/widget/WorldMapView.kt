@@ -1,7 +1,6 @@
 package com.plantdiseases.app.ui.widget
 
 import android.content.Context
-import android.content.res.ColorStateList
 import android.graphics.Canvas
 import android.graphics.LinearGradient
 import android.graphics.Paint
@@ -9,6 +8,7 @@ import android.graphics.Path
 import android.graphics.PointF
 import android.graphics.RectF
 import android.graphics.Shader
+import android.graphics.drawable.GradientDrawable
 import android.util.AttributeSet
 import android.view.Gravity
 import android.view.MotionEvent
@@ -17,7 +17,6 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
-import com.google.android.material.chip.Chip
 import com.plantdiseases.app.R
 import java.io.BufferedInputStream
 import java.io.DataInputStream
@@ -62,7 +61,10 @@ class WorldMapView @JvmOverloads constructor(
 
     private val mapCanvas = MapCanvasView(context)
     private val selectionHint = TextView(context)
-    private val selectedChip = Chip(context)
+    // Material Chip is intentionally single-line and throws when callers try
+    // to enable wrapping. The selected-country explanation can span several
+    // lines (especially in Russian), so use a chip-styled TextView instead.
+    private val selectedChip = TextView(context)
     private var zones: List<CountryZone> = emptyList()
 
     init {
@@ -92,10 +94,17 @@ class WorldMapView @JvmOverloads constructor(
 
         selectedChip.apply {
             isClickable = false
-            isCheckable = false
-            isSingleLine = false
             maxLines = 4
-            setEnsureMinTouchTargetSize(true)
+            gravity = Gravity.CENTER_VERTICAL
+            minHeight = dp(48f).toInt()
+            setPadding(
+                dp(16f).toInt(),
+                dp(10f).toInt(),
+                dp(16f).toInt(),
+                dp(10f).toInt(),
+            )
+            setTextColor(color(R.color.on_surface))
+            textSize = 14f
             isVisible = false
             layoutParams = LayoutParams(
                 LayoutParams.MATCH_PARENT,
@@ -160,7 +169,7 @@ class WorldMapView @JvmOverloads constructor(
         selectedChip.isVisible = true
     }
 
-    private fun applyChipColors(chip: Chip, status: ZoneStatus) {
+    private fun applyChipColors(chip: TextView, status: ZoneStatus) {
         val background = when (status) {
             ZoneStatus.GROWS_MORE -> color(R.color.primary_light)
             ZoneStatus.GROWS_LESS -> color(R.color.surface_variant)
@@ -169,18 +178,25 @@ class WorldMapView @JvmOverloads constructor(
             ZoneStatus.GROWS_MORE -> color(R.color.primary)
             ZoneStatus.GROWS_LESS -> color(R.color.primary_variant)
         }
-        chip.chipBackgroundColor = ColorStateList.valueOf(background)
-        chip.chipStrokeColor = ColorStateList.valueOf(stroke)
-        chip.chipStrokeWidth = dp(1f)
+        chip.background = chipBackground(background, stroke)
         chip.setTextColor(color(R.color.on_surface))
     }
 
-    private fun applyNeutralChipColors(chip: Chip) {
-        chip.chipBackgroundColor = ColorStateList.valueOf(color(R.color.surface_variant))
-        chip.chipStrokeColor = ColorStateList.valueOf(color(R.color.card_stroke))
-        chip.chipStrokeWidth = dp(1f)
+    private fun applyNeutralChipColors(chip: TextView) {
+        chip.background = chipBackground(
+            color(R.color.surface_variant),
+            color(R.color.card_stroke),
+        )
         chip.setTextColor(color(R.color.on_surface))
     }
+
+    private fun chipBackground(fillColor: Int, strokeColor: Int) =
+        GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(12f)
+            setColor(fillColor)
+            setStroke(dp(1f).toInt().coerceAtLeast(1), strokeColor)
+        }
 
     private fun statusLabel(status: ZoneStatus): String =
         context.getString(
