@@ -906,7 +906,8 @@
     <string name="native_range_selected_country_accessibility">Selected country, %1$s: %2$s</string>
     <string name="native_range_map_content_description">Native-range map: %1$s. Use the country chips below the map for an accessible list.</string>
     <string name="native_range_map_empty">Native-range map unavailable</string>
-    <string name="flowering_title">Flowering calendar</string>
+    <string name="flowering_title">Flowering by month</string>
+    <string name="flowering_chart_hint">Indoor flowering: 0 — none, 1 — occasional, 2 — peak. The dot marks this month.</string>
     <string name="flowering_blooms_now">Blooms now</string>
     <string name="flowering_next_bloom">Next bloom in %1$s</string>
     <string name="flowering_rarely_indoors">Rarely flowers indoors</string>
@@ -915,7 +916,7 @@
     <string name="flowering_collapse">Hide flowering details</string>
     <string name="flowering_toggle_content_description">%1$s. %2$s. %3$s</string>
     <string name="flowering_accessibility_month_intensity">%1$s %2$d</string>
-    <string name="flowering_chart_content_description">%1$s. Monthly flowering intensity from zero to two: %2$s</string>
+    <string name="flowering_chart_content_description">%1$s. 0 means no bloom, 1 occasional bloom, 2 peak bloom. The dot marks this month. %2$s</string>
     <string-array name="flowering_month_initials">
         <item>J</item>
         <item>F</item>

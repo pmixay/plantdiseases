@@ -35,12 +35,21 @@ class FloweringChartView @JvmOverloads constructor(
     private var intensities: List<Int> = emptyList()
     private var currentMonth: Int = 0
     private var bloomStatus: BloomStatus? = null
+    private var showStatusLine = true
 
     private val barPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val emptyBarPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
         textSize = dp(10f)
+    }
+    private val axisLabelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = Paint.Align.RIGHT
+        textSize = dp(10f)
+    }
+    private val axisGuidePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = dp(1f)
     }
     private val statusPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
@@ -83,6 +92,13 @@ class FloweringChartView @JvmOverloads constructor(
 
     fun statusText(): String? = bloomStatus?.let { statusText(context, it) }
 
+    /** Hide the drawn status when a surrounding card already presents it. */
+    fun setStatusLineVisible(visible: Boolean) {
+        if (showStatusLine == visible) return
+        showStatusLine = visible
+        invalidate()
+    }
+
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val desiredWidth = dp(300f).toInt() + paddingLeft + paddingRight
         val desiredHeight = dp(184f).toInt() + paddingTop + paddingBottom
@@ -101,25 +117,38 @@ class FloweringChartView @JvmOverloads constructor(
         val right = width - paddingRight.toFloat()
         val top = paddingTop.toFloat()
         val bottom = height - paddingBottom.toFloat()
-        val statusBaseline = bottom - dp(2f)
+        val statusBaseline = bottom - dp(if (showStatusLine) 2f else 25f)
 
         if (status is BloomStatus.RarelyIndoors) {
-            drawRareState(canvas, left, right, top, statusBaseline)
+            drawRareState(canvas, left, right, top, statusBaseline, showStatusLine)
             return
         }
 
-        val chartBottom = statusBaseline - dp(40f)
+        val chartBottom = statusBaseline - dp(if (showStatusLine) 40f else 16f)
         val chartTop = top + dp(8f)
         val chartHeight = max(dp(1f), chartBottom - chartTop)
-        val slot = (right - left) / MONTH_COUNT
+        val chartLeft = left + dp(28f)
+        val axisLabelX = chartLeft - dp(8f)
+        val slot = (right - chartLeft) / MONTH_COUNT
         val barWidth = slot * 0.52f
         val months = resources.getStringArray(R.array.flowering_month_initials)
 
+        // The scale is intentionally visible: bar heights are the three
+        // server values, not a percentage or a health score.
+        val yForIntensity = { intensity: Float -> chartBottom - chartHeight * intensity / 2f }
+        listOf(0f, 1f, 2f).forEach { intensity ->
+            val y = yForIntensity(intensity)
+            canvas.drawLine(chartLeft, y, right, y, axisGuidePaint)
+        }
+        drawAxisLabel(canvas, "2", axisLabelX, yForIntensity(2f))
+        drawAxisLabel(canvas, "1", axisLabelX, yForIntensity(1f))
+        drawAxisLabel(canvas, "0", axisLabelX, yForIntensity(0f))
+
         intensities.forEachIndexed { index, intensity ->
-            val centerX = left + slot * index + slot / 2f
+            val centerX = chartLeft + slot * index + slot / 2f
             val barHeight = when (intensity) {
                 2 -> chartHeight
-                1 -> chartHeight * 0.55f
+                1 -> chartHeight * 0.5f
                 else -> dp(3f)
             }
             rect.set(
@@ -136,7 +165,20 @@ class FloweringChartView @JvmOverloads constructor(
                 canvas.drawCircle(centerX, chartBottom + dp(25f), dp(2.5f), markerPaint)
             }
         }
-        canvas.drawText(statusText(context, status), (left + right) / 2f, statusBaseline, statusPaint)
+        if (showStatusLine) {
+            canvas.drawText(
+                statusText(context, status),
+                (left + right) / 2f,
+                statusBaseline,
+                statusPaint,
+            )
+        }
+    }
+
+    private fun drawAxisLabel(canvas: Canvas, label: String, x: Float, centerY: Float) {
+        val metrics = axisLabelPaint.fontMetrics
+        val baseline = centerY - (metrics.ascent + metrics.descent) / 2f
+        canvas.drawText(label, x, baseline, axisLabelPaint)
     }
 
     private fun drawRareState(
@@ -145,6 +187,7 @@ class FloweringChartView @JvmOverloads constructor(
         right: Float,
         top: Float,
         statusBaseline: Float,
+        drawStatus: Boolean,
     ) {
         rect.set(left, top + dp(8f), right, statusBaseline - dp(20f))
         canvas.drawRoundRect(rect, dp(16f), dp(16f), rarePanelPaint)
@@ -154,21 +197,36 @@ class FloweringChartView @JvmOverloads constructor(
         canvas.drawCircle(centerX, centerY, dp(12f), markerPaint)
         canvas.drawCircle(centerX - dp(15f), centerY + dp(9f), dp(6f), emptyBarPaint)
         canvas.drawCircle(centerX + dp(15f), centerY + dp(9f), dp(6f), emptyBarPaint)
-        canvas.drawText(
-            statusText(context, BloomStatus.RarelyIndoors),
-            centerX,
-            statusBaseline,
-            statusPaint,
-        )
+        if (drawStatus) {
+            canvas.drawText(
+                statusText(context, BloomStatus.RarelyIndoors),
+                centerX,
+                statusBaseline,
+                statusPaint,
+            )
+        }
     }
 
     private fun refreshColors() {
-        barPaint.color = context.getColor(R.color.on_hero)
-        emptyBarPaint.color = context.getColor(R.color.hero_stat_stroke)
-        labelPaint.color = context.getColor(R.color.on_hero_secondary)
-        statusPaint.color = context.getColor(R.color.on_hero)
-        markerPaint.color = context.getColor(R.color.primary_light)
-        rarePanelPaint.color = context.getColor(R.color.hero_stat_bg)
+        // The flowering chart lives on a normal glass card, not a care-plan
+        // hero. Keep the signal green but translucent so the graph feels
+        // lighter and the card's surface remains visible through the bars.
+        barPaint.color = context.getColor(R.color.primary)
+        barPaint.alpha = 148
+        emptyBarPaint.color = context.getColor(R.color.primary)
+        emptyBarPaint.alpha = 52
+        labelPaint.color = context.getColor(R.color.on_surface_secondary)
+        labelPaint.alpha = 210
+        axisLabelPaint.color = context.getColor(R.color.on_surface_secondary)
+        axisLabelPaint.alpha = 230
+        axisGuidePaint.color = context.getColor(R.color.divider)
+        axisGuidePaint.alpha = 150
+        statusPaint.color = context.getColor(R.color.on_surface)
+        statusPaint.alpha = 255
+        markerPaint.color = context.getColor(R.color.primary)
+        markerPaint.alpha = 210
+        rarePanelPaint.color = context.getColor(R.color.surface_variant)
+        rarePanelPaint.alpha = 220
     }
 
     private fun buildContentDescription(status: BloomStatus): String {

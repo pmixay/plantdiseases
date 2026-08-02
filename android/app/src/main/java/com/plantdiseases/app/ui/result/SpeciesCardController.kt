@@ -34,6 +34,10 @@ class SpeciesCardController(
     private val scanRepository: ScanRepository by inject()
 
     fun bind(scan: ScanEntity) {
+        // The result-card header already exposes today's bloom status; keep
+        // the expanded chart focused on the month pattern instead of repeating
+        // the same sentence below it.
+        binding.resultFloweringChart.setStatusLineVisible(false)
         binding.cardResultFlowering.visibility = View.GONE
         binding.resultFloweringDetails.visibility = View.GONE
         binding.resultFloweringHeader.setOnClickListener(null)

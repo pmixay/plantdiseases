@@ -751,12 +751,12 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_md"
                         android:visibility="gone"
+                        app:cardBackgroundColor="@color/surface"
                         app:contentPadding="0dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:background="@drawable/bg_care_plan_gradient"
                             android:orientation="vertical">
 
                             <LinearLayout
@@ -777,7 +777,7 @@
                                     android:contentDescription="@null"
                                     android:importantForAccessibility="no"
                                     android:src="@drawable/ic_garden"
-                                    app:tint="@color/on_hero" />
+                                    app:tint="@color/primary" />
 
                                 <LinearLayout
                                     android:layout_width="0dp"
@@ -791,7 +791,7 @@
                                         android:layout_height="wrap_content"
                                         android:fontFamily="sans-serif-medium"
                                         android:text="@string/flowering_title"
-                                        android:textColor="@color/on_hero"
+                                        android:textColor="@color/on_surface"
                                         android:textSize="@dimen/text_body" />
 
                                     <TextView
@@ -799,7 +799,7 @@
                                         android:layout_width="match_parent"
                                         android:layout_height="wrap_content"
                                         android:layout_marginTop="2dp"
-                                        android:textColor="@color/on_hero_secondary"
+                                        android:textColor="@color/on_surface_secondary"
                                         android:textSize="@dimen/text_body_sm" />
 
                                 </LinearLayout>
@@ -811,7 +811,7 @@
                                     android:contentDescription="@null"
                                     android:importantForAccessibility="no"
                                     android:src="@drawable/ic_chevron_down"
-                                    app:tint="@color/on_hero" />
+                                    app:tint="@color/primary" />
 
                             </LinearLayout>
 
@@ -828,7 +828,16 @@
                                 <View
                                     android:layout_width="match_parent"
                                     android:layout_height="1dp"
-                                    android:background="@color/hero_stat_stroke" />
+                                    android:background="@color/divider" />
+
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="@dimen/space_md"
+                                    android:lineSpacingExtra="1dp"
+                                    android:text="@string/flowering_chart_hint"
+                                    android:textColor="@color/on_surface_secondary"
+                                    android:textSize="@dimen/text_body_sm" />
 
                                 <com.plantdiseases.app.ui.widget.FloweringChartView
                                     android:id="@+id/result_flowering_chart"
@@ -842,7 +851,7 @@
                                     android:layout_height="wrap_content"
                                     android:layout_marginTop="@dimen/space_sm"
                                     android:lineSpacingExtra="2dp"
-                                    android:textColor="@color/on_hero_secondary"
+                                    android:textColor="@color/on_surface_secondary"
                                     android:textSize="@dimen/text_body_sm"
                                     android:visibility="gone" />
 
@@ -850,10 +859,9 @@
                                     android:id="@+id/result_flowering_conditions"
                                     android:layout_width="match_parent"
                                     android:layout_height="wrap_content"
-                                    android:layout_marginTop="@dimen/space_md"
-                                    android:background="@drawable/bg_glass_dark_pill"
+                                    android:layout_marginTop="@dimen/space_lg"
                                     android:orientation="vertical"
-                                    android:padding="@dimen/space_md"
+                                    android:paddingTop="@dimen/space_md"
                                     android:visibility="gone">
 
                                     <TextView
@@ -861,7 +869,7 @@
                                         android:layout_height="wrap_content"
                                         android:fontFamily="sans-serif-medium"
                                         android:text="@string/flowering_conditions_title"
-                                        android:textColor="@color/on_hero"
+                                        android:textColor="@color/primary"
                                         android:textSize="@dimen/text_body_sm" />
 
                                     <TextView
@@ -870,7 +878,7 @@
                                         android:layout_height="wrap_content"
                                         android:layout_marginTop="@dimen/space_xs"
                                         android:lineSpacingExtra="2dp"
-                                        android:textColor="@color/on_hero_secondary"
+                                        android:textColor="@color/on_surface_secondary"
                                         android:textSize="@dimen/text_body_sm" />
 
                                 </LinearLayout>
