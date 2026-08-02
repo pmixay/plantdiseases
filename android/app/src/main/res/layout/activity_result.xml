@@ -915,6 +915,19 @@
                         android:layout_marginTop="@dimen/space_sm"
                         android:orientation="vertical" />
 
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_species_details"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="-8dp"
+                        android:layout_marginTop="@dimen/space_xs"
+                        android:text="@string/species_show_details"
+                        android:textAllCaps="false"
+                        android:visibility="gone"
+                        app:icon="@drawable/ic_chevron_right"
+                        app:iconGravity="textEnd" />
+
                 </LinearLayout>
 
             </com.google.android.material.card.MaterialCardView>

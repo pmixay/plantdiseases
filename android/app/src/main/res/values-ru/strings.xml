@@ -892,6 +892,7 @@
     <string name="species_problems_loading">Подбираем проблемы, характерные для этого растения…</string>
     <string name="species_problems_ai_note">Наиболее вероятны для этого вида — нажмите, чтобы открыть руководство.</string>
     <string name="species_problems_guide_note">Болезни растений, которые умеет распознавать приложение, — нажмите, чтобы узнать больше.</string>
+    <string name="species_show_details">Показать сведения</string>
     <string name="native_range_title">Природный ареал</string>
     <string name="native_range_grows_more">Хорошо растёт</string>
     <string name="native_range_grows_less">Растёт ограниченно</string>
@@ -899,7 +900,10 @@
     <string name="native_range_selected_country">%1$s · %2$s</string>
     <string name="native_range_country_accessibility">%1$s: %2$s</string>
     <string name="native_range_selected_country_accessibility">Выбрана страна %1$s: %2$s</string>
-    <string name="native_range_map_content_description">Карта природного ареала: %1$s. Доступный список приведён под картой.</string>
+    <string name="native_range_tap_hint">Нажмите на страну, чтобы проверить, как здесь растёт растение.</string>
+    <string name="native_range_outside_country">%1$s · Вне известного ареала для выращивания на открытом воздухе; нужны помещение или теплица с контролируемыми условиями.</string>
+    <string name="native_range_outside_country_accessibility">%1$s: вне известного ареала для открытого грунта; нужны помещение или теплица с контролируемыми условиями.</string>
+    <string name="native_range_map_content_description">Карта природного ареала: %1$s. Нажмите на страну, чтобы проверить её.</string>
     <string name="native_range_map_empty">Карта природного ареала недоступна</string>
     <string name="flowering_title">Цветение по месяцам</string>
     <string name="flowering_chart_hint">Цветение в помещении: 0 — нет, 1 — иногда, 2 — пик. Точка отмечает текущий месяц.</string>

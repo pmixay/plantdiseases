@@ -200,6 +200,9 @@ class PlantApiClient(
             parameter("name", name)
             common?.let { parameter("common", it) }
             parameter("locale", locale)
+            // Distinguishes the canonical bilingual response from any cached
+            // pre-v2 response at an intermediary.
+            parameter("profile_version", 2)
         }
         return if (response.status.isSuccess()) response.body() else null
     }

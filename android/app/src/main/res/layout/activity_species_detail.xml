@@ -263,58 +263,48 @@
                             android:textSize="@dimen/text_body_sm"
                             android:visibility="gone" />
 
-                    </LinearLayout>
-
-                </com.google.android.material.card.MaterialCardView>
-
-                <com.google.android.material.card.MaterialCardView
-                    android:id="@+id/card_flowering_conditions"
-                    style="@style/App.GlassCard"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_md"
-                    android:visibility="gone"
-                    app:cardBackgroundColor="@color/surface"
-                    app:contentPadding="0dp">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:gravity="center_vertical"
-                        android:orientation="horizontal"
-                        android:padding="@dimen/space_lg">
-
-                        <ImageView
-                            android:layout_width="28dp"
-                            android:layout_height="28dp"
-                            android:contentDescription="@null"
-                            android:importantForAccessibility="no"
-                            android:src="@drawable/ic_light"
-                            app:tint="@color/primary" />
-
                         <LinearLayout
-                            android:layout_width="0dp"
+                            android:id="@+id/card_flowering_conditions"
+                            android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:layout_marginStart="@dimen/space_md"
-                            android:layout_weight="1"
-                            android:orientation="vertical">
+                            android:layout_marginTop="@dimen/space_lg"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal"
+                            android:visibility="gone">
 
-                            <TextView
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:fontFamily="sans-serif-medium"
-                                android:text="@string/flowering_conditions_title"
-                                android:textColor="@color/on_surface"
-                                android:textSize="@dimen/text_body" />
+                            <ImageView
+                                android:layout_width="28dp"
+                                android:layout_height="28dp"
+                                android:contentDescription="@null"
+                                android:importantForAccessibility="no"
+                                android:src="@drawable/ic_light"
+                                app:tint="@color/primary" />
 
-                            <TextView
-                                android:id="@+id/tv_flowering_conditions"
-                                android:layout_width="match_parent"
+                            <LinearLayout
+                                android:layout_width="0dp"
                                 android:layout_height="wrap_content"
-                                android:layout_marginTop="@dimen/space_xs"
-                                android:lineSpacingExtra="2dp"
-                                android:textColor="@color/on_surface_secondary"
-                                android:textSize="@dimen/text_body_sm" />
+                                android:layout_marginStart="@dimen/space_md"
+                                android:layout_weight="1"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:fontFamily="sans-serif-medium"
+                                    android:text="@string/flowering_conditions_title"
+                                    android:textColor="@color/on_surface"
+                                    android:textSize="@dimen/text_body" />
+
+                                <TextView
+                                    android:id="@+id/tv_flowering_conditions"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="@dimen/space_xs"
+                                    android:lineSpacingExtra="2dp"
+                                    android:textColor="@color/on_surface_secondary"
+                                    android:textSize="@dimen/text_body_sm" />
+
+                            </LinearLayout>
 
                         </LinearLayout>
 
@@ -324,7 +314,7 @@
 
                 <!-- Optional /api/species-profile native-range section. The
                      custom view owns its offline Canvas geometry, tap state
-                     and accessible country chips; this card only supplies the
+                     and selected-country result; this card only supplies the
                      surrounding species-screen title and server summary. -->
                 <com.google.android.material.card.MaterialCardView
                     android:id="@+id/card_native_range"

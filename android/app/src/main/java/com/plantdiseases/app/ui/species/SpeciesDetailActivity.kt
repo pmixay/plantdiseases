@@ -348,13 +348,17 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 flowering != null &&
                 binding.floweringChart.setFlowering(flowering.monthlyIntensity)
             ) {
-                val note = flowering.indoorNote.trim()
+                val localized = profile.localizedText[locale]
+                val note = (localized?.indoorNote ?: flowering.indoorNote).trim()
                 binding.tvFloweringIndoorNote.text = note
                 binding.tvFloweringIndoorNote.visibility =
                     if (note.isBlank()) View.GONE else View.VISIBLE
                 binding.cardFlowering.visibility = View.VISIBLE
 
-                val conditions = profile.floweringConditions?.trim().orEmpty()
+                val conditions = (
+                    localized?.floweringConditions
+                        ?: profile.floweringConditions
+                ).orEmpty().trim()
                 if (conditions.isNotBlank()) {
                     binding.tvFloweringConditions.text = conditions
                     binding.cardFloweringConditions.visibility = View.VISIBLE
@@ -364,15 +368,19 @@ class SpeciesDetailActivity : AppCompatActivity() {
             val nativeRange = profile.nativeRange
             val zones = nativeRange?.zones.orEmpty().mapNotNull { zone ->
                 WorldMapView.ZoneStatus.fromWireName(zone.status)?.let { status ->
-                    zone.country.takeIf(String::isNotBlank)?.let { country ->
-                        WorldMapView.CountryZone(country, status)
+                    (zone.country.ifBlank { zone.countryCode.orEmpty() })
+                        .takeIf(String::isNotBlank)?.let { country ->
+                        WorldMapView.CountryZone(country, status, zone.countryCode)
                     }
                 }
             }
             if (nativeRange == null || zones.isEmpty()) {
                 return@launch
             }
-            binding.tvNativeRangeSummary.text = nativeRange.summary
+            binding.tvNativeRangeSummary.text = (
+                profile.localizedText[locale]?.nativeRangeSummary
+                    ?: nativeRange.summary
+            )
             binding.worldMap.setZones(zones)
             binding.cardNativeRange.visibility = View.VISIBLE
         }

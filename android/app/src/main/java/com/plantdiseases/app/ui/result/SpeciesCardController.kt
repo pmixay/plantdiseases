@@ -14,6 +14,7 @@ import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
+import com.plantdiseases.app.ui.species.SpeciesDetailActivity
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.TelemetryIds
@@ -41,6 +42,8 @@ class SpeciesCardController(
         binding.cardResultFlowering.visibility = View.GONE
         binding.resultFloweringDetails.visibility = View.GONE
         binding.resultFloweringHeader.setOnClickListener(null)
+        binding.btnSpeciesDetails.visibility = View.GONE
+        binding.btnSpeciesDetails.setOnClickListener(null)
 
         // The card stays hidden when we have neither a scientific nor a common
         // name (PlantNet wasn't configured, or every candidate scored zero).
@@ -68,6 +71,15 @@ class SpeciesCardController(
         // Alternates intentionally left empty — we only persist the best match
         // on the ScanEntity.
         binding.speciesAltsLayout.removeAllViews()
+
+        if (sci != null) {
+            binding.btnSpeciesDetails.visibility = View.VISIBLE
+            binding.btnSpeciesDetails.setOnClickListener {
+                val displayName = binding.tvSpeciesBest.text?.toString()?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                SpeciesDetailActivity.start(activity, sci, displayName ?: common)
+            }
+        }
 
         // Enrich with a localized Wikipedia blurb + lead photo, and a strip of
         // other community scans of this species — both need the scientific name.
@@ -192,12 +204,16 @@ class SpeciesCardController(
             val status = binding.resultFloweringChart.statusText() ?: return@launch
             binding.tvResultFloweringStatus.text = status
 
-            val note = flowering.indoorNote.trim()
+            val localized = profile.localizedText[locale]
+            val note = (localized?.indoorNote ?: flowering.indoorNote).trim()
             binding.tvResultFloweringIndoorNote.text = note
             binding.tvResultFloweringIndoorNote.visibility =
                 if (note.isBlank()) View.GONE else View.VISIBLE
 
-            val conditions = profile.floweringConditions?.trim().orEmpty()
+            val conditions = (
+                localized?.floweringConditions
+                    ?: profile.floweringConditions
+            ).orEmpty().trim()
             binding.tvResultFloweringConditions.text = conditions
             binding.resultFloweringConditions.visibility =
                 if (conditions.isBlank()) View.GONE else View.VISIBLE
