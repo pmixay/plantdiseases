@@ -768,23 +768,7 @@ data class SpeciesProfileResponse(
     @SerializedName("native_range")
     @SerialName("native_range")
     val nativeRange: NativeRange? = null,
-    /** Both locales are returned by profile v2 so an offline locale switch
-     *  never changes the botanical facts or map geometry. */
-    @SerializedName("localized_text")
-    @SerialName("localized_text")
-    val localizedText: Map<String, SpeciesProfileText> = emptyMap(),
     @SerializedName("source") @SerialName("source") val source: String? = null,
-)
-
-@Serializable
-data class SpeciesProfileText(
-    @SerializedName("indoor_note") @SerialName("indoor_note") val indoorNote: String = "",
-    @SerializedName("flowering_conditions")
-    @SerialName("flowering_conditions")
-    val floweringConditions: String = "",
-    @SerializedName("native_range_summary")
-    @SerialName("native_range_summary")
-    val nativeRangeSummary: String = "",
 )
 
 @Serializable
@@ -804,7 +788,6 @@ data class NativeRange(
 @Serializable
 data class NativeRangeZone(
     @SerializedName("country") @SerialName("country") val country: String = "",
-    @SerializedName("country_code") @SerialName("country_code") val countryCode: String? = null,
     @SerializedName("status") @SerialName("status") val status: String = "",
 )
 

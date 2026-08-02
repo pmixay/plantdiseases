@@ -3863,23 +3863,17 @@ async def species_diseases_endpoint(name: str, common: str = "", locale: str = "
 
 
 @api_router.get("/species-profile")
-async def species_profile_endpoint(
-    name: str,
-    common: str = "",
-    locale: str = "en",
-    profile_version: int = 2,
-):
+async def species_profile_endpoint(name: str, common: str = "", locale: str = "en"):
     """Flowering pattern + native range for a species (AI, best-effort).
 
     Graceful ``{"available": False}`` when no OpenRouter key is configured or
     on any failure — the client then hides the section, so the species screen
     degrades gracefully instead of showing bogus data. A real (``available``)
     result is cached server-side (in-memory + on disk, surviving restarts) per
-    species and carries both EN/RU text copies, so a locale switch cannot
-    change the map. ``profile_version`` is a cache-busting query parameter for
-    clients/CDNs; the current endpoint always serves the v2-compatible shape.
+    (species, language) and carries a long ``Cache-Control`` so the
+    client/CDN reuses it too; a transient failure is sent uncached so the
+    next open retries.
     """
-    _ = profile_version
     n = (name or "").strip()
     if not n or len(n) > 128:
         raise HTTPException(status_code=422, detail="Invalid species name")

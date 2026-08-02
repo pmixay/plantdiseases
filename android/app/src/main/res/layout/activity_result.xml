@@ -751,12 +751,12 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_md"
                         android:visibility="gone"
-                        app:cardBackgroundColor="@color/surface"
                         app:contentPadding="0dp">
 
                         <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
+                            android:background="@drawable/bg_care_plan_gradient"
                             android:orientation="vertical">
 
                             <LinearLayout
@@ -777,7 +777,7 @@
                                     android:contentDescription="@null"
                                     android:importantForAccessibility="no"
                                     android:src="@drawable/ic_garden"
-                                    app:tint="@color/primary" />
+                                    app:tint="@color/on_hero" />
 
                                 <LinearLayout
                                     android:layout_width="0dp"
@@ -791,7 +791,7 @@
                                         android:layout_height="wrap_content"
                                         android:fontFamily="sans-serif-medium"
                                         android:text="@string/flowering_title"
-                                        android:textColor="@color/on_surface"
+                                        android:textColor="@color/on_hero"
                                         android:textSize="@dimen/text_body" />
 
                                     <TextView
@@ -799,7 +799,7 @@
                                         android:layout_width="match_parent"
                                         android:layout_height="wrap_content"
                                         android:layout_marginTop="2dp"
-                                        android:textColor="@color/on_surface_secondary"
+                                        android:textColor="@color/on_hero_secondary"
                                         android:textSize="@dimen/text_body_sm" />
 
                                 </LinearLayout>
@@ -811,7 +811,7 @@
                                     android:contentDescription="@null"
                                     android:importantForAccessibility="no"
                                     android:src="@drawable/ic_chevron_down"
-                                    app:tint="@color/primary" />
+                                    app:tint="@color/on_hero" />
 
                             </LinearLayout>
 
@@ -828,16 +828,7 @@
                                 <View
                                     android:layout_width="match_parent"
                                     android:layout_height="1dp"
-                                    android:background="@color/divider" />
-
-                                <TextView
-                                    android:layout_width="match_parent"
-                                    android:layout_height="wrap_content"
-                                    android:layout_marginTop="@dimen/space_md"
-                                    android:lineSpacingExtra="1dp"
-                                    android:text="@string/flowering_chart_hint"
-                                    android:textColor="@color/on_surface_secondary"
-                                    android:textSize="@dimen/text_body_sm" />
+                                    android:background="@color/hero_stat_stroke" />
 
                                 <com.plantdiseases.app.ui.widget.FloweringChartView
                                     android:id="@+id/result_flowering_chart"
@@ -851,7 +842,7 @@
                                     android:layout_height="wrap_content"
                                     android:layout_marginTop="@dimen/space_sm"
                                     android:lineSpacingExtra="2dp"
-                                    android:textColor="@color/on_surface_secondary"
+                                    android:textColor="@color/on_hero_secondary"
                                     android:textSize="@dimen/text_body_sm"
                                     android:visibility="gone" />
 
@@ -859,9 +850,10 @@
                                     android:id="@+id/result_flowering_conditions"
                                     android:layout_width="match_parent"
                                     android:layout_height="wrap_content"
-                                    android:layout_marginTop="@dimen/space_lg"
+                                    android:layout_marginTop="@dimen/space_md"
+                                    android:background="@drawable/bg_glass_dark_pill"
                                     android:orientation="vertical"
-                                    android:paddingTop="@dimen/space_md"
+                                    android:padding="@dimen/space_md"
                                     android:visibility="gone">
 
                                     <TextView
@@ -869,7 +861,7 @@
                                         android:layout_height="wrap_content"
                                         android:fontFamily="sans-serif-medium"
                                         android:text="@string/flowering_conditions_title"
-                                        android:textColor="@color/primary"
+                                        android:textColor="@color/on_hero"
                                         android:textSize="@dimen/text_body_sm" />
 
                                     <TextView
@@ -878,7 +870,7 @@
                                         android:layout_height="wrap_content"
                                         android:layout_marginTop="@dimen/space_xs"
                                         android:lineSpacingExtra="2dp"
-                                        android:textColor="@color/on_surface_secondary"
+                                        android:textColor="@color/on_hero_secondary"
                                         android:textSize="@dimen/text_body_sm" />
 
                                 </LinearLayout>
@@ -914,19 +906,6 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_sm"
                         android:orientation="vertical" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_species_details"
-                        style="@style/Widget.Material3.Button.TextButton"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="-8dp"
-                        android:layout_marginTop="@dimen/space_xs"
-                        android:text="@string/species_show_details"
-                        android:textAllCaps="false"
-                        android:visibility="gone"
-                        app:icon="@drawable/ic_chevron_right"
-                        app:iconGravity="textEnd" />
 
                 </LinearLayout>
 
