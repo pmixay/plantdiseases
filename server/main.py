@@ -3867,7 +3867,7 @@ async def species_profile_endpoint(
     name: str,
     common: str = "",
     locale: str = "en",
-    profile_version: int = 2,
+    profile_version: int = 3,
 ):
     """Flowering pattern + native range for a species (AI, best-effort).
 
@@ -3877,7 +3877,7 @@ async def species_profile_endpoint(
     result is cached server-side (in-memory + on disk, surviving restarts) per
     species and carries both EN/RU text copies, so a locale switch cannot
     change the map. ``profile_version`` is a cache-busting query parameter for
-    clients/CDNs; the current endpoint always serves the v2-compatible shape.
+    clients/CDNs; the current endpoint always serves the canonical bilingual shape.
     """
     _ = profile_version
     n = (name or "").strip()

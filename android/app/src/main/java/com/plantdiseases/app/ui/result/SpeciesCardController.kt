@@ -195,7 +195,7 @@ class SpeciesCardController(
             if (
                 profile?.available != true ||
                 flowering == null ||
-                !binding.resultFloweringChart.setFlowering(flowering.monthlyIntensity)
+                !binding.resultFloweringChart.setFlowering(flowering.monthlyIntensity.orEmpty())
             ) {
                 binding.cardResultFlowering.visibility = View.GONE
                 return@launch
@@ -204,16 +204,17 @@ class SpeciesCardController(
             val status = binding.resultFloweringChart.statusText() ?: return@launch
             binding.tvResultFloweringStatus.text = status
 
-            val localized = profile.localizedText[locale]
-            val note = (localized?.indoorNote ?: flowering.indoorNote).trim()
+            val localized = profile.localizedText.orEmpty()[locale]
+            val note = localized?.indoorNote.orEmpty()
+                .ifBlank { flowering.indoorNote.orEmpty() }
+                .trim()
             binding.tvResultFloweringIndoorNote.text = note
             binding.tvResultFloweringIndoorNote.visibility =
                 if (note.isBlank()) View.GONE else View.VISIBLE
 
-            val conditions = (
-                localized?.floweringConditions
-                    ?: profile.floweringConditions
-            ).orEmpty().trim()
+            val conditions = localized?.floweringConditions.orEmpty()
+                .ifBlank { profile.floweringConditions.orEmpty() }
+                .trim()
             binding.tvResultFloweringConditions.text = conditions
             binding.resultFloweringConditions.visibility =
                 if (conditions.isBlank()) View.GONE else View.VISIBLE

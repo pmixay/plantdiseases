@@ -772,7 +772,7 @@ data class SpeciesProfileResponse(
      *  never changes the botanical facts or map geometry. */
     @SerializedName("localized_text")
     @SerialName("localized_text")
-    val localizedText: Map<String, SpeciesProfileText> = emptyMap(),
+    val localizedText: Map<String, SpeciesProfileText>? = null,
     @SerializedName("source") @SerialName("source") val source: String? = null,
 )
 

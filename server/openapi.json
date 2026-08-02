@@ -1398,7 +1398,7 @@
             "required": false,
             "schema": {
               "type": "integer",
-              "default": 2,
+              "default": 3,
               "title": "Profile Version"
             }
           }

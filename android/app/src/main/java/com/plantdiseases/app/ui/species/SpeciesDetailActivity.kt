@@ -137,7 +137,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
                         .diskCacheStrategy(DiskCacheStrategy.ALL)
                         .into(binding.ivSpeciesHero)
                 }
-                renderPhotos(info.images)
+                renderPhotos(info.images.orEmpty())
                 info.pageUrl?.let { url ->
                     binding.btnWikipedia.visibility = View.VISIBLE
                     binding.btnWikipedia.setOnClickListener {
@@ -205,7 +205,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
             binding.tvToxicityBody.setTextColor(getColor(R.color.disease_red))
             binding.tvToxicityBody.text = getString(
                 R.string.toxicity_toxic_body,
-                plan.toxicSpeciesList.joinToString(", ") { localizeToxicSpecies(it) },
+                plan.toxicSpeciesList.orEmpty().joinToString(", ") { localizeToxicSpecies(it) },
             )
         } else {
             card.setCardBackgroundColor(getColor(R.color.healthy_green_bg))
@@ -301,7 +301,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 // reopening the same species.
                 renderDiseases(
                     if (cached.available) {
-                        cached.diseases.filter { it.name.isNotBlank() }
+                        cached.diseases.orEmpty().filter { it.name.orEmpty().isNotBlank() }
                     } else {
                         emptyList()
                     },
@@ -318,7 +318,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 .fetchSpeciesDiseases(scientificName, commonName, locale)
                 .getOrNull()
             val aiItems = if (resp?.available == true) {
-                resp.diseases.filter { it.name.isNotBlank() }
+                resp.diseases.orEmpty().filter { it.name.orEmpty().isNotBlank() }
             } else {
                 emptyList()
             }
@@ -346,19 +346,20 @@ class SpeciesDetailActivity : AppCompatActivity() {
             val flowering = profile.flowering
             if (
                 flowering != null &&
-                binding.floweringChart.setFlowering(flowering.monthlyIntensity)
+                binding.floweringChart.setFlowering(flowering.monthlyIntensity.orEmpty())
             ) {
-                val localized = profile.localizedText[locale]
-                val note = (localized?.indoorNote ?: flowering.indoorNote).trim()
+                val localized = profile.localizedText.orEmpty()[locale]
+                val note = localized?.indoorNote.orEmpty()
+                    .ifBlank { flowering.indoorNote.orEmpty() }
+                    .trim()
                 binding.tvFloweringIndoorNote.text = note
                 binding.tvFloweringIndoorNote.visibility =
                     if (note.isBlank()) View.GONE else View.VISIBLE
                 binding.cardFlowering.visibility = View.VISIBLE
 
-                val conditions = (
-                    localized?.floweringConditions
-                        ?: profile.floweringConditions
-                ).orEmpty().trim()
+                val conditions = localized?.floweringConditions.orEmpty()
+                    .ifBlank { profile.floweringConditions.orEmpty() }
+                    .trim()
                 if (conditions.isNotBlank()) {
                     binding.tvFloweringConditions.text = conditions
                     binding.cardFloweringConditions.visibility = View.VISIBLE
@@ -367,8 +368,8 @@ class SpeciesDetailActivity : AppCompatActivity() {
 
             val nativeRange = profile.nativeRange
             val zones = nativeRange?.zones.orEmpty().mapNotNull { zone ->
-                WorldMapView.ZoneStatus.fromWireName(zone.status)?.let { status ->
-                    (zone.country.ifBlank { zone.countryCode.orEmpty() })
+                WorldMapView.ZoneStatus.fromWireName(zone.status.orEmpty())?.let { status ->
+                    (zone.country.orEmpty().ifBlank { zone.countryCode.orEmpty() })
                         .takeIf(String::isNotBlank)?.let { country ->
                         WorldMapView.CountryZone(country, status, zone.countryCode)
                     }
@@ -378,9 +379,9 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 return@launch
             }
             binding.tvNativeRangeSummary.text = (
-                profile.localizedText[locale]?.nativeRangeSummary
-                    ?: nativeRange.summary
-            )
+                profile.localizedText.orEmpty()[locale]?.nativeRangeSummary.orEmpty()
+                    .ifBlank { nativeRange.summary.orEmpty() }
+            ).trim()
             binding.worldMap.setZones(zones)
             binding.cardNativeRange.visibility = View.VISIBLE
         }
@@ -400,7 +401,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 val guide = item.docKey?.let { DiseaseCatalog.guideItemForClass(it) }
                     ?: DiseaseCatalog.guideItemForName(item.name)
                 addDiseaseRow(
-                    name = item.name,
+                    name = item.name.orEmpty(),
                     note = item.note,
                     iconRes = guide?.iconRes ?: R.drawable.ic_disease,
                     guideId = guide?.id,

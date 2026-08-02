@@ -1345,7 +1345,7 @@ class ScanRepository(
         }
 
     private fun speciesProfileCacheKey(name: String): String =
-        "species_profile:v2:${name.trim().lowercase(java.util.Locale.ROOT)}"
+        "species_profile:v3:${name.trim().lowercase(java.util.Locale.ROOT)}"
 
     /**
      * Flowering and native-range profile (AI, best-effort). Real profiles are
@@ -1358,7 +1358,7 @@ class ScanRepository(
         locale: String,
     ): Result<com.plantdiseases.app.data.model.SpeciesProfileResponse> =
         withContext(Dispatchers.IO) {
-            // v2 contains both EN/RU text copies, so one cached response is
+            // The canonical profile contains both EN/RU text copies, so one cached response is
             // safe to reuse after an offline language switch.
             val cacheKey = speciesProfileCacheKey(name)
             com.plantdiseases.app.util.ResponseCache

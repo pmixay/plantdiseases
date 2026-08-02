@@ -1095,7 +1095,7 @@ def species_common_diseases(
 # Same discipline as ``species_common_diseases`` above: one OpenRouter call
 # per species, strict JSON parsing with a tolerant-but-strict sanitiser,
 # in-memory + disk cache, and a graceful ``available: False`` with no API key
-# or on any failure. The canonical v2 profile contains the same geography and
+# or on any failure. The canonical bilingual profile contains the same geography and
 # numeric flowering data for every locale, plus both EN/RU copies of the short
 # narrative strings. This prevents a language switch from changing the map.
 
@@ -1122,9 +1122,11 @@ English sentence>", "ru": "<short Russian sentence>"}}, \
 sentence>", "ru": "<short Russian sentence>"}}}
 
 Rules:
-- "monthly_intensity" has EXACTLY 12 integers, one per calendar month starting with January \
-(Northern Hemisphere growing season), each 0 (no bloom), 1 (some bloom) or 2 (peak bloom). A \
-species that rarely or never flowers as a houseplant should be mostly or all 0s.
+- "monthly_intensity" has EXACTLY 12 integers, one per calendar month starting with January, \
+each 0 (no bloom), 1 (some bloom) or 2 (peak bloom). Describe the species' normal flowering \
+season under suitable cultivation. Do NOT zero the calendar merely because flowering indoors is \
+uncommon; explain that limitation in "indoor_note". Use all 0s only for a species that does not \
+flower biologically (for example, a fern).
 - "zones" lists 3 to 6 UNIQUE countries where the species is native, naturalised or widely \
 cultivated outdoors. Use an uppercase ISO-3166 alpha-3 country code, never a region. Tag each \
 zone "grows_more" (thrives there — native range or common outdoor cultivation) or "grows_less" \
@@ -1402,10 +1404,12 @@ def species_profile(
     if not _chat_api_key_present():
         return {"available": False, "source": "no_api_key"}
 
-    # v2 is deliberately keyed only by scientific name. The cached value is
+    # Generation v3 is deliberately keyed only by scientific name. It refreshes
+    # older profiles that zeroed the calendar when indoor flowering was rare.
+    # The cached value is
     # the canonical bilingual profile; locale-specific wire fields are
     # rendered from it on every request.
-    cache_key = f"v2:{name.lower()}"
+    cache_key = f"v3:{name.lower()}"
     cached = _SPECIES_PROFILE_CACHE.get(cache_key)
     if cached is not None:
         return {**_profile_response(cached, name, lang), "cached": True}

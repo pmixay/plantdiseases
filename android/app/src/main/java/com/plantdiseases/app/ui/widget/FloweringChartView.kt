@@ -15,8 +15,9 @@ import kotlin.math.max
  *
  * Intensity values are 0 (none), 1 (some) and 2 (peak). The current month is
  * marked below its label and the status line is derived from the same series.
- * An all-zero series is intentionally rendered as a dedicated "rarely flowers
- * indoors" panel rather than twelve misleading minimum-height bars.
+ * An all-zero series still renders the complete axes and month labels; its
+ * status explains that indoor flowering is rare without making the graph
+ * disappear.
  */
 class FloweringChartView @JvmOverloads constructor(
     context: Context,
@@ -57,7 +58,6 @@ class FloweringChartView @JvmOverloads constructor(
         isFakeBoldText = true
     }
     private val markerPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val rarePanelPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val rect = RectF()
 
     init {
@@ -119,11 +119,6 @@ class FloweringChartView @JvmOverloads constructor(
         val bottom = height - paddingBottom.toFloat()
         val statusBaseline = bottom - dp(if (showStatusLine) 2f else 25f)
 
-        if (status is BloomStatus.RarelyIndoors) {
-            drawRareState(canvas, left, right, top, statusBaseline, showStatusLine)
-            return
-        }
-
         val chartBottom = statusBaseline - dp(if (showStatusLine) 40f else 16f)
         val chartTop = top + dp(8f)
         val chartHeight = max(dp(1f), chartBottom - chartTop)
@@ -181,32 +176,6 @@ class FloweringChartView @JvmOverloads constructor(
         canvas.drawText(label, x, baseline, axisLabelPaint)
     }
 
-    private fun drawRareState(
-        canvas: Canvas,
-        left: Float,
-        right: Float,
-        top: Float,
-        statusBaseline: Float,
-        drawStatus: Boolean,
-    ) {
-        rect.set(left, top + dp(8f), right, statusBaseline - dp(20f))
-        canvas.drawRoundRect(rect, dp(16f), dp(16f), rarePanelPaint)
-
-        val centerX = (left + right) / 2f
-        val centerY = rect.centerY() - dp(8f)
-        canvas.drawCircle(centerX, centerY, dp(12f), markerPaint)
-        canvas.drawCircle(centerX - dp(15f), centerY + dp(9f), dp(6f), emptyBarPaint)
-        canvas.drawCircle(centerX + dp(15f), centerY + dp(9f), dp(6f), emptyBarPaint)
-        if (drawStatus) {
-            canvas.drawText(
-                statusText(context, BloomStatus.RarelyIndoors),
-                centerX,
-                statusBaseline,
-                statusPaint,
-            )
-        }
-    }
-
     private fun refreshColors() {
         // The flowering chart lives on a normal glass card, not a care-plan
         // hero. Keep the signal green but translucent so the graph feels
@@ -225,8 +194,6 @@ class FloweringChartView @JvmOverloads constructor(
         statusPaint.alpha = 255
         markerPaint.color = context.getColor(R.color.primary)
         markerPaint.alpha = 210
-        rarePanelPaint.color = context.getColor(R.color.surface_variant)
-        rarePanelPaint.alpha = 220
     }
 
     private fun buildContentDescription(status: BloomStatus): String {
