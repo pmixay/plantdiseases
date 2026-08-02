@@ -213,7 +213,7 @@ class SpeciesCardController(
             val conditions = (
                 localized?.floweringConditions
                     ?: profile.floweringConditions
-            ).trim()
+            ).orEmpty().trim()
             binding.tvResultFloweringConditions.text = conditions
             binding.resultFloweringConditions.visibility =
                 if (conditions.isBlank()) View.GONE else View.VISIBLE

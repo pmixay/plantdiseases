@@ -358,7 +358,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 val conditions = (
                     localized?.floweringConditions
                         ?: profile.floweringConditions
-                ).trim()
+                ).orEmpty().trim()
                 if (conditions.isNotBlank()) {
                     binding.tvFloweringConditions.text = conditions
                     binding.cardFloweringConditions.visibility = View.VISIBLE
