@@ -52,6 +52,12 @@ class WorldMapViewTest {
     }
 
     @Test
+    fun polygonLongitudes_areUnwrappedInsteadOfDrawingAcrossTheMap() {
+        assertThat(unwrapLongitudeDelta(-179.0, 179.0)).isWithin(0.0001).of(181.0)
+        assertThat(unwrapLongitudeDelta(179.0, -179.0)).isWithin(0.0001).of(-181.0)
+    }
+
+    @Test
     fun hitTesting_respectsOuterRingBoundaryAndHole() {
         val outer = listOf(
             GeoPoint(0.0, 0.0),
@@ -104,6 +110,7 @@ class WorldMapViewTest {
 
         assertThat(map.countries).hasSize(177)
         assertThat(map.match("Brazil").single().code).isEqualTo("BRA")
+        assertThat(map.match("PER").single().code).isEqualTo("PER")
         assertThat(map.match("Бразилия").single().code).isEqualTo("BRA")
         assertThat(map.match("southern Brazil").single().code).isEqualTo("BRA")
         assertThat(map.match("Southeast Asia").map { it.code }).contains("THA")

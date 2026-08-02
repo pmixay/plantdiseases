@@ -1360,7 +1360,7 @@
     "/api/species-profile": {
       "get": {
         "summary": "Species Profile Endpoint",
-        "description": "Flowering pattern + native range for a species (AI, best-effort).\n\nGraceful ``{\"available\": False}`` when no OpenRouter key is configured or\non any failure — the client then hides the section, so the species screen\ndegrades gracefully instead of showing bogus data. A real (``available``)\nresult is cached server-side (in-memory + on disk, surviving restarts) per\n(species, language) and carries a long ``Cache-Control`` so the\nclient/CDN reuses it too; a transient failure is sent uncached so the\nnext open retries.",
+        "description": "Flowering pattern + native range for a species (AI, best-effort).\n\nGraceful ``{\"available\": False}`` when no OpenRouter key is configured or\non any failure — the client then hides the section, so the species screen\ndegrades gracefully instead of showing bogus data. A real (``available``)\nresult is cached server-side per species and carries both EN/RU text copies,\nso a locale switch cannot change the map. ``profile_version`` is a cache-busting\nquery parameter for clients/CDNs.",
         "operationId": "species_profile_endpoint_api_species_profile_get",
         "parameters": [
           {
@@ -1390,6 +1390,16 @@
               "type": "string",
               "default": "en",
               "title": "Locale"
+            }
+          },
+          {
+            "name": "profile_version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 2,
+              "title": "Profile Version"
             }
           }
         ],

@@ -14,10 +14,10 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
 import com.google.android.material.chip.Chip
-import com.google.android.material.chip.ChipGroup
 import com.plantdiseases.app.R
 import java.io.BufferedInputStream
 import java.io.DataInputStream
@@ -34,9 +34,8 @@ import kotlin.math.tan
  * Offline native-range map backed by bundled Natural Earth 1:110m geometry.
  *
  * This is deliberately a composite XML-compatible View rather than a screen
- * controller: the inner [Canvas] draws the map, while real Material [Chip]s
- * below it expose every server-supplied range label to accessibility services
- * and remain usable when an island is too small to tap.
+ * controller: the inner [Canvas] draws the map and one result chip below it
+ * reports the country selected by the user.
  */
 class WorldMapView @JvmOverloads constructor(
     context: Context,
@@ -58,11 +57,12 @@ class WorldMapView @JvmOverloads constructor(
     data class CountryZone(
         val country: String,
         val status: ZoneStatus,
+        val countryCode: String? = null,
     )
 
     private val mapCanvas = MapCanvasView(context)
+    private val selectionHint = TextView(context)
     private val selectedChip = Chip(context)
-    private val countryChips = ChipGroup(context)
     private var zones: List<CountryZone> = emptyList()
 
     init {
@@ -76,10 +76,11 @@ class WorldMapView @JvmOverloads constructor(
         mapCanvas.setOnCountrySelectedListener(::showSelectedCountry)
         addView(mapCanvas)
 
-        selectedChip.apply {
-            isClickable = false
-            isCheckable = false
-            isVisible = false
+        selectionHint.apply {
+            text = context.getString(R.string.native_range_tap_hint)
+            setTextColor(color(R.color.on_surface_secondary))
+            textSize = 14f
+            isVisible = true
             layoutParams = LayoutParams(
                 LayoutParams.WRAP_CONTENT,
                 LayoutParams.WRAP_CONTENT,
@@ -87,33 +88,39 @@ class WorldMapView @JvmOverloads constructor(
                 topMargin = dp(8f).toInt()
             }
         }
-        addView(selectedChip)
+        addView(selectionHint)
 
-        countryChips.apply {
+        selectedChip.apply {
+            isClickable = false
+            isCheckable = false
             isSingleLine = false
-            chipSpacingHorizontal = dp(6f).toInt()
-            chipSpacingVertical = dp(6f).toInt()
+            maxLines = 4
+            setEnsureMinTouchTargetSize(true)
+            isVisible = false
             layoutParams = LayoutParams(
                 LayoutParams.MATCH_PARENT,
                 LayoutParams.WRAP_CONTENT,
             ).apply {
-                topMargin = dp(6f).toInt()
+                topMargin = dp(8f).toInt()
             }
         }
-        addView(countryChips)
+        addView(selectedChip)
     }
 
     /**
      * Replaces the complete highlighted range. Blank labels and duplicate
-     * (label, status) pairs are ignored; an empty result clears the widget.
+     * (country, status) pairs are ignored; an empty result clears the widget.
      */
     fun setZones(value: List<CountryZone>) {
         zones = value
             .filter { it.country.isNotBlank() }
-            .distinctBy { "${normalizeMapName(it.country)}:${it.status.wireName}" }
+            .distinctBy {
+                "${it.countryCode?.trim()?.uppercase(Locale.ROOT).orEmpty()}:${normalizeMapName(it.country)}"
+            }
+            .take(6)
+        selectionHint.isVisible = true
         selectedChip.isVisible = false
         mapCanvas.setZones(zones)
-        renderCountryChips()
         mapCanvas.contentDescription =
             if (zones.isEmpty()) {
                 context.getString(R.string.native_range_map_empty)
@@ -125,61 +132,33 @@ class WorldMapView @JvmOverloads constructor(
             }
     }
 
-    private fun renderCountryChips() {
-        countryChips.removeAllViews()
-        zones.forEach { zone ->
-            countryChips.addView(
-                zoneChip(
-                    label = zone.country,
-                    status = zone.status,
-                    clickable = true,
-                ).apply {
-                    setOnClickListener {
-                        showSelectedCountry(zone.country, zone.status)
-                        mapCanvas.selectZone(zone)
-                    }
-                },
+    private fun showSelectedCountry(name: String, status: ZoneStatus?) {
+        selectionHint.isVisible = false
+        if (status == null) {
+            selectedChip.text = context.getString(
+                R.string.native_range_outside_country,
+                name,
+            )
+            applyNeutralChipColors(selectedChip)
+            selectedChip.contentDescription = context.getString(
+                R.string.native_range_outside_country_accessibility,
+                name,
+            )
+        } else {
+            selectedChip.text = context.getString(
+                R.string.native_range_selected_country,
+                name,
+                statusLabel(status),
+            )
+            applyChipColors(selectedChip, status)
+            selectedChip.contentDescription = context.getString(
+                R.string.native_range_selected_country_accessibility,
+                name,
+                statusLabel(status),
             )
         }
-    }
-
-    private fun showSelectedCountry(name: String, status: ZoneStatus) {
-        selectedChip.text = context.getString(
-            R.string.native_range_selected_country,
-            name,
-            statusLabel(status),
-        )
-        applyChipColors(selectedChip, status)
-        selectedChip.contentDescription = context.getString(
-            R.string.native_range_selected_country_accessibility,
-            name,
-            statusLabel(status),
-        )
         selectedChip.isVisible = true
     }
-
-    private fun zoneChip(
-        label: String,
-        status: ZoneStatus,
-        clickable: Boolean,
-    ): Chip =
-        Chip(context).apply {
-            text = context.getString(
-                R.string.native_range_country_chip,
-                label,
-                statusLabel(status),
-            )
-            isCheckable = false
-            isClickable = clickable
-            minHeight = dp(40f).toInt()
-            setEnsureMinTouchTargetSize(true)
-            applyChipColors(this, status)
-            contentDescription = context.getString(
-                R.string.native_range_country_accessibility,
-                label,
-                statusLabel(status),
-            )
-        }
 
     private fun applyChipColors(chip: Chip, status: ZoneStatus) {
         val background = when (status) {
@@ -192,6 +171,13 @@ class WorldMapView @JvmOverloads constructor(
         }
         chip.chipBackgroundColor = ColorStateList.valueOf(background)
         chip.chipStrokeColor = ColorStateList.valueOf(stroke)
+        chip.chipStrokeWidth = dp(1f)
+        chip.setTextColor(color(R.color.on_surface))
+    }
+
+    private fun applyNeutralChipColors(chip: Chip) {
+        chip.chipBackgroundColor = ColorStateList.valueOf(color(R.color.surface_variant))
+        chip.chipStrokeColor = ColorStateList.valueOf(color(R.color.card_stroke))
         chip.chipStrokeWidth = dp(1f)
         chip.setTextColor(color(R.color.on_surface))
     }
@@ -228,36 +214,34 @@ class WorldMapView @JvmOverloads constructor(
         private var projection: WorldMapProjection? = null
         private var matches: List<RangeMatch> = emptyList()
         private var selectedCode: String? = null
-        private var onCountrySelected: ((String, ZoneStatus) -> Unit)? = null
+        private var onCountrySelected: ((String, ZoneStatus?) -> Unit)? = null
 
         init {
             isClickable = true
             importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
         }
 
-        fun setOnCountrySelectedListener(listener: (String, ZoneStatus) -> Unit) {
+        fun setOnCountrySelectedListener(listener: (String, ZoneStatus?) -> Unit) {
             onCountrySelected = listener
         }
 
         fun setZones(zones: List<CountryZone>) {
             matches = zones.flatMap { zone ->
-                data.match(zone.country).map { country ->
+                val matchedCountries = zone.countryCode
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let(data::match)
+                    .orEmpty()
+                    .ifEmpty { data.match(zone.country) }
+                matchedCountries.map { country ->
                     RangeMatch(
                         geometry = country,
                         source = zone,
-                        displayName = data.displayName(country, zone.country),
+                        displayName = data.displayName(country),
                     )
                 }
             }.distinctBy { "${it.geometry.code}:${it.source.status.wireName}" }
             selectedCode = null
             rebuildProjection()
-            invalidate()
-        }
-
-        fun selectZone(zone: CountryZone) {
-            val match = matches.firstOrNull { it.source == zone } ?: return
-            selectedCode = match.geometry.code
-            onCountrySelected?.invoke(match.displayName, match.source.status)
             invalidate()
         }
 
@@ -287,7 +271,10 @@ class WorldMapView @JvmOverloads constructor(
             val save = canvas.save()
             canvas.clipPath(clipPath)
 
-            val activeProjection = projection ?: return
+            val activeProjection = projection ?: run {
+                canvas.restoreToCount(save)
+                return
+            }
             val highlighted = matches.associateBy { it.geometry.code }
             data.countries.forEach { country ->
                 val path = country.toPath(activeProjection)
@@ -337,12 +324,15 @@ class WorldMapView @JvmOverloads constructor(
             if (event.action != MotionEvent.ACTION_UP) return true
             performClick()
             val point = projection?.unproject(event.x, event.y) ?: return true
-            val hit = matches
-                .filter { it.geometry.contains(point, projection?.centerLongitude ?: 0.0) }
-                .minByOrNull { it.geometry.areaHint }
-            if (hit != null) {
-                selectedCode = hit.geometry.code
-                onCountrySelected?.invoke(hit.displayName, hit.source.status)
+            val activeProjection = projection ?: return true
+            val hitCountry = data.countries
+                .filter { it.contains(point, activeProjection.centerLongitude) }
+                .minByOrNull { it.areaHint }
+            if (hitCountry != null) {
+                selectedCode = hitCountry.code
+                val match = matches.firstOrNull { it.geometry.code == hitCountry.code }
+                val displayName = match?.displayName ?: data.displayName(hitCountry)
+                onCountrySelected?.invoke(displayName, match?.source?.status)
                 invalidate()
             }
             return true
@@ -370,8 +360,14 @@ class WorldMapView @JvmOverloads constructor(
                 fillType = Path.FillType.EVEN_ODD
                 polygons.forEach { polygon ->
                     polygon.rings.forEach { ring ->
+                        var previousDelta: Double? = null
                         ring.forEachIndexed { index, point ->
-                            val projected = projection.project(point)
+                            var delta = longitudeDelta(point.longitude, projection.centerLongitude)
+                            previousDelta?.let { previous ->
+                                delta = unwrapLongitudeDelta(delta, previous)
+                            }
+                            previousDelta = delta
+                            val projected = projection.projectUnwrapped(delta, point.latitude)
                             if (index == 0) {
                                 moveTo(projected.x, projected.y)
                             } else {
@@ -444,8 +440,12 @@ internal data class WorldMapProjection(
     private val centerY: Double,
 ) {
     fun project(point: GeoPoint): PointF {
-        val x = centerX + longitudeDelta(point.longitude, centerLongitude) * scale
-        val y = centerY - (mercatorY(point.latitude) - centerMercatorY) * scale
+        return projectUnwrapped(longitudeDelta(point.longitude, centerLongitude), point.latitude)
+    }
+
+    fun projectUnwrapped(longitudeDelta: Double, latitude: Double): PointF {
+        val x = centerX + longitudeDelta * scale
+        val y = centerY - (mercatorY(latitude) - centerMercatorY) * scale
         return PointF(x.toFloat(), y.toFloat())
     }
 
@@ -569,6 +569,13 @@ private fun inverseMercatorY(value: Double): Double =
 private fun longitudeDelta(longitude: Double, center: Double): Double =
     wrapLongitude(longitude - center)
 
+internal fun unwrapLongitudeDelta(delta: Double, previous: Double): Double {
+    var value = delta
+    while (value - previous > 180.0) value -= 360.0
+    while (value - previous < -180.0) value += 360.0
+    return value
+}
+
 private fun wrapLongitude(longitude: Double): Double {
     var value = (longitude + 180.0) % 360.0
     if (value < 0.0) value += 360.0
@@ -609,9 +616,7 @@ internal class WorldMapData(val countries: List<CountryGeometry>) {
         }
     }
 
-    fun displayName(country: CountryGeometry, suppliedName: String): String {
-        val suppliedMatchesOnlyCountry = match(suppliedName).map { it.code }.distinct().size == 1
-        if (suppliedMatchesOnlyCountry) return suppliedName
+    fun displayName(country: CountryGeometry): String {
         val russian = Locale.getDefault().language == "ru"
         return if (russian) country.nameRu else country.nameEn
     }

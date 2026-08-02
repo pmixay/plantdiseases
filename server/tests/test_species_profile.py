@@ -48,6 +48,33 @@ def _valid_profile_json(**overrides) -> str:
     return json.dumps(payload)
 
 
+def _valid_profile_v2_json() -> str:
+    return json.dumps({
+        "flowering": {
+            "monthly_intensity": [0, 0, 1, 2, 2, 1, 0, 0, 0, 0, 0, 0],
+            "indoor_note": {
+                "en": "Blooms less reliably indoors.",
+                "ru": "В помещении цветёт менее стабильно.",
+            },
+        },
+        "flowering_conditions": {
+            "en": "Long days and warm temperatures help it bloom.",
+            "ru": "Для цветения нужны длинный день и тепло.",
+        },
+        "native_range": {
+            "zones": [
+                {"country_code": "PER", "country": {"en": "Peru", "ru": "Перу"}, "status": "grows_more"},
+                {"country_code": "BOL", "country": {"en": "Bolivia", "ru": "Боливия"}, "status": "grows_more"},
+                {"country_code": "BOL", "country": {"en": "Bolivia", "ru": "Боливия"}, "status": "grows_less"},
+            ],
+            "summary": {
+                "en": "Native to the Andes.",
+                "ru": "Родом из Анд.",
+            },
+        },
+    })
+
+
 # ── parser ──────────────────────────────────────────────────────────
 
 def test_parser_plain_json():
@@ -65,6 +92,16 @@ def test_parser_plain_json():
             ],
             "summary": "Native to the understory of Brazilian rainforests.",
         },
+    }
+
+
+def test_v2_parser_deduplicates_country_codes_and_keeps_both_languages():
+    result = ai_services._parse_species_profile_v2(_valid_profile_v2_json())
+    assert result is not None
+    assert [z["country_code"] for z in result["native_range"]["zones"]] == ["PER", "BOL"]
+    assert result["flowering_conditions"] == {
+        "en": "Long days and warm temperatures help it bloom.",
+        "ru": "Для цветения нужны длинный день и тепло.",
     }
 
 
@@ -191,6 +228,26 @@ def test_structured_success_and_cache(monkeypatch):
     cached = ai_services.species_profile("Ficus elastica", lang="en")
     assert cached.get("cached") is True
     assert calls["n"] == 1
+
+
+def test_v2_profile_is_shared_between_locales(monkeypatch):
+    monkeypatch.setattr(ai_services, "OPENROUTER_API_KEY", "test-key")
+    calls = {"n": 0}
+
+    def fake_call(*args, **kwargs):
+        calls["n"] += 1
+        return (_valid_profile_v2_json(), 10, 20, {})
+
+    monkeypatch.setattr(ai_services, "_call_openrouter", fake_call)
+    en = ai_services.species_profile("Potato", lang="en")
+    ru = ai_services.species_profile("Potato", lang="ru")
+
+    assert calls["n"] == 1
+    assert [z["country_code"] for z in en["native_range"]["zones"]] == ["PER", "BOL"]
+    assert [z["country_code"] for z in ru["native_range"]["zones"]] == ["PER", "BOL"]
+    assert en["flowering"]["monthly_intensity"] == ru["flowering"]["monthly_intensity"]
+    assert en["flowering_conditions"] != ru["flowering_conditions"]
+    assert en["localized_text"]["ru"]["native_range_summary"] == "Родом из Анд."
 
 
 def test_disk_cache_survives_inmemory_wipe(monkeypatch):
