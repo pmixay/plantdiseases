@@ -39,6 +39,8 @@ class CarePlanController(
         // Treatment / Prevention card so the "what's wrong → how to treat →
         // ongoing care" reading order stays intact.
         val view = card ?: CarePlanCardView(activity).also { fresh ->
+            // Keyed to the diagnosis, not the species baseline.
+            fresh.isCurePlan = true
             card = fresh
             fresh.layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,

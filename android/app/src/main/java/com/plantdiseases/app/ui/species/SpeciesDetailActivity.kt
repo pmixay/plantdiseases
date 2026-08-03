@@ -10,7 +10,6 @@ import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -25,12 +24,10 @@ import com.bumptech.glide.load.engine.GlideException
 import com.bumptech.glide.request.RequestListener
 import com.bumptech.glide.request.target.Target
 import com.google.android.material.card.MaterialCardView
-import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.CarePlanResponse
 import com.plantdiseases.app.data.model.SpeciesDiseaseItem
-import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivitySpeciesDetailBinding
 import com.plantdiseases.app.ui.common.CarePlanCardView
@@ -60,7 +57,6 @@ class SpeciesDetailActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivitySpeciesDetailBinding
     private val scanRepository: ScanRepository by inject()
-    private val plantRepository: PlantRepository by inject()
     private val connectivity: ConnectivityObserver by inject()
     private val isRu: Boolean get() = Locale.getDefault().language == "ru"
     private val locale: String get() = if (isRu) "ru" else "en"
@@ -103,16 +99,6 @@ class SpeciesDetailActivity : AppCompatActivity() {
         binding.speciesToolbar.title = title
         binding.tvSpeciesTitle.text = title
         binding.tvSpeciesScientific.text = scientificName
-
-        binding.btnAddGarden.setOnClickListener { addToGarden() }
-        binding.btnScanHealth.setOnClickListener {
-            startActivity(
-                Intent(this, MainActivity::class.java).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                    putExtra(MainActivity.EXTRA_OPEN_SCANNER, true)
-                },
-            )
-        }
 
         // Independent loads run concurrently: the Wikipedia blurb/photo, care
         // plan, common-problems list and optional botanical profile. Each
@@ -388,8 +374,6 @@ class SpeciesDetailActivity : AppCompatActivity() {
             // Miss → reveal the section with a loading state so a slow (first-
             // time) AI lookup reads as "finding problems…", not an empty gap.
             binding.tvDiseasesTitle.visibility = View.VISIBLE
-            binding.tvDiseasesSubtitle.visibility = View.VISIBLE
-            binding.tvDiseasesSubtitle.setText(R.string.species_problems_loading)
             binding.pbDiseases.visibility = View.VISIBLE
             val resp = scanRepository
                 .fetchSpeciesDiseases(scientificName, commonName, locale)
@@ -495,7 +479,6 @@ class SpeciesDetailActivity : AppCompatActivity() {
     private fun renderDiseases(aiItems: List<SpeciesDiseaseItem>) {
         binding.listDiseases.removeAllViews()
         if (aiItems.isNotEmpty()) {
-            binding.tvDiseasesSubtitle.setText(R.string.species_problems_ai_note)
             aiItems.forEach { item ->
                 // Match by class key first, then by display name, so the row
                 // picks up the same icon as the disease guide/book instead of
@@ -510,7 +493,6 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 )
             }
         } else {
-            binding.tvDiseasesSubtitle.setText(R.string.species_problems_guide_note)
             DiseaseCatalog.diseaseGuideItems().forEach { g ->
                 addDiseaseRow(
                     name = if (isRu) g.titleRu else g.titleEn,
@@ -523,7 +505,6 @@ class SpeciesDetailActivity : AppCompatActivity() {
         val hasRows = binding.listDiseases.childCount > 0
         val vis = if (hasRows) View.VISIBLE else View.GONE
         binding.tvDiseasesTitle.visibility = vis
-        binding.tvDiseasesSubtitle.visibility = vis
         binding.listDiseases.visibility = vis
         applyDiseasesCollapse()
     }
@@ -554,9 +535,9 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 if (expanded) View.VISIBLE else View.GONE
         }
         binding.tvDiseasesExpand.text = if (expanded) {
-            getString(R.string.species_problems_collapse)
+            getString(R.string.list_show_fewer)
         } else {
-            getString(R.string.species_problems_expand, total)
+            getString(R.string.list_show_all, total)
         }
         binding.ivDiseasesChevron.setImageResource(
             if (expanded) R.drawable.ic_chevron_up else R.drawable.ic_chevron_down,
@@ -590,31 +571,6 @@ class SpeciesDetailActivity : AppCompatActivity() {
             row.isClickable = false
         }
         binding.listDiseases.addView(row)
-    }
-
-    private fun addToGarden() {
-        lifecycleScope.launch {
-            runCatching {
-                plantRepository.savePlant(
-                    name = commonName ?: scientificName,
-                    species = scientificName,
-                    scientificName = scientificName,
-                    commonName = commonName,
-                )
-            }.onSuccess {
-                Toast.makeText(
-                    this@SpeciesDetailActivity,
-                    R.string.identify_added_garden,
-                    Toast.LENGTH_SHORT,
-                ).show()
-            }.onFailure {
-                Toast.makeText(
-                    this@SpeciesDetailActivity,
-                    R.string.identify_failed,
-                    Toast.LENGTH_SHORT,
-                ).show()
-            }
-        }
     }
 
     companion object {

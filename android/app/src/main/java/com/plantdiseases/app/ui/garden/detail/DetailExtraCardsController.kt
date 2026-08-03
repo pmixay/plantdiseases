@@ -70,6 +70,8 @@ class DetailExtraCardsController(
      */
     fun buildCarePlanSlot(plant: PlantEntity, scans: List<ScanEntity>): View {
         val card = CarePlanCardView(activity).apply {
+            // Keyed to the plant's current condition, not the species baseline.
+            isCurePlan = true
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,

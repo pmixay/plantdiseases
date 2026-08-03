@@ -49,6 +49,16 @@ class CarePlanCardView @JvmOverloads constructor(
     private var onApplyToReminders: ((CarePlanResponse) -> Unit)? = null
     private var lastPlan: CarePlanResponse? = null
 
+    /**
+     * A plan for a specific diagnosis is a *cure* plan; the species baseline
+     * (disease = "healthy") is a *care* plan. Hosts set this before binding.
+     */
+    var isCurePlan: Boolean = false
+        set(value) {
+            field = value
+            titleView.setText(if (value) R.string.cure_plan_title else R.string.care_plan_title)
+        }
+
     init {
         radius = 20.dp().toFloat()
         cardElevation = 0f

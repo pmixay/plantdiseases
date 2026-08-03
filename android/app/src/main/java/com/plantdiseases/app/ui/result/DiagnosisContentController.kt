@@ -181,6 +181,40 @@ class DiagnosisContentController(
         }
     }
 
+    /** Shared across both tabs so switching tab keeps the user's choice. */
+    private var stepsExpanded = false
+
+    /**
+     * Cap the visible steps of the showing tab and reveal the toggle only when
+     * that list is actually longer than the cap.
+     */
+    private fun applyStepsCollapse() {
+        val list = if (binding.treatmentStepsLayout.visibility == View.VISIBLE) {
+            binding.treatmentStepsLayout
+        } else {
+            binding.preventionStepsLayout
+        }
+        val total = list.childCount
+        val cap = activity.resources.getInteger(R.integer.treatment_steps_collapsed_rows)
+        if (total <= cap) {
+            for (i in 0 until total) list.getChildAt(i)?.visibility = View.VISIBLE
+            binding.stepsExpandRow.visibility = View.GONE
+            return
+        }
+        for (i in cap until total) {
+            list.getChildAt(i)?.visibility = if (stepsExpanded) View.VISIBLE else View.GONE
+        }
+        binding.stepsExpandRow.visibility = View.VISIBLE
+        binding.tvStepsExpand.text = if (stepsExpanded) {
+            activity.getString(R.string.list_show_fewer)
+        } else {
+            activity.getString(R.string.list_show_all, total)
+        }
+        binding.ivStepsChevron.setImageResource(
+            if (stepsExpanded) R.drawable.ic_chevron_up else R.drawable.ic_chevron_down,
+        )
+    }
+
     fun setupTreatmentPrevention(
         scan: ScanEntity,
         repository: ScanRepository,
@@ -217,6 +251,11 @@ class DiagnosisContentController(
             binding.treatmentStepsLayout.visibility = View.GONE
             binding.preventionStepsLayout.visibility = View.VISIBLE
         }
+        applyStepsCollapse()
+        binding.stepsExpandRow.setOnClickListener {
+            stepsExpanded = !stepsExpanded
+            applyStepsCollapse()
+        }
 
         binding.tabsTreatmentPrevention.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
             override fun onTabSelected(tab: TabLayout.Tab) {
@@ -230,6 +269,8 @@ class DiagnosisContentController(
                         binding.preventionStepsLayout.visibility = View.VISIBLE
                     }
                 }
+                // The cap applies to whichever list is now showing.
+                applyStepsCollapse()
             }
             override fun onTabUnselected(tab: TabLayout.Tab) {}
             override fun onTabReselected(tab: TabLayout.Tab) {}

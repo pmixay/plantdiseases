@@ -577,6 +577,41 @@
                         android:padding="@dimen/space_lg"
                         android:visibility="gone" />
 
+                    <!-- Treatment and prevention lists can run long; both are
+                         capped at @integer/treatment_steps_collapsed_rows and
+                         the rest sits behind this toggle, which applies to
+                         whichever tab is showing. -->
+                    <LinearLayout
+                        android:id="@+id/steps_expand_row"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:background="?attr/selectableItemBackground"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center_vertical"
+                        android:minHeight="@dimen/species_info_touch_target"
+                        android:orientation="horizontal"
+                        android:paddingHorizontal="@dimen/space_lg"
+                        android:visibility="gone">
+
+                        <TextView
+                            android:id="@+id/tv_steps_expand"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:textColor="?attr/colorPrimary"
+                            android:textSize="@dimen/text_body"
+                            tools:text="Show all 7" />
+
+                        <ImageView
+                            android:id="@+id/iv_steps_chevron"
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:contentDescription="@null"
+                            android:src="@drawable/ic_chevron_down"
+                            app:tint="?attr/colorPrimary" />
+                    </LinearLayout>
+
                     <!-- AI Plant Doctor entry point — same assistant as the
                          Garden plant detail, surfaced right after the
                          treatment/prevention advice for a follow-up chat. -->

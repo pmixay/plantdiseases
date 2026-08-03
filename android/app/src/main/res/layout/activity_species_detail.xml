@@ -3,8 +3,10 @@
     Full-screen species detail, opened from the Home "Trending species"
     carousel (and reusable elsewhere). A large Wikipedia lead photo under a
     gradient toolbar, the common/scientific name, the encyclopedia blurb, a
-    care-at-a-glance block (filled from /api/care-plan), and add-to-garden /
-    scan-health / Wikipedia actions.
+    care-at-a-glance block (filled from /api/care-plan), pet toxicity,
+    flowering, native range, common problems, other community scans of this
+    species, and the Wikipedia link. This is the one screen that owns species
+    information; every other surface links here via SpeciesInfoCardView.
 -->
 <androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -310,15 +312,7 @@
                             android:orientation="vertical"
                             android:visibility="gone">
 
-                            <TextView
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="@dimen/space_xs"
-                                android:lineSpacingExtra="1dp"
-                                android:text="@string/flowering_chart_hint"
-                                android:textColor="@color/on_surface_secondary"
-                                android:textSize="@dimen/text_body_sm" />
-
+                            
                             <com.plantdiseases.app.ui.widget.FloweringChartView
                                 android:id="@+id/flowering_chart"
                                 android:layout_width="match_parent"
@@ -481,14 +475,6 @@
                     android:textSize="@dimen/text_body"
                     android:visibility="gone" />
 
-                <TextView
-                    android:id="@+id/tv_diseases_subtitle"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:textColor="@color/on_surface_secondary"
-                    android:textSize="@dimen/text_body_sm"
-                    android:visibility="gone" />
 
                 <ProgressBar
                     android:id="@+id/pb_diseases"
@@ -564,34 +550,6 @@
                     android:orientation="horizontal"
                     android:visibility="gone" />
 
-                <!-- baselineAligned=false + match_parent heights keep both
-                     buttons the same height even when one label wraps to two
-                     lines at a large font scale (they'd otherwise sit at
-                     different levels). -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_lg"
-                    android:baselineAligned="false"
-                    android:orientation="horizontal">
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_add_garden"
-                        android:layout_width="0dp"
-                        android:layout_height="match_parent"
-                        android:layout_weight="1"
-                        android:layout_marginEnd="@dimen/space_sm"
-                        android:text="@string/identify_add_garden" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_scan_health"
-                        style="@style/Widget.Material3.Button.TonalButton"
-                        android:layout_width="0dp"
-                        android:layout_height="match_parent"
-                        android:layout_weight="1"
-                        android:layout_marginStart="@dimen/space_sm"
-                        android:text="@string/identify_scan_health" />
-                </LinearLayout>
             </LinearLayout>
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>

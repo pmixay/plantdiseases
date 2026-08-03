@@ -18,5 +18,8 @@
 
     <!-- Common-problems rows kept visible before "show all N" appears. The
          fallback path renders the whole 17-item bundled catalogue. -->
-    <integer name="species_problems_collapsed_rows">4</integer>
+    <integer name="species_problems_collapsed_rows">2</integer>
+
+    <!-- Treatment / prevention steps shown before "show all N". -->
+    <integer name="treatment_steps_collapsed_rows">3</integer>
 </resources>

@@ -652,6 +652,7 @@
 
     <!-- Care Plan -->
     <string name="care_plan_title">Care Plan</string>
+    <string name="cure_plan_title">Cure Plan</string>
     <string name="care_plan_subtitle_species">Tailored for %s</string>
     <string name="care_plan_subtitle_unknown">Generic plan — species not set</string>
     <string name="care_plan_subtitle_offline">Basic offline plan — re-scan online for a tailored one</string>
@@ -887,14 +888,8 @@
     <string name="identify_water_days">Water about every %1$d days</string>
     <string name="identify_water_as_needed">Water when the top soil is dry</string>
     <string name="identify_humidity">Humidity: %1$s</string>
-    <string name="identify_add_garden">Add to garden</string>
-    <string name="identify_scan_health">Scan health</string>
-    <string name="identify_added_garden">Added to your garden</string>
     <string name="identify_retake">Retake</string>
     <string name="species_common_problems">Common problems to watch for</string>
-    <string name="species_problems_loading">Finding the problems most common for this plant…</string>
-    <string name="species_problems_ai_note">Most likely for this species — tap one for the full care guide.</string>
-    <string name="species_problems_guide_note">Plant conditions this app can diagnose — tap one to learn more.</string>
     <string name="native_range_title">Native range</string>
     <string name="native_range_loading">Loading native range…</string>
     <string name="native_range_grows_more">Thrives</string>
@@ -910,10 +905,12 @@
     <string name="native_range_map_empty">Native-range map unavailable</string>
     <string name="flowering_title">Flowering by month</string>
     <string name="flowering_loading">Loading flowering calendar…</string>
-    <string name="flowering_chart_hint">Indoor flowering: 0 — none, 1 — occasional, 2 — peak. The dot marks this month.</string>
     <string name="flowering_blooms_now">Blooms now</string>
     <string name="flowering_next_bloom">Next bloom in %1$s</string>
     <string name="flowering_rarely_indoors">Rarely flowers indoors</string>
+    <string name="flowering_level_none">none</string>
+    <string name="flowering_level_occasional">occasional</string>
+    <string name="flowering_level_peak">peak</string>
     <string name="flowering_conditions_title">What helps it bloom</string>
     <string name="flowering_expand">Show flowering details</string>
     <string name="flowering_collapse">Hide flowering details</string>
@@ -925,11 +922,11 @@
     <string name="species_info_collapse">Hide full description</string>
     <!-- Spoken for the description toggle: species name, then the action. -->
     <string name="species_info_toggle_content_description">%1$s. %2$s</string>
-    <string name="species_problems_expand">Show all %1$d</string>
-    <string name="species_problems_collapse">Show fewer</string>
+    <string name="list_show_all">Show all %1$d</string>
+    <string name="list_show_fewer">Show fewer</string>
     <string name="flowering_toggle_content_description">%1$s. %2$s. %3$s</string>
-    <string name="flowering_accessibility_month_intensity">%1$s %2$d</string>
-    <string name="flowering_chart_content_description">%1$s. 0 means no bloom, 1 occasional bloom, 2 peak bloom. The dot marks this month. %2$s</string>
+    <string name="flowering_accessibility_month_intensity">%1$s: %2$s</string>
+    <string name="flowering_chart_content_description">%1$s. The chart labels each month none, occasional or peak. The dot marks this month. %2$s</string>
     <string-array name="flowering_month_initials">
         <item>J</item>
         <item>F</item>
