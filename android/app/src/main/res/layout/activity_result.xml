@@ -403,39 +403,6 @@
 
                     </LinearLayout>
 
-                    <!-- Community action stays at the bottom of the verdict
-                         card, aligned with the card's other content. -->
-                    <LinearLayout
-                        android:id="@+id/status_action_row"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_xs"
-                        android:gravity="center_vertical"
-                        android:orientation="horizontal"
-                        android:visibility="gone">
-
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/btn_second_opinion"
-                            style="@style/Widget.Material3.Button.TextButton"
-                            android:layout_width="150dp"
-                            android:layout_height="wrap_content"
-                            android:layout_marginStart="0dp"
-                            android:ellipsize="end"
-                            android:gravity="start|center_vertical"
-                            android:insetLeft="0dp"
-                            android:insetRight="0dp"
-                            android:maxLines="2"
-                            android:minWidth="0dp"
-                            android:paddingStart="0dp"
-                            android:textSize="@dimen/text_body_sm"
-                            android:visibility="gone"
-                            android:text="@string/result_get_second_opinion"
-                            app:icon="@drawable/ic_community"
-                            app:iconGravity="textStart"
-                            app:iconSize="20dp" />
-
-                    </LinearLayout>
-
                 </LinearLayout>
 
                 </FrameLayout>
@@ -525,20 +492,60 @@
 
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- AI Plant Doctor remains available without bringing back the
-                 removed Treatment / Prevention tabs card. -->
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_ask_doctor"
-                style="@style/Widget.Material3.Button.TonalButton"
+            <!-- Follow-up "get help with this verdict" pair: the AI Plant
+                 Doctor and the community second opinion. Both live outside
+                 the verdict card so it ends on its own advisory, and they
+                 share one style so they read as alternatives to each other.
+                 Either can be GONE — the weights let the survivor span the
+                 full width. -->
+            <LinearLayout
+                android:id="@+id/result_action_row"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_md"
-                android:minHeight="48dp"
-                android:text="@string/doctor_open_cta"
-                android:visibility="gone"
-                app:icon="@drawable/ic_doctor_chat"
-                app:iconGravity="textStart"
-                app:cornerRadius="@dimen/radius_md" />
+                android:baselineAligned="false"
+                android:orientation="horizontal">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_ask_doctor"
+                    style="@style/Widget.Material3.Button.TonalButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:ellipsize="end"
+                    android:maxLines="2"
+                    android:minHeight="48dp"
+                    android:text="@string/doctor_open_cta"
+                    android:visibility="gone"
+                    app:autoSizeMaxTextSize="14sp"
+                    app:autoSizeMinTextSize="10sp"
+                    app:autoSizeTextType="uniform"
+                    app:cornerRadius="@dimen/radius_md"
+                    app:icon="@drawable/ic_doctor_chat"
+                    app:iconGravity="textStart"
+                    app:iconSize="20dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_second_opinion"
+                    style="@style/Widget.Material3.Button.TonalButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="@dimen/space_sm"
+                    android:layout_weight="1"
+                    android:ellipsize="end"
+                    android:maxLines="2"
+                    android:minHeight="48dp"
+                    android:text="@string/result_get_second_opinion"
+                    android:visibility="gone"
+                    app:autoSizeMaxTextSize="14sp"
+                    app:autoSizeMinTextSize="10sp"
+                    app:autoSizeTextType="uniform"
+                    app:cornerRadius="@dimen/radius_md"
+                    app:icon="@drawable/ic_community"
+                    app:iconGravity="textStart"
+                    app:iconSize="20dp" />
+
+            </LinearLayout>
 
             <!-- Description -->
             <com.google.android.material.card.MaterialCardView

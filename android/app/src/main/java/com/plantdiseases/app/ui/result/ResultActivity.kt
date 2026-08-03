@@ -2,7 +2,6 @@ package com.plantdiseases.app.ui.result
 
 import android.animation.ValueAnimator
 import android.content.Context
-import android.content.res.ColorStateList
 import android.content.Intent
 import android.graphics.Color
 import android.net.ConnectivityManager
@@ -510,7 +509,7 @@ class ResultActivity : AppCompatActivity() {
                 }
             }
 
-            tvDate.text = ImageUtils.formatTimestamp(scan.timestamp)
+            tvDate.text = ImageUtils.formatRelativeTime(this@ResultActivity, scan.timestamp)
 
             btnNewScan.setOnClickListener {
                 // Always land back on the scanner tab — finish() alone would
@@ -558,24 +557,15 @@ class ResultActivity : AppCompatActivity() {
             if (!isNotAPlant && !isOfflineAqua) {
                 btnSecondOpinion.visibility = View.VISIBLE
                 community.setupSecondOpinion(scan, isRu)
-                val opinionColor = getColor(
-                    when {
-                        confidenceAdvisory != null -> R.color.warning_amber
-                        isHealthyVerdict -> R.color.healthy_green
-                        else -> R.color.disease_red
-                    },
-                )
-                btnSecondOpinion.setTextColor(opinionColor)
-                btnSecondOpinion.iconTint = ColorStateList.valueOf(opinionColor)
-                val actionTextSizeSp = if (isRu) 11f else 13f
-                btnSecondOpinion.setTextSize(
-                    TypedValue.COMPLEX_UNIT_SP,
-                    actionTextSizeSp,
-                )
             } else {
                 btnSecondOpinion.visibility = View.GONE
             }
-            statusActionRow.visibility = if (btnSecondOpinion.visibility == View.VISIBLE) {
+            // The row only exists to pair the two follow-up actions; it goes
+            // with them so no empty gap is left above the care plan.
+            resultActionRow.visibility = if (
+                btnSecondOpinion.visibility == View.VISIBLE ||
+                btnAskDoctor.visibility == View.VISIBLE
+            ) {
                 View.VISIBLE
             } else {
                 View.GONE
@@ -688,7 +678,7 @@ class ResultActivity : AppCompatActivity() {
             binding.cardStatus,
             binding.cardSpecies,
             binding.cardPipelineWarning,
-            binding.btnAskDoctor,
+            binding.resultActionRow,
             binding.cardDescription,
             binding.cardSimilarScans,
             binding.cardAlternatives,

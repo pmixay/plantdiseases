@@ -35,9 +35,9 @@ class CarePlanController(
         val classKey = repository.topClassKey(scan)
             ?: scan.diseaseName.lowercase().replace(' ', '_')
 
-        // Reuse a single card across re-binds, inserted just after the doctor
-        // action so identity and the follow-up entry point remain above the
-        // longer care details.
+        // Reuse a single card across re-binds, inserted just after the
+        // doctor / second-opinion action row so identity and the follow-up
+        // entry points remain above the longer care details.
         val view = card ?: CarePlanCardView(activity).also { fresh ->
             // Keyed to the diagnosis, not the species baseline.
             fresh.isCurePlan = true
@@ -46,7 +46,7 @@ class CarePlanController(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
             ).apply { topMargin = 12.dpToPx() }
-            val anchorIdx = container.indexOfChild(binding.btnAskDoctor)
+            val anchorIdx = container.indexOfChild(binding.resultActionRow)
                 .takeIf { it >= 0 } ?: (container.childCount - 1)
             container.addView(fresh, anchorIdx + 1)
         }
