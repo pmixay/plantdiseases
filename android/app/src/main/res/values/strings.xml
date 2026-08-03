@@ -138,6 +138,10 @@
     <string name="date_today">Today</string>
     <string name="date_yesterday">Yesterday</string>
     <string name="date_days_ago">%d days ago</string>
+    <!-- Sub-day granularity; abbreviated so the forms stay plural-safe. -->
+    <string name="time_just_now">Just now</string>
+    <string name="time_minutes_ago">%d min ago</string>
+    <string name="time_hours_ago">%d hr ago</string>
 
     <!-- Settings -->
     <string name="close">Close</string>
@@ -194,7 +198,6 @@
     <string name="community_opinion_agree">Agree</string>
     <string name="community_opinion_disagree">Disagree</string>
     <string name="community_opinion_confidence">Confidence %1$d%%</string>
-    <string name="community_opinion_species_fmt">%1$s (%2$d%%)</string>
     <string name="community_opinion_empty">No opinions yet — be the first to weigh in.</string>
     <string name="community_opinion_thanks">Thanks for your opinion!</string>
     <string name="community_opinion_error">Couldn\'t reach the community. Try again.</string>
@@ -289,7 +292,8 @@
 
     <!-- Retry analysis -->
     <string name="retry_analysis">Retry Analysis</string>
-    <string name="inline_confidence_retake">The photo might be blurry. Retake it with the leaf filling most of the frame.</string>
+    <!-- One sentence per line: the advisory is scanned, not read. -->
+    <string name="inline_confidence_retake">The photo might be blurry.\nRetake it with the leaf filling most of the frame.</string>
 
     <!-- Pipeline warnings -->
     <string name="warning_very_low_confidence_title">Very low confidence</string>
