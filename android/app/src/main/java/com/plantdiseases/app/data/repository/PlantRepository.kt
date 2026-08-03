@@ -196,11 +196,6 @@ class PlantRepository(
         )
     )
 
-,
-            photoUri = photoUri,
-        )
-    )
-
     private suspend fun addJournalEntry(entry: PlantJournalEntity): Long =
         withContext(Dispatchers.IO) {
             journalDao.insert(entry)
