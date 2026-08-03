@@ -373,8 +373,8 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 WorldMapView.ZoneStatus.fromWireName(zone.status.orEmpty())?.let { status ->
                     (zone.country.orEmpty().ifBlank { zone.countryCode.orEmpty() })
                         .takeIf(String::isNotBlank)?.let { country ->
-                        WorldMapView.CountryZone(country, status, zone.countryCode)
-                    }
+                            WorldMapView.CountryZone(country, status, zone.countryCode)
+                        }
                 }
             }
             val hasNativeRange = nativeRange != null && zones.isNotEmpty()
