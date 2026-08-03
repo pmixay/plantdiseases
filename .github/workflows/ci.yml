@@ -178,7 +178,7 @@ jobs:
           name: app-release-apk
           path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 7
           # An APK is already a compressed zip, so the artifact wrapper's
           # deflate buys very little. Use a light level (3) — most of the small
           # gain at a fraction of the CPU of the default 6 — rather than 0.
