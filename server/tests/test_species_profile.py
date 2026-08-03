@@ -309,3 +309,67 @@ def test_endpoint_graceful_without_key(client):
 def test_endpoint_rejects_blank_name(client):
     r = client.get("/api/species-profile", params={"name": "   "})
     assert r.status_code == 422
+
+
+def test_v2_shape_with_bad_zone_codes_is_not_laundered_through_the_v1_parser(monkeypatch):
+    """A v2 reply whose zones fail validation must degrade, not leak dict reprs.
+
+    ``_sanitize_canonical_zones`` requires ISO alpha-3, so a model answering
+    with alpha-2 ("PE") drops every zone and the v2 parser returns None.
+    Control then falls through to the v1 parser on the *same* text. The v1
+    helpers used to ``str()`` whatever they were given, which turned the v2
+    ``{"en": ..., "ru": ...}`` dicts into Python dict reprs and served
+    ``"{'en': 'Cool rest', 'ru': '...'}"`` to users — cached for 30 days.
+    """
+    v2_with_alpha2 = json.dumps({
+        "flowering": {
+            "monthly_intensity": [0, 0, 1, 2, 2, 1, 0, 0, 0, 0, 0, 0],
+            "indoor_note": {"en": "Rarely indoors.", "ru": "Редко в помещении."},
+        },
+        "flowering_conditions": {"en": "Cool dry rest.", "ru": "Прохладный покой."},
+        "native_range": {
+            "zones": [
+                {"country_code": "PE", "country": {"en": "Peru", "ru": "Перу"},
+                 "status": "grows_more"},
+            ],
+            "summary": {"en": "Andean slopes.", "ru": "Склоны Анд."},
+        },
+    })
+    monkeypatch.setattr(ai_services, "_chat_api_key_present", lambda: True)
+    monkeypatch.setattr(
+        ai_services, "_call_openrouter", lambda *a, **k: (v2_with_alpha2, None, None, None),
+    )
+
+    out = ai_services.species_profile("Ficus elastica", lang="en")
+
+    assert out["available"] is False
+    assert "{'en'" not in json.dumps(out, ensure_ascii=False)
+
+
+def test_legacy_reply_is_not_served_to_the_other_locale(monkeypatch):
+    """The legacy adapter copies one language into both slots.
+
+    The v3 cache key carries no locale, so caching that under the shared key
+    would serve the Russian text to every English client for the whole TTL.
+    Legacy-derived profiles are locale-scoped instead.
+    """
+    ru_legacy = json.dumps({
+        "flowering": {"monthly_intensity": [0] * 12, "indoor_note": "Редко цветёт."},
+        "flowering_conditions": "Нужен прохладный период покоя.",
+        "native_range": {
+            "zones": [{"country": "Перу", "status": "grows_more"}],
+            "summary": "Родом из Анд.",
+        },
+    })
+    monkeypatch.setattr(ai_services, "_chat_api_key_present", lambda: True)
+    monkeypatch.setattr(
+        ai_services, "_call_openrouter", lambda *a, **k: (ru_legacy, None, None, None),
+    )
+
+    ru = ai_services.species_profile("Testus plantus", lang="ru")
+    assert ru["available"] is True
+    assert ru["flowering_conditions"] == "Нужен прохладный период покоя."
+
+    # The English client must not be handed the Russian copy from cache.
+    en = ai_services.species_profile("Testus plantus", lang="en")
+    assert en.get("cached") is not True

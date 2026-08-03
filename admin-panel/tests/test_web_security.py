@@ -8,7 +8,6 @@ import httpx
 import app.main as main_module
 from app.main import app, sessions, ssh
 
-
 STATIC_DIR = Path(__file__).resolve().parents[1] / "app" / "static"
 
 

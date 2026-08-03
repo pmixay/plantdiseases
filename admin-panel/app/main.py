@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
@@ -30,7 +31,6 @@ from .models import (
 from .security import LocalSession, LocalSessionStore
 from .ssh_client import SshManager, SshOperationError, StoredConnection
 
-
 LOGGER = logging.getLogger("plantdiseases.admin")
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -38,6 +38,9 @@ COOKIE_NAME = "plantd_admin_session"
 
 sessions = LocalSessionStore()
 ssh = SshManager()
+# An expired or evicted session must not leave a live authenticated root SSH
+# channel (and its password) behind with no reachable way to close it.
+sessions.on_evict = ssh.disconnect
 operation_lock = threading.Lock()
 audit_lock = threading.Lock()
 
@@ -235,6 +238,23 @@ async def ssh_error_handler(_request: Request, exc: SshOperationError):
     return JSONResponse(status_code=502, content={"detail": str(exc)})
 
 
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(_request: Request, exc: RequestValidationError):
+    """Return validation errors without echoing the submitted body.
+
+    FastAPI's default handler serialises ``exc.errors()`` verbatim, and each
+    entry carries an ``input`` copy of what was posted. Connection payloads
+    carry the production root SSH password, so any body-level validator that
+    fires reflects that password straight back in the 422. Rebuild each error
+    with location/message/type only.
+    """
+    scrubbed = [
+        {"loc": err.get("loc", []), "msg": err.get("msg", ""), "type": err.get("type", "")}
+        for err in exc.errors()
+    ]
+    return JSONResponse(status_code=422, content={"detail": scrubbed})
+
+
 @app.get("/bootstrap", include_in_schema=False)
 async def bootstrap(token: str = Query(default="")):
     if not sessions.consume_bootstrap_token(token):
@@ -291,7 +311,7 @@ async def connect(body: ConnectionRequest, session: MutationSessionDep):
 @app.post("/api/connection/disconnect")
 async def disconnect(session: MutationSessionDep):
     audit("ssh_disconnected", session)
-    ssh.disconnect(session.session_id)
+    await run_in_threadpool(ssh.disconnect, session.session_id)
     return {"ok": True}
 
 
@@ -413,8 +433,16 @@ def git_snapshot(session: LocalSession, *, fetch: bool = False) -> dict[str, Any
 
 
 @app.get("/api/git/status")
-async def git_status(session: SessionDep, fetch: bool = Query(default=False)):
-    return await run_in_threadpool(git_snapshot, session, fetch=fetch)
+async def git_status(session: SessionDep):
+    """Read-only snapshot. The fetching variant is POST /api/git/fetch."""
+    return await run_in_threadpool(git_snapshot, session, fetch=False)
+
+
+@app.post("/api/git/fetch")
+async def git_fetch(session: MutationSessionDep):
+    """Snapshot after `git fetch --prune origin` — a remote side effect, so it
+    takes the CSRF-checked mutation dependency rather than riding on a GET."""
+    return await run_in_threadpool(git_snapshot, session, fetch=True)
 
 
 def ensure_clean(snapshot: dict[str, Any]) -> None:

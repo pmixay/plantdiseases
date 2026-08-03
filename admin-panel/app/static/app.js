@@ -526,7 +526,11 @@ async function loadGit(fetch = false, options = {}) {
   if (!state.connection) return;
   if (options.overlay) loading(true, fetch ? "Fetching GitHub branches…" : "Reading repository…");
   try {
-    const snapshot = await api(`/api/git/status?fetch=${fetch ? "true" : "false"}`);
+    // Fetching prunes remotes on the server, so it goes through the
+    // CSRF-checked POST; the plain snapshot stays a GET.
+    const snapshot = fetch
+      ? await api("/api/git/fetch", { method: "POST" })
+      : await api("/api/git/status");
     renderGit(snapshot);
   } catch (error) {
     toast("Could not inspect Git", error.message, "error");
