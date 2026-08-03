@@ -12,7 +12,6 @@
     <color name="primary_light">#DCFCE7</color>
     <color name="primary_variant">#22C55E</color>
     <color name="on_primary">#FFFFFF</color>
-    <color name="on_primary_secondary">#CCFFFFFF</color>
     <!-- ``primary_dark`` / ``secondary`` / ``on_secondary`` are
          consumed by ``values/themes.xml`` (Material 3 colorPrimaryDark
          / colorSecondary / colorOnSecondary attributes); they have no
@@ -95,7 +94,6 @@
 
     <!-- ─── Category accents ────────────────────────────────────── -->
     <color name="watering_blue">#2563EB</color>
-    <color name="lighting_yellow">#F59E0B</color>
     <!-- Guide-list lighting (sun) icon. Same amber as lighting_yellow
          in light mode; values-night brightens it because amber-400 on
          the dark amber chip background read as near-invisible. -->

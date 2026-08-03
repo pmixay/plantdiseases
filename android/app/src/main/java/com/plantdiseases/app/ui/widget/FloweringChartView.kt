@@ -93,12 +93,6 @@ class FloweringChartView @JvmOverloads constructor(
     fun statusText(): String? = bloomStatus?.let { statusText(context, it) }
 
     /** Hide the drawn status when a surrounding card already presents it. */
-    fun setStatusLineVisible(visible: Boolean) {
-        if (showStatusLine == visible) return
-        showStatusLine = visible
-        invalidate()
-    }
-
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val desiredWidth = dp(300f).toInt() + paddingLeft + paddingRight
         val desiredHeight = dp(184f).toInt() + paddingTop + paddingBottom

@@ -751,13 +751,6 @@ class CameraFragment : Fragment() {
         binding.gridOverlay.visibility = if (enabled) View.VISIBLE else View.GONE
     }
 
-    fun toggleGridOverlay() {
-        val isVisible = binding.gridOverlay.visibility == View.VISIBLE
-        binding.gridOverlay.visibility = if (isVisible) View.GONE else View.VISIBLE
-        requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit().putBoolean(KEY_GRID_OVERLAY, !isVisible).apply()
-    }
-
     override fun onResume() {
         super.onResume()
         // Re-arm the shutter in case we came back from gallery /

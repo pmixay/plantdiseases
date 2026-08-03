@@ -315,14 +315,6 @@ async def disconnect(session: MutationSessionDep):
     return {"ok": True}
 
 
-@app.get("/api/connection")
-async def connection_status(session: SessionDep):
-    return {
-        "connected": ssh.public_connection(session.session_id) is not None,
-        "connection": ssh.public_connection(session.session_id),
-    }
-
-
 def database_request(session: LocalSession, action: str, **extra: Any) -> dict[str, Any]:
     connection = connection_for(session)
     return ssh.run_remote_agent(
@@ -571,11 +563,6 @@ def update_current_branch(session: LocalSession) -> dict[str, Any]:
         "recovery_ref": recovery_ref,
     }
     return result
-
-
-@app.post("/api/git/update")
-async def git_update(session: MutationSessionDep):
-    return await run_in_threadpool(update_current_branch, session)
 
 
 def restart_server(session: LocalSession) -> dict[str, Any]:

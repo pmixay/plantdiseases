@@ -196,11 +196,7 @@ class PlantRepository(
         )
     )
 
-    suspend fun addPhoto(plantId: Long, photoUri: String, text: String?) = addJournalEntry(
-        PlantJournalEntity(
-            plantId = plantId,
-            type = JournalType.PHOTO.value,
-            text = text?.trim()?.takeIf { it.isNotEmpty() },
+,
             photoUri = photoUri,
         )
     )

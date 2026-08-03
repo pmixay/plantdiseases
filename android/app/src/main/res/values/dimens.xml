@@ -19,7 +19,6 @@
     <dimen name="content_gutter">16dp</dimen>
 
     <!-- ─── Corner radii ─────────────────────────────────────────── -->
-    <dimen name="radius_sm">12dp</dimen>
     <dimen name="radius_md">16dp</dimen>
     <dimen name="radius_lg">22dp</dimen>
     <dimen name="radius_round">999dp</dimen>
