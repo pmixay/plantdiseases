@@ -67,6 +67,7 @@
     <color name="disease_red_bg">#3A1B1B</color>
     <color name="warning_amber">#FBBF24</color>
     <color name="warning_amber_bg">#3A2E1B</color>
+    <color name="confidence_gradient_mid">#3A251B</color>
     <color name="neutral_blue">#60A5FA</color>
     <color name="neutral_blue_bg">#1E2D40</color>
 

@@ -142,7 +142,7 @@ class SpeciesInfoCardView @JvmOverloads constructor(
 
     /** Clears every enriched field so a rebound card never leaks the previous species. */
     private fun reset() {
-        Glide.with(context).clear(photo)
+        clearPhotoRequest()
         photo.setImageResource(R.drawable.ic_plant_placeholder)
         photo.isVisible = false
         scientificView.isVisible = false
@@ -237,10 +237,18 @@ class SpeciesInfoCardView @JvmOverloads constructor(
     }
 
     override fun onDetachedFromWindow() {
-        // Drop the in-flight Glide request so a recycled/finishing host does
-        // not get a callback into a dead view.
-        Glide.with(context).clear(photo)
+        // Detachment happens after Activity.onDestroy() when a result screen
+        // finishes. Asking Glide for that destroyed Activity's RequestManager
+        // crashes, so use the process-scoped manager only to clear the request.
+        // Invalidating the token also prevents an enrichment response that was
+        // already queued on the main thread from rebinding this detached view.
+        bindToken++
+        clearPhotoRequest()
         super.onDetachedFromWindow()
+    }
+
+    private fun clearPhotoRequest() {
+        Glide.with(context.applicationContext).clear(photo)
     }
 
     private companion object {

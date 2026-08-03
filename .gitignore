@@ -66,3 +66,6 @@ server/static/aqua/classes.json
 server/labeling.db*
 server/labeling_images/
 server/labeling_exports/
+
+# Python bytecode from android/tools helper scripts
+android/tools/__pycache__/
