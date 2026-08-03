@@ -63,8 +63,6 @@
     <string name="blurry_or_not_a_plant_result_body">The photo is too blurry to read — or there\'s no plant in frame. If you photographed a plant, move a little closer, hold steady, wait for autofocus, and retake a sharp, well-lit shot of a single leaf.</string>
     <string name="description_label">Description</string>
     <string name="result_learn_more">Read the full guide</string>
-    <string name="treatment_label">Treatment</string>
-    <string name="prevention_label">Prevention</string>
 
     <!-- Gallery -->
     <string name="empty_gallery">No scans yet</string>
@@ -654,6 +652,8 @@
     <!-- Care Plan -->
     <string name="care_plan_title">Care Plan</string>
     <string name="cure_plan_title">Cure Plan</string>
+    <string name="care_plan_expand">Show care plan</string>
+    <string name="care_plan_collapse">Hide care plan</string>
     <string name="care_plan_subtitle_species">Tailored for %s</string>
     <string name="care_plan_subtitle_unknown">Generic plan — species not set</string>
     <string name="care_plan_subtitle_offline">Basic offline plan — re-scan online for a tailored one</string>
@@ -892,6 +892,8 @@
     <string name="identify_retake">Retake</string>
     <string name="species_common_problems">Common problems to watch for</string>
     <string name="native_range_title">Native range</string>
+    <string name="native_range_expand">Show native range</string>
+    <string name="native_range_collapse">Hide native range</string>
     <string name="native_range_loading">Loading native range…</string>
     <string name="native_range_grows_more">Thrives</string>
     <string name="native_range_grows_less">Limited growth</string>

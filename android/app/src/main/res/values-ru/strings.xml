@@ -64,8 +64,6 @@
     <string name="blurry_or_not_a_plant_result_body">Снимок слишком размыт, чтобы поставить диагноз, — либо в кадре нет растения. Если вы фотографировали растение, подойдите ближе, держите камеру неподвижно, дождитесь автофокуса и сделайте чёткий снимок одного листа при хорошем освещении.</string>
     <string name="description_label">Описание</string>
     <string name="result_learn_more">Открыть полное руководство</string>
-    <string name="treatment_label">Лечение</string>
-    <string name="prevention_label">Профилактика</string>
 
     <!-- Gallery -->
     <string name="empty_gallery">Пока нет сканов</string>
@@ -652,6 +650,8 @@
     <!-- Care Plan -->
     <string name="care_plan_title">План ухода</string>
     <string name="cure_plan_title">План лечения</string>
+    <string name="care_plan_expand">Показать план ухода</string>
+    <string name="care_plan_collapse">Скрыть план ухода</string>
     <string name="care_plan_subtitle_species">Подобрано для %s</string>
     <string name="care_plan_subtitle_unknown">Общий план — вид не указан</string>
     <string name="care_plan_subtitle_offline">Базовый офлайн-план — пересканируйте онлайн для точного</string>
@@ -887,6 +887,8 @@
     <string name="identify_retake">Переснять</string>
     <string name="species_common_problems">Частые проблемы этого вида</string>
     <string name="native_range_title">Природный ареал</string>
+    <string name="native_range_expand">Показать природный ареал</string>
+    <string name="native_range_collapse">Скрыть природный ареал</string>
     <string name="native_range_loading">Загружаем природный ареал…</string>
     <string name="native_range_grows_more">Хорошо растёт</string>
     <string name="native_range_grows_less">Растёт ограниченно</string>

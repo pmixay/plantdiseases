@@ -4,7 +4,7 @@
 
     <item
         android:id="@+id/action_map"
-        android:icon="@drawable/ic_world_map"
+        android:icon="@drawable/ic_map"
         android:iconTint="@color/toolbar_title"
         android:title="@string/nearby_action_map"
         app:showAsAction="ifRoom" />

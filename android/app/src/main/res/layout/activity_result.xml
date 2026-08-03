@@ -442,6 +442,16 @@
 
             </com.google.android.material.card.MaterialCardView>
 
+            <!-- Universal species card. It is the first follow-up to the
+                 diagnosis: identity is more useful here than a long care
+                 section. The controller hides it when no species was found. -->
+            <com.plantdiseases.app.ui.common.SpeciesInfoCardView
+                android:id="@+id/card_species"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md"
+                android:visibility="gone" />
+
             <!-- Non-confidence pipeline advisories that need their own context
                  (for example, an offline scan or blurry image). Confidence
                  itself is rendered inside the status card above. -->
@@ -515,6 +525,21 @@
 
             </com.google.android.material.card.MaterialCardView>
 
+            <!-- AI Plant Doctor remains available without bringing back the
+                 removed Treatment / Prevention tabs card. -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_ask_doctor"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md"
+                android:minHeight="48dp"
+                android:text="@string/doctor_open_cta"
+                android:visibility="gone"
+                app:icon="@drawable/ic_doctor_chat"
+                app:iconGravity="textStart"
+                app:cornerRadius="@dimen/radius_md" />
+
             <!-- Description -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/card_description"
@@ -545,163 +570,6 @@
                 </LinearLayout>
 
             </com.google.android.material.card.MaterialCardView>
-
-            <!-- Treatment / Prevention tabs card -->
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/card_treatment_prevention"
-                style="@style/App.GlassCard"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_md"
-                app:contentPadding="0dp">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
-
-                    <com.google.android.material.tabs.TabLayout
-                        android:id="@+id/tabs_treatment_prevention"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:background="@android:color/transparent"
-                        app:tabMode="fixed"
-                        app:tabGravity="fill"
-                        app:tabIndicatorColor="@color/primary"
-                        app:tabIndicatorHeight="3dp"
-                        app:tabSelectedTextColor="@color/primary"
-                        app:tabTextColor="@color/on_surface_secondary" />
-
-                    <LinearLayout
-                        android:id="@+id/treatment_steps_layout"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="@dimen/space_lg" />
-
-                    <LinearLayout
-                        android:id="@+id/prevention_steps_layout"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="@dimen/space_lg"
-                        android:visibility="gone" />
-
-                    <!-- Treatment and prevention lists can run long; both are
-                         capped at @integer/treatment_steps_collapsed_rows and
-                         the rest sits behind this toggle, which applies to
-                         whichever tab is showing. -->
-                    <LinearLayout
-                        android:id="@+id/steps_expand_row"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:background="?attr/selectableItemBackground"
-                        android:clickable="true"
-                        android:focusable="true"
-                        android:gravity="center_vertical"
-                        android:minHeight="@dimen/species_info_touch_target"
-                        android:orientation="horizontal"
-                        android:paddingHorizontal="@dimen/space_lg"
-                        android:visibility="gone">
-
-                        <TextView
-                            android:id="@+id/tv_steps_expand"
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:textColor="?attr/colorPrimary"
-                            android:textSize="@dimen/text_body"
-                            tools:text="Show all 7" />
-
-                        <ImageView
-                            android:id="@+id/iv_steps_chevron"
-                            android:layout_width="20dp"
-                            android:layout_height="20dp"
-                            android:contentDescription="@null"
-                            android:src="@drawable/ic_chevron_down"
-                            app:tint="?attr/colorPrimary" />
-                    </LinearLayout>
-
-                    <!-- AI Plant Doctor entry point — same assistant as the
-                         Garden plant detail, surfaced right after the
-                         treatment/prevention advice for a follow-up chat. -->
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:layout_marginHorizontal="@dimen/space_lg"
-                        android:background="@color/divider" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_ask_doctor"
-                        style="@style/Widget.Material3.Button.TonalButton"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginHorizontal="@dimen/space_lg"
-                        android:layout_marginTop="@dimen/space_md"
-                        android:layout_marginBottom="@dimen/space_lg"
-                        android:minHeight="48dp"
-                        android:text="@string/doctor_open_cta"
-                        app:icon="@drawable/ic_doctor_chat"
-                        app:iconGravity="textStart"
-                        app:cornerRadius="@dimen/radius_md" />
-
-                </LinearLayout>
-
-            </com.google.android.material.card.MaterialCardView>
-
-            <!-- Top-3 alternative diagnoses — explainable AI -->
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/card_alternatives"
-                style="@style/App.GlassCard"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_md"
-                android:visibility="gone"
-                android:foreground="?attr/selectableItemBackground">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/why_this_diagnosis"
-                        android:textAppearance="@style/TextAppearance.App.Title" />
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_xs"
-                        android:text="@string/alternatives_subtitle"
-                        android:textSize="@dimen/text_body_sm"
-                        android:textColor="@color/on_surface_secondary" />
-
-                    <LinearLayout
-                        android:id="@+id/alternatives_layout"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_md"
-                        android:orientation="vertical" />
-
-                </LinearLayout>
-
-            </com.google.android.material.card.MaterialCardView>
-
-            <!-- Universal species card. Identity only — photo, name and the
-                 Wikipedia description — with "more about this species"
-                 opening the species screen, which now owns every richer
-                 species surface (care, toxicity, flowering, native range,
-                 common problems, other scans of this species).
-                 Hidden by the controller when the scan carries no species,
-                 and on not_a_plant verdicts. -->
-            <com.plantdiseases.app.ui.common.SpeciesInfoCardView
-                android:id="@+id/card_species"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_md"
-                android:visibility="gone" />
 
             <!-- Similar scans: server-side community corpus.
                  Renders a header, a "top diseases" chip row built from
@@ -790,6 +658,47 @@
                         android:visibility="gone"
                         app:icon="@drawable/ic_garden"
                         app:cornerRadius="@dimen/radius_md" />
+
+                </LinearLayout>
+
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- Top-3 alternative diagnoses — explainable AI. This is kept at
+                 the bottom of the result, immediately before feedback. -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/card_alternatives"
+                style="@style/App.GlassCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_md"
+                android:visibility="gone"
+                android:foreground="?attr/selectableItemBackground">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/why_this_diagnosis"
+                        android:textAppearance="@style/TextAppearance.App.Title" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_xs"
+                        android:text="@string/alternatives_subtitle"
+                        android:textSize="@dimen/text_body_sm"
+                        android:textColor="@color/on_surface_secondary" />
+
+                    <LinearLayout
+                        android:id="@+id/alternatives_layout"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_md"
+                        android:orientation="vertical" />
 
                 </LinearLayout>
 

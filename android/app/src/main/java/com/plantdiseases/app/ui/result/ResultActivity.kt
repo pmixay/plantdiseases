@@ -88,10 +88,6 @@ class ResultActivity : AppCompatActivity() {
 
     private var pendingScanForToolbar: ScanEntity? = null
 
-    // Treatment/Prevention tab to restore after the (async) result load
-    // rebuilds the tabs — survives rotation and process-death.
-    private var restoredTabIndex = 0
-
     private val diagnosisContent by lazy { DiagnosisContentController(this, binding) }
     private val carePlan by lazy { CarePlanController(this, binding) }
     private val feedback by lazy { FeedbackController(this, binding) }
@@ -167,7 +163,6 @@ class ResultActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        restoredTabIndex = savedInstanceState?.getInt(KEY_RESULT_TAB, 0) ?: 0
         // Edge-to-edge: let the gradient app bar fill the status-bar area.
         WindowCompat.setDecorFitsSystemWindows(window, false)
         binding = ActivityResultBinding.inflate(layoutInflater)
@@ -469,11 +464,11 @@ class ResultActivity : AppCompatActivity() {
             if (isNotAPlant) {
                 cardDescription.visibility = View.VISIBLE
                 tvDescription.text = resultDescription
-                cardTreatmentPrevention.visibility = View.GONE
                 cardAlternatives.visibility = View.GONE
                 cardSpecies.visibility = View.GONE
                 cardSimilarScans.visibility = View.GONE
                 cardPipelineWarning.visibility = View.GONE
+                btnAskDoctor.visibility = View.GONE
                 // Share / add-to-garden don't make sense for NAP — collapse the
                 // bottom bar to just the "new scan" button.
                 btnShare.visibility = View.GONE
@@ -489,7 +484,8 @@ class ResultActivity : AppCompatActivity() {
                 diagnosisContent.bindAlternatives(scan, repository, isRu)
                 binding.cardSpecies.bind(scan.speciesScientific, scan.speciesCommon)
                 community.bindSimilarScans(scan, repository, isRu)
-                diagnosisContent.setupTreatmentPrevention(scan, repository, isRu, restoredTabIndex)
+                btnAskDoctor.visibility = View.VISIBLE
+                diagnosisContent.setupAskDoctor(scan)
                 carePlan.bind(scan, repository, isRu)
             }
 
@@ -690,13 +686,13 @@ class ResultActivity : AppCompatActivity() {
     private fun animateCardsIn() {
         val cards = listOf(
             binding.cardStatus,
-            binding.cardDescription,
-            binding.cardTreatmentPrevention,
-            binding.cardAlternatives,
             binding.cardSpecies,
-            binding.cardSimilarScans,
-            binding.cardFeedback,
             binding.cardPipelineWarning,
+            binding.btnAskDoctor,
+            binding.cardDescription,
+            binding.cardSimilarScans,
+            binding.cardAlternatives,
+            binding.cardFeedback,
         ).filter { it.visibility == View.VISIBLE }
 
         cards.forEachIndexed { index, view ->
@@ -721,20 +717,9 @@ class ResultActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
-    override fun onSaveInstanceState(outState: Bundle) {
-        super.onSaveInstanceState(outState)
-        // Persist the selected Treatment/Prevention tab so it survives rotation
-        // and process-death (the scan itself reloads from the DB by scanId).
-        outState.putInt(
-            KEY_RESULT_TAB,
-            binding.tabsTreatmentPrevention.selectedTabPosition.coerceAtLeast(0),
-        )
-    }
-
     companion object {
         const val EXTRA_SCAN_ID = "extra_scan_id"
 
-        private const val KEY_RESULT_TAB = "result_tab"
         private const val RESULT_HINT_DELAY_MS = 500L
         private const val LOW_CONFIDENCE_FALLBACK = 0.5f
         private const val VERY_LOW_CONFIDENCE_FALLBACK = 0.4f

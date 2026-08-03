@@ -31,6 +31,7 @@ import com.plantdiseases.app.data.model.SpeciesDiseaseItem
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivitySpeciesDetailBinding
 import com.plantdiseases.app.ui.common.CarePlanCardView
+import com.plantdiseases.app.ui.common.ExpandableSectionAnimator
 import com.plantdiseases.app.ui.guide.GuideDetailActivity
 import com.plantdiseases.app.ui.result.CommunityOpinionSheet
 import com.plantdiseases.app.ui.result.SimilarScansAdapter
@@ -63,6 +64,8 @@ class SpeciesDetailActivity : AppCompatActivity() {
 
     private lateinit var scientificName: String
     private var commonName: String? = null
+    private var floweringExpanded = false
+    private var nativeRangeExpanded = false
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
@@ -99,6 +102,9 @@ class SpeciesDetailActivity : AppCompatActivity() {
         binding.speciesToolbar.title = title
         binding.tvSpeciesTitle.text = title
         binding.tvSpeciesScientific.text = scientificName
+        floweringExpanded = savedInstanceState?.getBoolean(STATE_FLOWERING_EXPANDED) ?: false
+        nativeRangeExpanded = savedInstanceState?.getBoolean(STATE_NATIVE_RANGE_EXPANDED) ?: false
+        setupExpandableProfileSections()
 
         // Independent loads run concurrently: the Wikipedia blurb/photo, care
         // plan, common-problems list and optional botanical profile. Each
@@ -109,6 +115,59 @@ class SpeciesDetailActivity : AppCompatActivity() {
         loadDiseases()
         loadSpeciesProfile()
         loadCommunityScans()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean(STATE_FLOWERING_EXPANDED, floweringExpanded)
+        outState.putBoolean(STATE_NATIVE_RANGE_EXPANDED, nativeRangeExpanded)
+        super.onSaveInstanceState(outState)
+    }
+
+    private fun setupExpandableProfileSections() {
+        binding.floweringHeader.setOnClickListener {
+            setFloweringExpanded(!floweringExpanded)
+        }
+        binding.nativeRangeHeader.setOnClickListener {
+            setNativeRangeExpanded(!nativeRangeExpanded)
+        }
+        setFloweringExpanded(floweringExpanded, animate = false)
+        setNativeRangeExpanded(nativeRangeExpanded, animate = false)
+    }
+
+    private fun setFloweringExpanded(expanded: Boolean, animate: Boolean = true) {
+        floweringExpanded = expanded
+        ExpandableSectionAnimator.update(
+            container = binding.cardFlowering,
+            expanded = expanded,
+            chevron = binding.ivFloweringChevron,
+            animate = animate,
+        ) {
+            binding.floweringBody.visibility = if (expanded) View.VISIBLE else View.GONE
+        }
+        binding.floweringHeader.contentDescription = getString(
+            R.string.species_info_toggle_content_description,
+            getString(R.string.flowering_title),
+            getString(if (expanded) R.string.flowering_collapse else R.string.flowering_expand),
+        )
+    }
+
+    private fun setNativeRangeExpanded(expanded: Boolean, animate: Boolean = true) {
+        nativeRangeExpanded = expanded
+        ExpandableSectionAnimator.update(
+            container = binding.cardNativeRange,
+            expanded = expanded,
+            chevron = binding.ivNativeRangeChevron,
+            animate = animate,
+        ) {
+            binding.nativeRangeBody.visibility = if (expanded) View.VISIBLE else View.GONE
+        }
+        binding.nativeRangeHeader.contentDescription = getString(
+            R.string.species_info_toggle_content_description,
+            getString(R.string.native_range_title),
+            getString(
+                if (expanded) R.string.native_range_collapse else R.string.native_range_expand,
+            ),
+        )
     }
 
     /**
@@ -576,6 +635,8 @@ class SpeciesDetailActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_SCIENTIFIC_NAME = "extra_scientific_name"
         const val EXTRA_COMMON_NAME = "extra_common_name"
+        private const val STATE_FLOWERING_EXPANDED = "state_flowering_expanded"
+        private const val STATE_NATIVE_RANGE_EXPANDED = "state_native_range_expanded"
 
         fun start(context: Context, scientificName: String, commonName: String?) {
             context.startActivity(
