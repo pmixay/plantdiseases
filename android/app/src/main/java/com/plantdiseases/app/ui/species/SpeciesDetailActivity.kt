@@ -328,34 +328,35 @@ class SpeciesDetailActivity : AppCompatActivity() {
     }
 
     /**
-     * One optional botanical-profile request feeds both the flowering cards
-     * and native-range map. `available=false`, malformed content and transport
-     * errors leave each optional section hidden while the established species
-     * screen continues rendering normally.
+     * One optional botanical-profile request feeds both sections, but the UI
+     * exposes separate loading states so users can see that both the flowering
+     * calendar and native-range map are on their way. Each card resolves on its
+     * own: valid content replaces its spinner, while absent/malformed content
+     * hides only that card.
      */
     private fun loadSpeciesProfile() {
-        binding.cardFlowering.visibility = View.GONE
-        binding.cardFloweringConditions.visibility = View.GONE
-        binding.cardNativeRange.visibility = View.GONE
+        showSpeciesProfileLoading()
         lifecycleScope.launch {
             val profile = scanRepository
                 .fetchSpeciesProfile(scientificName, commonName, locale)
                 .getOrNull()
-            if (profile?.available != true) return@launch
+            if (profile?.available != true) {
+                finishFloweringLoading(hasContent = false)
+                finishNativeRangeLoading(hasContent = false)
+                return@launch
+            }
 
+            val localized = profile.localizedText.orEmpty()[locale]
             val flowering = profile.flowering
-            if (
-                flowering != null &&
+            val hasFlowering = flowering != null &&
                 binding.floweringChart.setFlowering(flowering.monthlyIntensity.orEmpty())
-            ) {
-                val localized = profile.localizedText.orEmpty()[locale]
+            if (hasFlowering) {
                 val note = localized?.indoorNote.orEmpty()
                     .ifBlank { flowering.indoorNote.orEmpty() }
                     .trim()
                 binding.tvFloweringIndoorNote.text = note
                 binding.tvFloweringIndoorNote.visibility =
                     if (note.isBlank()) View.GONE else View.VISIBLE
-                binding.cardFlowering.visibility = View.VISIBLE
 
                 val conditions = localized?.floweringConditions.orEmpty()
                     .ifBlank { profile.floweringConditions.orEmpty() }
@@ -365,6 +366,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
                     binding.cardFloweringConditions.visibility = View.VISIBLE
                 }
             }
+            finishFloweringLoading(hasFlowering)
 
             val nativeRange = profile.nativeRange
             val zones = nativeRange?.zones.orEmpty().mapNotNull { zone ->
@@ -375,16 +377,39 @@ class SpeciesDetailActivity : AppCompatActivity() {
                     }
                 }
             }
-            if (nativeRange == null || zones.isEmpty()) {
-                return@launch
-            }
-            binding.tvNativeRangeSummary.text = (
-                profile.localizedText.orEmpty()[locale]?.nativeRangeSummary.orEmpty()
+            val hasNativeRange = nativeRange != null && zones.isNotEmpty()
+            if (hasNativeRange) {
+                binding.tvNativeRangeSummary.text = localized?.nativeRangeSummary.orEmpty()
                     .ifBlank { nativeRange.summary.orEmpty() }
-            ).trim()
-            binding.worldMap.setZones(zones)
-            binding.cardNativeRange.visibility = View.VISIBLE
+                    .trim()
+                binding.worldMap.setZones(zones)
+            }
+            finishNativeRangeLoading(hasNativeRange)
         }
+    }
+
+    private fun showSpeciesProfileLoading() {
+        binding.cardFlowering.visibility = View.VISIBLE
+        binding.floweringLoading.visibility = View.VISIBLE
+        binding.floweringContent.visibility = View.GONE
+        binding.cardFloweringConditions.visibility = View.GONE
+        binding.tvFloweringIndoorNote.visibility = View.GONE
+
+        binding.cardNativeRange.visibility = View.VISIBLE
+        binding.nativeRangeLoading.visibility = View.VISIBLE
+        binding.nativeRangeContent.visibility = View.GONE
+    }
+
+    private fun finishFloweringLoading(hasContent: Boolean) {
+        binding.floweringLoading.visibility = View.GONE
+        binding.floweringContent.visibility = if (hasContent) View.VISIBLE else View.GONE
+        binding.cardFlowering.visibility = if (hasContent) View.VISIBLE else View.GONE
+    }
+
+    private fun finishNativeRangeLoading(hasContent: Boolean) {
+        binding.nativeRangeLoading.visibility = View.GONE
+        binding.nativeRangeContent.visibility = if (hasContent) View.VISIBLE else View.GONE
+        binding.cardNativeRange.visibility = if (hasContent) View.VISIBLE else View.GONE
     }
 
     /** Render the "common problems" section. Prefers the AI list (each item
