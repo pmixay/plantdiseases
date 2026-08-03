@@ -19,7 +19,6 @@ import com.plantdiseases.app.data.model.SpeciesCandidate
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivitySpeciesIdentifyBinding
 import com.plantdiseases.app.ui.camera.CameraFragment
-import com.plantdiseases.app.ui.species.SpeciesDetailActivity
 import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.launch
@@ -33,7 +32,8 @@ import java.util.Locale
  * preview, shutter, gallery, flash, grid, pinch-zoom, tap-to-focus, crop);
  * when a photo is captured the fragment hands the cropped path back here, we
  * run PlantNet identification, and the candidate picker slides up over the
- * camera. Tapping a candidate opens the rich [SpeciesDetailActivity].
+ * camera. The best match renders in place as a SpeciesInfoCardView,
+ * whose action opens the full species screen.
  */
 class SpeciesIdentifyActivity : AppCompatActivity() {
 
@@ -133,10 +133,11 @@ class SpeciesIdentifyActivity : AppCompatActivity() {
         }
     }
 
-    /** Auto-open the single best match — no "which is yours?" picker, mirroring
-     *  how the disease scan jumps straight to its top diagnosis. Picks the
-     *  highest-scoring candidate with a usable scientific name; if none has one,
-     *  degrade to the no-match status (same as an empty result set). */
+    /** Show the single best match in place — no "which is yours?" picker,
+     *  mirroring how the disease scan jumps straight to its top diagnosis.
+     *  Picks the highest-scoring candidate with a usable scientific name; if
+     *  none has one, degrade to the no-match status (same as an empty result
+     *  set). The card itself owns the route to the full species screen. */
     private fun openTopCandidate(candidates: List<SpeciesCandidate>) {
         val top = candidates
             .filter { !it.scientificName.isNullOrBlank() }
@@ -146,17 +147,17 @@ class SpeciesIdentifyActivity : AppCompatActivity() {
             showStatus(getString(R.string.identify_no_match))
             return
         }
-        // Return to the live camera underneath so backing out of the detail
-        // screen lands on a fresh capture, not a stale panel.
-        hideCandidates()
-        SpeciesDetailActivity.start(this, sci, top.displayCommonName)
+        binding.candidatesStatus.visibility = View.GONE
+        binding.candidatesTitle.visibility = View.VISIBLE
+        binding.identifySpeciesCard.bind(sci, top.displayCommonName)
+        showCandidates()
     }
 
     /** Show the panel with a status line instead of opening a match (no match,
      *  unavailable, or an error). The picker title is hidden — the panel is now
      *  status-only. */
     private fun showStatus(msg: String) {
-        binding.candidatesList.removeAllViews()
+        binding.identifySpeciesCard.visibility = View.GONE
         binding.candidatesTitle.visibility = View.GONE
         binding.candidatesStatus.text = msg
         binding.candidatesStatus.visibility = View.VISIBLE

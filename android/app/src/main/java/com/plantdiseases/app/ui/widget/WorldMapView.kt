@@ -64,6 +64,7 @@ class WorldMapView @JvmOverloads constructor(
 
     private val mapCanvas = MapCanvasView(context)
     private val selectionHint = TextView(context)
+
     // Material Chip is intentionally single-line and throws when callers try
     // to enable wrapping. The selected-country explanation can span several
     // lines (especially in Russian), so use a chip-styled TextView instead.
@@ -498,9 +499,8 @@ internal data class WorldMapProjection(
     private val centerX: Double,
     private val centerY: Double,
 ) {
-    fun project(point: GeoPoint): PointF {
-        return projectUnwrapped(longitudeDelta(point.longitude, centerLongitude), point.latitude)
-    }
+    fun project(point: GeoPoint): PointF =
+        projectUnwrapped(longitudeDelta(point.longitude, centerLongitude), point.latitude)
 
     fun projectUnwrapped(longitudeDelta: Double, latitude: Double): PointF {
         val x = centerX + longitudeDelta * scale

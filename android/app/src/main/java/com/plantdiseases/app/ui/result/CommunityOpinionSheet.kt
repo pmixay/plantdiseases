@@ -21,6 +21,7 @@ import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import com.google.android.material.textfield.TextInputEditText
 import com.plantdiseases.app.R
+import com.plantdiseases.app.ui.common.SpeciesInfoCardView
 import com.plantdiseases.app.data.model.CommunityOpinion
 import com.plantdiseases.app.data.model.CommunityOpinionRequest
 import com.plantdiseases.app.data.model.CommunityTopDisease
@@ -63,6 +64,7 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
     private var listContainer: LinearLayout? = null
     private var emptyView: TextView? = null
     private var metaView: TextView? = null
+    private var speciesCard: SpeciesInfoCardView? = null
     private var voteRow: View? = null
     private var chipGroup: ChipGroup? = null
     private var noteInput: TextInputEditText? = null
@@ -87,6 +89,7 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
             return
         }
 
+        speciesCard = view.findViewById(R.id.card_opinion_species)
         ownerStatusRow = view.findViewById(R.id.ll_opinion_owner_status)
         ownerStatusText = view.findViewById(R.id.tv_opinion_owner_status)
         stopRequestBtn = view.findViewById(R.id.btn_opinion_stop_request)
@@ -205,6 +208,11 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
             meta.visibility = View.VISIBLE
             meta.text = parts.joinToString(" · ")
         }
+
+        // The community feed carries the PlantNet binomial but no common name,
+        // so the card resolves the display name and photo itself. It hides
+        // itself when `species` is null.
+        speciesCard?.bind(species, null)
     }
 
     /** Show the shared scan photo (borrowed from the scan-result screen) when

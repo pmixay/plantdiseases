@@ -138,6 +138,17 @@
 
         </com.google.android.material.card.MaterialCardView>
 
+        <!-- The species this scan is of. Hidden when the upload carried no
+             PlantNet binomial (CommunityScanItem.species is nullable — servers
+             without a PlantNet key never populate it), so the card never
+             becomes a dead-end tap. -->
+        <com.plantdiseases.app.ui.common.SpeciesInfoCardView
+            android:id="@+id/card_opinion_species"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/space_md"
+            android:visibility="gone" />
+
         <!-- Owner-only request status: how long the ask stays visible and a
              "Stop request" action — reachable at any point, including after
              replies arrived (stopping ends further notifications). -->

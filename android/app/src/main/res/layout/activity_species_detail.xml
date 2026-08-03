@@ -3,11 +3,14 @@
     Full-screen species detail, opened from the Home "Trending species"
     carousel (and reusable elsewhere). A large Wikipedia lead photo under a
     gradient toolbar, the common/scientific name, the encyclopedia blurb, a
-    care-at-a-glance block (filled from /api/care-plan), and add-to-garden /
-    scan-health / Wikipedia actions.
+    care-at-a-glance block (filled from /api/care-plan), pet toxicity,
+    flowering, native range, common problems, other community scans of this
+    species, and the Wikipedia link. This is the one screen that owns species
+    information; every other surface links here via SpeciesInfoCardView.
 -->
 <androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/background">
@@ -107,14 +110,50 @@
                     android:layout_marginTop="@dimen/space_md"
                     android:visibility="gone" />
 
+                <!-- A full Wikipedia lead section can run many paragraphs, so
+                     it starts clipped; the toggle below is revealed by the
+                     Activity only when the text is actually cut off. -->
                 <TextView
                     android:id="@+id/tv_species_extract"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_md"
+                    android:ellipsize="end"
                     android:lineSpacingExtra="3dp"
+                    android:maxLines="@integer/species_extract_collapsed_lines"
                     android:textColor="@color/on_surface"
                     android:textSize="@dimen/text_body" />
+
+                <LinearLayout
+                    android:id="@+id/extract_expand_row"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_xs"
+                    android:background="?attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center_vertical"
+                    android:minHeight="@dimen/species_info_touch_target"
+                    android:orientation="horizontal"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:id="@+id/tv_extract_expand"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/species_info_expand"
+                        android:textColor="?attr/colorPrimary"
+                        android:textSize="@dimen/text_body" />
+
+                    <ImageView
+                        android:id="@+id/iv_extract_chevron"
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:contentDescription="@null"
+                        android:src="@drawable/ic_chevron_down"
+                        app:tint="?attr/colorPrimary" />
+                </LinearLayout>
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_wikipedia"
@@ -123,7 +162,12 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_xs"
                     android:text="@string/identify_wikipedia"
-                    android:visibility="gone" />
+                    android:visibility="gone"
+                    app:icon="@drawable/ic_world_map"
+                    app:iconGravity="textStart"
+                    app:iconPadding="@dimen/space_sm"
+                    app:iconSize="18dp"
+                    app:iconTint="?attr/colorPrimary" />
 
                 <!-- Care at a glance — the same rich CarePlanCardView the scan
                      result and garden detail render, inserted here at runtime
@@ -213,8 +257,12 @@
                         android:padding="@dimen/space_lg">
 
                         <LinearLayout
+                            android:id="@+id/flowering_header"
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
+                            android:layout_height="@dimen/species_info_touch_target"
+                            android:background="?attr/selectableItemBackground"
+                            android:clickable="true"
+                            android:focusable="true"
                             android:gravity="center_vertical"
                             android:orientation="horizontal">
 
@@ -236,108 +284,118 @@
                                 android:textColor="@color/on_surface"
                                 android:textSize="@dimen/text_title_sm" />
 
-                        </LinearLayout>
-
-                        <LinearLayout
-                            android:id="@+id/flowering_loading"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/space_sm"
-                            android:gravity="center_vertical"
-                            android:orientation="horizontal">
-
-                            <com.google.android.material.progressindicator.CircularProgressIndicator
-                                android:layout_width="24dp"
-                                android:layout_height="24dp"
-                                android:indeterminate="true"
+                            <ImageView
+                                android:id="@+id/iv_flowering_chevron"
+                                android:layout_width="20dp"
+                                android:layout_height="20dp"
+                                android:layout_marginStart="@dimen/space_sm"
+                                android:contentDescription="@null"
                                 android:importantForAccessibility="no"
-                                app:indicatorColor="@color/primary"
-                                app:indicatorSize="22dp"
-                                app:trackThickness="2dp" />
-
-                            <TextView
-                                android:layout_width="0dp"
-                                android:layout_height="wrap_content"
-                                android:layout_marginStart="@dimen/space_md"
-                                android:layout_weight="1"
-                                android:text="@string/flowering_loading"
-                                android:textColor="@color/on_surface_secondary"
-                                android:textSize="@dimen/text_body_sm" />
+                                android:src="@drawable/ic_chevron_down"
+                                app:tint="@color/primary" />
 
                         </LinearLayout>
 
                         <LinearLayout
-                            android:id="@+id/flowering_content"
+                            android:id="@+id/flowering_body"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:orientation="vertical"
                             android:visibility="gone">
 
-                            <TextView
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="@dimen/space_xs"
-                                android:lineSpacingExtra="1dp"
-                                android:text="@string/flowering_chart_hint"
-                                android:textColor="@color/on_surface_secondary"
-                                android:textSize="@dimen/text_body_sm" />
-
-                            <com.plantdiseases.app.ui.widget.FloweringChartView
-                                android:id="@+id/flowering_chart"
-                                android:layout_width="match_parent"
-                                android:layout_height="184dp"
-                                android:layout_marginTop="@dimen/space_sm" />
-
-                            <TextView
-                                android:id="@+id/tv_flowering_indoor_note"
+                            <LinearLayout
+                                android:id="@+id/flowering_loading"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="@dimen/space_sm"
-                                android:lineSpacingExtra="2dp"
-                                android:textColor="@color/on_surface_secondary"
-                                android:textSize="@dimen/text_body_sm"
-                                android:visibility="gone" />
-
-                            <LinearLayout
-                                android:id="@+id/card_flowering_conditions"
-                                android:layout_width="match_parent"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="@dimen/space_lg"
                                 android:gravity="center_vertical"
-                                android:orientation="horizontal"
-                                android:visibility="gone">
+                                android:orientation="horizontal">
 
-                                <ImageView
-                                    android:layout_width="28dp"
-                                    android:layout_height="28dp"
-                                    android:contentDescription="@null"
+                                <com.google.android.material.progressindicator.CircularProgressIndicator
+                                    android:layout_width="24dp"
+                                    android:layout_height="24dp"
+                                    android:indeterminate="true"
                                     android:importantForAccessibility="no"
-                                    android:src="@drawable/ic_light"
-                                    app:tint="@color/primary" />
+                                    app:indicatorColor="@color/primary"
+                                    app:indicatorSize="22dp"
+                                    app:trackThickness="2dp" />
 
-                                <LinearLayout
+                                <TextView
                                     android:layout_width="0dp"
                                     android:layout_height="wrap_content"
                                     android:layout_marginStart="@dimen/space_md"
                                     android:layout_weight="1"
-                                    android:orientation="vertical">
+                                    android:text="@string/flowering_loading"
+                                    android:textColor="@color/on_surface_secondary"
+                                    android:textSize="@dimen/text_body_sm" />
 
-                                    <TextView
-                                        android:layout_width="match_parent"
-                                        android:layout_height="wrap_content"
-                                        android:fontFamily="sans-serif-medium"
-                                        android:text="@string/flowering_conditions_title"
-                                        android:textColor="@color/on_surface"
-                                        android:textSize="@dimen/text_body" />
+                            </LinearLayout>
 
-                                    <TextView
-                                        android:id="@+id/tv_flowering_conditions"
-                                        android:layout_width="match_parent"
+                            <LinearLayout
+                                android:id="@+id/flowering_content"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="vertical"
+                                android:visibility="gone">
+
+                                <com.plantdiseases.app.ui.widget.FloweringChartView
+                                    android:id="@+id/flowering_chart"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="184dp"
+                                    android:layout_marginTop="@dimen/space_sm" />
+
+                                <TextView
+                                    android:id="@+id/tv_flowering_indoor_note"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="@dimen/space_sm"
+                                    android:lineSpacingExtra="2dp"
+                                    android:textColor="@color/on_surface_secondary"
+                                    android:textSize="@dimen/text_body_sm"
+                                    android:visibility="gone" />
+
+                                <LinearLayout
+                                    android:id="@+id/card_flowering_conditions"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="@dimen/space_lg"
+                                    android:gravity="center_vertical"
+                                    android:orientation="horizontal"
+                                    android:visibility="gone">
+
+                                    <ImageView
+                                        android:layout_width="28dp"
+                                        android:layout_height="28dp"
+                                        android:contentDescription="@null"
+                                        android:importantForAccessibility="no"
+                                        android:src="@drawable/ic_light"
+                                        app:tint="@color/primary" />
+
+                                    <LinearLayout
+                                        android:layout_width="0dp"
                                         android:layout_height="wrap_content"
-                                        android:layout_marginTop="@dimen/space_xs"
-                                        android:lineSpacingExtra="2dp"
-                                        android:textColor="@color/on_surface_secondary"
-                                        android:textSize="@dimen/text_body_sm" />
+                                        android:layout_marginStart="@dimen/space_md"
+                                        android:layout_weight="1"
+                                        android:orientation="vertical">
+
+                                        <TextView
+                                            android:layout_width="match_parent"
+                                            android:layout_height="wrap_content"
+                                            android:fontFamily="sans-serif-medium"
+                                            android:text="@string/flowering_conditions_title"
+                                            android:textColor="@color/on_surface"
+                                            android:textSize="@dimen/text_body" />
+
+                                        <TextView
+                                            android:id="@+id/tv_flowering_conditions"
+                                            android:layout_width="match_parent"
+                                            android:layout_height="wrap_content"
+                                            android:layout_marginTop="@dimen/space_xs"
+                                            android:lineSpacingExtra="2dp"
+                                            android:textColor="@color/on_surface_secondary"
+                                            android:textSize="@dimen/text_body_sm" />
+
+                                    </LinearLayout>
 
                                 </LinearLayout>
 
@@ -366,63 +424,95 @@
                         android:layout_height="wrap_content"
                         android:orientation="vertical">
 
-                        <TextView
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:fontFamily="sans-serif-medium"
-                            android:text="@string/native_range_title"
-                            android:textColor="@color/on_surface"
-                            android:textSize="@dimen/text_title_sm" />
-
                         <LinearLayout
-                            android:id="@+id/native_range_loading"
+                            android:id="@+id/native_range_header"
                             android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="@dimen/space_sm"
+                            android:layout_height="@dimen/species_info_touch_target"
+                            android:background="?attr/selectableItemBackground"
+                            android:clickable="true"
+                            android:focusable="true"
                             android:gravity="center_vertical"
                             android:orientation="horizontal">
-
-                            <com.google.android.material.progressindicator.CircularProgressIndicator
-                                android:layout_width="24dp"
-                                android:layout_height="24dp"
-                                android:indeterminate="true"
-                                android:importantForAccessibility="no"
-                                app:indicatorColor="@color/primary"
-                                app:indicatorSize="22dp"
-                                app:trackThickness="2dp" />
 
                             <TextView
                                 android:layout_width="0dp"
                                 android:layout_height="wrap_content"
-                                android:layout_marginStart="@dimen/space_md"
                                 android:layout_weight="1"
-                                android:text="@string/native_range_loading"
-                                android:textColor="@color/on_surface_secondary"
-                                android:textSize="@dimen/text_body_sm" />
+                                android:fontFamily="sans-serif-medium"
+                                android:text="@string/native_range_title"
+                                android:textColor="@color/on_surface"
+                                android:textSize="@dimen/text_title_sm" />
+
+                            <ImageView
+                                android:id="@+id/iv_native_range_chevron"
+                                android:layout_width="20dp"
+                                android:layout_height="20dp"
+                                android:layout_marginStart="@dimen/space_sm"
+                                android:contentDescription="@null"
+                                android:importantForAccessibility="no"
+                                android:src="@drawable/ic_chevron_down"
+                                app:tint="@color/primary" />
 
                         </LinearLayout>
 
                         <LinearLayout
-                            android:id="@+id/native_range_content"
+                            android:id="@+id/native_range_body"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:orientation="vertical"
                             android:visibility="gone">
 
-                            <TextView
-                                android:id="@+id/tv_native_range_summary"
+                            <LinearLayout
+                                android:id="@+id/native_range_loading"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:layout_marginTop="@dimen/space_xs"
-                                android:lineSpacingExtra="2dp"
-                                android:textColor="@color/on_surface_secondary"
-                                android:textSize="@dimen/text_body_sm" />
+                                android:layout_marginTop="@dimen/space_sm"
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal">
 
-                            <com.plantdiseases.app.ui.widget.WorldMapView
-                                android:id="@+id/world_map"
+                                <com.google.android.material.progressindicator.CircularProgressIndicator
+                                    android:layout_width="24dp"
+                                    android:layout_height="24dp"
+                                    android:indeterminate="true"
+                                    android:importantForAccessibility="no"
+                                    app:indicatorColor="@color/primary"
+                                    app:indicatorSize="22dp"
+                                    app:trackThickness="2dp" />
+
+                                <TextView
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginStart="@dimen/space_md"
+                                    android:layout_weight="1"
+                                    android:text="@string/native_range_loading"
+                                    android:textColor="@color/on_surface_secondary"
+                                    android:textSize="@dimen/text_body_sm" />
+
+                            </LinearLayout>
+
+                            <LinearLayout
+                                android:id="@+id/native_range_content"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
-                                android:layout_marginTop="@dimen/space_md" />
+                                android:orientation="vertical"
+                                android:visibility="gone">
+
+                                <TextView
+                                    android:id="@+id/tv_native_range_summary"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="@dimen/space_xs"
+                                    android:lineSpacingExtra="2dp"
+                                    android:textColor="@color/on_surface_secondary"
+                                    android:textSize="@dimen/text_body_sm" />
+
+                                <com.plantdiseases.app.ui.widget.WorldMapView
+                                    android:id="@+id/world_map"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="@dimen/space_md" />
+
+                            </LinearLayout>
 
                         </LinearLayout>
 
@@ -444,14 +534,6 @@
                     android:textSize="@dimen/text_body"
                     android:visibility="gone" />
 
-                <TextView
-                    android:id="@+id/tv_diseases_subtitle"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:textColor="@color/on_surface_secondary"
-                    android:textSize="@dimen/text_body_sm"
-                    android:visibility="gone" />
 
                 <ProgressBar
                     android:id="@+id/pb_diseases"
@@ -469,34 +551,64 @@
                     android:orientation="vertical"
                     android:visibility="gone" />
 
-                <!-- baselineAligned=false + match_parent heights keep both
-                     buttons the same height even when one label wraps to two
-                     lines at a large font scale (they'd otherwise sit at
-                     different levels). -->
+                <!-- The fallback path renders the whole bundled catalogue (17
+                     cards). The Activity keeps the first few visible and hides
+                     the rest behind this toggle so the screen doesn't end in a
+                     wall of guide links. -->
                 <LinearLayout
+                    android:id="@+id/diseases_expand_row"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_xs"
+                    android:background="?attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center_vertical"
+                    android:minHeight="@dimen/species_info_touch_target"
+                    android:orientation="horizontal"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:id="@+id/tv_diseases_expand"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:textColor="?attr/colorPrimary"
+                        android:textSize="@dimen/text_body"
+                        tools:text="Show all 17" />
+
+                    <ImageView
+                        android:id="@+id/iv_diseases_chevron"
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:contentDescription="@null"
+                        android:src="@drawable/ic_chevron_down"
+                        app:tint="?attr/colorPrimary" />
+                </LinearLayout>
+
+                <!-- Other community scans of this species. Moved here from the
+                     scan result screen so every species surface lives on one
+                     page; hidden when the community has nothing for it. -->
+                <TextView
+                    android:id="@+id/tv_species_community_label"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_lg"
-                    android:baselineAligned="false"
-                    android:orientation="horizontal">
+                    android:fontFamily="sans-serif-medium"
+                    android:text="@string/species_community_others"
+                    android:textColor="@color/on_surface"
+                    android:textSize="@dimen/text_body"
+                    android:visibility="gone" />
 
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_add_garden"
-                        android:layout_width="0dp"
-                        android:layout_height="match_parent"
-                        android:layout_weight="1"
-                        android:layout_marginEnd="@dimen/space_sm"
-                        android:text="@string/identify_add_garden" />
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/rv_species_community"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_sm"
+                    android:clipToPadding="false"
+                    android:orientation="horizontal"
+                    android:visibility="gone" />
 
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_scan_health"
-                        style="@style/Widget.Material3.Button.TonalButton"
-                        android:layout_width="0dp"
-                        android:layout_height="match_parent"
-                        android:layout_weight="1"
-                        android:layout_marginStart="@dimen/space_sm"
-                        android:text="@string/identify_scan_health" />
-                </LinearLayout>
             </LinearLayout>
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>

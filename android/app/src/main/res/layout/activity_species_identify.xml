@@ -72,7 +72,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:fontFamily="sans-serif-medium"
-                android:text="@string/identify_pick_candidate"
+                android:text="@string/species_card_title"
                 android:textColor="@color/on_surface"
                 android:textSize="@dimen/text_title_sm" />
 
@@ -86,12 +86,16 @@
                 android:textSize="@dimen/text_body_sm"
                 android:visibility="gone" />
 
-            <LinearLayout
-                android:id="@+id/candidates_list"
+            <!-- The identified species, shown in place rather than jumping
+                 straight to the species screen: the same universal card used
+                 on the scan result and the community sheet, whose "more about
+                 this species" opens the full screen. -->
+            <com.plantdiseases.app.ui.common.SpeciesInfoCardView
+                android:id="@+id/identify_species_card"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_xs"
-                android:orientation="vertical" />
+                android:layout_marginTop="@dimen/space_md"
+                android:visibility="gone" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_retake"

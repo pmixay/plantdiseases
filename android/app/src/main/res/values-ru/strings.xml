@@ -64,8 +64,6 @@
     <string name="blurry_or_not_a_plant_result_body">Снимок слишком размыт, чтобы поставить диагноз, — либо в кадре нет растения. Если вы фотографировали растение, подойдите ближе, держите камеру неподвижно, дождитесь автофокуса и сделайте чёткий снимок одного листа при хорошем освещении.</string>
     <string name="description_label">Описание</string>
     <string name="result_learn_more">Открыть полное руководство</string>
-    <string name="treatment_label">Лечение</string>
-    <string name="prevention_label">Профилактика</string>
 
     <!-- Gallery -->
     <string name="empty_gallery">Пока нет сканов</string>
@@ -183,7 +181,6 @@
     <string name="alternatives_subtitle">Уверенность модели по основным кандидатам</string>
 
     <string name="species_card_title">Определённый вид</string>
-    <string name="species_card_score">PlantNet — %1$d%%</string>
     <string name="species_source_wikipedia">Источник: Wikipedia</string>
     <string name="species_source_wikipedia_translated">Источник: Wikipedia (автоперевод)</string>
     <string name="species_community_others">Другие сканы этого вида</string>
@@ -320,6 +317,7 @@
 
     <!-- Retry analysis -->
     <string name="retry_analysis">Повторить анализ</string>
+    <string name="inline_confidence_retake">Фото может быть размытым. Переснимите его так, чтобы лист заполнял большую часть кадра.</string>
 
     <!-- Pipeline warnings -->
     <string name="warning_very_low_confidence_title">Очень низкая уверенность</string>
@@ -651,6 +649,9 @@
 
     <!-- Care Plan -->
     <string name="care_plan_title">План ухода</string>
+    <string name="cure_plan_title">План лечения</string>
+    <string name="care_plan_expand">Показать план ухода</string>
+    <string name="care_plan_collapse">Скрыть план ухода</string>
     <string name="care_plan_subtitle_species">Подобрано для %s</string>
     <string name="care_plan_subtitle_unknown">Общий план — вид не указан</string>
     <string name="care_plan_subtitle_offline">Базовый офлайн-план — пересканируйте онлайн для точного</string>
@@ -883,17 +884,11 @@
     <string name="identify_water_days">Полив примерно раз в %1$d дн.</string>
     <string name="identify_water_as_needed">Поливать, когда верхний слой почвы сухой</string>
     <string name="identify_humidity">Влажность: %1$s</string>
-    <string name="identify_add_garden">В мой сад</string>
-    <string name="identify_scan_health">Проверить здоровье</string>
-    <string name="identify_added_garden">Добавлено в ваш сад</string>
-    <string name="identify_pick_candidate">Какое из них ваше растение?</string>
     <string name="identify_retake">Переснять</string>
     <string name="species_common_problems">Частые проблемы этого вида</string>
-    <string name="species_problems_loading">Подбираем проблемы, характерные для этого растения…</string>
-    <string name="species_problems_ai_note">Наиболее вероятны для этого вида — нажмите, чтобы открыть руководство.</string>
-    <string name="species_problems_guide_note">Болезни растений, которые умеет распознавать приложение, — нажмите, чтобы узнать больше.</string>
-    <string name="species_show_details">Показать сведения</string>
     <string name="native_range_title">Природный ареал</string>
+    <string name="native_range_expand">Показать природный ареал</string>
+    <string name="native_range_collapse">Скрыть природный ареал</string>
     <string name="native_range_loading">Загружаем природный ареал…</string>
     <string name="native_range_grows_more">Хорошо растёт</string>
     <string name="native_range_grows_less">Растёт ограниченно</string>
@@ -908,16 +903,28 @@
     <string name="native_range_map_empty">Карта природного ареала недоступна</string>
     <string name="flowering_title">Цветение по месяцам</string>
     <string name="flowering_loading">Загружаем календарь цветения…</string>
-    <string name="flowering_chart_hint">Цветение в помещении: 0 — нет, 1 — иногда, 2 — пик. Точка отмечает текущий месяц.</string>
     <string name="flowering_blooms_now">Цветёт сейчас</string>
     <string name="flowering_next_bloom">Следующее цветение — в %1$s</string>
     <string name="flowering_rarely_indoors">Редко цветёт в помещении</string>
+    <string name="flowering_level_none">нет</string>
+    <string name="flowering_level_occasional">иногда</string>
+    <string name="flowering_level_peak">пик</string>
     <string name="flowering_conditions_title">Что помогает зацвести</string>
     <string name="flowering_expand">Показать сведения о цветении</string>
     <string name="flowering_collapse">Скрыть сведения о цветении</string>
+
+    <!-- Universal species-info card (SpeciesInfoCardView), shown wherever a
+         specific species is referenced. -->
+    <string name="species_info_more">Подробнее об этом виде</string>
+    <string name="species_info_expand">Показать полное описание</string>
+    <string name="species_info_collapse">Скрыть полное описание</string>
+    <!-- Spoken for the description toggle: species name, then the action. -->
+    <string name="species_info_toggle_content_description">%1$s. %2$s</string>
+    <string name="list_show_all">Показать все: %1$d</string>
+    <string name="list_show_fewer">Показать меньше</string>
     <string name="flowering_toggle_content_description">%1$s. %2$s. %3$s</string>
-    <string name="flowering_accessibility_month_intensity">%1$s: %2$d</string>
-    <string name="flowering_chart_content_description">%1$s. 0 — не цветёт, 1 — иногда, 2 — пик цветения. Точка отмечает текущий месяц. %2$s</string>
+    <string name="flowering_accessibility_month_intensity">%1$s: %2$s</string>
+    <string name="flowering_chart_content_description">%1$s. График отмечает каждый месяц: нет, иногда или пик. Точка отмечает текущий месяц. %2$s</string>
     <string-array name="flowering_month_initials">
         <item>Я</item>
         <item>Ф</item>

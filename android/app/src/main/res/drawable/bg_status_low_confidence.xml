@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A single status-card surface for uncertain diagnoses. The red verdict tint
+     eases through orange into the yellow retry cue, keeping the confidence
+     message attached to the result rather than looking like a second card. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:angle="270"
+        android:startColor="@color/disease_red_bg"
+        android:centerColor="@color/confidence_gradient_mid"
+        android:endColor="@color/warning_amber_bg" />
+    <corners android:radius="@dimen/radius_lg" />
+</shape>

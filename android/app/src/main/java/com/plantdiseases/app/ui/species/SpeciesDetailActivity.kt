@@ -10,7 +10,6 @@ import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -18,26 +17,30 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
+import androidx.recyclerview.widget.LinearLayoutManager
 import com.bumptech.glide.load.DataSource
 import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.bumptech.glide.load.engine.GlideException
 import com.bumptech.glide.request.RequestListener
 import com.bumptech.glide.request.target.Target
 import com.google.android.material.card.MaterialCardView
-import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.CarePlanRequest
 import com.plantdiseases.app.data.model.CarePlanResponse
 import com.plantdiseases.app.data.model.SpeciesDiseaseItem
-import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivitySpeciesDetailBinding
 import com.plantdiseases.app.ui.common.CarePlanCardView
+import com.plantdiseases.app.ui.common.ExpandableSectionAnimator
 import com.plantdiseases.app.ui.guide.GuideDetailActivity
+import com.plantdiseases.app.ui.result.CommunityOpinionSheet
+import com.plantdiseases.app.ui.result.SimilarScansAdapter
 import com.plantdiseases.app.ui.widget.WorldMapView
 import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.DiseaseCatalog
+import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.TelemetryIds
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
 import java.util.Locale
@@ -55,13 +58,14 @@ class SpeciesDetailActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivitySpeciesDetailBinding
     private val scanRepository: ScanRepository by inject()
-    private val plantRepository: PlantRepository by inject()
     private val connectivity: ConnectivityObserver by inject()
     private val isRu: Boolean get() = Locale.getDefault().language == "ru"
     private val locale: String get() = if (isRu) "ru" else "en"
 
     private lateinit var scientificName: String
     private var commonName: String? = null
+    private var floweringExpanded = false
+    private var nativeRangeExpanded = false
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
@@ -98,16 +102,9 @@ class SpeciesDetailActivity : AppCompatActivity() {
         binding.speciesToolbar.title = title
         binding.tvSpeciesTitle.text = title
         binding.tvSpeciesScientific.text = scientificName
-
-        binding.btnAddGarden.setOnClickListener { addToGarden() }
-        binding.btnScanHealth.setOnClickListener {
-            startActivity(
-                Intent(this, MainActivity::class.java).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                    putExtra(MainActivity.EXTRA_OPEN_SCANNER, true)
-                },
-            )
-        }
+        floweringExpanded = savedInstanceState?.getBoolean(STATE_FLOWERING_EXPANDED) ?: false
+        nativeRangeExpanded = savedInstanceState?.getBoolean(STATE_NATIVE_RANGE_EXPANDED) ?: false
+        setupExpandableProfileSections()
 
         // Independent loads run concurrently: the Wikipedia blurb/photo, care
         // plan, common-problems list and optional botanical profile. Each
@@ -117,6 +114,96 @@ class SpeciesDetailActivity : AppCompatActivity() {
         loadCare()
         loadDiseases()
         loadSpeciesProfile()
+        loadCommunityScans()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean(STATE_FLOWERING_EXPANDED, floweringExpanded)
+        outState.putBoolean(STATE_NATIVE_RANGE_EXPANDED, nativeRangeExpanded)
+        super.onSaveInstanceState(outState)
+    }
+
+    private fun setupExpandableProfileSections() {
+        binding.floweringHeader.setOnClickListener {
+            setFloweringExpanded(!floweringExpanded)
+        }
+        binding.nativeRangeHeader.setOnClickListener {
+            setNativeRangeExpanded(!nativeRangeExpanded)
+        }
+        setFloweringExpanded(floweringExpanded, animate = false)
+        setNativeRangeExpanded(nativeRangeExpanded, animate = false)
+    }
+
+    private fun setFloweringExpanded(expanded: Boolean, animate: Boolean = true) {
+        floweringExpanded = expanded
+        ExpandableSectionAnimator.update(
+            container = binding.cardFlowering,
+            expanded = expanded,
+            chevron = binding.ivFloweringChevron,
+            animate = animate,
+        ) {
+            binding.floweringBody.visibility = if (expanded) View.VISIBLE else View.GONE
+        }
+        binding.floweringHeader.contentDescription = getString(
+            R.string.species_info_toggle_content_description,
+            getString(R.string.flowering_title),
+            getString(if (expanded) R.string.flowering_collapse else R.string.flowering_expand),
+        )
+    }
+
+    private fun setNativeRangeExpanded(expanded: Boolean, animate: Boolean = true) {
+        nativeRangeExpanded = expanded
+        ExpandableSectionAnimator.update(
+            container = binding.cardNativeRange,
+            expanded = expanded,
+            chevron = binding.ivNativeRangeChevron,
+            animate = animate,
+        ) {
+            binding.nativeRangeBody.visibility = if (expanded) View.VISIBLE else View.GONE
+        }
+        binding.nativeRangeHeader.contentDescription = getString(
+            R.string.species_info_toggle_content_description,
+            getString(R.string.native_range_title),
+            getString(
+                if (expanded) R.string.native_range_collapse else R.string.native_range_expand,
+            ),
+        )
+    }
+
+    /**
+     * "Other scans of this species" — moved here from the scan result screen
+     * so every species surface lives on this page. Best-effort: the strip
+     * stays hidden when the community has nothing for this species.
+     */
+    private fun loadCommunityScans() {
+        val pseudoId = TelemetryIds.userPseudoId(this)
+        val adapter = SimilarScansAdapter(
+            displayName = { key -> DiseaseLabels.displayName(key, isRu) ?: key },
+            // Compact preview cells; tapping opens a READ-ONLY view — second
+            // opinions are left to the result screen.
+            preview = true,
+            onClick = { item ->
+                if (item.scanId.isNotBlank() && pseudoId.isNotBlank()) {
+                    lifecycleScope.launch { scanRepository.recordCommunityView(item.scanId, pseudoId) }
+                }
+                CommunityOpinionSheet.showReadOnly(
+                    supportFragmentManager,
+                    item,
+                    DiseaseLabels.displayName(item.disease, isRu) ?: item.disease,
+                )
+            },
+        )
+        binding.rvSpeciesCommunity.layoutManager =
+            LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
+        binding.rvSpeciesCommunity.adapter = adapter
+        lifecycleScope.launch {
+            scanRepository.communityScansBySpecies(scientificName, pseudoId).onSuccess { resp ->
+                if (resp.items.isEmpty()) return@onSuccess
+                adapter.submit(resp.items)
+                binding.tvSpeciesCommunityLabel.visibility = View.VISIBLE
+                binding.rvSpeciesCommunity.visibility = View.VISIBLE
+            }
+        }
     }
 
     private fun loadDetail() {
@@ -130,6 +217,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
             if (info?.available == true) {
                 binding.tvSpeciesExtract.text =
                     info.extract ?: getString(R.string.identify_no_info)
+                revealExtractToggleIfClipped()
                 info.imageUrl?.let { url ->
                     Glide.with(this@SpeciesDetailActivity)
                         .load(com.plantdiseases.app.util.ServerConfig.photoUrl(url))
@@ -146,8 +234,42 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 }
             } else {
                 binding.tvSpeciesExtract.text = getString(R.string.identify_no_info)
+                binding.extractExpandRow.visibility = View.GONE
             }
         }
+    }
+
+    /** `lineCount` is only meaningful after layout, hence the post. */
+    private fun revealExtractToggleIfClipped() {
+        binding.tvSpeciesExtract.post {
+            val collapsed = resources.getInteger(R.integer.species_extract_collapsed_lines)
+            val clipped = binding.tvSpeciesExtract.lineCount > collapsed
+            binding.extractExpandRow.visibility = if (clipped) View.VISIBLE else View.GONE
+            if (clipped) {
+                setExtractExpanded(expanded = false)
+                binding.extractExpandRow.setOnClickListener {
+                    setExtractExpanded(binding.tvSpeciesExtract.maxLines == collapsed)
+                }
+            }
+        }
+    }
+
+    private fun setExtractExpanded(expanded: Boolean) {
+        val collapsed = resources.getInteger(R.integer.species_extract_collapsed_lines)
+        binding.tvSpeciesExtract.maxLines = if (expanded) Int.MAX_VALUE else collapsed
+        binding.tvExtractExpand.setText(
+            if (expanded) R.string.species_info_collapse else R.string.species_info_expand,
+        )
+        binding.ivExtractChevron.setImageResource(
+            if (expanded) R.drawable.ic_chevron_up else R.drawable.ic_chevron_down,
+        )
+        binding.extractExpandRow.contentDescription = getString(
+            R.string.species_info_toggle_content_description,
+            binding.tvSpeciesTitle.text?.toString().orEmpty(),
+            getString(
+                if (expanded) R.string.species_info_collapse else R.string.species_info_expand,
+            ),
+        )
     }
 
     /** Care-at-a-glance, on its own coroutine so it isn't gated behind the
@@ -186,7 +308,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
     }
 
     /** Pet-toxicity card — the same surface the scan result shows
-     *  (DiagnosisContentController.bindToxicity): red when the species is a
+     *  red when the species is a
      *  known pet hazard, green when it's confirmed pet-safe, hidden when the
      *  server couldn't pin toxicity to a species (``source != "db"``). */
     private fun bindToxicity(plan: CarePlanResponse?) {
@@ -311,8 +433,6 @@ class SpeciesDetailActivity : AppCompatActivity() {
             // Miss → reveal the section with a loading state so a slow (first-
             // time) AI lookup reads as "finding problems…", not an empty gap.
             binding.tvDiseasesTitle.visibility = View.VISIBLE
-            binding.tvDiseasesSubtitle.visibility = View.VISIBLE
-            binding.tvDiseasesSubtitle.setText(R.string.species_problems_loading)
             binding.pbDiseases.visibility = View.VISIBLE
             val resp = scanRepository
                 .fetchSpeciesDiseases(scientificName, commonName, locale)
@@ -373,8 +493,8 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 WorldMapView.ZoneStatus.fromWireName(zone.status.orEmpty())?.let { status ->
                     (zone.country.orEmpty().ifBlank { zone.countryCode.orEmpty() })
                         .takeIf(String::isNotBlank)?.let { country ->
-                        WorldMapView.CountryZone(country, status, zone.countryCode)
-                    }
+                            WorldMapView.CountryZone(country, status, zone.countryCode)
+                        }
                 }
             }
             val hasNativeRange = nativeRange != null && zones.isNotEmpty()
@@ -418,7 +538,6 @@ class SpeciesDetailActivity : AppCompatActivity() {
     private fun renderDiseases(aiItems: List<SpeciesDiseaseItem>) {
         binding.listDiseases.removeAllViews()
         if (aiItems.isNotEmpty()) {
-            binding.tvDiseasesSubtitle.setText(R.string.species_problems_ai_note)
             aiItems.forEach { item ->
                 // Match by class key first, then by display name, so the row
                 // picks up the same icon as the disease guide/book instead of
@@ -433,7 +552,6 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 )
             }
         } else {
-            binding.tvDiseasesSubtitle.setText(R.string.species_problems_guide_note)
             DiseaseCatalog.diseaseGuideItems().forEach { g ->
                 addDiseaseRow(
                     name = if (isRu) g.titleRu else g.titleEn,
@@ -446,8 +564,48 @@ class SpeciesDetailActivity : AppCompatActivity() {
         val hasRows = binding.listDiseases.childCount > 0
         val vis = if (hasRows) View.VISIBLE else View.GONE
         binding.tvDiseasesTitle.visibility = vis
-        binding.tvDiseasesSubtitle.visibility = vis
         binding.listDiseases.visibility = vis
+        applyDiseasesCollapse()
+    }
+
+    /**
+     * The fallback path renders the whole bundled catalogue (17 rows today), so
+     * cap the visible rows and hide the rest behind a toggle rather than ending
+     * the screen in a wall of guide links.
+     */
+    private fun applyDiseasesCollapse() {
+        val total = binding.listDiseases.childCount
+        val cap = resources.getInteger(R.integer.species_problems_collapsed_rows)
+        if (total <= cap) {
+            binding.diseasesExpandRow.visibility = View.GONE
+            return
+        }
+        binding.diseasesExpandRow.visibility = View.VISIBLE
+        setDiseasesExpanded(expanded = false, total = total, cap = cap)
+        binding.diseasesExpandRow.setOnClickListener {
+            val nowCollapsed = binding.listDiseases.getChildAt(cap)?.visibility != View.VISIBLE
+            setDiseasesExpanded(expanded = nowCollapsed, total = total, cap = cap)
+        }
+    }
+
+    private fun setDiseasesExpanded(expanded: Boolean, total: Int, cap: Int) {
+        for (i in cap until total) {
+            binding.listDiseases.getChildAt(i)?.visibility =
+                if (expanded) View.VISIBLE else View.GONE
+        }
+        binding.tvDiseasesExpand.text = if (expanded) {
+            getString(R.string.list_show_fewer)
+        } else {
+            getString(R.string.list_show_all, total)
+        }
+        binding.ivDiseasesChevron.setImageResource(
+            if (expanded) R.drawable.ic_chevron_up else R.drawable.ic_chevron_down,
+        )
+        binding.diseasesExpandRow.contentDescription = getString(
+            R.string.species_info_toggle_content_description,
+            getString(R.string.species_common_problems),
+            binding.tvDiseasesExpand.text?.toString().orEmpty(),
+        )
     }
 
     private fun addDiseaseRow(name: String, note: String?, iconRes: Int, guideId: String?) {
@@ -474,34 +632,11 @@ class SpeciesDetailActivity : AppCompatActivity() {
         binding.listDiseases.addView(row)
     }
 
-    private fun addToGarden() {
-        lifecycleScope.launch {
-            runCatching {
-                plantRepository.savePlant(
-                    name = commonName ?: scientificName,
-                    species = scientificName,
-                    scientificName = scientificName,
-                    commonName = commonName,
-                )
-            }.onSuccess {
-                Toast.makeText(
-                    this@SpeciesDetailActivity,
-                    R.string.identify_added_garden,
-                    Toast.LENGTH_SHORT,
-                ).show()
-            }.onFailure {
-                Toast.makeText(
-                    this@SpeciesDetailActivity,
-                    R.string.identify_failed,
-                    Toast.LENGTH_SHORT,
-                ).show()
-            }
-        }
-    }
-
     companion object {
         const val EXTRA_SCIENTIFIC_NAME = "extra_scientific_name"
         const val EXTRA_COMMON_NAME = "extra_common_name"
+        private const val STATE_FLOWERING_EXPANDED = "state_flowering_expanded"
+        private const val STATE_NATIVE_RANGE_EXPANDED = "state_native_range_expanded"
 
         fun start(context: Context, scientificName: String, commonName: String?) {
             context.startActivity(

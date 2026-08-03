@@ -90,6 +90,8 @@
     <color name="disease_red_bg">#FEE2E2</color>
     <color name="warning_amber">#D97706</color>
     <color name="warning_amber_bg">#FEF3C7</color>
+    <!-- Middle stop for the uncertain-diagnosis red → orange → yellow card. -->
+    <color name="confidence_gradient_mid">#FDE8C8</color>
     <color name="neutral_blue">#2563EB</color>
     <color name="neutral_blue_bg">#DBEAFE</color>
 

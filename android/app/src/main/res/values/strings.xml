@@ -63,8 +63,6 @@
     <string name="blurry_or_not_a_plant_result_body">The photo is too blurry to read — or there\'s no plant in frame. If you photographed a plant, move a little closer, hold steady, wait for autofocus, and retake a sharp, well-lit shot of a single leaf.</string>
     <string name="description_label">Description</string>
     <string name="result_learn_more">Read the full guide</string>
-    <string name="treatment_label">Treatment</string>
-    <string name="prevention_label">Prevention</string>
 
     <!-- Gallery -->
     <string name="empty_gallery">No scans yet</string>
@@ -185,7 +183,6 @@
 
     <!-- Auto-detected species card -->
     <string name="species_card_title">Detected species</string>
-    <string name="species_card_score">PlantNet match: %1$d%%</string>
     <string name="species_source_wikipedia">Source: Wikipedia</string>
     <string name="species_source_wikipedia_translated">Source: Wikipedia (auto-translated)</string>
     <string name="species_community_others">Other scans of this species</string>
@@ -327,6 +324,7 @@
 
     <!-- Retry analysis -->
     <string name="retry_analysis">Retry Analysis</string>
+    <string name="inline_confidence_retake">The photo might be blurry. Retake it with the leaf filling most of the frame.</string>
 
     <!-- Pipeline warnings -->
     <string name="warning_very_low_confidence_title">Very low confidence</string>
@@ -653,6 +651,9 @@
 
     <!-- Care Plan -->
     <string name="care_plan_title">Care Plan</string>
+    <string name="cure_plan_title">Cure Plan</string>
+    <string name="care_plan_expand">Show care plan</string>
+    <string name="care_plan_collapse">Hide care plan</string>
     <string name="care_plan_subtitle_species">Tailored for %s</string>
     <string name="care_plan_subtitle_unknown">Generic plan — species not set</string>
     <string name="care_plan_subtitle_offline">Basic offline plan — re-scan online for a tailored one</string>
@@ -888,17 +889,11 @@
     <string name="identify_water_days">Water about every %1$d days</string>
     <string name="identify_water_as_needed">Water when the top soil is dry</string>
     <string name="identify_humidity">Humidity: %1$s</string>
-    <string name="identify_add_garden">Add to garden</string>
-    <string name="identify_scan_health">Scan health</string>
-    <string name="identify_added_garden">Added to your garden</string>
-    <string name="identify_pick_candidate">Which one is your plant?</string>
     <string name="identify_retake">Retake</string>
     <string name="species_common_problems">Common problems to watch for</string>
-    <string name="species_problems_loading">Finding the problems most common for this plant…</string>
-    <string name="species_problems_ai_note">Most likely for this species — tap one for the full care guide.</string>
-    <string name="species_problems_guide_note">Plant conditions this app can diagnose — tap one to learn more.</string>
-    <string name="species_show_details">Show details</string>
     <string name="native_range_title">Native range</string>
+    <string name="native_range_expand">Show native range</string>
+    <string name="native_range_collapse">Hide native range</string>
     <string name="native_range_loading">Loading native range…</string>
     <string name="native_range_grows_more">Thrives</string>
     <string name="native_range_grows_less">Limited growth</string>
@@ -913,16 +908,28 @@
     <string name="native_range_map_empty">Native-range map unavailable</string>
     <string name="flowering_title">Flowering by month</string>
     <string name="flowering_loading">Loading flowering calendar…</string>
-    <string name="flowering_chart_hint">Indoor flowering: 0 — none, 1 — occasional, 2 — peak. The dot marks this month.</string>
     <string name="flowering_blooms_now">Blooms now</string>
     <string name="flowering_next_bloom">Next bloom in %1$s</string>
     <string name="flowering_rarely_indoors">Rarely flowers indoors</string>
+    <string name="flowering_level_none">none</string>
+    <string name="flowering_level_occasional">occasional</string>
+    <string name="flowering_level_peak">peak</string>
     <string name="flowering_conditions_title">What helps it bloom</string>
     <string name="flowering_expand">Show flowering details</string>
     <string name="flowering_collapse">Hide flowering details</string>
+
+    <!-- Universal species-info card (SpeciesInfoCardView), shown wherever a
+         specific species is referenced. -->
+    <string name="species_info_more">More about this species</string>
+    <string name="species_info_expand">Show full description</string>
+    <string name="species_info_collapse">Hide full description</string>
+    <!-- Spoken for the description toggle: species name, then the action. -->
+    <string name="species_info_toggle_content_description">%1$s. %2$s</string>
+    <string name="list_show_all">Show all %1$d</string>
+    <string name="list_show_fewer">Show fewer</string>
     <string name="flowering_toggle_content_description">%1$s. %2$s. %3$s</string>
-    <string name="flowering_accessibility_month_intensity">%1$s %2$d</string>
-    <string name="flowering_chart_content_description">%1$s. 0 means no bloom, 1 occasional bloom, 2 peak bloom. The dot marks this month. %2$s</string>
+    <string name="flowering_accessibility_month_intensity">%1$s: %2$s</string>
+    <string name="flowering_chart_content_description">%1$s. The chart labels each month none, occasional or peak. The dot marks this month. %2$s</string>
     <string-array name="flowering_month_initials">
         <item>J</item>
         <item>F</item>

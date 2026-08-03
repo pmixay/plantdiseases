@@ -122,7 +122,7 @@ class FloweringChartView @JvmOverloads constructor(
         val chartBottom = statusBaseline - dp(if (showStatusLine) 40f else 16f)
         val chartTop = top + dp(8f)
         val chartHeight = max(dp(1f), chartBottom - chartTop)
-        val chartLeft = left + dp(28f)
+        val chartLeft = left + dp(intensityLabelGutterDp)
         val axisLabelX = chartLeft - dp(8f)
         val slot = (right - chartLeft) / MONTH_COUNT
         val barWidth = slot * 0.52f
@@ -135,9 +135,11 @@ class FloweringChartView @JvmOverloads constructor(
             val y = yForIntensity(intensity)
             canvas.drawLine(chartLeft, y, right, y, axisGuidePaint)
         }
-        drawAxisLabel(canvas, "2", axisLabelX, yForIntensity(2f))
-        drawAxisLabel(canvas, "1", axisLabelX, yForIntensity(1f))
-        drawAxisLabel(canvas, "0", axisLabelX, yForIntensity(0f))
+        // Words, not 0/1/2 — the scale is meaningless without a legend, and
+        // labelling it directly removes the need for one.
+        drawAxisLabel(canvas, intensityLabels[2], axisLabelX, yForIntensity(2f))
+        drawAxisLabel(canvas, intensityLabels[1], axisLabelX, yForIntensity(1f))
+        drawAxisLabel(canvas, intensityLabels[0], axisLabelX, yForIntensity(0f))
 
         intensities.forEachIndexed { index, intensity ->
             val centerX = chartLeft + slot * index + slot / 2f
@@ -168,6 +170,21 @@ class FloweringChartView @JvmOverloads constructor(
                 statusPaint,
             )
         }
+    }
+
+    /** Localized "none / occasional / peak", indexed by intensity 0..2. */
+    private val intensityLabels: List<String> by lazy {
+        listOf(
+            context.getString(R.string.flowering_level_none),
+            context.getString(R.string.flowering_level_occasional),
+            context.getString(R.string.flowering_level_peak),
+        )
+    }
+
+    /** Widest label plus breathing room, so the plot never overlaps the axis. */
+    private val intensityLabelGutterDp: Float by lazy {
+        val widest = intensityLabels.maxOf { axisLabelPaint.measureText(it) }
+        widest / resources.displayMetrics.density + 10f
     }
 
     private fun drawAxisLabel(canvas: Canvas, label: String, x: Float, centerY: Float) {
@@ -202,7 +219,7 @@ class FloweringChartView @JvmOverloads constructor(
             context.getString(
                 R.string.flowering_accessibility_month_intensity,
                 monthNames[index],
-                intensity,
+                intensityLabels[intensity.coerceIn(0, 2)],
             )
         }.joinToString()
         return context.getString(
