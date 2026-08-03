@@ -214,7 +214,9 @@ class FloweringChartView @JvmOverloads constructor(
     }
 
     private fun buildContentDescription(status: BloomStatus): String {
-        val monthNames = resources.getStringArray(R.array.flowering_month_names)
+        // Nominative names: the list reads "January: peak", not the
+        // prepositional forms the Russian "Next bloom in %s" status needs.
+        val monthNames = resources.getStringArray(R.array.flowering_month_names_nominative)
         val pattern = intensities.mapIndexed { index, intensity ->
             context.getString(
                 R.string.flowering_accessibility_month_intensity,
@@ -263,6 +265,8 @@ class FloweringChartView @JvmOverloads constructor(
             when (status) {
                 BloomStatus.BloomsNow -> context.getString(R.string.flowering_blooms_now)
                 is BloomStatus.NextBloom -> {
+                    // Prepositional in Russian — this array exists to be
+                    // substituted into flowering_next_bloom.
                     val month = context.resources
                         .getStringArray(R.array.flowering_month_names)[status.monthIndex]
                     context.getString(R.string.flowering_next_bloom, month)

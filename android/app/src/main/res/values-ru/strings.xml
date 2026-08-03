@@ -936,6 +936,8 @@
         <item>Н</item>
         <item>Д</item>
     </string-array>
+    <!-- Предложный падеж — подставляется в flowering_next_bloom. Для месяца
+         самого по себе есть flowering_month_names_nominative. -->
     <string-array name="flowering_month_names">
         <item>январе</item>
         <item>феврале</item>
@@ -949,6 +951,21 @@
         <item>октябре</item>
         <item>ноябре</item>
         <item>декабре</item>
+    </string-array>
+    <!-- Именительный падеж — для озвучивания графика. -->
+    <string-array name="flowering_month_names_nominative">
+        <item>январь</item>
+        <item>февраль</item>
+        <item>март</item>
+        <item>апрель</item>
+        <item>май</item>
+        <item>июнь</item>
+        <item>июль</item>
+        <item>август</item>
+        <item>сентябрь</item>
+        <item>октябрь</item>
+        <item>ноябрь</item>
+        <item>декабрь</item>
     </string-array>
 
     <!-- Статистика и советы -->

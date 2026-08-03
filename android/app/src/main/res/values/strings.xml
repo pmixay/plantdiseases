@@ -941,7 +941,25 @@
         <item>N</item>
         <item>D</item>
     </string-array>
+    <!-- Substituted into flowering_next_bloom, so these are the prepositional
+         forms in Russian. Use flowering_month_names_nominative to name a month
+         on its own. -->
     <string-array name="flowering_month_names">
+        <item>January</item>
+        <item>February</item>
+        <item>March</item>
+        <item>April</item>
+        <item>May</item>
+        <item>June</item>
+        <item>July</item>
+        <item>August</item>
+        <item>September</item>
+        <item>October</item>
+        <item>November</item>
+        <item>December</item>
+    </string-array>
+    <!-- Standalone month names for the chart's accessibility read-out. -->
+    <string-array name="flowering_month_names_nominative">
         <item>January</item>
         <item>February</item>
         <item>March</item>

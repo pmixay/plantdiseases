@@ -438,12 +438,17 @@ class SpeciesDetailActivity : AppCompatActivity() {
                         }
                 }
             }
-            val hasNativeRange = nativeRange != null && zones.isNotEmpty()
+            // setZones reports whether any zone landed on the bundled 1:110m
+            // geometry. Small island states have no polygon there, so a range
+            // made only of those would leave a summary above a world map that
+            // highlights nothing — drop the whole card instead.
+            val hasNativeRange = nativeRange != null &&
+                zones.isNotEmpty() &&
+                binding.worldMap.setZones(zones)
             if (hasNativeRange) {
                 binding.tvNativeRangeSummary.text = localized?.nativeRangeSummary.orEmpty()
                     .ifBlank { nativeRange.summary.orEmpty() }
                     .trim()
-                binding.worldMap.setZones(zones)
             }
             finishNativeRangeLoading(hasNativeRange)
         }

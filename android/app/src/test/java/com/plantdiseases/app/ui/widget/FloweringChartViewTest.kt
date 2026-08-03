@@ -82,6 +82,35 @@ class FloweringChartViewTest {
         assertThat(text).isEqualTo("Следующее цветение — в марте")
     }
 
+    @Test
+    fun contentDescription_readsEveryMonthWithItsIntensity() {
+        val months = MutableList(12) { 0 }.apply { this[4] = 2 }
+        val view = FloweringChartView(localizedContext("en"))
+
+        assertThat(view.setFlowering(months, monthIndex = 0)).isTrue()
+        val description = view.contentDescription.toString()
+        assertThat(description).contains("Next bloom in May")
+        assertThat(description).contains("January: none")
+        assertThat(description).contains("May: peak")
+    }
+
+    /** The status line needs "в марте", but the per-month list needs "март". */
+    @Test
+    fun russianContentDescription_namesMonthsInTheNominative() {
+        val months = MutableList(12) { 0 }.apply {
+            this[0] = 2
+            this[1] = 1
+        }
+        val view = FloweringChartView(localizedContext("ru"))
+
+        assertThat(view.setFlowering(months, monthIndex = 0)).isTrue()
+        val description = view.contentDescription.toString()
+        assertThat(description).contains("январь: пик")
+        assertThat(description).contains("февраль: иногда")
+        assertThat(description).contains("март: нет")
+        assertThat(description).doesNotContain("январе")
+    }
+
     private fun localizedContext(language: String): Context {
         val configuration = Configuration(context.resources.configuration)
         configuration.setLocale(Locale(language))
