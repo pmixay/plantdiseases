@@ -162,16 +162,39 @@ data-cleaning it folded in. Details in `DATASET_LABELING_PLAN.md`.
 
 ### 2.6.13 — the run that makes the pivot real
 
-Four of five fixes have landed in the notebook: fail-fast on a truncated
-corpus (`REQUIRED_SOURCE_FLOORS` + persisted `source_inventory.json`),
-re-sourced ornamental data, a revived MaxLogit OOD floor scored over plant
-logits only, and an unpinned conformal grid.
+Six fixes have landed in the notebook: fail-fast on a truncated corpus
+(`REQUIRED_SOURCE_FLOORS` + persisted `source_inventory.json`), re-sourced
+ornamental data, a revived MaxLogit OOD floor scored over plant logits only,
+an unpinned conformal grid, and — added 2026-08 — **`split_hint` routing** plus
+**`subject_domain` passthrough + per-split domain reporting**.
 
-- [ ] **Train 2.6.13 and paired-bootstrap vs 2.6.8** — diff `source_inventory`
-      first. Expect `val_indomain` to recover toward 0.86. Treat
-      `viral_disease` as known-starved (its 600 ornamental train images are
-      gone and unreplaced) — do **not** read a viral regression as a modelling
-      failure.
+The last two are the eval-integrity pair. `fetch_kaggle_supplement` used to read
+only `hn_kind`, so every supplement row the offline pipeline had marked
+`train_only` (sub-label-confidence positives — 1,226 of v8b's 3,125, minus the
+~700 boundary negs already handled) still drained into the held-out splits at
+~52%: they were grading the ship gate **and fitting the shipped temperature +
+conformal q̂**. They now route to `supplement_train_only` — train-only, full 0.9
+sampler weight, so aqua loses no volume. Separately, `subject_domain` now rides
+into the sidecar and every split reports its domain mix, so the widening domain
+(houseplants → garden ornamentals → kitchen-garden edibles) is measurable
+instead of assumed. Neither the notebook nor the runtime gates on domain values:
+a new bucket needs no code change. See `DATASET_LABELING_PLAN.md`.
+
+- [ ] **Train 2.6.13 and paired-bootstrap vs 2.6.8** — expect `val_indomain` to
+      recover toward 0.86. Treat `viral_disease` as known-starved (its 600
+      ornamental train images are gone and unreplaced) — do **not** read a viral
+      regression as a modelling failure. Expect the eval/cal slices to **shrink**
+      and train to grow: that is the `split_hint` fix working.
+      **The vs-2.6.8 A/B cannot be corpus-verified.** The instruction to "diff
+      `source_inventory` first" is unrunnable for that pair — the inventory gate
+      ships *in* 2.6.13, so 2.6.8 has none — and the corpora provably differ
+      (dead `pappu54` → two replacements; supplement v6 → v8b). Worse, ~1,891
+      v8b rows are `carried_from_v5`, i.e. inside 2.6.8's own training set, which
+      biases the comparison **toward** 2.6.8. Read the paired number **only** on
+      supplement rows tagged `carried_from_v7 | carried_from_v8 | new` (1,234
+      rows, ~185 landing in `val_realworld`). The join is mechanical: on-disk
+      stems are `supp_<class>_<original stem>`, so eval images map straight back
+      to `manifest.csv`.
 
 **What to check in the run log** — each line proves one fix landed:
 
@@ -183,6 +206,9 @@ logits only, and an unpinned conformal grid.
 | `conformal: selected alpha=… lambda_reg=…` | **not** the last grid value | Search converged inside the grid. |
 | `head early stop @ epN (best ep=M)` | `M` well above 3 | Best-epoch 3 was the corpus-loss symptom. |
 | `[final val_indomain] disease_macro_f1` | toward **0.86** | The headline regression is undone. |
+| `Kaggle supplement routing:` | all three of `supplement` / `supplement_train_only` / `supplement_boundary` non-zero | `split_hint` is being honoured. Only two keys ⇒ the column is gone and the run raised (or you flipped `STRICT_SUPPLEMENT_SPLIT_HINT`). |
+| `Kaggle supplement subject_domain:` | the buckets you collected | Domain rides into the sidecars. All `unspecified` ⇒ the manifest column is missing. |
+| `per-split subject_domain:` → `val_realworld` | a non-trivial non-`unspecified` share | **The ship gate can finally see the broadened domain.** If ornamental/edible rows are ~0 here, no number in this repo says whether the pivot worked. |
 
 ### Still open from the 2.6.12 pivot
 
@@ -190,10 +216,14 @@ logits only, and an unpinned conformal grid.
       admit ornamentals, and collect garden-ornamental scans (weak classes
       first). The `kaggle_ornamental` up-weight already landed and the dead
       source was re-pointed in 2.6.13.
-- [ ] **Broaden the eval seed** — add an ornamental source to `val_realworld`
-      so the gate measures the new domain. **Load-bearing, not polish:** the
-      whole ornamental leg is train-only today, which is exactly why its
-      disappearance was invisible.
+- [ ] **Broaden the eval seed** — **half-closed.** v8b's domain re-judge put 190
+      garden ornamentals into `source=supplement`, which *is* eval-eligible, so
+      the gate now carries some; and the per-split domain report (2.6.13) finally
+      says how many. Still open: every *dedicated* ornamental source
+      (`kaggle_ornamental`) remains train-only, and kitchen-garden edibles have
+      no eval-eligible supply at all. Collect the new domain into the
+      **supplement**, not into a train-only slug — that routing is why the
+      2.26k-image loss was invisible.
 - [ ] **Refresh `MODEL_CARD.md`** — it still says "v2.6.9 (in training — NOT
       YET TRAINED)" and contradicts this file on aqua export precision. Do not
       import its numbers until it is rewritten.

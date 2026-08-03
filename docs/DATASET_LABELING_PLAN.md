@@ -36,16 +36,45 @@ until verified production volume exists.
   held-out training image inflates the gate.
 - **Image gates:** real photos, short side ≥ 384 px, pHash near-dup removal
   (Hamming ≤ 6), per-creator cap.
-- **Domain gate (v2.6.12):** subject is a **houseplant/indoor plant OR an outdoor / garden
-  ornamental** (potted, garden, landscape) — still **no commercial field / agricultural-crop
-  imagery**.
+- **Domain gate (v2.6.12, widened 2026-08):** subject is a **houseplant/indoor plant, an
+  outdoor / garden ornamental** (potted, garden, landscape) **or a domestic kitchen-garden
+  edible** (cucumber, tomato, pepper, berry bushes — a home plot, greenhouse or allotment) —
+  still **no commercial field / plantation / greenhouse-monoculture imagery**. The line is
+  *the grower*, not the species: a cucumber on a trellis in someone's garden is in-domain;
+  a hectare of cucumbers under commercial glass is not.
 - **Vision-agent judging:** kept/rejected vs exported reference exemplars; a
   boundary negative is kept only if the agent would *reject* it for the lookalike
   positive class (judged vs both confused-class exemplar sets).
 - **Hard negatives role-tagged** (`role=hard_negative`, `hn_kind`) under `healthy/`
   or `not_a_plant/`; `hn_kind=boundary` is routed **train-only** by the notebook.
 
-## Domain (v2.6.12) — houseplants → + outdoor/garden ornamentals
+## Domain — houseplants → + garden ornamentals (v2.6.12) → + kitchen-garden edibles (2026-08)
+
+**The domain is still widening.** After ornamentals, the next step admits **domestic edible
+garden plants** — cucumber, tomato, pepper, courgette, berry bushes — grown by a person for
+themselves. The exclusion that survives every widening is **commercial agriculture**
+(plantations, monoculture fields, production greenhouses): that imagery is a different
+photographic distribution, it is what the 2.6.7 gray_mold fix removed, and it is still ~39%
+of gray_mold's eval slice today. Species is not the test; the grower is.
+
+> **Assumption flagged.** "Cucumbers and similar" was read as *home-grown edibles, commercial
+> agriculture still out*. If commercial rows are meant to be in-domain too, say so — it is a
+> one-line change to the upstream judge prompt and **zero** notebook changes (below).
+
+Code-side this costs nothing, by design. As of **2.6.13** the notebook **records and reports**
+`subject_domain` verbatim and **never gates on it** — no enum, no allowlist, no mapping table.
+A new bucket (`garden_edible`, whatever you name it) appears in the per-split domain report and
+in `model_card.json → source_inventory.per_split_subject_domain` the first run after it is
+collected. Domain policy lives entirely in the offline labeling pipeline; the runtime gate stays
+bundle-derived (a rebuilt OOD bank on the broader in-distribution).
+
+Two weight comments in §4 now lag the policy and should be revisited **with evidence, not
+reflex**: `doctorp_pepper` is down-weighted 0.8 (prior 0.5) because "pepper is a container
+CROP", and `kaggle_ornamental` sits at 1.0. If domestic edibles are in-domain, pepper's
+down-weight is arguing against the deployment distribution. Leave both alone until 2.6.13 gives
+a baseline — changing sampler weights and the corpus in the same run makes the A/B unreadable.
+
+### Original v2.6.12 pivot (kept for the record)
 
 The target domain broadens to **houseplants + outdoor / garden ORNAMENTALS** (potted, patio,
 garden, landscape); commercial **field / agricultural crops stay excluded**. The v8
@@ -208,6 +237,19 @@ v7 eval; let v8's clean benchmark guide any further move.
    folded production scans). Restores independence + targets the fallen recall.
 3. **Extend the ≥0.80 floor to physiological positives** — route sub-0.80 disease
    positives **train-only** (don't delete: protects aqua's data-hungry volume).
+   ✅ **Landed both sides as of 2.6.13.** The manifest stamps `split_hint`
+   (`eval_ok` / `train_only`); `fetch_kaggle_supplement` now honours it and routes
+   `train_only` rows to a new **`supplement_train_only`** source — TRAIN-ONLY (in no
+   `make_*_split allowed_sources`) at the **full 0.9 `supplement` sampler weight**, so the
+   student keeps every image. Until this landed the notebook read *only* `hn_kind`, so of
+   v8b's 1,226 `train_only` rows just the ~700 boundary negatives were held back and the
+   rest — the sub-floor positives — drained into `val_realworld` / `val_indomain` /
+   `temperature_cal` / `conformal_cal` at ~52%. **They were not only grading the ship gate,
+   they were fitting the shipped temperature and conformal q̂.** Routing precedence:
+   boundary first, then `eval_ok`; anything else (blank, unrecognised, absent from the
+   manifest) routes train-only — an unknown verdict must never *promote* a row into a
+   held-out slice. Expect eval/cal slices to **shrink** and train to grow on this run;
+   that is the fix working, not a regression.
 4. **Thicken thin eval** — +50–100 powdery past its 14-query/54%-one-engine monoculture;
    broaden gray_mold via new multilingual sources. Don't grow nutrient/scorch count.
 5. **Boundary negatives: hold ~700, don't grow**; keep `hn_kind=boundary` train-only;
