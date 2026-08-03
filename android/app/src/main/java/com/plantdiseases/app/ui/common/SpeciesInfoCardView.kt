@@ -7,6 +7,8 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.view.isVisible
+import androidx.lifecycle.findViewTreeLifecycleOwner
+import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.bumptech.glide.load.resource.bitmap.CenterCrop
@@ -92,15 +94,25 @@ class SpeciesInfoCardView @JvmOverloads constructor(
     }
 
     /**
+     * Convenience overload for hosts inside a lifecycle-owning view tree —
+     * every current caller. Enrichment runs on the owner's scope so it is
+     * cancelled with the host; without an owner the card still renders the
+     * names it was given and simply skips the Wikipedia fetch.
+     */
+    fun bind(scientific: String?, common: String?): Boolean =
+        bind(findViewTreeLifecycleOwner()?.lifecycleScope, scientific, common)
+
+    /**
      * Render [scientific]/[common] immediately, then enrich with the Wikipedia
-     * photo and description on [scope].
+     * photo and description on [scope]. A null [scope] renders the names and
+     * skips the fetch.
      *
      * Returns false — and hides itself — when neither name is usable, so hosts
      * can simply call `bind(...)` without pre-checking. The "more about this
      * species" action is shown only when [scientific] is present, because
      * [SpeciesDetailActivity] finishes immediately without a binomial.
      */
-    fun bind(scope: CoroutineScope, scientific: String?, common: String?): Boolean {
+    fun bind(scope: CoroutineScope?, scientific: String?, common: String?): Boolean {
         val sci = scientific?.trim()?.takeIf { it.isNotEmpty() }
         val commonTrimmed = common?.trim()?.takeIf { it.isNotEmpty() }
         val token = ++bindToken
@@ -123,7 +135,7 @@ class SpeciesInfoCardView @JvmOverloads constructor(
                 val display = nameView.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }
                 SpeciesDetailActivity.start(context, sci, display ?: commonTrimmed)
             }
-            loadEnrichment(scope, sci, commonTrimmed, isRu, token)
+            scope?.let { loadEnrichment(it, sci, commonTrimmed, isRu, token) }
         }
         return true
     }

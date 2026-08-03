@@ -45,7 +45,7 @@ import java.io.File
  * Shows one saved scan's diagnosis. The activity is a thin host: it owns the
  * screen chrome (insets, toolbar, pinch-zoom, sticky header, skeleton) and the
  * status/image header, then hands each independent section to a controller —
- * [DiagnosisContentController], [SpeciesCardController], [CommunityController],
+ * [DiagnosisContentController], [CommunityController],
  * [CarePlanController], [FeedbackController], [GardenAttachController] and
  * [ShareController]. The activity-result permission launchers stay here because
  * they must be registered before the activity is STARTED.
@@ -86,7 +86,6 @@ class ResultActivity : AppCompatActivity() {
     private var restoredTabIndex = 0
 
     private val diagnosisContent by lazy { DiagnosisContentController(this, binding) }
-    private val speciesCard by lazy { SpeciesCardController(this, binding) }
     private val carePlan by lazy { CarePlanController(this, binding) }
     private val feedback by lazy { FeedbackController(this, binding) }
     private val gardenAttach by lazy { GardenAttachController(this, binding) }
@@ -475,7 +474,7 @@ class ResultActivity : AppCompatActivity() {
                 btnAddToGarden.visibility = if (isOfflineAqua) View.GONE else View.VISIBLE
                 diagnosisContent.bindPipelineWarnings(scan, repository)
                 diagnosisContent.bindAlternatives(scan, repository, isRu)
-                speciesCard.bind(scan)
+                binding.cardSpecies.bind(scan.speciesScientific, scan.speciesCommon)
                 community.bindSimilarScans(scan, repository, isRu)
                 diagnosisContent.setupTreatmentPrevention(scan, repository, isRu, restoredTabIndex)
                 carePlan.bind(scan, repository, isRu)
@@ -489,14 +488,12 @@ class ResultActivity : AppCompatActivity() {
             // so the card offers "This is a plant" (+ optional note) instead
             // of the yes/no pair.
             if (isNotAPlant) {
-                cardToxicity.visibility = View.GONE
                 if (isOfflineAqua) {
                     cardFeedback.visibility = View.GONE
                 } else {
                     feedback.bindNotAPlant(scan)
                 }
             } else {
-                diagnosisContent.bindToxicity(scan, repository)
                 if (isOfflineAqua) {
                     cardFeedback.visibility = View.GONE
                 } else {
@@ -615,7 +612,6 @@ class ResultActivity : AppCompatActivity() {
             binding.cardAlternatives,
             binding.cardSpecies,
             binding.cardSimilarScans,
-            binding.cardToxicity,
             binding.cardFeedback,
             binding.cardPipelineWarning,
             binding.cardLowConfidence,

@@ -181,55 +181,6 @@ class DiagnosisContentController(
         }
     }
 
-    fun bindToxicity(scan: ScanEntity, repository: ScanRepository) {
-        val card = binding.cardToxicity
-        val title = binding.tvToxicityTitle
-        val body = binding.tvToxicityBody
-        val icon = binding.ivToxicityIcon
-
-        val speciesList = repository.parseToxicSpeciesList(scan.toxicSpeciesList)
-        when (scan.toxicitySource) {
-            "db" -> if (scan.toxicToPets) {
-                card.visibility = View.VISIBLE
-                card.setCardBackgroundColor(activity.getColor(R.color.disease_red_bg))
-                title.setTextColor(activity.getColor(R.color.disease_red))
-                icon.setColorFilter(activity.getColor(R.color.disease_red))
-                title.setText(R.string.toxicity_toxic_title)
-                body.setTextColor(activity.getColor(R.color.disease_red))
-                body.text = activity.getString(
-                    R.string.toxicity_toxic_body,
-                    speciesList.joinToString(", ") { localizeToxicSpecies(it) },
-                )
-            } else {
-                card.visibility = View.VISIBLE
-                card.setCardBackgroundColor(activity.getColor(R.color.healthy_green_bg))
-                title.setTextColor(activity.getColor(R.color.healthy_green))
-                icon.setColorFilter(activity.getColor(R.color.healthy_green))
-                icon.setImageResource(R.drawable.ic_healthy)
-                title.setText(R.string.toxicity_safe_title)
-                body.setTextColor(activity.getColor(R.color.healthy_green))
-                body.setText(R.string.toxicity_safe_body)
-            }
-            else -> {
-                // Unknown source: the server couldn't pin a species. Showing a
-                // big amber "pet safety unconfirmed" card on every scan reads as
-                // a warning the user can't act on — hide it and let the user
-                // pick a species via create-plant to trigger a real lookup.
-                card.visibility = View.GONE
-            }
-        }
-    }
-
-    /** Localize the ASPCA toxic-species tokens (a closed set: cats / dogs /
-     *  horses). Unknown tokens pass through unchanged. */
-    private fun localizeToxicSpecies(token: String): String =
-        when (token.trim().lowercase()) {
-            "cats", "cat" -> activity.getString(R.string.toxicity_animal_cats)
-            "dogs", "dog" -> activity.getString(R.string.toxicity_animal_dogs)
-            "horses", "horse" -> activity.getString(R.string.toxicity_animal_horses)
-            else -> token
-        }
-
     fun setupTreatmentPrevention(
         scan: ScanEntity,
         repository: ScanRepository,

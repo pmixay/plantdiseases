@@ -186,7 +186,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
     }
 
     /** Pet-toxicity card — the same surface the scan result shows
-     *  (DiagnosisContentController.bindToxicity): red when the species is a
+     *  red when the species is a
      *  known pet hazard, green when it's confirmed pet-safe, hidden when the
      *  server couldn't pin toxicity to a species (``source != "db"``). */
     private fun bindToxicity(plan: CarePlanResponse?) {
