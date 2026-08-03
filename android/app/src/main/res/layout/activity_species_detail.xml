@@ -8,6 +8,7 @@
 -->
 <androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/background">
@@ -107,14 +108,50 @@
                     android:layout_marginTop="@dimen/space_md"
                     android:visibility="gone" />
 
+                <!-- A full Wikipedia lead section can run many paragraphs, so
+                     it starts clipped; the toggle below is revealed by the
+                     Activity only when the text is actually cut off. -->
                 <TextView
                     android:id="@+id/tv_species_extract"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_md"
+                    android:ellipsize="end"
                     android:lineSpacingExtra="3dp"
+                    android:maxLines="@integer/species_extract_collapsed_lines"
                     android:textColor="@color/on_surface"
                     android:textSize="@dimen/text_body" />
+
+                <LinearLayout
+                    android:id="@+id/extract_expand_row"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_xs"
+                    android:background="?attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center_vertical"
+                    android:minHeight="@dimen/species_info_touch_target"
+                    android:orientation="horizontal"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:id="@+id/tv_extract_expand"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/species_info_expand"
+                        android:textColor="?attr/colorPrimary"
+                        android:textSize="@dimen/text_body" />
+
+                    <ImageView
+                        android:id="@+id/iv_extract_chevron"
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:contentDescription="@null"
+                        android:src="@drawable/ic_chevron_down"
+                        app:tint="?attr/colorPrimary" />
+                </LinearLayout>
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_wikipedia"
@@ -467,6 +504,64 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_xs"
                     android:orientation="vertical"
+                    android:visibility="gone" />
+
+                <!-- The fallback path renders the whole bundled catalogue (17
+                     cards). The Activity keeps the first few visible and hides
+                     the rest behind this toggle so the screen doesn't end in a
+                     wall of guide links. -->
+                <LinearLayout
+                    android:id="@+id/diseases_expand_row"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_xs"
+                    android:background="?attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:gravity="center_vertical"
+                    android:minHeight="@dimen/species_info_touch_target"
+                    android:orientation="horizontal"
+                    android:visibility="gone">
+
+                    <TextView
+                        android:id="@+id/tv_diseases_expand"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:textColor="?attr/colorPrimary"
+                        android:textSize="@dimen/text_body"
+                        tools:text="Show all 17" />
+
+                    <ImageView
+                        android:id="@+id/iv_diseases_chevron"
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
+                        android:contentDescription="@null"
+                        android:src="@drawable/ic_chevron_down"
+                        app:tint="?attr/colorPrimary" />
+                </LinearLayout>
+
+                <!-- Other community scans of this species. Moved here from the
+                     scan result screen so every species surface lives on one
+                     page; hidden when the community has nothing for it. -->
+                <TextView
+                    android:id="@+id/tv_species_community_label"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_lg"
+                    android:fontFamily="sans-serif-medium"
+                    android:text="@string/species_community_others"
+                    android:textColor="@color/on_surface"
+                    android:textSize="@dimen/text_body"
+                    android:visibility="gone" />
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/rv_species_community"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_sm"
+                    android:clipToPadding="false"
+                    android:orientation="horizontal"
                     android:visibility="gone" />
 
                 <!-- baselineAligned=false + match_parent heights keep both

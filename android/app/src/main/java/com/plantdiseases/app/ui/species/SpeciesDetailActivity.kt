@@ -18,6 +18,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
+import androidx.recyclerview.widget.LinearLayoutManager
 import com.bumptech.glide.load.DataSource
 import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.bumptech.glide.load.engine.GlideException
@@ -34,10 +35,14 @@ import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivitySpeciesDetailBinding
 import com.plantdiseases.app.ui.common.CarePlanCardView
 import com.plantdiseases.app.ui.guide.GuideDetailActivity
+import com.plantdiseases.app.ui.result.CommunityOpinionSheet
+import com.plantdiseases.app.ui.result.SimilarScansAdapter
 import com.plantdiseases.app.ui.widget.WorldMapView
 import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.DiseaseCatalog
+import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.TelemetryIds
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
 import java.util.Locale
@@ -117,6 +122,43 @@ class SpeciesDetailActivity : AppCompatActivity() {
         loadCare()
         loadDiseases()
         loadSpeciesProfile()
+        loadCommunityScans()
+    }
+
+    /**
+     * "Other scans of this species" — moved here from the scan result screen
+     * so every species surface lives on this page. Best-effort: the strip
+     * stays hidden when the community has nothing for this species.
+     */
+    private fun loadCommunityScans() {
+        val pseudoId = TelemetryIds.userPseudoId(this)
+        val adapter = SimilarScansAdapter(
+            displayName = { key -> DiseaseLabels.displayName(key, isRu) ?: key },
+            // Compact preview cells; tapping opens a READ-ONLY view — second
+            // opinions are left to the result screen.
+            preview = true,
+            onClick = { item ->
+                if (item.scanId.isNotBlank() && pseudoId.isNotBlank()) {
+                    lifecycleScope.launch { scanRepository.recordCommunityView(item.scanId, pseudoId) }
+                }
+                CommunityOpinionSheet.showReadOnly(
+                    supportFragmentManager,
+                    item,
+                    DiseaseLabels.displayName(item.disease, isRu) ?: item.disease,
+                )
+            },
+        )
+        binding.rvSpeciesCommunity.layoutManager =
+            LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false)
+        binding.rvSpeciesCommunity.adapter = adapter
+        lifecycleScope.launch {
+            scanRepository.communityScansBySpecies(scientificName, pseudoId).onSuccess { resp ->
+                if (resp.items.isEmpty()) return@onSuccess
+                adapter.submit(resp.items)
+                binding.tvSpeciesCommunityLabel.visibility = View.VISIBLE
+                binding.rvSpeciesCommunity.visibility = View.VISIBLE
+            }
+        }
     }
 
     private fun loadDetail() {
@@ -130,6 +172,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
             if (info?.available == true) {
                 binding.tvSpeciesExtract.text =
                     info.extract ?: getString(R.string.identify_no_info)
+                revealExtractToggleIfClipped()
                 info.imageUrl?.let { url ->
                     Glide.with(this@SpeciesDetailActivity)
                         .load(com.plantdiseases.app.util.ServerConfig.photoUrl(url))
@@ -146,8 +189,42 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 }
             } else {
                 binding.tvSpeciesExtract.text = getString(R.string.identify_no_info)
+                binding.extractExpandRow.visibility = View.GONE
             }
         }
+    }
+
+    /** `lineCount` is only meaningful after layout, hence the post. */
+    private fun revealExtractToggleIfClipped() {
+        binding.tvSpeciesExtract.post {
+            val collapsed = resources.getInteger(R.integer.species_extract_collapsed_lines)
+            val clipped = binding.tvSpeciesExtract.lineCount > collapsed
+            binding.extractExpandRow.visibility = if (clipped) View.VISIBLE else View.GONE
+            if (clipped) {
+                setExtractExpanded(expanded = false)
+                binding.extractExpandRow.setOnClickListener {
+                    setExtractExpanded(binding.tvSpeciesExtract.maxLines == collapsed)
+                }
+            }
+        }
+    }
+
+    private fun setExtractExpanded(expanded: Boolean) {
+        val collapsed = resources.getInteger(R.integer.species_extract_collapsed_lines)
+        binding.tvSpeciesExtract.maxLines = if (expanded) Int.MAX_VALUE else collapsed
+        binding.tvExtractExpand.setText(
+            if (expanded) R.string.species_info_collapse else R.string.species_info_expand,
+        )
+        binding.ivExtractChevron.setImageResource(
+            if (expanded) R.drawable.ic_chevron_up else R.drawable.ic_chevron_down,
+        )
+        binding.extractExpandRow.contentDescription = getString(
+            R.string.species_info_toggle_content_description,
+            binding.tvSpeciesTitle.text?.toString().orEmpty(),
+            getString(
+                if (expanded) R.string.species_info_collapse else R.string.species_info_expand,
+            ),
+        )
     }
 
     /** Care-at-a-glance, on its own coroutine so it isn't gated behind the
@@ -448,6 +525,47 @@ class SpeciesDetailActivity : AppCompatActivity() {
         binding.tvDiseasesTitle.visibility = vis
         binding.tvDiseasesSubtitle.visibility = vis
         binding.listDiseases.visibility = vis
+        applyDiseasesCollapse()
+    }
+
+    /**
+     * The fallback path renders the whole bundled catalogue (17 rows today), so
+     * cap the visible rows and hide the rest behind a toggle rather than ending
+     * the screen in a wall of guide links.
+     */
+    private fun applyDiseasesCollapse() {
+        val total = binding.listDiseases.childCount
+        val cap = resources.getInteger(R.integer.species_problems_collapsed_rows)
+        if (total <= cap) {
+            binding.diseasesExpandRow.visibility = View.GONE
+            return
+        }
+        binding.diseasesExpandRow.visibility = View.VISIBLE
+        setDiseasesExpanded(expanded = false, total = total, cap = cap)
+        binding.diseasesExpandRow.setOnClickListener {
+            val nowCollapsed = binding.listDiseases.getChildAt(cap)?.visibility != View.VISIBLE
+            setDiseasesExpanded(expanded = nowCollapsed, total = total, cap = cap)
+        }
+    }
+
+    private fun setDiseasesExpanded(expanded: Boolean, total: Int, cap: Int) {
+        for (i in cap until total) {
+            binding.listDiseases.getChildAt(i)?.visibility =
+                if (expanded) View.VISIBLE else View.GONE
+        }
+        binding.tvDiseasesExpand.text = if (expanded) {
+            getString(R.string.species_problems_collapse)
+        } else {
+            getString(R.string.species_problems_expand, total)
+        }
+        binding.ivDiseasesChevron.setImageResource(
+            if (expanded) R.drawable.ic_chevron_up else R.drawable.ic_chevron_down,
+        )
+        binding.diseasesExpandRow.contentDescription = getString(
+            R.string.species_info_toggle_content_description,
+            getString(R.string.species_common_problems),
+            binding.tvDiseasesExpand.text?.toString().orEmpty(),
+        )
     }
 
     private fun addDiseaseRow(name: String, note: String?, iconRes: Int, guideId: String?) {
