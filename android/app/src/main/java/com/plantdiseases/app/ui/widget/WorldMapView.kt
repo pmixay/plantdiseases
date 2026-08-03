@@ -7,6 +7,7 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.PointF
 import android.graphics.RectF
+import android.graphics.Region
 import android.graphics.Shader
 import android.graphics.drawable.GradientDrawable
 import android.util.AttributeSet
@@ -27,6 +28,8 @@ import kotlin.math.abs
 import kotlin.math.ln
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.round
+import kotlin.math.roundToInt
 import kotlin.math.tan
 
 /**
@@ -76,6 +79,7 @@ class WorldMapView @JvmOverloads constructor(
             dp(220f).toInt(),
         )
         mapCanvas.setOnCountrySelectedListener(::showSelectedCountry)
+        mapCanvas.setOnSelectionClearedListener(::clearSelectedCountry)
         addView(mapCanvas)
 
         selectionHint.apply {
@@ -127,8 +131,7 @@ class WorldMapView @JvmOverloads constructor(
                 "${it.countryCode?.trim()?.uppercase(Locale.ROOT).orEmpty()}:${normalizeMapName(it.country)}"
             }
             .take(6)
-        selectionHint.isVisible = true
-        selectedChip.isVisible = false
+        clearSelectedCountry()
         mapCanvas.setZones(zones)
         mapCanvas.contentDescription =
             if (zones.isEmpty()) {
@@ -139,6 +142,11 @@ class WorldMapView @JvmOverloads constructor(
                     zones.joinToString { it.country },
                 )
             }
+    }
+
+    private fun clearSelectedCountry() {
+        selectionHint.isVisible = true
+        selectedChip.isVisible = false
     }
 
     private fun showSelectedCountry(name: String, status: ZoneStatus?) {
@@ -228,9 +236,11 @@ class WorldMapView @JvmOverloads constructor(
         private val mapRect = RectF()
         private val clipPath = Path()
         private var projection: WorldMapProjection? = null
+        private var renderedCountries: List<RenderedCountry> = emptyList()
         private var matches: List<RangeMatch> = emptyList()
         private var selectedCode: String? = null
         private var onCountrySelected: ((String, ZoneStatus?) -> Unit)? = null
+        private var onSelectionCleared: (() -> Unit)? = null
 
         init {
             isClickable = true
@@ -239,6 +249,10 @@ class WorldMapView @JvmOverloads constructor(
 
         fun setOnCountrySelectedListener(listener: (String, ZoneStatus?) -> Unit) {
             onCountrySelected = listener
+        }
+
+        fun setOnSelectionClearedListener(listener: () -> Unit) {
+            onSelectionCleared = listener
         }
 
         fun setZones(zones: List<CountryZone>) {
@@ -287,13 +301,14 @@ class WorldMapView @JvmOverloads constructor(
             val save = canvas.save()
             canvas.clipPath(clipPath)
 
-            val activeProjection = projection ?: run {
+            if (projection == null) {
                 canvas.restoreToCount(save)
                 return
             }
             val highlighted = matches.associateBy { it.geometry.code }
-            data.countries.forEach { country ->
-                val path = country.toPath(activeProjection)
+            renderedCountries.forEach { rendered ->
+                val country = rendered.geometry
+                val path = rendered.path
                 val match = highlighted[country.code]
                 countryPaint.color = when (match?.source?.status) {
                     ZoneStatus.GROWS_MORE -> color(R.color.primary)
@@ -339,18 +354,26 @@ class WorldMapView @JvmOverloads constructor(
         override fun onTouchEvent(event: MotionEvent): Boolean {
             if (event.action != MotionEvent.ACTION_UP) return true
             performClick()
-            val point = projection?.unproject(event.x, event.y) ?: return true
-            val activeProjection = projection ?: return true
-            val hitCountry = data.countries
-                .filter { it.contains(point, activeProjection.centerLongitude) }
-                .minByOrNull { it.areaHint }
-            if (hitCountry != null) {
-                selectedCode = hitCountry.code
-                val match = matches.firstOrNull { it.geometry.code == hitCountry.code }
-                val displayName = match?.displayName ?: data.displayName(hitCountry)
+            // Hit-test the exact Paths used by onDraw. Geographic hit-testing
+            // used to wrap every polygon vertex independently, so a far-away
+            // country could stretch across a focused viewport (for example a
+            // USA tap resolving to China on an Americas map).
+            val hit = renderedCountries
+                .asSequence()
+                .filter {
+                    it.hitRegion.contains(event.x.roundToInt(), event.y.roundToInt())
+                }
+                .minByOrNull { it.geometry.areaHint }
+            if (hit != null) {
+                selectedCode = hit.geometry.code
+                val match = matches.firstOrNull { it.geometry.code == hit.geometry.code }
+                val displayName = match?.displayName ?: data.displayName(hit.geometry)
                 onCountrySelected?.invoke(displayName, match?.source?.status)
-                invalidate()
+            } else {
+                selectedCode = null
+                onSelectionCleared?.invoke()
             }
+            invalidate()
             return true
         }
 
@@ -360,15 +383,29 @@ class WorldMapView @JvmOverloads constructor(
         }
 
         private fun rebuildProjection() {
-            if (width <= 0 || height <= 0 || data.countries.isEmpty()) return
+            if (width <= 0 || height <= 0 || data.countries.isEmpty()) {
+                projection = null
+                renderedCountries = emptyList()
+                return
+            }
             val highlightedPoints = matches.flatMap { it.geometry.allPoints }
             val points = highlightedPoints.ifEmpty { data.countries.flatMap { it.allPoints } }
-            projection = WorldMapProjection.fit(
+            val updatedProjection = WorldMapProjection.fit(
                 points = points,
                 width = width.toFloat(),
                 height = height.toFloat(),
                 padding = dp(14f),
             )
+            projection = updatedProjection
+            val viewport = Region(0, 0, width, height)
+            renderedCountries = data.countries.map { country ->
+                val path = country.toPath(updatedProjection)
+                RenderedCountry(
+                    geometry = country,
+                    path = path,
+                    hitRegion = Region().apply { setPath(path, viewport) },
+                )
+            }
         }
 
         private fun CountryGeometry.toPath(projection: WorldMapProjection): Path =
@@ -441,6 +478,12 @@ private data class RangeMatch(
     val geometry: CountryGeometry,
     val source: WorldMapView.CountryZone,
     val displayName: String,
+)
+
+private data class RenderedCountry(
+    val geometry: CountryGeometry,
+    val path: Path,
+    val hitRegion: Region,
 )
 
 /**
@@ -541,21 +584,31 @@ internal fun pointInRing(
     centerLongitude: Double,
 ): Boolean {
     if (ring.size < 3) return false
-    val px = longitudeDelta(point.longitude, centerLongitude)
+    val unwrappedX = ArrayList<Double>(ring.size)
+    var previousX: Double? = null
+    ring.forEach { vertex ->
+        var x = longitudeDelta(vertex.longitude, centerLongitude)
+        previousX?.let { previous -> x = unwrapLongitudeDelta(x, previous) }
+        unwrappedX += x
+        previousX = x
+    }
+    val ringCenterX = (unwrappedX.minOrNull()!! + unwrappedX.maxOrNull()!!) / 2.0
+    val rawPointX = longitudeDelta(point.longitude, centerLongitude)
+    val px = rawPointX + 360.0 * round((ringCenterX - rawPointX) / 360.0)
     val py = point.latitude
     var inside = false
-    var previous = ring.last()
-    ring.forEach { current ->
-        val x1 = longitudeDelta(previous.longitude, centerLongitude)
-        val y1 = previous.latitude
-        val x2 = longitudeDelta(current.longitude, centerLongitude)
-        val y2 = current.latitude
+    var previousIndex = ring.lastIndex
+    ring.indices.forEach { currentIndex ->
+        val x1 = unwrappedX[previousIndex]
+        val y1 = ring[previousIndex].latitude
+        val x2 = unwrappedX[currentIndex]
+        val y2 = ring[currentIndex].latitude
         if (pointOnSegment(px, py, x1, y1, x2, y2)) return true
         if ((y1 > py) != (y2 > py)) {
             val intersectionX = (x2 - x1) * (py - y1) / (y2 - y1) + x1
             if (px < intersectionX) inside = !inside
         }
-        previous = current
+        previousIndex = currentIndex
     }
     return inside
 }
