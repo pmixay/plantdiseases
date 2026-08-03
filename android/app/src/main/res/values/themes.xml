@@ -105,6 +105,11 @@
         <item name="cardBackgroundColor">?attr/colorSurfaceContainer</item>
     </style>
 
+    <style name="App.Animation.DiseaseAppearance" parent="@android:style/Animation.Dialog">
+        <item name="android:windowEnterAnimation">@anim/fade_disease_appearance_in</item>
+        <item name="android:windowExitAnimation">@anim/fade_disease_appearance_out</item>
+    </style>
+
     <!-- Profile stat tiles (the count rows beside the health-rate ring). -->
     <style name="Profile.StatTile" parent="">
         <item name="android:layout_width">match_parent</item>

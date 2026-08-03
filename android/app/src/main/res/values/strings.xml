@@ -326,6 +326,7 @@
 
     <!-- Retry analysis -->
     <string name="retry_analysis">Retry Analysis</string>
+    <string name="inline_confidence_retake">The photo might be blurry. Retake it with the leaf filling most of the frame.</string>
 
     <!-- Pipeline warnings -->
     <string name="warning_very_low_confidence_title">Very low confidence</string>

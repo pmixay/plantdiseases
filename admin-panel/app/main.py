@@ -259,7 +259,7 @@ async def index(session_id: Annotated[str | None, Cookie(alias=COOKIE_NAME)] = N
         return HTMLResponse(
             "<!doctype html><title>PlantDiseases Admin</title>"
             "<main style='font:16px system-ui;max-width:680px;margin:10vh auto;padding:24px'>"
-            "<h1>Launch token required</h1><p>Start this panel with <code>start.sh</code> "
+            "<h1>Launch token required</h1><p>Start this panel with <code>launch.sh</code> "
             "or <code>start.bat</code>, then use the browser window it opens.</p></main>",
             status_code=401,
         )

@@ -319,6 +319,7 @@
 
     <!-- Retry analysis -->
     <string name="retry_analysis">Повторить анализ</string>
+    <string name="inline_confidence_retake">Фото может быть размытым. Переснимите его так, чтобы лист заполнял большую часть кадра.</string>
 
     <!-- Pipeline warnings -->
     <string name="warning_very_low_confidence_title">Очень низкая уверенность</string>

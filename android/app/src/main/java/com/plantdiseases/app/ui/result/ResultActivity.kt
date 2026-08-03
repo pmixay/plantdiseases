@@ -2,11 +2,14 @@ package com.plantdiseases.app.ui.result
 
 import android.animation.ValueAnimator
 import android.content.Context
+import android.content.res.ColorStateList
 import android.content.Intent
+import android.graphics.Color
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.widget.Toast
 import android.os.Bundle
+import android.util.TypedValue
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
@@ -31,7 +34,6 @@ import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.ui.analysis.AnalysisActivity
 import com.plantdiseases.app.ui.common.CoachMarkOverlay
-import com.plantdiseases.app.ui.guide.GuideDetailSheet
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.ModelFamily
@@ -51,6 +53,11 @@ import java.io.File
  * they must be registered before the activity is STARTED.
  */
 class ResultActivity : AppCompatActivity() {
+
+    private enum class ConfidenceAdvisory {
+        LOW,
+        VERY_LOW,
+    }
 
     private lateinit var binding: ActivityResultBinding
 
@@ -316,6 +323,7 @@ class ResultActivity : AppCompatActivity() {
     private fun displayResult(scan: ScanEntity, repository: ScanRepository) {
         val isRu = LocaleHelper.isRussian(this)
         val isNotAPlant = repository.isNotAPlantScan(scan)
+        val warnings = repository.parseWarnings(scan.warnings)
         // Trust the server's final verdict end-to-end (isHealthy/diseaseName),
         // not a re-derived argmax over all_probs — overriding it fought the
         // server's own weak-healthy reroute and flipped the visible verdict.
@@ -324,17 +332,24 @@ class ResultActivity : AppCompatActivity() {
         // read the photo", not a confident "this isn't a plant" — present it as
         // blurry-or-NAP so a genuine blurry plant isn't told it isn't one.
         val isBlurryReject = isNotAPlant &&
-            "blurry_image" in repository.parseWarnings(scan.warnings)
+            "blurry_image" in warnings
         // On-device (Aqua) scan: local-first and deliberately limited. It has no
         // server-issued scan_id, so it never joins the community feed, can't be
         // added to the garden, and has no feedback channel. The offline warning
         // card (DiagnosisContentController) marks it in the result body.
-        val isOfflineAqua = "offline_aqua" in repository.parseWarnings(scan.warnings)
+        val isOfflineAqua = "offline_aqua" in warnings
+        val confidenceAdvisory = confidenceAdvisoryFor(scan, warnings, isNotAPlant)
         val diseaseName = when {
             isBlurryReject -> getString(R.string.blurry_or_not_a_plant_diagnosis_name)
             isNotAPlant -> getString(R.string.not_a_plant_diagnosis_name)
             isRu -> scan.diseaseNameRu
             else -> scan.diseaseName
+        }
+        val resultDescription = when {
+            isBlurryReject -> getString(R.string.blurry_or_not_a_plant_result_body)
+            isNotAPlant -> getString(R.string.not_a_plant_result_body)
+            isRu -> scan.descriptionRu
+            else -> scan.description
         }
 
         binding.apply {
@@ -373,26 +388,27 @@ class ResultActivity : AppCompatActivity() {
 
             tvDiseaseName.text = diseaseName
             tvStickyName.text = diseaseName
+            tvDiseaseName.post { fitDiseaseNameToQuestionButton() }
 
-            // "Read the full guide" — deep-link to the offline doc for this
-            // verdict's class, when one exists (not_a_plant has none).
+            // Both the guide and example image move into the compact question
+            // overlay, keeping the scrollable result focused on care actions.
             val guideId = GuideDataProvider.guideIdForDisease(repository.verdictClassKey(scan) ?: "")
-            if (guideId != null) {
-                btnOpenGuide.visibility = View.VISIBLE
-                btnOpenGuide.setOnClickListener {
-                    GuideDetailSheet.newInstance(guideId).show(supportFragmentManager, "guide_detail")
+            // The example-photo preview is keyed off the DISPLAYED verdict
+            // (verdictClassKey), not the raw argmax, so a rerouted scan opens
+            // the right reference image.
+            val appearanceImageUrl =
+                GuideDataProvider.exampleImageUrlForDisease(repository.verdictClassKey(scan) ?: "")
+            btnDiseaseAppearance.visibility = if (isNotAPlant) View.GONE else View.VISIBLE
+            btnDiseaseAppearance.setOnClickListener {
+                if (supportFragmentManager.findFragmentByTag(DISEASE_APPEARANCE_TAG) == null) {
+                    DiseaseAppearanceDialog.newInstance(
+                        imageUrl = appearanceImageUrl,
+                        diseaseName = diseaseName,
+                        description = resultDescription,
+                        guideId = guideId,
+                    ).show(supportFragmentManager, DISEASE_APPEARANCE_TAG)
                 }
-            } else {
-                btnOpenGuide.visibility = View.GONE
             }
-
-            // Bundled example photo of this diagnosis. Keyed off the DISPLAYED
-            // verdict (verdictClassKey), not the raw argmax, so a rerouted scan
-            // looks up the right class.
-            tvDiseasePhotosLabel.visibility = View.GONE
-            hsvDiseasePhotos.visibility = View.GONE
-            GuideDataProvider.exampleImageUrlForDisease(repository.verdictClassKey(scan) ?: "")
-                ?.let { diagnosisContent.loadDiseasePhotos(it) }
 
             val confidencePercent = (scan.confidence * 100).toInt()
             // For NAP we don't expose a confidence bar — "100% confident this
@@ -416,59 +432,56 @@ class ResultActivity : AppCompatActivity() {
                 }.start()
             }
 
-            when {
+            val statusBackgroundColor = when {
                 isBlurryReject -> {
-                    cardStatus.setCardBackgroundColor(getColor(R.color.neutral_blue_bg))
                     tvStatusLabel.text = getString(R.string.status_blurry_or_not_a_plant)
                     tvStatusLabel.setTextColor(getColor(R.color.neutral_blue))
                     ivStatusIcon.setImageResource(R.drawable.ic_warning)
                     ivStatusIcon.setColorFilter(getColor(R.color.neutral_blue))
+                    R.color.neutral_blue_bg
                 }
                 isNotAPlant -> {
-                    cardStatus.setCardBackgroundColor(getColor(R.color.neutral_blue_bg))
                     tvStatusLabel.text = getString(R.string.status_not_a_plant)
                     tvStatusLabel.setTextColor(getColor(R.color.neutral_blue))
                     ivStatusIcon.setImageResource(R.drawable.ic_warning)
                     ivStatusIcon.setColorFilter(getColor(R.color.neutral_blue))
+                    R.color.neutral_blue_bg
                 }
                 isHealthyVerdict -> {
-                    cardStatus.setCardBackgroundColor(getColor(R.color.healthy_green_bg))
                     tvStatusLabel.text = getString(R.string.status_healthy)
                     tvStatusLabel.setTextColor(getColor(R.color.healthy_green))
                     ivStatusIcon.setImageResource(R.drawable.ic_healthy)
                     ivStatusIcon.clearColorFilter()
+                    R.color.healthy_green_bg
                 }
                 else -> {
-                    cardStatus.setCardBackgroundColor(getColor(R.color.disease_red_bg))
                     tvStatusLabel.text = getString(R.string.status_disease)
                     tvStatusLabel.setTextColor(getColor(R.color.disease_red))
                     ivStatusIcon.setImageResource(R.drawable.ic_disease)
                     ivStatusIcon.clearColorFilter()
+                    R.color.disease_red_bg
                 }
             }
+            bindInlineConfidenceAdvisory(confidenceAdvisory, statusBackgroundColor)
 
             // Description: for NAP we swap in a retry hint and silence the
             // disease-only sections below.
             if (isNotAPlant) {
-                tvDescription.text = getString(
-                    if (isBlurryReject) {
-                        R.string.blurry_or_not_a_plant_result_body
-                    } else {
-                        R.string.not_a_plant_result_body
-                    },
-                )
+                cardDescription.visibility = View.VISIBLE
+                tvDescription.text = resultDescription
                 cardTreatmentPrevention.visibility = View.GONE
                 cardAlternatives.visibility = View.GONE
                 cardSpecies.visibility = View.GONE
                 cardSimilarScans.visibility = View.GONE
                 cardPipelineWarning.visibility = View.GONE
-                cardLowConfidence.visibility = View.GONE
                 // Share / add-to-garden don't make sense for NAP — collapse the
                 // bottom bar to just the "new scan" button.
                 btnShare.visibility = View.GONE
                 btnAddToGarden.visibility = View.GONE
             } else {
-                tvDescription.text = if (isRu) scan.descriptionRu else scan.description
+                // Plant descriptions now live in the question-mark overlay
+                // alongside their visual example and full guide.
+                cardDescription.visibility = View.GONE
                 btnShare.visibility = View.VISIBLE
                 // Offline Aqua scans can't be added to the garden (limited, local).
                 btnAddToGarden.visibility = if (isOfflineAqua) View.GONE else View.VISIBLE
@@ -530,15 +543,6 @@ class ResultActivity : AppCompatActivity() {
                 btnImproveOnline.setOnClickListener { improveOnline(scan) }
             }
 
-            // Low-confidence card carries its own retry button (the action
-            // belongs next to the warning, not in the global bottom bar).
-            if (!isNotAPlant && scan.confidence < 0.5f && !isHealthyVerdict) {
-                cardLowConfidence.visibility = View.VISIBLE
-                btnRetryAnalysis.visibility = View.VISIBLE
-            } else {
-                cardLowConfidence.visibility = View.GONE
-            }
-
             // No-photo fallback CTA: offer the symptom checker whenever the
             // pipeline couldn't get a confident plant read or the diagnosis is
             // low-confidence, so the user still gets guidance.
@@ -550,15 +554,6 @@ class ResultActivity : AppCompatActivity() {
                 )
             }
 
-            btnRetryAnalysis.setOnClickListener {
-                startActivity(
-                    Intent(this@ResultActivity, AnalysisActivity::class.java).apply {
-                        putExtra(AnalysisActivity.EXTRA_IMAGE_PATH, scan.imagePath)
-                    },
-                )
-                finish()
-            }
-
             // Community second opinion on the user's OWN scan — offered on
             // every server-diagnosed plant verdict (not just low-confidence
             // ones; the owner may doubt any result). Hidden for NAP (the
@@ -567,14 +562,102 @@ class ResultActivity : AppCompatActivity() {
             if (!isNotAPlant && !isOfflineAqua) {
                 btnSecondOpinion.visibility = View.VISIBLE
                 community.setupSecondOpinion(scan, isRu)
+                val opinionColor = getColor(
+                    when {
+                        confidenceAdvisory != null -> R.color.warning_amber
+                        isHealthyVerdict -> R.color.healthy_green
+                        else -> R.color.disease_red
+                    },
+                )
+                btnSecondOpinion.setTextColor(opinionColor)
+                btnSecondOpinion.iconTint = ColorStateList.valueOf(opinionColor)
+                val actionTextSizeSp = if (isRu) 11f else 13f
+                btnSecondOpinion.setTextSize(
+                    TypedValue.COMPLEX_UNIT_SP,
+                    actionTextSizeSp,
+                )
             } else {
                 btnSecondOpinion.visibility = View.GONE
+            }
+            statusActionRow.visibility = if (btnSecondOpinion.visibility == View.VISIBLE) {
+                View.VISIBLE
+            } else {
+                View.GONE
             }
 
             animateCardsIn()
 
             // Toolbar overflow menu owns the delete action.
             pendingScanForToolbar = scan
+        }
+    }
+
+    /**
+     * Treat the server warning as the source of truth, while retaining the
+     * old numeric fallbacks for scans saved by older app/server versions.
+     * Very low always wins when both flags are present.
+     */
+    private fun confidenceAdvisoryFor(
+        scan: ScanEntity,
+        warnings: List<String>,
+        isNotAPlant: Boolean,
+    ): ConfidenceAdvisory? {
+        if (isNotAPlant) return null
+        return when {
+            "very_low_confidence" in warnings || scan.confidence < VERY_LOW_CONFIDENCE_FALLBACK ->
+                ConfidenceAdvisory.VERY_LOW
+            "low_confidence" in warnings || scan.confidence < LOW_CONFIDENCE_FALLBACK ->
+                ConfidenceAdvisory.LOW
+            else -> null
+        }
+    }
+
+    /**
+     * Keep the diagnosis label beside the help button on every display width.
+     * The server can return long localized names, so reduce only this label
+     * until its measured text fits the space left by the fixed-size button.
+     */
+    private fun fitDiseaseNameToQuestionButton() {
+        if (binding.btnDiseaseAppearance.visibility != View.VISIBLE) return
+
+        val textView = binding.tvDiseaseName
+        val questionButton = binding.btnDiseaseAppearance
+        val marginStart = (questionButton.layoutParams as? ViewGroup.MarginLayoutParams)
+            ?.marginStart
+            ?: 0
+        val availableWidth = (
+            binding.diseaseStatusTextColumn.width - questionButton.width - marginStart
+        ).coerceAtLeast(1)
+
+        textView.maxWidth = availableWidth
+        var textSizeSp = 18f
+        textView.setTextSize(TypedValue.COMPLEX_UNIT_SP, textSizeSp)
+        while (textSizeSp > 14f && textView.paint.measureText(textView.text.toString()) > availableWidth) {
+            textSizeSp -= 0.5f
+            textView.setTextSize(TypedValue.COMPLEX_UNIT_SP, textSizeSp)
+        }
+    }
+
+    /** Keeps uncertainty and its recovery action in the diagnosis card. */
+    private fun bindInlineConfidenceAdvisory(
+        advisory: ConfidenceAdvisory?,
+        standardBackgroundColor: Int,
+    ) = binding.run {
+        val isVisible = advisory != null
+        statusConfidenceGradient.visibility = if (isVisible) View.VISIBLE else View.GONE
+        inlineConfidenceNotice.visibility = if (isVisible) View.VISIBLE else View.GONE
+        cardStatus.setCardBackgroundColor(
+            if (isVisible) Color.TRANSPARENT else getColor(standardBackgroundColor),
+        )
+
+        if (advisory != null) {
+            tvInlineConfidenceTitle.setText(
+                when (advisory) {
+                    ConfidenceAdvisory.VERY_LOW -> R.string.warning_very_low_confidence_title
+                    ConfidenceAdvisory.LOW -> R.string.warning_low_confidence_title
+                },
+            )
+            tvInlineConfidenceBody.setText(R.string.inline_confidence_retake)
         }
     }
 
@@ -614,7 +697,6 @@ class ResultActivity : AppCompatActivity() {
             binding.cardSimilarScans,
             binding.cardFeedback,
             binding.cardPipelineWarning,
-            binding.cardLowConfidence,
         ).filter { it.visibility == View.VISIBLE }
 
         cards.forEachIndexed { index, view ->
@@ -654,6 +736,9 @@ class ResultActivity : AppCompatActivity() {
 
         private const val KEY_RESULT_TAB = "result_tab"
         private const val RESULT_HINT_DELAY_MS = 500L
+        private const val LOW_CONFIDENCE_FALLBACK = 0.5f
+        private const val VERY_LOW_CONFIDENCE_FALLBACK = 0.4f
+        private const val DISEASE_APPEARANCE_TAG = "disease_appearance"
 
         /** When true, auto-open the community opinions for this scan once it
          *  loads — set from an opinion notification tap and from tapping a

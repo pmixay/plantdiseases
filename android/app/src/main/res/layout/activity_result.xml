@@ -213,12 +213,28 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/space_lg"
+                app:contentPadding="0dp"
                 android:foreground="?attr/selectableItemBackground">
+
+                <!-- The gradient layer is only enabled for uncertain verdicts.
+                     It keeps the confidence advisory visually part of this
+                     card instead of creating a second warning card below it. -->
+                <FrameLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content">
+
+                    <View
+                        android:id="@+id/status_confidence_gradient"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:background="@drawable/bg_status_low_confidence"
+                        android:visibility="gone" />
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical">
+                    android:orientation="vertical"
+                    android:padding="@dimen/space_lg">
 
                     <!-- Status row -->
                     <LinearLayout
@@ -238,6 +254,7 @@
                             android:importantForAccessibility="no" />
 
                         <LinearLayout
+                            android:id="@+id/disease_status_text_column"
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
@@ -248,20 +265,48 @@
                                 android:id="@+id/tv_status_label"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
+                                android:includeFontPadding="false"
                                 android:textSize="@dimen/text_body_sm"
                                 android:fontFamily="sans-serif-medium"
                                 android:textAllCaps="true"
                                 android:letterSpacing="0.05" />
 
-                            <TextView
-                                android:id="@+id/tv_disease_name"
+                            <LinearLayout
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
-                                android:textSize="22sp"
-                                android:textColor="@color/on_surface"
-                                android:fontFamily="sans-serif-medium"
-                                android:accessibilityHeading="true" />
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal">
+
+                                <TextView
+                                    android:id="@+id/tv_disease_name"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:ellipsize="end"
+                                    android:includeFontPadding="false"
+                                    android:letterSpacing="-0.01"
+                                    android:maxLines="1"
+                                    android:maxWidth="240dp"
+                                    android:textSize="18sp"
+                                    android:textColor="@color/on_surface"
+                                    android:fontFamily="sans-serif-medium"
+                                    android:accessibilityHeading="true" />
+
+                                <ImageButton
+                                    android:id="@+id/btn_disease_appearance"
+                                    android:layout_width="16dp"
+                                    android:layout_height="16dp"
+                                    android:layout_marginStart="4dp"
+                                    android:background="@drawable/bg_disease_appearance_button"
+                                    android:contentDescription="@string/example_photos_label"
+                                    android:minWidth="0dp"
+                                    android:minHeight="0dp"
+                                    android:padding="3dp"
+                                    android:src="@drawable/ic_question"
+                                    android:translationY="-1dp"
+                                    android:visibility="gone" />
+
+                            </LinearLayout>
 
                         </LinearLayout>
 
@@ -311,13 +356,95 @@
                         android:textSize="@dimen/text_body_sm"
                         android:textColor="@color/on_surface_secondary" />
 
+                    <!-- One compact, actionable confidence advisory. It is
+                         deliberately in the verdict card so uncertain scans
+                         don't show a duplicated stack of yellow warning cards. -->
+                    <LinearLayout
+                        android:id="@+id/inline_confidence_notice"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_md"
+                        android:orientation="vertical"
+                        android:visibility="gone">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <ImageView
+                                android:layout_width="20dp"
+                                android:layout_height="20dp"
+                                android:src="@drawable/ic_warning"
+                                android:contentDescription="@null"
+                                android:importantForAccessibility="no" />
+
+                            <TextView
+                                android:id="@+id/tv_inline_confidence_title"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="@dimen/space_sm"
+                                android:layout_weight="1"
+                                android:fontFamily="sans-serif-medium"
+                                android:textColor="@color/warning_amber"
+                                android:textSize="@dimen/text_body" />
+
+                        </LinearLayout>
+
+                        <TextView
+                            android:id="@+id/tv_inline_confidence_body"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/space_xs"
+                            android:textColor="@color/on_surface_secondary"
+                            android:textSize="@dimen/text_body_sm"
+                            android:lineSpacingExtra="2dp" />
+
+                    </LinearLayout>
+
+                    <!-- Community action stays at the bottom of the verdict
+                         card, aligned with the card's other content. -->
+                    <LinearLayout
+                        android:id="@+id/status_action_row"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_xs"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:visibility="gone">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_second_opinion"
+                            style="@style/Widget.Material3.Button.TextButton"
+                            android:layout_width="150dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="0dp"
+                            android:ellipsize="end"
+                            android:gravity="start|center_vertical"
+                            android:insetLeft="0dp"
+                            android:insetRight="0dp"
+                            android:maxLines="2"
+                            android:minWidth="0dp"
+                            android:paddingStart="0dp"
+                            android:textSize="@dimen/text_body_sm"
+                            android:visibility="gone"
+                            android:text="@string/result_get_second_opinion"
+                            app:icon="@drawable/ic_community"
+                            app:iconGravity="textStart"
+                            app:iconSize="20dp" />
+
+                    </LinearLayout>
+
                 </LinearLayout>
+
+                </FrameLayout>
 
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- Confidence advisories — surfaced directly under the verdict (not
-                 buried below the fold) so users who don't scroll still see when
-                 the model is unsure. -->
+            <!-- Non-confidence pipeline advisories that need their own context
+                 (for example, an offline scan or blurry image). Confidence
+                 itself is rendered inside the status card above. -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/card_pipeline_warning"
                 android:layout_width="match_parent"
@@ -388,63 +515,6 @@
 
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- Low confidence warning -->
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/card_low_confidence"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/space_md"
-                android:visibility="gone"
-                app:cardCornerRadius="@dimen/radius_lg"
-                app:cardElevation="0dp"
-                app:cardBackgroundColor="@color/warning_amber_bg">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="@dimen/space_lg">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical">
-
-                        <ImageView
-                            android:layout_width="22dp"
-                            android:layout_height="22dp"
-                            android:src="@drawable/ic_warning"
-                            android:contentDescription="@null"
-                            android:importantForAccessibility="no" />
-
-                        <TextView
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:layout_marginStart="@dimen/space_md"
-                            android:text="@string/low_confidence_warning"
-                            android:textSize="@dimen/text_body_sm"
-                            android:textColor="@color/warning_amber" />
-
-                    </LinearLayout>
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_retry_analysis"
-                        style="@style/Widget.Material3.Button.TextButton"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_gravity="end"
-                        android:layout_marginTop="@dimen/space_xs"
-                        android:text="@string/retry_analysis"
-                        android:textColor="@color/warning_amber"
-                        app:icon="@drawable/ic_scan"
-                        app:iconTint="@color/warning_amber" />
-
-                </LinearLayout>
-
-            </com.google.android.material.card.MaterialCardView>
-
             <!-- Description -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/card_description"
@@ -459,35 +529,6 @@
                     android:layout_height="wrap_content"
                     android:orientation="vertical">
 
-                    <!-- Example photos of this diagnosis (Wikipedia); populated
-                         in code, hidden until/unless images load. -->
-                    <TextView
-                        android:id="@+id/tv_disease_photos_label"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginBottom="@dimen/space_sm"
-                        android:text="@string/example_photos_label"
-                        android:textSize="@dimen/text_body_sm"
-                        android:textColor="@color/primary"
-                        android:fontFamily="sans-serif-medium"
-                        android:visibility="gone" />
-
-                    <HorizontalScrollView
-                        android:id="@+id/hsv_disease_photos"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginBottom="@dimen/space_md"
-                        android:scrollbars="none"
-                        android:visibility="gone">
-
-                        <LinearLayout
-                            android:id="@+id/ll_disease_photos_row"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:orientation="horizontal" />
-
-                    </HorizontalScrollView>
-
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
@@ -500,37 +541,6 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_sm"
                         android:textAppearance="@style/TextAppearance.App.Body" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_open_guide"
-                        style="@style/Widget.Material3.Button.TextButton"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/space_xs"
-                        android:layout_marginStart="-8dp"
-                        android:text="@string/result_learn_more"
-                        android:visibility="gone"
-                        app:icon="@drawable/ic_chevron_right"
-                        app:iconGravity="textEnd" />
-
-                    <!-- The ONE second-opinion control: ask, live-request
-                         status ("Opinions (2) · 41 h left", pulsing), or view
-                         replies. Available on EVERY server-diagnosed plant
-                         verdict — the owner may doubt any result, not just
-                         the ones the model itself flags as low-confidence.
-                         Hidden for NAP and offline scans (nothing shareable /
-                         no scan_id). Tap always opens the owner replies sheet,
-                         which carries the "Stop request" action. -->
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_second_opinion"
-                        style="@style/Widget.Material3.Button.TextButton"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="-8dp"
-                        android:visibility="gone"
-                        android:text="@string/result_get_second_opinion"
-                        app:icon="@drawable/ic_community"
-                        app:iconGravity="textStart" />
 
                 </LinearLayout>
 

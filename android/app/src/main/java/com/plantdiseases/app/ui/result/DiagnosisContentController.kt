@@ -6,15 +6,10 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.animation.DecelerateInterpolator
-import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
-import com.bumptech.glide.Glide
-import com.bumptech.glide.load.engine.DiskCacheStrategy
-import com.bumptech.glide.load.resource.bitmap.CenterCrop
-import com.bumptech.glide.load.resource.bitmap.RoundedCorners
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.tabs.TabLayout
 import com.plantdiseases.app.R
@@ -32,9 +27,8 @@ import org.koin.core.component.inject
 /**
  * Renders the static diagnosis body: the pipeline-warning banner, the
  * alternative-diagnoses bars, the treatment/prevention tabs (with the AI plant
- * doctor follow-up), the pet-toxicity card and the bundled example photo of
- * the diagnosed problem. Pure view binding off a [ScanEntity] — no community
- * or feedback state lives here.
+ * doctor follow-up) and the pet-toxicity card. Pure view binding off a
+ * [ScanEntity] — no community or feedback state lives here.
  */
 class DiagnosisContentController(
     private val activity: AppCompatActivity,
@@ -46,7 +40,15 @@ class DiagnosisContentController(
         DiseaseLabels.displayName(key, isRu)
 
     fun bindPipelineWarnings(scan: ScanEntity, repository: ScanRepository) {
-        val warnings = repository.parseWarnings(scan.warnings)
+        // Confidence is part of the status card (and owns its Retry action).
+        // The weak-healthy reroute is also already expressed by the displayed
+        // disease verdict. Keep only pipeline messages that add distinct,
+        // actionable context so the result does not become a warning stack.
+        val warnings = repository.parseWarnings(scan.warnings).filterNot {
+            it == "very_low_confidence" ||
+                it == "low_confidence" ||
+                it == "weak_healthy_rerouted"
+        }
         if (warnings.isEmpty()) {
             binding.cardPipelineWarning.visibility = View.GONE
             return
@@ -61,9 +63,9 @@ class DiagnosisContentController(
             .firstOrNull { it.startsWith("disease_suspected:") }
             ?.substringAfter(":")
 
-        // Priority order: very_low_confidence > blur > not-a-leaf gate >
-        // weak-healthy reroute > uncertain_healthy / disease_suspected (soft
-        // hedge) > low_confidence (mild hedge).
+        // Priority order for non-confidence pipeline warnings: offline > blur
+        // > not-a-leaf gate > uncertain healthy / disease suspected > viral
+        // caveat.
         binding.cardPipelineWarning.visibility = View.VISIBLE
         when {
             // On-device (Aqua) scan — always caveat: the offline model has no
@@ -72,10 +74,6 @@ class DiagnosisContentController(
                 binding.tvPipelineWarningTitle.setText(R.string.warning_offline_scan_title)
                 binding.tvPipelineWarningBody.setText(R.string.warning_offline_scan)
             }
-            "very_low_confidence" in warnings -> {
-                binding.tvPipelineWarningTitle.setText(R.string.warning_very_low_confidence_title)
-                binding.tvPipelineWarningBody.setText(R.string.warning_very_low_confidence)
-            }
             "blurry_image" in warnings -> {
                 binding.tvPipelineWarningTitle.setText(R.string.warning_blurry_image_title)
                 binding.tvPipelineWarningBody.setText(R.string.warning_blurry_image)
@@ -83,10 +81,6 @@ class DiagnosisContentController(
             "nap_ood_gated" in warnings -> {
                 binding.tvPipelineWarningTitle.setText(R.string.warning_nap_ood_gated_title)
                 binding.tvPipelineWarningBody.setText(R.string.warning_nap_ood_gated)
-            }
-            "weak_healthy_rerouted" in warnings -> {
-                binding.tvPipelineWarningTitle.setText(R.string.warning_weak_healthy_rerouted_title)
-                binding.tvPipelineWarningBody.setText(R.string.warning_weak_healthy_rerouted)
             }
             suspectedKey != null -> {
                 val label = displayName(suspectedKey, isRu) ?: suspectedKey
@@ -101,10 +95,6 @@ class DiagnosisContentController(
             "viral_variegation_caveat" in warnings -> {
                 binding.tvPipelineWarningTitle.setText(R.string.warning_viral_variegation_title)
                 binding.tvPipelineWarningBody.setText(R.string.warning_viral_variegation)
-            }
-            "low_confidence" in warnings -> {
-                binding.tvPipelineWarningTitle.setText(R.string.warning_low_confidence_title)
-                binding.tvPipelineWarningBody.setText(R.string.warning_low_confidence)
             }
             else -> {
                 binding.cardPipelineWarning.visibility = View.GONE
@@ -299,29 +289,6 @@ class DiagnosisContentController(
         }
     }
 
-    /** Bundled offline example photo of the diagnosed problem, shown above the
-     *  description. Server-hosted (moved out of the APK), disk-cached so it
-     *  stays available offline after the first view. */
-    fun loadDiseasePhotos(imageUrl: String) {
-        val row = binding.llDiseasePhotosRow
-        row.removeAllViews()
-        val iv = ImageView(activity).apply {
-            layoutParams = LinearLayout.LayoutParams(dpPx(150), dpPx(110))
-                .apply { marginEnd = dpPx(8) }
-            scaleType = ImageView.ScaleType.CENTER_CROP
-        }
-        Glide.with(activity)
-            .load(imageUrl)
-            .diskCacheStrategy(DiskCacheStrategy.ALL)
-            .placeholder(R.drawable.ic_plant_placeholder)
-            .error(R.drawable.ic_plant_placeholder)
-            .transform(CenterCrop(), RoundedCorners(24))
-            .into(iv)
-        row.addView(iv)
-        binding.tvDiseasePhotosLabel.visibility = View.VISIBLE
-        binding.hsvDiseasePhotos.visibility = View.VISIBLE
-    }
-
     private fun buildStepsList(container: LinearLayout, steps: List<String>, bgRes: Int, colorRes: Int) {
         container.removeAllViews()
         val color = activity.getColor(colorRes)
@@ -365,8 +332,6 @@ class DiagnosisContentController(
             container.addView(row)
         }
     }
-
-    private fun dpPx(v: Int): Int = (v * activity.resources.displayMetrics.density).toInt()
 
     private fun Int.dpToPx(): Int = TypedValue.applyDimension(
         TypedValue.COMPLEX_UNIT_DIP,
