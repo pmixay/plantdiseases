@@ -10,9 +10,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -22,10 +25,9 @@ import org.robolectric.shadow.api.Shadow
 import org.robolectric.shadows.ShadowNetworkCapabilities
 
 /**
- * Robolectric coverage of the shared [ConnectivityObserver]: the
- * validated-internet rule the offline notices key off, the seeded snapshot, and
- * the default-network callback lifecycle (including the capability-change path
- * that a plain onAvailable/onLost watcher misses).
+ * Robolectric coverage of the shared [ConnectivityObserver]: Android
+ * capability gating, real server reachability (including a stale validated
+ * VPN), periodic recovery, and the single callback's lifecycle.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
@@ -36,7 +38,7 @@ class ConnectivityObserverTest {
     private val connectivityManager: ConnectivityManager
         get() = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
-    /** The shadow's default active network — always present in a unit test. */
+    /** The shadow's default active network — always present in this test. */
     private val activeNetwork: Network get() = connectivityManager.activeNetwork!!
 
     private fun capabilities(vararg granted: Int): NetworkCapabilities {
@@ -69,6 +71,28 @@ class ConnectivityObserverTest {
             NetworkCapabilities.NET_CAPABILITY_VALIDATED,
         )
 
+    private data class ObserverHarness(
+        val observer: ConnectivityObserver,
+        val scope: CoroutineScope,
+    )
+
+    private fun observer(
+        probe: suspend () -> Boolean = { true },
+        ticks: Flow<Unit> = emptyFlow(),
+    ): ObserverHarness {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        return ObserverHarness(
+            observer = ConnectivityObserver(
+                context = context,
+                reachabilityProbe = probe,
+                scope = scope,
+                probeTicks = ticks,
+                stopTimeoutMs = 0,
+            ),
+            scope = scope,
+        )
+    }
+
     /**
      * Collect [ConnectivityObserver.isOnline] into [into], synchronously on the
      * test thread: with [Dispatchers.Unconfined] every emission — and the
@@ -100,55 +124,91 @@ class ConnectivityObserverTest {
         assertThat(ConnectivityObserver.hasValidatedInternet(online)).isTrue()
     }
 
-    // ── Snapshot ────────────────────────────────────────────────────────
-    @Test
-    fun isOnlineNow_readsTheActiveNetwork() {
-        val observer = ConnectivityObserver(context)
-        setActiveCapabilities(capabilities(NetworkCapabilities.NET_CAPABILITY_INTERNET))
-        assertThat(observer.isOnlineNow()).isFalse()
-
-        setActiveCapabilities(online)
-        assertThat(observer.isOnlineNow()).isTrue()
-    }
-
     // ── The flow ────────────────────────────────────────────────────────
     @Test
-    fun isOnline_seedsCurrentStateThenTracksChanges() {
+    fun isOnline_gatesTheProbeThenTracksNetworkChanges() {
         setActiveCapabilities(capabilities(NetworkCapabilities.NET_CAPABILITY_INTERNET))
-        val observer = ConnectivityObserver(context)
+        var probeCalls = 0
+        val harness = observer(
+            probe = {
+                probeCalls++
+                true
+            },
+        )
 
         val seen = mutableListOf<Boolean>()
-        val job = collectOnline(observer, seen)
+        val job = collectOnline(harness.observer, seen)
         try {
-            // Seeded from the current network, before any callback fires.
+            // An unvalidated network is offline without wasting a server call.
             assertThat(seen).containsExactly(false)
+            assertThat(probeCalls).isEqualTo(0)
 
-            // Validation completing fires onCapabilitiesChanged, NOT onAvailable —
-            // the case that used to leave a banner stuck on screen.
+            // Validation completing now permits the reachability probe.
             fireCapabilitiesChanged(online)
             assertThat(seen).containsExactly(false, true).inOrder()
+            assertThat(probeCalls).isEqualTo(1)
 
-            // Re-delivering the same state is collapsed (distinctUntilChanged).
+            // Re-delivering identical capabilities is collapsed.
             fireCapabilitiesChanged(online)
             assertThat(seen).containsExactly(false, true).inOrder()
+            assertThat(probeCalls).isEqualTo(1)
 
             fireLost()
             assertThat(seen).containsExactly(false, true, false).inOrder()
         } finally {
             job.cancel()
+            harness.scope.cancel()
         }
     }
 
     @Test
-    fun isOnline_unregistersItsCallbackWhenCollectionStops() {
-        val observer = ConnectivityObserver(context)
+    fun validatedVpn_isOfflineWhenTheServerCannotBeReached_thenRecoversOnTick() {
+        // This is the real-device regression: Samsung still reported an
+        // Amnezia VPN as INTERNET+VALIDATED after its underlying network was
+        // gone. Capabilities alone would incorrectly hide every notice.
+        setActiveCapabilities(online)
+        var serverReachable = false
+        val ticks = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+        val harness = observer(
+            probe = { serverReachable },
+            ticks = ticks,
+        )
+
+        val seen = mutableListOf<Boolean>()
+        val job = collectOnline(harness.observer, seen)
+        try {
+            assertThat(seen).containsExactly(false)
+
+            serverReachable = true
+            assertThat(ticks.tryEmit(Unit)).isTrue()
+            assertThat(seen).containsExactly(false, true).inOrder()
+
+            serverReachable = false
+            assertThat(ticks.tryEmit(Unit)).isTrue()
+            assertThat(seen).containsExactly(false, true, false).inOrder()
+        } finally {
+            job.cancel()
+            harness.scope.cancel()
+        }
+    }
+
+    @Test
+    fun isOnline_sharesOneCallbackAndUnregistersWhenCollectionStops() {
+        setActiveCapabilities(online)
+        val harness = observer()
         val before = shadowOf(connectivityManager).networkCallbacks.size
 
-        val job = collectOnline(observer, mutableListOf())
+        val first = collectOnline(harness.observer, mutableListOf())
         assertThat(shadowOf(connectivityManager).networkCallbacks).hasSize(before + 1)
 
-        // Joining waits for the whole flow hierarchy, awaitClose block included.
-        runBlocking { job.cancelAndJoin() }
+        val second = collectOnline(harness.observer, mutableListOf())
+        assertThat(shadowOf(connectivityManager).networkCallbacks).hasSize(before + 1)
+
+        first.cancel()
+        assertThat(shadowOf(connectivityManager).networkCallbacks).hasSize(before + 1)
+
+        second.cancel()
+        harness.scope.cancel()
         assertThat(shadowOf(connectivityManager).networkCallbacks).hasSize(before)
     }
 }

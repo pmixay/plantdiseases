@@ -24,6 +24,7 @@ server/feedback.db
 server/feedback.db-journal
 server/feedback.db-wal
 server/feedback.db-shm
+server/feedback_images/
 # Top-level logs/ is created when main.py is imported from the repo
 # root (LOG_DIR defaults to a relative path).
 /logs/
@@ -49,8 +50,12 @@ server/community_thumbs/
 server/telemetry.db
 server/telemetry.db-wal
 server/telemetry.db-shm
+server/push.db
+server/push.db-wal
+server/push.db-shm
 server/plant_photo_cache/
 server/ai_cache/
+server/admin_backups/
 
 # Hosted Aqua on-device model (provisioned out of band)
 server/static/aqua/aqua_classifier.tflite

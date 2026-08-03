@@ -14,6 +14,7 @@ import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
+import com.plantdiseases.app.ui.species.SpeciesDetailActivity
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.TelemetryIds
@@ -34,6 +35,16 @@ class SpeciesCardController(
     private val scanRepository: ScanRepository by inject()
 
     fun bind(scan: ScanEntity) {
+        // The result-card header already exposes today's bloom status; keep
+        // the expanded chart focused on the month pattern instead of repeating
+        // the same sentence below it.
+        binding.resultFloweringChart.setStatusLineVisible(false)
+        binding.cardResultFlowering.visibility = View.GONE
+        binding.resultFloweringDetails.visibility = View.GONE
+        binding.resultFloweringHeader.setOnClickListener(null)
+        binding.btnSpeciesDetails.visibility = View.GONE
+        binding.btnSpeciesDetails.setOnClickListener(null)
+
         // The card stays hidden when we have neither a scientific nor a common
         // name (PlantNet wasn't configured, or every candidate scored zero).
         val sci = scan.speciesScientific?.takeIf { it.isNotBlank() }
@@ -60,6 +71,15 @@ class SpeciesCardController(
         // Alternates intentionally left empty — we only persist the best match
         // on the ScanEntity.
         binding.speciesAltsLayout.removeAllViews()
+
+        if (sci != null) {
+            binding.btnSpeciesDetails.visibility = View.VISIBLE
+            binding.btnSpeciesDetails.setOnClickListener {
+                val displayName = binding.tvSpeciesBest.text?.toString()?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                SpeciesDetailActivity.start(activity, sci, displayName ?: common)
+            }
+        }
 
         // Enrich with a localized Wikipedia blurb + lead photo, and a strip of
         // other community scans of this species — both need the scientific name.
@@ -125,6 +145,8 @@ class SpeciesCardController(
             }
         }
 
+        loadFloweringProfile(scientific, common, if (isRu) "ru" else "en")
+
         val adapter = SimilarScansAdapter(
             displayName = { key -> DiseaseLabels.displayName(key, isRu) ?: key },
             // Compact preview cells (diagnosis + detected species), and tapping
@@ -157,6 +179,71 @@ class SpeciesCardController(
                 }
             }
         }
+    }
+
+    /**
+     * The result card reuses the same cached species-profile repository path
+     * as SpeciesDetailActivity. It starts collapsed so diagnosis content keeps
+     * priority, while the header still exposes today's derived bloom state.
+     */
+    private fun loadFloweringProfile(scientific: String, common: String?, locale: String) {
+        activity.lifecycleScope.launch {
+            val profile = scanRepository
+                .fetchSpeciesProfile(scientific, common, locale)
+                .getOrNull()
+            val flowering = profile?.flowering
+            if (
+                profile?.available != true ||
+                flowering == null ||
+                !binding.resultFloweringChart.setFlowering(flowering.monthlyIntensity.orEmpty())
+            ) {
+                binding.cardResultFlowering.visibility = View.GONE
+                return@launch
+            }
+
+            val status = binding.resultFloweringChart.statusText() ?: return@launch
+            binding.tvResultFloweringStatus.text = status
+
+            val localized = profile.localizedText.orEmpty()[locale]
+            val note = localized?.indoorNote.orEmpty()
+                .ifBlank { flowering.indoorNote.orEmpty() }
+                .trim()
+            binding.tvResultFloweringIndoorNote.text = note
+            binding.tvResultFloweringIndoorNote.visibility =
+                if (note.isBlank()) View.GONE else View.VISIBLE
+
+            val conditions = localized?.floweringConditions.orEmpty()
+                .ifBlank { profile.floweringConditions.orEmpty() }
+                .trim()
+            binding.tvResultFloweringConditions.text = conditions
+            binding.resultFloweringConditions.visibility =
+                if (conditions.isBlank()) View.GONE else View.VISIBLE
+
+            binding.cardResultFlowering.visibility = View.VISIBLE
+            setFloweringExpanded(expanded = false, status = status)
+            binding.resultFloweringHeader.setOnClickListener {
+                setFloweringExpanded(
+                    expanded = binding.resultFloweringDetails.visibility != View.VISIBLE,
+                    status = status,
+                )
+            }
+        }
+    }
+
+    private fun setFloweringExpanded(expanded: Boolean, status: String) {
+        binding.resultFloweringDetails.visibility = if (expanded) View.VISIBLE else View.GONE
+        binding.ivResultFloweringChevron.setImageResource(
+            if (expanded) R.drawable.ic_chevron_up else R.drawable.ic_chevron_down,
+        )
+        val action = activity.getString(
+            if (expanded) R.string.flowering_collapse else R.string.flowering_expand,
+        )
+        binding.resultFloweringHeader.contentDescription = activity.getString(
+            R.string.flowering_toggle_content_description,
+            activity.getString(R.string.flowering_title),
+            status,
+            action,
+        )
     }
 
     /** Cyrillic presence means PlantNet already returned a Russian common

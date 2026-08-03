@@ -223,8 +223,14 @@ Environment=FORWARDED_ALLOW_IPS=127.0.0.1
 # OpenRouter call.
 Environment=AI_CACHE_DIR=/var/lib/plantdiseases/ai_cache
 Environment=FEEDBACK_DB_PATH=/var/lib/plantdiseases/feedback.db
+Environment=FEEDBACK_IMG_DIR=/var/lib/plantdiseases/feedback_images
 Environment=COMMUNITY_DB_PATH=/var/lib/plantdiseases/community.db
 Environment=COMMUNITY_THUMB_DIR=/var/lib/plantdiseases/community_thumbs
+Environment=LABELING_DB_PATH=/var/lib/plantdiseases/labeling.db
+Environment=LABELING_IMG_DIR=/var/lib/plantdiseases/labeling_images
+Environment=TELEMETRY_DB_PATH=/var/lib/plantdiseases/telemetry.db
+Environment=PUSH_DB_PATH=/var/lib/plantdiseases/push.db
+Environment=PLANT_PHOTO_CACHE_DIR=/var/lib/plantdiseases/plant_photo_cache
 ExecStart=/opt/plantdiseases/.venv/bin/uvicorn main:app \
           --host 127.0.0.1 --port 8000 \
           --forwarded-allow-ips 127.0.0.1 --proxy-headers

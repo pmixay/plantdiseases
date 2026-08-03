@@ -12,10 +12,9 @@ services:
       # NOT auto-downloaded; the server is fail-fast if they're missing.
       - ./models:/app/models
       - ./logs:/app/logs
-      # Persistent data volume — SQLite stores (feedback + community
-      # corpus) and the community thumbnail directory live here.
-      # Without this mount they sit on the container's writable layer
-      # and every restart wipes every user contribution.
+      # Persistent data volume — every SQLite store, user-derived image,
+      # thumbnail and cache is explicitly routed here below. Without this
+      # mount a rebuild from the admin panel would wipe container-local data.
       - ./data:/app/data
     environment:
       # Restrict origins in production (comma separated list of explicit origins).
@@ -28,8 +27,14 @@ services:
       # Pin DB + thumbnail paths into the mounted volume so a
       # ``docker compose down && up`` keeps user data.
       - FEEDBACK_DB_PATH=${FEEDBACK_DB_PATH:-/app/data/feedback.db}
+      - FEEDBACK_IMG_DIR=${FEEDBACK_IMG_DIR:-/app/data/feedback_images}
       - COMMUNITY_DB_PATH=${COMMUNITY_DB_PATH:-/app/data/community.db}
       - COMMUNITY_THUMB_DIR=${COMMUNITY_THUMB_DIR:-/app/data/community_thumbs}
+      - LABELING_DB_PATH=${LABELING_DB_PATH:-/app/data/labeling.db}
+      - LABELING_IMG_DIR=${LABELING_IMG_DIR:-/app/data/labeling_images}
+      - TELEMETRY_DB_PATH=${TELEMETRY_DB_PATH:-/app/data/telemetry.db}
+      - PUSH_DB_PATH=${PUSH_DB_PATH:-/app/data/push.db}
+      - PLANT_PHOTO_CACHE_DIR=${PLANT_PHOTO_CACHE_DIR:-/app/data/plant_photo_cache}
       # Persistent LLM result cache (species "common problems" + care plans).
       # Without this it defaults to /app/ai_cache on the container layer, which
       # a redeploy wipes — so every species goes cold again and the next open

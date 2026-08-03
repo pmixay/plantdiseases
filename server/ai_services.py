@@ -1093,11 +1093,11 @@ def species_common_diseases(
 #
 # Powers the species-detail screen's "flowering" + "native range" sections.
 # Same discipline as ``species_common_diseases`` above: one OpenRouter call
-# per (species, language), strict JSON parsing with a tolerant-but-strict
-# sanitiser, in-memory + disk cache, and a graceful ``available: False`` with
-# no API key or on any failure. Botanical facts (bloom season, native range)
-# don't drift the way "commonly affected by" advice might, so the cache TTL
-# here is longer than the diseases endpoint's 7 days.
+# per species, strict JSON parsing with a tolerant-but-strict sanitiser,
+# in-memory + disk cache, and a graceful ``available: False`` with no API key
+# or on any failure. The canonical bilingual profile contains the same geography and
+# numeric flowering data for every locale, plus both EN/RU copies of the short
+# narrative strings. This prevents a language switch from changing the map.
 
 SPECIES_PROFILE_CACHE_SIZE = get_int("SPECIES_PROFILE_CACHE_SIZE", 256)
 SPECIES_PROFILE_CACHE_TTL_SECONDS = get_int("SPECIES_PROFILE_CACHE_TTL_SECONDS", 30 * 24 * 3600)
@@ -1114,22 +1114,24 @@ _SPECIES_PROFILE_SYSTEM = """You are a horticulture assistant. Given a plant spe
 its flowering pattern and native range for a houseplant-care app.
 
 Return ONLY a JSON object, no prose, of exactly this shape:
-{"flowering": {"monthly_intensity": [0,0,1,2,2,1,0,0,0,0,0,0], "indoor_note": "<one short \
-sentence on how indoor blooming differs from growing it outdoors/in the wild>"}, \
-"flowering_conditions": "<one short sentence: the trigger(s) that make this species bloom, \
-e.g. day length, a dormancy/rest period, a cold snap, drought stress>", "native_range": \
-{"zones": [{"country": "<country or region name>", "status": "grows_more"|"grows_less"}], \
-"summary": "<one short sentence describing the native range>"}}
+{"flowering": {"monthly_intensity": [0,0,1,2,2,1,0,0,0,0,0,0], "indoor_note": {"en": "<short \
+English sentence>", "ru": "<short Russian sentence>"}}, \
+"flowering_conditions": {"en": "<short English sentence>", "ru": "<short Russian sentence>"}, \
+"native_range": {"zones": [{"country_code": "PER", "country": {"en": "Peru", \
+"ru": "Перу"}, "status": "grows_more"}], "summary": {"en": "<short English \
+sentence>", "ru": "<short Russian sentence>"}}}
 
 Rules:
-- "monthly_intensity" has EXACTLY 12 integers, one per calendar month starting with January \
-(Northern Hemisphere growing season), each 0 (no bloom), 1 (some bloom) or 2 (peak bloom). A \
-species that rarely or never flowers as a houseplant should be mostly or all 0s.
-- "zones" lists 3 to 6 countries/regions where the species is native, naturalised or widely \
-cultivated outdoors, each tagged "grows_more" (thrives there — native range or common outdoor \
-cultivation) or "grows_less" (marginal — only in sheltered microclimates, or rare/greenhouse-only).
-- Write "indoor_note", "flowering_conditions" and "summary" in the requested language, each \
-under 30 words.
+- "monthly_intensity" has EXACTLY 12 integers, one per calendar month starting with January, \
+each 0 (no bloom), 1 (some bloom) or 2 (peak bloom). Describe the species' normal flowering \
+season under suitable cultivation. Do NOT zero the calendar merely because flowering indoors is \
+uncommon; explain that limitation in "indoor_note". Use all 0s only for a species that does not \
+flower biologically (for example, a fern).
+- "zones" lists 3 to 6 UNIQUE countries where the species is native, naturalised or widely \
+cultivated outdoors. Use an uppercase ISO-3166 alpha-3 country code, never a region. Tag each \
+zone "grows_more" (thrives there — native range or common outdoor cultivation) or "grows_less" \
+(marginal — only in sheltered microclimates, or rare/greenhouse-only).
+- Write every English and Russian note/summary under 30 words.
 - Base this on the species' known botany; do not invent unverifiable claims.
 - Output the JSON object only, nothing before or after it."""
 
@@ -1172,6 +1174,165 @@ def _sanitize_native_zones(raw: Any) -> list[dict]:
 def _clip_note(raw: Any, max_len: int = 240) -> str:
     text = str(raw or "").strip()
     return text[:max_len].rstrip() if len(text) > max_len else text
+
+
+def _localized_pair(raw: Any, *, max_len: int = 240) -> dict[str, str]:
+    """Return a safe EN/RU pair from the v2 model shape."""
+    if isinstance(raw, dict):
+        en = _clip_note(raw.get("en"), max_len)
+        ru = _clip_note(raw.get("ru"), max_len)
+    else:
+        en = _clip_note(raw, max_len)
+        ru = ""
+    if not en and ru:
+        en = ru
+    if not ru and en:
+        ru = en
+    return {"en": en, "ru": ru}
+
+
+def _sanitize_canonical_zones(raw: Any) -> list[dict]:
+    """Validate and deduplicate v2 country zones by ISO alpha-3 code."""
+    if not isinstance(raw, list):
+        return []
+    out: list[dict] = []
+    seen: set[str] = set()
+    for item in raw[:8]:
+        if not isinstance(item, dict):
+            continue
+        code = str(item.get("country_code") or "").strip().upper()
+        if not re.fullmatch(r"[A-Z]{3}", code) or code in seen:
+            continue
+        status = item.get("status")
+        if status not in _NATIVE_RANGE_STATUSES:
+            continue
+        names = item.get("country")
+        if not isinstance(names, dict):
+            names = {"en": item.get("country_en"), "ru": item.get("country_ru")}
+        pair = _localized_pair(names, max_len=80)
+        if not pair["en"] and not pair["ru"]:
+            continue
+        seen.add(code)
+        out.append({"country_code": code, "country": pair, "status": status})
+        if len(out) == 6:
+            break
+    return out
+
+
+def _parse_species_profile_v2(text: str) -> dict | None:
+    """Parse the locale-independent canonical v2 profile returned by the AI."""
+    raw = (text or "").strip()
+    if not raw:
+        return None
+    match = re.search(r"\{.*\}", raw, re.DOTALL)
+    if not match:
+        return None
+    try:
+        data = json.loads(match.group(0))
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+
+    flowering_raw = data.get("flowering")
+    flowering_raw = flowering_raw if isinstance(flowering_raw, dict) else {}
+    monthly = _sanitize_monthly_intensity(flowering_raw.get("monthly_intensity"))
+    if monthly is None:
+        return None
+    indoor = _localized_pair(flowering_raw.get("indoor_note"))
+    conditions = _localized_pair(data.get("flowering_conditions"))
+    native_raw = data.get("native_range")
+    native_raw = native_raw if isinstance(native_raw, dict) else {}
+    zones = _sanitize_canonical_zones(native_raw.get("zones"))
+    summary = _localized_pair(native_raw.get("summary"))
+    if not conditions["en"] or not conditions["ru"] or not zones:
+        return None
+    if not summary["en"] or not summary["ru"]:
+        return None
+    return {
+        "flowering": {"monthly_intensity": monthly, "indoor_note": indoor},
+        "flowering_conditions": conditions,
+        "native_range": {"zones": zones, "summary": summary},
+    }
+
+
+def _legacy_profile_to_canonical(profile: dict, lang: str) -> dict:
+    """Adapt a v1 model reply for a one-deploy compatibility fallback."""
+    language = "ru" if lang == "ru" else "en"
+    other = "ru" if language == "en" else "en"
+    flowering = profile.get("flowering") or {}
+    conditions = _clip_note(profile.get("flowering_conditions"))
+    native = profile.get("native_range") or {}
+    summary = _clip_note(native.get("summary"))
+    zones = []
+    seen_countries: set[str] = set()
+    for zone in native.get("zones", []):
+        if not isinstance(zone, dict):
+            continue
+        country = _clip_note(zone.get("country"), 80)
+        status = zone.get("status")
+        country_key = re.sub(r"\s+", " ", country.casefold()).strip()
+        if country and country_key not in seen_countries and status in _NATIVE_RANGE_STATUSES:
+            seen_countries.add(country_key)
+            zones.append({
+                "country_code": "",
+                "country": {"en": country, "ru": country},
+                "status": status,
+            })
+    indoor = _clip_note(flowering.get("indoor_note"))
+    return {
+        "flowering": {
+            "monthly_intensity": flowering.get("monthly_intensity", []),
+            "indoor_note": {language: indoor, other: indoor},
+        },
+        "flowering_conditions": {language: conditions, other: conditions},
+        "native_range": {
+            "zones": zones[:6],
+            "summary": {language: summary, other: summary},
+        },
+    }
+
+
+def _profile_response(canonical: dict, species: str, lang: str) -> dict:
+    """Render a canonical profile into the stable locale-facing wire shape."""
+    language = "ru" if lang == "ru" else "en"
+    flowering = canonical["flowering"]
+    conditions = canonical["flowering_conditions"]
+    native = canonical["native_range"]
+    zones = [
+        {
+            "country": zone["country"].get(language) or zone["country"].get("en", ""),
+            "country_code": zone.get("country_code", ""),
+            "status": zone["status"],
+        }
+        for zone in native["zones"]
+    ]
+    return {
+        "available": True,
+        "species": species,
+        "flowering": {
+            "monthly_intensity": flowering["monthly_intensity"],
+            "indoor_note": flowering["indoor_note"].get(language) or flowering["indoor_note"].get("en", ""),
+        },
+        "flowering_conditions": conditions.get(language) or conditions.get("en", ""),
+        "native_range": {
+            "zones": zones,
+            "summary": native["summary"].get(language) or native["summary"].get("en", ""),
+        },
+        "localized_text": {
+            "en": {
+                "indoor_note": flowering["indoor_note"].get("en", ""),
+                "flowering_conditions": conditions.get("en", ""),
+                "native_range_summary": native["summary"].get("en", ""),
+            },
+            "ru": {
+                "indoor_note": flowering["indoor_note"].get("ru", ""),
+                "flowering_conditions": conditions.get("ru", ""),
+                "native_range_summary": native["summary"].get("ru", ""),
+            },
+        },
+        "source": "openrouter",
+    }
 
 
 def _parse_species_profile(text: str) -> dict | None:
@@ -1243,23 +1404,27 @@ def species_profile(
     if not _chat_api_key_present():
         return {"available": False, "source": "no_api_key"}
 
-    cache_key = f"{name.lower()}:{lang}"
+    # Generation v3 is deliberately keyed only by scientific name. It refreshes
+    # older profiles that zeroed the calendar when indoor flowering was rare.
+    # The cached value is
+    # the canonical bilingual profile; locale-specific wire fields are
+    # rendered from it on every request.
+    cache_key = f"v3:{name.lower()}"
     cached = _SPECIES_PROFILE_CACHE.get(cache_key)
     if cached is not None:
-        return {**copy.deepcopy(cached), "cached": True}
+        return {**_profile_response(cached, name, lang), "cached": True}
     # Fall through to the persistent layer before paying for the LLM again —
     # this is what survives a server restart / a fresh app install.
     disk_hit = _SPECIES_PROFILE_DISK.get(cache_key)
     if disk_hit is not None:
         _SPECIES_PROFILE_CACHE.put(cache_key, disk_hit)
-        return {**copy.deepcopy(disk_hit), "cached": True}
+        return {**_profile_response(disk_hit, name, lang), "cached": True}
 
-    lang_word = "Russian" if lang == "ru" else "English"
     common = (common_name or "").strip()
     subject = name + (f" (commonly known as {common})" if common else "")
     user = (
         f"Species: {subject}\n"
-        f"Write the notes and summary in {lang_word}.\n"
+        "Write every note and summary in both English and Russian.\n"
         "Return the JSON object now."
     )
     try:
@@ -1276,18 +1441,17 @@ def species_profile(
         logger.warning("species_profile failed: %s", e)
         return {"available": False, "source": "api_error"}
 
-    profile = _parse_species_profile(text)
-    if profile is None:
+    canonical = _parse_species_profile_v2(text)
+    if canonical is None:
+        # A short-lived compatibility fallback for a provider/model still
+        # returning the pre-v2 shape. New responses always use v2 above.
+        legacy = _parse_species_profile(text)
+        canonical = _legacy_profile_to_canonical(legacy, lang) if legacy else None
+    if canonical is None:
         return {"available": False, "source": "empty"}
-    response = {
-        "available": True,
-        "species": name,
-        **profile,
-        "source": "openrouter",
-    }
-    _SPECIES_PROFILE_CACHE.put(cache_key, response)
-    _SPECIES_PROFILE_DISK.put(cache_key, response)
-    return response
+    _SPECIES_PROFILE_CACHE.put(cache_key, canonical)
+    _SPECIES_PROFILE_DISK.put(cache_key, canonical)
+    return _profile_response(canonical, name, lang)
 
 
 # ── Care plan ───────────────────────────────────────────────────────

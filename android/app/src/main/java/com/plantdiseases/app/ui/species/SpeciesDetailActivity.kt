@@ -2,6 +2,7 @@ package com.plantdiseases.app.ui.species
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Bundle
 import android.view.View
@@ -16,7 +17,6 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
-import android.graphics.drawable.Drawable
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.DataSource
 import com.bumptech.glide.load.engine.DiskCacheStrategy
@@ -34,6 +34,7 @@ import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivitySpeciesDetailBinding
 import com.plantdiseases.app.ui.common.CarePlanCardView
 import com.plantdiseases.app.ui.guide.GuideDetailActivity
+import com.plantdiseases.app.ui.widget.WorldMapView
 import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.DiseaseCatalog
 import com.plantdiseases.app.util.LocaleHelper
@@ -108,13 +109,14 @@ class SpeciesDetailActivity : AppCompatActivity() {
             )
         }
 
-        // Three independent loads run concurrently: the Wikipedia blurb/photo,
-        // the care plan, and the (slow, AI) common-problems list. Each renders
-        // as soon as it's ready, with its own loading state, so one slow call
-        // never blanks the whole screen.
+        // Independent loads run concurrently: the Wikipedia blurb/photo, care
+        // plan, common-problems list and optional botanical profile. Each
+        // renders as soon as it is ready, so one slow call never blanks the
+        // whole screen.
         loadDetail()
         loadCare()
         loadDiseases()
+        loadSpeciesProfile()
     }
 
     private fun loadDetail() {
@@ -135,7 +137,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
                         .diskCacheStrategy(DiskCacheStrategy.ALL)
                         .into(binding.ivSpeciesHero)
                 }
-                renderPhotos(info.images)
+                renderPhotos(info.images.orEmpty())
                 info.pageUrl?.let { url ->
                     binding.btnWikipedia.visibility = View.VISIBLE
                     binding.btnWikipedia.setOnClickListener {
@@ -203,7 +205,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
             binding.tvToxicityBody.setTextColor(getColor(R.color.disease_red))
             binding.tvToxicityBody.text = getString(
                 R.string.toxicity_toxic_body,
-                plan.toxicSpeciesList.joinToString(", ") { localizeToxicSpecies(it) },
+                plan.toxicSpeciesList.orEmpty().joinToString(", ") { localizeToxicSpecies(it) },
             )
         } else {
             card.setCardBackgroundColor(getColor(R.color.healthy_green_bg))
@@ -299,7 +301,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 // reopening the same species.
                 renderDiseases(
                     if (cached.available) {
-                        cached.diseases.filter { it.name.isNotBlank() }
+                        cached.diseases.orEmpty().filter { it.name.orEmpty().isNotBlank() }
                     } else {
                         emptyList()
                     },
@@ -316,12 +318,72 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 .fetchSpeciesDiseases(scientificName, commonName, locale)
                 .getOrNull()
             val aiItems = if (resp?.available == true) {
-                resp.diseases.filter { it.name.isNotBlank() }
+                resp.diseases.orEmpty().filter { it.name.orEmpty().isNotBlank() }
             } else {
                 emptyList()
             }
             binding.pbDiseases.visibility = View.GONE
             renderDiseases(aiItems)
+        }
+    }
+
+    /**
+     * One optional botanical-profile request feeds both the flowering cards
+     * and native-range map. `available=false`, malformed content and transport
+     * errors leave each optional section hidden while the established species
+     * screen continues rendering normally.
+     */
+    private fun loadSpeciesProfile() {
+        binding.cardFlowering.visibility = View.GONE
+        binding.cardFloweringConditions.visibility = View.GONE
+        binding.cardNativeRange.visibility = View.GONE
+        lifecycleScope.launch {
+            val profile = scanRepository
+                .fetchSpeciesProfile(scientificName, commonName, locale)
+                .getOrNull()
+            if (profile?.available != true) return@launch
+
+            val flowering = profile.flowering
+            if (
+                flowering != null &&
+                binding.floweringChart.setFlowering(flowering.monthlyIntensity.orEmpty())
+            ) {
+                val localized = profile.localizedText.orEmpty()[locale]
+                val note = localized?.indoorNote.orEmpty()
+                    .ifBlank { flowering.indoorNote.orEmpty() }
+                    .trim()
+                binding.tvFloweringIndoorNote.text = note
+                binding.tvFloweringIndoorNote.visibility =
+                    if (note.isBlank()) View.GONE else View.VISIBLE
+                binding.cardFlowering.visibility = View.VISIBLE
+
+                val conditions = localized?.floweringConditions.orEmpty()
+                    .ifBlank { profile.floweringConditions.orEmpty() }
+                    .trim()
+                if (conditions.isNotBlank()) {
+                    binding.tvFloweringConditions.text = conditions
+                    binding.cardFloweringConditions.visibility = View.VISIBLE
+                }
+            }
+
+            val nativeRange = profile.nativeRange
+            val zones = nativeRange?.zones.orEmpty().mapNotNull { zone ->
+                WorldMapView.ZoneStatus.fromWireName(zone.status.orEmpty())?.let { status ->
+                    (zone.country.orEmpty().ifBlank { zone.countryCode.orEmpty() })
+                        .takeIf(String::isNotBlank)?.let { country ->
+                        WorldMapView.CountryZone(country, status, zone.countryCode)
+                    }
+                }
+            }
+            if (nativeRange == null || zones.isEmpty()) {
+                return@launch
+            }
+            binding.tvNativeRangeSummary.text = (
+                profile.localizedText.orEmpty()[locale]?.nativeRangeSummary.orEmpty()
+                    .ifBlank { nativeRange.summary.orEmpty() }
+            ).trim()
+            binding.worldMap.setZones(zones)
+            binding.cardNativeRange.visibility = View.VISIBLE
         }
     }
 
@@ -339,7 +401,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 val guide = item.docKey?.let { DiseaseCatalog.guideItemForClass(it) }
                     ?: DiseaseCatalog.guideItemForName(item.name)
                 addDiseaseRow(
-                    name = item.name,
+                    name = item.name.orEmpty(),
                     note = item.note,
                     iconRes = guide?.iconRes ?: R.drawable.ic_disease,
                     guideId = guide?.id,

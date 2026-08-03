@@ -740,6 +740,155 @@
                         android:textColor="@color/primary"
                         android:visibility="gone" />
 
+                    <!-- Optional flowering profile. It stays collapsed on the
+                         result screen so the diagnosis remains primary; the
+                         header exposes today's derived bloom status and opens
+                         the full calendar + bloom trigger on tap. -->
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/card_result_flowering"
+                        style="@style/App.GlassCard"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_md"
+                        android:visibility="gone"
+                        app:cardBackgroundColor="@color/surface"
+                        app:contentPadding="0dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical">
+
+                            <LinearLayout
+                                android:id="@+id/result_flowering_header"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:clickable="true"
+                                android:focusable="true"
+                                android:foreground="?attr/selectableItemBackground"
+                                android:gravity="center_vertical"
+                                android:minHeight="64dp"
+                                android:orientation="horizontal"
+                                android:padding="@dimen/space_md">
+
+                                <ImageView
+                                    android:layout_width="24dp"
+                                    android:layout_height="24dp"
+                                    android:contentDescription="@null"
+                                    android:importantForAccessibility="no"
+                                    android:src="@drawable/ic_garden"
+                                    app:tint="@color/primary" />
+
+                                <LinearLayout
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginStart="@dimen/space_sm"
+                                    android:layout_weight="1"
+                                    android:orientation="vertical">
+
+                                    <TextView
+                                        android:layout_width="match_parent"
+                                        android:layout_height="wrap_content"
+                                        android:fontFamily="sans-serif-medium"
+                                        android:text="@string/flowering_title"
+                                        android:textColor="@color/on_surface"
+                                        android:textSize="@dimen/text_body" />
+
+                                    <TextView
+                                        android:id="@+id/tv_result_flowering_status"
+                                        android:layout_width="match_parent"
+                                        android:layout_height="wrap_content"
+                                        android:layout_marginTop="2dp"
+                                        android:textColor="@color/on_surface_secondary"
+                                        android:textSize="@dimen/text_body_sm" />
+
+                                </LinearLayout>
+
+                                <ImageView
+                                    android:id="@+id/iv_result_flowering_chevron"
+                                    android:layout_width="24dp"
+                                    android:layout_height="24dp"
+                                    android:contentDescription="@null"
+                                    android:importantForAccessibility="no"
+                                    android:src="@drawable/ic_chevron_down"
+                                    app:tint="@color/primary" />
+
+                            </LinearLayout>
+
+                            <LinearLayout
+                                android:id="@+id/result_flowering_details"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:orientation="vertical"
+                                android:paddingStart="@dimen/space_md"
+                                android:paddingEnd="@dimen/space_md"
+                                android:paddingBottom="@dimen/space_lg"
+                                android:visibility="gone">
+
+                                <View
+                                    android:layout_width="match_parent"
+                                    android:layout_height="1dp"
+                                    android:background="@color/divider" />
+
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="@dimen/space_md"
+                                    android:lineSpacingExtra="1dp"
+                                    android:text="@string/flowering_chart_hint"
+                                    android:textColor="@color/on_surface_secondary"
+                                    android:textSize="@dimen/text_body_sm" />
+
+                                <com.plantdiseases.app.ui.widget.FloweringChartView
+                                    android:id="@+id/result_flowering_chart"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="184dp"
+                                    android:layout_marginTop="@dimen/space_sm" />
+
+                                <TextView
+                                    android:id="@+id/tv_result_flowering_indoor_note"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="@dimen/space_sm"
+                                    android:lineSpacingExtra="2dp"
+                                    android:textColor="@color/on_surface_secondary"
+                                    android:textSize="@dimen/text_body_sm"
+                                    android:visibility="gone" />
+
+                                <LinearLayout
+                                    android:id="@+id/result_flowering_conditions"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginTop="@dimen/space_lg"
+                                    android:orientation="vertical"
+                                    android:paddingTop="@dimen/space_md"
+                                    android:visibility="gone">
+
+                                    <TextView
+                                        android:layout_width="match_parent"
+                                        android:layout_height="wrap_content"
+                                        android:fontFamily="sans-serif-medium"
+                                        android:text="@string/flowering_conditions_title"
+                                        android:textColor="@color/primary"
+                                        android:textSize="@dimen/text_body_sm" />
+
+                                    <TextView
+                                        android:id="@+id/tv_result_flowering_conditions"
+                                        android:layout_width="match_parent"
+                                        android:layout_height="wrap_content"
+                                        android:layout_marginTop="@dimen/space_xs"
+                                        android:lineSpacingExtra="2dp"
+                                        android:textColor="@color/on_surface_secondary"
+                                        android:textSize="@dimen/text_body_sm" />
+
+                                </LinearLayout>
+
+                            </LinearLayout>
+
+                        </LinearLayout>
+
+                    </com.google.android.material.card.MaterialCardView>
+
                     <!-- Other community scans of this species. -->
                     <TextView
                         android:id="@+id/tv_species_community_label"
@@ -765,6 +914,21 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/space_sm"
                         android:orientation="vertical" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_species_details"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="-8dp"
+                        android:layout_marginTop="@dimen/space_xs"
+                        android:insetLeft="8dp"
+                        android:insetRight="8dp"
+                        android:text="@string/species_show_details"
+                        android:textAllCaps="false"
+                        android:visibility="gone"
+                        app:icon="@drawable/ic_chevron_right"
+                        app:iconGravity="textEnd" />
 
                 </LinearLayout>
 

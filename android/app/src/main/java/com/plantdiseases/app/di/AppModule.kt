@@ -6,6 +6,7 @@ import com.plantdiseases.app.data.repository.CommunityUploader
 import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.util.ConnectivityObserver
+import com.plantdiseases.app.util.OnboardingHintState
 import org.koin.android.ext.koin.androidContext
 import org.koin.dsl.module
 
@@ -23,6 +24,8 @@ val appModule = module {
     // One connectivity watcher for the whole app — the screens observe it
     // through their OfflineNoticeView instead of each polling ConnectivityManager.
     single { ConnectivityObserver(androidContext()) }
+
+    single { OnboardingHintState(androidContext()) }
 
     single {
         ScanRepository(

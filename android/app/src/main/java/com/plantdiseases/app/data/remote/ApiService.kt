@@ -6,6 +6,7 @@ import com.plantdiseases.app.data.model.CarePlanResponse
 import com.plantdiseases.app.data.model.PopularResponse
 import com.plantdiseases.app.data.model.SpeciesDiseasesResponse
 import com.plantdiseases.app.data.model.SpeciesInfoResponse
+import com.plantdiseases.app.data.model.SpeciesProfileResponse
 import com.plantdiseases.app.util.ServerConfig
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -185,6 +186,23 @@ class PlantApiClient(
             parameter("name", name)
             common?.let { parameter("common", it) }
             parameter("locale", locale)
+        }
+        return if (response.status.isSuccess()) response.body() else null
+    }
+
+    /** Flowering calendar + native range (AI, graceful available=false). */
+    suspend fun speciesProfile(
+        name: String,
+        common: String? = null,
+        locale: String = "en",
+    ): SpeciesProfileResponse? {
+        val response = httpClient.get("api/species-profile") {
+            parameter("name", name)
+            common?.let { parameter("common", it) }
+            parameter("locale", locale)
+            // Distinguishes the canonical bilingual response from any cached
+            // pre-v2 response at an intermediary.
+            parameter("profile_version", 3)
         }
         return if (response.status.isSuccess()) response.body() else null
     }

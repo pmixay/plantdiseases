@@ -165,6 +165,22 @@ Release signing, FCM push, TLS, and the optional integrations — `PLANTNET_API_
 and reports each as "unavailable" — are all covered in
 [`DEPLOYMENT.md`](DEPLOYMENT.md).
 
+### Local admin panel
+
+The loopback-only admin panel connects to a deployment over verified SSH and
+provides anonymous-install data management, safe branch switching/updating,
+server restart controls, health checks, and an explicit SSH console.
+
+```bash
+cd admin-panel
+./start.sh          # Linux / macOS
+```
+
+On Windows, run `admin-panel\start.bat`. Both launchers create their own virtual
+environment and open the secured local UI. See
+[`admin-panel/README.md`](admin-panel/README.md) for its security model,
+database layout, deletion backups, and deployment setup.
+
 ---
 
 ## API
@@ -235,6 +251,7 @@ Response shapes and validation rules are documented inline in
 ```
 plantdiseases/
 ├── android/                Kotlin app (Material 3, CameraX, Room, Ktor, Koin DI)
+├── admin-panel/            Local SSH/Git/data administration UI
 ├── server/                 FastAPI server + ML pipeline
 │   ├── main.py             HTTP layer, middleware, validation
 │   ├── pipeline.py         Two-stage pipeline + blur/OOD gates
