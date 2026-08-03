@@ -5,4 +5,9 @@
 <resources>
     <integer name="gallery_span_count">2</integer>
     <integer name="community_span_count">2</integer>
+
+    <!-- Lines of the Wikipedia description the species-info card shows before
+         it offers "show full description". Kept short because the card is
+         embedded under diagnosis content, not read as an article. -->
+    <integer name="species_info_collapsed_lines">4</integer>
 </resources>
