@@ -98,19 +98,10 @@
     <string name="none_yet">None yet</string>
 
     <!-- Onboarding -->
-    <string name="onboarding_next">Next</string>
-    <string name="onboarding_skip">Skip</string>
-    <string name="onboarding_start">Get Started</string>
-    <string name="onboarding_scan_title">Scan</string>
-    <string name="onboarding_scan_body">Frame a single leaf and PlantDiseases will line up the shot for you — auto-capture fires when the frame turns green.</string>
-    <string name="onboarding_diagnose_title">Diagnose</string>
-    <string name="onboarding_diagnose_body">PlantVision finds the leaf, classifies the disease, and shows the top-3 candidates with confidence bars.</string>
-    <string name="onboarding_care_title">Care</string>
-    <string name="onboarding_care_body">Get bilingual treatment, prevention tips and a watering / light plan tailored to the diagnosis.</string>
 
     <!-- Data-use consent (blocking; Play prominent disclosure) -->
     <string name="consent_title">Your data &amp; our models</string>
-    <string name="consent_body">Photos you scan and the feedback you give are used to train and improve our diagnosis models. Data is anonymized before storage — no account, name, precise location or device identifiers are attached, and photo metadata (EXIF, including GPS) is removed. If something goes wrong, the app may also send an anonymous error report (no photos or location) to help us fix bugs. You can delete your contributions at any time from Profile.</string>
+    <string name="consent_body">Photos you scan and the feedback you give are used to train and improve our diagnosis models. Data is anonymized before storage — no account, name, precise location or device identifiers are attached, and photo metadata (EXIF, including GPS) is removed. If something goes wrong, the app may also send an anonymous error report (no photos or location) to help us fix bugs. Contributions can\'t be withdrawn once sent — they are stored securely and carry no account, name or precise location.</string>
     <string name="consent_agree">Agree</string>
     <string name="consent_privacy_link">Privacy policy</string>
     <string name="consent_privacy_url" translatable="false">https://pdis.arbuz.lol/privacy.html</string>
@@ -164,12 +155,7 @@
     <string name="offline_notice_needs_connection">Offline — this needs a connection</string>
 
     <!-- Server status / diagnostics -->
-    <string name="server_online">Online</string>
-    <string name="server_offline">Offline</string>
-    <string name="server_checking">Checking…</string>
     <string name="save">Save</string>
-    <string name="diagnostics_refresh">Refresh</string>
-    <string name="diagnostics_value_dash">—</string>
 
     <!-- Server error states (analysis screen) -->
     <string name="server_starting">Server is warming up</string>
@@ -189,7 +175,6 @@
     <string name="example_photos_label">What it looks like</string>
     <!-- Similar scans (community corpus) -->
     <string name="similar_scans_title">Similar scans in your country</string>
-    <string name="similar_scans_subtitle">%1$d recent scans in %2$s</string>
     <!-- Count of genuinely SIMILAR scans rendered in the strip (post
          disease/species filter) - not the regional all-disease total,
          which used to say "9 scans" above a one-item carousel. -->
@@ -198,7 +183,6 @@
         <item quantity="other">%1$d similar scans in %2$s</item>
     </plurals>
     <string name="similar_scans_subtitle_region">Recent community diagnoses in %1$s</string>
-    <string name="similar_scans_subtitle_no_region">No country feed is available yet.</string>
     <string name="similar_scans_empty">No community scans yet — your scan will be the first.</string>
     <!-- Community second opinion -->
     <string name="community_opinion_title">Get a second opinion</string>
@@ -211,7 +195,6 @@
     <string name="community_opinion_disagree">Disagree</string>
     <string name="community_opinion_confidence">Confidence %1$d%%</string>
     <string name="community_opinion_species_fmt">%1$s (%2$d%%)</string>
-    <string name="community_opinion_consensus_prefix">Community so far: %1$s</string>
     <string name="community_opinion_empty">No opinions yet — be the first to weigh in.</string>
     <string name="community_opinion_thanks">Thanks for your opinion!</string>
     <string name="community_opinion_error">Couldn\'t reach the community. Try again.</string>
@@ -221,11 +204,6 @@
     <string name="community_opinion_photo_desc">Shared plant scan</string>
     <string name="gallery_community_badge">💬 %1$d</string>
     <string name="gallery_new_opinions_badge">+%1$d</string>
-    <string name="community_my_opinions_title">My second opinions</string>
-    <string name="community_my_opinions_empty">You haven\'t sent any opinions yet.</string>
-    <string name="community_my_opinions_count_label">diagnoses you\'ve weighed in on</string>
-    <string name="community_my_opinions_breakdown">What you flag most</string>
-    <string name="community_my_opinions_recent">Recent</string>
     <string name="result_get_second_opinion">Get a second opinion</string>
     <string name="result_second_opinion_waiting">Waiting for second opinions…</string>
     <string name="result_second_opinion_view">View second opinions (%1$d)</string>
@@ -260,14 +238,12 @@
     <string name="community_map_near_me">Near me</string>
     <string name="nearby_action_disable">Leave community</string>
     <string name="community_disable_title">Leave community?</string>
-    <string name="community_disable_body">You\'ll stop sharing scans and receiving opinions. Scans you\'ve already shared stay until you delete them from Profile.</string>
+    <string name="community_disable_body">You\'ll stop sharing scans and receiving opinions. Scans you\'ve already shared stay in the community corpus.</string>
     <string name="community_disable_confirm">Leave</string>
     <string name="community_map_zoom_in">Zoom in to see individual scans</string>
     <string name="community_map_truncated">Showing the latest scans — zoom in to see all</string>
     <string name="community_map_empty">No community scans in this area yet</string>
     <string name="community_map_group_title">%1$d scans here</string>
-    <string name="community_map_legend_less">Fewer</string>
-    <string name="community_map_legend_more">More</string>
     <!-- In-context community opt-in -->
     <string name="community_enable_cta">Enable community</string>
     <string name="community_enable_blurb">See scans from growers near you and ask for a second opinion. Enabling shares your scans anonymously and uses your approximate location.</string>
@@ -282,15 +258,7 @@
     <string name="community_vote_percent">%1$d%%</string>
 
     <!-- Community consent + Profile toggle -->
-    <string name="community_toggle_title">Share scans with the community</string>
-    <string name="community_toggle_subtitle">Country + diagnosis + 512px thumbnail. Off keeps everything on-device.</string>
-    <string name="community_features_title">Enable community features</string>
-    <string name="community_features_subtitle">Share scans anonymously, get second opinions, and see scans from growers near you. Off turns the community off entirely and keeps everything on-device.</string>
-    <string name="community_profile_subtitle">Anonymous sharing is enabled after data consent.</string>
     <string name="community_scope_global">worldwide</string>
-    <string name="opinion_notifications_title">Receive community opinions</string>
-    <string name="opinion_notifications_subtitle">Notify me when someone responds to my second-opinion requests.</string>
-    <string name="community_delete_title">Delete my contributions</string>
     <string name="opinion_notif_title">New second opinion</string>
     <string name="opinion_notif_body">Someone weighed in on your %1$s scan</string>
     <string name="opinion_notif_body_named">%1$s weighed in on your %2$s scan</string>
@@ -299,9 +267,6 @@
     <string name="channel_plant_reminders_desc">Care schedule reminders for your plants</string>
     <string name="channel_community_name">Community</string>
     <string name="channel_community_desc">Second opinions on scans you shared</string>
-    <string name="community_delete_body">This removes every scan you\'ve shared so far from the community corpus. Continue?</string>
-    <string name="community_delete_done">Your community contributions were removed.</string>
-    <string name="community_delete_failed">Couldn\'t reach the server. Try again later.</string>
 
     <!-- Pre-scan tips sheet (replaces auto-capture). -->
     <string name="scan_tips_title">Before you scan</string>
@@ -333,8 +298,6 @@
     <string name="warning_uncertain_healthy">The model is not confident that the plant is healthy. Please check the alternative diagnoses below — they may apply.</string>
     <string name="warning_viral_variegation_title">Could be natural variegation</string>
     <string name="warning_viral_variegation">Colorful or mottled patterns on ornamental foliage (Calathea, Caladium, Coleus, Croton, Aglaonema…) can closely resemble viral mosaic. If this is a variegated cultivar, the pattern may be perfectly normal — compare with a healthy leaf of the same plant and consider a second opinion before treating.</string>
-    <string name="warning_detector_mismatch_title">Detector sees damage</string>
-    <string name="warning_detector_mismatch">The detector spotted leaf damage, but the classifier decided the plant is healthy. Try re-scanning from a closer, better-lit angle.</string>
     <string name="warning_blurry_image_title">Photo is too blurry</string>
     <string name="warning_blurry_image">We couldn\'t read the leaf clearly enough to trust a diagnosis. Hold the phone steady, wait for autofocus to lock, and try again.</string>
     <string name="warning_weak_healthy_rerouted_title">Looks unhealthy</string>
@@ -373,7 +336,6 @@
     <string name="empty_garden_hint">Add your first plant to keep scans, care notes and watering history together.</string>
     <string name="empty_garden_cta_add">Add your first plant</string>
     <string name="empty_garden_secondary_hint">Already scanned a plant? Tap “Add to garden” on a result.</string>
-    <string name="latest_scan_format">Last scan: %s</string>
     <string name="no_scans_attached">No scans attached yet</string>
     <string name="plant_detail_title">Plant detail</string>
     <string name="scans">Scans</string>
@@ -382,7 +344,6 @@
     <string name="timeline">Timeline</string>
     <string name="plant_journal">Journal</string>
     <string name="add_note">Note</string>
-    <string name="add_photo_log">Photo</string>
     <string name="log_watering">Water</string>
     <string name="log_fertilising">Fertilise</string>
     <string name="log_repotting">Repot</string>
@@ -515,12 +476,7 @@
     <!-- Reminder notification action buttons + plant-detail event log -->
     <string name="reminder_action_done">Done</string>
     <string name="reminder_action_snooze">Snooze 1d</string>
-    <string name="reminder_log_empty">No reminders fired yet.</string>
-    <string name="reminder_log_done">%1$s · done %2$s</string>
-    <string name="reminder_log_pending">%1$s · awaiting action %2$s</string>
-    <string name="reminder_log_snoozed">%1$s · snoozed %2$s</string>
     <string name="reminder_streak_last_watered">Last watered %s</string>
-    <string name="reminder_streak_never_watered">Never watered through reminders yet</string>
     <!-- Photos tab + before/after compare slider -->
     <string name="plant_photos">Photos</string>
     <string name="plant_photos_empty_title">No photos yet</string>
@@ -693,20 +649,15 @@
     <string name="care_plan_detail_npk">Fertiliser NPK</string>
     <string name="care_plan_detail_fertilise_howto">How to feed</string>
     <string name="care_plan_fertilise_howto_value">A balanced liquid plant fertiliser diluted to half strength — e.g. an all-purpose 10-10-10 feed, only during active growth.</string>
-    <string name="care_plan_detail_light_lux">Light (lux)</string>
-    <string name="care_plan_detail_humidity">Humidity band</string>
     <string name="care_plan_detail_temperature">Temperature</string>
     <string name="care_plan_detail_treatment">Treatment checklist</string>
     <string name="care_plan_detail_sanitation">Sanitation</string>
-    <string name="care_plan_detail_isolation">Isolation</string>
     <string name="care_plan_detail_red_flags">Red flags</string>
     <string name="care_plan_detail_checkpoints">Checkpoints</string>
-    <string name="care_plan_detail_season_note">Season note</string>
     <string name="care_plan_lux_range">%1$d – %2$d lx</string>
     <string name="care_plan_humidity_range">%1$d – %2$d %%</string>
     <string name="care_plan_temp_day">Day %1$d – %2$d °C</string>
     <string name="care_plan_temp_night">Night %1$d – %2$d °C</string>
-    <string name="care_plan_checkpoint_line">Day %1$d · %2$s</string>
     <string name="care_plan_isolation_required">Quarantine from other plants until recovered</string>
     <string name="care_plan_detail_setup">Setup</string>
     <string name="care_plan_day_badge">D%1$d</string>
@@ -789,10 +740,6 @@
     <string name="progression_trend_baseline">No history yet</string>
     <string name="progression_history_meta">%1$d scans · latest %2$s</string>
     <string name="progression_loading">Building progression sparkline…</string>
-    <string name="progression_failed">Could not load progression data.</string>
-    <string name="progression_followup_cta">Take a follow-up scan in a week to see how this plant changes — the sparkline above will fill in.</string>
-    <string name="progression_followup_remind">Remind me in 7 days</string>
-    <string name="progression_followup_scheduled">Follow-up reminder scheduled</string>
     <!-- Full-screen photo viewer -->
     <string name="photo_viewer_indicator">%1$d / %2$d</string>
     <!-- Plant detail → Light Meter shortcut -->
@@ -811,8 +758,6 @@
     <string name="model_family_frontier_desc">Largest, most accurate cloud model.</string>
     <string name="model_family_unavailable">Unavailable on this server</string>
     <string name="model_family_offline_badge">Offline</string>
-    <string name="model_family_chip">Model: %1$s</string>
-    <string name="model_family_aqua_not_installed">Offline model isn\'t installed yet — using the cloud model for now.</string>
     <string name="model_family_cd">Choose diagnosis model</string>
 
 
@@ -832,30 +777,14 @@
     <string name="home_tool_symptom">Symptom check</string>
     <string name="home_tool_guide">Guide</string>
     <string name="home_trending">Trending in your country</string>
-    <string name="home_trending_global">Worldwide</string>
-    <string name="home_trending_species_chip">%1$s · %2$d</string>
-    <string name="home_trending_disease_row">%1$s — %2$d scans this week</string>
-    <string name="home_open_community">Open community</string>
-    <string name="home_stats_title">Your stats &amp; tips</string>
-    <string name="home_stats_summary">%1$d scans · %2$d healthy · %3$d plants in garden</string>
     <string name="home_popular_diseases">Popular diseases</string>
-    <string name="home_popular_species">Popular plants</string>
     <string name="home_popular_in_country">Popular in %1$s</string>
     <string name="home_popular_near">Popular near %1$s</string>
     <string name="home_popular_worldwide">Popular worldwide</string>
     <string name="home_popular_percent">%1$d%% of community scans</string>
-    <string name="home_species_popular_tag">Popular</string>
     <string name="home_disease_guide">Guide</string>
     <string name="home_see_all">See all</string>
     <string name="home_guide_tag">Guide</string>
-    <plurals name="home_species_count">
-        <item quantity="one">%d scan</item>
-        <item quantity="other">%d scans</item>
-    </plurals>
-    <plurals name="home_disease_count">
-        <item quantity="one">%d scan this week</item>
-        <item quantity="other">%d scans this week</item>
-    </plurals>
 
     <!-- Guide / disease detail -->
     <string name="guide_detail_scan">Scan a plant for this</string>
@@ -876,7 +805,6 @@
     <string name="identify_unavailable">Species identification isn\'t available on this server right now.</string>
     <string name="identify_no_match">No confident match — try a closer, well-lit photo of a single leaf or flower.</string>
     <string name="identify_failed">Something went wrong. Check your connection and try again.</string>
-    <string name="identify_candidate_row">%1$s (%2$s) · %3$d%%</string>
     <string name="identify_loading">Loading…</string>
     <string name="identify_no_info">No encyclopedia entry found for this species.</string>
     <string name="identify_wikipedia">Read on Wikipedia</string>
@@ -944,7 +872,25 @@
         <item>N</item>
         <item>D</item>
     </string-array>
+    <!-- Substituted into flowering_next_bloom, so these are the prepositional
+         forms in Russian. Use flowering_month_names_nominative to name a month
+         on its own. -->
     <string-array name="flowering_month_names">
+        <item>January</item>
+        <item>February</item>
+        <item>March</item>
+        <item>April</item>
+        <item>May</item>
+        <item>June</item>
+        <item>July</item>
+        <item>August</item>
+        <item>September</item>
+        <item>October</item>
+        <item>November</item>
+        <item>December</item>
+    </string-array>
+    <!-- Standalone month names for the chart's accessibility read-out. -->
+    <string-array name="flowering_month_names_nominative">
         <item>January</item>
         <item>February</item>
         <item>March</item>
@@ -961,12 +907,7 @@
 
     <!-- Stats & Tips -->
     <string name="stats_section">Your stats</string>
-    <string name="stats_total_scans">Plant scans</string>
-    <string name="stats_healthy_share">Healthy results</string>
-    <string name="stats_healthy_share_value">%1$d%% (%2$d)</string>
-    <string name="stats_issues_found">Issues found</string>
     <string name="stats_top_issues">Your most frequent issues</string>
-    <string name="stats_empty">No scans yet — your stats will appear after the first scan.</string>
     <!-- The tip_* cards moved into the Guide handbook (App help tab). -->
 
     <!-- RuStore in-app updates (util/InAppUpdateManager) -->

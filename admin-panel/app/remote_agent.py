@@ -25,7 +25,6 @@ import sys
 import time
 from pathlib import Path
 
-
 if "REQUEST_JSON" not in globals():
     REQUEST_JSON = ""
 
@@ -366,7 +365,7 @@ def _open_database(path, write=False):
             "database_open_failed",
             "Could not open {} database".format(path.name),
             str(exc),
-        )
+        ) from exc
 
 
 def _table_names(connection):
@@ -414,12 +413,12 @@ def _bounded_int(value, default, minimum, maximum, field):
     try:
         parsed = int(value)
     except (TypeError, ValueError):
-        raise AgentError("invalid_request", "{} must be an integer".format(field))
+        raise AgentError("invalid_request", "{} must be an integer".format(field)) from None
     if parsed < minimum or parsed > maximum:
         raise AgentError(
             "invalid_request",
             "{} must be between {} and {}".format(field, minimum, maximum),
-        )
+        ) from None
     return parsed
 
 
@@ -1350,7 +1349,7 @@ def _new_backup_directory(layout, label):
     try:
         root.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
-        raise AgentError("backup_failed", "Could not create admin_backups", str(exc))
+        raise AgentError("backup_failed", "Could not create admin_backups", str(exc)) from exc
     stamp = _datetime.datetime.now(tz=_datetime.timezone.utc).strftime(
         "%Y%m%dT%H%M%S.%fZ"
     )
@@ -1363,7 +1362,7 @@ def _new_backup_directory(layout, label):
     try:
         candidate.mkdir(mode=0o700)
     except OSError as exc:
-        raise AgentError("backup_failed", "Could not create backup snapshot directory", str(exc))
+        raise AgentError("backup_failed", "Could not create backup snapshot directory", str(exc)) from exc
     return candidate
 
 
@@ -1417,7 +1416,7 @@ def _backup_paths(layout, paths, label):
                 "backup_failed",
                 "SQLite backup failed for {}".format(Path(source).name),
                 str(exc),
-            )
+            ) from exc
         files.append(str(destination))
         details.append({
             "source": str(source),
@@ -1565,11 +1564,29 @@ def delete_user(data_dir, user_id, create_backup=True, request=None):
                 )
 
         _commit_all(unique_connections)
-        deleted_per_store = _group_store_counts(deleted_counts)
-        media_result = _remove_media(layout, connections, media_references)
     except sqlite3.Error as exc:
         _rollback_all(unique_connections)
-        raise AgentError("delete_failed", "SQLite deletion transaction failed", str(exc))
+        _close_all(unique_connections)
+        raise AgentError("delete_failed", "SQLite deletion transaction failed", str(exc)) from exc
+
+    # Past the commit boundary the rows are gone. Anything that fails from here
+    # is a post-deletion cleanup problem, and reporting it as a failed
+    # transaction told the operator nothing was deleted while the rows were
+    # already off disk — so these run outside the rollback handler and fold
+    # their errors into the media result instead of aborting.
+    try:
+        deleted_per_store = _group_store_counts(deleted_counts)
+        try:
+            media_result = _remove_media(layout, connections, media_references)
+        except (sqlite3.Error, OSError) as exc:
+            # Same shape _remove_media returns, so callers/UI stay unchanged.
+            media_result = {
+                "deleted": [],
+                "missing": [],
+                "retained_referenced": [],
+                "rejected_unsafe": 0,
+                "errors": [str(exc)],
+            }
     finally:
         _close_all(unique_connections)
 

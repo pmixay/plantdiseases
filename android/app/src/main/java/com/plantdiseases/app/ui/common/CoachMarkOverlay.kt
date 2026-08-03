@@ -5,19 +5,25 @@ import android.animation.ObjectAnimator
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewTreeObserver
 import android.widget.FrameLayout
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.doOnLayout
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
 import com.plantdiseases.app.databinding.ViewCoachMarkBinding
+import kotlin.math.roundToInt
 
 /**
  * A small, dependency-free coach mark anchored to an existing view.
  *
  * It is attached to the activity content dynamically, which lets feature
  * screens use it without reserving permanent space or coupling their layouts
- * to onboarding. The activity lifecycle and Back dispatcher both dismiss it,
- * and the anchor's original scale is restored after the optional pulse.
+ * to onboarding. The host lifecycle owns it: the pulse is paused while the
+ * host is stopped and the overlay is torn down when the host is destroyed.
+ * Back dismisses it too, and the anchor's original scale is restored after the
+ * optional pulse.
  */
 class CoachMarkOverlay private constructor(
     private val host: AppCompatActivity,
@@ -46,6 +52,31 @@ class CoachMarkOverlay private constructor(
 
     private val backCallback = object : androidx.activity.OnBackPressedCallback(true) {
         override fun handleOnBackPressed() = dismiss()
+    }
+
+    /**
+     * The anchor keeps moving after the overlay is laid out — MainActivity's
+     * splash exit slides the bottom bar back up, and a translation never
+     * triggers a layout pass — so the bubble is re-placed before every draw
+     * instead of once.
+     */
+    private val repositionListener = ViewTreeObserver.OnPreDrawListener {
+        positionBubble()
+        true
+    }
+
+    /** Keeps the pulse off the vsync queue while the host is stopped (Home
+     *  key), and takes the overlay down with the host. */
+    private val lifecycleObserver = object : DefaultLifecycleObserver {
+        override fun onStart(owner: LifecycleOwner) {
+            pulseAnimator?.resume()
+        }
+
+        override fun onStop(owner: LifecycleOwner) {
+            pulseAnimator?.pause()
+        }
+
+        override fun onDestroy(owner: LifecycleOwner) = dismiss(immediate = true)
     }
 
     init {
@@ -78,11 +109,12 @@ class CoachMarkOverlay private constructor(
         )
         host.onBackPressedDispatcher.addCallback(host, backCallback)
 
+        binding.root.viewTreeObserver.addOnPreDrawListener(repositionListener)
         binding.root.doOnLayout {
-            positionBubble()
             binding.root.announceForAccessibility("$title. $body")
         }
         if (pulseAnchor) startPulse()
+        host.lifecycle.addObserver(lifecycleObserver)
     }
 
     fun dismiss(immediate: Boolean = false) {
@@ -114,6 +146,12 @@ class CoachMarkOverlay private constructor(
     private fun finishDismiss() {
         if (removalComplete) return
         removalComplete = true
+        // Both before removeView: detaching the root swaps its ViewTreeObserver
+        // for a fresh floating one, which would strand the pre-draw listener in
+        // the window's observer.
+        binding.root.viewTreeObserver.takeIf { it.isAlive }
+            ?.removeOnPreDrawListener(repositionListener)
+        host.lifecycle.removeObserver(lifecycleObserver)
         binding.root.animate().setListener(null)
         (binding.root.parent as? ViewGroup)?.removeView(binding.root)
         onDismissed()
@@ -128,8 +166,13 @@ class CoachMarkOverlay private constructor(
         binding.root.getLocationOnScreen(rootLocation)
         anchor.getLocationOnScreen(anchorLocation)
 
-        val anchorLeft = anchorLocation[0] - rootLocation[0]
-        val anchorTop = anchorLocation[1] - rootLocation[1]
+        // getLocationOnScreen reports the *scaled* corner, which the pulse
+        // moves every frame. Scaling leaves the centre where it is, so measure
+        // from there and place against the anchor's resting bounds.
+        val centerX = anchorLocation[0] - rootLocation[0] + anchor.width * anchor.scaleX / 2f
+        val centerY = anchorLocation[1] - rootLocation[1] + anchor.height * anchor.scaleY / 2f
+        val anchorLeft = (centerX - anchor.width / 2f).roundToInt()
+        val anchorTop = (centerY - anchor.height / 2f).roundToInt()
         val anchorRight = anchorLeft + anchor.width
         val anchorBottom = anchorTop + anchor.height
         val bubbleWidth = binding.coachBubble.width

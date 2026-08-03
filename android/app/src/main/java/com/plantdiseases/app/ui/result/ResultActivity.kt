@@ -623,7 +623,7 @@ class ResultActivity : AppCompatActivity() {
             ?: 0
         val availableWidth = (
             binding.diseaseStatusTextColumn.width - questionButton.width - marginStart
-        ).coerceAtLeast(1)
+            ).coerceAtLeast(1)
 
         textView.maxWidth = availableWidth
         var textSizeSp = 18f

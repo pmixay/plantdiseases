@@ -99,19 +99,10 @@
     <string name="none_yet">Пока нет</string>
 
     <!-- Onboarding -->
-    <string name="onboarding_next">Далее</string>
-    <string name="onboarding_skip">Пропустить</string>
-    <string name="onboarding_start">Начать</string>
-    <string name="onboarding_scan_title">Сканируй</string>
-    <string name="onboarding_scan_body">Поднесите камеру к листу — PlantDiseases подсветит рамку зелёным и автоматически сделает снимок, как только кадр стабилизируется.</string>
-    <string name="onboarding_diagnose_title">Узнай болезнь</string>
-    <string name="onboarding_diagnose_body">PlantVision находит лист, определяет болезнь и показывает топ-3 кандидата с уверенностью модели.</string>
-    <string name="onboarding_care_title">Уход</string>
-    <string name="onboarding_care_body">Получите двуязычные рекомендации по лечению, профилактике и расписание полива и света под ваш диагноз.</string>
 
     <!-- Согласие на использование данных (блокирующее) -->
     <string name="consent_title">Ваши данные и наши модели</string>
-    <string name="consent_body">Снимки, которые вы сканируете, и ваши отзывы используются для обучения и улучшения наших моделей диагностики. Данные анонимизируются перед сохранением — без имени, аккаунта, точной геолокации и идентификаторов устройства; метаданные фото (EXIF, включая GPS) удаляются. Если что-то пойдёт не так, приложение может отправить анонимный отчёт об ошибке (без фото и геолокации), чтобы помочь исправить сбои. Удалить свои данные можно в любой момент в Профиле.</string>
+    <string name="consent_body">Снимки, которые вы сканируете, и ваши отзывы используются для обучения и улучшения наших моделей диагностики. Данные анонимизируются перед сохранением — без имени, аккаунта, точной геолокации и идентификаторов устройства; метаданные фото (EXIF, включая GPS) удаляются. Если что-то пойдёт не так, приложение может отправить анонимный отчёт об ошибке (без фото и геолокации), чтобы помочь исправить сбои. Отправленные данные нельзя отозвать — они хранятся защищённо и не содержат аккаунта, имени и точного местоположения.</string>
     <string name="consent_agree">Принять</string>
     <string name="consent_privacy_link">Политика конфиденциальности</string>
 
@@ -163,12 +154,7 @@
     <string name="offline_notice_needs_connection">Офлайн — нужно подключение к интернету</string>
 
     <!-- Server status / diagnostics -->
-    <string name="server_online">Онлайн</string>
-    <string name="server_offline">Недоступен</string>
-    <string name="server_checking">Проверка…</string>
     <string name="save">Сохранить</string>
-    <string name="diagnostics_refresh">Обновить</string>
-    <string name="diagnostics_value_dash">—</string>
 
     <!-- Server error states (analysis screen) -->
     <string name="server_starting">Сервер запускается</string>
@@ -186,7 +172,6 @@
     <string name="species_community_others">Другие сканы этого вида</string>
     <string name="example_photos_label">Как это выглядит</string>
     <string name="similar_scans_title">Похожие сканы в вашей стране</string>
-    <string name="similar_scans_subtitle">%1$d сканов в %2$s</string>
     <plurals name="similar_scans_subtitle_count">
         <item quantity="one">%1$d похожий скан в %2$s</item>
         <item quantity="few">%1$d похожих скана в %2$s</item>
@@ -194,7 +179,6 @@
         <item quantity="other">%1$d похожих скана в %2$s</item>
     </plurals>
     <string name="similar_scans_subtitle_region">Недавние диагнозы сообщества в %1$s</string>
-    <string name="similar_scans_subtitle_no_region">Лента страны пока недоступна.</string>
     <string name="similar_scans_empty">Сканов сообщества пока нет — ваш будет первым.</string>
     <!-- Community second opinion -->
     <string name="community_opinion_title">Второе мнение</string>
@@ -207,7 +191,6 @@
     <string name="community_opinion_disagree">Не согласен</string>
     <string name="community_opinion_confidence">Точность %1$d%%</string>
     <string name="community_opinion_species_fmt">%1$s (%2$d%%)</string>
-    <string name="community_opinion_consensus_prefix">Мнения сообщества: %1$s</string>
     <string name="community_opinion_empty">Пока нет мнений — будьте первым.</string>
     <string name="community_opinion_thanks">Спасибо за ваше мнение!</string>
     <string name="community_opinion_error">Не удалось связаться с сообществом. Повторите.</string>
@@ -217,11 +200,6 @@
     <string name="community_opinion_photo_desc">Снимок растения сообщества</string>
     <string name="gallery_community_badge">💬 %1$d</string>
     <string name="gallery_new_opinions_badge">+%1$d</string>
-    <string name="community_my_opinions_title">Мои мнения</string>
-    <string name="community_my_opinions_empty">Вы пока не отправляли мнений.</string>
-    <string name="community_my_opinions_count_label">диагнозов вы оценили</string>
-    <string name="community_my_opinions_breakdown">Что вы отмечаете чаще всего</string>
-    <string name="community_my_opinions_recent">Недавние</string>
     <string name="result_get_second_opinion">Получить второе мнение</string>
     <string name="result_second_opinion_waiting">Ждём второго мнения…</string>
     <string name="result_second_opinion_view">Посмотреть мнения (%1$d)</string>
@@ -255,14 +233,12 @@
     <string name="community_map_near_me">Рядом со мной</string>
     <string name="nearby_action_disable">Покинуть сообщество</string>
     <string name="community_disable_title">Покинуть сообщество?</string>
-    <string name="community_disable_body">Вы перестанете делиться сканами и получать мнения. Уже опубликованные сканы останутся, пока вы не удалите их в профиле.</string>
+    <string name="community_disable_body">Вы перестанете делиться сканами и получать мнения. Уже опубликованные сканы остаются в корпусе сообщества.</string>
     <string name="community_disable_confirm">Покинуть</string>
     <string name="community_map_zoom_in">Приблизьте, чтобы увидеть отдельные сканы</string>
     <string name="community_map_truncated">Показаны последние сканы — приблизьте, чтобы увидеть все</string>
     <string name="community_map_empty">В этой области пока нет сканов сообщества</string>
     <string name="community_map_group_title">Сканов здесь: %1$d</string>
-    <string name="community_map_legend_less">Меньше</string>
-    <string name="community_map_legend_more">Больше</string>
     <!-- In-context community opt-in -->
     <string name="community_enable_cta">Включить сообщество</string>
     <string name="community_enable_blurb">Смотрите сканы садоводов рядом с вами и спрашивайте второе мнение. Включение анонимно делится вашими сканами и использует примерное местоположение.</string>
@@ -275,15 +251,7 @@
     <string name="nearby_filter_apply">Применить</string>
     <string name="community_votes_header">Голоса сообщества</string>
     <string name="community_vote_percent">%1$d%%</string>
-    <string name="community_toggle_title">Делиться сканами с сообществом</string>
-    <string name="community_toggle_subtitle">Страна + диагноз + миниатюра 512px. Можно выключить — всё останется на устройстве.</string>
-    <string name="community_features_title">Включить функции сообщества</string>
-    <string name="community_features_subtitle">Анонимно делитесь сканами, получайте вторые мнения и смотрите сканы садоводов рядом. Выключение полностью отключает сообщество — всё останется на устройстве.</string>
-    <string name="community_profile_subtitle">Анонимный обмен включен после согласия на данные.</string>
     <string name="community_scope_global">по всему миру</string>
-    <string name="opinion_notifications_title">Получать мнения сообщества</string>
-    <string name="opinion_notifications_subtitle">Уведомлять, когда кто-то отвечает на мои запросы второго мнения.</string>
-    <string name="community_delete_title">Удалить мои данные из сообщества</string>
     <string name="opinion_notif_title">Новое второе мнение</string>
     <string name="opinion_notif_body">Кто-то оставил мнение о вашем скане: %1$s</string>
     <string name="opinion_notif_body_named">%1$s оставил(а) мнение о вашем скане: %2$s</string>
@@ -292,9 +260,6 @@
     <string name="channel_plant_reminders_desc">Напоминания по графику ухода за вашими растениями</string>
     <string name="channel_community_name">Сообщество</string>
     <string name="channel_community_desc">Вторые мнения о сканах, которыми вы поделились</string>
-    <string name="community_delete_body">Все сообщения сканов будут удалены из общего корпуса. Продолжить?</string>
-    <string name="community_delete_done">Ваши данные удалены из сообщества.</string>
-    <string name="community_delete_failed">Не удалось связаться с сервером. Попробуйте позже.</string>
 
     <!-- Pre-scan tips sheet -->
     <string name="scan_tips_title">Перед сканированием</string>
@@ -326,8 +291,6 @@
     <string name="warning_uncertain_healthy">Модель не уверена, что растение здорово. Проверьте альтернативные диагнозы ниже — один из них может подойти.</string>
     <string name="warning_viral_variegation_title">Возможно, это естественная пёстрость</string>
     <string name="warning_viral_variegation">Яркие или пятнистые узоры на декоративной листве (калатея, каладиум, колеус, кротон, аглаонема…) легко спутать с вирусной мозаикой. Если это пёстрый сорт, рисунок может быть нормой — сравните со здоровым листом того же растения и спросите второе мнение, прежде чем лечить.</string>
-    <string name="warning_detector_mismatch_title">Детектор видит повреждения</string>
-    <string name="warning_detector_mismatch">Детектор нашёл признаки повреждения, но классификатор определил растение как здоровое. Рекомендуем повторить скан с ближнего ракурса при хорошем освещении.</string>
     <string name="warning_blurry_image_title">Снимок размытый</string>
     <string name="warning_blurry_image">Не удалось разглядеть лист, чтобы поставить диагноз. Держите камеру неподвижно, дождитесь автофокуса и попробуйте снова.</string>
     <string name="warning_weak_healthy_rerouted_title">Выглядит нездоровым</string>
@@ -366,7 +329,6 @@
     <string name="empty_garden_hint">Добавьте первое растение, чтобы хранить сканы, заметки и полив вместе.</string>
     <string name="empty_garden_cta_add">Добавить первое растение</string>
     <string name="empty_garden_secondary_hint">Уже сканировали растение? Нажмите «Добавить в сад» на результате.</string>
-    <string name="latest_scan_format">Последний скан: %s</string>
     <string name="no_scans_attached">Сканы ещё не привязаны</string>
     <string name="plant_detail_title">Растение</string>
     <string name="scans">Сканы</string>
@@ -375,7 +337,6 @@
     <string name="timeline">История</string>
     <string name="plant_journal">Журнал</string>
     <string name="add_note">Заметка</string>
-    <string name="add_photo_log">Фото</string>
     <string name="log_watering">Полив</string>
     <string name="log_fertilising">Подкормка</string>
     <string name="log_repotting">Пересадка</string>
@@ -512,12 +473,7 @@
     <!-- Кнопки действий в напоминании + журнал напоминаний на экране растения -->
     <string name="reminder_action_done">Сделал</string>
     <string name="reminder_action_snooze">Отложить на 1 д</string>
-    <string name="reminder_log_empty">Напоминания пока не срабатывали.</string>
-    <string name="reminder_log_done">%1$s · сделано %2$s</string>
-    <string name="reminder_log_pending">%1$s · ждёт действия %2$s</string>
-    <string name="reminder_log_snoozed">%1$s · отложено %2$s</string>
     <string name="reminder_streak_last_watered">Последний полив: %s</string>
-    <string name="reminder_streak_never_watered">Через напоминания пока ни разу не поливали</string>
     <!-- Вкладка «Фото» + слайдер сравнения «до/после» -->
     <string name="plant_photos">Фото</string>
     <string name="plant_photos_empty_title">Пока нет фото</string>
@@ -691,20 +647,15 @@
     <string name="care_plan_detail_npk">NPK удобрения</string>
     <string name="care_plan_detail_fertilise_howto">Чем подкармливать</string>
     <string name="care_plan_fertilise_howto_value">Сбалансированное жидкое удобрение для растений, разведённое вдвое — например, универсальное 10-10-10, только в период активного роста.</string>
-    <string name="care_plan_detail_light_lux">Освещение (люкс)</string>
-    <string name="care_plan_detail_humidity">Влажность</string>
     <string name="care_plan_detail_temperature">Температура</string>
     <string name="care_plan_detail_treatment">Чек-лист лечения</string>
     <string name="care_plan_detail_sanitation">Санитария</string>
-    <string name="care_plan_detail_isolation">Изоляция</string>
     <string name="care_plan_detail_red_flags">Тревожные признаки</string>
     <string name="care_plan_detail_checkpoints">Контрольные точки</string>
-    <string name="care_plan_detail_season_note">Сезонная заметка</string>
     <string name="care_plan_lux_range">%1$d – %2$d лк</string>
     <string name="care_plan_humidity_range">%1$d – %2$d %%</string>
     <string name="care_plan_temp_day">День %1$d – %2$d °C</string>
     <string name="care_plan_temp_night">Ночь %1$d – %2$d °C</string>
-    <string name="care_plan_checkpoint_line">День %1$d · %2$s</string>
     <string name="care_plan_isolation_required">Изолируйте от других растений до выздоровления</string>
     <string name="care_plan_detail_setup">Подготовка</string>
     <string name="care_plan_day_badge">Д%1$d</string>
@@ -780,10 +731,6 @@
     <string name="progression_trend_baseline">Истории ещё нет</string>
     <string name="progression_history_meta">%1$d сканов · последний %2$s</string>
     <string name="progression_loading">Строим график динамики…</string>
-    <string name="progression_failed">Не удалось загрузить данные динамики.</string>
-    <string name="progression_followup_cta">Сделайте повторный скан через неделю — график выше начнёт заполняться, и вы увидите динамику.</string>
-    <string name="progression_followup_remind">Напомнить через 7 дней</string>
-    <string name="progression_followup_scheduled">Напоминание запланировано</string>
     <!-- Полноэкранный просмотр фото -->
     <string name="photo_viewer_indicator">%1$d / %2$d</string>
     <!-- Экран растения → переход в люксметр -->
@@ -802,8 +749,6 @@
     <string name="model_family_frontier_desc">Самая большая и точная облачная модель.</string>
     <string name="model_family_unavailable">Недоступна на этом сервере</string>
     <string name="model_family_offline_badge">Офлайн</string>
-    <string name="model_family_chip">Модель: %1$s</string>
-    <string name="model_family_aqua_not_installed">Офлайн-модель ещё не установлена — пока используется облачная.</string>
     <string name="model_family_cd">Выбрать модель диагностики</string>
 
 
@@ -823,34 +768,14 @@
     <string name="home_tool_symptom">Проверка симптомов</string>
     <string name="home_tool_guide">Справочник</string>
     <string name="home_trending">В вашей стране</string>
-    <string name="home_trending_global">Весь мир</string>
-    <string name="home_trending_species_chip">%1$s · %2$d</string>
-    <string name="home_trending_disease_row">%1$s — %2$d сканов за неделю</string>
-    <string name="home_open_community">Открыть сообщество</string>
-    <string name="home_stats_title">Ваша статистика и советы</string>
-    <string name="home_stats_summary">%1$d сканов · %2$d здоровых · %3$d растений в саду</string>
     <string name="home_popular_diseases">Частые болезни</string>
-    <string name="home_popular_species">Популярные растения</string>
     <string name="home_popular_in_country">Популярно: %1$s</string>
     <string name="home_popular_near">Популярно рядом: %1$s</string>
     <string name="home_popular_worldwide">Популярно во всем мире</string>
     <string name="home_popular_percent">%1$d%% сканов сообщества</string>
-    <string name="home_species_popular_tag">Популярное</string>
     <string name="home_disease_guide">Справочник</string>
     <string name="home_see_all">Все</string>
     <string name="home_guide_tag">Справка</string>
-    <plurals name="home_species_count">
-        <item quantity="one">%d скан</item>
-        <item quantity="few">%d скана</item>
-        <item quantity="many">%d сканов</item>
-        <item quantity="other">%d сканов</item>
-    </plurals>
-    <plurals name="home_disease_count">
-        <item quantity="one">%d скан за неделю</item>
-        <item quantity="few">%d скана за неделю</item>
-        <item quantity="many">%d сканов за неделю</item>
-        <item quantity="other">%d сканов за неделю</item>
-    </plurals>
 
     <!-- Справочник / детали болезни -->
     <string name="guide_detail_scan">Отсканировать растение</string>
@@ -871,7 +796,6 @@
     <string name="identify_unavailable">Определение вида сейчас недоступно на этом сервере.</string>
     <string name="identify_no_match">Уверенного совпадения нет — попробуйте более близкое фото одного листа или цветка при хорошем свете.</string>
     <string name="identify_failed">Что-то пошло не так. Проверьте соединение и повторите.</string>
-    <string name="identify_candidate_row">%1$s (%2$s) · %3$d%%</string>
     <string name="identify_loading">Загрузка…</string>
     <string name="identify_no_info">Энциклопедической статьи об этом виде не найдено.</string>
     <string name="identify_wikipedia">Читать в Википедии</string>
@@ -939,6 +863,8 @@
         <item>Н</item>
         <item>Д</item>
     </string-array>
+    <!-- Предложный падеж — подставляется в flowering_next_bloom. Для месяца
+         самого по себе есть flowering_month_names_nominative. -->
     <string-array name="flowering_month_names">
         <item>январе</item>
         <item>феврале</item>
@@ -953,15 +879,25 @@
         <item>ноябре</item>
         <item>декабре</item>
     </string-array>
+    <!-- Именительный падеж — для озвучивания графика. -->
+    <string-array name="flowering_month_names_nominative">
+        <item>январь</item>
+        <item>февраль</item>
+        <item>март</item>
+        <item>апрель</item>
+        <item>май</item>
+        <item>июнь</item>
+        <item>июль</item>
+        <item>август</item>
+        <item>сентябрь</item>
+        <item>октябрь</item>
+        <item>ноябрь</item>
+        <item>декабрь</item>
+    </string-array>
 
     <!-- Статистика и советы -->
     <string name="stats_section">Ваша статистика</string>
-    <string name="stats_total_scans">Сканов растений</string>
-    <string name="stats_healthy_share">Здоровых результатов</string>
-    <string name="stats_healthy_share_value">%1$d%% (%2$d)</string>
-    <string name="stats_issues_found">Найдено проблем</string>
     <string name="stats_top_issues">Ваши частые проблемы</string>
-    <string name="stats_empty">Пока нет сканов — статистика появится после первого сканирования.</string>
     <!-- Карточки tip_* переехали в справочник (вкладка «Помощь»). -->
 
     <!-- Обновления из RuStore (util/InAppUpdateManager) -->

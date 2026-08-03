@@ -697,16 +697,6 @@ class ScanRepositoryNetworkTest {
     }
 
     @Test
-    fun deleteCommunityContributions_success_onDelete() {
-        server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
-        val result = runBlocking { repo.deleteCommunityContributions("user-9") }
-        assertThat(result.isSuccess).isTrue()
-        val req = server.takeRequest()
-        assertThat(req.method).isEqualTo("DELETE")
-        assertThat(req.path).isEqualTo("/api/community/user/user-9")
-    }
-
-    @Test
     fun recordCommunityView_firesPostWithBody() {
         server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
         runBlocking { repo.recordCommunityView("sc-5", "viewer-1") }

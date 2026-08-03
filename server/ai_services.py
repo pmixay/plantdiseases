@@ -1161,7 +1161,11 @@ def _sanitize_native_zones(raw: Any) -> list[dict]:
     for it in raw[:8]:
         if not isinstance(it, dict):
             continue
-        country = str(it.get("country") or "").strip()
+        raw_country = it.get("country")
+        if not isinstance(raw_country, str):
+            # v2 shape ({"en": .., "ru": ..}) — not a v1 zone; never stringify.
+            continue
+        country = raw_country.strip()
         if not country or len(country) > 80:
             continue
         status = it.get("status")
@@ -1172,7 +1176,14 @@ def _sanitize_native_zones(raw: Any) -> list[dict]:
 
 
 def _clip_note(raw: Any, max_len: int = 240) -> str:
-    text = str(raw or "").strip()
+    # Strings only. A v2 payload carries {"en": ..., "ru": ...} dicts here; a
+    # permissive str() turned those into Python dict reprs ("{'en': '...'}")
+    # which the v1 fallback then served to users and cached for 30 days.
+    # Rejecting non-strings makes such a payload fail BOTH parsers, so the
+    # request degrades to available:false as this module's discipline requires.
+    if not isinstance(raw, str):
+        return ""
+    text = raw.strip()
     return text[:max_len].rstrip() if len(text) > max_len else text
 
 
@@ -1410,15 +1421,22 @@ def species_profile(
     # the canonical bilingual profile; locale-specific wire fields are
     # rendered from it on every request.
     cache_key = f"v3:{name.lower()}"
-    cached = _SPECIES_PROFILE_CACHE.get(cache_key)
-    if cached is not None:
-        return {**_profile_response(cached, name, lang), "cached": True}
+    # A profile built by the legacy adapter is NOT bilingual — that adapter
+    # copies the single language the model replied in into both slots. Storing
+    # it under the shared key would serve e.g. Russian text to every English
+    # client for the whole 30-day TTL, so it gets a locale-scoped key instead.
+    legacy_key = f"v3:{lang}:{name.lower()}"
+    for key in (cache_key, legacy_key):
+        cached = _SPECIES_PROFILE_CACHE.get(key)
+        if cached is not None:
+            return {**_profile_response(cached, name, lang), "cached": True}
     # Fall through to the persistent layer before paying for the LLM again —
     # this is what survives a server restart / a fresh app install.
-    disk_hit = _SPECIES_PROFILE_DISK.get(cache_key)
-    if disk_hit is not None:
-        _SPECIES_PROFILE_CACHE.put(cache_key, disk_hit)
-        return {**_profile_response(disk_hit, name, lang), "cached": True}
+    for key in (cache_key, legacy_key):
+        disk_hit = _SPECIES_PROFILE_DISK.get(key)
+        if disk_hit is not None:
+            _SPECIES_PROFILE_CACHE.put(key, disk_hit)
+            return {**_profile_response(disk_hit, name, lang), "cached": True}
 
     common = (common_name or "").strip()
     subject = name + (f" (commonly known as {common})" if common else "")
@@ -1442,15 +1460,19 @@ def species_profile(
         return {"available": False, "source": "api_error"}
 
     canonical = _parse_species_profile_v2(text)
+    from_legacy = False
     if canonical is None:
         # A short-lived compatibility fallback for a provider/model still
         # returning the pre-v2 shape. New responses always use v2 above.
         legacy = _parse_species_profile(text)
-        canonical = _legacy_profile_to_canonical(legacy, lang) if legacy else None
+        if legacy:
+            canonical = _legacy_profile_to_canonical(legacy, lang)
+            from_legacy = True
     if canonical is None:
         return {"available": False, "source": "empty"}
-    _SPECIES_PROFILE_CACHE.put(cache_key, canonical)
-    _SPECIES_PROFILE_DISK.put(cache_key, canonical)
+    store_key = legacy_key if from_legacy else cache_key
+    _SPECIES_PROFILE_CACHE.put(store_key, canonical)
+    _SPECIES_PROFILE_DISK.put(store_key, canonical)
     return _profile_response(canonical, name, lang)
 
 

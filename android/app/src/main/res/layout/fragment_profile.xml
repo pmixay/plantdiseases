@@ -511,50 +511,6 @@
 
         <!-- Community contributions: delete-my-data. Enabling/disabling
              community now lives inside the community screen itself. -->
-        <com.google.android.material.card.MaterialCardView
-            style="@style/App.GlassCard"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/space_md">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/community_toggle_title"
-                    android:textAppearance="@style/TextAppearance.App.Title"
-                    android:accessibilityHeading="true" />
-
-                <!-- Community sharing is opt-in and managed inside the community
-                     screen; Profile keeps only the delete-my-shared-data control
-                     (your data rights, independent of the on/off state). -->
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_xxs"
-                    android:text="@string/community_profile_subtitle"
-                    android:textSize="@dimen/text_body_sm"
-                    android:textColor="@color/on_surface_secondary"
-                    android:lineSpacingExtra="1dp" />
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btn_delete_community"
-                    style="@style/Widget.Material3.Button.TextButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_md"
-                    android:layout_marginStart="-8dp"
-                    android:text="@string/community_delete_title"
-                    android:textColor="@color/disease_red"
-                    app:icon="@drawable/ic_delete"
-                    app:iconTint="@color/disease_red" />
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
         <!-- Footer: version. The "clear all history" action moved to the
              Gallery tab's top-app-bar basket, next to the scans it wipes.
              The version row doubles as the HIDDEN admin entry: 7 quick taps
