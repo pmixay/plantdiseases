@@ -51,17 +51,10 @@ Small, real, and cheap — worth clearing before the tag or shortly after.
       covered the old path were deleted rather than replaced, because
       `MapCanvasView` is private. Make it internal and test a dispatched
       `MotionEvent`.
-- [ ] **`sklearn` is missing from `requirements-dev.txt`**, so
-      `pytest tests -q` fails at collection on `test_eval_bootstrap.py`, and
-      `test_data_invariants.py::test_eval_bootstrap_exposes_per_class_precision`
-      fails on a clean checkout. Server CI has not run since 2026-07-26, so
-      this is latent rather than red.
 - [ ] **CI does not cover `admin-panel/`.** The `paths-filter` has `android`
-      and `server` only, so its 5 test files and its ruff config never run.
-      Also: the workflow triggers on `main`, `claude/**`, `work/**` — the
-      `codex/**` branches that merged #136 and #137 match none of them, which
-      is how four auto-fixable lint errors reached `main` and kept the Android
-      suite from running for two days.
+      and `server` only, so its 5 test files and its ruff config never run —
+      on the one deliverable that holds production root SSH credentials.
+      (`codex/**` now triggers CI; server CI is green — 510 tests.)
 
 ---
 
@@ -259,13 +252,14 @@ Found by a full doc-vs-code sweep; none of it blocks a release.
       SDK and paramiko. `NOTICE` still lists Retrofit, removed some time ago.
 - [ ] **Both READMEs link to `server/models/classes.json`** as the canonical
       class list. That path is gitignored and absent, so the link 404s.
-- [ ] **`privacy.html` gaps** — it discloses no third-party processors, though
-      `/api/identify` sends photos to PlantNet and `/api/chat`, `/api/care-plan`,
-      `/api/species-diseases` and `/api/species-profile` send text to
-      OpenRouter. It never mentions the stored FCM token (which "delete my
-      data" does not purge) or that error reports carry a hashed client IP.
-      **Treat this as the highest-priority doc item** — it is the canonical
-      data disclosure.
+- [ ] **`privacy.html` — third-party processors are still undisclosed.**
+      `/api/identify` sends photos to PlantNet, and `/api/chat`,
+      `/api/care-plan`, `/api/species-diseases` and `/api/species-profile`
+      send text to OpenRouter. The policy names neither. It also does not
+      mention the stored FCM push token or that error reports carry a hashed
+      client IP. **Highest-priority doc item** — it is the canonical
+      disclosure surface. (The deletion section is now accurate: the app's
+      delete-my-data control was removed and the policy says so plainly.)
 - [ ] **Consolidate repetition** — the "model artefacts are not committed /
       fail-fast" paragraph appears in five places and the optional-integration
       setup in four. `DEPLOYMENT.md` should own both; the rest should link.

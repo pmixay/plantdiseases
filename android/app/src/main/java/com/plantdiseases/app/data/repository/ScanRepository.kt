@@ -25,7 +25,6 @@ import com.plantdiseases.app.data.remote.PlantApiClient
 import com.plantdiseases.app.util.AquaModelManager
 import io.ktor.client.call.body
 import io.ktor.client.request.forms.MultiPartFormDataContent
-import io.ktor.client.request.delete
 import io.ktor.client.request.forms.formData
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
@@ -42,10 +41,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaTypeOrNull
-import okhttp3.MultipartBody
-import okhttp3.RequestBody.Companion.asRequestBody
-import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.File
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
@@ -1405,21 +1400,6 @@ class ScanRepository(
                         response.body<com.plantdiseases.app.data.model.CommunityScansResponse>(),
                     )
                     else -> Result.failure(Exception("by-species failed: ${response.status.value}"))
-                }
-            } catch (e: Exception) {
-                Result.failure(e)
-            }
-        }
-
-    /** Erase every community-shared row for this install. */
-    suspend fun deleteCommunityContributions(userPseudoId: String): Result<Unit> =
-        withContext(Dispatchers.IO) {
-            try {
-                val response = apiClient.httpClient.delete("api/community/user/$userPseudoId")
-                if (response.status.value in 200..299) {
-                    Result.success(Unit)
-                } else {
-                    Result.failure(Exception("Community delete failed: ${response.status.value}"))
                 }
             } catch (e: Exception) {
                 Result.failure(e)

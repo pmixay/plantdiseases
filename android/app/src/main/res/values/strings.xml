@@ -103,7 +103,7 @@
 
     <!-- Data-use consent (blocking; Play prominent disclosure) -->
     <string name="consent_title">Your data &amp; our models</string>
-    <string name="consent_body">Photos you scan and the feedback you give are used to train and improve our diagnosis models. Data is anonymized before storage — no account, name, precise location or device identifiers are attached, and photo metadata (EXIF, including GPS) is removed. If something goes wrong, the app may also send an anonymous error report (no photos or location) to help us fix bugs. You can delete your contributions at any time from Profile.</string>
+    <string name="consent_body">Photos you scan and the feedback you give are used to train and improve our diagnosis models. Data is anonymized before storage — no account, name, precise location or device identifiers are attached, and photo metadata (EXIF, including GPS) is removed. If something goes wrong, the app may also send an anonymous error report (no photos or location) to help us fix bugs. Contributions can\'t be withdrawn once sent — they are stored securely and carry no account, name or precise location.</string>
     <string name="consent_agree">Agree</string>
     <string name="consent_privacy_link">Privacy policy</string>
     <string name="consent_privacy_url" translatable="false">https://pdis.arbuz.lol/privacy.html</string>
@@ -238,7 +238,7 @@
     <string name="community_map_near_me">Near me</string>
     <string name="nearby_action_disable">Leave community</string>
     <string name="community_disable_title">Leave community?</string>
-    <string name="community_disable_body">You\'ll stop sharing scans and receiving opinions. Scans you\'ve already shared stay until you delete them from Profile.</string>
+    <string name="community_disable_body">You\'ll stop sharing scans and receiving opinions. Scans you\'ve already shared stay in the community corpus.</string>
     <string name="community_disable_confirm">Leave</string>
     <string name="community_map_zoom_in">Zoom in to see individual scans</string>
     <string name="community_map_truncated">Showing the latest scans — zoom in to see all</string>
@@ -258,10 +258,7 @@
     <string name="community_vote_percent">%1$d%%</string>
 
     <!-- Community consent + Profile toggle -->
-    <string name="community_toggle_title">Share scans with the community</string>
-    <string name="community_profile_subtitle">Anonymous sharing is enabled after data consent.</string>
     <string name="community_scope_global">worldwide</string>
-    <string name="community_delete_title">Delete my contributions</string>
     <string name="opinion_notif_title">New second opinion</string>
     <string name="opinion_notif_body">Someone weighed in on your %1$s scan</string>
     <string name="opinion_notif_body_named">%1$s weighed in on your %2$s scan</string>
@@ -270,9 +267,6 @@
     <string name="channel_plant_reminders_desc">Care schedule reminders for your plants</string>
     <string name="channel_community_name">Community</string>
     <string name="channel_community_desc">Second opinions on scans you shared</string>
-    <string name="community_delete_body">This removes every scan you\'ve shared so far from the community corpus. Continue?</string>
-    <string name="community_delete_done">Your community contributions were removed.</string>
-    <string name="community_delete_failed">Couldn\'t reach the server. Try again later.</string>
 
     <!-- Pre-scan tips sheet (replaces auto-capture). -->
     <string name="scan_tips_title">Before you scan</string>
