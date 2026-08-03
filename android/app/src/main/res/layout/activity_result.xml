@@ -922,6 +922,8 @@
                         android:layout_height="wrap_content"
                         android:layout_marginStart="-8dp"
                         android:layout_marginTop="@dimen/space_xs"
+                        android:insetLeft="8dp"
+                        android:insetRight="8dp"
                         android:text="@string/species_show_details"
                         android:textAllCaps="false"
                         android:visibility="gone"
