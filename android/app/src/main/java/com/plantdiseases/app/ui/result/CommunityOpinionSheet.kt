@@ -184,29 +184,18 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         loadOpinions()
     }
 
-    /** Confidence + detected species line ("Confidence 87% · Monstera (92%)"),
-     *  hidden when neither is known. */
+    /** Model confidence line ("Confidence 87%"), hidden when unknown. The
+     *  detected species is deliberately absent — the species card right below
+     *  already names it, so repeating it here only crowded the diagnosis. */
     private fun renderMeta() {
         val meta = metaView ?: return
         val confidence = arguments?.getFloat(ARG_CONFIDENCE, -1f) ?: -1f
         val species = arguments?.getString(ARG_SPECIES)?.takeIf { it.isNotBlank() }
-        val speciesScore = arguments?.getFloat(ARG_SPECIES_SCORE, -1f) ?: -1f
-        val parts = mutableListOf<String>()
         if (confidence in 0f..1f) {
-            parts += getString(R.string.community_opinion_confidence, Math.round(confidence * 100))
-        }
-        if (species != null) {
-            parts += if (speciesScore in 0f..1f) {
-                getString(R.string.community_opinion_species_fmt, species, Math.round(speciesScore * 100))
-            } else {
-                species
-            }
-        }
-        if (parts.isEmpty()) {
-            meta.visibility = View.GONE
-        } else {
             meta.visibility = View.VISIBLE
-            meta.text = parts.joinToString(" · ")
+            meta.text = getString(R.string.community_opinion_confidence, Math.round(confidence * 100))
+        } else {
+            meta.visibility = View.GONE
         }
 
         // The community feed carries the PlantNet binomial but no common name,
@@ -617,7 +606,6 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         private const val ARG_DISEASE_KEY = "arg_disease_key"
         private const val ARG_CONFIDENCE = "arg_confidence"
         private const val ARG_SPECIES = "arg_species"
-        private const val ARG_SPECIES_SCORE = "arg_species_score"
         private const val ARG_THUMB = "arg_thumb"
         private const val ARG_VIEW_ONLY = "arg_view_only"
 
@@ -650,7 +638,8 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
         )
 
         /** Open the community scan detail for a feed/carousel item: shows the
-         *  model's diagnosis + confidence + species, then Agree / Disagree. */
+         *  model's diagnosis + confidence, the species card, then Agree /
+         *  Disagree. */
         fun show(
             fm: FragmentManager,
             item: com.plantdiseases.app.data.model.CommunityScanItem,
@@ -663,7 +652,6 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
                     ARG_DISEASE_KEY to item.disease,
                     ARG_CONFIDENCE to (item.confidence ?: -1f),
                     ARG_SPECIES to item.species,
-                    ARG_SPECIES_SCORE to (item.speciesScore ?: -1f),
                     ARG_THUMB to item.thumbPath,
                 )
             }.show(fm, TAG)
@@ -686,7 +674,6 @@ class CommunityOpinionSheet : BottomSheetDialogFragment() {
                     ARG_DISEASE_KEY to item.disease,
                     ARG_CONFIDENCE to (item.confidence ?: -1f),
                     ARG_SPECIES to item.species,
-                    ARG_SPECIES_SCORE to (item.speciesScore ?: -1f),
                     ARG_THUMB to item.thumbPath,
                     ARG_VIEW_ONLY to true,
                 )

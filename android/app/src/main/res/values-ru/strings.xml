@@ -193,7 +193,6 @@
     <string name="community_opinion_agree">Согласен</string>
     <string name="community_opinion_disagree">Не согласен</string>
     <string name="community_opinion_confidence">Точность %1$d%%</string>
-    <string name="community_opinion_species_fmt">%1$s (%2$d%%)</string>
     <string name="community_opinion_empty">Пока нет мнений — будьте первым.</string>
     <string name="community_opinion_thanks">Спасибо за ваше мнение!</string>
     <string name="community_opinion_error">Не удалось связаться с сообществом. Повторите.</string>

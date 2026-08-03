@@ -121,7 +121,8 @@
                         android:ellipsize="end"
                         tools:text="Leaf Spot" />
 
-                    <!-- Model's read: confidence + detected species. -->
+                    <!-- Model's read: confidence only. The species belongs to
+                         the species card below, not to this line. -->
                     <TextView
                         android:id="@+id/tv_opinion_meta"
                         android:layout_width="match_parent"
@@ -130,7 +131,7 @@
                         android:textSize="@dimen/text_body_sm"
                         android:textColor="@color/on_surface_secondary"
                         android:visibility="gone"
-                        tools:text="Confidence 87% · Monstera deliciosa (92%)"
+                        tools:text="Confidence 87%"
                         tools:visibility="visible" />
                 </LinearLayout>
 
