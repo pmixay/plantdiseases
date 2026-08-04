@@ -69,3 +69,7 @@ server/labeling_exports/
 
 # Python bytecode from android/tools helper scripts
 android/tools/__pycache__/
+
+# Claude Code agent worktrees (isolated checkouts for background subagents;
+# never a deliverable, sometimes actively lock-held by a running agent)
+.claude/worktrees/
