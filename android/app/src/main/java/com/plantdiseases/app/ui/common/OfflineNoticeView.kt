@@ -53,8 +53,9 @@ class OfflineNoticeView @JvmOverloads constructor(
         val vertical = resources.getDimensionPixelSize(R.dimen.space_sm)
         setPadding(horizontal, vertical, horizontal, vertical)
         compoundDrawablePadding = resources.getDimensionPixelSize(R.dimen.space_sm)
-        // ic_warning already carries the (day/night aware) amber tint.
-        setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_warning, 0, 0, 0)
+        // ic_offline (wifi glyph + warning badge) already carries the
+        // (day/night aware) amber tint.
+        setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_offline, 0, 0, 0)
         // Appearing/disappearing mid-screen is a state change TalkBack should
         // read out, not something the user has to go hunting for.
         accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
