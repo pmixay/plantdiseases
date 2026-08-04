@@ -100,28 +100,60 @@ OPENROUTER_TOTAL_TIMEOUT = get_float("OPENROUTER_TOTAL_TIMEOUT", 30.0)
 # (let the model use its own default).
 OPENROUTER_REASONING_EFFORT = get_str("OPENROUTER_REASONING_EFFORT", "medium").strip().lower()
 
+# Provider routing. One OpenRouter model id is served by several providers at
+# wildly different prices, and without a pin OpenRouter may pick any of them
+# per request. For openai/gpt-5.6-luna the spread is 10x — Azure lists $1.00/M
+# input against OpenAI's own $0.10/M — so this is not a rounding error.
+# We pin the first-party OpenAI endpoint for three reasons, in this order:
+#   * it is the cheap tier and the one carrying the current promotional
+#     discount, where Azure/Bedrock are 10x/2.2x;
+#   * it is the only endpoint that advertises `structured_outputs` +
+#     `response_format` alongside reasoning — Bedrock's does not, so a request
+#     routed there would lose the JSON schema and fall back to prose parsing;
+#   * pinning one provider keeps that provider's prompt cache warm for free,
+#     which is the same job `session_id` does for the chat doctor.
+# Comma-separated OpenRouter provider slugs; blank lets OpenRouter route
+# freely. "openai/flex" is OpenAI's slower half-price tier — cheaper still, at
+# the cost of higher latency and more 429s (which this module retries).
+OPENROUTER_PROVIDER_ONLY = get_str("OPENROUTER_PROVIDER_ONLY", "openai").strip()
+
 # Prompt caching (https://openrouter.ai/docs/features/prompt-caching).
-# The chat doctor re-sends the same ~600-token system prompt plus a growing
+# The chat doctor re-sends the same ~500-token system prompt plus a growing
 # conversation history on every turn; billed at full input price that is the
 # single largest recurring cost in this module. Caching makes the provider
-# re-read that prefix from ITS cache instead (0.1x-0.5x input price depending
-# on the provider, free on some), so only the new user turn is paid in full.
+# re-read that prefix from ITS cache instead — on gpt-5.6 a cached read is
+# 0.1x input price ($0.01/M against $0.10/M) — so only the new user turn is
+# paid in full.
+#
+# gpt-5.6 changed one side of that trade: from this generation on OpenAI
+# CHARGES for the cache write, at 1.25x input, where earlier models wrote for
+# free. So caching is no longer unconditionally free money — a prefix written
+# once and never re-read now costs 25% more than not caching at all. It still
+# pays overwhelmingly here, because the only surface that caches is the chat
+# doctor, where the prefix is re-read on every turn of the same conversation:
+# one write at 1.25x is repaid by the second read (2.0x -> 1.1x) and every
+# turn after that is nearly free. The one-shot species/care-plan calls
+# deliberately don't ask for caching (see their call sites).
 #
 # Two request fields do the work, both handled by OpenRouter itself and
 # ignored by providers that don't need them:
 #   * ``cache_control: {"type": "ephemeral"}`` at the request level — asks
 #     OpenRouter to place the breakpoint for us and advance it as the
 #     conversation grows. Required by Anthropic/Qwen; a no-op for the default
-#     openai/gpt-oss-120b and the other automatic-caching providers (OpenAI,
+#     openai/gpt-5.6-luna and the other automatic-caching providers (OpenAI,
 #     Groq, DeepSeek, Grok, Z.AI, Gemini 2.5).
 #   * ``session_id`` — OpenRouter's sticky-routing key. Without it a model
 #     served by several providers can land on a DIFFERENT provider each turn,
 #     and a cold provider means a guaranteed cache miss no matter how stable
 #     the prefix is. With it, stickiness starts from the first successful
-#     request rather than only after a hit is observed.
+#     request rather than only after a hit is observed. (OPENROUTER_PROVIDER_ONLY
+#     narrows the field to one provider anyway; session_id still earns its keep
+#     by pinning the specific instance behind it.)
 # Caching is opportunistic everywhere: providers enforce their own minimum
 # cacheable prefix (1024 tokens for OpenAI/Anthropic), so short prompts simply
-# don't cache and cost exactly what they cost today. Set to false to opt out.
+# don't cache and cost exactly what they cost today — the doctor's system
+# prompt alone sits under that line, and caching starts paying once a couple of
+# turns of history have accumulated behind it. Set to false to opt out.
 OPENROUTER_PROMPT_CACHING = get_bool("OPENROUTER_PROMPT_CACHING", True)
 
 # Hard caps so a runaway client can't blow the budget. Tune via config
@@ -530,6 +562,28 @@ _EFFORT_ALIASES: dict[str, dict[str, str]] = {
 }
 
 
+_SCHEMA_ERROR_HINTS = ("response_format", "json_schema", "schema", "structured output")
+
+
+def _blames_schema(response: Any) -> bool:
+    """True when a 4xx body points at the JSON schema we sent. Best-effort: an
+    unreadable body counts as "not the schema" so an unrelated failure keeps
+    its own error instead of being retried into a different one."""
+    try:
+        body = response.text or ""
+    except Exception:  # noqa: BLE001 — a body we can't read tells us nothing
+        return False
+    lowered = body.lower()
+    return any(hint in lowered for hint in _SCHEMA_ERROR_HINTS)
+
+
+def _provider_only() -> list[str]:
+    """Provider slugs this request may be routed to (see
+    ``OPENROUTER_PROVIDER_ONLY``). Empty list = no pin. Read at call time so a
+    config reload / test override takes effect."""
+    return [slug for slug in (s.strip() for s in OPENROUTER_PROVIDER_ONLY.split(",")) if slug]
+
+
 def _normalise_effort(effort: str) -> str:
     """Map a reasoning effort the configured model doesn't accept onto the
     nearest level it does. Identity for every model/level pair we know is fine."""
@@ -637,6 +691,9 @@ def _call_openrouter(
                 "name": schema_name, "strict": True, "schema": json_schema,
             },
         }
+    providers = _provider_only()
+    if providers:
+        payload["provider"] = {"only": providers}
     if OPENROUTER_PROMPT_CACHING:
         # Request-level breakpoint: OpenRouter places it after the last
         # cacheable block and advances it as the history grows, so we don't
@@ -685,13 +742,16 @@ def _call_openrouter(
                 r.raise_for_status()  # last-ditch — caller handles
             _sleep_for_retry(attempt, retry_after=r.headers.get("Retry-After"))
             continue
-        if r.status_code >= 400 and "response_format" in payload:
+        if r.status_code >= 400 and "response_format" in payload and _blames_schema(r):
             # The configured model/provider won't take our schema (unsupported
             # feature, or a schema keyword its strict mode rejects). Structured
             # output is an upgrade, not a dependency: drop it and retry once so
             # the caller's tolerant parser handles a plain JSON reply, exactly
             # as it did before schemas existed. Popping the key also makes this
             # branch unreachable on the retry, so it can't loop.
+            # Gated on the error actually naming the schema: a 400 from an
+            # unrelated cause (a bad provider slug, say) must fail loudly as
+            # itself, not masquerade as a schema problem in the logs.
             payload.pop("response_format")
             logger.warning(
                 "OpenRouter rejected response_format (HTTP %s); retrying without it",
@@ -1149,7 +1209,12 @@ def species_common_diseases(
     if not _chat_api_key_present():
         return {"available": False, "diseases": [], "source": "no_api_key"}
 
-    cache_key = f"{name.lower()}:{lang}"
+    # ``v2`` = this generation of the answer (gpt-5.6 + medium effort + JSON
+    # schema). Without the bump, every species already in the 7-day disk cache
+    # would keep serving the OLD model's list for a week after deploy — the
+    # improvement would look like it had done nothing. Superseded entries are
+    # never read again; their JSON files are harmless and can be deleted.
+    cache_key = f"v2:{name.lower()}:{lang}"
     cached = _SPECIES_DISEASES_CACHE.get(cache_key)
     if cached is not None:
         return {**copy.deepcopy(cached), "cached": True}
@@ -1235,9 +1300,9 @@ the botany is genuinely uncertain, describe the genus' pattern rather than inven
 species-specific claim.
 
 - "monthly_intensity": the species' normal flowering season under SUITABLE CULTIVATION, in \
-the northern hemisphere, one value per calendar month from January. Do NOT zero the calendar \
-just because flowering indoors is uncommon — put that limitation in "indoor_note". All zeros \
-only for a species that does not flower biologically, such as a fern.
+the northern hemisphere — EXACTLY 12 values, one per calendar month starting with January. Do \
+NOT zero the calendar just because flowering indoors is uncommon — put that limitation in \
+"indoor_note". All zeros only for a species that does not flower biologically, such as a fern.
 - "zones": 3 to 6 UNIQUE countries where the species is native, naturalised or widely \
 cultivated outdoors — a country, never a region or continent. "grows_more" = thrives there \
 (native range or common outdoor cultivation); "grows_less" = marginal (sheltered \
@@ -1247,7 +1312,9 @@ fact in each, not a translation artefact.
 
 Answer with the JSON object {"flowering": {"monthly_intensity", "indoor_note"}, \
 "flowering_conditions", "native_range": {"zones": [{"country_code", "country", "status"}], \
-"summary"}} and nothing else; every note and country name is an {"en", "ru"} pair."""
+"summary"}} and nothing else. "monthly_intensity" is 12 integers (0, 1 or 2); \
+"country_code" is an ISO 3166-1 alpha-3 code; every note, summary and country name is an \
+{"en", "ru"} pair."""
 
 _LOCALIZED_TEXT_SCHEMA = {
     "type": "object",
@@ -1615,17 +1682,22 @@ def species_profile(
     if not _chat_api_key_present():
         return {"available": False, "source": "no_api_key"}
 
-    # Generation v3 is deliberately keyed only by scientific name. It refreshes
-    # older profiles that zeroed the calendar when indoor flowering was rare.
-    # The cached value is
-    # the canonical bilingual profile; locale-specific wire fields are
-    # rendered from it on every request.
-    cache_key = f"v3:{name.lower()}"
+    # Generation v4 is deliberately keyed only by scientific name. v3 refreshed
+    # older profiles that zeroed the calendar when indoor flowering was rare;
+    # v4 refreshes everything the previous model wrote, because this is the
+    # cache that would otherwise hide the whole point of the model switch — a
+    # profile is held for THIRTY days, so without the bump most species would
+    # still be serving gpt-oss's bloom calendar and country list a month after
+    # deploy. Superseded entries are never read again; their JSON files are
+    # harmless and can be deleted.
+    # The cached value is the canonical bilingual profile; locale-specific wire
+    # fields are rendered from it on every request.
+    cache_key = f"v4:{name.lower()}"
     # A profile built by the legacy adapter is NOT bilingual — that adapter
     # copies the single language the model replied in into both slots. Storing
     # it under the shared key would serve e.g. Russian text to every English
     # client for the whole 30-day TTL, so it gets a locale-scoped key instead.
-    legacy_key = f"v3:{lang}:{name.lower()}"
+    legacy_key = f"v4:{lang}:{name.lower()}"
     for key in (cache_key, legacy_key):
         cached = _SPECIES_PROFILE_CACHE.get(key)
         if cached is not None:
@@ -2392,11 +2464,14 @@ CARE_PLAN_POLISH_REASONING_EFFORT = get_str(
     "CARE_PLAN_POLISH_REASONING_EFFORT", "medium"
 ).strip().lower()
 _CARE_PLAN_CACHE = _LRU(CARE_PLAN_CACHE_SIZE, CARE_PLAN_CACHE_TTL_SECONDS)
-# ``_v2`` namespace abandons entries cached before the truncation fix: a
-# reasoning model truncated the polish past the dosage guard, so the old dir
-# held summaries cut off mid-sentence that would otherwise be served for the
-# full 7-day TTL. The old ``care_plan_polish`` dir is now orphaned (safe to rm).
-_CARE_PLAN_DISK = _DiskCache("care_plan_polish_v2", CARE_PLAN_CACHE_TTL_SECONDS)
+# The namespace is bumped whenever cached summaries stop matching what the
+# current prompt would produce — otherwise the old text is served for the full
+# 7-day TTL and the change appears to have done nothing. ``_v2`` abandoned
+# summaries truncated mid-sentence by the old model; ``_v3`` abandons summaries
+# written before the prompt started including the follow-up checkpoint and red
+# flags, which is exactly the content this cache would have hidden. Earlier
+# dirs are orphaned and safe to rm.
+_CARE_PLAN_DISK = _DiskCache("care_plan_polish_v3", CARE_PLAN_CACHE_TTL_SECONDS)
 
 # Polish outcome counters for /api/metrics. A polish that drifts off the
 # canonical dosages is dropped SILENTLY (the user still gets the deterministic

@@ -45,6 +45,7 @@ key maps to the same name as the legacy environment variable.
 | `openrouter_api_key` | *(empty)* | OpenRouter key. Without it the chat and care-plan polish return an offline fallback. |
 | `openrouter_model` | `openai/gpt-5.6-luna` | Pinned chat model. Pick anything OpenRouter exposes; the AI content surfaces expect a model with **structured outputs** (`response_format: json_schema`) and reasoning-effort support. A model without them still works — the schema is dropped after one rejected request and the tolerant JSON parsers take over. |
 | `openrouter_base_url` | `https://openrouter.ai/api/v1` | Override only for OpenRouter-compatible self-hosted gateways. |
+| `openrouter_provider_only` | `openai` | Comma-separated provider slugs the model may be routed to; blank = OpenRouter's choice. See "Provider pinning" below. |
 | `openrouter_reasoning_effort` | `medium` | Global fallback effort for callers that don't pin their own. `max`/`xhigh`/`high`/`medium`/`low`/`none`, or `omit` to send no reasoning field. A stale `minimal` (gpt-5.0-era, rejected by gpt-5.6) is mapped to `low` rather than failing the call. |
 | `species_profile_reasoning_effort` | `high` | Flowering calendar + ISO-3166 native range — the hardest recall here, cached 30 days per species. |
 | `species_diseases_reasoning_effort` | `medium` | Per-species common problems, cached 7 days. |
@@ -87,6 +88,22 @@ chat sheet and the optional Markdown summary on care plans.
    complete, deterministic plan without a key; only the
    `summary_md` polish step is skipped.
 
+**Provider pinning.** One OpenRouter model id is served by several
+providers, and the price spread is not a rounding error — for
+`openai/gpt-5.6-luna` OpenAI's own endpoint lists $0.10/M input against
+Amazon Bedrock's $0.22/M and Azure's $1.00/M, a 10× difference for
+identical output. Left unpinned, OpenRouter picks per request. So
+`openrouter_provider_only` defaults to `openai`, which is also the tier
+carrying the current promotional discount, the only endpoint that
+advertises `structured_outputs` (a request routed to Bedrock would lose
+the JSON schema), and — as a free side effect — keeps one provider's
+prompt cache warm.
+
+Set it to `openai/flex` for OpenAI's half-price tier if you can absorb
+higher latency and more 429s (the server retries those with backoff), or
+blank it to let OpenRouter route freely. Verify what actually served a
+request in the OpenRouter activity log.
+
 **Reasoning effort.** gpt-5.6 treats `reasoning.effort` as a *ceiling*,
 not a floor: on a prompt it judges easy the model may spend no reasoning
 tokens at all, even at `high`. So each caller asks for the effort its own
@@ -111,6 +128,21 @@ rather than an instruction the model can drift from. The tolerant parsers
 and sanitisers stay in place regardless — a schema constrains shape, never
 truthfulness. If the configured model/provider rejects the schema, the
 server logs it, retries once without it and carries on.
+
+**Cache generations.** Every AI answer is cached twice — server-side
+(in-memory + `server/ai_cache/`, 7 days for species diseases and care-plan
+polish, 30 days for species profiles) and again on the device
+(`ResponseCache`, 7 days). Those caches are the reason a model or prompt
+change can appear to do nothing: the old answer keeps being served until
+it expires. So the cache keys carry a generation, and this change bumps
+all of them — species profile `v3`→`v4`, species diseases → `v2`,
+care-plan polish dir → `care_plan_polish_v3`, plus the matching Android
+keys and the `profile_version` query parameter. Superseded entries are
+never read again; the orphaned JSON files under `server/ai_cache/` are
+harmless and can be deleted at any time (`rm -rf
+server/ai_cache/care_plan_polish_v2`). Bump the generation whenever you
+change a prompt, model or effort in a way that should reach users before
+the TTL does.
 
 **Prompt caching (on by default).** Every chat turn re-sends the same
 ~600-token system prompt plus the conversation so far. With

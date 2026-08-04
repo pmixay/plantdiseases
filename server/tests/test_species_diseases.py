@@ -91,6 +91,20 @@ def test_blank_name_is_graceful():
     assert out["available"] is False and out["source"] == "no_species"
 
 
+def test_schema_doc_keys_stay_in_step_with_the_guide():
+    """doc_key is what makes an item a tappable link into the offline guide.
+    The schema's enum and the parser's allow-list are the same vocabulary — if
+    they drift, the model is steered towards keys the parser then nulls out."""
+    doc_key = ai_services._SPECIES_DISEASES_SCHEMA["properties"]["diseases"][
+        "items"]["properties"]["doc_key"]
+    assert set(doc_key["enum"]) == ai_services._GUIDE_DOC_KEYS
+    # Nullable in the shape strict mode documents: null in `type`, not in the
+    # enum. Without it the schema would force a guide key onto a condition the
+    # guide doesn't cover.
+    assert doc_key["type"] == ["string", "null"]
+    assert None not in doc_key["enum"]
+
+
 def test_structured_success_and_cache(monkeypatch):
     monkeypatch.setattr(ai_services, "OPENROUTER_API_KEY", "test-key")
     calls = {"n": 0}

@@ -75,6 +75,73 @@ def _valid_profile_v2_json() -> str:
     })
 
 
+# ── schema ↔ parser contract ────────────────────────────────────────
+#
+# The shape now lives in _SPECIES_PROFILE_SCHEMA (sent to the provider as a
+# strict JSON schema) while the flowering calendar and native range are read
+# back out by _parse_species_profile_v2. Those two must describe the same
+# object: a schema that drifts from the parser produces replies that validate
+# upstream and are then thrown away here as malformed, which surfaces as the
+# whole section silently vanishing from the species screen.
+
+def _assert_conforms(instance, schema, path="$"):
+    """Validate against the JSON Schema subset we actually send (strict mode:
+    type / properties / required / additionalProperties=false / enum / items)."""
+    types = schema.get("type")
+    types = [types] if isinstance(types, str) else list(types or [])
+    checks = {
+        "object": dict, "array": list, "string": str, "integer": int, "null": type(None),
+    }
+    if types:
+        assert any(
+            isinstance(instance, checks[t]) and not (t == "integer" and isinstance(instance, bool))
+            for t in types
+        ), f"{path}: {type(instance).__name__} is not one of {types}"
+    if "enum" in schema and instance is not None:
+        assert instance in schema["enum"], f"{path}: {instance!r} not in enum"
+    if isinstance(instance, dict) and "properties" in schema:
+        for key in schema.get("required", []):
+            assert key in instance, f"{path}: missing required key {key!r}"
+        if schema.get("additionalProperties") is False:
+            extra = set(instance) - set(schema["properties"])
+            assert not extra, f"{path}: unexpected keys {sorted(extra)}"
+        for key, value in instance.items():
+            if key in schema["properties"]:
+                _assert_conforms(value, schema["properties"][key], f"{path}.{key}")
+    if isinstance(instance, list) and "items" in schema:
+        for i, item in enumerate(instance):
+            _assert_conforms(item, schema["items"], f"{path}[{i}]")
+
+
+def test_schema_and_parser_describe_the_same_profile():
+    """A reply that satisfies the schema must parse into a complete profile —
+    12-month calendar, native-range zones and bilingual text all intact."""
+    reply = _valid_profile_v2_json()
+    _assert_conforms(json.loads(reply), ai_services._SPECIES_PROFILE_SCHEMA)
+
+    parsed = ai_services._parse_species_profile_v2(reply)
+    assert parsed is not None, "schema-conformant reply must survive the parser"
+    assert len(parsed["flowering"]["monthly_intensity"]) == 12
+    assert parsed["flowering"]["indoor_note"]["en"] and parsed["flowering"]["indoor_note"]["ru"]
+    assert parsed["flowering_conditions"]["en"] and parsed["flowering_conditions"]["ru"]
+    zones = parsed["native_range"]["zones"]
+    assert [z["country_code"] for z in zones] == ["PER", "BOL"]  # duplicate dropped
+    assert {z["status"] for z in zones} <= ai_services._NATIVE_RANGE_STATUSES
+    assert parsed["native_range"]["summary"]["en"] and parsed["native_range"]["summary"]["ru"]
+
+
+def test_schema_pins_the_calendar_and_zone_vocabulary():
+    """The two fields with a closed vocabulary are the two the sanitiser drops
+    the WHOLE profile over, so the schema has to constrain them at the source."""
+    schema = ai_services._SPECIES_PROFILE_SCHEMA["properties"]
+    months = schema["flowering"]["properties"]["monthly_intensity"]
+    assert months["items"]["enum"] == [0, 1, 2]
+    assert "12" in months["description"]
+    zone = schema["native_range"]["properties"]["zones"]["items"]["properties"]
+    assert set(zone["status"]["enum"]) == ai_services._NATIVE_RANGE_STATUSES
+    assert "alpha-3" in zone["country_code"]["description"]
+
+
 # ── parser ──────────────────────────────────────────────────────────
 
 def test_parser_plain_json():

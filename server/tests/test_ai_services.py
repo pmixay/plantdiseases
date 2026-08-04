@@ -253,6 +253,35 @@ def test_call_openrouter_leaves_effort_alone_for_other_models(monkeypatch):
     assert captured["payload"]["reasoning"] == {"effort": "minimal"}
 
 
+def test_call_openrouter_pins_the_openai_provider(monkeypatch):
+    """One model id is served by several providers at a 10x price spread
+    (Azure lists $1.00/M input against OpenAI's $0.10/M), and only OpenAI's own
+    endpoint advertises structured outputs — so routing is pinned, not left to
+    whichever provider OpenRouter happens to pick."""
+    import ai_services as ai
+
+    captured = {}
+    _mock_openrouter_post(monkeypatch, finish_reason="stop", captured=captured)
+    ai._call_openrouter("sys", [{"role": "user", "content": "hi"}])
+    assert captured["payload"]["provider"] == {"only": ["openai"]}
+
+
+def test_call_openrouter_provider_pin_is_configurable(monkeypatch):
+    """An operator can widen the pin (or drop it entirely) without a code
+    change — e.g. to reach OpenAI's cheaper flex tier."""
+    import ai_services as ai
+
+    monkeypatch.setattr(ai, "OPENROUTER_PROVIDER_ONLY", "openai/flex, openai")
+    captured = {}
+    _mock_openrouter_post(monkeypatch, finish_reason="stop", captured=captured)
+    ai._call_openrouter("sys", [{"role": "user", "content": "hi"}])
+    assert captured["payload"]["provider"] == {"only": ["openai/flex", "openai"]}
+
+    monkeypatch.setattr(ai, "OPENROUTER_PROVIDER_ONLY", "")
+    ai._call_openrouter("sys", [{"role": "user", "content": "hi"}])
+    assert "provider" not in captured["payload"]
+
+
 def test_call_openrouter_sends_strict_json_schema(monkeypatch):
     """Structured-output callers constrain the SHAPE at the provider instead of
     asking for it in prose."""
@@ -285,6 +314,10 @@ def test_call_openrouter_retries_without_schema_when_rejected(monkeypatch):
         def __init__(self, status_code):
             self.status_code = status_code
             self.headers = {}
+            self.text = (
+                '{"error":{"message":"response_format.json_schema is not supported"}}'
+                if status_code >= 400 else ""
+            )
 
         def raise_for_status(self):
             raise requests.HTTPError(f"{self.status_code}")
@@ -308,6 +341,36 @@ def test_call_openrouter_retries_without_schema_when_rejected(monkeypatch):
     assert len(payloads) == 2
     assert "response_format" in payloads[0]
     assert "response_format" not in payloads[1]
+
+
+def test_call_openrouter_does_not_blame_the_schema_for_unrelated_4xx(monkeypatch):
+    """A 400 that has nothing to do with the schema (a bad provider slug, an
+    auth problem) must surface as itself — retrying it without the schema would
+    fail again anyway and log a misleading cause."""
+    import requests
+
+    import ai_services as ai
+
+    calls = {"n": 0}
+
+    class _Resp:
+        status_code = 400
+        headers: dict = {}
+        text = '{"error":{"message":"Invalid provider slug: opnai"}}'
+
+        def raise_for_status(self):
+            raise requests.HTTPError("400")
+
+    def _fake_post(url, headers=None, json=None, timeout=None):
+        calls["n"] += 1
+        return _Resp()
+
+    monkeypatch.setattr(requests, "post", _fake_post)
+    with pytest.raises(requests.HTTPError):
+        ai._call_openrouter(
+            "sys", [{"role": "user", "content": "hi"}], json_schema={"type": "object"},
+        )
+    assert calls["n"] == 1  # failed fast, no schema-stripping retry
 
 
 def test_prompt_caching_sends_breakpoint_and_sticky_session(monkeypatch):
