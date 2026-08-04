@@ -106,12 +106,53 @@
     <string name="consent_privacy_link">Privacy policy</string>
     <string name="consent_privacy_url" translatable="false">https://pdis.arbuz.lol/privacy.html</string>
 
-    <!-- In-context onboarding -->
-    <string name="coach_scan_title">Start with a scan</string>
-    <string name="coach_scan_body">Tap Scan to photograph a leaf and get a diagnosis.</string>
-    <string name="coach_result_title">Understand your result</string>
-    <string name="coach_result_body">Start with the diagnosis and confidence here, then scroll for care steps and alternatives.</string>
-    <string name="coach_got_it">Got it</string>
+    <!-- Interactive contextual guidance -->
+    <string name="guidance_title_home_scan">Home &amp; Scan</string>
+    <string name="guidance_title_garden">Garden</string>
+    <string name="guidance_title_garden_plant">Your plant</string>
+    <string name="guidance_title_gallery">Gallery</string>
+    <string name="guidance_title_profile">Profile</string>
+    <string name="guidance_title_species">Species details</string>
+    <string name="guidance_home_actions">Scan checks a known plant for health problems. Identify recognizes an unknown species.</string>
+    <string name="guidance_home_tools">Quick tools measure light, calculate watering, check symptoms, and open the plant guide.</string>
+    <string name="guidance_home_scan_nav">Open Scan whenever you want to check a plant’s health. Tap the highlighted tab or use the forward arrow.</string>
+    <string name="guidance_camera_permission">Camera access lets you photograph a leaf. You can still import a photo from Gallery without granting it. The forward arrow never grants permission.</string>
+    <string name="guidance_camera_preview">Fill most of the frame with one leaf. Use even light and a plain background, and keep other plants out of view.</string>
+    <string name="guidance_camera_gallery">Import an existing, clear plant photo here. Cancelling returns to this step; choosing one continues toward the result.</string>
+    <string name="guidance_camera_shutter">Hold steady and wait for focus, then tap the shutter. The forward arrow closes this guidance without taking a photo.</string>
+    <string name="guidance_result">This card shows the diagnosis and confidence. Continue down the page for care information, explanations, and alternative possibilities.</string>
+    <string name="guidance_garden_hero">Garden keeps your plants together with their health history, journal entries, and reminders.</string>
+    <string name="guidance_garden_plants">Plant cards open health and care history. When your garden is empty, this area explains how to begin.</string>
+    <string name="guidance_garden_add">Add a plant here, or %1$s. Tap the highlighted button to open the existing form; Forward will not add anything.</string>
+    <string name="guidance_garden_attach_scan_link">attach a ready scan later</string>
+    <string name="guidance_garden_result_add">Your scan is ready. Tap “Add to garden” to attach it to a plant. Forward leaves the scan unattached.</string>
+    <string name="guidance_garden_plant_summary">This overview keeps the plant name, species, scan count, journal activity, and watering history together.</string>
+    <string name="guidance_garden_plant_actions">Use these shortcuts to record watering or a note, start a new health scan, and open the remaining care actions.</string>
+    <string name="guidance_garden_plant_care">The care plan uses this plant’s scan history to collect its treatment and monitoring recommendations.</string>
+    <string name="guidance_garden_plant_history">Switch between health history, saved photos, and journal entries here. This guidance appears only on your first plant visit.</string>
+    <string name="guidance_garden_plant_assistant">Try the AI assistant for plant-care questions. Tap the highlighted card to open it.</string>
+    <string name="guidance_gallery_filters">Switch between all results, healthy scans, and diseased scans with these filters.</string>
+    <string name="guidance_gallery_results">Completed scans appear here and can be reopened. When history is empty, this area shows how to create the first scan.</string>
+    <string name="guidance_profile_settings">Language, theme, and photo autosave are controlled here. Guidance never changes these settings.</string>
+    <string name="guidance_profile_statistics">See your health rate, scan totals, weekly activity, and common issues here. This area also handles an account with no scans yet.</string>
+    <string name="guidance_profile_replay">You can restart all app guidance from this row at any time. Consent and your settings are kept.</string>
+    <string name="guidance_species_summary">This area contains the identified species, scientific name, encyclopedia description, reference photos, and Wikipedia link.</string>
+    <string name="guidance_species_care">The Care Plan contains watering, light, humidity, feeding, and detailed recommendations. Expand it whenever you need more detail.</string>
+    <string name="guidance_species_flowering">Flowering shows bloom intensity by month, indoor-flowering notes, and helpful conditions. You may tap the highlighted header to expand it.</string>
+    <string name="guidance_species_native_range">Native Range shows where the plant grows naturally. Expand it for an interactive map; tapping a country reports expected growth.</string>
+    <string name="guidance_previous">Previous step</string>
+    <string name="guidance_next">Next step</string>
+    <string name="guidance_activate_target">Activate highlighted control</string>
+    <string name="guidance_step_counter">Step %1$d of %2$d</string>
+    <string name="guidance_skip_section">Skip section</string>
+    <string name="guidance_skip_all">Skip all</string>
+    <string name="guidance_skip_all_title">Skip all instructions?</string>
+    <string name="guidance_skip_all_body">No guidance chapters will appear again unless you choose Replay app guidance in Profile.</string>
+    <string name="guidance_back_title">Leave this section?</string>
+    <string name="guidance_back_body">This is the first step on this screen. Continue the section or skip it permanently.</string>
+    <string name="guidance_continue">Continue guidance</string>
+    <string name="replay_guidance_title">Replay app guidance</string>
+    <string name="replay_guidance_subtitle">Restart every contextual guidance section</string>
 
     <!-- Result -->
     <string name="new_scan">New Scan</string>
@@ -271,16 +312,6 @@
     <string name="channel_community_name">Community</string>
     <string name="channel_community_desc">Second opinions on scans you shared</string>
 
-    <!-- Pre-scan tips sheet (replaces auto-capture). -->
-    <string name="scan_tips_title">Before you scan</string>
-    <string name="scan_tips_subtitle">Three quick framing rules — they fix almost every "weird diagnosis".</string>
-    <string name="scan_tips_continue">Got it — let\'s scan</string>
-    <string name="scan_tip_distance_title">Get the distance right</string>
-    <string name="scan_tip_distance_body">Too close: only a tiny patch is in frame. Too far: the leaf is a thumbnail. Aim so one leaf fills most of the frame.</string>
-    <string name="scan_tip_focus_title">Hold steady, wait for focus</string>
-    <string name="scan_tip_focus_body">Tap the leaf to lock autofocus. Avoid back-lit shots — the leaf should not be a dark silhouette against a bright window.</string>
-    <string name="scan_tip_single_title">One species per frame</string>
-    <string name="scan_tip_single_body">Mixing two plants in one photo confuses both the classifier and the species detector. Crop or step back to isolate a single plant.</string>
     <!-- About model -->
     <!-- Rate limit -->
     <string name="server_busy">Server Busy</string>

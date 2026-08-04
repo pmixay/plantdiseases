@@ -17,12 +17,16 @@ import androidx.navigation.ui.AppBarConfiguration
 import androidx.navigation.ui.navigateUp
 import androidx.navigation.ui.setupActionBarWithNavController
 import com.plantdiseases.app.databinding.ActivityMainBinding
-import com.plantdiseases.app.ui.common.CoachMarkOverlay
 import com.plantdiseases.app.ui.onboarding.OnboardingActivity
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingChapter
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingContext
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingCoordinator
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingStepId
 import com.plantdiseases.app.ui.shell.ShellFragment
 import com.plantdiseases.app.util.InAppUpdateManager
 import com.plantdiseases.app.util.LocaleHelper
-import com.plantdiseases.app.util.OnboardingHintState
+import com.plantdiseases.app.util.OnboardingStateStore
 import org.koin.android.ext.android.inject
 
 class MainActivity : AppCompatActivity() {
@@ -53,9 +57,8 @@ class MainActivity : AppCompatActivity() {
      *  come from RuStore. */
     private var inAppUpdateManager: InAppUpdateManager? = null
 
-    private val onboardingHints: OnboardingHintState by inject()
-    private var activeCoachMark: CoachMarkOverlay? = null
-    private var scanHintScheduled = false
+    private val onboardingState: OnboardingStateStore by inject()
+    private lateinit var onboardingCoordinator: OnboardingCoordinator
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
@@ -96,13 +99,24 @@ class MainActivity : AppCompatActivity() {
         // binding.
         splashScreen?.setOnExitAnimationListener { provider -> animateSplashExit(provider) }
 
-        maybeShowConsentDialog()
-
         // Edge-to-edge display
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
         binding = ActivityMainBinding.inflate(layoutInflater)
+        onboardingCoordinator = OnboardingCoordinator(
+            host = this,
+            store = onboardingState,
+            undimmedViews = { activeContext ->
+                if (activeContext == OnboardingContext.CAMERA && ::binding.isInitialized) {
+                    listOf(binding.bottomNavigation)
+                } else {
+                    emptyList()
+                }
+            },
+            navigateToContext = ::navigateOnboardingTo,
+        )
         setContentView(binding.root)
+        maybeShowConsentDialog()
 
         // Single root inset listener — dispatches status-bar + nav-bar + cutout insets
         // to the toolbar (top) and the bottom navigation (bottom/sides).
@@ -177,6 +191,13 @@ class MainActivity : AppCompatActivity() {
         binding.bottomNavigation.setOnItemSelectedListener { item ->
             if (syncingBar) true else selectTab(item.itemId)
         }
+        binding.bottomNavigation.findViewById<View>(R.id.cameraFragment)?.let { scanItem ->
+            onboardingCoordinator.registerAnchor(
+                key = OnboardingAnchorKey.BOTTOM_NAV_SCAN,
+                view = scanItem,
+                pauseAfterTarget = true,
+            )
+        }
 
         navController.addOnDestinationChangedListener { _, destination, _ ->
             // Pushed destinations always keep the toolbar — that's where their
@@ -207,8 +228,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        activeCoachMark?.dismiss(immediate = true)
-        activeCoachMark = null
         inAppUpdateManager?.release()
         inAppUpdateManager = null
         super.onDestroy()
@@ -226,7 +245,6 @@ class MainActivity : AppCompatActivity() {
             .setCancelable(false)
             .setPositiveButton(R.string.consent_agree) { _, _ ->
                 OnboardingActivity.setDataConsentGiven(this)
-                scheduleScanCoachMark()
             }
             .setNeutralButton(R.string.consent_privacy_link, null)
             .create()
@@ -306,51 +324,18 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Show feature discovery only after Home is genuinely visible. Posting
-     * closes the cold-start race with [EXTRA_OPEN_SCANNER]: that intent pages
-     * away during the same event loop, so it cannot accidentally consume the
-     * Home hint before the user has visited Home.
-     */
-    private fun scheduleScanCoachMark() {
-        if (scanHintScheduled || activeCoachMark != null) return
-        if (!OnboardingActivity.isDataConsentGiven(this)) return
-        scanHintScheduled = true
-        binding.bottomNavigation.post {
-            scanHintScheduled = false
-            if (isFinishing || isDestroyed) return@post
-            if (navController.currentDestination?.id != R.id.shellFragment) return@post
-            if (shell?.currentTabId != R.id.homeFragment) return@post
-
-            val scanItem = binding.bottomNavigation.findViewById<View>(R.id.cameraFragment)
-                ?: return@post
-            if (!scanItem.isAttachedToWindow || !onboardingHints.claimScanTabHint()) return@post
-
-            activeCoachMark = CoachMarkOverlay.show(
-                host = this,
-                anchor = scanItem,
-                title = getString(R.string.coach_scan_title),
-                body = getString(R.string.coach_scan_body),
-                dismissText = getString(R.string.coach_got_it),
-                placement = CoachMarkOverlay.Placement.ABOVE,
-                pulseAnchor = true,
-                onDismissed = { activeCoachMark = null },
-            )
-        }
-    }
-
-    /**
      * Handle a bottom-bar tap (or a programmatic `selectedItemId =`, which the
      * Home/Gallery/Profile "scan" CTAs use) by paging to that tab.
      *
      * Returns false for an id that isn't a tab, which leaves the bar's selection
      * where it was.
      */
-    private fun selectTab(@IdRes tabId: Int): Boolean {
+    private fun selectTab(@IdRes tabId: Int, animate: Boolean = true): Boolean {
         if (ShellFragment.pageOf(tabId) < 0) return false
         val onShell = navController.currentDestination?.id == R.id.shellFragment
         val pager = shell?.takeIf { it.view != null && onShell }
         if (pager != null) {
-            pager.showTab(tabId, animate = true)
+            pager.showTab(tabId, animate = animate)
         } else {
             // Either the shell hasn't been created yet (cold start), or the
             // guide is on top of it. Park the request; the shell picks it up
@@ -397,7 +382,69 @@ class MainActivity : AppCompatActivity() {
     fun applyTabChrome(@IdRes tabId: Int) {
         binding.appBar.visibility = View.GONE
         if (tabId == R.id.galleryFragment) clearGalleryBadge()
-        if (tabId == R.id.homeFragment) scheduleScanCoachMark()
+        onboardingCoordinator.setContext(
+            when (tabId) {
+                R.id.homeFragment -> OnboardingContext.HOME
+                R.id.cameraFragment -> OnboardingContext.CAMERA
+                R.id.gardenFragment -> OnboardingContext.GARDEN
+                R.id.galleryFragment -> OnboardingContext.GALLERY
+                R.id.profileFragment -> OnboardingContext.PROFILE
+                else -> null
+            },
+        )
+    }
+
+    private fun navigateOnboardingTo(target: OnboardingContext): Boolean {
+        val tabId = when (target) {
+            OnboardingContext.HOME -> R.id.homeFragment
+            OnboardingContext.CAMERA -> R.id.cameraFragment
+            OnboardingContext.GARDEN -> R.id.gardenFragment
+            OnboardingContext.GALLERY -> R.id.galleryFragment
+            OnboardingContext.PROFILE -> R.id.profileFragment
+            else -> return false
+        }
+        binding.bottomNavigation.selectedItemId = tabId
+        return true
+    }
+
+    fun registerOnboardingAnchor(
+        key: OnboardingAnchorKey,
+        view: View,
+        available: () -> Boolean = { view.isShown },
+        pauseAfterTarget: Boolean = false,
+        onTarget: () -> Unit = { view.performClick() },
+        onInlineAction: (() -> Unit)? = null,
+    ) {
+        onboardingCoordinator.registerAnchor(
+            key,
+            view,
+            available,
+            pauseAfterTarget,
+            onTarget,
+            onInlineAction,
+        )
+    }
+
+    fun unregisterOnboardingAnchor(key: OnboardingAnchorKey, view: View? = null) {
+        onboardingCoordinator.unregisterAnchor(key, view)
+    }
+
+    fun resumeOnboardingAfterExternalUi() = onboardingCoordinator.resumeAfterExternalUi()
+
+    fun moveOnboardingTo(step: OnboardingStepId) = onboardingCoordinator.moveTo(step)
+
+    /** Garden's inline guidance link: remember the Result continuation, then open Scanner. */
+    fun startGardenAttachScanGuidance() {
+        onboardingState.completeChapter(OnboardingChapter.GARDEN)
+        onboardingState.activateChapter(OnboardingChapter.GARDEN_SCAN_ATTACH)
+        binding.bottomNavigation.selectedItemId = R.id.cameraFragment
+    }
+
+    /** Profile's manual entry point; consent and normal preferences are untouched. */
+    fun replayAppGuidance() {
+        onboardingCoordinator.replay()
+        selectTab(R.id.homeFragment, animate = false)
+        applyTabChrome(R.id.homeFragment)
     }
 
     // Gallery badge for new results

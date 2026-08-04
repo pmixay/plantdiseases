@@ -32,12 +32,14 @@ import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.ui.analysis.AnalysisActivity
-import com.plantdiseases.app.ui.common.CoachMarkOverlay
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingContext
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingCoordinator
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.ModelFamily
 import com.plantdiseases.app.util.LocaleHelper
-import com.plantdiseases.app.util.OnboardingHintState
+import com.plantdiseases.app.util.OnboardingStateStore
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
 import java.io.File
@@ -61,29 +63,12 @@ class ResultActivity : AppCompatActivity() {
     private lateinit var binding: ActivityResultBinding
 
     private val scanRepository: ScanRepository by inject()
-    private val onboardingHints: OnboardingHintState by inject()
+    private val onboardingState: OnboardingStateStore by inject()
 
     private var scaleFactor = 1.0f
     private lateinit var scaleGestureDetector: ScaleGestureDetector
     private var skeletonAnimator: ValueAnimator? = null
-    private var activeCoachMark: CoachMarkOverlay? = null
-
-    private val resultHintRunnable = Runnable {
-        if (isFinishing || isDestroyed || !binding.cardStatus.isAttachedToWindow) return@Runnable
-        if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) return@Runnable
-        if (!onboardingHints.claimResultHint()) return@Runnable
-
-        activeCoachMark = CoachMarkOverlay.show(
-            host = this,
-            anchor = binding.cardStatus,
-            title = getString(R.string.coach_result_title),
-            body = getString(R.string.coach_result_body),
-            dismissText = getString(R.string.coach_got_it),
-            placement = CoachMarkOverlay.Placement.BELOW,
-            pulseAnchor = false,
-            onDismissed = { activeCoachMark = null },
-        )
-    }
+    private lateinit var onboardingCoordinator: OnboardingCoordinator
 
     private var pendingScanForToolbar: ScanEntity? = null
 
@@ -166,6 +151,19 @@ class ResultActivity : AppCompatActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         binding = ActivityResultBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        onboardingCoordinator = OnboardingCoordinator(
+            host = this,
+            store = onboardingState,
+            navigateToContext = { target ->
+                if (target == OnboardingContext.CAMERA || target == OnboardingContext.HOME) {
+                    finish()
+                    true
+                } else {
+                    false
+                }
+            },
+        )
+        onboardingCoordinator.setContext(OnboardingContext.RESULT)
 
         ViewCompat.setOnApplyWindowInsetsListener(binding.appBar) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
@@ -288,8 +286,16 @@ class ResultActivity : AppCompatActivity() {
 
             displayResult(scan, scanRepository)
             Haptics.success(this@ResultActivity)
-            binding.cardStatus.removeCallbacks(resultHintRunnable)
-            binding.cardStatus.postDelayed(resultHintRunnable, RESULT_HINT_DELAY_MS)
+            onboardingCoordinator.registerAnchor(
+                OnboardingAnchorKey.RESULT_DIAGNOSIS,
+                binding.cardStatus,
+            )
+            onboardingCoordinator.registerAnchor(
+                OnboardingAnchorKey.RESULT_ADD_TO_GARDEN,
+                binding.btnAddToGarden,
+                available = { binding.btnAddToGarden.isShown },
+                pauseAfterTarget = true,
+            )
         }
     }
 
@@ -699,9 +705,6 @@ class ResultActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        binding.cardStatus.removeCallbacks(resultHintRunnable)
-        activeCoachMark?.dismiss(immediate = true)
-        activeCoachMark = null
         skeletonAnimator?.cancel()
         skeletonAnimator = null
         super.onDestroy()
@@ -710,7 +713,6 @@ class ResultActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_SCAN_ID = "extra_scan_id"
 
-        private const val RESULT_HINT_DELAY_MS = 500L
         private const val LOW_CONFIDENCE_FALLBACK = 0.5f
         private const val VERY_LOW_CONFIDENCE_FALLBACK = 0.4f
         private const val DISEASE_APPEARANCE_TAG = "disease_appearance"

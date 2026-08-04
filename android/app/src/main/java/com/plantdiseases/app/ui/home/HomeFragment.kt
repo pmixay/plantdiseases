@@ -23,6 +23,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import com.bumptech.glide.Glide
 import com.bumptech.glide.load.engine.DiskCacheStrategy
 import com.google.android.material.bottomnavigation.BottomNavigationView
+import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.PopularResponse
 import com.plantdiseases.app.data.remote.PlantApiClient
@@ -31,6 +32,7 @@ import com.plantdiseases.app.ui.camera.LightMeterActivity
 import com.plantdiseases.app.ui.camera.WaterCalculatorActivity
 import com.plantdiseases.app.ui.community.NearbyScansActivity
 import com.plantdiseases.app.ui.guide.GuideDetailActivity
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.ui.species.SpeciesDetailActivity
 import com.plantdiseases.app.ui.symptom.SymptomCheckerActivity
 import com.plantdiseases.app.util.CommunityPrefs
@@ -140,6 +142,16 @@ class HomeFragment : Fragment() {
         // real scan-based data when the scope has any.
         renderSpecies(binding, null)
         maybePlayIntro(savedInstanceState)
+        (activity as? MainActivity)?.apply {
+            registerOnboardingAnchor(
+                OnboardingAnchorKey.HOME_SCAN_IDENTIFY,
+                binding.homePrimaryActions,
+            )
+            registerOnboardingAnchor(
+                OnboardingAnchorKey.HOME_QUICK_TOOLS,
+                binding.homeQuickTools,
+            )
+        }
     }
 
     /**
@@ -185,6 +197,16 @@ class HomeFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        (activity as? MainActivity)?.apply {
+            unregisterOnboardingAnchor(
+                OnboardingAnchorKey.HOME_SCAN_IDENTIFY,
+                _binding?.homePrimaryActions,
+            )
+            unregisterOnboardingAnchor(
+                OnboardingAnchorKey.HOME_QUICK_TOOLS,
+                _binding?.homeQuickTools,
+            )
+        }
         super.onDestroyView()
         _binding = null
     }
