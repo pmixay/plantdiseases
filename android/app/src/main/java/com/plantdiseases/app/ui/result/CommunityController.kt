@@ -65,8 +65,7 @@ class CommunityController(
      * control goes through here.
      */
     private fun applySecondOpinionEnabled() {
-        binding.btnSecondOpinion.isEnabled =
-            connectivity.lastKnownOnline && !opinionRequestInFlight
+        binding.btnSecondOpinion.isEnabled = connectivity.lastKnownOnline && !opinionRequestInFlight
     }
 
     private fun displayName(key: String, isRu: Boolean): String =

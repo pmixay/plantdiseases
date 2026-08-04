@@ -11,7 +11,6 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
-import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -30,10 +29,15 @@ import org.robolectric.shadows.ShadowNetworkCapabilities
  * design — that an online device is never polled.
  *
  * Virtual time throughout: the observer waits out probe retries and recovery
- * backoff, so the tests drive a [TestScope] clock rather than sleeping. Note
- * that `advanceUntilIdle` is only safe while the observer believes it is
- * online; offline it runs a backoff loop that never goes idle, so those cases
- * step the clock explicitly.
+ * backoff, so the tests drive a [TestScope] clock rather than sleeping.
+ *
+ * Use `runCurrent()` / `advanceTimeBy()` here, never `advanceUntilIdle()`.
+ * Everything the observer runs — the shared flow, the network callback, both
+ * reachability drivers — lives in `backgroundScope`, and `advanceUntilIdle()`
+ * does not drive background work: it returns having executed nothing, and the
+ * assertions then fail against an empty list rather than a wrong value. There
+ * is also nothing to become idle in the first place once the observer is
+ * offline, since the recovery loop reschedules itself forever.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
@@ -130,14 +134,14 @@ class ConnectivityObserverTest {
 
         val seen = mutableListOf<Boolean>()
         backgroundScope.launch { observer.isOnline.toList(seen) }
-        advanceUntilIdle()
+        runCurrent()
 
         assertThat(seen).containsExactly(false)
         assertThat(probeCalls).isEqualTo(0)
 
         // Validation completing now permits the reachability gate to run.
         fireCapabilitiesChanged(online)
-        advanceUntilIdle()
+        runCurrent()
         assertThat(seen).containsExactly(false, true).inOrder()
     }
 
@@ -152,11 +156,11 @@ class ConnectivityObserverTest {
 
         val seen = mutableListOf<Boolean>()
         backgroundScope.launch { observer.isOnline.toList(seen) }
-        advanceUntilIdle()
+        runCurrent()
         assertThat(seen).containsExactly(true)
 
         fireLost() // old network gone, the new default is already validated
-        advanceUntilIdle()
+        runCurrent()
         assertThat(seen).containsExactly(true)
     }
 
@@ -167,11 +171,11 @@ class ConnectivityObserverTest {
 
         val seen = mutableListOf<Boolean>()
         backgroundScope.launch { observer.isOnline.toList(seen) }
-        advanceUntilIdle()
+        runCurrent()
 
         setActiveCapabilities(capabilities()) // nothing left to fall back to
         fireLost()
-        advanceUntilIdle()
+        runCurrent()
         assertThat(seen).containsExactly(true, false).inOrder()
     }
 
@@ -216,7 +220,7 @@ class ConnectivityObserverTest {
         )
 
         backgroundScope.launch { observer.isOnline.toList(mutableListOf()) }
-        advanceUntilIdle()
+        runCurrent()
         assertThat(probeCalls).isEqualTo(1)
 
         advanceTimeBy(10 * 60_000)
@@ -233,13 +237,13 @@ class ConnectivityObserverTest {
 
         val seen = mutableListOf<Boolean>()
         backgroundScope.launch { observer.isOnline.toList(seen) }
-        advanceUntilIdle()
+        runCurrent()
         assertThat(seen).containsExactly(true)
 
         // A one-off transport failure (a request dying on a handover, an
         // upload timing out) must not paint the screen offline.
         reports.emit(false)
-        advanceUntilIdle()
+        runCurrent()
         assertThat(seen).containsExactly(true)
 
         // A failure the probe corroborates does.
@@ -303,15 +307,16 @@ class ConnectivityObserverTest {
 
         val first = backgroundScope.launch { observer.isOnline.toList(mutableListOf()) }
         val second = backgroundScope.launch { observer.isOnline.toList(mutableListOf()) }
-        advanceUntilIdle()
+        runCurrent()
         assertThat(shadowOf(connectivityManager).networkCallbacks).hasSize(before + 1)
 
         first.cancel()
-        advanceUntilIdle()
+        runCurrent()
         assertThat(shadowOf(connectivityManager).networkCallbacks).hasSize(before + 1)
 
         second.cancel()
-        advanceUntilIdle()
+        advanceTimeBy(100)
+        runCurrent()
         assertThat(shadowOf(connectivityManager).networkCallbacks).hasSize(before)
     }
 }
