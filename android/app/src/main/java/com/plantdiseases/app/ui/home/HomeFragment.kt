@@ -44,6 +44,8 @@ import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.RegionResolver
 import com.plantdiseases.app.util.SpeciesCatalog
 import com.plantdiseases.app.util.applyStatusBarTopInset
+import com.plantdiseases.app.util.enableWhileOnline
+import com.plantdiseases.app.util.onConnectivityChanged
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
 import java.util.Calendar
@@ -87,6 +89,13 @@ class HomeFragment : Fragment() {
     // refresh) doesn't re-hit /api/species-info for a name already resolved.
     private val speciesImageCache = mutableMapOf<String, String?>()
 
+    /** Latest reachability reading, and whether the carousel currently holds
+     *  live data. Together they decide the "saved earlier" caption: it is only
+     *  honest when we are offline AND what's on screen came from the cache or
+     *  the bundled list rather than this session's fetch. */
+    private var isOffline = false
+    private var showingLiveTrending = false
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -98,11 +107,24 @@ class HomeFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        // The fixed notice and the scroll content share one status-bar inset;
-        // when the notice appears it takes its own row instead of overlaying
-        // the Home title.
         binding.root.applyStatusBarTopInset()
-        binding.offlineNotice.observe(viewLifecycleOwner, connectivity)
+        // Home keeps working offline — the carousels fall back to the cached
+        // popular bundle and then to the bundled catalogs — so there is no
+        // offline strip here. Instead the carousel says its data is saved
+        // rather than live, and the entry points into features that genuinely
+        // cannot run offline are disabled.
+        viewLifecycleOwner.onConnectivityChanged(connectivity.isOnline) { online ->
+            isOffline = !online
+            _binding?.let { applyTrendingScopeNote(it) }
+        }
+        // Species ID (PlantNet), symptom triage (scored server-side) and the
+        // community feed have no offline mode at all.
+        viewLifecycleOwner.enableWhileOnline(
+            connectivity.isOnline,
+            binding.cardIdentify,
+            binding.tileSymptom,
+            binding.btnNearbyScans,
+        )
         binding.tvGreeting.text = greeting()
 
         binding.btnNearbyScans.setOnClickListener {
@@ -172,7 +194,11 @@ class HomeFragment : Fragment() {
         )
         if (animScale == 0f) return
 
-        val content = binding.root.getChildAt(0) as? ViewGroup ?: return
+        // The blocks to stagger are the scroll view's content column, not the
+        // root's children. (Resolving this against the root silently disabled
+        // the whole intro while the offline strip was the root's first child:
+        // a TextView is not a ViewGroup, so the cast returned null every time.)
+        val content = binding.homeScroll.getChildAt(0) as? ViewGroup ?: return
         val dy = 24f * resources.displayMetrics.density
         var shown = 0
         for (i in 0 until content.childCount) {
@@ -299,7 +325,7 @@ class HomeFragment : Fragment() {
                         com.plantdiseases.app.util.ResponseCache.TTL_POPULAR_MS,
                     )
                     val b = _binding ?: return@launch
-                    renderSpecies(b, fresh)
+                    renderSpecies(b, fresh, live = true)
                     renderDiseases(b, fresh)
                 } else if (cached == null) {
                     // No cache and no network → fall back to the bundled list.
@@ -321,10 +347,30 @@ class HomeFragment : Fragment() {
             ""
         }
 
-    private fun renderSpecies(b: FragmentHomeBinding, popular: PopularResponse?) {
+    /**
+     * "Saved earlier — may be out of date" under the trending carousel.
+     *
+     * The carousel never blanks offline (cache → bundled list), which is the
+     * right behaviour but leaves the user reading month-old "trending nearby"
+     * data with no way to tell. This is the one honest signal Home needs, and
+     * it sits on the content it describes rather than claiming the whole
+     * screen is degraded.
+     */
+    private fun applyTrendingScopeNote(b: FragmentHomeBinding) {
+        val stale = isOffline && !showingLiveTrending
+        b.tvTrendingScope.visibility = if (stale) View.VISIBLE else View.GONE
+        if (stale) b.tvTrendingScope.setText(R.string.offline_saved_data_note)
+    }
+
+    private fun renderSpecies(
+        b: FragmentHomeBinding,
+        popular: PopularResponse?,
+        live: Boolean = false,
+    ) {
         b.sectionSpecies.visibility = View.VISIBLE
         setPopularTitle(b, popular)
-        b.tvTrendingScope.visibility = View.GONE
+        showingLiveTrending = live
+        applyTrendingScopeNote(b)
         val items = if (popular != null && popular.items.isNotEmpty()) {
             popular.items.take(MAX_POPULAR_CARDS).map { p ->
                 // Pre-seed the image cache so loadSpeciesImage paints instantly,

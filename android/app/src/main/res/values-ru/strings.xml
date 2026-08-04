@@ -192,10 +192,15 @@
     <string name="server_not_responding_detail">Сервер не ответил в течение 10 секунд. Попробуйте позже.</string>
     <string name="no_network">Нет интернета</string>
     <string name="no_network_detail">Проверьте подключение к сети и повторите попытку.</string>
-    <string name="offline_banner">Нет подключения к интернету</string>
     <!-- Общее уведомление об офлайне (ui/common/OfflineNoticeView). -->
-    <string name="offline_notice_cached">Офлайн — показаны сохранённые данные</string>
     <string name="offline_notice_needs_connection">Офлайн — нужно подключение к интернету</string>
+    <string name="offline_notice_scan_on_device">Офлайн — скан на телефоне, результат ограничен</string>
+    <string name="offline_notice_scan_unavailable">Офлайн — для сканирования нужен интернет</string>
+    <!-- Пометка на экранах, где офлайн всё же есть что показать. -->
+    <string name="offline_saved_data_note">Сохранено ранее — данные могут быть неактуальны</string>
+    <!-- Показывается при попытке онлайн-действия в офлайне. -->
+    <string name="offline_action_unavailable">Недоступно офлайн</string>
+    <string name="offline_scan_needs_model">Для сканирования нужен интернет. Скачайте модель для телефона онлайн, чтобы сканировать офлайн.</string>
 
     <!-- Server status / diagnostics -->
     <string name="save">Сохранить</string>
@@ -782,6 +787,7 @@
     <string name="model_family_frontier_desc">Самая большая и точная облачная модель.</string>
     <string name="model_family_unavailable">Недоступна на этом сервере</string>
     <string name="model_family_offline_badge">Офлайн</string>
+    <string name="model_family_needs_connection">Нужен интернет</string>
     <string name="model_family_cd">Выбрать модель диагностики</string>
 
 

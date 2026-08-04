@@ -193,11 +193,20 @@
     <string name="server_not_responding_detail">The server did not respond within 10 seconds. Please try again later.</string>
     <string name="no_network">No Internet Connection</string>
     <string name="no_network_detail">Check your network connection and try again.</string>
-    <string name="offline_banner">No internet connection</string>
-    <!-- Shared offline notice (ui/common/OfflineNoticeView). The first line is
-         the default; screens with nothing cached to fall back on use the second. -->
-    <string name="offline_notice_cached">Offline — showing cached content</string>
+    <!-- Shared offline notice (ui/common/OfflineNoticeView). Only screens whose
+         feature actually stops working offline carry the strip; the camera picks
+         one of its two messages at runtime, depending on whether the on-device
+         model is installed. -->
     <string name="offline_notice_needs_connection">Offline — this needs a connection</string>
+    <string name="offline_notice_scan_on_device">Offline — scanning on your phone, limited result</string>
+    <string name="offline_notice_scan_unavailable">Offline — scanning needs a connection</string>
+    <!-- Inline marker on screens that DO have something to show offline. The
+         content is real but was saved earlier, so it is flagged as possibly
+         out of date rather than hidden. -->
+    <string name="offline_saved_data_note">Saved earlier — may be out of date</string>
+    <!-- Shown when an online-only action is attempted while offline. -->
+    <string name="offline_action_unavailable">Not available offline</string>
+    <string name="offline_scan_needs_model">Scanning needs a connection. Download the on-device model while online to scan offline.</string>
 
     <!-- Server status / diagnostics -->
     <string name="save">Save</string>
@@ -793,6 +802,7 @@
     <string name="model_family_frontier_desc">Largest, most accurate cloud model.</string>
     <string name="model_family_unavailable">Unavailable on this server</string>
     <string name="model_family_offline_badge">Offline</string>
+    <string name="model_family_needs_connection">Needs a connection</string>
     <string name="model_family_cd">Choose diagnosis model</string>
 
 

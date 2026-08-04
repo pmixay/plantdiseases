@@ -4,8 +4,6 @@ import android.animation.ValueAnimator
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import android.widget.Toast
 import android.os.Bundle
 import android.util.TypedValue
@@ -35,11 +33,13 @@ import com.plantdiseases.app.ui.analysis.AnalysisActivity
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingContext
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingCoordinator
+import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.ModelFamily
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.OnboardingStateStore
+import com.plantdiseases.app.util.enableWhileOnline
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
 import java.io.File
@@ -64,6 +64,7 @@ class ResultActivity : AppCompatActivity() {
 
     private val scanRepository: ScanRepository by inject()
     private val onboardingState: OnboardingStateStore by inject()
+    private val connectivity: ConnectivityObserver by inject()
 
     private var scaleFactor = 1.0f
     private lateinit var scaleGestureDetector: ScaleGestureDetector
@@ -197,6 +198,19 @@ class ResultActivity : AppCompatActivity() {
         setupToolbarMenu()
         setupPinchToZoom()
         setupStickyHeader()
+        // The diagnosis itself is already saved locally and reads fine offline,
+        // so there is no strip on this screen. Only the follow-ups that need
+        // the server are held back: the AI doctor and re-running an offline
+        // scan online. (Whether they are shown at all is decided per-verdict in
+        // displayResult; this only decides whether a shown one can be used
+        // right now.) The second-opinion control is deliberately absent — it
+        // also has to stay disabled while an ask is in flight, so
+        // CommunityController owns its enabled state outright.
+        enableWhileOnline(
+            connectivity.isOnline,
+            binding.btnAskDoctor,
+            binding.btnImproveOnline,
+        )
         // Registered in onCreate so the handoffs survive the activity + sheet
         // being recreated together (rotation, process death with a sheet open).
         feedback.registerCorrectionListener(scanId) { pendingScanForToolbar }
@@ -653,11 +667,15 @@ class ResultActivity : AppCompatActivity() {
         }
     }
 
-    /** Re-run an offline scan's photo through the full online model. Requires a
-     *  validated connection; the online result replaces the offline scan in
-     *  place (AnalysisActivity's force-family + replace-scan flow). */
+    /** Re-run an offline scan's photo through the full online model. Needs the
+     *  server to be reachable; the online result replaces the offline scan in
+     *  place (AnalysisActivity's force-family + replace-scan flow).
+     *
+     *  The check is the app's shared one. This screen used to re-derive it from
+     *  NetworkCapabilities on its own, which passed happily on a stale VPN
+     *  tunnel — sending the user into an analysis that could only time out. */
     private fun improveOnline(scan: ScanEntity) {
-        if (!hasValidatedInternet()) {
+        if (!connectivity.lastKnownOnline) {
             Toast.makeText(this, R.string.improve_online_no_network, Toast.LENGTH_SHORT).show()
             return
         }
@@ -669,14 +687,6 @@ class ResultActivity : AppCompatActivity() {
             },
         )
         finish()
-    }
-
-    private fun hasValidatedInternet(): Boolean {
-        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-            ?: return false
-        val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
-        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
 
     private fun animateCardsIn() {

@@ -1058,16 +1058,6 @@ object GsonJsonObjectSerializer : KSerializer<com.google.gson.JsonObject> {
     }
 }
 
-/** Server health check response */
-@Serializable
-data class HealthResponse(
-    @SerializedName("status") @SerialName("status") val status: String = "",
-    @SerializedName("version") @SerialName("version") val version: String = "",
-    @SerializedName("num_classes") @SerialName("num_classes") val numClasses: Int = 0,
-    @SerializedName("uptime_seconds") @SerialName("uptime_seconds") val uptimeSeconds: Double? = null,
-    @SerializedName("total_requests") @SerialName("total_requests") val totalRequests: Int? = null
-)
-
 /**
  * /api/progression request — time-ordered scan list (oldest first).
  * The server returns the 5-point severity sparkline + a trend slope
