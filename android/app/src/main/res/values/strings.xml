@@ -829,9 +829,7 @@
     <string name="native_range_loading">Loading native range…</string>
     <string name="native_range_grows_more">Thrives</string>
     <string name="native_range_grows_less">Limited growth</string>
-    <string name="native_range_country_chip">%1$s · %2$s</string>
     <string name="native_range_selected_country">%1$s · %2$s</string>
-    <string name="native_range_country_accessibility">%1$s: %2$s</string>
     <string name="native_range_selected_country_accessibility">Selected country, %1$s: %2$s</string>
     <string name="native_range_tap_hint">Tap a country to check how this plant grows there.</string>
     <string name="native_range_outside_country">%1$s · Outside the known outdoor range; grow it indoors or in a greenhouse under controlled conditions.</string>

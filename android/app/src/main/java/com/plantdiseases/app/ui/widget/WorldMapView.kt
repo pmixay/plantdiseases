@@ -14,8 +14,6 @@ import android.util.AttributeSet
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
-import android.widget.FrameLayout
-import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
@@ -36,10 +34,8 @@ import kotlin.math.tan
  * Offline native-range map backed by bundled Natural Earth 1:110m geometry.
  *
  * This is deliberately a composite XML-compatible View rather than a screen
- * controller: the inner [Canvas] draws the map, a focusable chip per matched
- * country sits below it (the only way to select a country with TalkBack or
- * switch access, since the canvas selection comes from raw touch), and one
- * result chip at the bottom reports the country selected by the user.
+ * controller: the inner [Canvas] draws the map, a short hint invites the user
+ * to select a country, and one result chip reports that selection.
  */
 class WorldMapView @JvmOverloads constructor(
     context: Context,
@@ -65,19 +61,12 @@ class WorldMapView @JvmOverloads constructor(
     )
 
     private val mapCanvas = MapCanvasView(context)
-
-    // One focusable chip per matched country. The canvas only ever selects
-    // from a MotionEvent, so these chips are what makes the map operable
-    // without pointing at a pixel.
-    private val countryChipRow = LinearLayout(context)
-    private val countryChipScroll = HorizontalScrollView(context)
     private val selectionHint = TextView(context)
 
     // Material Chip is intentionally single-line and throws when callers try
     // to enable wrapping. The selected-country explanation can span several
     // lines (especially in Russian), so use a chip-styled TextView instead.
     private val selectedChip = TextView(context)
-    private var zones: List<CountryZone> = emptyList()
 
     init {
         orientation = VERTICAL
@@ -90,27 +79,6 @@ class WorldMapView @JvmOverloads constructor(
         mapCanvas.setOnCountrySelectedListener(::showSelectedCountry)
         mapCanvas.setOnSelectionClearedListener(::clearSelectedCountry)
         addView(mapCanvas)
-
-        countryChipRow.orientation = HORIZONTAL
-        countryChipScroll.apply {
-            isHorizontalScrollBarEnabled = false
-            clipToPadding = false
-            isVisible = false
-            layoutParams = LayoutParams(
-                LayoutParams.MATCH_PARENT,
-                LayoutParams.WRAP_CONTENT,
-            ).apply {
-                topMargin = dp(8f).toInt()
-            }
-            addView(
-                countryChipRow,
-                FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.WRAP_CONTENT,
-                    FrameLayout.LayoutParams.WRAP_CONTENT,
-                ),
-            )
-        }
-        addView(countryChipScroll)
 
         selectionHint.apply {
             text = context.getString(R.string.native_range_tap_hint)
@@ -160,7 +128,7 @@ class WorldMapView @JvmOverloads constructor(
      * hide the section rather than show a map that highlights nothing.
      */
     fun setZones(value: List<CountryZone>): Boolean {
-        zones = value
+        val zones = value
             .filter { it.country.isNotBlank() }
             .distinctBy {
                 "${it.countryCode?.trim()?.uppercase(Locale.ROOT).orEmpty()}:${normalizeMapName(it.country)}"
@@ -168,7 +136,6 @@ class WorldMapView @JvmOverloads constructor(
             .take(6)
         clearSelectedCountry()
         val placed = mapCanvas.setZones(zones)
-        renderCountryChips(mapCanvas.matches)
         // Name the countries from the bundled bilingual geometry, not from the
         // wire payload: the species profile is cached under a locale-free key,
         // so zone.country can still be English after a language switch.
@@ -182,49 +149,6 @@ class WorldMapView @JvmOverloads constructor(
                 context.getString(R.string.native_range_map_empty)
             }
         return placed
-    }
-
-    private fun renderCountryChips(matches: List<RangeMatch>) {
-        countryChipRow.removeAllViews()
-        matches.forEach { countryChipRow.addView(countryChip(it)) }
-        countryChipScroll.isVisible = matches.isNotEmpty()
-    }
-
-    /** A tappable/focusable stand-in for pointing at the country on canvas. */
-    private fun countryChip(match: RangeMatch): TextView {
-        val status = statusLabel(match.source.status)
-        return TextView(context).apply {
-            text = context.getString(
-                R.string.native_range_country_chip,
-                match.displayName,
-                status,
-            )
-            contentDescription = context.getString(
-                R.string.native_range_country_accessibility,
-                match.displayName,
-                status,
-            )
-            maxLines = 1
-            gravity = Gravity.CENTER
-            minHeight = dp(48f).toInt()
-            setPadding(
-                dp(14f).toInt(),
-                dp(8f).toInt(),
-                dp(14f).toInt(),
-                dp(8f).toInt(),
-            )
-            textSize = 13f
-            isClickable = true
-            isFocusable = true
-            applyChipColors(this, match.source.status)
-            layoutParams = LayoutParams(
-                LayoutParams.WRAP_CONTENT,
-                LayoutParams.WRAP_CONTENT,
-            ).apply {
-                marginEnd = dp(8f).toInt()
-            }
-            setOnClickListener { mapCanvas.selectCountry(match.geometry.code) }
-        }
     }
 
     private fun clearSelectedCountry() {
@@ -363,14 +287,6 @@ class WorldMapView @JvmOverloads constructor(
             rebuildProjection()
             invalidate()
             return matches.isNotEmpty()
-        }
-
-        /** Selects a highlighted country from outside the canvas (the chips). */
-        fun selectCountry(code: String) {
-            val match = matches.firstOrNull { it.geometry.code == code } ?: return
-            selectedCode = code
-            onCountrySelected?.invoke(match.displayName, match.source.status)
-            invalidate()
         }
 
         override fun onSizeChanged(width: Int, height: Int, oldWidth: Int, oldHeight: Int) {
