@@ -30,13 +30,12 @@
             app:navigationIconTint="@color/toolbar_title"
             app:titleTextColor="@color/toolbar_title" />
 
-        <!-- Shared offline notice, pinned under the toolbar. The blurb, photos
-             and care plan are cached per species; the common-problems list
-             falls back to the bundled guide. -->
-        <com.plantdiseases.app.ui.common.OfflineNoticeView
-            android:id="@+id/offline_notice"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content" />
+        <!-- No offline strip: the blurb, photos and care plan are cached per
+             species and the common-problems list falls back to the bundled
+             guide, so this screen still has something real to show. What it
+             owes the user is a note that the content is saved rather than
+             live — see tv_offline_saved_note below, which sits with the text
+             it describes. -->
     </com.google.android.material.appbar.AppBarLayout>
 
     <androidx.core.widget.NestedScrollView
@@ -108,6 +107,18 @@
                     android:textColor="@color/on_surface_secondary"
                     android:textSize="@dimen/text_body_sm"
                     android:textStyle="italic" />
+
+                <!-- Shown only while offline AND showing cached species
+                     content, so the user can tell live data from saved. -->
+                <TextView
+                    android:id="@+id/tv_offline_saved_note"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_xs"
+                    android:text="@string/offline_saved_data_note"
+                    android:textColor="@color/warning_amber"
+                    android:textSize="@dimen/text_caption"
+                    android:visibility="gone" />
 
                 <ProgressBar
                     android:id="@+id/progress"

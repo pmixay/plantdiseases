@@ -43,6 +43,7 @@ import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.RegionResolver
 import com.plantdiseases.app.util.ServerConfig
+import com.plantdiseases.app.util.onConnectivityChanged
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
@@ -98,6 +99,13 @@ class CommunityMapActivity : AppCompatActivity() {
         binding.toolbar.setNavigationOnClickListener { finish() }
         binding.offlineNotice.observe(this, connectivity)
         binding.fabNearMe.setOnClickListener { onNearMe() }
+        // Pick the markers back up as soon as the server is reachable — the
+        // pans made while offline deliberately fetched nothing.
+        var wasOnline = true
+        onConnectivityChanged(connectivity) { online ->
+            if (online && !wasOnline) reload()
+            wasOnline = online
+        }
         applyWindowInsets()
 
         binding.map.apply {
@@ -155,6 +163,15 @@ class CommunityMapActivity : AppCompatActivity() {
     }
 
     private fun reload() {
+        // Every pan and zoom lands here through the debounced map listener.
+        // Offline that would queue a doomed request — and pay its connect
+        // timeout — for each gesture, so don't start one; the strip already
+        // says why the map has no markers. onConnectivityChanged reloads once
+        // the server is reachable again.
+        if (!connectivity.lastKnownOnline) {
+            binding.mapProgress.visibility = View.GONE
+            return
+        }
         val box = binding.map.boundingBox
         val zoom = binding.map.zoomLevelDouble
         loadJob?.cancel()

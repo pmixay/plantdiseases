@@ -36,11 +36,14 @@ import com.plantdiseases.app.ui.analysis.AnalysisActivity
 import com.plantdiseases.app.ui.crop.CropContract
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.ui.onboarding.guidance.OnboardingStepId
+import com.plantdiseases.app.util.AquaClassifier
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
+import com.plantdiseases.app.util.ModelFamily
 import com.plantdiseases.app.util.ModelFamilyPrefs
 import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.applyStatusBarTopInset
+import com.plantdiseases.app.util.onConnectivityChanged
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -62,6 +65,10 @@ class CameraFragment : Fragment() {
     private lateinit var scaleGestureDetector: ScaleGestureDetector
 
     private var captureInFlight = false
+
+    /** Latest reachability reading. Offline the scan screen is limited to the
+     *  on-device model — or, without one, to explaining why it can't scan. */
+    private var isOffline = false
 
     /** Monotonic timestamp of the last accepted shutter tap. A fast double-tap
      *  used to fire two captures / two croppers (and two first-run tips sheets)
@@ -222,6 +229,12 @@ class CameraFragment : Fragment() {
         // OfflineNoticeView over this preview, so skip this fragment's own
         // banner there rather than stacking two strips at the top.
         if (!identifyMode) binding.offlineBanner.observe(viewLifecycleOwner, connectivity)
+        // Tracked in both modes: identify is server-only, so the shutter guard
+        // needs the state even though the host owns identify's notice.
+        viewLifecycleOwner.onConnectivityChanged(connectivity) { online ->
+            isOffline = !online
+            if (_binding != null && !identifyMode) applyOfflineScanState()
+        }
         restoreGridOverlay()
         registerOnboardingAnchors()
     }
@@ -238,6 +251,9 @@ class CameraFragment : Fragment() {
     private fun setupUI() {
         binding.btnCapture.setOnClickListener { onCaptureClicked() }
         binding.btnGallery.setOnClickListener {
+            // Same offline rule as the shutter — an imported photo needs the
+            // same model the captured one does.
+            if (refuseOffline()) return@setOnClickListener
             galleryLauncher.launch("image/*")
         }
         binding.btnFlash.setOnClickListener { toggleFlash() }
@@ -276,11 +292,44 @@ class CameraFragment : Fragment() {
         }
     }
 
-    /** Update the picker chip to show the currently-selected family. */
+    /** Update the picker chip to show the family a capture would actually
+     *  run on — which offline is Aqua, not whatever the user last picked. */
     private fun refreshModelFamilyChip() {
-        val family = ModelFamilyPrefs.selected(requireContext())
+        val family = effectiveFamily()
         binding.btnModelFamily.setText(family.labelRes)
         binding.btnModelFamily.setIconResource(family.iconRes)
+    }
+
+    /**
+     * The family this capture will really use. Offline, the two server tiers
+     * cannot run at all, so an installed on-device model takes over — decided
+     * here, before the shutter, rather than after a wasted image re-encode and
+     * a connect timeout downstream.
+     */
+    private fun effectiveFamily(): ModelFamily {
+        val selected = ModelFamilyPrefs.selected(requireContext())
+        return if (isOffline && !selected.onDevice && AquaClassifier.isAvailable(requireContext())) {
+            ModelFamily.AQUA
+        } else {
+            selected
+        }
+    }
+
+    /**
+     * Reflect reachability on the scan screen. Offline the app is limited to
+     * the on-device model, so the banner says which of the two situations the
+     * user is in — a limited scan still works, or scanning is unavailable —
+     * and the picker chip switches to the family that will actually run.
+     */
+    private fun applyOfflineScanState() {
+        binding.offlineBanner.setMessage(
+            if (AquaClassifier.isAvailable(requireContext())) {
+                R.string.offline_notice_scan_on_device
+            } else {
+                R.string.offline_notice_scan_unavailable
+            },
+        )
+        refreshModelFamilyChip()
     }
 
     /** Refresh per-family availability from the server so the picker can grey
@@ -537,7 +586,29 @@ class CameraFragment : Fragment() {
         val now = SystemClock.elapsedRealtime()
         if (now - lastCaptureTapAt < captureDebounceMs) return
         lastCaptureTapAt = now
+        if (refuseOffline()) return
         continueCaptureFlow()
+    }
+
+    /**
+     * True when this photo has nowhere to go: offline in identify mode (always
+     * server-side) or offline with no on-device model installed. Says so up
+     * front rather than letting the user frame, crop and then wait out a
+     * connect timeout for an error dialog.
+     */
+    private fun refuseOffline(): Boolean {
+        if (!isOffline) return false
+        if (!identifyMode && AquaClassifier.isAvailable(requireContext())) return false
+        Toast.makeText(
+            requireContext(),
+            if (identifyMode) {
+                R.string.offline_action_unavailable
+            } else {
+                R.string.offline_scan_needs_model
+            },
+            Toast.LENGTH_LONG,
+        ).show()
+        return true
     }
 
     /** Second stage of the shutter flow. Community sharing is opt-in and
@@ -704,12 +775,20 @@ class CameraFragment : Fragment() {
 
     private fun navigateToAnalysis(imagePath: String) {
         captureInFlight = true
+        // Only when reachability overrode the user's pick — otherwise let
+        // analysis read the preference itself, as it always has.
+        val override = effectiveFamily().takeIf { it != ModelFamilyPrefs.selected(requireContext()) }
         val intent = Intent(requireContext(), AnalysisActivity::class.java).apply {
             putExtra(AnalysisActivity.EXTRA_IMAGE_PATH, imagePath)
             // Camera-origin flag: gates the post-verdict device-gallery
             // autosave in AnalysisActivity (gallery imports are never
             // autosaved — the user already has that photo).
             putExtra(AnalysisActivity.EXTRA_FROM_CAMERA, pendingFromCamera)
+            // Offline, hand analysis the on-device family explicitly. Without
+            // it, a scan on the default (server) family walks the whole server
+            // path first — decode, resize, re-encode, connect timeout — before
+            // failing over to the very model we already know it will use.
+            override?.let { putExtra(AnalysisActivity.EXTRA_FORCE_FAMILY, it.id) }
         }
         startActivity(intent)
     }

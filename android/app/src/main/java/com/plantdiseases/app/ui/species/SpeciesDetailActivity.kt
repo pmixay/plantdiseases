@@ -45,6 +45,7 @@ import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.OnboardingStateStore
 import com.plantdiseases.app.util.TelemetryIds
+import com.plantdiseases.app.util.onConnectivityChanged
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
 import java.util.Locale
@@ -78,6 +79,10 @@ class SpeciesDetailActivity : AppCompatActivity() {
     private var nativeRangeAvailable = false
     private lateinit var onboardingCoordinator: OnboardingCoordinator
 
+    /** Inputs to the "saved earlier" caption — see [applySavedDataNote]. */
+    private var isOffline = false
+    private var hasSpeciesContent = false
+
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
     }
@@ -102,7 +107,15 @@ class SpeciesDetailActivity : AppCompatActivity() {
             insets
         }
         binding.speciesToolbar.setNavigationOnClickListener { finish() }
-        binding.offlineNotice.observe(this, connectivity)
+        // This screen has real content offline (the species blurb, photos and
+        // care plan are cached per species; common problems fall back to the
+        // bundled guide), so it gets an inline "saved earlier" note rather
+        // than an offline strip — and only once there is cached content to
+        // caption.
+        onConnectivityChanged(connectivity) { online ->
+            isOffline = !online
+            applySavedDataNote()
+        }
 
         scientificName = intent.getStringExtra(EXTRA_SCIENTIFIC_NAME).orEmpty()
         commonName = intent.getStringExtra(EXTRA_COMMON_NAME)?.takeIf { it.isNotBlank() }
@@ -227,6 +240,8 @@ class SpeciesDetailActivity : AppCompatActivity() {
             // the stored Wikipedia blurb/photo instead of re-fetching.
             val info = scanRepository.getSpeciesInfo(scientificName, locale).getOrNull()
             binding.progress.visibility = View.GONE
+            hasSpeciesContent = info?.available == true
+            applySavedDataNote()
             if (info?.available == true) {
                 binding.tvSpeciesExtract.text =
                     info.extract ?: getString(R.string.identify_no_info)
@@ -252,6 +267,17 @@ class SpeciesDetailActivity : AppCompatActivity() {
             detailResolved = true
             registerOnboardingAnchorsWhenReady()
         }
+    }
+
+    /**
+     * Caption the species text as saved-not-live, but only when both halves
+     * are true: we're offline *and* something actually rendered. Offline with
+     * no cached entry shows the ordinary "no info" empty state — calling that
+     * "out of date" would be describing content that isn't there.
+     */
+    private fun applySavedDataNote() {
+        binding.tvOfflineSavedNote.visibility =
+            if (isOffline && hasSpeciesContent) View.VISIBLE else View.GONE
     }
 
     /** `lineCount` is only meaningful after layout, hence the post. */
