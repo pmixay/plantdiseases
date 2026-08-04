@@ -787,6 +787,7 @@
     <string name="model_family_frontier_desc">Самая большая и точная облачная модель.</string>
     <string name="model_family_unavailable">Недоступна на этом сервере</string>
     <string name="model_family_offline_badge">Офлайн</string>
+    <string name="model_family_needs_connection">Нужен интернет</string>
     <string name="model_family_cd">Выбрать модель диагностики</string>
 
 

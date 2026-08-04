@@ -191,6 +191,19 @@ class ConnectivityObserver(
             state.value = reachable
         }
 
+        // A probe can be in flight for seconds, and a real request finishing
+        // in that window is *fresher* evidence than the answer the probe is
+        // about to deliver. Applying it unconditionally let a stale verdict
+        // drag a recovered app back offline — visibly, since the strip and
+        // every gated control follow this state. Compare-and-set so a probe
+        // can only ever confirm the world it was launched into.
+        fun settleProbe(stateWhenStarted: Boolean, reachable: Boolean) {
+            if (state.compareAndSet(stateWhenStarted, reachable)) {
+                lastReachability = reachable
+                lastReachabilityAt = nowMs()
+            }
+        }
+
         // Real API traffic is the primary signal and costs nothing.
         launch {
             reports.collect { reachable ->
@@ -200,7 +213,7 @@ class ConnectivityObserver(
                     // One transport failure is not proof — a request can die
                     // on a handover, or time out on a slow upload, while the
                     // server is perfectly reachable. Confirm before flipping.
-                    settle(probeConfirming())
+                    settleProbe(true, probeConfirming())
                 }
             }
         }
@@ -210,7 +223,7 @@ class ConnectivityObserver(
         // reaches the `else` branch, which is the whole point: no timer, no
         // traffic, nothing to drain.
         launch {
-            if (!recentlyReachable) settle(probeConfirming())
+            if (!recentlyReachable) settleProbe(state.value, probeConfirming())
             var attempt = 0
             while (isActive) {
                 if (state.value) {
@@ -220,7 +233,7 @@ class ConnectivityObserver(
                     delay(recoveryDelayMs(attempt))
                     // A real request may have recovered us during the wait.
                     if (state.value) continue
-                    settle(probeOnce())
+                    settleProbe(false, probeOnce())
                     if (!state.value) attempt++
                 }
             }

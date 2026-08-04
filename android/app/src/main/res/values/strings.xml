@@ -802,6 +802,7 @@
     <string name="model_family_frontier_desc">Largest, most accurate cloud model.</string>
     <string name="model_family_unavailable">Unavailable on this server</string>
     <string name="model_family_offline_badge">Offline</string>
+    <string name="model_family_needs_connection">Needs a connection</string>
     <string name="model_family_cd">Choose diagnosis model</string>
 
 

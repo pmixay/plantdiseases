@@ -246,7 +246,10 @@ class SymptomCheckerActivity : AppCompatActivity() {
             binding.symptomProgress.visibility = View.GONE
             result.onSuccess { renderResults(it.results, it.lowConfidence) }
                 .onFailure {
-                    binding.symptomSubmit.isEnabled = true
+                    // Back through the gate, not straight to enabled: if the
+                    // connection is what failed, re-arming Submit just invites
+                    // a second doomed request.
+                    updateSubmitState()
                     Toast.makeText(
                         this@SymptomCheckerActivity,
                         R.string.symptom_error,

@@ -200,14 +200,15 @@ class ResultActivity : AppCompatActivity() {
         setupStickyHeader()
         // The diagnosis itself is already saved locally and reads fine offline,
         // so there is no strip on this screen. Only the follow-ups that need
-        // the server are held back: the AI doctor, asking the community for a
-        // second opinion, and re-running an offline scan online. (Whether they
-        // are shown at all is decided per-verdict in displayResult; this only
-        // decides whether a shown one can be used right now.)
+        // the server are held back: the AI doctor and re-running an offline
+        // scan online. (Whether they are shown at all is decided per-verdict in
+        // displayResult; this only decides whether a shown one can be used
+        // right now.) The second-opinion control is deliberately absent — it
+        // also has to stay disabled while an ask is in flight, so
+        // CommunityController owns its enabled state outright.
         enableWhileOnline(
             connectivity.isOnline,
             binding.btnAskDoctor,
-            binding.btnSecondOpinion,
             binding.btnImproveOnline,
         )
         // Registered in onCreate so the handoffs survive the activity + sheet
