@@ -129,18 +129,10 @@ care-plan polish runs inside the `/api/care-plan` request), so the trade
 is a visible stall against a fraction of a cent per call. Fine for a
 deployment that values cost over tail latency; not the default.
 
-Confirm what actually served a request — the pin is a request, not a
-receipt, and billing follows the endpoint that really ran — via
-`GET /api/metrics` → `openrouter_route`:
-
-```json
-"openrouter_route": {
-  "model": "openai/gpt-5.6-luna",
-  "provider_only": ["openai"],
-  "last_provider": "OpenAI",
-  "last_service_tier": "default"
-}
-```
+The pin is a request, not a receipt — billing follows the endpoint that
+actually ran, and a service tier can decline. Confirm what really served
+a request in OpenRouter's own activity log, which reports the provider,
+the tier and the charge per call.
 
 **Reasoning effort.** gpt-5.6 treats `reasoning.effort` as a *ceiling*,
 not a floor: on a prompt it judges easy the model may spend no reasoning

@@ -148,7 +148,6 @@ def test_identify_species_gives_up_after_bounded_retries(monkeypatch):
 
 def _mock_openrouter_post(
     monkeypatch, *, finish_reason, content="answer", captured=None, usage=None,
-    extra=None,
 ):
     """Stub requests.post with one OpenRouter-shaped chat completion."""
     import requests
@@ -165,7 +164,6 @@ def _mock_openrouter_post(
             return {
                 "choices": [{"message": {"content": content}, "finish_reason": finish_reason}],
                 "usage": usage,
-                **(extra or {}),
             }
 
     def _fake_post(url, headers=None, json=None, timeout=None):
@@ -293,23 +291,6 @@ def test_call_openrouter_provider_pin_is_configurable(monkeypatch):
     _mock_openrouter_post(monkeypatch, finish_reason="stop", captured=captured)
     ai._call_openrouter("sys", [{"role": "user", "content": "hi"}])
     assert captured["payload"]["provider"]["only"] == ["openai/flex", "openai"]
-
-
-def test_route_snapshot_reports_what_actually_served_the_call(monkeypatch):
-    """The pin is a request, not a receipt — billing follows the endpoint that
-    really ran. OpenRouter echoes the provider and service tier, so /api/metrics
-    can show whether the cheap endpoint is genuinely doing the work."""
-    import ai_services as ai
-
-    _mock_openrouter_post(
-        monkeypatch, finish_reason="stop", extra={"provider": "OpenAI", "service_tier": "flex"},
-    )
-    ai._call_openrouter("sys", [{"role": "user", "content": "hi"}])
-    snap = ai.openrouter_route_snapshot()
-    assert snap["last_provider"] == "OpenAI"
-    assert snap["last_service_tier"] == "flex"
-    assert snap["provider_only"] == ["openai"]
-    assert snap["model"] == ai.OPENROUTER_MODEL
 
 
 def test_call_openrouter_sends_strict_json_schema(monkeypatch):

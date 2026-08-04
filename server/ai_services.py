@@ -585,25 +585,6 @@ _SCHEMA_ERROR_HINTS = (
 )
 
 
-# What actually served the most recent OpenRouter call. The pin is a REQUEST,
-# not a receipt: billing follows the endpoint that really ran, and a service
-# tier can decline. OpenRouter reports both back on every response, so this is
-# how an operator confirms from a running server that the cheap first-party
-# endpoint is doing the work — rather than inferring it from config that may
-# not be the config the process actually loaded.
-_last_route = {"provider": "", "service_tier": ""}
-
-
-def openrouter_route_snapshot() -> dict:
-    """Read-only view of the AI routing config and what last served a call."""
-    return {
-        "model": OPENROUTER_MODEL,
-        "provider_only": _provider_only(),
-        "last_provider": _last_route["provider"],
-        "last_service_tier": _last_route["service_tier"],
-    }
-
-
 def _blames_schema(response: Any) -> bool:
     """True when a 4xx body points at the JSON schema we sent. Best-effort: an
     unreadable body counts as "not the schema" so an unrelated failure keeps
@@ -808,10 +789,6 @@ def _call_openrouter(
             r.raise_for_status()  # 4xx (not in transient set) — fail fast
 
         data = r.json()
-        for field in ("provider", "service_tier"):
-            value = data.get(field)
-            if isinstance(value, str) and value:
-                _last_route[field] = value
         choices = data.get("choices") or []
         text = ""
         finish_reason = ""
