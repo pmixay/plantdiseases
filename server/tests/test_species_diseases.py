@@ -96,12 +96,17 @@ def test_structured_success_and_cache(monkeypatch):
     calls = {"n": 0}
 
     def fake_call(system_text, history, *, max_tokens=None, require_complete=False,
-                  reasoning_effort=None, session_id=None, cache_prefix=False):
+                  reasoning_effort=None, json_schema=None, schema_name="response",
+                  session_id=None, cache_prefix=False):
         calls["n"] += 1
-        assert "JSON" in system_text
-        # Structured recall must pin the shortest reasoning trace per call —
-        # a raised global effort would otherwise truncate the JSON answer.
-        assert reasoning_effort == "minimal"
+        # The shape is a provider-enforced schema now, not prose in the prompt.
+        assert json_schema is not None
+        assert json_schema["properties"]["diseases"]["items"]["required"] == [
+            "name", "doc_key", "note",
+        ]
+        # Factual recall about a species, cached for 7 days — worth the medium
+        # floor rather than the cheapest possible trace.
+        assert reasoning_effort == "medium"
         return (json.dumps({"diseases": [
             {"name": "Spider mites", "doc_key": "pests", "note": "Fine webbing; rinse + neem."},
             {"name": "Edema", "doc_key": "edema", "note": "Blisters; water less."},
@@ -129,7 +134,8 @@ def test_disk_cache_survives_inmemory_wipe(monkeypatch):
     calls = {"n": 0}
 
     def fake_call(system_text, history, *, max_tokens=None, require_complete=False,
-                  reasoning_effort=None, session_id=None, cache_prefix=False):
+                  reasoning_effort=None, json_schema=None, schema_name="response",
+                  session_id=None, cache_prefix=False):
         calls["n"] += 1
         return (json.dumps({"diseases": [
             {"name": "Root rot", "note": "Soggy soil; let it dry."},

@@ -208,12 +208,15 @@ def test_structured_success_and_cache(monkeypatch):
     calls = {"n": 0}
 
     def fake_call(system_text, history, *, max_tokens=None, require_complete=False,
-                  reasoning_effort=None):
+                  reasoning_effort=None, json_schema=None, schema_name="response"):
         calls["n"] += 1
-        assert "JSON" in system_text
-        # Structured recall must pin the shortest reasoning trace per call —
-        # a raised global effort would otherwise truncate the JSON answer.
-        assert reasoning_effort == "minimal"
+        # The shape is a provider-enforced schema now, not prose in the prompt.
+        assert json_schema is not None
+        assert json_schema["properties"]["native_range"]["properties"]["zones"][
+            "items"]["properties"]["status"]["enum"] == ["grows_less", "grows_more"]
+        # The hardest recall in this module (bloom calendar + ISO-3166 range)
+        # and cached for 30 days per species — it earns more than the floor.
+        assert reasoning_effort == "high"
         return (_valid_profile_json(), 10, 20, {})
 
     monkeypatch.setattr(ai_services, "_call_openrouter", fake_call)
@@ -257,7 +260,7 @@ def test_disk_cache_survives_inmemory_wipe(monkeypatch):
     calls = {"n": 0}
 
     def fake_call(system_text, history, *, max_tokens=None, require_complete=False,
-                  reasoning_effort=None):
+                  reasoning_effort=None, json_schema=None, schema_name="response"):
         calls["n"] += 1
         return (_valid_profile_json(), 5, 5, {})
 
