@@ -10,7 +10,8 @@ import com.plantdiseases.app.R
 import com.plantdiseases.app.databinding.ActivityOnboardingBinding
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.OnboardingStateStore
-import org.koin.android.ext.android.inject
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
 /**
  * First-launch prominent disclosure.
@@ -20,10 +21,13 @@ import org.koin.android.ext.android.inject
  * through Agree. Feature discovery continues later as small, once-only coach
  * marks in context instead of a swipe tour the user has to remember.
  */
+@AndroidEntryPoint
 class OnboardingActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityOnboardingBinding
-    private val onboardingState: OnboardingStateStore by inject()
+
+    @Inject
+    lateinit var onboardingState: OnboardingStateStore
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))

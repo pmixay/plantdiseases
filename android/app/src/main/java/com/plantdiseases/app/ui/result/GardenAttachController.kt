@@ -11,8 +11,6 @@ import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.launch
-import org.koin.core.component.KoinComponent
-import org.koin.core.component.inject
 
 /**
  * Owns "add this scan to a garden plant": picking an existing plant or creating
@@ -23,8 +21,8 @@ import org.koin.core.component.inject
 class GardenAttachController(
     private val activity: AppCompatActivity,
     private val binding: ActivityResultBinding,
-) : KoinComponent {
-    private val plantRepository: PlantRepository by inject()
+    private val plantRepository: PlantRepository,
+) {
 
     fun registerCreatePlantListener() {
         activity.supportFragmentManager.setFragmentResultListener(

@@ -27,8 +27,10 @@ import com.plantdiseases.app.ui.shell.ShellFragment
 import com.plantdiseases.app.util.InAppUpdateManager
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.OnboardingStateStore
-import org.koin.android.ext.android.inject
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
+@AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
@@ -57,7 +59,8 @@ class MainActivity : AppCompatActivity() {
      *  come from RuStore. */
     private var inAppUpdateManager: InAppUpdateManager? = null
 
-    private val onboardingState: OnboardingStateStore by inject()
+    @Inject
+    lateinit var onboardingState: OnboardingStateStore
     private lateinit var onboardingCoordinator: OnboardingCoordinator
 
     override fun attachBaseContext(newBase: Context) {

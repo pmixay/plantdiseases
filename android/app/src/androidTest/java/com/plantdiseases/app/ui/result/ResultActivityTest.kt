@@ -10,9 +10,8 @@ import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.data.model.AnalysisResponse
-import com.plantdiseases.app.data.repository.ScanRepository
+import com.plantdiseases.app.di.appEntryPoint
 import kotlinx.coroutines.runBlocking
-import org.koin.core.context.GlobalContext
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -28,7 +27,7 @@ class ResultActivityTest {
     @Test
     fun rendersStoredDiagnosisName() {
         val app = ApplicationProvider.getApplicationContext<PlantDiseasesApp>()
-        val scanRepository = GlobalContext.get().get<ScanRepository>()
+        val scanRepository = appEntryPoint(app).scanRepository()
 
         val scanId = runBlocking {
             scanRepository.saveScan(

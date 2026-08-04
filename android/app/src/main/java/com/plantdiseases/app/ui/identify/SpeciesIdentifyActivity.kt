@@ -21,10 +21,11 @@ import com.plantdiseases.app.databinding.ActivitySpeciesIdentifyBinding
 import com.plantdiseases.app.ui.camera.CameraFragment
 import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.LocaleHelper
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
-import org.koin.android.ext.android.inject
 import java.io.File
 import java.util.Locale
+import javax.inject.Inject
 
 /**
  * "Identify my plant" — a full live-camera screen that mirrors the disease
@@ -35,12 +36,16 @@ import java.util.Locale
  * camera. The best match renders in place as a SpeciesInfoCardView,
  * whose action opens the full species screen.
  */
+@AndroidEntryPoint
 class SpeciesIdentifyActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivitySpeciesIdentifyBinding
 
-    private val scanRepository: ScanRepository by inject()
-    private val connectivity: ConnectivityObserver by inject()
+    @Inject
+    lateinit var scanRepository: ScanRepository
+
+    @Inject
+    lateinit var connectivity: ConnectivityObserver
 
     private val isRu: Boolean get() = Locale.getDefault().language == "ru"
     private val locale: String get() = if (isRu) "ru" else "en"

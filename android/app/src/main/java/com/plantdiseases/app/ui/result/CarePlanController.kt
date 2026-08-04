@@ -13,8 +13,6 @@ import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.ui.common.CarePlanCardView
 import kotlinx.coroutines.launch
-import org.koin.core.component.KoinComponent
-import org.koin.core.component.inject
 
 /**
  * Owns the server-side care-plan card (/api/care-plan): inserts it after the
@@ -25,9 +23,9 @@ import org.koin.core.component.inject
 class CarePlanController(
     private val activity: AppCompatActivity,
     private val binding: ActivityResultBinding,
-) : KoinComponent {
-    private val scanRepository: ScanRepository by inject()
-    private val plantRepository: PlantRepository by inject()
+    private val scanRepository: ScanRepository,
+    private val plantRepository: PlantRepository,
+) {
     private var card: CarePlanCardView? = null
 
     fun bind(scan: ScanEntity, repository: ScanRepository, isRu: Boolean) {

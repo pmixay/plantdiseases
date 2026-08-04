@@ -30,7 +30,7 @@ import kotlinx.coroutines.launch
 /**
  * The app's single answer to "can we reach the server right now?".
  *
- * App-scoped (a Koin singleton — see `di/AppModule.kt`) and consumed by every
+ * App-scoped (a Hilt singleton — see `di/AppModule.kt`) and consumed by every
  * screen that either shows the shared
  * [com.plantdiseases.app.ui.common.OfflineNoticeView] or disables an
  * online-only action (see `util/ConnectivityBinding.kt`).

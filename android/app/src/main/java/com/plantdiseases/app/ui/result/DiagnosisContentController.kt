@@ -20,8 +20,6 @@ import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.launch
-import org.koin.core.component.KoinComponent
-import org.koin.core.component.inject
 
 /**
  * Renders the static diagnosis body: the pipeline-warning banner, the
@@ -31,8 +29,8 @@ import org.koin.core.component.inject
 class DiagnosisContentController(
     private val activity: AppCompatActivity,
     private val binding: ActivityResultBinding,
-) : KoinComponent {
-    private val plantRepository: PlantRepository by inject()
+    private val plantRepository: PlantRepository,
+) {
 
     private fun displayName(key: String, isRu: Boolean): String? =
         DiseaseLabels.displayName(key, isRu)

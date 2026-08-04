@@ -20,8 +20,6 @@ import com.plantdiseases.app.util.SimilarScans
 import com.plantdiseases.app.util.TelemetryIds
 import com.plantdiseases.app.util.onConnectivityChanged
 import kotlinx.coroutines.launch
-import org.koin.core.component.KoinComponent
-import org.koin.core.component.inject
 
 /**
  * Owns every community-facing surface on the result screen: the similar-scans
@@ -36,16 +34,15 @@ import org.koin.core.component.inject
 class CommunityController(
     private val activity: AppCompatActivity,
     private val binding: ActivityResultBinding,
+    private val repository: ScanRepository,
+    private val communityUploader: CommunityUploader,
+    private val connectivity: ConnectivityObserver,
     private val ensureNotificationPermission: () -> Unit,
     // Requests coarse location (+ notifications) and reports back whether
     // location was granted. Owned by the activity because permission launchers
     // must be registered before the activity starts. See ResultActivity.
     private val requestCommunityOptIn: (onResult: (Boolean) -> Unit) -> Unit,
-) : KoinComponent {
-    private val repository: ScanRepository by inject()
-    private val communityUploader: CommunityUploader by inject()
-
-    private val connectivity: ConnectivityObserver by inject()
+) {
 
     /**
      * True from the moment an ask is sent until the server answers. The

@@ -44,20 +44,25 @@ import com.plantdiseases.app.util.ModelFamilyPrefs
 import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.applyStatusBarTopInset
 import com.plantdiseases.app.util.onConnectivityChanged
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.koin.android.ext.android.inject
 import java.io.File
 import java.util.Locale
+import javax.inject.Inject
 
+@AndroidEntryPoint
 class CameraFragment : Fragment() {
 
     private var _binding: FragmentCameraBinding? = null
     private val binding get() = _binding!!
 
-    private val scanRepository: ScanRepository by inject()
-    private val connectivity: ConnectivityObserver by inject()
+    @Inject
+    lateinit var scanRepository: ScanRepository
+
+    @Inject
+    lateinit var connectivity: ConnectivityObserver
 
     private var imageCapture: ImageCapture? = null
     private var cameraProvider: ProcessCameraProvider? = null

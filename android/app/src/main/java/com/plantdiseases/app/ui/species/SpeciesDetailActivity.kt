@@ -46,9 +46,10 @@ import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.OnboardingStateStore
 import com.plantdiseases.app.util.TelemetryIds
 import com.plantdiseases.app.util.onConnectivityChanged
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
-import org.koin.android.ext.android.inject
 import java.util.Locale
+import javax.inject.Inject
 
 /**
  * Full-screen species detail — the rich, scan-like target for both the
@@ -59,12 +60,19 @@ import java.util.Locale
  * links into the offline disease guide, falling back to the bundled guide
  * when the AI is unavailable). Offers add-to-garden / scan-health / Wikipedia.
  */
+@AndroidEntryPoint
 class SpeciesDetailActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivitySpeciesDetailBinding
-    private val scanRepository: ScanRepository by inject()
-    private val connectivity: ConnectivityObserver by inject()
-    private val onboardingState: OnboardingStateStore by inject()
+
+    @Inject
+    lateinit var scanRepository: ScanRepository
+
+    @Inject
+    lateinit var connectivity: ConnectivityObserver
+
+    @Inject
+    lateinit var onboardingState: OnboardingStateStore
     private val isRu: Boolean get() = Locale.getDefault().language == "ru"
     private val locale: String get() = if (isRu) "ru" else "en"
 

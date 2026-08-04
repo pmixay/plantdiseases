@@ -46,9 +46,10 @@ import com.plantdiseases.app.util.SpeciesCatalog
 import com.plantdiseases.app.util.applyStatusBarTopInset
 import com.plantdiseases.app.util.enableWhileOnline
 import com.plantdiseases.app.util.onConnectivityChanged
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
-import org.koin.android.ext.android.inject
 import java.util.Calendar
+import javax.inject.Inject
 
 /**
  * Home — a visual discovery feed (start destination). Two hero actions, a
@@ -57,13 +58,17 @@ import java.util.Calendar
  * guide. A slim Stats & Tips teaser sits at the bottom. Tapping a card opens
  * a dedicated detail screen (SpeciesDetailActivity / GuideDetailActivity).
  */
+@AndroidEntryPoint
 class HomeFragment : Fragment() {
 
     private var _binding: FragmentHomeBinding? = null
     private val binding get() = _binding!!
 
-    private val apiClient: PlantApiClient by inject()
-    private val connectivity: ConnectivityObserver by inject()
+    @Inject
+    lateinit var apiClient: PlantApiClient
+
+    @Inject
+    lateinit var connectivity: ConnectivityObserver
 
     // Use the app's persisted UI language (LocaleHelper), NOT the device
     // locale: a Russian phone with the app switched to English must send

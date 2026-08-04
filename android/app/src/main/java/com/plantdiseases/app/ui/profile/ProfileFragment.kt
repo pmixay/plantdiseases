@@ -24,13 +24,16 @@ import com.plantdiseases.app.util.AutosavePrefs
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.ThemeHelper
 import com.plantdiseases.app.util.applyStatusBarTopInset
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
-import org.koin.android.ext.android.inject
 import java.util.Calendar
+import javax.inject.Inject
 
+@AndroidEntryPoint
 class ProfileFragment : Fragment() {
 
-    private val scanRepository: ScanRepository by inject()
+    @Inject
+    lateinit var scanRepository: ScanRepository
 
     private var _binding: FragmentProfileBinding? = null
     private val binding get() = _binding!!
