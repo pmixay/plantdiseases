@@ -48,9 +48,10 @@ import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.ReminderManager
 import com.plantdiseases.app.util.applyStatusBarTopInset
 import com.plantdiseases.app.util.localizedSpeciesName
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import org.koin.android.ext.android.inject
+import javax.inject.Inject
 
 /**
  * Garden tab. The screen scaffold (hero, plant list container, empty
@@ -59,6 +60,7 @@ import org.koin.android.ext.android.inject
  * parts — thumbnail loading, the health dot, the status chips and the
  * add/edit dialog — are still built in code.
  */
+@AndroidEntryPoint
 class GardenFragment : Fragment() {
 
     private var _binding: FragmentGardenBinding? = null
@@ -76,7 +78,8 @@ class GardenFragment : Fragment() {
     /** Plant count above which the search box appears. */
     private val searchVisibleThreshold = 6
 
-    private val plantRepository: PlantRepository by inject()
+    @Inject
+    lateinit var plantRepository: PlantRepository
 
     override fun onCreateView(
         inflater: LayoutInflater,

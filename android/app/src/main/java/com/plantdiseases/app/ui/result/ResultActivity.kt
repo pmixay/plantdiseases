@@ -27,6 +27,8 @@ import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.GuideDataProvider
 import com.plantdiseases.app.data.local.ScanEntity
+import com.plantdiseases.app.data.repository.CommunityUploader
+import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.ui.analysis.AnalysisActivity
@@ -40,9 +42,10 @@ import com.plantdiseases.app.util.ModelFamily
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.OnboardingStateStore
 import com.plantdiseases.app.util.enableWhileOnline
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
-import org.koin.android.ext.android.inject
 import java.io.File
+import javax.inject.Inject
 
 /**
  * Shows one saved scan's diagnosis. The activity is a thin host: it owns the
@@ -53,6 +56,7 @@ import java.io.File
  * [ShareController]. The activity-result permission launchers stay here because
  * they must be registered before the activity is STARTED.
  */
+@AndroidEntryPoint
 class ResultActivity : AppCompatActivity() {
 
     private enum class ConfidenceAdvisory {
@@ -62,9 +66,20 @@ class ResultActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityResultBinding
 
-    private val scanRepository: ScanRepository by inject()
-    private val onboardingState: OnboardingStateStore by inject()
-    private val connectivity: ConnectivityObserver by inject()
+    @Inject
+    lateinit var scanRepository: ScanRepository
+
+    @Inject
+    lateinit var onboardingState: OnboardingStateStore
+
+    @Inject
+    lateinit var connectivity: ConnectivityObserver
+
+    @Inject
+    lateinit var plantRepository: PlantRepository
+
+    @Inject
+    lateinit var communityUploader: CommunityUploader
 
     private var scaleFactor = 1.0f
     private lateinit var scaleGestureDetector: ScaleGestureDetector
@@ -73,13 +88,21 @@ class ResultActivity : AppCompatActivity() {
 
     private var pendingScanForToolbar: ScanEntity? = null
 
-    private val diagnosisContent by lazy { DiagnosisContentController(this, binding) }
-    private val carePlan by lazy { CarePlanController(this, binding) }
-    private val feedback by lazy { FeedbackController(this, binding) }
-    private val gardenAttach by lazy { GardenAttachController(this, binding) }
-    private val share by lazy { ShareController(this) }
+    private val diagnosisContent by lazy { DiagnosisContentController(this, binding, plantRepository) }
+    private val carePlan by lazy { CarePlanController(this, binding, scanRepository, plantRepository) }
+    private val feedback by lazy { FeedbackController(this, binding, scanRepository) }
+    private val gardenAttach by lazy { GardenAttachController(this, binding, plantRepository) }
+    private val share by lazy { ShareController(this, scanRepository) }
     private val community by lazy {
-        CommunityController(this, binding, ::ensureNotificationPermission, ::requestCommunityOptIn)
+        CommunityController(
+            this,
+            binding,
+            scanRepository,
+            communityUploader,
+            connectivity,
+            ::ensureNotificationPermission,
+            ::requestCommunityOptIn,
+        )
     }
 
     // Notifications-only prompt, fired when the user asks for a second opinion

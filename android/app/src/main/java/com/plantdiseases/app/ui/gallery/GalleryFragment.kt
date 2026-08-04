@@ -24,12 +24,15 @@ import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.applyStatusBarTopInset
 import android.widget.Toast
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
-import org.koin.android.ext.android.inject
+import javax.inject.Inject
 
+@AndroidEntryPoint
 class GalleryFragment : Fragment() {
 
-    private val scanRepository: ScanRepository by inject()
+    @Inject
+    lateinit var scanRepository: ScanRepository
 
     private var _binding: FragmentGalleryBinding? = null
     private val binding get() = _binding!!

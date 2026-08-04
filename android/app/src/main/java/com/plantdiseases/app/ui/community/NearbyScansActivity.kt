@@ -29,8 +29,9 @@ import com.plantdiseases.app.util.RegionResolver
 import com.plantdiseases.app.util.TelemetryIds
 import com.plantdiseases.app.util.enableWhileOnline
 import com.plantdiseases.app.util.onReconnected
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
-import org.koin.android.ext.android.inject
+import javax.inject.Inject
 
 /**
  * Social-style community feed. The server scopes it by country when it can,
@@ -42,12 +43,17 @@ import org.koin.android.ext.android.inject
  * A toolbar filter action opens a bottom-sheet overlay to sort the feed
  * by date (newest / oldest) and narrow it to a single disease type.
  */
+@AndroidEntryPoint
 class NearbyScansActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityNearbyScansBinding
     private lateinit var adapter: NearbyScansAdapter
-    private val scanRepository: ScanRepository by inject()
-    private val connectivity: ConnectivityObserver by inject()
+
+    @Inject
+    lateinit var scanRepository: ScanRepository
+
+    @Inject
+    lateinit var connectivity: ConnectivityObserver
     private val isRu by lazy { LocaleHelper.isRussian(this) }
 
     // Full feed as returned by the server; filtered + sorted client-side

@@ -17,7 +17,7 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.color.MaterialColors
 import com.plantdiseases.app.R
-import com.plantdiseases.app.data.repository.ScanRepository
+import com.plantdiseases.app.di.appEntryPoint
 import com.plantdiseases.app.ui.species.SpeciesDetailActivity
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.ServerConfig
@@ -25,8 +25,6 @@ import com.plantdiseases.app.util.hasCyrillic
 import com.plantdiseases.app.util.localizedSpeciesName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import org.koin.core.component.KoinComponent
-import org.koin.core.component.inject
 import com.google.android.material.R as MaterialR
 
 /**
@@ -41,15 +39,23 @@ import com.google.android.material.R as MaterialR
  *
  * Bind is safe to call repeatedly: every call resets the card to its empty
  * state first, so a recycled host never shows the previous species' photo.
+ *
+ * Not `@AndroidEntryPoint`: [SpeciesInfoCardViewTest] constructs this view
+ * directly against a plain (non-Hilt) `AppCompatActivity` host, which a
+ * Hilt-injected View would crash against at construction time. Resolving the
+ * repository lazily via [appEntryPoint] — forced only inside [loadEnrichment],
+ * never on the null-`scientific` paths that test exercises — keeps the field
+ * untouched on every path that test covers.
  */
 class SpeciesInfoCardView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
     defStyle: Int = 0,
-) : MaterialCardView(context, attrs, defStyle),
-    KoinComponent {
+) : MaterialCardView(context, attrs, defStyle) {
 
-    private val scanRepository: ScanRepository by inject()
+    private val scanRepository by lazy(LazyThreadSafetyMode.NONE) {
+        appEntryPoint(context).scanRepository()
+    }
 
     private val photo: ImageView
     private val nameView: TextView

@@ -26,8 +26,9 @@ import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.onConnectivityChanged
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
-import org.koin.android.ext.android.inject
+import javax.inject.Inject
 
 /**
  * No-photo symptom checker — the fallback shown when the camera/ML pipeline
@@ -39,12 +40,16 @@ import org.koin.android.ext.android.inject
  * its limits: a sparse/weak result shows a "take a photo for a reliable
  * diagnosis" nudge.
  */
+@AndroidEntryPoint
 class SymptomCheckerActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivitySymptomCheckerBinding
 
-    private val scanRepository: ScanRepository by inject()
-    private val connectivity: ConnectivityObserver by inject()
+    @Inject
+    lateinit var scanRepository: ScanRepository
+
+    @Inject
+    lateinit var connectivity: ConnectivityObserver
 
     // Selected option per question id. The submit button enables at >= 2,
     // and only while the scoring server is reachable.

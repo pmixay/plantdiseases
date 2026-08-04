@@ -31,9 +31,10 @@ import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.Nicknames
 import com.plantdiseases.app.util.ServerConfig
 import com.plantdiseases.app.util.TelemetryIds
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
-import org.koin.android.ext.android.inject
 import android.widget.Toast
+import javax.inject.Inject
 
 /**
  * Community "second opinion" sheet. Opened from a low-confidence result
@@ -44,9 +45,11 @@ import android.widget.Toast
  * State-light and recreation-safe: the only inputs are stashed in arguments,
  * so a process-death restore reloads cleanly instead of crashing.
  */
+@AndroidEntryPoint
 class CommunityOpinionSheet : BottomSheetDialogFragment() {
 
-    private val scanRepository: ScanRepository by inject()
+    @Inject
+    lateinit var scanRepository: ScanRepository
 
     private var scanId: String = ""
     private var currentName: String? = null

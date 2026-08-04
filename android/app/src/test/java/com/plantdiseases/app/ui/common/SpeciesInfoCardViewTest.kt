@@ -14,9 +14,10 @@ import org.robolectric.annotation.Config
 
 /**
  * Covers the card's synchronous contract — the parts a host relies on before
- * any network enrichment lands. The Wikipedia enrichment path needs Koin (for
- * ScanRepository) and is deliberately not exercised here; every case below
- * keeps `scientific` null so `loadEnrichment` is never reached.
+ * any network enrichment lands. The Wikipedia enrichment path needs the Hilt
+ * graph (for ScanRepository) and is deliberately not exercised here — this
+ * test's host Activity is a plain (non-Hilt) `AppCompatActivity` — every case
+ * below keeps `scientific` null so `loadEnrichment` is never reached.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])

@@ -28,8 +28,6 @@ import com.plantdiseases.app.ui.garden.PhotoViewerActivity
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
 import kotlinx.coroutines.launch
-import org.koin.core.component.KoinComponent
-import org.koin.core.component.inject
 
 /**
  * Journal tab: the per-entry cards, their long-press context menu, and the
@@ -37,10 +35,10 @@ import org.koin.core.component.inject
  */
 class DetailJournalController(
     private val activity: AppCompatActivity,
+    private val plantRepository: PlantRepository,
     private val onReload: () -> Unit,
-) : KoinComponent {
+) {
 
-    private val plantRepository: PlantRepository by inject()
     private var plantId: Long = -1L
 
     fun renderJournal(

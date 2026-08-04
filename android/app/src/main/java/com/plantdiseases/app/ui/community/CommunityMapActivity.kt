@@ -44,9 +44,9 @@ import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.RegionResolver
 import com.plantdiseases.app.util.ServerConfig
 import com.plantdiseases.app.util.onReconnected
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import org.koin.android.ext.android.inject
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.DelayedMapListener
 import org.osmdroid.events.MapListener
@@ -58,6 +58,7 @@ import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polygon
 import java.io.File
+import javax.inject.Inject
 
 /**
  * Full-screen community scans map (osmdroid). Zoomed out it paints a
@@ -67,11 +68,16 @@ import java.io.File
  * list of them. Viewing the (anonymized, aggregate) map needs no opt-in; the
  * "near me" FAB uses coarse location and never flips upload sharing on.
  */
+@AndroidEntryPoint
 class CommunityMapActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityCommunityMapBinding
-    private val scanRepository: ScanRepository by inject()
-    private val connectivity: ConnectivityObserver by inject()
+
+    @Inject
+    lateinit var scanRepository: ScanRepository
+
+    @Inject
+    lateinit var connectivity: ConnectivityObserver
     private val isRu: Boolean get() = LocaleHelper.isRussian(this)
     private var loadJob: Job? = null
 

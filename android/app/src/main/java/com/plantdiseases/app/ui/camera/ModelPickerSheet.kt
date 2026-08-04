@@ -16,7 +16,8 @@ import com.plantdiseases.app.util.AquaModelManager
 import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.ModelFamily
 import com.plantdiseases.app.util.ModelFamilyPrefs
-import org.koin.android.ext.android.inject
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
 /**
  * Bottom-sheet model-family picker shown from the scan screen.
@@ -34,9 +35,11 @@ import org.koin.android.ext.android.inject
  * did not survive a configuration-change recreation of the open sheet, so a
  * pick made after rotating left the host chip stale until the next resume.)
  */
+@AndroidEntryPoint
 class ModelPickerSheet : BottomSheetDialogFragment() {
 
-    private val connectivity: ConnectivityObserver by inject()
+    @Inject
+    lateinit var connectivity: ConnectivityObserver
 
     override fun onCreateView(
         inflater: LayoutInflater,
