@@ -97,6 +97,7 @@
 
         <!-- Hero actions -->
         <LinearLayout
+            android:id="@+id/home_primary_actions"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/space_lg"
@@ -196,6 +197,7 @@
 
         <!-- Compact tools row -->
         <LinearLayout
+            android:id="@+id/home_quick_tools"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/space_md"

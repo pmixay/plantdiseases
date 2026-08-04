@@ -12,11 +12,13 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.bottomnavigation.BottomNavigationView
+import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.BuildConfig
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.ScanHistoryItem
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.FragmentProfileBinding
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.ui.widget.BarChartView
 import com.plantdiseases.app.util.AutosavePrefs
 import com.plantdiseases.app.util.LocaleHelper
@@ -79,6 +81,9 @@ class ProfileFragment : Fragment() {
 
         setupThemeChips()
         setupAutosaveToggle()
+        binding.replayGuidanceRow.setOnClickListener {
+            (activity as? MainActivity)?.replayAppGuidance()
+        }
         // loadStats() runs in onResume(), which fires immediately after this on
         // first show and again on every return — calling it here too would issue
         // a duplicate getStats() DB read on every fragment creation.
@@ -285,6 +290,7 @@ class ProfileFragment : Fragment() {
             if (stats.totalScans == 0) {
                 binding.statsLayout.visibility = View.GONE
                 binding.emptyState.visibility = View.VISIBLE
+                registerOnboardingAnchors(binding.emptyState)
                 return@launch
             }
 
@@ -320,6 +326,19 @@ class ProfileFragment : Fragment() {
 
             val commonDisease = if (isRu) stats.mostCommonDiseaseRu else stats.mostCommonDisease
             binding.tvCommonDisease.text = commonDisease ?: getString(R.string.none_yet)
+            registerOnboardingAnchors(binding.statsLayout)
+        }
+    }
+
+    private fun registerOnboardingAnchors(statisticsAnchor: View) {
+        (activity as? MainActivity)?.apply {
+            registerOnboardingAnchor(OnboardingAnchorKey.PROFILE_SETTINGS, binding.settingsCard)
+            registerOnboardingAnchor(OnboardingAnchorKey.PROFILE_STATISTICS, statisticsAnchor)
+            registerOnboardingAnchor(
+                OnboardingAnchorKey.PROFILE_REPLAY,
+                binding.replayGuidanceRow,
+                pauseAfterTarget = true,
+            )
         }
     }
 
@@ -343,6 +362,11 @@ class ProfileFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        (activity as? MainActivity)?.apply {
+            unregisterOnboardingAnchor(OnboardingAnchorKey.PROFILE_SETTINGS)
+            unregisterOnboardingAnchor(OnboardingAnchorKey.PROFILE_STATISTICS)
+            unregisterOnboardingAnchor(OnboardingAnchorKey.PROFILE_REPLAY)
+        }
         super.onDestroyView()
         countAnimators.forEach { it.cancel() }
         countAnimators.clear()

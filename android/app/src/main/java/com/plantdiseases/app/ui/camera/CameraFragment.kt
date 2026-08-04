@@ -28,11 +28,14 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import com.plantdiseases.app.PlantDiseasesApp
+import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.R
 import com.plantdiseases.app.databinding.FragmentCameraBinding
 import com.plantdiseases.app.ui.analysis.AnalysisActivity
 import com.plantdiseases.app.ui.crop.CropContract
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingStepId
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.ModelFamilyPrefs
@@ -106,7 +109,6 @@ class CameraFragment : Fragment() {
 
         private const val PREFS_NAME = "plantdiseases_prefs"
         private const val KEY_GRID_OVERLAY = "grid_overlay_enabled"
-        private const val KEY_TIPS_SEEN = "scan_tips_seen"
 
         /** Set in the fragment arguments to run the camera as a species
          *  identification front-end (see [identifyMode]). */
@@ -133,12 +135,18 @@ class CameraFragment : Fragment() {
         // use cases twice.
         binding.permissionLayout.visibility = if (granted) View.GONE else View.VISIBLE
         binding.cameraPreview.visibility = if (granted) View.VISIBLE else View.GONE
+        (activity as? MainActivity)?.resumeOnboardingAfterExternalUi()
     }
 
     private val galleryLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        uri?.let { handleGalleryImage(it) }
+        if (uri == null) {
+            (activity as? MainActivity)?.resumeOnboardingAfterExternalUi()
+        } else {
+            (activity as? MainActivity)?.moveOnboardingTo(OnboardingStepId.RESULT_DIAGNOSIS)
+            handleGalleryImage(uri)
+        }
     }
 
     /** Crop editor (our own [CropContract] / CropActivity). Both the camera
@@ -181,23 +189,6 @@ class CameraFragment : Fragment() {
         }
     }
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        // Deliver the first-run tips sheet's "Continue" tap via the Fragment
-        // Result API rather than a transient lambda, so it survives a
-        // config-change recreation (rotation / dark-mode / locale) while the
-        // sheet is open. Registering with `this` re-arms on recreation and the
-        // FragmentManager replays any pending result to the new listener.
-        parentFragmentManager.setFragmentResultListener(
-            ScanTipsSheet.REQUEST_KEY,
-            this,
-        ) { _, _ ->
-            requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .edit().putBoolean(KEY_TIPS_SEEN, true).apply()
-            continueCaptureFlow()
-        }
-    }
-
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -232,6 +223,7 @@ class CameraFragment : Fragment() {
         // banner there rather than stacking two strips at the top.
         if (!identifyMode) binding.offlineBanner.observe(viewLifecycleOwner, connectivity)
         restoreGridOverlay()
+        registerOnboardingAnchors()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -538,27 +530,13 @@ class CameraFragment : Fragment() {
         }, ContextCompat.getMainExecutor(requireContext()))
     }
 
-    /** Explicit shutter click. Shows the pre-scan tips sheet the
-     *  first time, otherwise falls straight through to capture. */
+    /** Explicit shutter click. Contextual guidance now owns first-use tips. */
     private fun onCaptureClicked() {
         // Swallow a rapid second tap before it can branch into a duplicate
         // capture / cropper / tips sheet.
         val now = SystemClock.elapsedRealtime()
         if (now - lastCaptureTapAt < captureDebounceMs) return
         lastCaptureTapAt = now
-        // The first-run scan-tips sheet is disease-scan guidance; identify
-        // mode goes straight to capture.
-        if (identifyMode) {
-            continueCaptureFlow()
-            return
-        }
-        val prefs = requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        if (!prefs.getBoolean(KEY_TIPS_SEEN, false)) {
-            // The Continue tap is handled by the Fragment Result listener
-            // registered in onCreate (config-change safe).
-            ScanTipsSheet.show(parentFragmentManager)
-            return
-        }
         continueCaptureFlow()
     }
 
@@ -572,6 +550,9 @@ class CameraFragment : Fragment() {
     private fun takePhoto() {
         if (captureInFlight) return
         val imageCapture = imageCapture ?: return
+        if (!identifyMode) {
+            (activity as? MainActivity)?.moveOnboardingTo(OnboardingStepId.RESULT_DIAGNOSIS)
+        }
 
         captureInFlight = true
         binding.btnCapture.isEnabled = false
@@ -768,7 +749,10 @@ class CameraFragment : Fragment() {
         // this is where the preview opens — on arrival at the Scan page, on
         // return from the cropper/gallery, and once the permission dialog is
         // dismissed and state is stable.
-        if (_binding != null) openCameraOrAskPermission()
+        if (_binding != null) {
+            openCameraOrAskPermission()
+            (activity as? MainActivity)?.resumeOnboardingAfterExternalUi()
+        }
     }
 
     override fun onPause() {
@@ -790,6 +774,14 @@ class CameraFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        if (!identifyMode) {
+            (activity as? MainActivity)?.apply {
+                unregisterOnboardingAnchor(OnboardingAnchorKey.CAMERA_PERMISSION, _binding?.btnGrantPermission)
+                unregisterOnboardingAnchor(OnboardingAnchorKey.CAMERA_PREVIEW, _binding?.cameraPreview)
+                unregisterOnboardingAnchor(OnboardingAnchorKey.CAMERA_GALLERY, _binding?.btnGallery)
+                unregisterOnboardingAnchor(OnboardingAnchorKey.CAMERA_SHUTTER, _binding?.btnCapture)
+            }
+        }
         super.onDestroyView()
         // Belt and braces — onPause has already released it on every path that
         // gets here. Kept so the "no provider outlives the view" guarantee
@@ -800,5 +792,32 @@ class CameraFragment : Fragment() {
         // dangling Choreographer callback on the destroyed view.
         binding.tvZoom.removeCallbacks(hideZoomRunnable)
         _binding = null
+    }
+
+    private fun registerOnboardingAnchors() {
+        if (identifyMode) return
+        (activity as? MainActivity)?.apply {
+            registerOnboardingAnchor(
+                OnboardingAnchorKey.CAMERA_PERMISSION,
+                binding.btnGrantPermission,
+                available = { binding.btnGrantPermission.isShown },
+                pauseAfterTarget = true,
+            )
+            registerOnboardingAnchor(
+                OnboardingAnchorKey.CAMERA_PREVIEW,
+                binding.cameraPreview,
+                available = { binding.cameraPreview.isShown },
+            )
+            registerOnboardingAnchor(
+                OnboardingAnchorKey.CAMERA_GALLERY,
+                binding.btnGallery,
+                pauseAfterTarget = true,
+            )
+            registerOnboardingAnchor(
+                OnboardingAnchorKey.CAMERA_SHUTTER,
+                binding.btnCapture,
+                pauseAfterTarget = true,
+            )
+        }
     }
 }

@@ -106,12 +106,53 @@
     <string name="consent_agree">Принять</string>
     <string name="consent_privacy_link">Политика конфиденциальности</string>
 
-    <!-- Контекстные подсказки -->
-    <string name="coach_scan_title">Начните со сканирования</string>
-    <string name="coach_scan_body">Нажмите «Скан», сфотографируйте лист и получите диагноз.</string>
-    <string name="coach_result_title">Как понять результат</string>
-    <string name="coach_result_body">Сначала посмотрите диагноз и уверенность модели, затем пролистайте к уходу и другим вариантам.</string>
-    <string name="coach_got_it">Понятно</string>
+    <!-- Интерактивные контекстные подсказки -->
+    <string name="guidance_title_home_scan">Главная и сканирование</string>
+    <string name="guidance_title_garden">Сад</string>
+    <string name="guidance_title_garden_plant">Ваше растение</string>
+    <string name="guidance_title_gallery">Галерея</string>
+    <string name="guidance_title_profile">Профиль</string>
+    <string name="guidance_title_species">О виде растения</string>
+    <string name="guidance_home_actions">«Сканировать» проверяет здоровье известного растения, а «Определить» распознаёт неизвестный вид.</string>
+    <string name="guidance_home_tools">Быстрые инструменты измеряют свет, рассчитывают полив, проверяют симптомы и открывают справочник растений.</string>
+    <string name="guidance_home_scan_nav">Откройте «Скан», чтобы проверить здоровье растения. Нажмите выделенную вкладку или стрелку вперёд.</string>
+    <string name="guidance_camera_permission">Доступ к камере нужен для снимка листа. Без него можно импортировать фото из галереи. Стрелка вперёд никогда не выдаёт разрешение.</string>
+    <string name="guidance_camera_preview">Пусть один лист занимает большую часть кадра. Нужны ровный свет, простой фон и отсутствие других растений.</string>
+    <string name="guidance_camera_gallery">Здесь можно выбрать готовое чёткое фото растения. После отмены подсказка продолжится с этого шага, а выбор фото ведёт к результату.</string>
+    <string name="guidance_camera_shutter">Держите телефон неподвижно и дождитесь фокусировки, затем нажмите затвор. Стрелка вперёд закроет подсказку без снимка.</string>
+    <string name="guidance_result">На карточке показаны диагноз и уверенность. Ниже находятся рекомендации по уходу, объяснения и альтернативные варианты.</string>
+    <string name="guidance_garden_hero">В «Саду» хранятся растения, история их здоровья, записи журнала и напоминания.</string>
+    <string name="guidance_garden_plants">Карточка растения открывает историю здоровья и ухода. Если сад пуст, эта область подскажет, с чего начать.</string>
+    <string name="guidance_garden_add">Здесь можно добавить растение или %1$s. Выделенная кнопка откроет существующую форму; стрелка ничего не добавит.</string>
+    <string name="guidance_garden_attach_scan_link">позже прикрепить готовый скан</string>
+    <string name="guidance_garden_result_add">Скан готов. Нажмите «Добавить в сад», чтобы прикрепить его к растению. Стрелка оставит скан неприкреплённым.</string>
+    <string name="guidance_garden_plant_summary">Здесь собраны название и вид растения, количество сканов, записи журнала и история полива.</string>
+    <string name="guidance_garden_plant_actions">Эти кнопки позволяют отметить полив, добавить заметку, начать новую проверку здоровья или открыть остальные действия по уходу.</string>
+    <string name="guidance_garden_plant_care">План лечения объединяет рекомендации по уходу и наблюдению с учётом истории сканов этого растения.</string>
+    <string name="guidance_garden_plant_history">Здесь можно переключаться между историей здоровья, сохранёнными фотографиями и журналом. Подсказки появятся только при первом открытии растения.</string>
+    <string name="guidance_garden_plant_assistant">Попробуйте ИИ-помощника для вопросов об уходе. Нажмите выделенную карточку, чтобы открыть его.</string>
+    <string name="guidance_gallery_filters">Эти фильтры показывают все результаты, здоровые растения или обнаруженные болезни.</string>
+    <string name="guidance_gallery_results">Готовые сканы появляются здесь, и их можно открыть снова. Для пустой истории эта область подсказывает, как сделать первый скан.</string>
+    <string name="guidance_profile_settings">Здесь настраиваются язык, тема и сохранение фото. Подсказка ничего не изменяет.</string>
+    <string name="guidance_profile_statistics">Здесь отображаются доля здоровых растений, число сканов, активность за неделю и частые проблемы. Предусмотрено и состояние без сканов.</string>
+    <string name="guidance_profile_replay">Эта строка позволяет в любой момент заново запустить все подсказки. Согласие и настройки сохранятся.</string>
+    <string name="guidance_species_summary">Здесь находятся определённый вид, научное название, описание из энциклопедии, примеры фото и ссылка на Википедию.</string>
+    <string name="guidance_species_care">В плане ухода есть полив, свет, влажность, подкормка и подробные рекомендации. Разверните его, когда нужны детали.</string>
+    <string name="guidance_species_flowering">Раздел показывает интенсивность цветения по месяцам, заметки о цветении дома и полезные условия. Выделенный заголовок можно развернуть.</string>
+    <string name="guidance_species_native_range">Раздел показывает природный ареал растения. Разверните интерактивную карту: нажатие на страну покажет ожидаемый рост.</string>
+    <string name="guidance_previous">Предыдущий шаг</string>
+    <string name="guidance_next">Следующий шаг</string>
+    <string name="guidance_activate_target">Нажать выделенный элемент</string>
+    <string name="guidance_step_counter">Шаг %1$d из %2$d</string>
+    <string name="guidance_skip_section">Пропустить раздел</string>
+    <string name="guidance_skip_all">Пропустить всё</string>
+    <string name="guidance_skip_all_title">Пропустить все инструкции?</string>
+    <string name="guidance_skip_all_body">Подсказки больше не появятся, пока вы не выберете «Повторить подсказки» в профиле.</string>
+    <string name="guidance_back_title">Выйти из раздела?</string>
+    <string name="guidance_back_body">Это первый шаг на данном экране. Продолжите раздел или пропустите его навсегда.</string>
+    <string name="guidance_continue">Продолжить подсказки</string>
+    <string name="replay_guidance_title">Повторить подсказки</string>
+    <string name="replay_guidance_subtitle">Заново запустить все контекстные инструкции</string>
 
     <!-- Result -->
     <string name="new_scan">Новый скан</string>
@@ -263,16 +304,6 @@
     <string name="channel_community_name">Сообщество</string>
     <string name="channel_community_desc">Вторые мнения о сканах, которыми вы поделились</string>
 
-    <!-- Pre-scan tips sheet -->
-    <string name="scan_tips_title">Перед сканированием</string>
-    <string name="scan_tips_subtitle">Три простых правила — они снимают почти все «странные» диагнозы.</string>
-    <string name="scan_tips_continue">Понятно — сканируем</string>
-    <string name="scan_tip_distance_title">Подберите расстояние</string>
-    <string name="scan_tip_distance_body">Слишком близко — в кадр попадает только пятно. Слишком далеко — лист размером с ноготь. Один лист должен занимать большую часть кадра.</string>
-    <string name="scan_tip_focus_title">Держите камеру неподвижно</string>
-    <string name="scan_tip_focus_body">Коснитесь листа, чтобы зафиксировать автофокус. Избегайте контрового света — лист не должен быть силуэтом на ярком фоне.</string>
-    <string name="scan_tip_single_title">Один вид в кадре</string>
-    <string name="scan_tip_single_body">Два растения в одном кадре сбивают и классификатор, и определение вида. Подойдите ближе или сместите ракурс, чтобы оставить одно растение.</string>
     <!-- About model -->
     <!-- Rate limit -->
     <string name="server_busy">Сервер занят</string>
@@ -818,9 +849,7 @@
     <string name="native_range_loading">Загружаем природный ареал…</string>
     <string name="native_range_grows_more">Хорошо растёт</string>
     <string name="native_range_grows_less">Растёт ограниченно</string>
-    <string name="native_range_country_chip">%1$s · %2$s</string>
     <string name="native_range_selected_country">%1$s · %2$s</string>
-    <string name="native_range_country_accessibility">%1$s: %2$s</string>
     <string name="native_range_selected_country_accessibility">Выбрана страна %1$s: %2$s</string>
     <string name="native_range_tap_hint">Нажмите на страну, чтобы проверить, как здесь растёт растение.</string>
     <string name="native_range_outside_country">%1$s · Вне известного ареала для выращивания на открытом воздухе; нужны помещение или теплица с контролируемыми условиями.</string>

@@ -33,6 +33,9 @@ import com.plantdiseases.app.databinding.ActivitySpeciesDetailBinding
 import com.plantdiseases.app.ui.common.CarePlanCardView
 import com.plantdiseases.app.ui.common.ExpandableSectionAnimator
 import com.plantdiseases.app.ui.guide.GuideDetailActivity
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingContext
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingCoordinator
 import com.plantdiseases.app.ui.result.CommunityOpinionSheet
 import com.plantdiseases.app.ui.result.SimilarScansAdapter
 import com.plantdiseases.app.ui.widget.WorldMapView
@@ -40,6 +43,7 @@ import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.DiseaseCatalog
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.OnboardingStateStore
 import com.plantdiseases.app.util.TelemetryIds
 import kotlinx.coroutines.launch
 import org.koin.android.ext.android.inject
@@ -59,6 +63,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
     private lateinit var binding: ActivitySpeciesDetailBinding
     private val scanRepository: ScanRepository by inject()
     private val connectivity: ConnectivityObserver by inject()
+    private val onboardingState: OnboardingStateStore by inject()
     private val isRu: Boolean get() = Locale.getDefault().language == "ru"
     private val locale: String get() = if (isRu) "ru" else "en"
 
@@ -66,6 +71,12 @@ class SpeciesDetailActivity : AppCompatActivity() {
     private var commonName: String? = null
     private var floweringExpanded = false
     private var nativeRangeExpanded = false
+    private var detailResolved = false
+    private var careResolved = false
+    private var profileResolved = false
+    private var floweringAvailable = false
+    private var nativeRangeAvailable = false
+    private lateinit var onboardingCoordinator: OnboardingCoordinator
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
@@ -75,6 +86,8 @@ class SpeciesDetailActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivitySpeciesDetailBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        onboardingCoordinator = OnboardingCoordinator(this, onboardingState)
+        onboardingCoordinator.setContext(OnboardingContext.SPECIES_DETAILS)
 
         WindowCompat.setDecorFitsSystemWindows(window, false)
         ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, insets ->
@@ -236,6 +249,8 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 binding.tvSpeciesExtract.text = getString(R.string.identify_no_info)
                 binding.extractExpandRow.visibility = View.GONE
             }
+            detailResolved = true
+            registerOnboardingAnchorsWhenReady()
         }
     }
 
@@ -304,6 +319,8 @@ class SpeciesDetailActivity : AppCompatActivity() {
             // Pet toxicity renders as its own card (below), not part of the
             // care card. Hidden when the plan couldn't load / pin toxicity.
             bindToxicity(plan)
+            careResolved = true
+            registerOnboardingAnchorsWhenReady()
         }
     }
 
@@ -463,6 +480,8 @@ class SpeciesDetailActivity : AppCompatActivity() {
             if (profile?.available != true) {
                 finishFloweringLoading(hasContent = false)
                 finishNativeRangeLoading(hasContent = false)
+                profileResolved = true
+                registerOnboardingAnchorsWhenReady()
                 return@launch
             }
 
@@ -487,6 +506,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 }
             }
             finishFloweringLoading(hasFlowering)
+            floweringAvailable = hasFlowering
 
             val nativeRange = profile.nativeRange
             val zones = nativeRange?.zones.orEmpty().mapNotNull { zone ->
@@ -505,7 +525,33 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 binding.worldMap.setZones(zones)
             }
             finishNativeRangeLoading(hasNativeRange)
+            nativeRangeAvailable = hasNativeRange
+            profileResolved = true
+            registerOnboardingAnchorsWhenReady()
         }
+    }
+
+    /** Loading cards are never anchors; the whole catalog is exposed atomically. */
+    private fun registerOnboardingAnchorsWhenReady() {
+        if (!detailResolved || !careResolved || !profileResolved) return
+        onboardingCoordinator.registerAnchor(
+            OnboardingAnchorKey.SPECIES_SUMMARY,
+            binding.speciesSummary,
+        )
+        onboardingCoordinator.registerAnchor(
+            OnboardingAnchorKey.SPECIES_CARE,
+            binding.careSlot,
+        )
+        onboardingCoordinator.registerAnchor(
+            OnboardingAnchorKey.SPECIES_FLOWERING,
+            binding.floweringHeader,
+            available = { floweringAvailable && binding.cardFlowering.isShown },
+        )
+        onboardingCoordinator.registerAnchor(
+            OnboardingAnchorKey.SPECIES_NATIVE_RANGE,
+            binding.nativeRangeHeader,
+            available = { nativeRangeAvailable && binding.cardNativeRange.isShown },
+        )
     }
 
     private fun showSpeciesProfileLoading() {

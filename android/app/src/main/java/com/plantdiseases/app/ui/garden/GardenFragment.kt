@@ -23,6 +23,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.children
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
@@ -30,14 +31,17 @@ import com.bumptech.glide.load.DecodeFormat
 import com.bumptech.glide.load.resource.bitmap.CenterCrop
 import com.bumptech.glide.load.resource.bitmap.RoundedCorners
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.card.MaterialCardView
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
+import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.PlantEntity
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.databinding.FragmentGardenBinding
 import com.plantdiseases.app.databinding.ItemPlantCardBinding
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.util.CareSchedule
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.LocaleHelper
@@ -139,6 +143,11 @@ class GardenFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        (activity as? MainActivity)?.apply {
+            unregisterOnboardingAnchor(OnboardingAnchorKey.GARDEN_HERO)
+            unregisterOnboardingAnchor(OnboardingAnchorKey.GARDEN_PLANTS)
+            unregisterOnboardingAnchor(OnboardingAnchorKey.GARDEN_ADD)
+        }
         super.onDestroyView()
         _binding = null
     }
@@ -209,6 +218,27 @@ class GardenFragment : Fragment() {
             }
 
         renderPlantList(all.filter { matchesQuery(it, query) }, query, animate)
+        registerOnboardingAnchors(all.isEmpty())
+    }
+
+    private fun registerOnboardingAnchors(empty: Boolean) {
+        val host = activity as? MainActivity ?: return
+        val listAnchor = if (empty) {
+            binding.gardenEmptyState
+        } else {
+            binding.gardenPlantsContainer.children
+                .firstOrNull { it is MaterialCardView }
+                ?: binding.gardenPlantsContainer
+        }
+        val addAnchor = if (empty) binding.gardenEmptyCta else binding.gardenAddFab
+        host.registerOnboardingAnchor(OnboardingAnchorKey.GARDEN_HERO, binding.gardenHero)
+        host.registerOnboardingAnchor(OnboardingAnchorKey.GARDEN_PLANTS, listAnchor)
+        host.registerOnboardingAnchor(
+            OnboardingAnchorKey.GARDEN_ADD,
+            addAnchor,
+            pauseAfterTarget = true,
+            onInlineAction = host::startGardenAttachScanGuidance,
+        )
     }
 
     private fun renderPlantList(
