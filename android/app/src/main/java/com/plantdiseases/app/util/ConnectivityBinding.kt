@@ -17,17 +17,33 @@ import kotlinx.coroutines.launch
 // reason the observer costs nothing in the background, and it is too easy to
 // get subtly wrong one call site at a time.
 //
-// Fragments must pass `viewLifecycleOwner`, not `this`.
+// These take the flow rather than the observer so the same code path is what
+// the tests exercise. Fragments must pass `viewLifecycleOwner`, not `this`.
 
 /** Run [block] with the current reachability state while [this] is STARTED. */
 fun LifecycleOwner.onConnectivityChanged(
-    connectivity: ConnectivityObserver,
+    onlineStates: Flow<Boolean>,
     block: (online: Boolean) -> Unit,
 ) {
     lifecycleScope.launch {
         repeatOnLifecycle(Lifecycle.State.STARTED) {
-            connectivity.isOnline.collect(block)
+            onlineStates.collect(block)
         }
+    }
+}
+
+/**
+ * Run [block] each time the server becomes reachable *again* — for a screen
+ * whose content is live-only and was deliberately not fetched while offline.
+ *
+ * The first reading never fires it; only a false→true transition does, so a
+ * screen that opens online doesn't load twice.
+ */
+fun LifecycleOwner.onReconnected(onlineStates: Flow<Boolean>, block: () -> Unit) {
+    var wasOnline = true
+    onConnectivityChanged(onlineStates) { online ->
+        if (online && !wasOnline) block()
+        wasOnline = online
     }
 }
 
@@ -41,31 +57,21 @@ fun LifecycleOwner.onConnectivityChanged(
  * screen's layout stable when connectivity flaps. A disabled view still
  * swallows its touches without firing its click listener, so this is enough
  * to close the entry point.
+ *
+ * A view whose enabled state something *else* also writes needs that writer to
+ * consult the same signal — see `CommunityController`, where a re-render used
+ * to quietly undo this.
  */
 fun LifecycleOwner.enableWhileOnline(
-    connectivity: ConnectivityObserver,
-    vararg views: View,
-) {
-    enableWhileOnline(connectivity.isOnline, *views)
-}
-
-/** Flow-based seam, so the gate can be tested without a ConnectivityManager. */
-internal fun LifecycleOwner.enableWhileOnline(
     onlineStates: Flow<Boolean>,
     vararg views: View,
-) {
-    lifecycleScope.launch {
-        repeatOnLifecycle(Lifecycle.State.STARTED) {
-            onlineStates.collect { online ->
-                views.forEach { view ->
-                    view.isEnabled = online
-                    // Buttons already dim their own disabled state — stacking a
-                    // view alpha on top of Material's leaves them almost
-                    // invisible. Cards and plain layouts don't, so those get it.
-                    if (view !is Button) view.alpha = if (online) 1f else DISABLED_ALPHA
-                }
-            }
-        }
+) = onConnectivityChanged(onlineStates) { online ->
+    views.forEach { view ->
+        view.isEnabled = online
+        // Buttons already dim their own disabled state — stacking a view alpha
+        // on top of Material's leaves them almost invisible. Cards and plain
+        // layouts don't, so those get the alpha.
+        if (view !is Button) view.alpha = if (online) 1f else DISABLED_ALPHA
     }
 }
 

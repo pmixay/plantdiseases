@@ -112,7 +112,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
         // bundled guide), so it gets an inline "saved earlier" note rather
         // than an offline strip — and only once there is cached content to
         // caption.
-        onConnectivityChanged(connectivity) { online ->
+        onConnectivityChanged(connectivity.isOnline) { online ->
             isOffline = !online
             applySavedDataNote()
         }

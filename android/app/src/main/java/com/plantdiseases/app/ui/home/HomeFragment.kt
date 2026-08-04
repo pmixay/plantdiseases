@@ -113,14 +113,14 @@ class HomeFragment : Fragment() {
         // offline strip here. Instead the carousel says its data is saved
         // rather than live, and the entry points into features that genuinely
         // cannot run offline are disabled.
-        viewLifecycleOwner.onConnectivityChanged(connectivity) { online ->
+        viewLifecycleOwner.onConnectivityChanged(connectivity.isOnline) { online ->
             isOffline = !online
             _binding?.let { applyTrendingScopeNote(it) }
         }
         // Species ID (PlantNet), symptom triage (scored server-side) and the
         // community feed have no offline mode at all.
         viewLifecycleOwner.enableWhileOnline(
-            connectivity,
+            connectivity.isOnline,
             binding.cardIdentify,
             binding.tileSymptom,
             binding.btnNearbyScans,

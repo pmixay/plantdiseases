@@ -186,7 +186,8 @@ class ConnectivityObserver(
         // Record every reading, not just the ones that change the state: the
         // timestamp is what decides whether a restart can re-seed from it.
         fun settle(reachable: Boolean) {
-            remember(reachable)
+            lastReachability = reachable
+            lastReachabilityAt = nowMs()
             state.value = reachable
         }
 
@@ -247,11 +248,6 @@ class ConnectivityObserver(
         throw e
     } catch (_: Exception) {
         false
-    }
-
-    private fun remember(reachable: Boolean) {
-        lastReachability = reachable
-        lastReachabilityAt = nowMs()
     }
 
     /**

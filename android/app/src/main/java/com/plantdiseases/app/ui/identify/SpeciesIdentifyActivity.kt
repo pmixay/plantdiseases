@@ -68,7 +68,7 @@ class SpeciesIdentifyActivity : AppCompatActivity() {
             insets
         }
 
-        binding.offlineNotice.observe(this, connectivity)
+        binding.offlineNotice.observe(this, connectivity.isOnline)
 
         binding.btnClose.setOnClickListener { finish() }
         binding.btnRetake.setOnClickListener { hideCandidates() }

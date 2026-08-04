@@ -15,7 +15,6 @@ import com.plantdiseases.app.data.model.CommunityOpinionRequest
 import com.plantdiseases.app.data.model.CommunityOpinionsResponse
 import com.plantdiseases.app.data.model.FeedbackRequest
 import com.plantdiseases.app.data.model.FeedbackResponse
-import com.plantdiseases.app.data.model.HealthResponse
 import com.plantdiseases.app.data.model.IdentifyResponse
 import com.plantdiseases.app.data.model.MyScanOpinionsResponse
 import com.plantdiseases.app.data.model.ProgressionRequest
@@ -640,22 +639,6 @@ class ScanRepository(
             "warnings" to parseWarnings(scan.warnings),
         )
     }
-
-    /** Check server health */
-    suspend fun checkServerHealth(): Result<HealthResponse> =
-        withContext(Dispatchers.IO) {
-            try {
-                val response = apiClient.httpClient.get("api/health")
-                when (response.status.value) {
-                    in 200..299 -> Result.success(response.body<HealthResponse>())
-                    else -> Result.failure(Exception("Server error: ${response.status.value}"))
-                }
-            } catch (e: SocketTimeoutException) {
-                Result.failure(ServerTimeoutException())
-            } catch (e: Exception) {
-                Result.failure(e)
-            }
-        }
 
     class ServerTimeoutException : Exception("Server is not responding")
     class NoNetworkException : Exception("No network connection")

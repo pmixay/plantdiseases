@@ -109,30 +109,6 @@ class RetryInterceptor(
 }
 
 /**
- * Tells [ReachabilityReporter] whether the server answered, for every call the
- * app makes anyway — which is what lets [com.plantdiseases.app.util.ConnectivityObserver]
- * stop polling a health endpoint on a timer.
- *
- * Installed *before* [RetryInterceptor] so it sees the settled outcome of a
- * call, not each individual attempt: a blip that the retry absorbs is not a
- * connectivity event. Any HTTP response — 200 or 500 alike — proves the bytes
- * reached the server and came back; only a transport-level [IOException] that
- * survived the retries says otherwise.
- */
-private class ReachabilityInterceptor(
-    private val report: (Boolean) -> Unit,
-) : Interceptor {
-
-    @Throws(IOException::class)
-    override fun intercept(chain: Interceptor.Chain): Response = try {
-        chain.proceed(chain.request()).also { report(true) }
-    } catch (e: IOException) {
-        report(false)
-        throw e
-    }
-}
-
-/**
  * The app's HTTP client — a Ktor [HttpClient] over an OkHttp engine.
  * Defaults to the build-time API base URL; the constructor parameter is a
  * test seam so unit/integration tests can point the whole stack at a local
@@ -157,7 +133,22 @@ class PlantApiClient(
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)
-            .addInterceptor(ReachabilityInterceptor(reachabilityReporter::report))
+            // Tell the reporter whether the server answered, for every call
+            // the app makes anyway — which is what lets ConnectivityObserver
+            // stop polling a health endpoint on a timer. Installed BEFORE the
+            // retry interceptor so it sees a call's settled outcome, not each
+            // attempt: a blip the retry absorbs is not a connectivity event.
+            // Any HTTP response — 200 or 500 alike — proves the bytes reached
+            // the server; only an IOException that survived the retries says
+            // otherwise.
+            .addInterceptor { chain ->
+                try {
+                    chain.proceed(chain.request()).also { reachabilityReporter.report(true) }
+                } catch (e: IOException) {
+                    reachabilityReporter.report(false)
+                    throw e
+                }
+            }
             .addInterceptor(RetryInterceptor(maxRetries = 3, initialDelayMs = 1000))
             .addInterceptor(logging)
             .build()

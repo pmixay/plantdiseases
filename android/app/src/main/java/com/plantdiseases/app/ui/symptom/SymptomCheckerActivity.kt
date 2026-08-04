@@ -146,11 +146,11 @@ class SymptomCheckerActivity : AppCompatActivity() {
             setNavigationOnClickListener { finish() }
         }
 
-        binding.offlineNotice.observe(this, connectivity)
+        binding.offlineNotice.observe(this, connectivity.isOnline)
         // The answers are scored server-side, so offline there is nothing to
         // submit them to. Keep the questionnaire usable — the user can still
         // fill it in — but hold the submit button until we can actually send.
-        onConnectivityChanged(connectivity) { online ->
+        onConnectivityChanged(connectivity.isOnline) { online ->
             isOffline = !online
             updateSubmitState()
         }

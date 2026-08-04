@@ -6,14 +6,12 @@ import android.util.AttributeSet
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
-import androidx.annotation.StringRes
 import androidx.appcompat.widget.AppCompatTextView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.plantdiseases.app.R
-import com.plantdiseases.app.util.ConnectivityObserver
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
@@ -30,9 +28,9 @@ import kotlinx.coroutines.launch
  * that data as possibly out of date inline instead of claiming the whole
  * screen is degraded.
  *
- * Copy is set per screen, in XML (`android:text`) or at runtime via
- * [setMessage] where it depends on device state — the scan camera says
- * something different depending on whether the on-device model is installed.
+ * Copy is set per screen, in XML (`android:text`) or at runtime via `setText`
+ * where it depends on device state — the scan camera says something different
+ * depending on whether the on-device model is installed.
  *
  * Drop it into a layout (top of the content, or pinned inside the app bar)
  * and call [observe] once the view is bound.
@@ -65,24 +63,11 @@ class OfflineNoticeView @JvmOverloads constructor(
         visibility = View.GONE
     }
 
-    /** Swap the message when it depends on runtime state. Call before [observe]. */
-    fun setMessage(@StringRes message: Int) {
-        setText(message)
-    }
-
     /**
-     * Show this notice while [connectivity] reports offline, hide it while
+     * Show this notice while [onlineStates] reports offline, hide it while
      * online. Collection is scoped to [owner]'s STARTED window, so an
      * offscreen screen (a background pager page, a paused activity) holds no
      * network callback.
-     */
-    fun observe(owner: LifecycleOwner, connectivity: ConnectivityObserver) {
-        observe(owner, connectivity.isOnline)
-    }
-
-    /**
-     * Flow-based seam kept internal so the visibility contract can be tested
-     * independently of Android's ConnectivityManager.
      *
      * Going offline has to *hold* for [SHOW_DELAY_MS] before the strip paints;
      * coming back online hides it at once. `collectLatest` cancels the pending
@@ -94,7 +79,7 @@ class OfflineNoticeView @JvmOverloads constructor(
      *  - a Wi-Fi→mobile or VPN handover, where the network is briefly nobody's;
      *  - a probe that loses one round-trip on a tunnel waking up.
      */
-    internal fun observe(owner: LifecycleOwner, onlineStates: Flow<Boolean>) {
+    fun observe(owner: LifecycleOwner, onlineStates: Flow<Boolean>) {
         owner.lifecycleScope.launch {
             owner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 onlineStates.collectLatest { online ->

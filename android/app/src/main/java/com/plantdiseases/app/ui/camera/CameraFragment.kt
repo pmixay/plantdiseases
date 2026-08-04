@@ -228,10 +228,10 @@ class CameraFragment : Fragment() {
         // In identify mode the host (SpeciesIdentifyActivity) shows the shared
         // OfflineNoticeView over this preview, so skip this fragment's own
         // banner there rather than stacking two strips at the top.
-        if (!identifyMode) binding.offlineBanner.observe(viewLifecycleOwner, connectivity)
+        if (!identifyMode) binding.offlineBanner.observe(viewLifecycleOwner, connectivity.isOnline)
         // Tracked in both modes: identify is server-only, so the shutter guard
         // needs the state even though the host owns identify's notice.
-        viewLifecycleOwner.onConnectivityChanged(connectivity) { online ->
+        viewLifecycleOwner.onConnectivityChanged(connectivity.isOnline) { online ->
             isOffline = !online
             if (_binding != null && !identifyMode) applyOfflineScanState()
         }
@@ -322,7 +322,7 @@ class CameraFragment : Fragment() {
      * and the picker chip switches to the family that will actually run.
      */
     private fun applyOfflineScanState() {
-        binding.offlineBanner.setMessage(
+        binding.offlineBanner.setText(
             if (AquaClassifier.isAvailable(requireContext())) {
                 R.string.offline_notice_scan_on_device
             } else {

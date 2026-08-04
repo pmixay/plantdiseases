@@ -12,6 +12,7 @@ import com.plantdiseases.app.data.repository.CommunityUploader
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.util.CommunityPrefs
+import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.OpinionPrefs
 import com.plantdiseases.app.util.RegionResolver
@@ -42,6 +43,13 @@ class CommunityController(
 ) : KoinComponent {
     private val repository: ScanRepository by inject()
     private val communityUploader: CommunityUploader by inject()
+
+    // The second-opinion control has two writers: the activity's
+    // enableWhileOnline gate (which reacts to connectivity changing) and this
+    // controller's re-renders (which react to the request's state changing).
+    // They must agree, or whichever ran last wins — and it was this one,
+    // silently re-enabling the button on an offline phone.
+    private val connectivity: ConnectivityObserver by inject()
 
     private fun displayName(key: String, isRu: Boolean): String =
         DiseaseLabels.displayName(key, isRu) ?: key
@@ -153,7 +161,7 @@ class CommunityController(
         requestedAtSec: Long?,
     ) {
         val btn = binding.btnSecondOpinion
-        btn.isEnabled = true
+        btn.isEnabled = connectivity.lastKnownOnline
         val hours = hoursLeft(requestedAtSec)
         btn.text = when {
             replyCount > 0 && hours != null ->
@@ -177,7 +185,7 @@ class CommunityController(
     private fun showViewReplies(scan: ScanEntity, isRu: Boolean, count: Int) {
         val btn = binding.btnSecondOpinion
         btn.clearAnimation()
-        btn.isEnabled = true
+        btn.isEnabled = connectivity.lastKnownOnline
         btn.text = activity.getString(R.string.result_second_opinion_view, count)
         btn.setOnClickListener { openReplies(scan, isRu) }
     }
@@ -185,7 +193,7 @@ class CommunityController(
     private fun showAsk(scan: ScanEntity, isRu: Boolean) {
         val btn = binding.btnSecondOpinion
         btn.clearAnimation()
-        btn.isEnabled = true
+        btn.isEnabled = connectivity.lastKnownOnline
         btn.setText(R.string.result_get_second_opinion)
         btn.setOnClickListener {
             // Second opinions come FROM the community, so they require the

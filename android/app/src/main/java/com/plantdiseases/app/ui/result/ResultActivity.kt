@@ -205,7 +205,7 @@ class ResultActivity : AppCompatActivity() {
         // are shown at all is decided per-verdict in displayResult; this only
         // decides whether a shown one can be used right now.)
         enableWhileOnline(
-            connectivity,
+            connectivity.isOnline,
             binding.btnAskDoctor,
             binding.btnSecondOpinion,
             binding.btnImproveOnline,
