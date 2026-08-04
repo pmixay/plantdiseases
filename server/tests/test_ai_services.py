@@ -148,6 +148,7 @@ def test_identify_species_gives_up_after_bounded_retries(monkeypatch):
 
 def _mock_openrouter_post(
     monkeypatch, *, finish_reason, content="answer", captured=None, usage=None,
+    extra=None,
 ):
     """Stub requests.post with one OpenRouter-shaped chat completion."""
     import requests
@@ -164,6 +165,7 @@ def _mock_openrouter_post(
             return {
                 "choices": [{"message": {"content": content}, "finish_reason": finish_reason}],
                 "usage": usage,
+                **(extra or {}),
             }
 
     def _fake_post(url, headers=None, json=None, timeout=None):
@@ -254,32 +256,60 @@ def test_call_openrouter_leaves_effort_alone_for_other_models(monkeypatch):
 
 
 def test_call_openrouter_pins_the_openai_provider(monkeypatch):
-    """One model id is served by several providers at a 10x price spread
-    (Azure lists $1.00/M input against OpenAI's $0.10/M), and only OpenAI's own
-    endpoint advertises structured outputs — so routing is pinned, not left to
-    whichever provider OpenRouter happens to pick."""
+    """Default routing is price-weighted load BALANCING, not "pick the best":
+    the expensive endpoints (Azure $1.00/M against OpenAI's $0.10/M for the
+    same model) keep a real share of traffic. So routing is pinned."""
     import ai_services as ai
 
     captured = {}
     _mock_openrouter_post(monkeypatch, finish_reason="stop", captured=captured)
     ai._call_openrouter("sys", [{"role": "user", "content": "hi"}])
-    assert captured["payload"]["provider"] == {"only": ["openai"]}
+    assert captured["payload"]["provider"] == {
+        "require_parameters": True, "only": ["openai"],
+    }
+
+
+def test_call_openrouter_requires_parameter_support_even_unpinned(monkeypatch):
+    """Dropping the pin must not mean dropping the guarantees: a provider that
+    doesn't support response_format would otherwise still receive the request
+    and silently ignore it, answering in unconstrained prose."""
+    import ai_services as ai
+
+    monkeypatch.setattr(ai, "OPENROUTER_PROVIDER_ONLY", "")
+    captured = {}
+    _mock_openrouter_post(monkeypatch, finish_reason="stop", captured=captured)
+    ai._call_openrouter("sys", [{"role": "user", "content": "hi"}])
+    assert captured["payload"]["provider"] == {"require_parameters": True}
 
 
 def test_call_openrouter_provider_pin_is_configurable(monkeypatch):
-    """An operator can widen the pin (or drop it entirely) without a code
-    change — e.g. to reach OpenAI's cheaper flex tier."""
+    """An operator can retarget the pin without a code change — e.g. to
+    OpenAI's half-price flex tier, which is opt-in by tier-suffixed slug and
+    is never reachable through default routing."""
     import ai_services as ai
 
     monkeypatch.setattr(ai, "OPENROUTER_PROVIDER_ONLY", "openai/flex, openai")
     captured = {}
     _mock_openrouter_post(monkeypatch, finish_reason="stop", captured=captured)
     ai._call_openrouter("sys", [{"role": "user", "content": "hi"}])
-    assert captured["payload"]["provider"] == {"only": ["openai/flex", "openai"]}
+    assert captured["payload"]["provider"]["only"] == ["openai/flex", "openai"]
 
-    monkeypatch.setattr(ai, "OPENROUTER_PROVIDER_ONLY", "")
+
+def test_route_snapshot_reports_what_actually_served_the_call(monkeypatch):
+    """The pin is a request, not a receipt — billing follows the endpoint that
+    really ran. OpenRouter echoes the provider and service tier, so /api/metrics
+    can show whether the cheap endpoint is genuinely doing the work."""
+    import ai_services as ai
+
+    _mock_openrouter_post(
+        monkeypatch, finish_reason="stop", extra={"provider": "OpenAI", "service_tier": "flex"},
+    )
     ai._call_openrouter("sys", [{"role": "user", "content": "hi"}])
-    assert "provider" not in captured["payload"]
+    snap = ai.openrouter_route_snapshot()
+    assert snap["last_provider"] == "OpenAI"
+    assert snap["last_service_tier"] == "flex"
+    assert snap["provider_only"] == ["openai"]
+    assert snap["model"] == ai.OPENROUTER_MODEL
 
 
 def test_call_openrouter_sends_strict_json_schema(monkeypatch):

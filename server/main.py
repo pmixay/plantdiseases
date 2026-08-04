@@ -71,6 +71,7 @@ try:
         compare_progression_history,
         generate_care_plan,
         identify_species,
+        openrouter_route_snapshot,
         species_common_diseases,
         species_profile,
     )
@@ -239,6 +240,7 @@ except ImportError:
         compare_progression_history,
         generate_care_plan,
         identify_species,
+        openrouter_route_snapshot,
         species_common_diseases,
         species_profile,
     )
@@ -1709,6 +1711,7 @@ async def metrics():
         **snap,
         "ai_doctor": chat_metrics_snapshot(),
         "care_plan_polish": care_plan_metrics_snapshot(),
+        "openrouter_route": openrouter_route_snapshot(),
         "feedback": feedback_counts(),
         "community": community_stats_snapshot(),
     }

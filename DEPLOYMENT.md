@@ -90,19 +90,57 @@ chat sheet and the optional Markdown summary on care plans.
 
 **Provider pinning.** One OpenRouter model id is served by several
 providers, and the price spread is not a rounding error — for
-`openai/gpt-5.6-luna` OpenAI's own endpoint lists $0.10/M input against
-Amazon Bedrock's $0.22/M and Azure's $1.00/M, a 10× difference for
-identical output. Left unpinned, OpenRouter picks per request. So
-`openrouter_provider_only` defaults to `openai`, which is also the tier
-carrying the current promotional discount, the only endpoint that
-advertises `structured_outputs` (a request routed to Bedrock would lose
-the JSON schema), and — as a free side effect — keeps one provider's
-prompt cache warm.
+`openai/gpt-5.6-luna`:
 
-Set it to `openai/flex` for OpenAI's half-price tier if you can absorb
-higher latency and more 429s (the server retries those with backoff), or
-blank it to let OpenRouter route freely. Verify what actually served a
-request in the OpenRouter activity log.
+| Endpoint | Input | Output | Reachable how |
+|---|---|---|---|
+| `openai` | $0.10/M | $0.60/M | default routing or pin |
+| `openai/flex` | $0.05/M | $0.30/M | **opt-in only** (tier slug) |
+| `amazon-bedrock/us-east-1` | $0.22/M | $1.32/M | default routing or pin |
+| `azure` | $1.00/M | $6.00/M | default routing or pin |
+
+Leaving routing to OpenRouter does *not* mean it picks the best option,
+in either direction:
+
+* Default routing is price-weighted load **balancing** (inverse square of
+  price, among providers with no recent outage), not cheapest-first — the
+  expensive endpoints keep a real share of traffic.
+* A provider that doesn't support a parameter still receives the request
+  and silently **ignores** the parameter. Balanced onto Bedrock (no
+  `response_format`), a species-profile call comes back as unconstrained
+  prose. That is why every request also carries
+  `provider.require_parameters = true`, which is what makes an unpinned
+  deployment safe.
+* Cheaper service tiers are **not** reachable automatically. Tier
+  endpoints are excluded from default routing and from base-slug matching,
+  so `only: ["openai"]` never yields flex, and blanking the pin never
+  yields it either.
+
+So `openrouter_provider_only` defaults to `openai`.
+
+**About flex.** It is 50% off and opt-in by slug
+(`openrouter_provider_only: "openai/flex"`). Two things to weigh before
+switching: a flex request never falls back to standard on a capacity
+error — that would break its price guarantee, so you get a 429 (retried
+here with backoff, into the same tier) — and OpenAI documents flex as
+unsuitable for real-time work: normally seconds, minutes under load.
+Every AI call in this server is made while a user waits on a screen (the
+care-plan polish runs inside the `/api/care-plan` request), so the trade
+is a visible stall against a fraction of a cent per call. Fine for a
+deployment that values cost over tail latency; not the default.
+
+Confirm what actually served a request — the pin is a request, not a
+receipt, and billing follows the endpoint that really ran — via
+`GET /api/metrics` → `openrouter_route`:
+
+```json
+"openrouter_route": {
+  "model": "openai/gpt-5.6-luna",
+  "provider_only": ["openai"],
+  "last_provider": "OpenAI",
+  "last_service_tier": "default"
+}
+```
 
 **Reasoning effort.** gpt-5.6 treats `reasoning.effort` as a *ceiling*,
 not a floor: on a prompt it judges easy the model may spend no reasoning

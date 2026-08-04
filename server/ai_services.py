@@ -101,20 +101,33 @@ OPENROUTER_TOTAL_TIMEOUT = get_float("OPENROUTER_TOTAL_TIMEOUT", 30.0)
 OPENROUTER_REASONING_EFFORT = get_str("OPENROUTER_REASONING_EFFORT", "medium").strip().lower()
 
 # Provider routing. One OpenRouter model id is served by several providers at
-# wildly different prices, and without a pin OpenRouter may pick any of them
-# per request. For openai/gpt-5.6-luna the spread is 10x — Azure lists $1.00/M
-# input against OpenAI's own $0.10/M — so this is not a rounding error.
-# We pin the first-party OpenAI endpoint for three reasons, in this order:
-#   * it is the cheap tier and the one carrying the current promotional
-#     discount, where Azure/Bedrock are 10x/2.2x;
-#   * it is the only endpoint that advertises `structured_outputs` +
-#     `response_format` alongside reasoning — Bedrock's does not, so a request
-#     routed there would lose the JSON schema and fall back to prose parsing;
-#   * pinning one provider keeps that provider's prompt cache warm for free,
-#     which is the same job `session_id` does for the chat doctor.
+# wildly different prices — for openai/gpt-5.6-luna, OpenAI's own endpoint is
+# $0.10/M input against Bedrock's $0.22/M and Azure's $1.00/M, a 10x spread for
+# identical output.
+#
+# Leaving it to OpenRouter does NOT mean "it picks the best one". Default
+# routing is price-weighted load BALANCING (inverse-square of price, among
+# providers with no recent outage), so the expensive endpoints keep a real
+# share of traffic rather than being ruled out. Worse for us, a provider that
+# doesn't support a parameter still receives the request and silently IGNORES
+# the parameter — a request balanced onto Bedrock (no `response_format`) would
+# come back as unconstrained prose, and only our tolerant parsers would stand
+# between that and an empty species screen. `require_parameters` below closes
+# that hole; the pin makes it moot in the first place.
+#
+# Cheaper service tiers are NOT reachable this way either: tier endpoints
+# ("openai/flex", 50% off) are excluded from default routing and from base-slug
+# matching, so `only: ["openai"]` never yields flex — it is opt-in only, by
+# tier-suffixed slug. Flex also never falls back to standard on a capacity
+# error (that would break its price guarantee): you get a 429, which we retry
+# into the same tier. OpenAI documents it as unsuitable for real-time chat
+# (seconds normally, minutes under load) — and every call in this module is
+# made while a user waits on a screen, so flex trades a visible stall for a
+# fraction of a cent. Set OPENROUTER_PROVIDER_ONLY to "openai/flex" if that
+# trade is right for your deployment; nothing else needs to change.
+#
 # Comma-separated OpenRouter provider slugs; blank lets OpenRouter route
-# freely. "openai/flex" is OpenAI's slower half-price tier — cheaper still, at
-# the cost of higher latency and more 429s (which this module retries).
+# freely (still parameter-filtered, see below).
 OPENROUTER_PROVIDER_ONLY = get_str("OPENROUTER_PROVIDER_ONLY", "openai").strip()
 
 # Prompt caching (https://openrouter.ai/docs/features/prompt-caching).
@@ -562,7 +575,33 @@ _EFFORT_ALIASES: dict[str, dict[str, str]] = {
 }
 
 
-_SCHEMA_ERROR_HINTS = ("response_format", "json_schema", "schema", "structured output")
+_SCHEMA_ERROR_HINTS = (
+    "response_format", "json_schema", "schema", "structured output",
+    # OpenRouter's phrasing when `require_parameters` filters every provider
+    # out — with the schema being the most demanding parameter we send, that
+    # is the same failure wearing a different message, and dropping the schema
+    # is the same right answer.
+    "no endpoints",
+)
+
+
+# What actually served the most recent OpenRouter call. The pin is a REQUEST,
+# not a receipt: billing follows the endpoint that really ran, and a service
+# tier can decline. OpenRouter reports both back on every response, so this is
+# how an operator confirms from a running server that the cheap first-party
+# endpoint is doing the work — rather than inferring it from config that may
+# not be the config the process actually loaded.
+_last_route = {"provider": "", "service_tier": ""}
+
+
+def openrouter_route_snapshot() -> dict:
+    """Read-only view of the AI routing config and what last served a call."""
+    return {
+        "model": OPENROUTER_MODEL,
+        "provider_only": _provider_only(),
+        "last_provider": _last_route["provider"],
+        "last_service_tier": _last_route["service_tier"],
+    }
 
 
 def _blames_schema(response: Any) -> bool:
@@ -691,9 +730,16 @@ def _call_openrouter(
                 "name": schema_name, "strict": True, "schema": json_schema,
             },
         }
+    # `require_parameters` is what makes an UNPINNED deployment safe: without
+    # it OpenRouter may route to a provider that ignores response_format /
+    # reasoning and returns something that merely looks like an answer. With
+    # the default pin it changes nothing (OpenAI's endpoint advertises every
+    # parameter we send) — it is the safety belt for loosening the pin.
+    provider_pref: dict[str, Any] = {"require_parameters": True}
     providers = _provider_only()
     if providers:
-        payload["provider"] = {"only": providers}
+        provider_pref["only"] = providers
+    payload["provider"] = provider_pref
     if OPENROUTER_PROMPT_CACHING:
         # Request-level breakpoint: OpenRouter places it after the last
         # cacheable block and advances it as the history grows, so we don't
@@ -762,6 +808,10 @@ def _call_openrouter(
             r.raise_for_status()  # 4xx (not in transient set) — fail fast
 
         data = r.json()
+        for field in ("provider", "service_tier"):
+            value = data.get(field)
+            if isinstance(value, str) and value:
+                _last_route[field] = value
         choices = data.get("choices") or []
         text = ""
         finish_reason = ""
