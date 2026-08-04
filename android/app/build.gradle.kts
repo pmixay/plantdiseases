@@ -162,6 +162,20 @@ android {
             // tests can inflate views, read strings and run Room in-memory.
             isIncludeAndroidResources = true
             isReturnDefaultValues = true
+
+            // Put the actual assertion message + stack in the console log.
+            // Nobody builds this project locally (CI owns builds), so a
+            // failure that prints only "ComparisonFailureWithFacts at
+            // FooTest.kt:42" costs a whole round-trip to diagnose — the HTML
+            // report it points at lives on the runner, not in the log.
+            all {
+                it.testLogging {
+                    events("failed")
+                    exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+                    showStackTraces = true
+                    showCauses = true
+                }
+            }
         }
     }
 }
