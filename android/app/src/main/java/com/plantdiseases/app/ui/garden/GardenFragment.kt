@@ -23,6 +23,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.children
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import com.bumptech.glide.Glide
@@ -30,23 +31,27 @@ import com.bumptech.glide.load.DecodeFormat
 import com.bumptech.glide.load.resource.bitmap.CenterCrop
 import com.bumptech.glide.load.resource.bitmap.RoundedCorners
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.card.MaterialCardView
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
+import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.local.PlantEntity
 import com.plantdiseases.app.data.local.ScanEntity
 import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.databinding.FragmentGardenBinding
 import com.plantdiseases.app.databinding.ItemPlantCardBinding
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.util.CareSchedule
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.ReminderManager
 import com.plantdiseases.app.util.applyStatusBarTopInset
 import com.plantdiseases.app.util.localizedSpeciesName
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import org.koin.android.ext.android.inject
+import javax.inject.Inject
 
 /**
  * Garden tab. The screen scaffold (hero, plant list container, empty
@@ -55,6 +60,7 @@ import org.koin.android.ext.android.inject
  * parts — thumbnail loading, the health dot, the status chips and the
  * add/edit dialog — are still built in code.
  */
+@AndroidEntryPoint
 class GardenFragment : Fragment() {
 
     private var _binding: FragmentGardenBinding? = null
@@ -72,7 +78,8 @@ class GardenFragment : Fragment() {
     /** Plant count above which the search box appears. */
     private val searchVisibleThreshold = 6
 
-    private val plantRepository: PlantRepository by inject()
+    @Inject
+    lateinit var plantRepository: PlantRepository
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -139,6 +146,11 @@ class GardenFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        (activity as? MainActivity)?.apply {
+            unregisterOnboardingAnchor(OnboardingAnchorKey.GARDEN_HERO)
+            unregisterOnboardingAnchor(OnboardingAnchorKey.GARDEN_PLANTS)
+            unregisterOnboardingAnchor(OnboardingAnchorKey.GARDEN_ADD)
+        }
         super.onDestroyView()
         _binding = null
     }
@@ -209,6 +221,27 @@ class GardenFragment : Fragment() {
             }
 
         renderPlantList(all.filter { matchesQuery(it, query) }, query, animate)
+        registerOnboardingAnchors(all.isEmpty())
+    }
+
+    private fun registerOnboardingAnchors(empty: Boolean) {
+        val host = activity as? MainActivity ?: return
+        val listAnchor = if (empty) {
+            binding.gardenEmptyState
+        } else {
+            binding.gardenPlantsContainer.children
+                .firstOrNull { it is MaterialCardView }
+                ?: binding.gardenPlantsContainer
+        }
+        val addAnchor = if (empty) binding.gardenEmptyCta else binding.gardenAddFab
+        host.registerOnboardingAnchor(OnboardingAnchorKey.GARDEN_HERO, binding.gardenHero)
+        host.registerOnboardingAnchor(OnboardingAnchorKey.GARDEN_PLANTS, listAnchor)
+        host.registerOnboardingAnchor(
+            OnboardingAnchorKey.GARDEN_ADD,
+            addAnchor,
+            pauseAfterTarget = true,
+            onInlineAction = host::startGardenAttachScanGuidance,
+        )
     }
 
     private fun renderPlantList(

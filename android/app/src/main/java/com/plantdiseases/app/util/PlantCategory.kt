@@ -51,7 +51,6 @@ object PlantCategoryClassifier {
         PlantCategory.LEAFY,
         PlantCategory.FRUITING,
         PlantCategory.FLOWERING,
-        PlantCategory.FOLIAGE,
     )
 
     private val BINOMIAL_OVERRIDES: Map<String, PlantCategory> = mapOf(
@@ -179,12 +178,7 @@ object PlantCategoryClassifier {
             "азали", "бугенвилле", "фукси", "бальзамин", "хойя", "тюльпан", "нарцисс",
             "крокус", "лили", "цвету",
         ),
-        PlantCategory.FOLIAGE to listOf(
-            "monstera", "philodendron", "pothos", "ivy", "fern", "palm", "dracaena", "rubber",
-            "fiddle", "spider", "prayer", "calathea", "peperomia", "pilea",
-            "монстер", "филодендрон", "потос", "сциндапсус", "плющ", "папоротник", "пальм",
-            "драцен", "фикус", "хлорофитум", "калате", "маранта", "пепероми", "пиле",
-            "замиокулькас",
-        ),
+        // No FOLIAGE entry: it is the fallback [classify] returns when nothing
+        // else matches, so a keyword list for it could never change an answer.
     )
 }

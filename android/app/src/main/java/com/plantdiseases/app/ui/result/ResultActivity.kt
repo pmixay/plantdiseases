@@ -3,10 +3,10 @@ package com.plantdiseases.app.ui.result
 import android.animation.ValueAnimator
 import android.content.Context
 import android.content.Intent
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
+import android.graphics.Color
 import android.widget.Toast
 import android.os.Bundle
+import android.util.TypedValue
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
@@ -27,72 +27,82 @@ import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.GuideDataProvider
 import com.plantdiseases.app.data.local.ScanEntity
+import com.plantdiseases.app.data.repository.CommunityUploader
+import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.ui.analysis.AnalysisActivity
-import com.plantdiseases.app.ui.common.CoachMarkOverlay
-import com.plantdiseases.app.ui.guide.GuideDetailSheet
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingContext
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingCoordinator
+import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.ModelFamily
 import com.plantdiseases.app.util.LocaleHelper
-import com.plantdiseases.app.util.OnboardingHintState
+import com.plantdiseases.app.util.OnboardingStateStore
+import com.plantdiseases.app.util.enableWhileOnline
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
-import org.koin.android.ext.android.inject
 import java.io.File
+import javax.inject.Inject
 
 /**
  * Shows one saved scan's diagnosis. The activity is a thin host: it owns the
  * screen chrome (insets, toolbar, pinch-zoom, sticky header, skeleton) and the
  * status/image header, then hands each independent section to a controller —
- * [DiagnosisContentController], [SpeciesCardController], [CommunityController],
+ * [DiagnosisContentController], [CommunityController],
  * [CarePlanController], [FeedbackController], [GardenAttachController] and
  * [ShareController]. The activity-result permission launchers stay here because
  * they must be registered before the activity is STARTED.
  */
+@AndroidEntryPoint
 class ResultActivity : AppCompatActivity() {
+
+    private enum class ConfidenceAdvisory {
+        LOW,
+        VERY_LOW,
+    }
 
     private lateinit var binding: ActivityResultBinding
 
-    private val scanRepository: ScanRepository by inject()
-    private val onboardingHints: OnboardingHintState by inject()
+    @Inject
+    lateinit var scanRepository: ScanRepository
+
+    @Inject
+    lateinit var onboardingState: OnboardingStateStore
+
+    @Inject
+    lateinit var connectivity: ConnectivityObserver
+
+    @Inject
+    lateinit var plantRepository: PlantRepository
+
+    @Inject
+    lateinit var communityUploader: CommunityUploader
 
     private var scaleFactor = 1.0f
     private lateinit var scaleGestureDetector: ScaleGestureDetector
     private var skeletonAnimator: ValueAnimator? = null
-    private var activeCoachMark: CoachMarkOverlay? = null
-
-    private val resultHintRunnable = Runnable {
-        if (isFinishing || isDestroyed || !binding.cardStatus.isAttachedToWindow) return@Runnable
-        if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) return@Runnable
-        if (!onboardingHints.claimResultHint()) return@Runnable
-
-        activeCoachMark = CoachMarkOverlay.show(
-            host = this,
-            anchor = binding.cardStatus,
-            title = getString(R.string.coach_result_title),
-            body = getString(R.string.coach_result_body),
-            dismissText = getString(R.string.coach_got_it),
-            placement = CoachMarkOverlay.Placement.BELOW,
-            pulseAnchor = false,
-            onDismissed = { activeCoachMark = null },
-        )
-    }
+    private lateinit var onboardingCoordinator: OnboardingCoordinator
 
     private var pendingScanForToolbar: ScanEntity? = null
 
-    // Treatment/Prevention tab to restore after the (async) result load
-    // rebuilds the tabs — survives rotation and process-death.
-    private var restoredTabIndex = 0
-
-    private val diagnosisContent by lazy { DiagnosisContentController(this, binding) }
-    private val speciesCard by lazy { SpeciesCardController(this, binding) }
-    private val carePlan by lazy { CarePlanController(this, binding) }
-    private val feedback by lazy { FeedbackController(this, binding) }
-    private val gardenAttach by lazy { GardenAttachController(this, binding) }
-    private val share by lazy { ShareController(this) }
+    private val diagnosisContent by lazy { DiagnosisContentController(this, binding, plantRepository) }
+    private val carePlan by lazy { CarePlanController(this, binding, scanRepository, plantRepository) }
+    private val feedback by lazy { FeedbackController(this, binding, scanRepository) }
+    private val gardenAttach by lazy { GardenAttachController(this, binding, plantRepository) }
+    private val share by lazy { ShareController(this, scanRepository) }
     private val community by lazy {
-        CommunityController(this, binding, ::ensureNotificationPermission, ::requestCommunityOptIn)
+        CommunityController(
+            this,
+            binding,
+            scanRepository,
+            communityUploader,
+            connectivity,
+            ::ensureNotificationPermission,
+            ::requestCommunityOptIn,
+        )
     }
 
     // Notifications-only prompt, fired when the user asks for a second opinion
@@ -161,11 +171,23 @@ class ResultActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        restoredTabIndex = savedInstanceState?.getInt(KEY_RESULT_TAB, 0) ?: 0
         // Edge-to-edge: let the gradient app bar fill the status-bar area.
         WindowCompat.setDecorFitsSystemWindows(window, false)
         binding = ActivityResultBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        onboardingCoordinator = OnboardingCoordinator(
+            host = this,
+            store = onboardingState,
+            navigateToContext = { target ->
+                if (target == OnboardingContext.CAMERA || target == OnboardingContext.HOME) {
+                    finish()
+                    true
+                } else {
+                    false
+                }
+            },
+        )
+        onboardingCoordinator.setContext(OnboardingContext.RESULT)
 
         ViewCompat.setOnApplyWindowInsetsListener(binding.appBar) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
@@ -199,6 +221,19 @@ class ResultActivity : AppCompatActivity() {
         setupToolbarMenu()
         setupPinchToZoom()
         setupStickyHeader()
+        // The diagnosis itself is already saved locally and reads fine offline,
+        // so there is no strip on this screen. Only the follow-ups that need
+        // the server are held back: the AI doctor and re-running an offline
+        // scan online. (Whether they are shown at all is decided per-verdict in
+        // displayResult; this only decides whether a shown one can be used
+        // right now.) The second-opinion control is deliberately absent — it
+        // also has to stay disabled while an ask is in flight, so
+        // CommunityController owns its enabled state outright.
+        enableWhileOnline(
+            connectivity.isOnline,
+            binding.btnAskDoctor,
+            binding.btnImproveOnline,
+        )
         // Registered in onCreate so the handoffs survive the activity + sheet
         // being recreated together (rotation, process death with a sheet open).
         feedback.registerCorrectionListener(scanId) { pendingScanForToolbar }
@@ -288,8 +323,16 @@ class ResultActivity : AppCompatActivity() {
 
             displayResult(scan, scanRepository)
             Haptics.success(this@ResultActivity)
-            binding.cardStatus.removeCallbacks(resultHintRunnable)
-            binding.cardStatus.postDelayed(resultHintRunnable, RESULT_HINT_DELAY_MS)
+            onboardingCoordinator.registerAnchor(
+                OnboardingAnchorKey.RESULT_DIAGNOSIS,
+                binding.cardStatus,
+            )
+            onboardingCoordinator.registerAnchor(
+                OnboardingAnchorKey.RESULT_ADD_TO_GARDEN,
+                binding.btnAddToGarden,
+                available = { binding.btnAddToGarden.isShown },
+                pauseAfterTarget = true,
+            )
         }
     }
 
@@ -317,6 +360,7 @@ class ResultActivity : AppCompatActivity() {
     private fun displayResult(scan: ScanEntity, repository: ScanRepository) {
         val isRu = LocaleHelper.isRussian(this)
         val isNotAPlant = repository.isNotAPlantScan(scan)
+        val warnings = repository.parseWarnings(scan.warnings)
         // Trust the server's final verdict end-to-end (isHealthy/diseaseName),
         // not a re-derived argmax over all_probs — overriding it fought the
         // server's own weak-healthy reroute and flipped the visible verdict.
@@ -325,17 +369,24 @@ class ResultActivity : AppCompatActivity() {
         // read the photo", not a confident "this isn't a plant" — present it as
         // blurry-or-NAP so a genuine blurry plant isn't told it isn't one.
         val isBlurryReject = isNotAPlant &&
-            "blurry_image" in repository.parseWarnings(scan.warnings)
+            "blurry_image" in warnings
         // On-device (Aqua) scan: local-first and deliberately limited. It has no
         // server-issued scan_id, so it never joins the community feed, can't be
         // added to the garden, and has no feedback channel. The offline warning
         // card (DiagnosisContentController) marks it in the result body.
-        val isOfflineAqua = "offline_aqua" in repository.parseWarnings(scan.warnings)
+        val isOfflineAqua = "offline_aqua" in warnings
+        val confidenceAdvisory = confidenceAdvisoryFor(scan, warnings, isNotAPlant)
         val diseaseName = when {
             isBlurryReject -> getString(R.string.blurry_or_not_a_plant_diagnosis_name)
             isNotAPlant -> getString(R.string.not_a_plant_diagnosis_name)
             isRu -> scan.diseaseNameRu
             else -> scan.diseaseName
+        }
+        val resultDescription = when {
+            isBlurryReject -> getString(R.string.blurry_or_not_a_plant_result_body)
+            isNotAPlant -> getString(R.string.not_a_plant_result_body)
+            isRu -> scan.descriptionRu
+            else -> scan.description
         }
 
         binding.apply {
@@ -374,26 +425,27 @@ class ResultActivity : AppCompatActivity() {
 
             tvDiseaseName.text = diseaseName
             tvStickyName.text = diseaseName
+            tvDiseaseName.post { fitDiseaseNameToQuestionButton() }
 
-            // "Read the full guide" — deep-link to the offline doc for this
-            // verdict's class, when one exists (not_a_plant has none).
+            // Both the guide and example image move into the compact question
+            // overlay, keeping the scrollable result focused on care actions.
             val guideId = GuideDataProvider.guideIdForDisease(repository.verdictClassKey(scan) ?: "")
-            if (guideId != null) {
-                btnOpenGuide.visibility = View.VISIBLE
-                btnOpenGuide.setOnClickListener {
-                    GuideDetailSheet.newInstance(guideId).show(supportFragmentManager, "guide_detail")
+            // The example-photo preview is keyed off the DISPLAYED verdict
+            // (verdictClassKey), not the raw argmax, so a rerouted scan opens
+            // the right reference image.
+            val appearanceImageUrl =
+                GuideDataProvider.exampleImageUrlForDisease(repository.verdictClassKey(scan) ?: "")
+            btnDiseaseAppearance.visibility = if (isNotAPlant) View.GONE else View.VISIBLE
+            btnDiseaseAppearance.setOnClickListener {
+                if (supportFragmentManager.findFragmentByTag(DISEASE_APPEARANCE_TAG) == null) {
+                    DiseaseAppearanceDialog.newInstance(
+                        imageUrl = appearanceImageUrl,
+                        diseaseName = diseaseName,
+                        description = resultDescription,
+                        guideId = guideId,
+                    ).show(supportFragmentManager, DISEASE_APPEARANCE_TAG)
                 }
-            } else {
-                btnOpenGuide.visibility = View.GONE
             }
-
-            // Bundled example photo of this diagnosis. Keyed off the DISPLAYED
-            // verdict (verdictClassKey), not the raw argmax, so a rerouted scan
-            // looks up the right class.
-            tvDiseasePhotosLabel.visibility = View.GONE
-            hsvDiseasePhotos.visibility = View.GONE
-            GuideDataProvider.exampleImageUrlForDisease(repository.verdictClassKey(scan) ?: "")
-                ?.let { diagnosisContent.loadDiseasePhotos(it) }
 
             val confidencePercent = (scan.confidence * 100).toInt()
             // For NAP we don't expose a confidence bar — "100% confident this
@@ -417,67 +469,65 @@ class ResultActivity : AppCompatActivity() {
                 }.start()
             }
 
-            when {
+            val statusBackgroundColor = when {
                 isBlurryReject -> {
-                    cardStatus.setCardBackgroundColor(getColor(R.color.neutral_blue_bg))
                     tvStatusLabel.text = getString(R.string.status_blurry_or_not_a_plant)
                     tvStatusLabel.setTextColor(getColor(R.color.neutral_blue))
                     ivStatusIcon.setImageResource(R.drawable.ic_warning)
                     ivStatusIcon.setColorFilter(getColor(R.color.neutral_blue))
+                    R.color.neutral_blue_bg
                 }
                 isNotAPlant -> {
-                    cardStatus.setCardBackgroundColor(getColor(R.color.neutral_blue_bg))
                     tvStatusLabel.text = getString(R.string.status_not_a_plant)
                     tvStatusLabel.setTextColor(getColor(R.color.neutral_blue))
                     ivStatusIcon.setImageResource(R.drawable.ic_warning)
                     ivStatusIcon.setColorFilter(getColor(R.color.neutral_blue))
+                    R.color.neutral_blue_bg
                 }
                 isHealthyVerdict -> {
-                    cardStatus.setCardBackgroundColor(getColor(R.color.healthy_green_bg))
                     tvStatusLabel.text = getString(R.string.status_healthy)
                     tvStatusLabel.setTextColor(getColor(R.color.healthy_green))
                     ivStatusIcon.setImageResource(R.drawable.ic_healthy)
                     ivStatusIcon.clearColorFilter()
+                    R.color.healthy_green_bg
                 }
                 else -> {
-                    cardStatus.setCardBackgroundColor(getColor(R.color.disease_red_bg))
                     tvStatusLabel.text = getString(R.string.status_disease)
                     tvStatusLabel.setTextColor(getColor(R.color.disease_red))
                     ivStatusIcon.setImageResource(R.drawable.ic_disease)
                     ivStatusIcon.clearColorFilter()
+                    R.color.disease_red_bg
                 }
             }
+            bindInlineConfidenceAdvisory(confidenceAdvisory, statusBackgroundColor)
 
             // Description: for NAP we swap in a retry hint and silence the
             // disease-only sections below.
             if (isNotAPlant) {
-                tvDescription.text = getString(
-                    if (isBlurryReject) {
-                        R.string.blurry_or_not_a_plant_result_body
-                    } else {
-                        R.string.not_a_plant_result_body
-                    },
-                )
-                cardTreatmentPrevention.visibility = View.GONE
+                cardDescription.visibility = View.VISIBLE
+                tvDescription.text = resultDescription
                 cardAlternatives.visibility = View.GONE
                 cardSpecies.visibility = View.GONE
                 cardSimilarScans.visibility = View.GONE
                 cardPipelineWarning.visibility = View.GONE
-                cardLowConfidence.visibility = View.GONE
+                btnAskDoctor.visibility = View.GONE
                 // Share / add-to-garden don't make sense for NAP — collapse the
                 // bottom bar to just the "new scan" button.
                 btnShare.visibility = View.GONE
                 btnAddToGarden.visibility = View.GONE
             } else {
-                tvDescription.text = if (isRu) scan.descriptionRu else scan.description
+                // Plant descriptions now live in the question-mark overlay
+                // alongside their visual example and full guide.
+                cardDescription.visibility = View.GONE
                 btnShare.visibility = View.VISIBLE
                 // Offline Aqua scans can't be added to the garden (limited, local).
                 btnAddToGarden.visibility = if (isOfflineAqua) View.GONE else View.VISIBLE
                 diagnosisContent.bindPipelineWarnings(scan, repository)
                 diagnosisContent.bindAlternatives(scan, repository, isRu)
-                speciesCard.bind(scan)
+                binding.cardSpecies.bind(scan.speciesScientific, scan.speciesCommon)
                 community.bindSimilarScans(scan, repository, isRu)
-                diagnosisContent.setupTreatmentPrevention(scan, repository, isRu, restoredTabIndex)
+                btnAskDoctor.visibility = View.VISIBLE
+                diagnosisContent.setupAskDoctor(scan)
                 carePlan.bind(scan, repository, isRu)
             }
 
@@ -489,14 +539,12 @@ class ResultActivity : AppCompatActivity() {
             // so the card offers "This is a plant" (+ optional note) instead
             // of the yes/no pair.
             if (isNotAPlant) {
-                cardToxicity.visibility = View.GONE
                 if (isOfflineAqua) {
                     cardFeedback.visibility = View.GONE
                 } else {
                     feedback.bindNotAPlant(scan)
                 }
             } else {
-                diagnosisContent.bindToxicity(scan, repository)
                 if (isOfflineAqua) {
                     cardFeedback.visibility = View.GONE
                 } else {
@@ -504,7 +552,7 @@ class ResultActivity : AppCompatActivity() {
                 }
             }
 
-            tvDate.text = ImageUtils.formatTimestamp(scan.timestamp)
+            tvDate.text = ImageUtils.formatRelativeTime(this@ResultActivity, scan.timestamp)
 
             btnNewScan.setOnClickListener {
                 // Always land back on the scanner tab — finish() alone would
@@ -533,15 +581,6 @@ class ResultActivity : AppCompatActivity() {
                 btnImproveOnline.setOnClickListener { improveOnline(scan) }
             }
 
-            // Low-confidence card carries its own retry button (the action
-            // belongs next to the warning, not in the global bottom bar).
-            if (!isNotAPlant && scan.confidence < 0.5f && !isHealthyVerdict) {
-                cardLowConfidence.visibility = View.VISIBLE
-                btnRetryAnalysis.visibility = View.VISIBLE
-            } else {
-                cardLowConfidence.visibility = View.GONE
-            }
-
             // No-photo fallback CTA: offer the symptom checker whenever the
             // pipeline couldn't get a confident plant read or the diagnosis is
             // low-confidence, so the user still gets guidance.
@@ -551,15 +590,6 @@ class ResultActivity : AppCompatActivity() {
                 startActivity(
                     Intent(this@ResultActivity, com.plantdiseases.app.ui.symptom.SymptomCheckerActivity::class.java),
                 )
-            }
-
-            btnRetryAnalysis.setOnClickListener {
-                startActivity(
-                    Intent(this@ResultActivity, AnalysisActivity::class.java).apply {
-                        putExtra(AnalysisActivity.EXTRA_IMAGE_PATH, scan.imagePath)
-                    },
-                )
-                finish()
             }
 
             // Community second opinion on the user's OWN scan — offered on
@@ -573,6 +603,16 @@ class ResultActivity : AppCompatActivity() {
             } else {
                 btnSecondOpinion.visibility = View.GONE
             }
+            // The row only exists to pair the two follow-up actions; it goes
+            // with them so no empty gap is left above the care plan.
+            resultActionRow.visibility = if (
+                btnSecondOpinion.visibility == View.VISIBLE ||
+                btnAskDoctor.visibility == View.VISIBLE
+            ) {
+                View.VISIBLE
+            } else {
+                View.GONE
+            }
 
             animateCardsIn()
 
@@ -581,11 +621,84 @@ class ResultActivity : AppCompatActivity() {
         }
     }
 
-    /** Re-run an offline scan's photo through the full online model. Requires a
-     *  validated connection; the online result replaces the offline scan in
-     *  place (AnalysisActivity's force-family + replace-scan flow). */
+    /**
+     * Treat the server warning as the source of truth, while retaining the
+     * old numeric fallbacks for scans saved by older app/server versions.
+     * Very low always wins when both flags are present.
+     */
+    private fun confidenceAdvisoryFor(
+        scan: ScanEntity,
+        warnings: List<String>,
+        isNotAPlant: Boolean,
+    ): ConfidenceAdvisory? {
+        if (isNotAPlant) return null
+        return when {
+            "very_low_confidence" in warnings || scan.confidence < VERY_LOW_CONFIDENCE_FALLBACK ->
+                ConfidenceAdvisory.VERY_LOW
+            "low_confidence" in warnings || scan.confidence < LOW_CONFIDENCE_FALLBACK ->
+                ConfidenceAdvisory.LOW
+            else -> null
+        }
+    }
+
+    /**
+     * Keep the diagnosis label beside the help button on every display width.
+     * The server can return long localized names, so reduce only this label
+     * until its measured text fits the space left by the fixed-size button.
+     */
+    private fun fitDiseaseNameToQuestionButton() {
+        if (binding.btnDiseaseAppearance.visibility != View.VISIBLE) return
+
+        val textView = binding.tvDiseaseName
+        val questionButton = binding.btnDiseaseAppearance
+        val marginStart = (questionButton.layoutParams as? ViewGroup.MarginLayoutParams)
+            ?.marginStart
+            ?: 0
+        val availableWidth = (
+            binding.diseaseStatusTextColumn.width - questionButton.width - marginStart
+            ).coerceAtLeast(1)
+
+        textView.maxWidth = availableWidth
+        var textSizeSp = 18f
+        textView.setTextSize(TypedValue.COMPLEX_UNIT_SP, textSizeSp)
+        while (textSizeSp > 14f && textView.paint.measureText(textView.text.toString()) > availableWidth) {
+            textSizeSp -= 0.5f
+            textView.setTextSize(TypedValue.COMPLEX_UNIT_SP, textSizeSp)
+        }
+    }
+
+    /** Keeps uncertainty and its recovery action in the diagnosis card. */
+    private fun bindInlineConfidenceAdvisory(
+        advisory: ConfidenceAdvisory?,
+        standardBackgroundColor: Int,
+    ) = binding.run {
+        val isVisible = advisory != null
+        statusConfidenceGradient.visibility = if (isVisible) View.VISIBLE else View.GONE
+        inlineConfidenceNotice.visibility = if (isVisible) View.VISIBLE else View.GONE
+        cardStatus.setCardBackgroundColor(
+            if (isVisible) Color.TRANSPARENT else getColor(standardBackgroundColor),
+        )
+
+        if (advisory != null) {
+            tvInlineConfidenceTitle.setText(
+                when (advisory) {
+                    ConfidenceAdvisory.VERY_LOW -> R.string.warning_very_low_confidence_title
+                    ConfidenceAdvisory.LOW -> R.string.warning_low_confidence_title
+                },
+            )
+            tvInlineConfidenceBody.setText(R.string.inline_confidence_retake)
+        }
+    }
+
+    /** Re-run an offline scan's photo through the full online model. Needs the
+     *  server to be reachable; the online result replaces the offline scan in
+     *  place (AnalysisActivity's force-family + replace-scan flow).
+     *
+     *  The check is the app's shared one. This screen used to re-derive it from
+     *  NetworkCapabilities on its own, which passed happily on a stale VPN
+     *  tunnel — sending the user into an analysis that could only time out. */
     private fun improveOnline(scan: ScanEntity) {
-        if (!hasValidatedInternet()) {
+        if (!connectivity.lastKnownOnline) {
             Toast.makeText(this, R.string.improve_online_no_network, Toast.LENGTH_SHORT).show()
             return
         }
@@ -599,26 +712,16 @@ class ResultActivity : AppCompatActivity() {
         finish()
     }
 
-    private fun hasValidatedInternet(): Boolean {
-        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-            ?: return false
-        val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
-        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-    }
-
     private fun animateCardsIn() {
         val cards = listOf(
             binding.cardStatus,
-            binding.cardDescription,
-            binding.cardTreatmentPrevention,
-            binding.cardAlternatives,
             binding.cardSpecies,
-            binding.cardSimilarScans,
-            binding.cardToxicity,
-            binding.cardFeedback,
             binding.cardPipelineWarning,
-            binding.cardLowConfidence,
+            binding.resultActionRow,
+            binding.cardDescription,
+            binding.cardSimilarScans,
+            binding.cardAlternatives,
+            binding.cardFeedback,
         ).filter { it.visibility == View.VISIBLE }
 
         cards.forEachIndexed { index, view ->
@@ -635,29 +738,17 @@ class ResultActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        binding.cardStatus.removeCallbacks(resultHintRunnable)
-        activeCoachMark?.dismiss(immediate = true)
-        activeCoachMark = null
         skeletonAnimator?.cancel()
         skeletonAnimator = null
         super.onDestroy()
     }
 
-    override fun onSaveInstanceState(outState: Bundle) {
-        super.onSaveInstanceState(outState)
-        // Persist the selected Treatment/Prevention tab so it survives rotation
-        // and process-death (the scan itself reloads from the DB by scanId).
-        outState.putInt(
-            KEY_RESULT_TAB,
-            binding.tabsTreatmentPrevention.selectedTabPosition.coerceAtLeast(0),
-        )
-    }
-
     companion object {
         const val EXTRA_SCAN_ID = "extra_scan_id"
 
-        private const val KEY_RESULT_TAB = "result_tab"
-        private const val RESULT_HINT_DELAY_MS = 500L
+        private const val LOW_CONFIDENCE_FALLBACK = 0.5f
+        private const val VERY_LOW_CONFIDENCE_FALLBACK = 0.4f
+        private const val DISEASE_APPEARANCE_TAG = "disease_appearance"
 
         /** When true, auto-open the community opinions for this scan once it
          *  loads — set from an opinion notification tap and from tapping a

@@ -34,10 +34,15 @@ import com.plantdiseases.app.ui.garden.detail.DetailJournalController
 import com.plantdiseases.app.ui.garden.detail.DetailPhotosController
 import com.plantdiseases.app.ui.garden.detail.DetailTimelineController
 import com.plantdiseases.app.ui.garden.detail.dp
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingContext
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingCoordinator
 import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.OnboardingStateStore
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
-import org.koin.android.ext.android.inject
+import javax.inject.Inject
 
 /**
  * Thin host for the plant-detail screen. It owns the screen chrome (insets,
@@ -48,6 +53,7 @@ import org.koin.android.ext.android.inject
  * tabs. The camera / cover-pick [androidx.activity.result.ActivityResultLauncher]s
  * stay here because they must be registered before the activity is STARTED.
  */
+@AndroidEntryPoint
 class PlantDetailActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityPlantDetailBinding
@@ -69,12 +75,21 @@ class PlantDetailActivity : AppCompatActivity() {
     private var wateringSuggestion: PlantRepository.WateringSuggestion? = null
     private var lastWateredAt: Long? = null
 
-    private val plantRepository: PlantRepository by inject()
-    private val scanRepository: ScanRepository by inject()
+    @Inject
+    lateinit var plantRepository: PlantRepository
+
+    @Inject
+    lateinit var scanRepository: ScanRepository
+
+    @Inject
+    lateinit var onboardingState: OnboardingStateStore
+
+    private lateinit var onboardingCoordinator: OnboardingCoordinator
 
     private val header by lazy {
         DetailHeaderController(
             activity = this,
+            plantRepository = plantRepository,
             onReload = ::loadPlant,
             onRequestNewScan = ::requestNewScan,
             onOpenHero = { plant, scans -> photos.openHeroPhotoViewer(plant, scans) },
@@ -83,14 +98,16 @@ class PlantDetailActivity : AppCompatActivity() {
     private val extraCards by lazy {
         DetailExtraCardsController(
             activity = this,
+            plantRepository = plantRepository,
+            scanRepository = scanRepository,
             content = content,
             onReload = ::loadPlant,
             onClearWateringSuggestion = { wateringSuggestion = null },
         )
     }
-    private val timeline by lazy { DetailTimelineController(this) }
+    private val timeline by lazy { DetailTimelineController(this, plantRepository) }
     private val photos by lazy { DetailPhotosController(this) }
-    private val journal by lazy { DetailJournalController(this, ::loadPlant) }
+    private val journal by lazy { DetailJournalController(this, plantRepository, ::loadPlant) }
 
     /** "New scan" → opens the camera, runs the capture through the normal
      *  disease-analysis flow ([AnalysisActivity]) and auto-attaches the
@@ -236,6 +253,7 @@ class PlantDetailActivity : AppCompatActivity() {
         restoredTabIndex = savedInstanceState?.getInt(KEY_TAB, 0) ?: 0
         restoredScrollY = savedInstanceState?.getInt(KEY_SCROLL, 0) ?: 0
         buildLayout()
+        onboardingCoordinator = OnboardingCoordinator(this, onboardingState)
         loadPlant()
         // Best-effort scroll restore once the content has been laid out.
         if (restoredScrollY > 0) {
@@ -353,20 +371,22 @@ class PlantDetailActivity : AppCompatActivity() {
         // Doctor used to live above the tabs but they're rare
         // touches — moving them below lets the user reach the core
         // data (Timeline / Photos / Journal) in one scroll.
-        content.addView(header.buildHeader(plant, scans, journalEntries))
-        content.addView(header.buildActionRow())
+        val summaryAnchor = header.buildHeader(plant, scans, journalEntries)
+        val actionsAnchor = header.buildActionRow()
+        content.addView(summaryAnchor)
+        content.addView(actionsAnchor)
         extraCards.buildLastWateredStrip(lastWateredAt)?.let { content.addView(it) }
         extraCards.buildAdaptiveWateringChip(wateringSuggestion, currentPlant)?.let { content.addView(it) }
         extraCards.buildProgressionCard(scans, currentPlant)?.let { content.addView(it) }
-        content.addView(extraCards.buildCarePlanSlot(plant, scans))
+        val careAnchor = extraCards.buildCarePlanSlot(plant, scans)
+        content.addView(careAnchor)
         extraCards.buildGuideLink(scans)?.let { content.addView(it) }
-        content.addView(
-            header.buildTabs(
-                timelineContainer = { timelineContainer },
-                photosContainer = { photosContainer },
-                journalContainer = { journalContainer },
-            ).also { tabLayout = it },
-        )
+        val historyAnchor = header.buildTabs(
+            timelineContainer = { timelineContainer },
+            photosContainer = { photosContainer },
+            journalContainer = { journalContainer },
+        ).also { tabLayout = it }
+        content.addView(historyAnchor)
 
         timelineContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -400,11 +420,23 @@ class PlantDetailActivity : AppCompatActivity() {
         // primary-actions area stays scannable.
         content.addView(extraCards.buildLightMeterEntry(plant))
         content.addView(extraCards.buildWaterCalculatorEntry(plant))
-        content.addView(extraCards.buildDoctorEntry(plant, scans))
+        val assistantAnchor = extraCards.buildDoctorEntry(plant, scans)
+        content.addView(assistantAnchor)
 
         timeline.renderTimeline(timelineContainer, plantId, scans)
         journal.renderJournal(journalContainer, plantId, journalEntries)
         photos.renderPhotos(photosContainer, scans, journalEntries)
+
+        onboardingCoordinator.registerAnchor(OnboardingAnchorKey.GARDEN_PLANT_SUMMARY, summaryAnchor)
+        onboardingCoordinator.registerAnchor(OnboardingAnchorKey.GARDEN_PLANT_ACTIONS, actionsAnchor)
+        onboardingCoordinator.registerAnchor(OnboardingAnchorKey.GARDEN_PLANT_CARE, careAnchor)
+        onboardingCoordinator.registerAnchor(OnboardingAnchorKey.GARDEN_PLANT_HISTORY, historyAnchor)
+        onboardingCoordinator.registerAnchor(
+            OnboardingAnchorKey.GARDEN_PLANT_ASSISTANT,
+            assistantAnchor,
+            pauseAfterTarget = true,
+        )
+        onboardingCoordinator.setContext(OnboardingContext.GARDEN_PLANT_DETAILS)
     }
 
     private fun applyRestoredTabSelection() {

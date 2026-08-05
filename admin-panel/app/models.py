@@ -6,7 +6,6 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
 
-
 _SERVICE_RE = re.compile(r"^[A-Za-z0-9_.@-]{1,128}$")
 _USER_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 

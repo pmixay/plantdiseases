@@ -27,8 +27,11 @@ import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.LocaleHelper
 import com.plantdiseases.app.util.RegionResolver
 import com.plantdiseases.app.util.TelemetryIds
+import com.plantdiseases.app.util.enableWhileOnline
+import com.plantdiseases.app.util.onReconnected
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
-import org.koin.android.ext.android.inject
+import javax.inject.Inject
 
 /**
  * Social-style community feed. The server scopes it by country when it can,
@@ -40,12 +43,17 @@ import org.koin.android.ext.android.inject
  * A toolbar filter action opens a bottom-sheet overlay to sort the feed
  * by date (newest / oldest) and narrow it to a single disease type.
  */
+@AndroidEntryPoint
 class NearbyScansActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityNearbyScansBinding
     private lateinit var adapter: NearbyScansAdapter
-    private val scanRepository: ScanRepository by inject()
-    private val connectivity: ConnectivityObserver by inject()
+
+    @Inject
+    lateinit var scanRepository: ScanRepository
+
+    @Inject
+    lateinit var connectivity: ConnectivityObserver
     private val isRu by lazy { LocaleHelper.isRussian(this) }
 
     // Full feed as returned by the server; filtered + sorted client-side
@@ -96,7 +104,11 @@ class NearbyScansActivity : AppCompatActivity() {
         }
 
         binding.toolbar.setNavigationOnClickListener { finish() }
-        binding.offlineNotice.observe(this, connectivity)
+        binding.offlineNotice.observe(this, connectivity.isOnline)
+        // Joining the community registers a push token and pulls the feed, so
+        // it can't be done offline. The feed itself is guarded inside load().
+        enableWhileOnline(connectivity.isOnline, binding.btnEnableCommunity)
+        onReconnected(connectivity.isOnline) { load(isRefresh = false) }
         setupFilterMenu()
 
         // Nearby (~30 km) / Country / Worldwide scope — reload on change.
@@ -193,6 +205,15 @@ class NearbyScansActivity : AppCompatActivity() {
         // instead of reading their location / hitting the network.
         if (!CommunityPrefs.uploadsEnabled(this)) {
             showEnablePrompt()
+            return
+        }
+        // The feed is live-only — nothing about it is cached. Offline, say so
+        // instead of spinning through a request that can only time out (every
+        // scope change and pull-to-refresh would pay for one). The observer
+        // re-runs this the moment the server is reachable again.
+        if (!connectivity.lastKnownOnline) {
+            binding.swipeRefresh.isRefreshing = false
+            showState(getString(R.string.no_network))
             return
         }
         disableMenuItem?.isVisible = true

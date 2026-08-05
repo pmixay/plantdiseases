@@ -6,9 +6,10 @@ import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.util.OpinionPrefs
 import com.plantdiseases.app.util.TelemetryIds
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import org.koin.android.ext.android.inject
+import javax.inject.Inject
 
 /**
  * Receives FCM pushes — the primary delivery path for "someone left a second
@@ -19,9 +20,11 @@ import org.koin.android.ext.android.inject
  * Expected data payload: { type: "opinion", scan_id: <clientScanId>,
  * disease: <class_key>, note: <text>, nickname: <responder handle> }.
  */
+@AndroidEntryPoint
 class PlantMessagingService : FirebaseMessagingService() {
 
-    private val scanRepository: ScanRepository by inject()
+    @Inject
+    lateinit var scanRepository: ScanRepository
 
     override fun onNewToken(token: String) {
         val ctx = applicationContext

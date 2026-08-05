@@ -63,8 +63,6 @@
     <string name="blurry_or_not_a_plant_result_body">The photo is too blurry to read — or there\'s no plant in frame. If you photographed a plant, move a little closer, hold steady, wait for autofocus, and retake a sharp, well-lit shot of a single leaf.</string>
     <string name="description_label">Description</string>
     <string name="result_learn_more">Read the full guide</string>
-    <string name="treatment_label">Treatment</string>
-    <string name="prevention_label">Prevention</string>
 
     <!-- Gallery -->
     <string name="empty_gallery">No scans yet</string>
@@ -100,29 +98,61 @@
     <string name="none_yet">None yet</string>
 
     <!-- Onboarding -->
-    <string name="onboarding_next">Next</string>
-    <string name="onboarding_skip">Skip</string>
-    <string name="onboarding_start">Get Started</string>
-    <string name="onboarding_scan_title">Scan</string>
-    <string name="onboarding_scan_body">Frame a single leaf and PlantDiseases will line up the shot for you — auto-capture fires when the frame turns green.</string>
-    <string name="onboarding_diagnose_title">Diagnose</string>
-    <string name="onboarding_diagnose_body">PlantVision finds the leaf, classifies the disease, and shows the top-3 candidates with confidence bars.</string>
-    <string name="onboarding_care_title">Care</string>
-    <string name="onboarding_care_body">Get bilingual treatment, prevention tips and a watering / light plan tailored to the diagnosis.</string>
 
     <!-- Data-use consent (blocking; Play prominent disclosure) -->
     <string name="consent_title">Your data &amp; our models</string>
-    <string name="consent_body">Photos you scan and the feedback you give are used to train and improve our diagnosis models. Data is anonymized before storage — no account, name, precise location or device identifiers are attached, and photo metadata (EXIF, including GPS) is removed. If something goes wrong, the app may also send an anonymous error report (no photos or location) to help us fix bugs. You can delete your contributions at any time from Profile.</string>
+    <string name="consent_body">Photos you scan and the feedback you give are used to train and improve our diagnosis models. Data is anonymized before storage — no account, name, precise location or device identifiers are attached, and photo metadata (EXIF, including GPS) is removed. If something goes wrong, the app may also send an anonymous error report (no photos or location) to help us fix bugs. Contributions can\'t be withdrawn once sent — they are stored securely and carry no account, name or precise location.</string>
     <string name="consent_agree">Agree</string>
     <string name="consent_privacy_link">Privacy policy</string>
     <string name="consent_privacy_url" translatable="false">https://pdis.arbuz.lol/privacy.html</string>
 
-    <!-- In-context onboarding -->
-    <string name="coach_scan_title">Start with a scan</string>
-    <string name="coach_scan_body">Tap Scan to photograph a leaf and get a diagnosis.</string>
-    <string name="coach_result_title">Understand your result</string>
-    <string name="coach_result_body">Start with the diagnosis and confidence here, then scroll for care steps and alternatives.</string>
-    <string name="coach_got_it">Got it</string>
+    <!-- Interactive contextual guidance -->
+    <string name="guidance_title_home_scan">Home &amp; Scan</string>
+    <string name="guidance_title_garden">Garden</string>
+    <string name="guidance_title_garden_plant">Your plant</string>
+    <string name="guidance_title_gallery">Gallery</string>
+    <string name="guidance_title_profile">Profile</string>
+    <string name="guidance_title_species">Species details</string>
+    <string name="guidance_home_actions">Scan checks a plant’s health; Identify names an unknown species.</string>
+    <string name="guidance_home_tools">Measure light, calculate watering, check symptoms, or browse the plant guide.</string>
+    <string name="guidance_home_scan_nav">Open Scan to check a plant’s health.</string>
+    <string name="guidance_camera_permission">Allow camera access to photograph a leaf, or choose a photo from Gallery.</string>
+    <string name="guidance_camera_preview">Frame one leaf in even light against a plain background.</string>
+    <string name="guidance_camera_gallery">Choose a clear photo of one plant.</string>
+    <string name="guidance_camera_shutter">Hold still, focus on the leaf, then take the photo.</string>
+    <string name="guidance_result">See the diagnosis, confidence, care, and alternatives here.</string>
+    <string name="guidance_garden_hero">Keep plants, health history, notes, and reminders here.</string>
+    <string name="guidance_garden_plants">Open a plant card to view its health and care history.</string>
+    <string name="guidance_garden_add">Add a plant here, or %1$s.</string>
+    <string name="guidance_garden_attach_scan_link">attach a scan later</string>
+    <string name="guidance_garden_result_add">Attach this scan to a plant.</string>
+    <string name="guidance_garden_plant_summary">See this plant’s identity, scans, notes, and watering history.</string>
+    <string name="guidance_garden_plant_actions">Record watering or a note, start a scan, or open more actions.</string>
+    <string name="guidance_garden_plant_care">View this plant’s care and treatment plan.</string>
+    <string name="guidance_garden_plant_history">Switch between health history, photos, and notes.</string>
+    <string name="guidance_garden_plant_assistant">Ask the AI assistant about plant care.</string>
+    <string name="guidance_gallery_filters">Filter scans by all, healthy, or diseased.</string>
+    <string name="guidance_gallery_results">Reopen completed scans here.</string>
+    <string name="guidance_profile_settings">Set language, theme, and photo autosave.</string>
+    <string name="guidance_profile_statistics">See health rate, scan totals, activity, and common issues.</string>
+    <string name="guidance_profile_replay">Restart app guidance from here.</string>
+    <string name="guidance_species_summary">See the species, description, photos, and Wikipedia link.</string>
+    <string name="guidance_species_care">Expand Care Plan for watering, light, and other care advice.</string>
+    <string name="guidance_species_flowering">Expand to see monthly flowering and indoor bloom tips.</string>
+    <string name="guidance_species_native_range">Expand the map to see natural range and country growth.</string>
+    <string name="guidance_previous">Previous step</string>
+    <string name="guidance_next">Next step</string>
+    <string name="guidance_activate_target">Activate highlighted control</string>
+    <string name="guidance_step_counter">Step %1$d of %2$d</string>
+    <string name="guidance_skip_section">Skip section</string>
+    <string name="guidance_skip_all">Skip all</string>
+    <string name="guidance_skip_all_title">Skip all instructions?</string>
+    <string name="guidance_skip_all_body">No guidance chapters will appear again unless you choose Replay app guidance in Profile.</string>
+    <string name="guidance_back_title">Leave this section?</string>
+    <string name="guidance_back_body">This is the first step on this screen. Continue the section or skip it permanently.</string>
+    <string name="guidance_continue">Continue guidance</string>
+    <string name="replay_guidance_title">Replay app guidance</string>
+    <string name="replay_guidance_subtitle">Restart every contextual guidance section</string>
 
     <!-- Result -->
     <string name="new_scan">New Scan</string>
@@ -149,6 +179,10 @@
     <string name="date_today">Today</string>
     <string name="date_yesterday">Yesterday</string>
     <string name="date_days_ago">%d days ago</string>
+    <!-- Sub-day granularity; abbreviated so the forms stay plural-safe. -->
+    <string name="time_just_now">Just now</string>
+    <string name="time_minutes_ago">%d min ago</string>
+    <string name="time_hours_ago">%d hr ago</string>
 
     <!-- Settings -->
     <string name="close">Close</string>
@@ -159,19 +193,23 @@
     <string name="server_not_responding_detail">The server did not respond within 10 seconds. Please try again later.</string>
     <string name="no_network">No Internet Connection</string>
     <string name="no_network_detail">Check your network connection and try again.</string>
-    <string name="offline_banner">No internet connection</string>
-    <!-- Shared offline notice (ui/common/OfflineNoticeView). The first line is
-         the default; screens with nothing cached to fall back on use the second. -->
-    <string name="offline_notice_cached">Offline — showing cached content</string>
+    <!-- Shared offline notice (ui/common/OfflineNoticeView). Only screens whose
+         feature actually stops working offline carry the strip; the camera picks
+         one of its two messages at runtime, depending on whether the on-device
+         model is installed. -->
     <string name="offline_notice_needs_connection">Offline — this needs a connection</string>
+    <string name="offline_notice_scan_on_device">Offline — scanning on your phone, limited result</string>
+    <string name="offline_notice_scan_unavailable">Offline — scanning needs a connection</string>
+    <!-- Inline marker on screens that DO have something to show offline. The
+         content is real but was saved earlier, so it is flagged as possibly
+         out of date rather than hidden. -->
+    <string name="offline_saved_data_note">Saved earlier — may be out of date</string>
+    <!-- Shown when an online-only action is attempted while offline. -->
+    <string name="offline_action_unavailable">Not available offline</string>
+    <string name="offline_scan_needs_model">Scanning needs a connection. Download the on-device model while online to scan offline.</string>
 
     <!-- Server status / diagnostics -->
-    <string name="server_online">Online</string>
-    <string name="server_offline">Offline</string>
-    <string name="server_checking">Checking…</string>
     <string name="save">Save</string>
-    <string name="diagnostics_refresh">Refresh</string>
-    <string name="diagnostics_value_dash">—</string>
 
     <!-- Server error states (analysis screen) -->
     <string name="server_starting">Server is warming up</string>
@@ -185,14 +223,12 @@
 
     <!-- Auto-detected species card -->
     <string name="species_card_title">Detected species</string>
-    <string name="species_card_score">PlantNet match: %1$d%%</string>
     <string name="species_source_wikipedia">Source: Wikipedia</string>
     <string name="species_source_wikipedia_translated">Source: Wikipedia (auto-translated)</string>
     <string name="species_community_others">Other scans of this species</string>
     <string name="example_photos_label">What it looks like</string>
     <!-- Similar scans (community corpus) -->
     <string name="similar_scans_title">Similar scans in your country</string>
-    <string name="similar_scans_subtitle">%1$d recent scans in %2$s</string>
     <!-- Count of genuinely SIMILAR scans rendered in the strip (post
          disease/species filter) - not the regional all-disease total,
          which used to say "9 scans" above a one-item carousel. -->
@@ -201,7 +237,6 @@
         <item quantity="other">%1$d similar scans in %2$s</item>
     </plurals>
     <string name="similar_scans_subtitle_region">Recent community diagnoses in %1$s</string>
-    <string name="similar_scans_subtitle_no_region">No country feed is available yet.</string>
     <string name="similar_scans_empty">No community scans yet — your scan will be the first.</string>
     <!-- Community second opinion -->
     <string name="community_opinion_title">Get a second opinion</string>
@@ -213,8 +248,6 @@
     <string name="community_opinion_agree">Agree</string>
     <string name="community_opinion_disagree">Disagree</string>
     <string name="community_opinion_confidence">Confidence %1$d%%</string>
-    <string name="community_opinion_species_fmt">%1$s (%2$d%%)</string>
-    <string name="community_opinion_consensus_prefix">Community so far: %1$s</string>
     <string name="community_opinion_empty">No opinions yet — be the first to weigh in.</string>
     <string name="community_opinion_thanks">Thanks for your opinion!</string>
     <string name="community_opinion_error">Couldn\'t reach the community. Try again.</string>
@@ -224,11 +257,6 @@
     <string name="community_opinion_photo_desc">Shared plant scan</string>
     <string name="gallery_community_badge">💬 %1$d</string>
     <string name="gallery_new_opinions_badge">+%1$d</string>
-    <string name="community_my_opinions_title">My second opinions</string>
-    <string name="community_my_opinions_empty">You haven\'t sent any opinions yet.</string>
-    <string name="community_my_opinions_count_label">diagnoses you\'ve weighed in on</string>
-    <string name="community_my_opinions_breakdown">What you flag most</string>
-    <string name="community_my_opinions_recent">Recent</string>
     <string name="result_get_second_opinion">Get a second opinion</string>
     <string name="result_second_opinion_waiting">Waiting for second opinions…</string>
     <string name="result_second_opinion_view">View second opinions (%1$d)</string>
@@ -263,14 +291,12 @@
     <string name="community_map_near_me">Near me</string>
     <string name="nearby_action_disable">Leave community</string>
     <string name="community_disable_title">Leave community?</string>
-    <string name="community_disable_body">You\'ll stop sharing scans and receiving opinions. Scans you\'ve already shared stay until you delete them from Profile.</string>
+    <string name="community_disable_body">You\'ll stop sharing scans and receiving opinions. Scans you\'ve already shared stay in the community corpus.</string>
     <string name="community_disable_confirm">Leave</string>
     <string name="community_map_zoom_in">Zoom in to see individual scans</string>
     <string name="community_map_truncated">Showing the latest scans — zoom in to see all</string>
     <string name="community_map_empty">No community scans in this area yet</string>
     <string name="community_map_group_title">%1$d scans here</string>
-    <string name="community_map_legend_less">Fewer</string>
-    <string name="community_map_legend_more">More</string>
     <!-- In-context community opt-in -->
     <string name="community_enable_cta">Enable community</string>
     <string name="community_enable_blurb">See scans from growers near you and ask for a second opinion. Enabling shares your scans anonymously and uses your approximate location.</string>
@@ -285,15 +311,7 @@
     <string name="community_vote_percent">%1$d%%</string>
 
     <!-- Community consent + Profile toggle -->
-    <string name="community_toggle_title">Share scans with the community</string>
-    <string name="community_toggle_subtitle">Country + diagnosis + 512px thumbnail. Off keeps everything on-device.</string>
-    <string name="community_features_title">Enable community features</string>
-    <string name="community_features_subtitle">Share scans anonymously, get second opinions, and see scans from growers near you. Off turns the community off entirely and keeps everything on-device.</string>
-    <string name="community_profile_subtitle">Anonymous sharing is enabled after data consent.</string>
     <string name="community_scope_global">worldwide</string>
-    <string name="opinion_notifications_title">Receive community opinions</string>
-    <string name="opinion_notifications_subtitle">Notify me when someone responds to my second-opinion requests.</string>
-    <string name="community_delete_title">Delete my contributions</string>
     <string name="opinion_notif_title">New second opinion</string>
     <string name="opinion_notif_body">Someone weighed in on your %1$s scan</string>
     <string name="opinion_notif_body_named">%1$s weighed in on your %2$s scan</string>
@@ -302,20 +320,7 @@
     <string name="channel_plant_reminders_desc">Care schedule reminders for your plants</string>
     <string name="channel_community_name">Community</string>
     <string name="channel_community_desc">Second opinions on scans you shared</string>
-    <string name="community_delete_body">This removes every scan you\'ve shared so far from the community corpus. Continue?</string>
-    <string name="community_delete_done">Your community contributions were removed.</string>
-    <string name="community_delete_failed">Couldn\'t reach the server. Try again later.</string>
 
-    <!-- Pre-scan tips sheet (replaces auto-capture). -->
-    <string name="scan_tips_title">Before you scan</string>
-    <string name="scan_tips_subtitle">Three quick framing rules — they fix almost every "weird diagnosis".</string>
-    <string name="scan_tips_continue">Got it — let\'s scan</string>
-    <string name="scan_tip_distance_title">Get the distance right</string>
-    <string name="scan_tip_distance_body">Too close: only a tiny patch is in frame. Too far: the leaf is a thumbnail. Aim so one leaf fills most of the frame.</string>
-    <string name="scan_tip_focus_title">Hold steady, wait for focus</string>
-    <string name="scan_tip_focus_body">Tap the leaf to lock autofocus. Avoid back-lit shots — the leaf should not be a dark silhouette against a bright window.</string>
-    <string name="scan_tip_single_title">One species per frame</string>
-    <string name="scan_tip_single_body">Mixing two plants in one photo confuses both the classifier and the species detector. Crop or step back to isolate a single plant.</string>
     <!-- About model -->
     <!-- Rate limit -->
     <string name="server_busy">Server Busy</string>
@@ -327,6 +332,8 @@
 
     <!-- Retry analysis -->
     <string name="retry_analysis">Retry Analysis</string>
+    <!-- One sentence per line: the advisory is scanned, not read. -->
+    <string name="inline_confidence_retake">The photo might be blurry.\nRetake it with the leaf filling most of the frame.</string>
 
     <!-- Pipeline warnings -->
     <string name="warning_very_low_confidence_title">Very low confidence</string>
@@ -335,8 +342,6 @@
     <string name="warning_uncertain_healthy">The model is not confident that the plant is healthy. Please check the alternative diagnoses below — they may apply.</string>
     <string name="warning_viral_variegation_title">Could be natural variegation</string>
     <string name="warning_viral_variegation">Colorful or mottled patterns on ornamental foliage (Calathea, Caladium, Coleus, Croton, Aglaonema…) can closely resemble viral mosaic. If this is a variegated cultivar, the pattern may be perfectly normal — compare with a healthy leaf of the same plant and consider a second opinion before treating.</string>
-    <string name="warning_detector_mismatch_title">Detector sees damage</string>
-    <string name="warning_detector_mismatch">The detector spotted leaf damage, but the classifier decided the plant is healthy. Try re-scanning from a closer, better-lit angle.</string>
     <string name="warning_blurry_image_title">Photo is too blurry</string>
     <string name="warning_blurry_image">We couldn\'t read the leaf clearly enough to trust a diagnosis. Hold the phone steady, wait for autofocus to lock, and try again.</string>
     <string name="warning_weak_healthy_rerouted_title">Looks unhealthy</string>
@@ -375,7 +380,6 @@
     <string name="empty_garden_hint">Add your first plant to keep scans, care notes and watering history together.</string>
     <string name="empty_garden_cta_add">Add your first plant</string>
     <string name="empty_garden_secondary_hint">Already scanned a plant? Tap “Add to garden” on a result.</string>
-    <string name="latest_scan_format">Last scan: %s</string>
     <string name="no_scans_attached">No scans attached yet</string>
     <string name="plant_detail_title">Plant detail</string>
     <string name="scans">Scans</string>
@@ -384,7 +388,6 @@
     <string name="timeline">Timeline</string>
     <string name="plant_journal">Journal</string>
     <string name="add_note">Note</string>
-    <string name="add_photo_log">Photo</string>
     <string name="log_watering">Water</string>
     <string name="log_fertilising">Fertilise</string>
     <string name="log_repotting">Repot</string>
@@ -517,12 +520,7 @@
     <!-- Reminder notification action buttons + plant-detail event log -->
     <string name="reminder_action_done">Done</string>
     <string name="reminder_action_snooze">Snooze 1d</string>
-    <string name="reminder_log_empty">No reminders fired yet.</string>
-    <string name="reminder_log_done">%1$s · done %2$s</string>
-    <string name="reminder_log_pending">%1$s · awaiting action %2$s</string>
-    <string name="reminder_log_snoozed">%1$s · snoozed %2$s</string>
     <string name="reminder_streak_last_watered">Last watered %s</string>
-    <string name="reminder_streak_never_watered">Never watered through reminders yet</string>
     <!-- Photos tab + before/after compare slider -->
     <string name="plant_photos">Photos</string>
     <string name="plant_photos_empty_title">No photos yet</string>
@@ -653,6 +651,9 @@
 
     <!-- Care Plan -->
     <string name="care_plan_title">Care Plan</string>
+    <string name="cure_plan_title">Cure Plan</string>
+    <string name="care_plan_expand">Show care plan</string>
+    <string name="care_plan_collapse">Hide care plan</string>
     <string name="care_plan_subtitle_species">Tailored for %s</string>
     <string name="care_plan_subtitle_unknown">Generic plan — species not set</string>
     <string name="care_plan_subtitle_offline">Basic offline plan — re-scan online for a tailored one</string>
@@ -692,20 +693,15 @@
     <string name="care_plan_detail_npk">Fertiliser NPK</string>
     <string name="care_plan_detail_fertilise_howto">How to feed</string>
     <string name="care_plan_fertilise_howto_value">A balanced liquid plant fertiliser diluted to half strength — e.g. an all-purpose 10-10-10 feed, only during active growth.</string>
-    <string name="care_plan_detail_light_lux">Light (lux)</string>
-    <string name="care_plan_detail_humidity">Humidity band</string>
     <string name="care_plan_detail_temperature">Temperature</string>
     <string name="care_plan_detail_treatment">Treatment checklist</string>
     <string name="care_plan_detail_sanitation">Sanitation</string>
-    <string name="care_plan_detail_isolation">Isolation</string>
     <string name="care_plan_detail_red_flags">Red flags</string>
     <string name="care_plan_detail_checkpoints">Checkpoints</string>
-    <string name="care_plan_detail_season_note">Season note</string>
     <string name="care_plan_lux_range">%1$d – %2$d lx</string>
     <string name="care_plan_humidity_range">%1$d – %2$d %%</string>
     <string name="care_plan_temp_day">Day %1$d – %2$d °C</string>
     <string name="care_plan_temp_night">Night %1$d – %2$d °C</string>
-    <string name="care_plan_checkpoint_line">Day %1$d · %2$s</string>
     <string name="care_plan_isolation_required">Quarantine from other plants until recovered</string>
     <string name="care_plan_detail_setup">Setup</string>
     <string name="care_plan_day_badge">D%1$d</string>
@@ -788,10 +784,6 @@
     <string name="progression_trend_baseline">No history yet</string>
     <string name="progression_history_meta">%1$d scans · latest %2$s</string>
     <string name="progression_loading">Building progression sparkline…</string>
-    <string name="progression_failed">Could not load progression data.</string>
-    <string name="progression_followup_cta">Take a follow-up scan in a week to see how this plant changes — the sparkline above will fill in.</string>
-    <string name="progression_followup_remind">Remind me in 7 days</string>
-    <string name="progression_followup_scheduled">Follow-up reminder scheduled</string>
     <!-- Full-screen photo viewer -->
     <string name="photo_viewer_indicator">%1$d / %2$d</string>
     <!-- Plant detail → Light Meter shortcut -->
@@ -810,8 +802,7 @@
     <string name="model_family_frontier_desc">Largest, most accurate cloud model.</string>
     <string name="model_family_unavailable">Unavailable on this server</string>
     <string name="model_family_offline_badge">Offline</string>
-    <string name="model_family_chip">Model: %1$s</string>
-    <string name="model_family_aqua_not_installed">Offline model isn\'t installed yet — using the cloud model for now.</string>
+    <string name="model_family_needs_connection">Needs a connection</string>
     <string name="model_family_cd">Choose diagnosis model</string>
 
 
@@ -831,30 +822,14 @@
     <string name="home_tool_symptom">Symptom check</string>
     <string name="home_tool_guide">Guide</string>
     <string name="home_trending">Trending in your country</string>
-    <string name="home_trending_global">Worldwide</string>
-    <string name="home_trending_species_chip">%1$s · %2$d</string>
-    <string name="home_trending_disease_row">%1$s — %2$d scans this week</string>
-    <string name="home_open_community">Open community</string>
-    <string name="home_stats_title">Your stats &amp; tips</string>
-    <string name="home_stats_summary">%1$d scans · %2$d healthy · %3$d plants in garden</string>
     <string name="home_popular_diseases">Popular diseases</string>
-    <string name="home_popular_species">Popular plants</string>
     <string name="home_popular_in_country">Popular in %1$s</string>
     <string name="home_popular_near">Popular near %1$s</string>
     <string name="home_popular_worldwide">Popular worldwide</string>
     <string name="home_popular_percent">%1$d%% of community scans</string>
-    <string name="home_species_popular_tag">Popular</string>
     <string name="home_disease_guide">Guide</string>
     <string name="home_see_all">See all</string>
     <string name="home_guide_tag">Guide</string>
-    <plurals name="home_species_count">
-        <item quantity="one">%d scan</item>
-        <item quantity="other">%d scans</item>
-    </plurals>
-    <plurals name="home_disease_count">
-        <item quantity="one">%d scan this week</item>
-        <item quantity="other">%d scans this week</item>
-    </plurals>
 
     <!-- Guide / disease detail -->
     <string name="guide_detail_scan">Scan a plant for this</string>
@@ -875,7 +850,6 @@
     <string name="identify_unavailable">Species identification isn\'t available on this server right now.</string>
     <string name="identify_no_match">No confident match — try a closer, well-lit photo of a single leaf or flower.</string>
     <string name="identify_failed">Something went wrong. Check your connection and try again.</string>
-    <string name="identify_candidate_row">%1$s (%2$s) · %3$d%%</string>
     <string name="identify_loading">Loading…</string>
     <string name="identify_no_info">No encyclopedia entry found for this species.</string>
     <string name="identify_wikipedia">Read on Wikipedia</string>
@@ -888,23 +862,15 @@
     <string name="identify_water_days">Water about every %1$d days</string>
     <string name="identify_water_as_needed">Water when the top soil is dry</string>
     <string name="identify_humidity">Humidity: %1$s</string>
-    <string name="identify_add_garden">Add to garden</string>
-    <string name="identify_scan_health">Scan health</string>
-    <string name="identify_added_garden">Added to your garden</string>
-    <string name="identify_pick_candidate">Which one is your plant?</string>
     <string name="identify_retake">Retake</string>
     <string name="species_common_problems">Common problems to watch for</string>
-    <string name="species_problems_loading">Finding the problems most common for this plant…</string>
-    <string name="species_problems_ai_note">Most likely for this species — tap one for the full care guide.</string>
-    <string name="species_problems_guide_note">Plant conditions this app can diagnose — tap one to learn more.</string>
-    <string name="species_show_details">Show details</string>
     <string name="native_range_title">Native range</string>
+    <string name="native_range_expand">Show native range</string>
+    <string name="native_range_collapse">Hide native range</string>
     <string name="native_range_loading">Loading native range…</string>
     <string name="native_range_grows_more">Thrives</string>
     <string name="native_range_grows_less">Limited growth</string>
-    <string name="native_range_country_chip">%1$s · %2$s</string>
     <string name="native_range_selected_country">%1$s · %2$s</string>
-    <string name="native_range_country_accessibility">%1$s: %2$s</string>
     <string name="native_range_selected_country_accessibility">Selected country, %1$s: %2$s</string>
     <string name="native_range_tap_hint">Tap a country to check how this plant grows there.</string>
     <string name="native_range_outside_country">%1$s · Outside the known outdoor range; grow it indoors or in a greenhouse under controlled conditions.</string>
@@ -913,102 +879,28 @@
     <string name="native_range_map_empty">Native-range map unavailable</string>
     <string name="flowering_title">Flowering by month</string>
     <string name="flowering_loading">Loading flowering calendar…</string>
-    <string name="flowering_chart_hint">Indoor flowering: 0 — none, 1 — occasional, 2 — peak. The dot marks this month.</string>
     <string name="flowering_blooms_now">Blooms now</string>
     <string name="flowering_next_bloom">Next bloom in %1$s</string>
     <string name="flowering_rarely_indoors">Rarely flowers indoors</string>
+    <string name="flowering_level_none">none</string>
+    <string name="flowering_level_occasional">occasional</string>
+    <string name="flowering_level_peak">peak</string>
     <string name="flowering_conditions_title">What helps it bloom</string>
     <string name="flowering_expand">Show flowering details</string>
     <string name="flowering_collapse">Hide flowering details</string>
+
+    <!-- Universal species-info card (SpeciesInfoCardView), shown wherever a
+         specific species is referenced. -->
+    <string name="species_info_more">More about this species</string>
+    <string name="species_info_expand">Show full description</string>
+    <string name="species_info_collapse">Hide full description</string>
+    <!-- Spoken for the description toggle: species name, then the action. -->
+    <string name="species_info_toggle_content_description">%1$s. %2$s</string>
+    <string name="list_show_all">Show all %1$d</string>
+    <string name="list_show_fewer">Show fewer</string>
     <string name="flowering_toggle_content_description">%1$s. %2$s. %3$s</string>
-    <string name="flowering_accessibility_month_intensity">%1$s %2$d</string>
-    <string name="flowering_chart_content_description">%1$s. 0 means no bloom, 1 occasional bloom, 2 peak bloom. The dot marks this month. %2$s</string>
-
-    <!-- Plant screen · collapsible sections -->
-    <string name="section_about_title">About the plant</string>
-    <string name="section_about_subtitle">Description, traits and varieties.</string>
-    <string name="section_care_title">Care</string>
-    <string name="section_care_subtitle">Watering, light, temperature, humidity and pruning.</string>
-    <string name="section_diseases_title">Diseases and pests</string>
-    <string name="section_diseases_subtitle">Common problems and how to treat them.</string>
-    <string name="section_fertiliser_title">Fertiliser and feeding</string>
-    <string name="section_fertiliser_subtitle">What to feed with, and when.</string>
-    <string name="section_lunar_title">Lunar calendar</string>
-    <string name="section_lunar_subtitle">Favourable days for planting and care.</string>
-    <string name="section_tips_title">Tips</string>
-    <string name="section_tips_subtitle">Useful growing recommendations.</string>
-    <string name="section_expand">Expand section</string>
-    <string name="section_collapse">Collapse section</string>
-
-    <!-- Lunar calendar -->
-    <string name="lunar_today">Today, %1$s</string>
-    <string name="lunar_good_for">The day is good for:</string>
-    <string name="lunar_avoid">Better to postpone:</string>
-    <string name="lunar_upcoming">Upcoming favourable days</string>
-    <string name="lunar_legend_good">favourable</string>
-    <string name="lunar_legend_neutral">neutral</string>
-    <string name="lunar_legend_bad">unfavourable</string>
-    <string name="lunar_prev_month">Previous month</string>
-    <string name="lunar_next_month">Next month</string>
-
-    <!-- Moon phases -->
-    <string name="moon_new">New Moon</string>
-    <string name="moon_waxing_crescent">Waxing Moon</string>
-    <string name="moon_first_quarter">First Quarter</string>
-    <string name="moon_waxing_gibbous">Waxing Moon</string>
-    <string name="moon_full">Full Moon</string>
-    <string name="moon_waning_gibbous">Waning Moon</string>
-    <string name="moon_last_quarter">Last Quarter</string>
-    <string name="moon_waning_crescent">Waning Moon</string>
-
-    <!-- Zodiac signs -->
-    <string name="zodiac_aries">Aries</string>
-    <string name="zodiac_taurus">Taurus</string>
-    <string name="zodiac_gemini">Gemini</string>
-    <string name="zodiac_cancer">Cancer</string>
-    <string name="zodiac_leo">Leo</string>
-    <string name="zodiac_virgo">Virgo</string>
-    <string name="zodiac_libra">Libra</string>
-    <string name="zodiac_scorpio">Scorpio</string>
-    <string name="zodiac_sagittarius">Sagittarius</string>
-    <string name="zodiac_capricorn">Capricorn</string>
-    <string name="zodiac_aquarius">Aquarius</string>
-    <string name="zodiac_pisces">Pisces</string>
-
-    <!-- Lunar tasks -->
-    <string name="lunar_task_planting">Planting</string>
-    <string name="lunar_task_repotting">Repotting</string>
-    <string name="lunar_task_feeding">Feeding</string>
-    <string name="lunar_task_watering">Watering</string>
-    <string name="lunar_task_pruning">Pruning</string>
-
-    <!-- Lunar calendar · plant categories -->
-    <string name="lunar_category_note">Tailored for: %1$s</string>
-    <string name="lunar_cat_fruiting">fruiting plants</string>
-    <string name="lunar_cat_root">root crops</string>
-    <string name="lunar_cat_leafy">leafy greens</string>
-    <string name="lunar_cat_flowering">flowering plants</string>
-    <string name="lunar_cat_succulent">succulents and cacti</string>
-    <string name="lunar_cat_foliage">foliage houseplants</string>
-    <string name="lunar_cat_herb">herbs</string>
-    <string name="lunar_out_of_range">This calendar covers 2026–2027.</string>
-
-    <!-- Weekday initials, Monday first -->
-    <string name="lunar_dow_mon">Mon</string>
-    <string name="lunar_dow_tue">Tue</string>
-    <string name="lunar_dow_wed">Wed</string>
-    <string name="lunar_dow_thu">Thu</string>
-    <string name="lunar_dow_fri">Fri</string>
-    <string name="lunar_dow_sat">Sat</string>
-    <string name="lunar_dow_sun">Sun</string>
-
-    <!-- Fertiliser / tips section bodies -->
-    <string name="fertiliser_interval">Feed every %1$d weeks during active growth.</string>
-    <string name="fertiliser_interval_none">No regular feeding needed for this plant.</string>
-    <string name="fertiliser_npk">Fertiliser: %1$s</string>
-    <string name="fertiliser_soil">Soil mix: %1$s</string>
-    <string name="section_empty">Details will appear once the plant profile has loaded.</string>
-
+    <string name="flowering_accessibility_month_intensity">%1$s: %2$s</string>
+    <string name="flowering_chart_content_description">%1$s. The chart labels each month none, occasional or peak. The dot marks this month. %2$s</string>
     <string-array name="flowering_month_initials">
         <item>J</item>
         <item>F</item>
@@ -1023,7 +915,25 @@
         <item>N</item>
         <item>D</item>
     </string-array>
+    <!-- Substituted into flowering_next_bloom, so these are the prepositional
+         forms in Russian. Use flowering_month_names_nominative to name a month
+         on its own. -->
     <string-array name="flowering_month_names">
+        <item>January</item>
+        <item>February</item>
+        <item>March</item>
+        <item>April</item>
+        <item>May</item>
+        <item>June</item>
+        <item>July</item>
+        <item>August</item>
+        <item>September</item>
+        <item>October</item>
+        <item>November</item>
+        <item>December</item>
+    </string-array>
+    <!-- Standalone month names for the chart's accessibility read-out. -->
+    <string-array name="flowering_month_names_nominative">
         <item>January</item>
         <item>February</item>
         <item>March</item>
@@ -1040,15 +950,65 @@
 
     <!-- Stats & Tips -->
     <string name="stats_section">Your stats</string>
-    <string name="stats_total_scans">Plant scans</string>
-    <string name="stats_healthy_share">Healthy results</string>
-    <string name="stats_healthy_share_value">%1$d%% (%2$d)</string>
-    <string name="stats_issues_found">Issues found</string>
     <string name="stats_top_issues">Your most frequent issues</string>
-    <string name="stats_empty">No scans yet — your stats will appear after the first scan.</string>
     <!-- The tip_* cards moved into the Guide handbook (App help tab). -->
 
     <!-- RuStore in-app updates (util/InAppUpdateManager) -->
     <string name="update_ready">App update downloaded</string>
     <string name="update_ready_action">Install</string>
+
+    <!-- Lunar calendar, moon phases, zodiac, scan tips, collapsible sections -->
+    <string name="lunar_title">Lunar calendar</string>
+    <string name="lunar_expand">Show lunar calendar</string>
+    <string name="lunar_collapse">Hide lunar calendar</string>
+    <string name="lunar_today">Today, %1$s</string>
+    <string name="lunar_good_for">The day is good for:</string>
+    <string name="lunar_avoid">Better to postpone:</string>
+    <string name="lunar_upcoming">Upcoming favourable days</string>
+    <string name="lunar_legend_good">favourable</string>
+    <string name="lunar_legend_neutral">neutral</string>
+    <string name="lunar_legend_bad">unfavourable</string>
+    <string name="lunar_prev_month">Previous month</string>
+    <string name="lunar_next_month">Next month</string>
+    <string name="moon_new">New Moon</string>
+    <string name="moon_waxing_crescent">Waxing Moon</string>
+    <string name="moon_first_quarter">First Quarter</string>
+    <string name="moon_waxing_gibbous">Waxing Moon</string>
+    <string name="moon_full">Full Moon</string>
+    <string name="moon_waning_gibbous">Waning Moon</string>
+    <string name="moon_last_quarter">Last Quarter</string>
+    <string name="moon_waning_crescent">Waning Moon</string>
+    <string name="zodiac_aries">Aries</string>
+    <string name="zodiac_taurus">Taurus</string>
+    <string name="zodiac_gemini">Gemini</string>
+    <string name="zodiac_cancer">Cancer</string>
+    <string name="zodiac_leo">Leo</string>
+    <string name="zodiac_virgo">Virgo</string>
+    <string name="zodiac_libra">Libra</string>
+    <string name="zodiac_scorpio">Scorpio</string>
+    <string name="zodiac_sagittarius">Sagittarius</string>
+    <string name="zodiac_capricorn">Capricorn</string>
+    <string name="zodiac_aquarius">Aquarius</string>
+    <string name="zodiac_pisces">Pisces</string>
+    <string name="lunar_task_planting">Planting</string>
+    <string name="lunar_task_repotting">Repotting</string>
+    <string name="lunar_task_feeding">Feeding</string>
+    <string name="lunar_task_watering">Watering</string>
+    <string name="lunar_task_pruning">Pruning</string>
+    <string name="lunar_category_note">Tailored for: %1$s</string>
+    <string name="lunar_cat_fruiting">fruiting plants</string>
+    <string name="lunar_cat_root">root crops</string>
+    <string name="lunar_cat_leafy">leafy greens</string>
+    <string name="lunar_cat_flowering">flowering plants</string>
+    <string name="lunar_cat_succulent">succulents and cacti</string>
+    <string name="lunar_cat_foliage">foliage houseplants</string>
+    <string name="lunar_cat_herb">herbs</string>
+    <string name="lunar_out_of_range">This calendar covers 2026–2027.</string>
+    <string name="lunar_dow_mon">Mon</string>
+    <string name="lunar_dow_tue">Tue</string>
+    <string name="lunar_dow_wed">Wed</string>
+    <string name="lunar_dow_thu">Thu</string>
+    <string name="lunar_dow_fri">Fri</string>
+    <string name="lunar_dow_sat">Sat</string>
+    <string name="lunar_dow_sun">Sun</string>
 </resources>

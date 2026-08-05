@@ -30,6 +30,9 @@ class CarePlanCardView @JvmOverloads constructor(
 ) : MaterialCardView(context, attrs, defStyle) {
 
     private val gradient: LinearLayout
+    private val verticalStack: LinearLayout
+    private val accordionHeader: LinearLayout
+    private val accordionChevron: ImageView
     private val titleView: TextView
     private val subtitleView: TextView
     private val statusContainer: LinearLayout
@@ -48,6 +51,20 @@ class CarePlanCardView @JvmOverloads constructor(
     private var onRetryClick: (() -> Unit)? = null
     private var onApplyToReminders: ((CarePlanResponse) -> Unit)? = null
     private var lastPlan: CarePlanResponse? = null
+    private var sectionExpanded = false
+    private var detailsExpanded = false
+    private var hasDetails = false
+
+    /**
+     * A plan for a specific diagnosis is a *cure* plan; the species baseline
+     * (disease = "healthy") is a *care* plan. Hosts set this before binding.
+     */
+    var isCurePlan: Boolean = false
+        set(value) {
+            field = value
+            titleView.setText(if (value) R.string.cure_plan_title else R.string.care_plan_title)
+            updateAccordionAccessibility()
+        }
 
     init {
         radius = 20.dp().toFloat()
@@ -64,7 +81,7 @@ class CarePlanCardView @JvmOverloads constructor(
         // near-black under a long detail panel — colour-shifting
         // both halves to the same gradient would push every body
         // paragraph below the legibility floor.
-        val verticalStack = LinearLayout(context).apply {
+        verticalStack = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LayoutParams(
                 LayoutParams.MATCH_PARENT,
@@ -81,11 +98,14 @@ class CarePlanCardView @JvmOverloads constructor(
         verticalStack.addView(gradient)
 
         // Header row — leaf icon + title + subtitle
-        val header = LinearLayout(context).apply {
+        accordionHeader = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = 48.dp()
+            isClickable = true
+            isFocusable = true
         }
-        header.addView(
+        accordionHeader.addView(
             FrameLayout(context).apply {
                 setBackgroundResource(R.drawable.bg_circle_semi)
                 layoutParams = LinearLayout.LayoutParams(44.dp(), 44.dp())
@@ -101,8 +121,9 @@ class CarePlanCardView @JvmOverloads constructor(
         val titles = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f,
             ).apply { marginStart = 12.dp() }
         }
         titleView = TextView(context).apply {
@@ -121,12 +142,25 @@ class CarePlanCardView @JvmOverloads constructor(
         }
         titles.addView(titleView)
         titles.addView(subtitleView)
-        header.addView(titles)
-        gradient.addView(header)
+        accordionHeader.addView(titles)
+        accordionChevron = ImageView(context).apply {
+            setImageResource(R.drawable.ic_chevron_down)
+            setColorFilter(context.getColor(R.color.on_hero))
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            layoutParams = LinearLayout.LayoutParams(20.dp(), 20.dp()).apply {
+                marginStart = 8.dp()
+            }
+        }
+        accordionHeader.addView(accordionChevron)
+        accordionHeader.setOnClickListener {
+            setSectionExpanded(!sectionExpanded)
+        }
+        gradient.addView(accordionHeader)
 
         // Status container (loading / error / pills swap inside this)
         statusContainer = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -311,29 +345,76 @@ class CarePlanCardView @JvmOverloads constructor(
             setPadding(20.dp(), 4.dp(), 20.dp(), 20.dp())
         }
         verticalStack.addView(detailsContainer)
+        setSectionExpanded(expanded = false, animate = false)
+    }
+
+    private fun setSectionExpanded(expanded: Boolean, animate: Boolean = true) {
+        sectionExpanded = expanded
+        ExpandableSectionAnimator.update(
+            container = verticalStack,
+            expanded = expanded,
+            chevron = accordionChevron,
+            animate = animate,
+        ) {
+            statusContainer.visibility = if (expanded) View.VISIBLE else View.GONE
+            detailsContainer.visibility = if (expanded && detailsExpanded && hasDetails) {
+                View.VISIBLE
+            } else {
+                View.GONE
+            }
+        }
+        updateAccordionAccessibility()
+    }
+
+    private fun updateAccordionAccessibility() {
+        accordionHeader.contentDescription = context.getString(
+            R.string.species_info_toggle_content_description,
+            titleView.text?.toString().orEmpty(),
+            context.getString(
+                if (sectionExpanded) R.string.care_plan_collapse else R.string.care_plan_expand,
+            ),
+        )
     }
 
     private fun toggleDetails() {
-        val expanded = detailsContainer.visibility == View.VISIBLE
-        detailsContainer.visibility = if (expanded) View.GONE else View.VISIBLE
-        detailsToggle.text = context.getString(
-            if (expanded) {
-                R.string.care_plan_show_details
+        detailsExpanded = !detailsExpanded
+        ExpandableSectionAnimator.update(
+            container = verticalStack,
+            expanded = detailsExpanded,
+        ) {
+            detailsContainer.visibility = if (sectionExpanded && detailsExpanded && hasDetails) {
+                View.VISIBLE
             } else {
+                View.GONE
+            }
+        }
+        detailsToggle.text = context.getString(
+            if (detailsExpanded) {
                 R.string.care_plan_hide_details
+            } else {
+                R.string.care_plan_show_details
             },
         )
         detailsToggle.setIconResource(
-            if (expanded) {
-                R.drawable.ic_chevron_down
-            } else {
+            if (detailsExpanded) {
                 R.drawable.ic_chevron_up
+            } else {
+                R.drawable.ic_chevron_down
             },
         )
+    }
+
+    private fun resetDetailsExpansion() {
+        detailsExpanded = false
+        hasDetails = false
+        detailsContainer.visibility = View.GONE
+        detailsToggle.text = context.getString(R.string.care_plan_show_details)
+        detailsToggle.setIconResource(R.drawable.ic_chevron_down)
     }
 
     fun showLoading(speciesHint: String?) {
         subtitleView.text = speciesSubtitle(speciesHint)
+        resetDetailsExpansion()
         loadingView.visibility = View.VISIBLE
         errorView.visibility = View.GONE
         pillsRow.visibility = View.GONE
@@ -346,6 +427,7 @@ class CarePlanCardView @JvmOverloads constructor(
 
     fun showError(onRetry: () -> Unit) {
         onRetryClick = onRetry
+        resetDetailsExpansion()
         loadingView.visibility = View.GONE
         pillsRow.visibility = View.GONE
         noteContainer.visibility = View.GONE
@@ -370,6 +452,7 @@ class CarePlanCardView @JvmOverloads constructor(
      */
     fun showAwaitingScan(speciesHint: String?, onScanNow: () -> Unit) {
         subtitleView.text = speciesSubtitle(speciesHint)
+        resetDetailsExpansion()
         loadingView.visibility = View.GONE
         pillsRow.visibility = View.GONE
         noteContainer.visibility = View.GONE
@@ -468,8 +551,12 @@ class CarePlanCardView @JvmOverloads constructor(
         // Build v2-field details panel and toggle visibility based on
         // whether any v2 field is populated.
         val rendered = applyV2Details(plan)
+        detailsExpanded = false
+        hasDetails = rendered
+        detailsToggle.text = context.getString(R.string.care_plan_show_details)
+        detailsToggle.setIconResource(R.drawable.ic_chevron_down)
         detailsToggle.visibility = if (rendered) View.VISIBLE else View.GONE
-        if (!rendered) detailsContainer.visibility = View.GONE
+        detailsContainer.visibility = View.GONE
     }
 
     /** Render the rich v2 care-plan fields into [detailsContainer].

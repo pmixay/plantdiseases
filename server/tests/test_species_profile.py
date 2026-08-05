@@ -75,6 +75,73 @@ def _valid_profile_v2_json() -> str:
     })
 
 
+# ── schema ↔ parser contract ────────────────────────────────────────
+#
+# The shape now lives in _SPECIES_PROFILE_SCHEMA (sent to the provider as a
+# strict JSON schema) while the flowering calendar and native range are read
+# back out by _parse_species_profile_v2. Those two must describe the same
+# object: a schema that drifts from the parser produces replies that validate
+# upstream and are then thrown away here as malformed, which surfaces as the
+# whole section silently vanishing from the species screen.
+
+def _assert_conforms(instance, schema, path="$"):
+    """Validate against the JSON Schema subset we actually send (strict mode:
+    type / properties / required / additionalProperties=false / enum / items)."""
+    types = schema.get("type")
+    types = [types] if isinstance(types, str) else list(types or [])
+    checks = {
+        "object": dict, "array": list, "string": str, "integer": int, "null": type(None),
+    }
+    if types:
+        assert any(
+            isinstance(instance, checks[t]) and not (t == "integer" and isinstance(instance, bool))
+            for t in types
+        ), f"{path}: {type(instance).__name__} is not one of {types}"
+    if "enum" in schema and instance is not None:
+        assert instance in schema["enum"], f"{path}: {instance!r} not in enum"
+    if isinstance(instance, dict) and "properties" in schema:
+        for key in schema.get("required", []):
+            assert key in instance, f"{path}: missing required key {key!r}"
+        if schema.get("additionalProperties") is False:
+            extra = set(instance) - set(schema["properties"])
+            assert not extra, f"{path}: unexpected keys {sorted(extra)}"
+        for key, value in instance.items():
+            if key in schema["properties"]:
+                _assert_conforms(value, schema["properties"][key], f"{path}.{key}")
+    if isinstance(instance, list) and "items" in schema:
+        for i, item in enumerate(instance):
+            _assert_conforms(item, schema["items"], f"{path}[{i}]")
+
+
+def test_schema_and_parser_describe_the_same_profile():
+    """A reply that satisfies the schema must parse into a complete profile —
+    12-month calendar, native-range zones and bilingual text all intact."""
+    reply = _valid_profile_v2_json()
+    _assert_conforms(json.loads(reply), ai_services._SPECIES_PROFILE_SCHEMA)
+
+    parsed = ai_services._parse_species_profile_v2(reply)
+    assert parsed is not None, "schema-conformant reply must survive the parser"
+    assert len(parsed["flowering"]["monthly_intensity"]) == 12
+    assert parsed["flowering"]["indoor_note"]["en"] and parsed["flowering"]["indoor_note"]["ru"]
+    assert parsed["flowering_conditions"]["en"] and parsed["flowering_conditions"]["ru"]
+    zones = parsed["native_range"]["zones"]
+    assert [z["country_code"] for z in zones] == ["PER", "BOL"]  # duplicate dropped
+    assert {z["status"] for z in zones} <= ai_services._NATIVE_RANGE_STATUSES
+    assert parsed["native_range"]["summary"]["en"] and parsed["native_range"]["summary"]["ru"]
+
+
+def test_schema_pins_the_calendar_and_zone_vocabulary():
+    """The two fields with a closed vocabulary are the two the sanitiser drops
+    the WHOLE profile over, so the schema has to constrain them at the source."""
+    schema = ai_services._SPECIES_PROFILE_SCHEMA["properties"]
+    months = schema["flowering"]["properties"]["monthly_intensity"]
+    assert months["items"]["enum"] == [0, 1, 2]
+    assert "12" in months["description"]
+    zone = schema["native_range"]["properties"]["zones"]["items"]["properties"]
+    assert set(zone["status"]["enum"]) == ai_services._NATIVE_RANGE_STATUSES
+    assert "alpha-3" in zone["country_code"]["description"]
+
+
 # ── parser ──────────────────────────────────────────────────────────
 
 def test_parser_plain_json():
@@ -208,12 +275,15 @@ def test_structured_success_and_cache(monkeypatch):
     calls = {"n": 0}
 
     def fake_call(system_text, history, *, max_tokens=None, require_complete=False,
-                  reasoning_effort=None):
+                  reasoning_effort=None, json_schema=None, schema_name="response"):
         calls["n"] += 1
-        assert "JSON" in system_text
-        # Structured recall must pin the shortest reasoning trace per call —
-        # a raised global effort would otherwise truncate the JSON answer.
-        assert reasoning_effort == "minimal"
+        # The shape is a provider-enforced schema now, not prose in the prompt.
+        assert json_schema is not None
+        assert json_schema["properties"]["native_range"]["properties"]["zones"][
+            "items"]["properties"]["status"]["enum"] == ["grows_less", "grows_more"]
+        # The hardest recall in this module (bloom calendar + ISO-3166 range)
+        # and cached for 30 days per species — it earns more than the floor.
+        assert reasoning_effort == "high"
         return (_valid_profile_json(), 10, 20, {})
 
     monkeypatch.setattr(ai_services, "_call_openrouter", fake_call)
@@ -257,7 +327,7 @@ def test_disk_cache_survives_inmemory_wipe(monkeypatch):
     calls = {"n": 0}
 
     def fake_call(system_text, history, *, max_tokens=None, require_complete=False,
-                  reasoning_effort=None):
+                  reasoning_effort=None, json_schema=None, schema_name="response"):
         calls["n"] += 1
         return (_valid_profile_json(), 5, 5, {})
 
@@ -309,3 +379,67 @@ def test_endpoint_graceful_without_key(client):
 def test_endpoint_rejects_blank_name(client):
     r = client.get("/api/species-profile", params={"name": "   "})
     assert r.status_code == 422
+
+
+def test_v2_shape_with_bad_zone_codes_is_not_laundered_through_the_v1_parser(monkeypatch):
+    """A v2 reply whose zones fail validation must degrade, not leak dict reprs.
+
+    ``_sanitize_canonical_zones`` requires ISO alpha-3, so a model answering
+    with alpha-2 ("PE") drops every zone and the v2 parser returns None.
+    Control then falls through to the v1 parser on the *same* text. The v1
+    helpers used to ``str()`` whatever they were given, which turned the v2
+    ``{"en": ..., "ru": ...}`` dicts into Python dict reprs and served
+    ``"{'en': 'Cool rest', 'ru': '...'}"`` to users — cached for 30 days.
+    """
+    v2_with_alpha2 = json.dumps({
+        "flowering": {
+            "monthly_intensity": [0, 0, 1, 2, 2, 1, 0, 0, 0, 0, 0, 0],
+            "indoor_note": {"en": "Rarely indoors.", "ru": "Редко в помещении."},
+        },
+        "flowering_conditions": {"en": "Cool dry rest.", "ru": "Прохладный покой."},
+        "native_range": {
+            "zones": [
+                {"country_code": "PE", "country": {"en": "Peru", "ru": "Перу"},
+                 "status": "grows_more"},
+            ],
+            "summary": {"en": "Andean slopes.", "ru": "Склоны Анд."},
+        },
+    })
+    monkeypatch.setattr(ai_services, "_chat_api_key_present", lambda: True)
+    monkeypatch.setattr(
+        ai_services, "_call_openrouter", lambda *a, **k: (v2_with_alpha2, None, None, None),
+    )
+
+    out = ai_services.species_profile("Ficus elastica", lang="en")
+
+    assert out["available"] is False
+    assert "{'en'" not in json.dumps(out, ensure_ascii=False)
+
+
+def test_legacy_reply_is_not_served_to_the_other_locale(monkeypatch):
+    """The legacy adapter copies one language into both slots.
+
+    The v3 cache key carries no locale, so caching that under the shared key
+    would serve the Russian text to every English client for the whole TTL.
+    Legacy-derived profiles are locale-scoped instead.
+    """
+    ru_legacy = json.dumps({
+        "flowering": {"monthly_intensity": [0] * 12, "indoor_note": "Редко цветёт."},
+        "flowering_conditions": "Нужен прохладный период покоя.",
+        "native_range": {
+            "zones": [{"country": "Перу", "status": "grows_more"}],
+            "summary": "Родом из Анд.",
+        },
+    })
+    monkeypatch.setattr(ai_services, "_chat_api_key_present", lambda: True)
+    monkeypatch.setattr(
+        ai_services, "_call_openrouter", lambda *a, **k: (ru_legacy, None, None, None),
+    )
+
+    ru = ai_services.species_profile("Testus plantus", lang="ru")
+    assert ru["available"] is True
+    assert ru["flowering_conditions"] == "Нужен прохладный период покоя."
+
+    # The English client must not be handed the Russian copy from cache.
+    en = ai_services.species_profile("Testus plantus", lang="en")
+    assert en.get("cached") is not True

@@ -10,6 +10,7 @@ import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.data.model.AnalysisResponse
+import com.plantdiseases.app.di.appEntryPoint
 import kotlinx.coroutines.runBlocking
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -26,9 +27,10 @@ class ResultActivityTest {
     @Test
     fun rendersStoredDiagnosisName() {
         val app = ApplicationProvider.getApplicationContext<PlantDiseasesApp>()
+        val scanRepository = appEntryPoint(app).scanRepository()
 
         val scanId = runBlocking {
-            app.scanRepository.saveScan(
+            scanRepository.saveScan(
                 "/nonexistent-image.jpg",
                 AnalysisResponse(
                     classKey = "leaf_spot",
@@ -50,7 +52,7 @@ class ResultActivityTest {
             onView(withText("Leaf Spot")).check(matches(isDisplayed()))
         }
 
-        runBlocking { app.scanRepository.deleteScan(scanId) }
+        runBlocking { scanRepository.deleteScan(scanId) }
     }
 
     @Test

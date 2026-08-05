@@ -2,10 +2,11 @@ name: ci
 
 on:
   # Pushes from the repo-owned automation branches get immediate CI before a
-  # PR is opened. Include both slash-prefixed branches and the plain `work`
-  # branch name used by some Codex sessions.
+  # PR is opened. `codex/**` matched nothing until 2026-08-03, so work merged
+  # from those branches (#136, #137) reached main with no CI at all — which is
+  # how four auto-fixable lint errors blocked the Android suite for two days.
   push:
-    branches: [main, "claude/**", "work/**"]
+    branches: [main, "claude/**", "work/**", "codex/**"]
   # Also run for PRs into main so Codex branches from forks (where the source
   # push does not trigger this repository's workflow) still receive checks.
 
@@ -178,7 +179,7 @@ jobs:
           name: app-release-apk
           path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 7
           # An APK is already a compressed zip, so the artifact wrapper's
           # deflate buys very little. Use a light level (3) — most of the small
           # gain at a fraction of the CPU of the default 6 — rather than 0.

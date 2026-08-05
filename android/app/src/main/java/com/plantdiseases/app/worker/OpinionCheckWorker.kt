@@ -3,12 +3,10 @@ package com.plantdiseases.app.worker
 import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.plantdiseases.app.data.repository.ScanRepository
+import com.plantdiseases.app.di.appEntryPoint
 import com.plantdiseases.app.push.OpinionNotifier
 import com.plantdiseases.app.util.OpinionPrefs
 import com.plantdiseases.app.util.TelemetryIds
-import org.koin.core.component.KoinComponent
-import org.koin.core.component.inject
 
 /**
  * Periodically polls the server for second opinions on THIS install's shared
@@ -19,13 +17,17 @@ import org.koin.core.component.inject
  * Quiet by design: the first successful poll seeds the baseline without
  * notifying (so pre-existing opinions don't all fire at once), and each scan
  * only notifies when its opinion count actually grows.
+ *
+ * Resolves its repository via [appEntryPoint] rather than Hilt-assisted
+ * construction (`HiltWorkerFactory`) — see the comment on
+ * [com.plantdiseases.app.di.AppEntryPoint] for why.
  */
 class OpinionCheckWorker(
     context: Context,
     params: WorkerParameters,
-) : CoroutineWorker(context, params), KoinComponent {
+) : CoroutineWorker(context, params) {
 
-    private val scanRepository: ScanRepository by inject()
+    private val scanRepository = appEntryPoint(context).scanRepository()
 
     override suspend fun doWork(): Result {
         val ctx = applicationContext

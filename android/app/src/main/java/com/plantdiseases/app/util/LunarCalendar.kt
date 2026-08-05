@@ -25,15 +25,27 @@ object LunarCalendar {
     /** Mean synodic month, days. */
     private const val SYNODIC_MONTH = 29.530588853
 
-    /** Julian Day of the new moon of 2000-01-06 18:14 UT — the age epoch. */
+    /** Age epoch: JD 2451550.1 = 2000-01-06 14:24 UT, the conventional mean
+     *  new-moon reference for this series. Ages are therefore mean, not true,
+     *  conjunctions — the two differ by up to ~14 h, well inside the tolerance
+     *  of a day-resolution gardening calendar. */
     private const val NEW_MOON_EPOCH_JD = 2451550.1
 
     /** Julian Day of J2000.0 (2000-01-01 12:00 TT). */
     private const val J2000_JD = 2451545.0
 
-    /** The calendar only navigates within this window; see [clampMonth]/[clampDate]. */
-    val MIN_MONTH: YearMonth = YearMonth.of(2026, 1)
-    val MAX_MONTH: YearMonth = YearMonth.of(2027, 12)
+    /**
+     * The calendar only navigates within this window; see [clampMonth]/[clampDate].
+     *
+     * Deliberately a wide FIXED window rather than a narrow one, and rather than
+     * something derived from `LocalDate.now()`: a two-year window dead-ends while
+     * the installed build is still in use (a user on an old version simply cannot
+     * page forward), and a now()-derived window would make every result here
+     * depend on the wall clock, which is untestable. The four-term series stays
+     * comfortably inside a 30° zodiac bin across this span.
+     */
+    val MIN_MONTH: YearMonth = YearMonth.of(2020, 1)
+    val MAX_MONTH: YearMonth = YearMonth.of(2040, 12)
     val MIN_DATE: LocalDate = MIN_MONTH.atDay(1)
     val MAX_DATE: LocalDate = MAX_MONTH.atEndOfMonth()
 
@@ -80,15 +92,23 @@ object LunarCalendar {
     /** Normalized position in the synodic month: 0 = new, 0.5 = full, →1 = new again. */
     fun cyclePosition(date: LocalDate): Double = moonAge(date) / SYNODIC_MONTH
 
-    fun phase(date: LocalDate): Phase = when (moonAge(date)) {
-        in 0.0..1.0 -> Phase.NEW
-        in 1.0..6.4 -> Phase.WAXING_CRESCENT
-        in 6.4..8.4 -> Phase.FIRST_QUARTER
-        in 8.4..13.8 -> Phase.WAXING_GIBBOUS
-        in 13.8..15.8 -> Phase.FULL
-        in 15.8..21.1 -> Phase.WANING_GIBBOUS
-        in 21.1..23.1 -> Phase.LAST_QUARTER
-        else -> Phase.WANING_CRESCENT
+    fun phase(date: LocalDate): Phase {
+        val age = moonAge(date)
+        // Symmetric about conjunction. The day BEFORE the new moon is as much
+        // "new" as the day after it, and [isTurningPoint] already rates both as
+        // the do-nothing window — labelling that tail WANING_CRESCENT made the
+        // card contradict its own rating once per cycle.
+        if (age >= SYNODIC_MONTH - 1.0) return Phase.NEW
+        return when (age) {
+            in 0.0..1.0 -> Phase.NEW
+            in 1.0..6.4 -> Phase.WAXING_CRESCENT
+            in 6.4..8.4 -> Phase.FIRST_QUARTER
+            in 8.4..13.8 -> Phase.WAXING_GIBBOUS
+            in 13.8..15.8 -> Phase.FULL
+            in 15.8..21.1 -> Phase.WANING_GIBBOUS
+            in 21.1..23.1 -> Phase.LAST_QUARTER
+            else -> Phase.WANING_CRESCENT
+        }
     }
 
     /** Apparent ecliptic longitude of the Moon in degrees, 0..360. */
@@ -98,9 +118,13 @@ object LunarCalendar {
         val meanAnomaly = 134.963 + 13.064993 * d
         val elongation = 297.850 + 12.190749 * d
         val sunAnomaly = 357.529 + 0.98560028 * d
+        // Standard four-term series. The evection argument is (M - 2D), NOT
+        // (2D - M): sin is odd, so writing it the other way round flips the
+        // term's sign and swings the result by up to 2 * 1.274 = 2.5°, which is
+        // enough to land on the wrong side of a 30° zodiac boundary.
         val lambda = meanLongitude +
             6.289 * sin(Math.toRadians(meanAnomaly)) -
-            1.274 * sin(Math.toRadians(2 * elongation - meanAnomaly)) +
+            1.274 * sin(Math.toRadians(meanAnomaly - 2 * elongation)) +
             0.658 * sin(Math.toRadians(2 * elongation)) -
             0.186 * sin(Math.toRadians(sunAnomaly))
         val normalised = lambda % 360
@@ -217,7 +241,11 @@ object LunarCalendar {
         if (sign in r.badSigns) return if (waxing) emptyList() else listOf(Task.PRUNING)
         val base = if (waxing) r.waxingTasks else r.waningTasks
         val water = if (sign in WATER_SIGNS && !r.avoidWaterOnWaterSigns) listOf(Task.WATERING) else emptyList()
-        return (base + water).distinct().take(3)
+        // Water first, not last: the cap is three, and several categories
+        // (FOLIAGE, FRUITING, FLOWERING) already list three waxing tasks, so
+        // appending WATERING meant take(3) always discarded it — the one task
+        // the water sign is actually signalling.
+        return (water + base).distinct().take(3)
     }
 
     /** Tasks to postpone — the complement of [favourableTasks], capped at two. */

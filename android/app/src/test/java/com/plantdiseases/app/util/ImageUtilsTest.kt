@@ -71,6 +71,26 @@ class ImageUtilsTest {
     }
 
     @Test
+    fun formatRelativeTime_minutesHoursThenFallsBackToDates() {
+        val now = System.currentTimeMillis()
+        val minute = 60L * 1000
+        val hour = 60 * minute
+        assertThat(ImageUtils.formatRelativeTime(context, now))
+            .isEqualTo(context.getString(R.string.time_just_now))
+        // Clock skew: a timestamp in the future must not read "-1 min ago".
+        assertThat(ImageUtils.formatRelativeTime(context, now + hour))
+            .isEqualTo(context.getString(R.string.time_just_now))
+        assertThat(ImageUtils.formatRelativeTime(context, now - 5 * minute))
+            .isEqualTo(context.getString(R.string.time_minutes_ago, 5))
+        assertThat(ImageUtils.formatRelativeTime(context, now - 2 * hour))
+            .isEqualTo(context.getString(R.string.time_hours_ago, 2))
+        assertThat(ImageUtils.formatRelativeTime(context, now - 26 * hour))
+            .isEqualTo(context.getString(R.string.date_yesterday))
+        assertThat(ImageUtils.formatRelativeTime(context, now - 3 * 24 * hour - hour))
+            .isEqualTo(context.getString(R.string.date_days_ago, 3))
+    }
+
+    @Test
     fun copyUriToFile_copiesRegisteredStreamBytes() {
         val uri = Uri.parse("content://test.provider/img/1")
         val payload = "image-bytes-here".toByteArray()

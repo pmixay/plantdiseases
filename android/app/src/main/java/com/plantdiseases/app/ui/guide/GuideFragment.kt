@@ -16,12 +16,10 @@ import com.plantdiseases.app.R
 import com.plantdiseases.app.data.GuideDataProvider
 import com.plantdiseases.app.data.model.GuideCategory
 import com.plantdiseases.app.databinding.FragmentGuideBinding
-import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.LocaleHelper
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import org.koin.android.ext.android.inject
 
 /**
  * Plant-care guide tab: category tabs (diseases / pests / watering / lighting /
@@ -40,8 +38,6 @@ class GuideFragment : Fragment() {
     private var searchQuery: String = ""
 
     private var searchJob: Job? = null
-
-    private val connectivity: ConnectivityObserver by inject()
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -68,8 +64,6 @@ class GuideFragment : Fragment() {
 
         binding.rvGuide.layoutManager = LinearLayoutManager(requireContext())
         binding.rvGuide.adapter = adapter
-
-        binding.offlineNotice.observe(viewLifecycleOwner, connectivity)
 
         setupTabs()
         setupSearch()

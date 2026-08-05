@@ -105,6 +105,11 @@
         <item name="cardBackgroundColor">?attr/colorSurfaceContainer</item>
     </style>
 
+    <style name="App.Animation.DiseaseAppearance" parent="@android:style/Animation.Dialog">
+        <item name="android:windowEnterAnimation">@anim/fade_disease_appearance_in</item>
+        <item name="android:windowExitAnimation">@anim/fade_disease_appearance_out</item>
+    </style>
+
     <!-- Profile stat tiles (the count rows beside the health-rate ring). -->
     <style name="Profile.StatTile" parent="">
         <item name="android:layout_width">match_parent</item>
@@ -133,14 +138,6 @@
     </style>
 
     <!-- Compact pill chip for status / count badges. -->
-    <style name="App.GlassPill" parent="">
-        <item name="android:background">@drawable/bg_glass_pill</item>
-        <item name="android:paddingHorizontal">@dimen/space_md</item>
-        <item name="android:paddingVertical">@dimen/space_xs</item>
-        <item name="android:textColor">?attr/colorOnSurface</item>
-        <item name="android:textSize">@dimen/text_caption</item>
-        <item name="android:fontFamily">sans-serif-medium</item>
-    </style>
 
     <!-- ─── Button shape ────────────────────────────────────────────
          Almost-pill rounded buttons (24dp on a ~48dp tall surface
@@ -167,24 +164,7 @@
         <item name="elevation">0dp</item>
     </style>
 
-    <style name="App.Button.Tonal" parent="Widget.Material3.Button.TonalButton">
-        <item name="backgroundTint">@color/primary_light</item>
-        <item name="android:textColor">@color/primary_dark</item>
-        <item name="rippleColor">@color/primary</item>
-        <item name="shapeAppearanceOverlay">@style/ShapeAppearance.App.Button</item>
-        <item name="android:minHeight">48dp</item>
-        <item name="android:paddingHorizontal">@dimen/space_2xl</item>
-        <item name="android:textSize">@dimen/text_body</item>
-        <item name="android:fontFamily">sans-serif-medium</item>
-        <item name="iconTint">@color/primary_dark</item>
-    </style>
 
-    <style name="App.Button.Text" parent="Widget.Material3.Button.TextButton">
-        <item name="android:textColor">@color/primary</item>
-        <item name="rippleColor">@color/primary_light</item>
-        <item name="android:fontFamily">sans-serif-medium</item>
-        <item name="iconTint">@color/primary</item>
-    </style>
 
     <!-- ─── FABs ────────────────────────────────────────────────────
          The vivid green primary on the new white canvas would burn

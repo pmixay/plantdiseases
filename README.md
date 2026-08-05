@@ -173,7 +173,7 @@ server restart controls, health checks, and an explicit SSH console.
 
 ```bash
 cd admin-panel
-./start.sh          # Linux / macOS
+./launch.sh         # Linux / macOS
 ```
 
 On Windows, run `admin-panel\start.bat`. Both launchers create their own virtual
