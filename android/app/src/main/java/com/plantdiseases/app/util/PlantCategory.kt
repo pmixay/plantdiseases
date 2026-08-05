@@ -80,8 +80,14 @@ object PlantCategoryClassifier {
         )
         putAll(
             listOf(
-                "lactuca", "spinacia", "brassica", "eruca", "cichorium", "valerianella",
-                "nasturtium", "rumex",
+                "lactuca",
+                "spinacia",
+                "brassica",
+                "eruca",
+                "cichorium",
+                "valerianella",
+                "nasturtium",
+                "rumex",
             ).associateWith { PlantCategory.LEAFY },
         )
         putAll(

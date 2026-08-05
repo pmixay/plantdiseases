@@ -85,15 +85,21 @@ class MoonPhaseView @JvmOverloads constructor(
         val cy = h / 2f
         litPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             shader = RadialGradient(
-                cx - 0.28f * r, cy - 0.28f * r, 1.35f * r,
-                context.getColor(R.color.moon_lit_hi), context.getColor(R.color.moon_lit_lo),
+                cx - 0.28f * r,
+                cy - 0.28f * r,
+                1.35f * r,
+                context.getColor(R.color.moon_lit_hi),
+                context.getColor(R.color.moon_lit_lo),
                 Shader.TileMode.CLAMP,
             )
         }
         glowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             shader = RadialGradient(
-                cx, cy, 1.22f * r,
-                context.getColor(R.color.moon_glow), 0x00000000,
+                cx,
+                cy,
+                1.22f * r,
+                context.getColor(R.color.moon_glow),
+                0x00000000,
                 Shader.TileMode.CLAMP,
             )
         }

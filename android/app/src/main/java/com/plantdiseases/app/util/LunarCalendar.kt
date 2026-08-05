@@ -50,8 +50,14 @@ object LunarCalendar {
     val MAX_DATE: LocalDate = MAX_MONTH.atEndOfMonth()
 
     enum class Phase {
-        NEW, WAXING_CRESCENT, FIRST_QUARTER, WAXING_GIBBOUS,
-        FULL, WANING_GIBBOUS, LAST_QUARTER, WANING_CRESCENT,
+        NEW,
+        WAXING_CRESCENT,
+        FIRST_QUARTER,
+        WAXING_GIBBOUS,
+        FULL,
+        WANING_GIBBOUS,
+        LAST_QUARTER,
+        WANING_CRESCENT,
     }
 
     enum class Zodiac { ARIES, TAURUS, GEMINI, CANCER, LEO, VIRGO, LIBRA, SCORPIO, SAGITTARIUS, CAPRICORN, AQUARIUS, PISCES }
@@ -215,7 +221,8 @@ object LunarCalendar {
     /** New/full moon days: the classic "do nothing" window. */
     private fun isTurningPoint(date: LocalDate): Boolean {
         val age = moonAge(date)
-        return age < 1.0 || age > SYNODIC_MONTH - 1.0 ||
+        return age < 1.0 ||
+            age > SYNODIC_MONTH - 1.0 ||
             (age > SYNODIC_MONTH / 2 - 1.0 && age < SYNODIC_MONTH / 2 + 1.0)
     }
 
