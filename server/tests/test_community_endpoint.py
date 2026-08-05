@@ -29,7 +29,6 @@ def isolated_community(tmp_path, monkeypatch):
     server_main.community_nearby_scans = comm.nearby_scans
     server_main.community_region_summary = comm.region_summary
     server_main.community_stats_snapshot = comm.stats_snapshot
-    server_main.community_delete_for_user = comm.delete_for_user
     server_main.community_set_wants_opinion = comm.set_wants_opinion
     server_main.community_clear_wants_opinion = comm.clear_wants_opinion
     server_main.community_wants_opinion = comm.wants_opinion
@@ -727,35 +726,6 @@ def test_community_scan_nickname_round_trips(client, isolated_community):
     assert item["nickname"] == "Томатный Король 42"
 
 
-# ── Delete-for-user ─────────────────────────────────────────────────
-
-
-def test_community_delete_user_purges_rows_and_thumbs(client, isolated_community):
-    db_path, thumb_dir = isolated_community
-    client.post(
-        "/api/community/scan",
-        data=_form(
-            scan_id="scandel00001",
-            user_pseudo_id="pseudo-delete-x",
-            region="Tokyo", country="JP",
-            disease="healthy",
-        ),
-        files={"image": ("scan.png", _png_bytes(), "image/png")},
-    )
-    assert any(thumb_dir.iterdir())
-    r = client.delete("/api/community/user/pseudo-delete-x")
-    assert r.status_code == 200, r.text
-    assert r.json()["deleted"] >= 1
-    # Thumb file gone, row gone.
-    assert not any(thumb_dir.iterdir())
-    with sqlite3.connect(str(db_path)) as conn:
-        n = conn.execute(
-            "SELECT COUNT(*) FROM community_scans WHERE user_pseudo_id = ?",
-            ("pseudo-delete-x",),
-        ).fetchone()[0]
-    assert n == 0
-
-
 def test_community_thumb_rejects_path_traversal(client, isolated_community):
     # Starlette decodes `%2F` to `/` before matching, so a traversal
     # attempt either hits the explicit-guard 400 (if URL-decode keeps
@@ -887,36 +857,7 @@ def test_duplicate_upload_does_not_orphan_thumbnail(client, isolated_community):
     assert sorted(p.name for p in thumb_dir.iterdir()) == files_after_first
 
 
-# ── Regression: delete_for_user / prune sweep companion tables ──────
-
-
-def test_delete_for_user_sweeps_opinions_and_views_on_own_scans(isolated_community):
-    import community as comm
-
-    comm.record_scan(
-        scan_id="scanowned001", user_pseudo_id="owner0000001",
-        country="GB", region="London", disease="leaf_spot",
-    )
-    comm.record_opinion(
-        scan_id="scanowned001", author_pseudo_id="viewer000001",
-        suggested_disease="powdery_mildew",
-    )
-    comm.record_view("scanowned001", "viewer000001")
-    assert comm.view_count_for("scanowned001") == 1
-
-    deleted = comm.delete_for_user("owner0000001")
-    assert deleted == 1
-    db_path, _ = isolated_community
-    conn = sqlite3.connect(db_path)
-    try:
-        assert conn.execute(
-            "SELECT COUNT(*) FROM community_opinions WHERE scan_id='scanowned001'"
-        ).fetchone()[0] == 0
-        assert conn.execute(
-            "SELECT COUNT(*) FROM community_scan_views WHERE scan_id='scanowned001'"
-        ).fetchone()[0] == 0
-    finally:
-        conn.close()
+# ── Regression: prune sweeps companion tables ───────────────────────
 
 
 def test_prune_sweeps_orphaned_companion_rows(isolated_community):

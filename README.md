@@ -217,12 +217,6 @@ All routes are mounted under `/api`. A curated highlights table follows;
 | `GET`  | `/api/community/thumb/{filename}` | Community scan thumbnail |
 | `POST` | `/api/push/register`       | Register an FCM token for opinion notifications (no-op without FCM creds) |
 
-**Privacy / data rights**
-
-| Method | Path | Description |
-|---|---|---|
-| `DELETE` | `/api/community/user/{user_pseudo_id}`  | Delete the caller's shared community contributions |
-
 Response shapes and validation rules are documented inline in
 [`server/main.py`](server/main.py).
 

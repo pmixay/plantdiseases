@@ -22,8 +22,6 @@ Privacy posture
 * Thumbnails are 512px JPEGs uploaded by the client. The user can opt
   out from the Android app; uploads default to ON after the consent
   acknowledgement on first scan.
-* `delete_for_user(user_pseudo_id)` lets us honour deletion requests
-  without joining against any other table.
 """
 
 from __future__ import annotations
@@ -1332,59 +1330,6 @@ def popular_snapshot(
     }
 
 
-def delete_for_user(user_pseudo_id: str) -> int:
-    """Erase every row + thumbnail attributed to one install."""
-    init_db()
-    if not user_pseudo_id:
-        return 0
-    with _write_lock, _connect() as conn:
-        rows = conn.execute(
-            "SELECT scan_id, thumb_path FROM community_scans WHERE user_pseudo_id = ?",
-            (user_pseudo_id,),
-        ).fetchall()
-        deleted = conn.execute(
-            "DELETE FROM community_scans WHERE user_pseudo_id = ?",
-            (user_pseudo_id,),
-        ).rowcount
-        # Opinions / views left by OTHER users on this install's scans
-        # reference rows that no longer exist — sweep them so the tables
-        # don't accumulate orphans (and the deleted scans stop showing up
-        # in opinion/view count queries keyed by scan_id).
-        scan_ids = [str(r[0]) for r in rows if r[0]]
-        if scan_ids:
-            placeholders = ",".join("?" * len(scan_ids))
-            conn.execute(
-                f"DELETE FROM community_opinions WHERE scan_id IN ({placeholders})",
-                tuple(scan_ids),
-            )
-            conn.execute(
-                f"DELETE FROM community_scan_views WHERE scan_id IN ({placeholders})",
-                tuple(scan_ids),
-            )
-        # Views this install left on other people's scans also go.
-        conn.execute(
-            "DELETE FROM community_scan_views WHERE viewer_pseudo_id = ?",
-            (user_pseudo_id,),
-        )
-        # Opinions this install authored on *other* people's scans also go.
-        conn.execute(
-            "DELETE FROM community_opinions WHERE author_pseudo_id = ?",
-            (user_pseudo_id,),
-        )
-        # Drop any pending second-opinion requests this install made.
-        conn.execute(
-            "DELETE FROM community_opinion_requests WHERE user_pseudo_id = ?",
-            (user_pseudo_id,),
-        )
-    for row in rows:
-        thumb = row[1]
-        if not thumb:
-            continue
-        with contextlib.suppress(OSError):
-            (COMMUNITY_THUMB_DIR / thumb).unlink(missing_ok=True)
-    return int(deleted or 0)
-
-
 def prune_older_than(days: int) -> int:
     """Delete rows + thumbnails older than ``days`` days."""
     init_db()
@@ -1511,7 +1456,6 @@ __all__ = [
     "OPINION_REQUEST_TTL_HOURS",
     "clear_wants_opinion",
     "daily_write_count_for_ip_hash",
-    "delete_for_user",
     "expire_stale_opinion_requests",
     "density_grid",
     "init_db",

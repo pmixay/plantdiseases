@@ -1,4 +1,4 @@
-"""Feedback → labeling-queue wiring (mark_feedback, image-upload path, GDPR)."""
+"""Feedback → labeling-queue wiring (mark_feedback, image-upload path)."""
 
 from __future__ import annotations
 
@@ -151,18 +151,3 @@ def test_feedback_image_upload_creates_candidate_for_unrecorded_scan(client, lab
     stored = labeling.LABELING_IMG_DIR / row["image_path"]
     assert stored.is_file()
     assert not Image.open(stored).getexif()
-
-
-def test_gdpr_delete_cascades_to_labeling(client, labdb):
-    user = "user_gdpr_1"
-    _seed_scan("scanF3xx", cls="pests", status="pending")
-    _post_feedback(client, "scanF3xx", False, corrected="healthy", user=user)
-    _wait_for(lambda: (_row("scanF3xx") or {}).get("source") == "user_feedback")
-    img_path = labeling.LABELING_IMG_DIR / _row("scanF3xx")["image_path"]
-    assert img_path.is_file()
-    r = client.delete(f"/api/community/user/{user}")
-    assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["deleted_labeling_candidates"] == 1
-    assert _row("scanF3xx") is None
-    assert not img_path.exists()
