@@ -301,7 +301,7 @@ sweep on fold-in (pHash ≤ 6; provenance `agent_vision` > `model+user` > `model
 ## Production signal loop (server, no review)
 
 Recorded post-response (consent-gated, anonymized: JPEG q88, EXIF/GPS stripped, ≤1024 px;
-only linkage `scan_id`, GDPR-swept):
+only linkage `scan_id`):
 - **Scans:** every `/api/analyze` except `not_a_plant`/blur; uncertain (`pending`) + all
   disease always kept, confident healthy sampled at 0.1; `pending` expires 90 days.
 - **Feedback:** negative → re-opens `pending` under `user_feedback` at the corrected

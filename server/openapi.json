@@ -399,7 +399,7 @@
     "/api/feedback/image": {
       "post": {
         "summary": "Feedback Image Upload",
-        "description": "Persist the original image bytes for a negative-feedback row.\n\nCalled by the Android client immediately after a successful\n``correct=false`` ``/api/feedback`` submission. The image is\nwritten to ``FEEDBACK_IMG_DIR`` keyed by SHA-256 of the bytes,\nand the most recent feedback row for ``scan_id`` is updated\nin-place with ``image_path``. Same per-IP rate limit and\nscan-id-was-issued gate as ``/api/feedback`` so a hostile\nclient can't spray arbitrary bytes at the corpus.\n\nPrivacy note: photo storage for model improvement is disclosed in\nthe first-launch consent screen (and the feedback sheet copy); the\nimage is also anonymized (EXIF-stripped, downscaled) before it\nreaches the collection store. The community delete-for-user path\ncascades through feedback rows AND the labeling candidates keyed\nby this user's scan_ids, so \"delete my data\" purges these too.",
+        "description": "Persist the original image bytes for a negative-feedback row.\n\nCalled by the Android client immediately after a successful\n``correct=false`` ``/api/feedback`` submission. The image is\nwritten to ``FEEDBACK_IMG_DIR`` keyed by SHA-256 of the bytes,\nand the most recent feedback row for ``scan_id`` is updated\nin-place with ``image_path``. Same per-IP rate limit and\nscan-id-was-issued gate as ``/api/feedback`` so a hostile\nclient can't spray arbitrary bytes at the corpus.\n\nPrivacy note: photo storage for model improvement is disclosed in\nthe first-launch consent screen (and the feedback sheet copy); the\nimage is also anonymized (EXIF-stripped, downscaled) before it\nreaches the collection store.",
         "operationId": "feedback_image_upload_api_feedback_image_post",
         "requestBody": {
           "content": {
@@ -1600,44 +1600,6 @@
             "content": {
               "application/json": {
                 "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/community/user/{user_pseudo_id}": {
-      "delete": {
-        "summary": "Community Scan Delete User",
-        "description": "Erase all rows + thumbnails attributed to one install. Used by\nthe Android \"delete my contributions\" affordance.",
-        "operationId": "community_scan_delete_user_api_community_user__user_pseudo_id__delete",
-        "parameters": [
-          {
-            "name": "user_pseudo_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "User Pseudo Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
               }
             }
           }

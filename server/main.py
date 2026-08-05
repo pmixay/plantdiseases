@@ -87,9 +87,6 @@ try:
         daily_write_count_for_ip_hash as community_daily_writes,
     )
     from .community import (
-        delete_for_user as community_delete_for_user,
-    )
-    from .community import (
         density_grid as community_density_grid,
     )
     from .community import (
@@ -171,9 +168,6 @@ try:
         daily_write_count_for_ip_hash as feedback_daily_writes,
     )
     from .feedback import (
-        delete_for_user as feedback_delete_for_user,
-    )
-    from .feedback import (
         feedback_counts,
         hash_client_ip,
         is_scan_id_issued,
@@ -189,9 +183,6 @@ try:
     )
     from .feedback import (
         prune_older_than as feedback_prune_older_than,
-    )
-    from .feedback import (
-        scan_ids_for_user as feedback_scan_ids_for_user,
     )
     from .pipeline import PlantDiseasePipeline
     from .plant_photos import (
@@ -253,9 +244,6 @@ except ImportError:
     )
     from community import (
         daily_write_count_for_ip_hash as community_daily_writes,
-    )
-    from community import (
-        delete_for_user as community_delete_for_user,
     )
     from community import (
         density_grid as community_density_grid,
@@ -339,9 +327,6 @@ except ImportError:
         daily_write_count_for_ip_hash as feedback_daily_writes,
     )
     from feedback import (
-        delete_for_user as feedback_delete_for_user,
-    )
-    from feedback import (
         feedback_counts,
         hash_client_ip,
         is_scan_id_issued,
@@ -357,9 +342,6 @@ except ImportError:
     )
     from feedback import (
         prune_older_than as feedback_prune_older_than,
-    )
-    from feedback import (
-        scan_ids_for_user as feedback_scan_ids_for_user,
     )
     from pipeline import PlantDiseasePipeline
     from plant_photos import (
@@ -529,10 +511,10 @@ DISEASE_CLASSES = {
 # Every non-not_a_plant (and non-blur — the blur gate emits a synthetic NAP)
 # analyze result is recorded ANONYMIZED for model improvement: re-encoded
 # (EXIF/GPS dropped), downscaled, no user identifiers — the only linkage is
-# the response scan_id, and the user↔scan_id join lives solely in feedback.db
-# (which the GDPR delete cascade sweeps). Routed by route_scan(): confident →
-# auto_yes, suspicious → pending (kept for offline review). Disclosed via the
-# blocking first-launch consent screen (Android) + privacy.html.
+# the response scan_id, and the user↔scan_id join lives solely in feedback.db.
+# Routed by route_scan(): confident → auto_yes, suspicious → pending (kept for
+# offline review). Disclosed via the blocking first-launch consent screen
+# (Android) + privacy.html.
 SCAN_RECORDING_ENABLED = get_bool("SCAN_RECORDING_ENABLED", True)
 SCAN_RETENTION_DAYS = get_int("SCAN_RETENTION_DAYS", 90)
 SCAN_MAX_IMAGES = get_int("SCAN_MAX_IMAGES", 20000)
@@ -3027,9 +3009,7 @@ async def feedback_image_upload(
     Privacy note: photo storage for model improvement is disclosed in
     the first-launch consent screen (and the feedback sheet copy); the
     image is also anonymized (EXIF-stripped, downscaled) before it
-    reaches the collection store. The community delete-for-user path
-    cascades through feedback rows AND the labeling candidates keyed
-    by this user's scan_ids, so "delete my data" purges these too.
+    reaches the collection store.
     """
     client_ip = _client_ip(request)
     ip_hash = hash_client_ip(client_ip)
@@ -4154,42 +4134,6 @@ async def aqua_model():
         filename="aqua_classifier.tflite",
         headers={"Cache-Control": "no-cache"},
     )
-
-
-@api_router.delete("/community/user/{user_pseudo_id}")
-async def community_scan_delete_user(user_pseudo_id: str):
-    """Erase all rows + thumbnails attributed to one install. Used by
-    the Android "delete my contributions" affordance.
-    """
-    if not user_pseudo_id or any(ch not in _SCAN_ID_ALLOWED for ch in user_pseudo_id):
-        raise HTTPException(status_code=422, detail="Invalid user id")
-    loop = asyncio.get_running_loop()
-    # Resolve the user's scan_ids BEFORE deleting the feedback rows — the
-    # feedback DB holds the only user↔scan_id join, and the labeling
-    # candidates (recorded scans / feedback uploads) are keyed by scan_id.
-    scan_ids = await loop.run_in_executor(
-        None,
-        lambda: feedback_scan_ids_for_user(user_pseudo_id),
-    )
-    deleted_community = await loop.run_in_executor(
-        None,
-        lambda: community_delete_for_user(user_pseudo_id),
-    )
-    deleted_feedback = await loop.run_in_executor(
-        None,
-        lambda: feedback_delete_for_user(user_pseudo_id),
-    )
-    deleted_labeling = await loop.run_in_executor(
-        None,
-        lambda: labeling.delete_candidates_for_scan_ids(scan_ids),
-    )
-    return JSONResponse(content={
-        "ok": True,
-        "deleted": deleted_community,
-        "deleted_community": deleted_community,
-        "deleted_feedback": deleted_feedback,
-        "deleted_labeling_candidates": deleted_labeling,
-    })
 
 
 # --- /api/popular: personalized, short-cached popular-plants bundle ----

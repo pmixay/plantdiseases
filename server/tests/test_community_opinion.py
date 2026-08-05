@@ -46,18 +46,6 @@ def test_opinions_for_unknown_scan_is_empty(comm):
     }
 
 
-def test_delete_for_user_removes_their_opinions(comm):
-    comm.record_opinion(scan_id="s4", author_pseudo_id="gone",
-                        suggested_disease="leaf_spot")
-    comm.record_opinion(scan_id="s4", author_pseudo_id="stay",
-                        suggested_disease="healthy")
-    comm.delete_for_user("gone")
-
-    res = comm.opinions_for("s4")
-    assert len(res["opinions"]) == 1
-    assert res["opinions"][0]["suggested_disease"] == "healthy"
-
-
 def test_daily_opinion_count_guards_none(comm):
     assert comm.daily_opinion_count_for_ip_hash(None) == 0
 

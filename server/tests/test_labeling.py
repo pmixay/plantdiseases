@@ -3,7 +3,7 @@
 The human admin review queue (claim/verdict/auth/endpoints) was removed — the
 store is now export-only (tools/export_data.py), judged offline. These tests
 cover the surviving store API: idempotent inserts, scan lookup, the feedback
-fold-back, the daily-cap counter and the GDPR delete cascade."""
+fold-back and the daily-cap counter."""
 
 from __future__ import annotations
 
@@ -98,12 +98,3 @@ def test_count_user_scans_today(labdb):
     _seed("powdery_mildew")
     assert labeling.count_user_scans_today("leaf_spot") == 2
     assert labeling.count_user_scans_today("powdery_mildew") == 1
-
-
-def test_delete_candidates_for_scan_ids_cascades_files(labdb):
-    rid, _ = _seed("viral_disease", scan_id="del-1")
-    path = labeling.LABELING_IMG_DIR / labeling.candidate_for_scan("del-1")["image_path"]
-    assert path.is_file()
-    assert labeling.delete_candidates_for_scan_ids(["del-1"]) == 1
-    assert labeling.candidate_for_scan("del-1") is None
-    assert not path.is_file()
