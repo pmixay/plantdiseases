@@ -106,12 +106,53 @@
     <string name="consent_agree">Принять</string>
     <string name="consent_privacy_link">Политика конфиденциальности</string>
 
-    <!-- Контекстные подсказки -->
-    <string name="coach_scan_title">Начните со сканирования</string>
-    <string name="coach_scan_body">Нажмите «Скан», сфотографируйте лист и получите диагноз.</string>
-    <string name="coach_result_title">Как понять результат</string>
-    <string name="coach_result_body">Сначала посмотрите диагноз и уверенность модели, затем пролистайте к уходу и другим вариантам.</string>
-    <string name="coach_got_it">Понятно</string>
+    <!-- Интерактивные контекстные подсказки -->
+    <string name="guidance_title_home_scan">Главная и сканирование</string>
+    <string name="guidance_title_garden">Сад</string>
+    <string name="guidance_title_garden_plant">Ваше растение</string>
+    <string name="guidance_title_gallery">Галерея</string>
+    <string name="guidance_title_profile">Профиль</string>
+    <string name="guidance_title_species">О виде растения</string>
+    <string name="guidance_home_actions">«Сканировать» проверяет здоровье, «Определить» распознаёт вид.</string>
+    <string name="guidance_home_tools">Измеряйте свет, рассчитывайте полив, проверяйте симптомы и открывайте справочник.</string>
+    <string name="guidance_home_scan_nav">Откройте «Скан», чтобы проверить здоровье растения.</string>
+    <string name="guidance_camera_permission">Разрешите камеру для фото листа или выберите фото в галерее.</string>
+    <string name="guidance_camera_preview">Снимайте один лист при ровном свете на простом фоне.</string>
+    <string name="guidance_camera_gallery">Выберите чёткое фото одного растения.</string>
+    <string name="guidance_camera_shutter">Держите телефон ровно, наведите фокус на лист и сделайте снимок.</string>
+    <string name="guidance_result">Здесь — диагноз, уверенность, уход и альтернативы.</string>
+    <string name="guidance_garden_hero">Здесь хранятся растения, история здоровья, заметки и напоминания.</string>
+    <string name="guidance_garden_plants">Откройте карточку растения, чтобы увидеть историю здоровья и ухода.</string>
+    <string name="guidance_garden_add">Добавьте растение или %1$s.</string>
+    <string name="guidance_garden_attach_scan_link">прикрепите скан позже</string>
+    <string name="guidance_garden_result_add">Прикрепите этот скан к растению.</string>
+    <string name="guidance_garden_plant_summary">Здесь — вид растения, сканы, заметки и поливы.</string>
+    <string name="guidance_garden_plant_actions">Отметьте полив, добавьте заметку, начните скан или откройте ещё действия.</string>
+    <string name="guidance_garden_plant_care">Здесь находится план ухода и лечения.</string>
+    <string name="guidance_garden_plant_history">Переключайтесь между историей, фото и заметками.</string>
+    <string name="guidance_garden_plant_assistant">Спросите ИИ-помощника об уходе за растением.</string>
+    <string name="guidance_gallery_filters">Фильтруйте сканы: все, здоровые или с болезнями.</string>
+    <string name="guidance_gallery_results">Здесь можно снова открыть готовые сканы.</string>
+    <string name="guidance_profile_settings">Настройте язык, тему и автосохранение фото.</string>
+    <string name="guidance_profile_statistics">Здесь — здоровье, число сканов, активность и частые проблемы.</string>
+    <string name="guidance_profile_replay">Здесь можно запустить подсказки заново.</string>
+    <string name="guidance_species_summary">Здесь — вид, описание, фото и ссылка на Википедию.</string>
+    <string name="guidance_species_care">Разверните план ухода: полив, свет и другие рекомендации.</string>
+    <string name="guidance_species_flowering">Разверните раздел, чтобы увидеть цветение по месяцам и советы.</string>
+    <string name="guidance_species_native_range">Разверните карту, чтобы увидеть ареал и рост по странам.</string>
+    <string name="guidance_previous">Предыдущий шаг</string>
+    <string name="guidance_next">Следующий шаг</string>
+    <string name="guidance_activate_target">Нажать выделенный элемент</string>
+    <string name="guidance_step_counter">Шаг %1$d из %2$d</string>
+    <string name="guidance_skip_section">Пропустить раздел</string>
+    <string name="guidance_skip_all">Пропустить всё</string>
+    <string name="guidance_skip_all_title">Пропустить все инструкции?</string>
+    <string name="guidance_skip_all_body">Подсказки больше не появятся, пока вы не выберете «Повторить подсказки» в профиле.</string>
+    <string name="guidance_back_title">Выйти из раздела?</string>
+    <string name="guidance_back_body">Это первый шаг на данном экране. Продолжите раздел или пропустите его навсегда.</string>
+    <string name="guidance_continue">Продолжить подсказки</string>
+    <string name="replay_guidance_title">Повторить подсказки</string>
+    <string name="replay_guidance_subtitle">Заново запустить все контекстные инструкции</string>
 
     <!-- Result -->
     <string name="new_scan">Новый скан</string>
@@ -151,10 +192,15 @@
     <string name="server_not_responding_detail">Сервер не ответил в течение 10 секунд. Попробуйте позже.</string>
     <string name="no_network">Нет интернета</string>
     <string name="no_network_detail">Проверьте подключение к сети и повторите попытку.</string>
-    <string name="offline_banner">Нет подключения к интернету</string>
     <!-- Общее уведомление об офлайне (ui/common/OfflineNoticeView). -->
-    <string name="offline_notice_cached">Офлайн — показаны сохранённые данные</string>
     <string name="offline_notice_needs_connection">Офлайн — нужно подключение к интернету</string>
+    <string name="offline_notice_scan_on_device">Офлайн — скан на телефоне, результат ограничен</string>
+    <string name="offline_notice_scan_unavailable">Офлайн — для сканирования нужен интернет</string>
+    <!-- Пометка на экранах, где офлайн всё же есть что показать. -->
+    <string name="offline_saved_data_note">Сохранено ранее — данные могут быть неактуальны</string>
+    <!-- Показывается при попытке онлайн-действия в офлайне. -->
+    <string name="offline_action_unavailable">Недоступно офлайн</string>
+    <string name="offline_scan_needs_model">Для сканирования нужен интернет. Скачайте модель для телефона онлайн, чтобы сканировать офлайн.</string>
 
     <!-- Server status / diagnostics -->
     <string name="save">Сохранить</string>
@@ -263,16 +309,6 @@
     <string name="channel_community_name">Сообщество</string>
     <string name="channel_community_desc">Вторые мнения о сканах, которыми вы поделились</string>
 
-    <!-- Pre-scan tips sheet -->
-    <string name="scan_tips_title">Перед сканированием</string>
-    <string name="scan_tips_subtitle">Три простых правила — они снимают почти все «странные» диагнозы.</string>
-    <string name="scan_tips_continue">Понятно — сканируем</string>
-    <string name="scan_tip_distance_title">Подберите расстояние</string>
-    <string name="scan_tip_distance_body">Слишком близко — в кадр попадает только пятно. Слишком далеко — лист размером с ноготь. Один лист должен занимать большую часть кадра.</string>
-    <string name="scan_tip_focus_title">Держите камеру неподвижно</string>
-    <string name="scan_tip_focus_body">Коснитесь листа, чтобы зафиксировать автофокус. Избегайте контрового света — лист не должен быть силуэтом на ярком фоне.</string>
-    <string name="scan_tip_single_title">Один вид в кадре</string>
-    <string name="scan_tip_single_body">Два растения в одном кадре сбивают и классификатор, и определение вида. Подойдите ближе или сместите ракурс, чтобы оставить одно растение.</string>
     <!-- About model -->
     <!-- Rate limit -->
     <string name="server_busy">Сервер занят</string>
@@ -751,6 +787,7 @@
     <string name="model_family_frontier_desc">Самая большая и точная облачная модель.</string>
     <string name="model_family_unavailable">Недоступна на этом сервере</string>
     <string name="model_family_offline_badge">Офлайн</string>
+    <string name="model_family_needs_connection">Нужен интернет</string>
     <string name="model_family_cd">Выбрать модель диагностики</string>
 
 
@@ -818,9 +855,7 @@
     <string name="native_range_loading">Загружаем природный ареал…</string>
     <string name="native_range_grows_more">Хорошо растёт</string>
     <string name="native_range_grows_less">Растёт ограниченно</string>
-    <string name="native_range_country_chip">%1$s · %2$s</string>
     <string name="native_range_selected_country">%1$s · %2$s</string>
-    <string name="native_range_country_accessibility">%1$s: %2$s</string>
     <string name="native_range_selected_country_accessibility">Выбрана страна %1$s: %2$s</string>
     <string name="native_range_tap_hint">Нажмите на страну, чтобы проверить, как здесь растёт растение.</string>
     <string name="native_range_outside_country">%1$s · Вне известного ареала для выращивания на открытом воздухе; нужны помещение или теплица с контролируемыми условиями.</string>
@@ -905,4 +940,80 @@
     <!-- Обновления из RuStore (util/InAppUpdateManager) -->
     <string name="update_ready">Обновление приложения загружено</string>
     <string name="update_ready_action">Установить</string>
+
+    <!-- Lunar calendar, moon phases, zodiac, scan tips, collapsible sections -->
+    <string name="lunar_title">Лунный календарь</string>
+    <string name="lunar_expand">Показать лунный календарь</string>
+    <string name="lunar_collapse">Скрыть лунный календарь</string>
+    <string name="lunar_today">Сегодня, %1$s</string>
+    <string name="lunar_good_for">День благоприятен для:</string>
+    <string name="lunar_avoid">Лучше отложить:</string>
+    <string name="lunar_upcoming">Ближайшие благоприятные дни</string>
+    <string name="lunar_legend_good">благоприятные</string>
+    <string name="lunar_legend_neutral">нейтральные</string>
+    <string name="lunar_legend_bad">неблагоприятные</string>
+    <string name="lunar_prev_month">Предыдущий месяц</string>
+    <string name="lunar_next_month">Следующий месяц</string>
+    <string name="moon_new">Новолуние</string>
+    <string name="moon_waxing_crescent">Растущая Луна</string>
+    <string name="moon_first_quarter">Первая четверть</string>
+    <string name="moon_waxing_gibbous">Растущая Луна</string>
+    <string name="moon_full">Полнолуние</string>
+    <string name="moon_waning_gibbous">Убывающая Луна</string>
+    <string name="moon_last_quarter">Последняя четверть</string>
+    <string name="moon_waning_crescent">Убывающая Луна</string>
+    <string name="zodiac_aries">Овен</string>
+    <string name="zodiac_taurus">Телец</string>
+    <string name="zodiac_gemini">Близнецы</string>
+    <string name="zodiac_cancer">Рак</string>
+    <string name="zodiac_leo">Лев</string>
+    <string name="zodiac_virgo">Дева</string>
+    <string name="zodiac_libra">Весы</string>
+    <string name="zodiac_scorpio">Скорпион</string>
+    <string name="zodiac_sagittarius">Стрелец</string>
+    <string name="zodiac_capricorn">Козерог</string>
+    <string name="zodiac_aquarius">Водолей</string>
+    <string name="zodiac_pisces">Рыбы</string>
+    <string name="lunar_task_planting">Посадка</string>
+    <string name="lunar_task_repotting">Пересадка</string>
+    <string name="lunar_task_feeding">Подкормка</string>
+    <string name="lunar_task_watering">Полив</string>
+    <string name="lunar_task_pruning">Обрезка</string>
+    <string name="lunar_category_note">Подобрано для: %1$s</string>
+    <string name="lunar_cat_fruiting">плодовых</string>
+    <string name="lunar_cat_root">корнеплодов</string>
+    <string name="lunar_cat_leafy">зелени</string>
+    <string name="lunar_cat_flowering">цветущих</string>
+    <string name="lunar_cat_succulent">суккулентов и кактусов</string>
+    <string name="lunar_cat_foliage">декоративно-лиственных</string>
+    <string name="lunar_cat_herb">пряных трав</string>
+    <string name="lunar_out_of_range">Календарь охватывает 2026–2027 годы.</string>
+    <string name="lunar_dow_mon">Пн</string>
+    <string name="lunar_dow_tue">Вт</string>
+    <string name="lunar_dow_wed">Ср</string>
+    <string name="lunar_dow_thu">Чт</string>
+    <string name="lunar_dow_fri">Пт</string>
+    <string name="lunar_dow_sat">Сб</string>
+    <string name="lunar_dow_sun">Вс</string>
+
+    <!-- Collapsible sections on the species screen -->
+    <string name="section_about_title">О растении</string>
+    <string name="section_about_subtitle">Описание, особенности и виды.</string>
+    <string name="section_care_title">Уход</string>
+    <string name="section_care_subtitle">Полив, свет, температура, влажность и обрезка.</string>
+    <string name="section_fertiliser_title">Удобрения и подкормка</string>
+    <string name="section_fertiliser_subtitle">Чем и когда подкармливать.</string>
+    <string name="section_diseases_title">Болезни и вредители</string>
+    <string name="section_diseases_subtitle">Распространённые проблемы и способы лечения.</string>
+    <string name="section_expand">Развернуть раздел</string>
+    <string name="section_collapse">Свернуть раздел</string>
+    <plurals name="fertiliser_interval">
+        <item quantity="one">Подкармливать каждую неделю в период активного роста.</item>
+        <item quantity="few">Подкармливать каждые %1$d недели в период активного роста.</item>
+        <item quantity="many">Подкармливать каждые %1$d недель в период активного роста.</item>
+        <item quantity="other">Подкармливать каждые %1$d недели в период активного роста.</item>
+    </plurals>
+    <string name="fertiliser_interval_none">Регулярная подкормка этому растению не нужна.</string>
+    <string name="fertiliser_npk">Удобрение: %1$s</string>
+    <string name="fertiliser_soil">Субстрат: %1$s</string>
 </resources>

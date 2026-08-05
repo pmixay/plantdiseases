@@ -34,7 +34,10 @@ logger = logging.getLogger("plantdiseases.plant_photos")
 
 _TIMEOUT_S = 6.0
 _MAX_BYTES = 16 * 1024 * 1024  # 16 MB — Wikimedia Commons originals routinely run 6-11 MB
-_CACHE_MAX_FILES = 600  # LRU cap; oldest-by-mtime evicted on write
+# LRU cap; oldest-by-mtime evicted on write. species_info now hands us
+# width-normalised renders (a few hundred KB) rather than multi-MB originals,
+# so the same disk budget holds far more species — raised to match.
+_CACHE_MAX_FILES = 1500
 _USER_AGENT = (
     "PlantDiseases/1.1 (https://github.com/pmixay/plantdiseases; plant care app)"
 )
@@ -176,6 +179,14 @@ def _download(url: str) -> bytes | None:
             stream=True,
         ) as resp:
             resp.raise_for_status()
+            # requests follows redirects, so the allowlist check on the input
+            # URL alone doesn't bind where the bytes actually came from.
+            # Wikimedia's own thumb/FilePath redirects stay inside the
+            # allowlist; anything that leaves it is not something this proxy
+            # should be fetching on a public endpoint's behalf.
+            if not is_allowed_url(resp.url):
+                logger.info("Plant photo redirected off-allowlist (%s); skipping", resp.url)
+                return None
             buf = bytearray()
             for chunk in resp.iter_content(64 * 1024):
                 buf.extend(chunk)

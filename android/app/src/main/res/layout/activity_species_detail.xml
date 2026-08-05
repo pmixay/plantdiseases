@@ -2,11 +2,26 @@
 <!--
     Full-screen species detail, opened from the Home "Trending species"
     carousel (and reusable elsewhere). A large Wikipedia lead photo under a
-    gradient toolbar, the common/scientific name, the encyclopedia blurb, a
-    care-at-a-glance block (filled from /api/care-plan), pet toxicity,
-    flowering, native range, common problems, other community scans of this
-    species, and the Wikipedia link. This is the one screen that owns species
-    information; every other surface links here via SpeciesInfoCardView.
+    gradient toolbar, then the common/scientific name, then the body as a
+    stack of collapsible sections:
+
+        About       encyclopedia blurb + Wikipedia link   (open by default)
+        Care        CarePlanCardView from /api/care-plan  (open by default)
+        Fertiliser  feeding/NPK/soil off that same plan
+        Diseases    AI common problems, else the bundled guide
+        Flowering   /api/species-profile
+        Native range/api/species-profile
+        Lunar       computed on-device, no network
+
+    Every section is the same shape — a MaterialCardView whose header row
+    stays visible while its body expands — and they are all driven by
+    SpeciesDetailActivity.Section over ExpandableSectionAnimator. Adding one
+    means copying a card here and adding a row to that list, nothing else.
+    Pet toxicity and the community-scans strip stay uncollapsed: both are
+    short, and toxicity is a safety note that should not be behind a tap.
+
+    This is the one screen that owns species information; every other surface
+    links here via SpeciesInfoCardView.
 -->
 <androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -30,13 +45,12 @@
             app:navigationIconTint="@color/toolbar_title"
             app:titleTextColor="@color/toolbar_title" />
 
-        <!-- Shared offline notice, pinned under the toolbar. The blurb, photos
-             and care plan are cached per species; the common-problems list
-             falls back to the bundled guide. -->
-        <com.plantdiseases.app.ui.common.OfflineNoticeView
-            android:id="@+id/offline_notice"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content" />
+        <!-- No offline strip: the blurb, photos and care plan are cached per
+             species and the common-problems list falls back to the bundled
+             guide, so this screen still has something real to show. What it
+             owes the user is a note that the content is saved rather than
+             live — see tv_offline_saved_note below, which sits with the text
+             it describes. -->
     </com.google.android.material.appbar.AppBarLayout>
 
     <androidx.core.widget.NestedScrollView
@@ -87,6 +101,12 @@
                 android:paddingHorizontal="@dimen/content_gutter"
                 android:paddingTop="@dimen/space_lg">
 
+                <LinearLayout
+                    android:id="@+id/species_summary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
                 <TextView
                     android:id="@+id/tv_species_title"
                     android:layout_width="match_parent"
@@ -103,6 +123,18 @@
                     android:textSize="@dimen/text_body_sm"
                     android:textStyle="italic" />
 
+                <!-- Shown only while offline AND showing cached species
+                     content, so the user can tell live data from saved. -->
+                <TextView
+                    android:id="@+id/tv_offline_saved_note"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_xs"
+                    android:text="@string/offline_saved_data_note"
+                    android:textColor="@color/warning_amber"
+                    android:textSize="@dimen/text_caption"
+                    android:visibility="gone" />
+
                 <ProgressBar
                     android:id="@+id/progress"
                     android:layout_width="wrap_content"
@@ -110,74 +142,333 @@
                     android:layout_marginTop="@dimen/space_md"
                     android:visibility="gone" />
 
-                <!-- A full Wikipedia lead section can run many paragraphs, so
-                     it starts clipped; the toggle below is revealed by the
-                     Activity only when the text is actually cut off. -->
-                <TextView
-                    android:id="@+id/tv_species_extract"
+                </LinearLayout>
+
+                <!-- About. The species blurb, its "show more" toggle and the
+                     Wikipedia link, behind the same collapsible-card header the
+                     flowering / native-range / lunar sections below use. -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/card_about"
+                    style="@style/App.GlassCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/space_md"
-                    android:ellipsize="end"
-                    android:lineSpacingExtra="3dp"
-                    android:maxLines="@integer/species_extract_collapsed_lines"
-                    android:textColor="@color/on_surface"
-                    android:textSize="@dimen/text_body" />
+                    app:cardBackgroundColor="@color/surface"
+                    app:contentPadding="0dp">
 
-                <LinearLayout
-                    android:id="@+id/extract_expand_row"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_xs"
-                    android:background="?attr/selectableItemBackground"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:gravity="center_vertical"
-                    android:minHeight="@dimen/species_info_touch_target"
-                    android:orientation="horizontal"
-                    android:visibility="gone">
-
-                    <TextView
-                        android:id="@+id/tv_extract_expand"
-                        android:layout_width="0dp"
+                    <LinearLayout
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="@string/species_info_expand"
-                        android:textColor="?attr/colorPrimary"
-                        android:textSize="@dimen/text_body" />
+                        android:orientation="vertical"
+                        android:padding="@dimen/space_lg">
 
-                    <ImageView
-                        android:id="@+id/iv_extract_chevron"
-                        android:layout_width="20dp"
-                        android:layout_height="20dp"
-                        android:contentDescription="@null"
-                        android:src="@drawable/ic_chevron_down"
-                        app:tint="?attr/colorPrimary" />
-                </LinearLayout>
+                        <LinearLayout
+                            android:id="@+id/about_header"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:background="?attr/selectableItemBackground"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:gravity="center_vertical"
+                            android:minHeight="@dimen/species_info_touch_target"
+                            android:orientation="horizontal">
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btn_wikipedia"
-                    style="@style/Widget.Material3.Button.TextButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_xs"
-                    android:text="@string/identify_wikipedia"
-                    android:visibility="gone"
-                    app:icon="@drawable/ic_world_map"
-                    app:iconGravity="textStart"
-                    app:iconPadding="@dimen/space_sm"
-                    app:iconSize="18dp"
-                    app:iconTint="?attr/colorPrimary" />
+                            <ImageView
+                                android:layout_width="24dp"
+                                android:layout_height="24dp"
+                                android:contentDescription="@null"
+                                android:importantForAccessibility="no"
+                                android:src="@drawable/ic_guide"
+                                app:tint="@color/primary" />
 
-                <!-- Care at a glance — the same rich CarePlanCardView the scan
-                     result and garden detail render, inserted here at runtime
-                     (gradient header + watering/light/humidity pills +
-                     expandable details). -->
-                <FrameLayout
-                    android:id="@+id/care_slot"
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="@dimen/space_sm"
+                                android:layout_weight="1"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:fontFamily="sans-serif-medium"
+                                    android:text="@string/section_about_title"
+                                    android:textColor="@color/on_surface"
+                                    android:textSize="@dimen/text_title_sm" />
+
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/section_about_subtitle"
+                                    android:textColor="@color/on_surface_secondary"
+                                    android:textSize="@dimen/text_caption" />
+                            </LinearLayout>
+
+                            <ImageView
+                                android:id="@+id/iv_about_chevron"
+                                android:layout_width="20dp"
+                                android:layout_height="20dp"
+                                android:layout_marginStart="@dimen/space_sm"
+                                android:contentDescription="@null"
+                                android:importantForAccessibility="no"
+                                android:src="@drawable/ic_chevron_down"
+                                app:tint="@color/primary" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:id="@+id/about_body"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:visibility="gone">
+
+                            <!-- A full Wikipedia lead section can run many paragraphs, so
+                                 it starts clipped; the toggle below is revealed by the
+                                 Activity only when the text is actually cut off. -->
+                            <TextView
+                                android:id="@+id/tv_species_extract"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/space_md"
+                                android:ellipsize="end"
+                                android:lineSpacingExtra="3dp"
+                                android:maxLines="@integer/species_extract_collapsed_lines"
+                                android:textColor="@color/on_surface"
+                                android:textSize="@dimen/text_body" />
+
+                            <LinearLayout
+                                android:id="@+id/extract_expand_row"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/space_xs"
+                                android:background="?attr/selectableItemBackground"
+                                android:clickable="true"
+                                android:focusable="true"
+                                android:gravity="center_vertical"
+                                android:minHeight="@dimen/species_info_touch_target"
+                                android:orientation="horizontal"
+                                android:visibility="gone">
+
+                                <TextView
+                                    android:id="@+id/tv_extract_expand"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:text="@string/species_info_expand"
+                                    android:textColor="?attr/colorPrimary"
+                                    android:textSize="@dimen/text_body" />
+
+                                <ImageView
+                                    android:id="@+id/iv_extract_chevron"
+                                    android:layout_width="20dp"
+                                    android:layout_height="20dp"
+                                    android:contentDescription="@null"
+                                    android:src="@drawable/ic_chevron_down"
+                                    app:tint="?attr/colorPrimary" />
+                            </LinearLayout>
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btn_wikipedia"
+                                style="@style/Widget.Material3.Button.TextButton"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/space_xs"
+                                android:text="@string/identify_wikipedia"
+                                android:visibility="gone"
+                                app:icon="@drawable/ic_world_map"
+                                app:iconGravity="textStart"
+                                app:iconPadding="@dimen/space_sm"
+                                app:iconSize="18dp"
+                                app:iconTint="?attr/colorPrimary" />
+
+                        </LinearLayout>
+
+                    </LinearLayout>
+
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- Care. The same rich CarePlanCardView the scan result and
+                     garden detail render (gradient header + watering/light/
+                     humidity pills + expandable details), inserted into
+                     care_slot at runtime. -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/card_care"
+                    style="@style/App.GlassCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_md" />
+                    android:layout_marginTop="@dimen/space_md"
+                    app:cardBackgroundColor="@color/surface"
+                    app:contentPadding="0dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="@dimen/space_lg">
+
+                        <LinearLayout
+                            android:id="@+id/care_header"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:background="?attr/selectableItemBackground"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:gravity="center_vertical"
+                            android:minHeight="@dimen/species_info_touch_target"
+                            android:orientation="horizontal">
+
+                            <ImageView
+                                android:layout_width="24dp"
+                                android:layout_height="24dp"
+                                android:contentDescription="@null"
+                                android:importantForAccessibility="no"
+                                android:src="@drawable/ic_treatment"
+                                app:tint="@color/primary" />
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="@dimen/space_sm"
+                                android:layout_weight="1"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:fontFamily="sans-serif-medium"
+                                    android:text="@string/section_care_title"
+                                    android:textColor="@color/on_surface"
+                                    android:textSize="@dimen/text_title_sm" />
+
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/section_care_subtitle"
+                                    android:textColor="@color/on_surface_secondary"
+                                    android:textSize="@dimen/text_caption" />
+                            </LinearLayout>
+
+                            <ImageView
+                                android:id="@+id/iv_care_chevron"
+                                android:layout_width="20dp"
+                                android:layout_height="20dp"
+                                android:layout_marginStart="@dimen/space_sm"
+                                android:contentDescription="@null"
+                                android:importantForAccessibility="no"
+                                android:src="@drawable/ic_chevron_down"
+                                app:tint="@color/primary" />
+                        </LinearLayout>
+
+                        <FrameLayout
+                            android:id="@+id/care_body"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:visibility="gone">
+
+                            <FrameLayout
+                                android:id="@+id/care_slot"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/space_sm" />
+                        </FrameLayout>
+
+                    </LinearLayout>
+
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- Fertiliser. Reads fertilise_weeks / fertiliser_npk /
+                     soil_mix off the care plan already fetched for the card
+                     above, so it costs no extra request. Hidden when the plan
+                     carries none of them. -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/card_fertiliser"
+                    style="@style/App.GlassCard"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_md"
+                    android:visibility="gone"
+                    app:cardBackgroundColor="@color/surface"
+                    app:contentPadding="0dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="@dimen/space_lg">
+
+                        <LinearLayout
+                            android:id="@+id/fertiliser_header"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:background="?attr/selectableItemBackground"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:gravity="center_vertical"
+                            android:minHeight="@dimen/species_info_touch_target"
+                            android:orientation="horizontal">
+
+                            <ImageView
+                                android:layout_width="24dp"
+                                android:layout_height="24dp"
+                                android:contentDescription="@null"
+                                android:importantForAccessibility="no"
+                                android:src="@drawable/ic_fertilize"
+                                app:tint="@color/primary" />
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="@dimen/space_sm"
+                                android:layout_weight="1"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:fontFamily="sans-serif-medium"
+                                    android:text="@string/section_fertiliser_title"
+                                    android:textColor="@color/on_surface"
+                                    android:textSize="@dimen/text_title_sm" />
+
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/section_fertiliser_subtitle"
+                                    android:textColor="@color/on_surface_secondary"
+                                    android:textSize="@dimen/text_caption" />
+                            </LinearLayout>
+
+                            <ImageView
+                                android:id="@+id/iv_fertiliser_chevron"
+                                android:layout_width="20dp"
+                                android:layout_height="20dp"
+                                android:layout_marginStart="@dimen/space_sm"
+                                android:contentDescription="@null"
+                                android:importantForAccessibility="no"
+                                android:src="@drawable/ic_chevron_down"
+                                app:tint="@color/primary" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:id="@+id/fertiliser_body"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:visibility="gone">
+
+                            <TextView
+                                android:id="@+id/tv_fertiliser_body"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/space_sm"
+                                android:lineSpacingExtra="3dp"
+                                android:textColor="@color/on_surface"
+                                android:textSize="@dimen/text_body" />
+                        </LinearLayout>
+
+                    </LinearLayout>
+
+                </com.google.android.material.card.MaterialCardView>
 
                 <!-- Pet-toxicity card — same surface the scan result uses
                      (icon + title + body, red for toxic / green for pet-safe),
@@ -520,71 +811,232 @@
 
                 </com.google.android.material.card.MaterialCardView>
 
-                <!-- Common problems for this species (AI list with guide
-                     links, or the bundled disease guide as fallback). Rows
-                     built programmatically by SpeciesDetailActivity. -->
-                <TextView
-                    android:id="@+id/tv_diseases_title"
+                <!-- Lunar gardening calendar. Unlike the cards above this one
+                     needs no network and no loading state: the phase, lunar
+                     day and zodiac sign are computed on-device from the date,
+                     and the advice is looked up per PlantCategory, so it is
+                     always available — offline included. -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/card_lunar"
+                    style="@style/App.GlassCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_lg"
-                    android:fontFamily="sans-serif-medium"
-                    android:text="@string/species_common_problems"
-                    android:textColor="@color/on_surface"
-                    android:textSize="@dimen/text_body"
-                    android:visibility="gone" />
+                    android:layout_marginTop="@dimen/space_md"
+                    app:cardBackgroundColor="@color/surface"
+                    app:contentPadding="0dp">
 
-
-                <ProgressBar
-                    android:id="@+id/pb_diseases"
-                    style="?android:attr/progressBarStyleSmall"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_sm"
-                    android:visibility="gone" />
-
-                <LinearLayout
-                    android:id="@+id/list_diseases"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_xs"
-                    android:orientation="vertical"
-                    android:visibility="gone" />
-
-                <!-- The fallback path renders the whole bundled catalogue (17
-                     cards). The Activity keeps the first few visible and hides
-                     the rest behind this toggle so the screen doesn't end in a
-                     wall of guide links. -->
-                <LinearLayout
-                    android:id="@+id/diseases_expand_row"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="@dimen/space_xs"
-                    android:background="?attr/selectableItemBackground"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:gravity="center_vertical"
-                    android:minHeight="@dimen/species_info_touch_target"
-                    android:orientation="horizontal"
-                    android:visibility="gone">
-
-                    <TextView
-                        android:id="@+id/tv_diseases_expand"
-                        android:layout_width="0dp"
+                    <LinearLayout
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:textColor="?attr/colorPrimary"
-                        android:textSize="@dimen/text_body"
-                        tools:text="Show all 17" />
+                        android:orientation="vertical"
+                        android:padding="@dimen/space_lg">
 
-                    <ImageView
-                        android:id="@+id/iv_diseases_chevron"
-                        android:layout_width="20dp"
-                        android:layout_height="20dp"
-                        android:contentDescription="@null"
-                        android:src="@drawable/ic_chevron_down"
-                        app:tint="?attr/colorPrimary" />
-                </LinearLayout>
+                        <LinearLayout
+                            android:id="@+id/lunar_header"
+                            android:layout_width="match_parent"
+                            android:layout_height="@dimen/species_info_touch_target"
+                            android:background="?attr/selectableItemBackground"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <ImageView
+                                android:layout_width="24dp"
+                                android:layout_height="24dp"
+                                android:contentDescription="@null"
+                                android:importantForAccessibility="no"
+                                android:src="@drawable/ic_moon"
+                                app:tint="@color/primary" />
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="@dimen/space_sm"
+                                android:layout_weight="1"
+                                android:fontFamily="sans-serif-medium"
+                                android:text="@string/lunar_title"
+                                android:textColor="@color/on_surface"
+                                android:textSize="@dimen/text_title_sm" />
+
+                            <ImageView
+                                android:id="@+id/iv_lunar_chevron"
+                                android:layout_width="20dp"
+                                android:layout_height="20dp"
+                                android:layout_marginStart="@dimen/space_sm"
+                                android:contentDescription="@null"
+                                android:importantForAccessibility="no"
+                                android:src="@drawable/ic_chevron_down"
+                                app:tint="@color/primary" />
+
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:id="@+id/lunar_body"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:visibility="gone">
+
+                            <com.plantdiseases.app.ui.widget.LunarCalendarView
+                                android:id="@+id/lunar_calendar"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/space_sm" />
+
+                        </LinearLayout>
+
+                    </LinearLayout>
+
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- Diseases and pests. Holds the AI "common problems" list
+                     (with guide links) and, when that is unavailable, the
+                     bundled catalogue fallback. Rows are built
+                     programmatically by SpeciesDetailActivity. -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/card_diseases"
+                    style="@style/App.GlassCard"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/space_md"
+                    app:cardBackgroundColor="@color/surface"
+                    app:contentPadding="0dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="@dimen/space_lg">
+
+                        <LinearLayout
+                            android:id="@+id/diseases_header"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:background="?attr/selectableItemBackground"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:gravity="center_vertical"
+                            android:minHeight="@dimen/species_info_touch_target"
+                            android:orientation="horizontal">
+
+                            <ImageView
+                                android:layout_width="24dp"
+                                android:layout_height="24dp"
+                                android:contentDescription="@null"
+                                android:importantForAccessibility="no"
+                                android:src="@drawable/ic_pest"
+                                app:tint="@color/primary" />
+
+                            <LinearLayout
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="@dimen/space_sm"
+                                android:layout_weight="1"
+                                android:orientation="vertical">
+
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:fontFamily="sans-serif-medium"
+                                    android:text="@string/section_diseases_title"
+                                    android:textColor="@color/on_surface"
+                                    android:textSize="@dimen/text_title_sm" />
+
+                                <TextView
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:text="@string/section_diseases_subtitle"
+                                    android:textColor="@color/on_surface_secondary"
+                                    android:textSize="@dimen/text_caption" />
+                            </LinearLayout>
+
+                            <ImageView
+                                android:id="@+id/iv_diseases_section_chevron"
+                                android:layout_width="20dp"
+                                android:layout_height="20dp"
+                                android:layout_marginStart="@dimen/space_sm"
+                                android:contentDescription="@null"
+                                android:importantForAccessibility="no"
+                                android:src="@drawable/ic_chevron_down"
+                                app:tint="@color/primary" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:id="@+id/diseases_body"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:visibility="gone">
+
+                            <TextView
+                                android:id="@+id/tv_diseases_title"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/space_lg"
+                                android:fontFamily="sans-serif-medium"
+                                android:text="@string/species_common_problems"
+                                android:textColor="@color/on_surface"
+                                android:textSize="@dimen/text_body"
+                                android:visibility="gone" />
+
+
+                            <ProgressBar
+                                android:id="@+id/pb_diseases"
+                                style="?android:attr/progressBarStyleSmall"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/space_sm"
+                                android:visibility="gone" />
+
+                            <LinearLayout
+                                android:id="@+id/list_diseases"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/space_xs"
+                                android:orientation="vertical"
+                                android:visibility="gone" />
+
+                            <!-- The fallback path renders the whole bundled catalogue (17
+                                 cards). The Activity keeps the first few visible and hides
+                                 the rest behind this toggle so the screen doesn't end in a
+                                 wall of guide links. -->
+                            <LinearLayout
+                                android:id="@+id/diseases_expand_row"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="@dimen/space_xs"
+                                android:background="?attr/selectableItemBackground"
+                                android:clickable="true"
+                                android:focusable="true"
+                                android:gravity="center_vertical"
+                                android:minHeight="@dimen/species_info_touch_target"
+                                android:orientation="horizontal"
+                                android:visibility="gone">
+
+                                <TextView
+                                    android:id="@+id/tv_diseases_expand"
+                                    android:layout_width="0dp"
+                                    android:layout_height="wrap_content"
+                                    android:layout_weight="1"
+                                    android:textColor="?attr/colorPrimary"
+                                    android:textSize="@dimen/text_body"
+                                    tools:text="Show all 17" />
+
+                                <ImageView
+                                    android:id="@+id/iv_diseases_chevron"
+                                    android:layout_width="20dp"
+                                    android:layout_height="20dp"
+                                    android:contentDescription="@null"
+                                    android:src="@drawable/ic_chevron_down"
+                                    app:tint="?attr/colorPrimary" />
+                            </LinearLayout>
+
+                        </LinearLayout>
+
+                    </LinearLayout>
+
+                </com.google.android.material.card.MaterialCardView>
 
                 <!-- Other community scans of this species. Moved here from the
                      scan result screen so every species surface lives on one

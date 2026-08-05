@@ -14,20 +14,25 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.model.ScanHistoryItem
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.FragmentGalleryBinding
 import com.plantdiseases.app.ui.result.ResultActivity
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.applyStatusBarTopInset
 import android.widget.Toast
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
-import org.koin.android.ext.android.inject
+import javax.inject.Inject
 
+@AndroidEntryPoint
 class GalleryFragment : Fragment() {
 
-    private val scanRepository: ScanRepository by inject()
+    @Inject
+    lateinit var scanRepository: ScanRepository
 
     private var _binding: FragmentGalleryBinding? = null
     private val binding get() = _binding!!
@@ -188,6 +193,8 @@ class GalleryFragment : Fragment() {
                 updateEmptyState(isEmpty = false, isFilterEmpty = false)
         }
 
+        if (!isFirstLoad) registerOnboardingAnchors(filtered.isEmpty(), allScans.isEmpty())
+
         // Only run the staggered entry animation for user-driven changes and
         // the first load — not when community badges arrive a moment later and
         // re-submit the same list, which made the whole grid re-animate.
@@ -265,6 +272,18 @@ class GalleryFragment : Fragment() {
         binding.rvGallery.visibility = if (isEmpty || isFilterEmpty) View.GONE else View.VISIBLE
     }
 
+    private fun registerOnboardingAnchors(filteredEmpty: Boolean, allEmpty: Boolean) {
+        val resultAnchor = when {
+            allEmpty -> binding.emptyStateLayout
+            filteredEmpty -> binding.filterEmptyLayout
+            else -> binding.rvGallery
+        }
+        (activity as? MainActivity)?.apply {
+            registerOnboardingAnchor(OnboardingAnchorKey.GALLERY_FILTERS, binding.chipGroupFilter)
+            registerOnboardingAnchor(OnboardingAnchorKey.GALLERY_RESULTS, resultAnchor)
+        }
+    }
+
     private fun deleteItem(id: Long) {
         viewLifecycleOwner.lifecycleScope.launch {
             scanRepository.deleteScan(id)
@@ -282,6 +301,10 @@ class GalleryFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        (activity as? MainActivity)?.apply {
+            unregisterOnboardingAnchor(OnboardingAnchorKey.GALLERY_FILTERS)
+            unregisterOnboardingAnchor(OnboardingAnchorKey.GALLERY_RESULTS)
+        }
         super.onDestroyView()
         _binding = null
     }

@@ -2,6 +2,7 @@ package com.plantdiseases.app.ui.species
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Rect
 import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Bundle
@@ -10,6 +11,7 @@ import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.annotation.StringRes
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -33,6 +35,9 @@ import com.plantdiseases.app.databinding.ActivitySpeciesDetailBinding
 import com.plantdiseases.app.ui.common.CarePlanCardView
 import com.plantdiseases.app.ui.common.ExpandableSectionAnimator
 import com.plantdiseases.app.ui.guide.GuideDetailActivity
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingContext
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingCoordinator
 import com.plantdiseases.app.ui.result.CommunityOpinionSheet
 import com.plantdiseases.app.ui.result.SimilarScansAdapter
 import com.plantdiseases.app.ui.widget.WorldMapView
@@ -40,10 +45,13 @@ import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.DiseaseCatalog
 import com.plantdiseases.app.util.DiseaseLabels
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.OnboardingStateStore
 import com.plantdiseases.app.util.TelemetryIds
+import com.plantdiseases.app.util.onConnectivityChanged
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
-import org.koin.android.ext.android.inject
 import java.util.Locale
+import javax.inject.Inject
 
 /**
  * Full-screen species detail — the rich, scan-like target for both the
@@ -54,18 +62,34 @@ import java.util.Locale
  * links into the offline disease guide, falling back to the bundled guide
  * when the AI is unavailable). Offers add-to-garden / scan-health / Wikipedia.
  */
+@AndroidEntryPoint
 class SpeciesDetailActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivitySpeciesDetailBinding
-    private val scanRepository: ScanRepository by inject()
-    private val connectivity: ConnectivityObserver by inject()
+
+    @Inject
+    lateinit var scanRepository: ScanRepository
+
+    @Inject
+    lateinit var connectivity: ConnectivityObserver
+
+    @Inject
+    lateinit var onboardingState: OnboardingStateStore
     private val isRu: Boolean get() = Locale.getDefault().language == "ru"
     private val locale: String get() = if (isRu) "ru" else "en"
 
     private lateinit var scientificName: String
     private var commonName: String? = null
-    private var floweringExpanded = false
-    private var nativeRangeExpanded = false
+    private var detailResolved = false
+    private var careResolved = false
+    private var profileResolved = false
+    private var floweringAvailable = false
+    private var nativeRangeAvailable = false
+    private lateinit var onboardingCoordinator: OnboardingCoordinator
+
+    /** Inputs to the "saved earlier" caption — see [applySavedDataNote]. */
+    private var isOffline = false
+    private var hasSpeciesContent = false
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
@@ -75,6 +99,8 @@ class SpeciesDetailActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivitySpeciesDetailBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        onboardingCoordinator = OnboardingCoordinator(this, onboardingState)
+        onboardingCoordinator.setContext(OnboardingContext.SPECIES_DETAILS)
 
         WindowCompat.setDecorFitsSystemWindows(window, false)
         ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, insets ->
@@ -89,7 +115,15 @@ class SpeciesDetailActivity : AppCompatActivity() {
             insets
         }
         binding.speciesToolbar.setNavigationOnClickListener { finish() }
-        binding.offlineNotice.observe(this, connectivity)
+        // This screen has real content offline (the species blurb, photos and
+        // care plan are cached per species; common problems fall back to the
+        // bundled guide), so it gets an inline "saved earlier" note rather
+        // than an offline strip — and only once there is cached content to
+        // caption.
+        onConnectivityChanged(connectivity.isOnline) { online ->
+            isOffline = !online
+            applySavedDataNote()
+        }
 
         scientificName = intent.getStringExtra(EXTRA_SCIENTIFIC_NAME).orEmpty()
         commonName = intent.getStringExtra(EXTRA_COMMON_NAME)?.takeIf { it.isNotBlank() }
@@ -102,9 +136,12 @@ class SpeciesDetailActivity : AppCompatActivity() {
         binding.speciesToolbar.title = title
         binding.tvSpeciesTitle.text = title
         binding.tvSpeciesScientific.text = scientificName
-        floweringExpanded = savedInstanceState?.getBoolean(STATE_FLOWERING_EXPANDED) ?: false
-        nativeRangeExpanded = savedInstanceState?.getBoolean(STATE_NATIVE_RANGE_EXPANDED) ?: false
-        setupExpandableProfileSections()
+        setupExpandableProfileSections(savedInstanceState)
+        // Purely local — no load() call to pair with this, unlike the cards above.
+        binding.lunarCalendar.setSpecies(scientificName, commonName)
+        // Tapping an upcoming-day row selects a date whose detail panel may sit
+        // below the fold; the calendar asks its host to bring that panel up.
+        binding.lunarCalendar.onRequestScrollTo = { target -> scrollSpeciesTo(target) }
 
         // Independent loads run concurrently: the Wikipedia blurb/photo, care
         // plan, common-problems list and optional botanical profile. Each
@@ -118,56 +155,164 @@ class SpeciesDetailActivity : AppCompatActivity() {
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
-        outState.putBoolean(STATE_FLOWERING_EXPANDED, floweringExpanded)
-        outState.putBoolean(STATE_NATIVE_RANGE_EXPANDED, nativeRangeExpanded)
+        sections.forEach { outState.putBoolean(it.stateKey, it.expanded) }
         super.onSaveInstanceState(outState)
     }
 
-    private fun setupExpandableProfileSections() {
-        binding.floweringHeader.setOnClickListener {
-            setFloweringExpanded(!floweringExpanded)
+    /**
+     * One collapsible section: a card whose header row stays visible while its
+     * body expands. Every section on this screen is that same shape, so the
+     * behaviour is described once here rather than as one `setXExpanded()` per
+     * section — there are seven of them.
+     */
+    private inner class Section(
+        val stateKey: String,
+        val card: ViewGroup,
+        val header: View,
+        val chevron: View,
+        val body: View,
+        @StringRes val titleRes: Int,
+        @StringRes val expandRes: Int,
+        @StringRes val collapseRes: Int,
+        var expanded: Boolean,
+    ) {
+        fun render(animate: Boolean) {
+            ExpandableSectionAnimator.update(
+                container = card,
+                expanded = expanded,
+                chevron = chevron,
+                animate = animate,
+            ) {
+                body.visibility = if (expanded) View.VISIBLE else View.GONE
+            }
+            header.contentDescription = getString(
+                R.string.species_info_toggle_content_description,
+                getString(titleRes),
+                getString(if (expanded) collapseRes else expandRes),
+            )
         }
-        binding.nativeRangeHeader.setOnClickListener {
-            setNativeRangeExpanded(!nativeRangeExpanded)
-        }
-        setFloweringExpanded(floweringExpanded, animate = false)
-        setNativeRangeExpanded(nativeRangeExpanded, animate = false)
     }
 
-    private fun setFloweringExpanded(expanded: Boolean, animate: Boolean = true) {
-        floweringExpanded = expanded
-        ExpandableSectionAnimator.update(
-            container = binding.cardFlowering,
-            expanded = expanded,
-            chevron = binding.ivFloweringChevron,
-            animate = animate,
-        ) {
-            binding.floweringBody.visibility = if (expanded) View.VISIBLE else View.GONE
-        }
-        binding.floweringHeader.contentDescription = getString(
-            R.string.species_info_toggle_content_description,
-            getString(R.string.flowering_title),
-            getString(if (expanded) R.string.flowering_collapse else R.string.flowering_expand),
-        )
-    }
+    private var sections: List<Section> = emptyList()
 
-    private fun setNativeRangeExpanded(expanded: Boolean, animate: Boolean = true) {
-        nativeRangeExpanded = expanded
-        ExpandableSectionAnimator.update(
-            container = binding.cardNativeRange,
-            expanded = expanded,
-            chevron = binding.ivNativeRangeChevron,
-            animate = animate,
-        ) {
-            binding.nativeRangeBody.visibility = if (expanded) View.VISIBLE else View.GONE
-        }
-        binding.nativeRangeHeader.contentDescription = getString(
-            R.string.species_info_toggle_content_description,
-            getString(R.string.native_range_title),
-            getString(
-                if (expanded) R.string.native_range_collapse else R.string.native_range_expand,
+    /**
+     * Builds the section list and wires each header. Defaults: About and Care
+     * open, everything else closed — the screen should still answer "what is
+     * this plant and how do I keep it alive?" without a single tap, while the
+     * long tail (fertiliser, problems, flowering, range, lunar) stays folded
+     * so the page is scannable.
+     */
+    private fun setupExpandableProfileSections(savedInstanceState: Bundle?) {
+        fun restored(key: String, default: Boolean) =
+            savedInstanceState?.getBoolean(key) ?: default
+
+        sections = listOf(
+            Section(
+                STATE_ABOUT_EXPANDED, binding.cardAbout, binding.aboutHeader,
+                binding.ivAboutChevron, binding.aboutBody,
+                R.string.section_about_title, R.string.section_expand, R.string.section_collapse,
+                restored(STATE_ABOUT_EXPANDED, default = true),
+            ),
+            Section(
+                STATE_CARE_EXPANDED, binding.cardCare, binding.careHeader,
+                binding.ivCareChevron, binding.careBody,
+                R.string.section_care_title, R.string.section_expand, R.string.section_collapse,
+                restored(STATE_CARE_EXPANDED, default = true),
+            ),
+            Section(
+                STATE_FERTILISER_EXPANDED, binding.cardFertiliser, binding.fertiliserHeader,
+                binding.ivFertiliserChevron, binding.fertiliserBody,
+                R.string.section_fertiliser_title, R.string.section_expand, R.string.section_collapse,
+                restored(STATE_FERTILISER_EXPANDED, default = false),
+            ),
+            Section(
+                STATE_DISEASES_EXPANDED, binding.cardDiseases, binding.diseasesHeader,
+                binding.ivDiseasesSectionChevron, binding.diseasesBody,
+                R.string.section_diseases_title, R.string.section_expand, R.string.section_collapse,
+                restored(STATE_DISEASES_EXPANDED, default = false),
+            ),
+            Section(
+                STATE_FLOWERING_EXPANDED, binding.cardFlowering, binding.floweringHeader,
+                binding.ivFloweringChevron, binding.floweringBody,
+                R.string.flowering_title, R.string.flowering_expand, R.string.flowering_collapse,
+                restored(STATE_FLOWERING_EXPANDED, default = false),
+            ),
+            Section(
+                STATE_NATIVE_RANGE_EXPANDED, binding.cardNativeRange, binding.nativeRangeHeader,
+                binding.ivNativeRangeChevron, binding.nativeRangeBody,
+                R.string.native_range_title, R.string.native_range_expand,
+                R.string.native_range_collapse,
+                restored(STATE_NATIVE_RANGE_EXPANDED, default = false),
+            ),
+            Section(
+                STATE_LUNAR_EXPANDED, binding.cardLunar, binding.lunarHeader,
+                binding.ivLunarChevron, binding.lunarBody,
+                R.string.lunar_title, R.string.lunar_expand, R.string.lunar_collapse,
+                restored(STATE_LUNAR_EXPANDED, default = false),
             ),
         )
+        sections.forEach { section ->
+            section.header.setOnClickListener { toggleSection(section) }
+            section.render(animate = false)
+        }
+    }
+
+    private fun toggleSection(section: Section) {
+        section.expanded = !section.expanded
+        section.render(animate = true)
+        // Opening a section near the bottom would otherwise reveal its content
+        // below the fold. Scroll its header up once the expand animation has
+        // settled, so the freshly shown body is what the user is looking at.
+        if (section.expanded) {
+            section.card.postDelayed({ scrollSpeciesTo(section.card) }, SECTION_SCROLL_DELAY_MS)
+        }
+    }
+
+    /**
+     * Scrolls [target] to just under the app bar. Uses
+     * `offsetDescendantRectToMyCoords`, which walks the whole parent chain, so
+     * it stays correct however deeply the target is nested — a plain
+     * `target.top` is relative to the immediate parent only.
+     */
+    private fun scrollSpeciesTo(target: View) {
+        binding.speciesScroll.post {
+            val rect = Rect()
+            target.getDrawingRect(rect)
+            binding.speciesScroll.offsetDescendantRectToMyCoords(target, rect)
+            val margin = (SCROLL_MARGIN_DP * resources.displayMetrics.density).toInt()
+            binding.speciesScroll.smoothScrollTo(0, (rect.top - margin).coerceAtLeast(0))
+        }
+    }
+
+    /**
+     * Feeding guidance, built from the care plan already fetched for the card
+     * above — `fertilise_weeks` / `fertiliser_npk` / `soil_mix` — so this
+     * section costs no extra request. Hidden entirely when the plan carries
+     * none of them, rather than showing an empty card.
+     */
+    private fun bindFertiliser(plan: CarePlanResponse) {
+        val lines = buildList {
+            add(
+                if (plan.fertiliseWeeks > 0) {
+                    resources.getQuantityString(
+                        R.plurals.fertiliser_interval,
+                        plan.fertiliseWeeks,
+                        plan.fertiliseWeeks,
+                    )
+                } else {
+                    getString(R.string.fertiliser_interval_none)
+                },
+            )
+            plan.fertiliserNpk?.takeIf { it.isNotBlank() }
+                ?.let { add(getString(R.string.fertiliser_npk, it)) }
+            plan.soilMix?.takeIf { it.isNotBlank() }
+                ?.let { add(getString(R.string.fertiliser_soil, it)) }
+        }
+        // A lone "no regular feeding needed" line is not worth a card of its
+        // own; show the section only once there is something concrete to say.
+        val worthShowing = lines.size > 1 || plan.fertiliseWeeks > 0
+        binding.cardFertiliser.visibility = if (worthShowing) View.VISIBLE else View.GONE
+        binding.tvFertiliserBody.text = lines.joinToString("\n\n")
     }
 
     /**
@@ -214,6 +359,8 @@ class SpeciesDetailActivity : AppCompatActivity() {
             // the stored Wikipedia blurb/photo instead of re-fetching.
             val info = scanRepository.getSpeciesInfo(scientificName, locale).getOrNull()
             binding.progress.visibility = View.GONE
+            hasSpeciesContent = info?.available == true
+            applySavedDataNote()
             if (info?.available == true) {
                 binding.tvSpeciesExtract.text =
                     info.extract ?: getString(R.string.identify_no_info)
@@ -236,7 +383,20 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 binding.tvSpeciesExtract.text = getString(R.string.identify_no_info)
                 binding.extractExpandRow.visibility = View.GONE
             }
+            detailResolved = true
+            registerOnboardingAnchorsWhenReady()
         }
+    }
+
+    /**
+     * Caption the species text as saved-not-live, but only when both halves
+     * are true: we're offline *and* something actually rendered. Offline with
+     * no cached entry shows the ordinary "no info" empty state — calling that
+     * "out of date" would be describing content that isn't there.
+     */
+    private fun applySavedDataNote() {
+        binding.tvOfflineSavedNote.visibility =
+            if (isOffline && hasSpeciesContent) View.VISIBLE else View.GONE
     }
 
     /** `lineCount` is only meaningful after layout, hence the post. */
@@ -304,6 +464,10 @@ class SpeciesDetailActivity : AppCompatActivity() {
             // Pet toxicity renders as its own card (below), not part of the
             // care card. Hidden when the plan couldn't load / pin toxicity.
             bindToxicity(plan)
+            // Feeding guidance rides on the same response — no extra request.
+            plan?.let { bindFertiliser(it) }
+            careResolved = true
+            registerOnboardingAnchorsWhenReady()
         }
     }
 
@@ -463,6 +627,8 @@ class SpeciesDetailActivity : AppCompatActivity() {
             if (profile?.available != true) {
                 finishFloweringLoading(hasContent = false)
                 finishNativeRangeLoading(hasContent = false)
+                profileResolved = true
+                registerOnboardingAnchorsWhenReady()
                 return@launch
             }
 
@@ -487,6 +653,7 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 }
             }
             finishFloweringLoading(hasFlowering)
+            floweringAvailable = hasFlowering
 
             val nativeRange = profile.nativeRange
             val zones = nativeRange?.zones.orEmpty().mapNotNull { zone ->
@@ -505,7 +672,33 @@ class SpeciesDetailActivity : AppCompatActivity() {
                 binding.worldMap.setZones(zones)
             }
             finishNativeRangeLoading(hasNativeRange)
+            nativeRangeAvailable = hasNativeRange
+            profileResolved = true
+            registerOnboardingAnchorsWhenReady()
         }
+    }
+
+    /** Loading cards are never anchors; the whole catalog is exposed atomically. */
+    private fun registerOnboardingAnchorsWhenReady() {
+        if (!detailResolved || !careResolved || !profileResolved) return
+        onboardingCoordinator.registerAnchor(
+            OnboardingAnchorKey.SPECIES_SUMMARY,
+            binding.speciesSummary,
+        )
+        onboardingCoordinator.registerAnchor(
+            OnboardingAnchorKey.SPECIES_CARE,
+            binding.careSlot,
+        )
+        onboardingCoordinator.registerAnchor(
+            OnboardingAnchorKey.SPECIES_FLOWERING,
+            binding.floweringHeader,
+            available = { floweringAvailable && binding.cardFlowering.isShown },
+        )
+        onboardingCoordinator.registerAnchor(
+            OnboardingAnchorKey.SPECIES_NATIVE_RANGE,
+            binding.nativeRangeHeader,
+            available = { nativeRangeAvailable && binding.cardNativeRange.isShown },
+        )
     }
 
     private fun showSpeciesProfileLoading() {
@@ -635,8 +828,18 @@ class SpeciesDetailActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_SCIENTIFIC_NAME = "extra_scientific_name"
         const val EXTRA_COMMON_NAME = "extra_common_name"
+        private const val STATE_ABOUT_EXPANDED = "state_about_expanded"
+        private const val STATE_CARE_EXPANDED = "state_care_expanded"
+        private const val STATE_FERTILISER_EXPANDED = "state_fertiliser_expanded"
+        private const val STATE_DISEASES_EXPANDED = "state_diseases_expanded"
         private const val STATE_FLOWERING_EXPANDED = "state_flowering_expanded"
         private const val STATE_NATIVE_RANGE_EXPANDED = "state_native_range_expanded"
+        private const val STATE_LUNAR_EXPANDED = "state_lunar_expanded"
+
+        /** Let the 300 ms expand transition settle before scrolling, so the
+         *  card has its final height and the scroll lands where it should. */
+        private const val SECTION_SCROLL_DELAY_MS = 320L
+        private const val SCROLL_MARGIN_DP = 8f
 
         fun start(context: Context, scientificName: String, commonName: String?) {
             context.startActivity(

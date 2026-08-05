@@ -9,6 +9,9 @@ import com.plantdiseases.app.MainActivity
 import com.plantdiseases.app.R
 import com.plantdiseases.app.databinding.ActivityOnboardingBinding
 import com.plantdiseases.app.util.LocaleHelper
+import com.plantdiseases.app.util.OnboardingStateStore
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
 /**
  * First-launch prominent disclosure.
@@ -18,9 +21,13 @@ import com.plantdiseases.app.util.LocaleHelper
  * through Agree. Feature discovery continues later as small, once-only coach
  * marks in context instead of a swipe tour the user has to remember.
  */
+@AndroidEntryPoint
 class OnboardingActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityOnboardingBinding
+
+    @Inject
+    lateinit var onboardingState: OnboardingStateStore
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.applyLocale(newBase))
@@ -50,6 +57,9 @@ class OnboardingActivity : AppCompatActivity() {
             .putBoolean(KEY_ONBOARDING_DONE, true)
             .putBoolean(KEY_DATA_CONSENT, true)
             .apply()
+        // This explicit call is what distinguishes a genuinely new install
+        // from an upgrade whose versioned guidance store does not exist yet.
+        onboardingState.startForNewInstall()
         startActivity(Intent(this, MainActivity::class.java))
         finish()
     }

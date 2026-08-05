@@ -73,6 +73,46 @@ def test_get_or_fetch_rejects_disallowed_host(photos):
     assert photos.get_or_fetch("https://evil.com/x.png") is None
 
 
+def _stub_requests_get(monkeypatch, *, final_url, body=_PNG):
+    """Stub requests.get with a streaming response that already followed its
+    redirects — ``final_url`` is where the bytes actually came from."""
+    import requests
+
+    class _Resp:
+        url = final_url
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def raise_for_status(self):
+            pass
+
+        def iter_content(self, _chunk):
+            yield body
+
+    monkeypatch.setattr(requests, "get", lambda url, **kw: _Resp())
+
+
+def test_download_rejects_redirect_off_the_allowlist(photos, monkeypatch):
+    """The allowlist check runs on the URL we ask for, but requests follows
+    redirects — so an allowed Wikimedia URL that bounces off-site must not turn
+    this public endpoint into a general-purpose fetcher."""
+    _stub_requests_get(monkeypatch, final_url="https://evil.com/x.png")
+    assert photos._download("https://upload.wikimedia.org/x.png") is None
+
+
+def test_download_allows_redirect_within_wikimedia(photos, monkeypatch):
+    """Wikimedia's own thumb/FilePath redirects stay inside the allowlist and
+    must keep working."""
+    _stub_requests_get(
+        monkeypatch, final_url="https://upload.wikimedia.org/thumb/x.png/800px-x.png",
+    )
+    assert photos._download("https://en.wikipedia.org/x.png") == _PNG
+
+
 def test_endpoint_serves_cached_photo(client, tmp_path, monkeypatch):
     import main as server_main
     f = tmp_path / "p.png"

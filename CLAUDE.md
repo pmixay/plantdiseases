@@ -19,7 +19,7 @@ Three deliverables, each with its own toolchain:
 | Dir | Stack | What it is |
 |---|---|---|
 | `server/` | Python 3.11, FastAPI, ONNX Runtime | ML inference API + the two-stage pipeline. The brains. |
-| `android/` | Kotlin, Gradle, Material 3 | The phone client (CameraX, Room, Ktor + kotlinx.serialization, Koin DI). |
+| `android/` | Kotlin, Gradle, Material 3 | The phone client (CameraX, Room, Ktor + kotlinx.serialization, Hilt DI). |
 | `admin-panel/` | Python 3.11, FastAPI, paramiko, vanilla JS | Loopback-only operator console that administers the live VPS over SSH. Internal tool, not shipped to users. **Not covered by CI** — run its tests by hand. |
 
 The bilingual privacy policy is a single standalone page, `privacy.html` (repo
@@ -141,7 +141,7 @@ and the community opinion sheet. Do not add species cards elsewhere.
 **Android structure** (`com.plantdiseases.app`): `ui/<feature>/` (camera, result,
 garden, gallery, guide, community, …) over `data/` (`repository/`, `remote/ApiService.kt`
 — now the **Ktor `PlantApiClient`** over an OkHttp engine; the Retrofit interface was removed,
-`local/Database.kt` Room), `di/AppModule.kt` (**Koin** singletons), `util/` helpers (incl.
+`local/Database.kt` Room), `di/AppModule.kt` (**Hilt** singletons), `util/` helpers (incl.
 `AquaClassifier`/`AquaInference` for on-device TFLite), `worker/` (WorkManager reminders/opinion
 polling). DTOs in `data/model/Models.kt` are `@Serializable` (kotlinx). Bilingual via
 `res/values*/strings.xml`. The server URL is baked at build time into

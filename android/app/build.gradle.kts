@@ -3,6 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.serialization")
     id("com.google.devtools.ksp")
+    id("com.google.dagger.hilt.android")
     id("org.jlleitschuh.gradle.ktlint")
     id("io.gitlab.arturbosch.detekt")
 }
@@ -162,6 +163,20 @@ android {
             // tests can inflate views, read strings and run Room in-memory.
             isIncludeAndroidResources = true
             isReturnDefaultValues = true
+
+            // Put the actual assertion message + stack in the console log.
+            // Nobody builds this project locally (CI owns builds), so a
+            // failure that prints only "ComparisonFailureWithFacts at
+            // FooTest.kt:42" costs a whole round-trip to diagnose — the HTML
+            // report it points at lives on the runner, not in the log.
+            all {
+                it.testLogging {
+                    events("failed")
+                    exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+                    showStackTraces = true
+                    showCauses = true
+                }
+            }
         }
     }
 }
@@ -273,15 +288,20 @@ dependencies {
     implementation("com.github.bumptech.glide:glide:4.16.0")
     ksp("com.github.bumptech.glide:ksp:4.16.0")
 
-    // Koin dependency injection. Replaces the hand-rolled `by lazy` singletons
-    // on PlantDiseasesApp with a Koin graph (di/AppModule.kt). The
-    // koin-androidx-workmanager artefact (Koin WorkerFactory) is intentionally
-    // NOT depended on: wiring workManagerFactory() re-initialises WorkManager
-    // and collides with the default androidx.startup initializer (crash on
-    // launch — see PlantDiseasesApp.onCreate). A future Koin-injected worker
-    // would re-add it there and remove the startup initializer.
-    implementation(platform("io.insert-koin:koin-bom:4.0.0"))
-    implementation("io.insert-koin:koin-android")
+    // Hilt (Dagger) dependency injection. Replaces the hand-rolled `by lazy`
+    // singletons on PlantDiseasesApp with a Hilt graph (di/AppModule.kt).
+    // KSP (not kapt) generates the Dagger components, matching the rest of
+    // the build (Room, Glide already use KSP). androidx.hilt:hilt-work is
+    // intentionally NOT depended on: wiring a HiltWorkerFactory into
+    // Configuration.Provider re-initialises WorkManager and collides with the
+    // default androidx.startup initializer (crash on launch — see
+    // PlantDiseasesApp.onCreate). Workers, the two push-package singleton
+    // objects and SpeciesInfoCardView (a custom View instantiated in a plain
+    // Robolectric host in tests, so it can't be `@AndroidEntryPoint`) instead
+    // resolve their deps via EntryPointAccessors against the Application's
+    // SingletonComponent — see di/AppEntryPoint.kt.
+    implementation("com.google.dagger:hilt-android:2.56.2")
+    ksp("com.google.dagger:hilt-android-compiler:2.56.2")
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")

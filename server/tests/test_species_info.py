@@ -244,3 +244,78 @@ def test_media_images_excludes_non_plant_media(monkeypatch):
 
     images = species_info._media_images("Ficus_elastica", "en", limit=4)
     assert images == ["https://upload.example/Ficus_elastica_leaf.jpg"]
+
+
+_THUMB = "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Ficus.jpg/320px-Ficus.jpg"
+
+
+def test_display_image_asks_for_a_card_sized_render():
+    """Neither extreme the summary offers is right: the ~320px thumbnail is
+    below what main.py re-encodes at, and the multi-megabyte original often
+    doesn't arrive inside plant_photos' 6s fetch timeout at all."""
+    out = species_info._display_image(
+        {"source": _THUMB, "width": 320},
+        {"source": "https://upload.wikimedia.org/wikipedia/commons/a/ab/Ficus.jpg",
+         "width": 4000},
+    )
+    assert out.endswith("/1024px-Ficus.jpg")
+
+
+def test_display_image_never_asks_for_more_than_the_file_has():
+    """Wikimedia refuses to upscale a raster original — asking anyway would
+    404 the photo and drop the card back to its placeholder."""
+    out = species_info._display_image(
+        {"source": _THUMB, "width": 320},
+        {"source": "https://upload.wikimedia.org/wikipedia/commons/a/ab/Ficus.jpg",
+         "width": 600},
+    )
+    assert out.endswith("/600px-Ficus.jpg")
+
+
+def test_display_image_renders_svg_originals_at_full_card_width():
+    """An SVG has no pixel ceiling (and its nominal width is often tiny). This
+    is the case that gains the most: plant_photos drops a raw .svg as
+    unrenderable, so before this the card was stuck on its placeholder."""
+    out = species_info._display_image(
+        {"source": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/"
+                   "Ficus.svg/240px-Ficus.svg.png", "width": 240},
+        {"source": "https://upload.wikimedia.org/wikipedia/commons/a/ab/Ficus.svg",
+         "width": 300},
+    )
+    assert out.endswith("/1024px-Ficus.svg.png")
+
+
+def test_display_image_leaves_unrecognised_urls_alone():
+    """Not every summary hands us a /NNNpx- thumbnail URL. When there is
+    nothing to rewrite we keep what Wikipedia gave us rather than guessing."""
+    original = "https://ru.example/lead.jpg"
+    assert species_info._display_image({"source": original}, None) == original
+    assert species_info._display_image(None, {"source": original}) == original
+    assert species_info._display_image(None, None) is None
+
+
+def test_media_images_upsize_only_when_the_file_can_supply_it(monkeypatch):
+    """Strip photos get the same treatment, but the media-list gives no
+    originals — so we only ask for a bigger render when the item's own width
+    says the file has the pixels."""
+    def fake_get(url, params=None, headers=None, timeout=None):
+        return _FakeResp(payload={"items": [
+            {
+                "type": "image", "title": "Ficus elastica leaf", "width": 3000,
+                "srcset": [{"src": "//upload.example/thumb/a/ab/A.jpg/320px-A.jpg"}],
+            },
+            {
+                "type": "image", "title": "Ficus elastica flower", "width": 400,
+                "srcset": [{"src": "//upload.example/thumb/a/ab/B.jpg/320px-B.jpg"}],
+            },
+        ]})
+
+    import requests
+
+    monkeypatch.setattr(requests, "get", fake_get)
+
+    images = species_info._media_images("Ficus_elastica", "en", limit=4)
+    assert images == [
+        "https://upload.example/thumb/a/ab/A.jpg/800px-A.jpg",
+        "https://upload.example/thumb/a/ab/B.jpg/320px-B.jpg",
+    ]

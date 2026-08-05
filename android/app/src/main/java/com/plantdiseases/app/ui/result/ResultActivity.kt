@@ -4,8 +4,6 @@ import android.animation.ValueAnimator
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import android.widget.Toast
 import android.os.Bundle
 import android.util.TypedValue
@@ -29,18 +27,25 @@ import com.plantdiseases.app.PlantDiseasesApp
 import com.plantdiseases.app.R
 import com.plantdiseases.app.data.GuideDataProvider
 import com.plantdiseases.app.data.local.ScanEntity
+import com.plantdiseases.app.data.repository.CommunityUploader
+import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.data.repository.ScanRepository
 import com.plantdiseases.app.databinding.ActivityResultBinding
 import com.plantdiseases.app.ui.analysis.AnalysisActivity
-import com.plantdiseases.app.ui.common.CoachMarkOverlay
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingAnchorKey
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingContext
+import com.plantdiseases.app.ui.onboarding.guidance.OnboardingCoordinator
+import com.plantdiseases.app.util.ConnectivityObserver
 import com.plantdiseases.app.util.Haptics
 import com.plantdiseases.app.util.ImageUtils
 import com.plantdiseases.app.util.ModelFamily
 import com.plantdiseases.app.util.LocaleHelper
-import com.plantdiseases.app.util.OnboardingHintState
+import com.plantdiseases.app.util.OnboardingStateStore
+import com.plantdiseases.app.util.enableWhileOnline
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
-import org.koin.android.ext.android.inject
 import java.io.File
+import javax.inject.Inject
 
 /**
  * Shows one saved scan's diagnosis. The activity is a thin host: it owns the
@@ -51,6 +56,7 @@ import java.io.File
  * [ShareController]. The activity-result permission launchers stay here because
  * they must be registered before the activity is STARTED.
  */
+@AndroidEntryPoint
 class ResultActivity : AppCompatActivity() {
 
     private enum class ConfidenceAdvisory {
@@ -60,40 +66,43 @@ class ResultActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityResultBinding
 
-    private val scanRepository: ScanRepository by inject()
-    private val onboardingHints: OnboardingHintState by inject()
+    @Inject
+    lateinit var scanRepository: ScanRepository
+
+    @Inject
+    lateinit var onboardingState: OnboardingStateStore
+
+    @Inject
+    lateinit var connectivity: ConnectivityObserver
+
+    @Inject
+    lateinit var plantRepository: PlantRepository
+
+    @Inject
+    lateinit var communityUploader: CommunityUploader
 
     private var scaleFactor = 1.0f
     private lateinit var scaleGestureDetector: ScaleGestureDetector
     private var skeletonAnimator: ValueAnimator? = null
-    private var activeCoachMark: CoachMarkOverlay? = null
-
-    private val resultHintRunnable = Runnable {
-        if (isFinishing || isDestroyed || !binding.cardStatus.isAttachedToWindow) return@Runnable
-        if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) return@Runnable
-        if (!onboardingHints.claimResultHint()) return@Runnable
-
-        activeCoachMark = CoachMarkOverlay.show(
-            host = this,
-            anchor = binding.cardStatus,
-            title = getString(R.string.coach_result_title),
-            body = getString(R.string.coach_result_body),
-            dismissText = getString(R.string.coach_got_it),
-            placement = CoachMarkOverlay.Placement.BELOW,
-            pulseAnchor = false,
-            onDismissed = { activeCoachMark = null },
-        )
-    }
+    private lateinit var onboardingCoordinator: OnboardingCoordinator
 
     private var pendingScanForToolbar: ScanEntity? = null
 
-    private val diagnosisContent by lazy { DiagnosisContentController(this, binding) }
-    private val carePlan by lazy { CarePlanController(this, binding) }
-    private val feedback by lazy { FeedbackController(this, binding) }
-    private val gardenAttach by lazy { GardenAttachController(this, binding) }
-    private val share by lazy { ShareController(this) }
+    private val diagnosisContent by lazy { DiagnosisContentController(this, binding, plantRepository) }
+    private val carePlan by lazy { CarePlanController(this, binding, scanRepository, plantRepository) }
+    private val feedback by lazy { FeedbackController(this, binding, scanRepository) }
+    private val gardenAttach by lazy { GardenAttachController(this, binding, plantRepository) }
+    private val share by lazy { ShareController(this, scanRepository) }
     private val community by lazy {
-        CommunityController(this, binding, ::ensureNotificationPermission, ::requestCommunityOptIn)
+        CommunityController(
+            this,
+            binding,
+            scanRepository,
+            communityUploader,
+            connectivity,
+            ::ensureNotificationPermission,
+            ::requestCommunityOptIn,
+        )
     }
 
     // Notifications-only prompt, fired when the user asks for a second opinion
@@ -166,6 +175,19 @@ class ResultActivity : AppCompatActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         binding = ActivityResultBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        onboardingCoordinator = OnboardingCoordinator(
+            host = this,
+            store = onboardingState,
+            navigateToContext = { target ->
+                if (target == OnboardingContext.CAMERA || target == OnboardingContext.HOME) {
+                    finish()
+                    true
+                } else {
+                    false
+                }
+            },
+        )
+        onboardingCoordinator.setContext(OnboardingContext.RESULT)
 
         ViewCompat.setOnApplyWindowInsetsListener(binding.appBar) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
@@ -199,6 +221,19 @@ class ResultActivity : AppCompatActivity() {
         setupToolbarMenu()
         setupPinchToZoom()
         setupStickyHeader()
+        // The diagnosis itself is already saved locally and reads fine offline,
+        // so there is no strip on this screen. Only the follow-ups that need
+        // the server are held back: the AI doctor and re-running an offline
+        // scan online. (Whether they are shown at all is decided per-verdict in
+        // displayResult; this only decides whether a shown one can be used
+        // right now.) The second-opinion control is deliberately absent — it
+        // also has to stay disabled while an ask is in flight, so
+        // CommunityController owns its enabled state outright.
+        enableWhileOnline(
+            connectivity.isOnline,
+            binding.btnAskDoctor,
+            binding.btnImproveOnline,
+        )
         // Registered in onCreate so the handoffs survive the activity + sheet
         // being recreated together (rotation, process death with a sheet open).
         feedback.registerCorrectionListener(scanId) { pendingScanForToolbar }
@@ -288,8 +323,16 @@ class ResultActivity : AppCompatActivity() {
 
             displayResult(scan, scanRepository)
             Haptics.success(this@ResultActivity)
-            binding.cardStatus.removeCallbacks(resultHintRunnable)
-            binding.cardStatus.postDelayed(resultHintRunnable, RESULT_HINT_DELAY_MS)
+            onboardingCoordinator.registerAnchor(
+                OnboardingAnchorKey.RESULT_DIAGNOSIS,
+                binding.cardStatus,
+            )
+            onboardingCoordinator.registerAnchor(
+                OnboardingAnchorKey.RESULT_ADD_TO_GARDEN,
+                binding.btnAddToGarden,
+                available = { binding.btnAddToGarden.isShown },
+                pauseAfterTarget = true,
+            )
         }
     }
 
@@ -647,11 +690,15 @@ class ResultActivity : AppCompatActivity() {
         }
     }
 
-    /** Re-run an offline scan's photo through the full online model. Requires a
-     *  validated connection; the online result replaces the offline scan in
-     *  place (AnalysisActivity's force-family + replace-scan flow). */
+    /** Re-run an offline scan's photo through the full online model. Needs the
+     *  server to be reachable; the online result replaces the offline scan in
+     *  place (AnalysisActivity's force-family + replace-scan flow).
+     *
+     *  The check is the app's shared one. This screen used to re-derive it from
+     *  NetworkCapabilities on its own, which passed happily on a stale VPN
+     *  tunnel — sending the user into an analysis that could only time out. */
     private fun improveOnline(scan: ScanEntity) {
-        if (!hasValidatedInternet()) {
+        if (!connectivity.lastKnownOnline) {
             Toast.makeText(this, R.string.improve_online_no_network, Toast.LENGTH_SHORT).show()
             return
         }
@@ -663,14 +710,6 @@ class ResultActivity : AppCompatActivity() {
             },
         )
         finish()
-    }
-
-    private fun hasValidatedInternet(): Boolean {
-        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-            ?: return false
-        val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
-        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
 
     private fun animateCardsIn() {
@@ -699,9 +738,6 @@ class ResultActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        binding.cardStatus.removeCallbacks(resultHintRunnable)
-        activeCoachMark?.dismiss(immediate = true)
-        activeCoachMark = null
         skeletonAnimator?.cancel()
         skeletonAnimator = null
         super.onDestroy()
@@ -710,7 +746,6 @@ class ResultActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_SCAN_ID = "extra_scan_id"
 
-        private const val RESULT_HINT_DELAY_MS = 500L
         private const val LOW_CONFIDENCE_FALLBACK = 0.5f
         private const val VERY_LOW_CONFIDENCE_FALLBACK = 0.4f
         private const val DISEASE_APPEARANCE_TAG = "disease_appearance"

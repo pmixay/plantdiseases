@@ -6,11 +6,11 @@ import android.content.Context
 import android.content.Intent
 import com.plantdiseases.app.data.repository.PlantRepository
 import com.plantdiseases.app.util.ReminderManager
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import org.koin.core.component.KoinComponent
-import org.koin.core.component.inject
+import javax.inject.Inject
 
 /**
  * Handles the "Done" / "Snooze" action buttons on a reminder
@@ -20,11 +20,17 @@ import org.koin.core.component.inject
  * "done") and then dismisses the notification.
  *
  * Runs on the system-managed broadcast thread; the actual repository
- * write hops onto Dispatchers.IO via [CoroutineScope].
+ * write hops onto Dispatchers.IO via [CoroutineScope]. Hilt supports
+ * `@AndroidEntryPoint` field injection on `BroadcastReceiver` directly
+ * (injection happens before [onReceive] runs), unlike the `CoroutineWorker`s
+ * in `worker/`, which go through `appEntryPoint` instead (see
+ * [com.plantdiseases.app.di.AppEntryPoint]).
  */
-class ReminderActionReceiver : BroadcastReceiver(), KoinComponent {
+@AndroidEntryPoint
+class ReminderActionReceiver : BroadcastReceiver() {
 
-    private val plantRepository: PlantRepository by inject()
+    @Inject
+    lateinit var plantRepository: PlantRepository
 
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.getStringExtra(EXTRA_ACTION) ?: return
