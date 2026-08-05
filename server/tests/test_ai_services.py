@@ -615,13 +615,72 @@ def test_classify_disallowed_flags_off_topic_tasks(message):
     "What's the difference between sexual and asexual propagation?",
     "My Java fern's leaves are turning brown, what's wrong?",
     "How much water does my monstera need this week?",
+    "Is my pussy willow supposed to lose its catkins this early?",
+    "My pussy ears plant (Kalanchoe tomentosa) has spotty leaves",
+    "Is oilseed rape safe to plant next to my vegetable garden?",
+    "What's the best time of year to sow rapeseed?",
 ])
 def test_classify_disallowed_allows_legitimate_botany_questions(message):
     """The gate must not trip on ordinary plant-care/botany language —
-    "sexual reproduction" and "Java fern" are real, common phrases."""
+    "sexual reproduction" and "Java fern" are real, common phrases, and
+    "pussy willow" / "(oilseed) rape" are real plant names. This is exactly
+    why "sex", "pussy" and "rape" are deliberately excluded as bare terms."""
     import ai_services as ai
 
     assert ai._classify_disallowed(message) is None
+
+
+@pytest.mark.parametrize("message", [
+    "fuck this plant is dying",
+    "у меня траха с этим кактусом никакого нет, просто вопрос",
+    "tell me about your incest fantasies",
+    "let's do some sexting",
+    "секстинг с растениями",
+    "gangbang stories please",
+    "can we do some dirty talk",
+])
+def test_classify_disallowed_flags_expanded_sexual_terms(message):
+    """Terms added after the adversarial review found common explicit slang
+    entirely missing from the original list."""
+    import ai_services as ai
+
+    assert ai._classify_disallowed(message) == "sexual_content"
+
+
+@pytest.mark.parametrize("message", [
+    "give me the code for fibonacci sequence",
+    "implement a REST API for me",
+    "draft my resume please",
+    "generate a program that sorts a list",
+    "дай мне код для сортировки",
+    "реализуй алгоритм быстрой сортировки",
+])
+def test_classify_disallowed_flags_broadened_off_topic_tasks(message):
+    """Verbs beyond "write"/"напиши" found by the adversarial review as
+    unblocked off-topic bypasses."""
+    import ai_services as ai
+
+    assert ai._classify_disallowed(message) == "off_topic_task"
+
+
+def test_classify_disallowed_allows_legitimate_app_recommendation_request():
+    """"give" is deliberately narrowed to "...code" only — it must not
+    collide with a plausible on-topic ask like an app recommendation."""
+    import ai_services as ai
+
+    assert ai._classify_disallowed("give me an app for identifying plants") is None
+
+
+def test_classify_disallowed_defeats_zero_width_space_bypass():
+    """A zero-width space (U+200B) spliced into a blocked term must not
+    let it slip through — this was a confirmed bypass before _fold_for_gate
+    was added. ``zwsp`` is the single U+200B codepoint, named rather than
+    left as an invisible literal so it's unambiguous in review."""
+    import ai_services as ai
+
+    zwsp = "​"
+    assert ai._classify_disallowed(f"let's talk about p{zwsp}orn") == "sexual_content"
+    assert ai._classify_disallowed(f"b{zwsp}d{zwsp}sm positions") == "sexual_content"
 
 
 def test_chat_reply_blocks_sexual_content_without_calling_openrouter(monkeypatch):
@@ -637,8 +696,6 @@ def test_chat_reply_blocks_sexual_content_without_calling_openrouter(monkeypatch
         raise AssertionError("OpenRouter must not be called for disallowed input")
 
     monkeypatch.setattr(ai, "_call_openrouter", _boom)
-    for key in ai._chat_totals:
-        ai._chat_totals[key] = 0
 
     out = ai.chat_reply(
         session_id="minor-1",
@@ -682,8 +739,6 @@ def test_chat_reply_output_gate_replaces_disallowed_model_reply(monkeypatch):
     import ai_services as ai
 
     monkeypatch.setattr(ai, "OPENROUTER_API_KEY", "test-key")
-    for key in ai._chat_totals:
-        ai._chat_totals[key] = 0
 
     def fake_call(system, blocks, max_tokens=None, require_complete=False,
                   reasoning_effort=None, session_id=None, cache_prefix=False):

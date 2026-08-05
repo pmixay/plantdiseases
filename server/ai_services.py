@@ -538,7 +538,12 @@ Rules:
 # "sex"/"sexual" alone are deliberately NOT in this list — "sexual
 # reproduction" / "asexual propagation" are ordinary botany terms (seeds vs.
 # cuttings), so a bare match there would be a constant false positive in a
-# plant-care app. Everything below is unambiguous outside a sexual context.
+# plant-care app. Two more deliberate omissions, for the same reason: bare
+# "pussy" (a common house/garden plant is literally "pussy willow", and
+# "pussy ears" is a trade name for Kalanchoe tomentosa) and bare "rape"
+# ("rapeseed"/"oilseed rape" is a normal crop). Both are covered instead by
+# an unambiguous multi-word phrase below. Everything else here is
+# unambiguous outside a sexual context.
 _SEXUAL_CONTENT_TERMS = (
     r"porn\w*", r"порно\w*",
     r"bdsm", r"бдсм",
@@ -553,6 +558,17 @@ _SEXUAL_CONTENT_TERMS = (
     r"dildo\w*", r"вибратор\w*",
     r"hentai", r"хентай",
     r"horny", r"возбужден\w*",
+    r"fuck\w*", r"трах\w*",
+    r"cum\b",
+    r"creampie\w*",
+    r"gangbang\w*",
+    r"org(?:y|ies)", r"оргия\w*",
+    r"incest\w*", r"инцест\w*",
+    r"rape\s+fantas\w*", r"изнасил\w*",
+    r"handjob\w*",
+    r"deepthroat\w*",
+    r"sexting\w*", r"секстинг\w*",
+    r"dirty\s+talk", r"куннилингус\w*", r"отсос\w*",
 )
 _SEXUAL_CONTENT_RE = re.compile(
     r"\b(?:" + "|".join(_SEXUAL_CONTENT_TERMS) + r")\b", re.IGNORECASE,
@@ -561,20 +577,45 @@ _SEXUAL_CONTENT_RE = re.compile(
 # Off-topic "do my unrelated task" requests — the other half of the incident
 # (asking the doctor for Python/Kotlin boilerplate). Lower stakes than sexual
 # content, but still a scope break and a way to burn the OpenRouter budget on
-# non-plant work, so it gets the same pre-LLM refusal.
+# non-plant work, so it gets the same pre-LLM refusal. "give"/"дай" are
+# deliberately narrowed to "...code" specifically rather than joining the
+# broad object list below — "give me an app for identifying plants" is a
+# plausible on-topic request and "app" is one of those objects.
 _OFF_TOPIC_TASK_RE = re.compile(
     r"(?i)"
     r"\bhello[ _-]?world\b"
     r"|\bmain\s*activity\b"
     r"|\bна питоне\b|\bin python\b"
     r"|\bна котлин[ае]\b|\bin kotlin\b"
-    r"|\bwrite (?:(?:a|me|us|my|the)\s+){0,2}(?:program|code|script|function|app"
-    r"|application|essay|poem|resume|cv)\b"
-    r"|напиши(?:те)? (?:мне )?(?:программу|код|скрипт|функцию|приложение"
-    r"|эссе|стих\w*|рассказ|резюме)\b"
+    r"|\b(?:write|implement|generate|create|draft)\b"
+    r" (?:(?:a|me|us|my|the|an|this)\s+){0,2}"
+    r"(?:program|code|script|function|app|application|essay|poem|resume|cv"
+    r"|algorithm|api|rest\s*api|website)\b"
+    r"|\bgive me (?:the )?code\b"
+    r"|\b(?:напиши|реализуй|сгенерируй|создай)(?:те)? (?:мне )?"
+    r"(?:программу|код|скрипт|функцию|приложение|эссе|стих\w*|рассказ|резюме"
+    r"|алгоритм|сайт)\b"
+    r"|дай(?:те)? (?:мне )?код\b"
     r"|\bsolve (?:this|the|my) (?:math|equation|homework)\b"
     r"|реши(?:те)? (?:мне )?(?:задачу|уравнение|домашн\w*)\b"
 )
+
+
+def _fold_for_gate(text: str) -> str:
+    """Normalize text before the content-gate regexes run.
+
+    NFKC folds compatibility variants (full-width letters, some ligatures)
+    onto their canonical form, and dropping Unicode "format" characters
+    (category Cf: zero-width space/joiner, etc.) undoes the "p​orn"
+    spacing trick. This is NOT a full confusables table — a Cyrillic
+    look-alike substituted for a Latin letter (or vice versa) still slips
+    past, same as any keyword net facing deliberate obfuscation; closing
+    that gap needs a semantic classifier, not more regex.
+    """
+    import unicodedata
+
+    folded = unicodedata.normalize("NFKC", text)
+    return "".join(ch for ch in folded if unicodedata.category(ch) != "Cf")
 
 _REFUSAL_REPLIES = {
     "en": (
@@ -597,9 +638,10 @@ def _classify_disallowed(text: str) -> str | None:
     """Best-effort bilingual keyword gate, checked BEFORE a message reaches
     the LLM. Returns a short category tag for logging/metrics, or ``None``
     when nothing matched."""
-    if _SEXUAL_CONTENT_RE.search(text):
+    folded = _fold_for_gate(text)
+    if _SEXUAL_CONTENT_RE.search(folded):
         return "sexual_content"
-    if _OFF_TOPIC_TASK_RE.search(text):
+    if _OFF_TOPIC_TASK_RE.search(folded):
         return "off_topic_task"
     return None
 
@@ -1034,6 +1076,36 @@ def _build_system_text(locale: str, diagnosis_context: dict | None) -> str:
     return "\n\n".join(parts)
 
 
+def _chat_response(
+    *, reply_text: str, session_id: str, tin: int, tout: int, cache_stats: dict,
+    turns_used: int, tokens_used: int, budget_left_turns: int, budget_left_tokens: int,
+) -> dict:
+    """Shared response shape for both the content-gate refusal and the
+    normal completion path — the two built an identical dict independently
+    before this, which meant a future field addition had to remember both
+    call sites."""
+    return {
+        "available": True,
+        "reply": reply_text,
+        "model": OPENROUTER_MODEL,
+        "provider": "openrouter",
+        # cached_input_tokens is a SUBSET of input_tokens (the part the
+        # provider served from its prompt cache), not an addition to it.
+        "usage": {
+            "input_tokens": tin,
+            "output_tokens": tout,
+            "cached_input_tokens": cache_stats["cached_tokens"],
+        },
+        "session": {
+            "session_id": session_id,
+            "turns_used": turns_used,
+            "turns_remaining": budget_left_turns,
+            "tokens_used": tokens_used,
+            "tokens_remaining": budget_left_tokens,
+        },
+    }
+
+
 def chat_reply(
     *,
     session_id: str,
@@ -1115,20 +1187,12 @@ def chat_reply(
             "AI Doctor blocked disallowed message  session=%s category=%s",
             session_id, violation,
         )
-        return {
-            "available": True,
-            "reply": refusal,
-            "model": OPENROUTER_MODEL,
-            "provider": "openrouter",
-            "usage": {"input_tokens": 0, "output_tokens": 0, "cached_input_tokens": 0},
-            "session": {
-                "session_id": session_id,
-                "turns_used": turns_used,
-                "turns_remaining": budget_left_turns,
-                "tokens_used": tokens_used,
-                "tokens_remaining": budget_left_tokens,
-            },
-        }
+        return _chat_response(
+            reply_text=refusal, session_id=session_id, tin=0, tout=0,
+            cache_stats={"cached_tokens": 0, "cache_write_tokens": 0},
+            turns_used=turns_used, tokens_used=tokens_used,
+            budget_left_turns=budget_left_turns, budget_left_tokens=budget_left_tokens,
+        )
 
     system_text = _build_system_text(locale, diagnosis_context)
     user_blocks = list(history) + [{"role": "user", "content": user_message}]
@@ -1152,22 +1216,29 @@ def chat_reply(
         logger.warning("OpenRouter returned empty reply")
         return {"available": False, "reply": "", "reason": "empty_reply"}
 
-    if _SEXUAL_CONTENT_RE.search(reply_text):
-        # Defense in depth: the input gate and system prompt both missed
-        # this one (e.g. a sexual turn that only emerged from context, with
-        # no trigger word in the latest user message itself). Never let it
-        # reach the client — swap it for the canned refusal. Token/turn
-        # accounting below still runs as normal: the call really happened
-        # and really cost budget, only the text the user sees changes.
+    # Defense in depth: the input gate and system prompt both missed this one
+    # (e.g. a sexual turn that only emerged from context, with no trigger
+    # word in the latest user message itself). Checks BOTH categories, not
+    # just sexual content — an earlier version only rechecked the sexual
+    # regex, leaving the model's own off-topic completions (code, essays)
+    # with no output-side backstop at all. Never let either reach the
+    # client — swap it for the canned refusal. Token/turn accounting below
+    # still runs as normal: the call really happened and really cost
+    # budget, only the text the user sees changes.
+    folded_reply = _fold_for_gate(reply_text)
+    output_blocked = bool(
+        _SEXUAL_CONTENT_RE.search(folded_reply) or _OFF_TOPIC_TASK_RE.search(folded_reply)
+    )
+    if output_blocked:
         logger.error(
             "AI Doctor model produced disallowed content despite system "
             "prompt + input gate  session=%s", session_id,
         )
-        with _chat_lock:
-            _chat_totals["blocked_output"] += 1
         reply_text = _refusal_reply(locale)
 
     with _chat_lock:
+        if output_blocked:
+            _chat_totals["blocked_output"] += 1
         sess.append("user", user_message)
         sess.append("assistant", reply_text)
         sess.tokens_in += tin
@@ -1190,26 +1261,11 @@ def chat_reply(
         budget_left_tokens = max(0, CHAT_SESSION_TOKEN_CAP - tokens_used)
         budget_left_turns = max(0, CHAT_SESSION_TURN_CAP - turns_used)
 
-    return {
-        "available": True,
-        "reply": reply_text,
-        "model": OPENROUTER_MODEL,
-        "provider": "openrouter",
-        # cached_input_tokens is a SUBSET of input_tokens (the part the
-        # provider served from its prompt cache), not an addition to it.
-        "usage": {
-            "input_tokens": tin,
-            "output_tokens": tout,
-            "cached_input_tokens": cache_stats["cached_tokens"],
-        },
-        "session": {
-            "session_id": session_id,
-            "turns_used": turns_used,
-            "turns_remaining": budget_left_turns,
-            "tokens_used": tokens_used,
-            "tokens_remaining": budget_left_tokens,
-        },
-    }
+    return _chat_response(
+        reply_text=reply_text, session_id=session_id, tin=tin, tout=tout,
+        cache_stats=cache_stats, turns_used=turns_used, tokens_used=tokens_used,
+        budget_left_turns=budget_left_turns, budget_left_tokens=budget_left_tokens,
+    )
 
 
 def chat_metrics_snapshot() -> dict:
