@@ -250,6 +250,41 @@ v7 eval; let v8's clean benchmark guide any further move.
    manifest) routes train-only — an unknown verdict must never *promote* a row into a
    held-out slice. Expect eval/cal slices to **shrink** and train to grow on this run;
    that is the fix working, not a regression.
+   **Fallback:** a build that predates `split_hint` but carries `confidence` routes on
+   `confidence >= 0.80` instead — the same floor the hint is derived from, so the fix
+   works without waiting on a re-upload. Only a build with *neither* column raises.
+   Measured on the currently-published manifest: **1,502 eval-eligible / 340 train-only
+   / 697 boundary**, and the 340 are exactly the sub-floor positives the item asks for
+   (gray_mold 75, leaf_scorch 112, nutrient 113, plus 40 hard-negatives).
+
+## ⚠ The published Kaggle supplement is STALE (found 2026-08-05)
+
+`maxayyt5/houseplant-disease-eval-supplement` **version 7** — what the notebook actually
+downloads — is a **v7-era build, not v8b**. The v8 and v8b rounds were finalized locally
+but the `kaggle datasets version` publish step never landed, so none of that work has
+ever reached a training run:
+
+| class | v8b (round notes) | **published v7** |
+|---|---|---|
+| nutrient_deficiency | 493 | **378** |
+| leaf_scorch_underwatering | 560 | **387** |
+| gray_mold_botrytis | 282 | **249** |
+| powdery_mildew | 188 | **146** |
+| healthy | 1126 | **1002** |
+| leaf_spot | 99 | **0 — absent entirely** |
+| not_a_plant | 377 | 377 |
+| **total** | **3125** | **2539** |
+
+The manifest also has **no `split_hint` and no provenance column**, and `subject_domain`
+holds only `houseplant` / `not_a_plant` — **zero `garden_ornamental` rows**. So the
+v2.6.12 domain pivot has never been in a corpus either, and the non-recycled provenance
+subset that the vs-2.6.8 A/B depends on does not exist upstream.
+
+**Publish the v8b build before training 2.6.13.** Guard added in §2:
+`SUPPLEMENT_MIN_ROWS = 3000` fails the run loud rather than letting a previous era's
+corpus train + grade silently — which is the same failure class as the `kaggle_ornamental`
+source loss, just upstream of the notebook. Set it to 0 to train on an older build on
+purpose.
 4. **Thicken thin eval** — +50–100 powdery past its 14-query/54%-one-engine monoculture;
    broaden gray_mold via new multilingual sources. Don't grow nutrient/scorch count.
 5. **Boundary negatives: hold ~700, don't grow**; keep `hn_kind=boundary` train-only;

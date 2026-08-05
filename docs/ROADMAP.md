@@ -180,6 +180,14 @@ into the sidecar and every split reports its domain mix, so the widening domain
 instead of assumed. Neither the notebook nor the runtime gates on domain values:
 a new bucket needs no code change. See `DATASET_LABELING_PLAN.md`.
 
+- [ ] **★ BLOCKER — publish the v8b supplement to Kaggle first.** The dataset the
+      notebook downloads is **version 7 = a v7-era build**: 2,539 rows vs v8b's
+      3,125, **no `leaf_spot` at all**, no `split_hint`, no provenance column, and
+      `subject_domain` limited to `houseplant`/`not_a_plant` — **zero garden
+      ornamentals**. The v8 and v8b rounds never reached the publish step, so none
+      of that work has ever been in a training run, and the domain pivot has never
+      been in a corpus. §2 now fails loud on this (`SUPPLEMENT_MIN_ROWS`). See
+      `DATASET_LABELING_PLAN.md`.
 - [ ] **Train 2.6.13 and paired-bootstrap vs 2.6.8** — expect `val_indomain` to
       recover toward 0.86. Treat `viral_disease` as known-starved (its 600
       ornamental train images are gone and unreplaced) — do **not** read a viral
@@ -206,7 +214,9 @@ a new bucket needs no code change. See `DATASET_LABELING_PLAN.md`.
 | `conformal: selected alpha=… lambda_reg=…` | **not** the last grid value | Search converged inside the grid. |
 | `head early stop @ epN (best ep=M)` | `M` well above 3 | Best-epoch 3 was the corpus-loss symptom. |
 | `[final val_indomain] disease_macro_f1` | toward **0.86** | The headline regression is undone. |
-| `Kaggle supplement routing:` | all three of `supplement` / `supplement_train_only` / `supplement_boundary` non-zero | `split_hint` is being honoured. Only two keys ⇒ the column is gone and the run raised (or you flipped `STRICT_SUPPLEMENT_SPLIT_HINT`). |
+| `Kaggle supplement manifest:` | row count matching the build you published | **Read this line first.** A stale upload otherwise trains and grades silently. |
+| `Kaggle supplement: eval/train routing basis =` | `split_hint`, else `confidence>=0.8` | `none` means neither column shipped and every row is grading the model. |
+| `Kaggle supplement routing:` | all three of `supplement` / `supplement_train_only` / `supplement_boundary` non-zero | The verdict is being honoured. Only two keys ⇒ no routing basis (or you flipped `STRICT_SUPPLEMENT_SPLIT_HINT`). |
 | `Kaggle supplement subject_domain:` | the buckets you collected | Domain rides into the sidecars. All `unspecified` ⇒ the manifest column is missing. |
 | `per-split subject_domain:` → `val_realworld` | a non-trivial non-`unspecified` share | **The ship gate can finally see the broadened domain.** If ornamental/edible rows are ~0 here, no number in this repo says whether the pivot worked. |
 
